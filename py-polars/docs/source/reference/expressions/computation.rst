@@ -7,7 +7,7 @@ Computation
    :toctree: api/
 
     Expr.abs
-    Expr.approx_unique
+    Expr.approx_n_unique
     Expr.arccos
     Expr.arccosh
     Expr.arcsin
@@ -15,6 +15,7 @@ Computation
     Expr.arctan
     Expr.arctanh
     Expr.arg_unique
+    Expr.cbrt
     Expr.cos
     Expr.cosh
     Expr.cumcount

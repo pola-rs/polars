@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Callable, Iterable
 
 from polars import functions as F
 from polars.utils._parse_expr_input import parse_as_list_of_expressions
 from polars.utils._wrap import wrap_ldf
-from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
@@ -136,23 +134,12 @@ class LazyGroupBy:
         """
         if aggs and isinstance(aggs[0], dict):
             raise ValueError(
-                "specifying aggregations as a dictionary is not supported."
-                " Try unpacking the dictionary to take advantage of the keyword syntax"
+                "specifying aggregations as a dictionary is not supported"
+                "\n\nTry unpacking the dictionary to take advantage of the keyword syntax"
                 " of the `agg` method."
             )
 
-        if "aggs" in named_aggs:
-            warnings.warn(
-                "passing expressions to `agg` using the keyword argument `aggs` is"
-                " deprecated. Use positional syntax instead.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
-            )
-            first_input = named_aggs.pop("aggs")
-            pyexprs = parse_as_list_of_expressions(first_input, *aggs, **named_aggs)
-        else:
-            pyexprs = parse_as_list_of_expressions(*aggs, **named_aggs)
-
+        pyexprs = parse_as_list_of_expressions(*aggs, **named_aggs)
         return wrap_ldf(self.lgb.agg(pyexprs))
 
     def apply(

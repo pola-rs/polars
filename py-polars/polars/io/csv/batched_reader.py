@@ -26,6 +26,8 @@ if TYPE_CHECKING:
 
 
 class BatchedCsvReader:
+    """Read a CSV file in batches."""
+
     def __init__(
         self,
         source: str | Path,
@@ -53,6 +55,7 @@ class BatchedCsvReader:
         sample_size: int = 1024,
         eol_char: str = "\n",
         new_columns: Sequence[str] | None = None,
+        raise_if_empty: bool = True,
     ):
         path: str | None
         if isinstance(source, (str, Path)):
@@ -99,6 +102,7 @@ class BatchedCsvReader:
             row_count=_prepare_row_count_args(row_count_name, row_count_offset),
             sample_size=sample_size,
             eol_char=eol_char,
+            raise_if_empty=raise_if_empty,
         )
         self.new_columns = new_columns
 
@@ -126,7 +130,7 @@ class BatchedCsvReader:
 
         Returns
         -------
-        Sequence of DataFrames
+        list of DataFrames
 
         """
         batches = self._reader.next_batches(n)

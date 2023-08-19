@@ -1,6 +1,6 @@
-===========
+====
 Meta
-===========
+====
 
 The following methods are available under the `expr.meta` attribute.
 

@@ -1,10 +1,9 @@
-use polars::{functions, time};
+use polars::functions;
 use polars_core::prelude::*;
 use pyo3::prelude::*;
 
-use crate::conversion::{get_df, get_series, Wrap};
+use crate::conversion::{get_df, get_series};
 use crate::error::PyPolarsErr;
-use crate::prelude::{ClosedWindow, Duration};
 use crate::{PyDataFrame, PySeries};
 
 #[pyfunction]
@@ -91,16 +90,4 @@ pub fn hor_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
 
     let df = functions::hor_concat_df(&dfs).map_err(PyPolarsErr::from)?;
     Ok(df.into())
-}
-
-#[pyfunction]
-pub fn time_range_eager(
-    start: i64,
-    stop: i64,
-    every: &str,
-    closed: Wrap<ClosedWindow>,
-) -> PyResult<PySeries> {
-    let time_range = time::time_range_impl("time", start, stop, Duration::parse(every), closed.0)
-        .map_err(PyPolarsErr::from)?;
-    Ok(time_range.into_series().into())
 }

@@ -14,5 +14,4 @@ Attributes
    Series.name
    Series.shape
    Series.str
-   Series.time_unit
    Series.flags

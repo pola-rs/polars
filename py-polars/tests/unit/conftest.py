@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import random
+import string
 from typing import List, cast
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -56,6 +59,25 @@ def fruits_cars() -> pl.DataFrame:
         },
         schema_overrides={"A": pl.Int64, "B": pl.Int64},
     )
+
+
+@pytest.fixture()
+def str_ints_df() -> pl.DataFrame:
+    n = 1000
+
+    strs = pl.Series("strs", random.choices(string.ascii_lowercase, k=n))
+    strs = pl.select(
+        pl.when(strs == "a")
+        .then(pl.lit(""))
+        .when(strs == "b")
+        .then(None)
+        .otherwise(strs)
+        .alias("strs")
+    ).to_series()
+
+    vals = pl.Series("vals", np.random.rand(n))
+
+    return pl.DataFrame([vals, strs])
 
 
 ISO8601_FORMATS_DATETIME = []

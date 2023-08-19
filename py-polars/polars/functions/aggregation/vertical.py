@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Any, Iterable, overload
 
 import polars._reexport as pl
 import polars.functions as F
-from polars.utils.decorators import deprecated_alias
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 
 if TYPE_CHECKING:
     from polars import Expr, Series
@@ -25,7 +26,7 @@ def all(
     ...
 
 
-@deprecated_alias(columns="exprs")
+@deprecate_renamed_parameter("columns", "exprs", version="0.18.7")
 def all(
     exprs: IntoExpr | Iterable[IntoExpr] | None = None, *more_exprs: IntoExpr
 ) -> Expr | bool | None:
@@ -91,10 +92,9 @@ def all(
         if exprs is None:
             return F.col("*")
         elif isinstance(exprs, pl.Series):
-            warnings.warn(
+            issue_deprecation_warning(
                 "passing a Series to `all` is deprecated. Use `Series.all()` instead.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.18.7",
             )
             return exprs.all()
         elif isinstance(exprs, str):
@@ -114,7 +114,7 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
-@deprecated_alias(columns="exprs")
+@deprecate_renamed_parameter("columns", "exprs", version="0.18.7")
 def any(
     exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
 ) -> Expr | bool | None:
@@ -163,10 +163,9 @@ def any(
     """
     if not more_exprs:
         if isinstance(exprs, pl.Series):
-            warnings.warn(
+            issue_deprecation_warning(
                 "passing a Series to `any` is deprecated. Use `Series.any()` instead.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.18.7",
             )
             return exprs.any()
         elif isinstance(exprs, str):
@@ -257,10 +256,9 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
     """
     if not more_exprs:
         if isinstance(exprs, pl.Series):
-            warnings.warn(
+            issue_deprecation_warning(
                 "passing a Series to `max` is deprecated. Use `Series.max()` instead.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.18.7",
             )
             return exprs.max()
         elif isinstance(exprs, str):
@@ -353,10 +351,9 @@ def min(
     """
     if not more_exprs:
         if isinstance(exprs, pl.Series):
-            warnings.warn(
+            issue_deprecation_warning(
                 "passing a Series to `min` is deprecated. Use `Series.min()` instead.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.18.7",
             )
             return exprs.min()
         elif isinstance(exprs, str):
@@ -376,7 +373,7 @@ def sum(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
-@deprecated_alias(column="exprs")
+@deprecate_renamed_parameter("column", "exprs", version="0.18.7")
 def sum(
     exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
 ) -> Expr | int | float:
@@ -450,10 +447,9 @@ def sum(
     """
     if not more_exprs:
         if isinstance(exprs, pl.Series):
-            warnings.warn(
+            issue_deprecation_warning(
                 "passing a Series to `sum` is deprecated. Use `Series.sum()` instead.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.18.7",
             )
             return exprs.sum()
         elif isinstance(exprs, str):
@@ -473,7 +469,7 @@ def cumsum(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
-@deprecated_alias(column="exprs")
+@deprecate_renamed_parameter("column", "exprs", version="0.18.7")
 def cumsum(
     exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
 ) -> Expr | Series:
@@ -524,10 +520,9 @@ def cumsum(
     """
     if not more_exprs:
         if isinstance(exprs, pl.Series):
-            warnings.warn(
+            issue_deprecation_warning(
                 "passing a Series to `cumsum` is deprecated. Use `Series.cumsum()` instead.",
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
+                version="0.18.7",
             )
             return exprs.cumsum()
         elif isinstance(exprs, str):
@@ -538,8 +533,7 @@ def cumsum(
 
 
 def _warn_for_deprecated_horizontal_use(name: str) -> None:
-    warnings.warn(
+    issue_deprecation_warning(
         f"using `{name}` for horizontal computation is deprecated. Use `{name}_horizontal` instead.",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
+        version="0.18.7",
     )

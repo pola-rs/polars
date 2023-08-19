@@ -132,3 +132,32 @@ def test_categorical_string_comparison_6283() -> None:
         "funding": ["yes", "yes", "no"],
         "score": [78, 39, 76],
     }
+
+
+def test_clear_window_cache_after_filter_10499() -> None:
+    df = pl.from_dict(
+        {
+            "a": [None, None, 3, None, 5, 0, 0, 0, 9, 10],
+            "b": [1, 1, 2, 2, 3, 3, 4, 4, 5, 5],
+        }
+    )
+
+    assert df.lazy().filter((pl.col("a").null_count() < pl.count()).over("b")).filter(
+        ((pl.col("a") == 0).sum() < pl.count()).over("b")
+    ).collect().to_dict(False) == {"a": [3, None, 5, 0, 9, 10], "b": [2, 2, 3, 3, 5, 5]}
+
+
+def test_agg_function_of_filter_10565() -> None:
+    df_int = pl.DataFrame(data={"a": []}, schema={"a": pl.Int16})
+    assert df_int.filter(pl.col("a").n_unique().over("a") == 1).to_dict(False) == {
+        "a": []
+    }
+
+    df_str = pl.DataFrame(data={"a": []}, schema={"a": pl.Utf8})
+    assert df_str.filter(pl.col("a").n_unique().over("a") == 1).to_dict(False) == {
+        "a": []
+    }
+
+    assert df_str.lazy().filter(pl.col("a").n_unique().over("a") == 1).collect(
+        predicate_pushdown=False
+    ).to_dict(False) == {"a": []}

@@ -114,16 +114,6 @@ def test_unnest_columns_available() -> None:
     }
 
 
-def test_streaming_duplicate_cols_5537() -> None:
-    assert pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).lazy().with_columns(
-        [(pl.col("a") * 2).alias("foo"), (pl.col("a") * 3)]
-    ).collect(streaming=True).to_dict(False) == {
-        "a": [3, 6, 9],
-        "b": [1, 2, 3],
-        "foo": [2, 4, 6],
-    }
-
-
 def test_double_projection_union() -> None:
     lf1 = pl.DataFrame(
         {
@@ -288,3 +278,38 @@ def test_join_suffix_collision_9562() -> None:
     assert df.lazy().join(
         other_df.lazy(), how="inner", left_on="ham", right_on="ham", suffix="m"
     ).select("ham").collect().to_dict(False) == {"ham": ["a", "b"]}
+
+
+def test_projection_join_names_9955() -> None:
+    batting = pl.DataFrame(
+        {
+            "playerID": ["abercda01"],
+            "yearID": [1871],
+            "lgID": ["NA"],
+        }
+    ).lazy()
+
+    awards_players = pl.DataFrame(
+        {
+            "playerID": ["bondto01"],
+            "yearID": [1877],
+            "lgID": ["NL"],
+        }
+    ).lazy()
+
+    right = awards_players.filter(pl.col("lgID") == "NL").select("playerID")
+
+    q = batting.join(
+        right,
+        left_on=[pl.col("playerID")],
+        right_on=[pl.col("playerID")],
+        how="inner",
+    )
+
+    q = q.select(batting.columns)
+
+    assert q.collect().schema == {
+        "playerID": pl.Utf8,
+        "yearID": pl.Int64,
+        "lgID": pl.Utf8,
+    }

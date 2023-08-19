@@ -190,7 +190,7 @@ def test_from_pandas_include_indexes() -> None:
 
 def test_from_pandas_duplicated_columns() -> None:
     df = pd.DataFrame([[1, 2, 3, 4], [5, 6, 7, 8]], columns=["a", "b", "c", "b"])
-    with pytest.raises(ValueError, match="Duplicate column names found: "):
+    with pytest.raises(ValueError, match="duplicate column names found: "):
         pl.from_pandas(df)
 
 
@@ -459,8 +459,8 @@ def test_from_arrow() -> None:
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]  # type: ignore[union-attr]
 
-    # if not a PyArrow type, raise a ValueError
-    with pytest.raises(ValueError):
+    # if not a PyArrow type, raise a TypeError
+    with pytest.raises(TypeError):
         _ = pl.from_arrow([1, 2])
 
     df = pl.from_arrow(

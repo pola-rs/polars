@@ -125,7 +125,7 @@ class Config(contextlib.ContextDecorator):
             if not hasattr(self, opt) and not opt.startswith("set_"):
                 opt = f"set_{opt}"
             if not hasattr(self, opt):
-                raise AttributeError(f"Config has no {opt!r} option")
+                raise AttributeError(f"`Config` has no option {opt!r}")
             getattr(self, opt)(value)
 
     def __enter__(self) -> Config:
@@ -204,7 +204,9 @@ class Config(contextlib.ContextDecorator):
 
         Returns
         -------
-        str : json string containing current Config options, or filepath where saved.
+        str
+            JSON string containing current Config options, or the path to the file where
+            the options are saved.
 
         """
         environment_vars = {

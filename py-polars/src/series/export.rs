@@ -43,22 +43,22 @@ impl PySeries {
                     );
                     Ok(np_arr.into_py(py))
                 }
-            }
+            },
             DataType::Utf8 => {
                 let ca = s.utf8().unwrap();
                 let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
                 Ok(np_arr.into_py(py))
-            }
+            },
             DataType::Binary => {
                 let ca = s.binary().unwrap();
                 let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
                 Ok(np_arr.into_py(py))
-            }
+            },
             DataType::Boolean => {
                 let ca = s.bool().unwrap();
                 let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
                 Ok(np_arr.into_py(py))
-            }
+            },
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 let ca = s
@@ -68,13 +68,13 @@ impl PySeries {
                 let np_arr =
                     PyArray1::from_iter(py, ca.into_iter().map(|opt_v| opt_v.to_object(py)));
                 Ok(np_arr.into_py(py))
-            }
+            },
             dt => {
                 raise_err!(
                     format!("'to_numpy' not supported for dtype: {dt:?}"),
                     ComputeError
                 );
-            }
+            },
         }
     }
 
@@ -97,7 +97,7 @@ impl PySeries {
                     DataType::Float64 => PyList::new(py, series.f64().unwrap()),
                     DataType::Categorical(_) => {
                         PyList::new(py, series.categorical().unwrap().iter_str())
-                    }
+                    },
                     #[cfg(feature = "object")]
                     DataType::Object(_) => {
                         let v = PyList::empty(py);
@@ -109,7 +109,7 @@ impl PySeries {
                             v.append(val).unwrap();
                         }
                         v
-                    }
+                    },
                     DataType::List(_) => {
                         let v = PyList::empty(py);
                         let ca = series.list().unwrap();
@@ -117,15 +117,15 @@ impl PySeries {
                             match opt_s {
                                 None => {
                                     v.append(py.None()).unwrap();
-                                }
+                                },
                                 Some(s) => {
                                     let pylst = to_list_recursive(py, s.as_ref());
                                     v.append(pylst).unwrap();
-                                }
+                                },
                             }
                         }
                         v
-                    }
+                    },
                     DataType::Array(_, _) => {
                         let v = PyList::empty(py);
                         let ca = series.array().unwrap();
@@ -133,47 +133,47 @@ impl PySeries {
                             match opt_s {
                                 None => {
                                     v.append(py.None()).unwrap();
-                                }
+                                },
                                 Some(s) => {
                                     let pylst = to_list_recursive(py, s.as_ref());
                                     v.append(pylst).unwrap();
-                                }
+                                },
                             }
                         }
                         v
-                    }
+                    },
                     DataType::Date => {
                         let ca = series.date().unwrap();
                         return Wrap(ca).to_object(py);
-                    }
+                    },
                     DataType::Time => {
                         let ca = series.time().unwrap();
                         return Wrap(ca).to_object(py);
-                    }
+                    },
                     DataType::Datetime(_, _) => {
                         let ca = series.datetime().unwrap();
                         return Wrap(ca).to_object(py);
-                    }
+                    },
                     DataType::Decimal(_, _) => {
                         let ca = series.decimal().unwrap();
                         return Wrap(ca).to_object(py);
-                    }
+                    },
                     DataType::Utf8 => {
                         let ca = series.utf8().unwrap();
                         return Wrap(ca).to_object(py);
-                    }
+                    },
                     DataType::Struct(_) => {
                         let ca = series.struct_().unwrap();
                         return Wrap(ca).to_object(py);
-                    }
+                    },
                     DataType::Duration(_) => {
                         let ca = series.duration().unwrap();
                         return Wrap(ca).to_object(py);
-                    }
+                    },
                     DataType::Binary => {
                         let ca = series.binary().unwrap();
                         return Wrap(ca).to_object(py);
-                    }
+                    },
                     DataType::Null => {
                         let null: Option<u8> = None;
                         let n = series.len();
@@ -196,10 +196,10 @@ impl PySeries {
                         impl ExactSizeIterator for NullIter {}
 
                         PyList::new(py, NullIter { iter, n })
-                    }
+                    },
                     DataType::Unknown => {
                         panic!("to_list not implemented for unknown")
-                    }
+                    },
                 };
                 pylist.to_object(py)
             }

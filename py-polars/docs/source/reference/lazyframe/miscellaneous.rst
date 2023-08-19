@@ -13,9 +13,6 @@ Miscellaneous
     LazyFrame.map
     LazyFrame.pipe
     LazyFrame.profile
-    LazyFrame.sink_ipc
-    LazyFrame.sink_parquet
-
 
 Read/write logical plan
 -----------------------
@@ -23,6 +20,7 @@ Read/write logical plan
 .. autosummary::
    :toctree: api/
 
+    LazyFrame.deserialize
     LazyFrame.from_json
     LazyFrame.read_json
-    LazyFrame.write_json
+    LazyFrame.serialize

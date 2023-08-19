@@ -2,21 +2,24 @@ from __future__ import annotations
 
 import re
 from datetime import timezone
-from typing import TYPE_CHECKING, Any, Collection, TypeVar
+from typing import TYPE_CHECKING, Any, Collection, Mapping, TypeVar
 
-from polars import Expr
 from polars import functions as F
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
     NUMERIC_DTYPES,
+    SIGNED_INTEGER_DTYPES,
     TEMPORAL_DTYPES,
+    UNSIGNED_INTEGER_DTYPES,
     Categorical,
     Datetime,
     Duration,
     Utf8,
     is_polars_dtype,
 )
+from polars.expr import Expr
+from polars.utils.deprecation import deprecate_function
 
 if TYPE_CHECKING:
     import sys
@@ -48,11 +51,73 @@ def is_selector(obj: Any) -> bool:
     return isinstance(obj, _selector_proxy_)
 
 
+def expand_selector(
+    target: DataFrame | LazyFrame | Mapping[str, PolarsDataType], selector: SelectorType
+) -> tuple[str, ...]:
+    """
+    Expand a selector to column names with respect to a specific frame or schema target.
+
+    Parameters
+    ----------
+    target
+        A polars DataFrame, LazyFrame or schema.
+    selector
+        An arbitrary polars selector (or compound selector).
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "colx": ["a", "b", "c"],
+    ...         "coly": [123, 456, 789],
+    ...         "colz": [2.0, 5.5, 8.0],
+    ...     }
+    ... )
+
+    Expand selector with respect to an existing `DataFrame`:
+
+    >>> cs.expand_selector(df, cs.numeric())
+    ('coly', 'colz')
+    >>> cs.expand_selector(df, cs.first() | cs.last())
+    ('colx', 'colz')
+
+    This also works with `LazyFrame`:
+
+    >>> cs.expand_selector(df.lazy(), ~(cs.first() | cs.last()))
+    ('coly',)
+
+    Expand selector with respect to a standalone schema:
+
+    >>> schema = {
+    ...     "colx": pl.Float32,
+    ...     "coly": pl.Float64,
+    ...     "colz": pl.Date,
+    ... }
+    >>> cs.expand_selector(schema, cs.float())
+    ('colx', 'coly')
+
+    """
+    if isinstance(target, Mapping):
+        from polars.dataframe import DataFrame
+
+        target = DataFrame(schema=target)
+
+    return tuple(target.select(selector).columns)
+
+
+@deprecate_function(
+    message="This function has been superseded by `expand_selector`; please update accordingly",
+    version="0.18.14",
+)
 def selector_column_names(
     frame: DataFrame | LazyFrame, selector: SelectorType
 ) -> tuple[str, ...]:
     """
     Return the column names that would be selected from the given frame.
+
+    .. deprecated:: 0.18.14
+       Use :func:`expand_selector` instead.
 
     Parameters
     ----------
@@ -61,25 +126,51 @@ def selector_column_names(
     selector
         An arbitrary polars selector (or compound selector).
 
+    """
+    return expand_selector(target=frame, selector=selector)
+
+
+def _expand_selectors(
+    frame: DataFrame | LazyFrame, items: Any, *more_items: Any
+) -> list[Any]:
+    """
+    Internal function that expands any selectors to column names in the given input.
+
+    Non-selector values are left as-is.
+
     Examples
     --------
-    >>> from polars.selectors import selector_column_names
+    >>> from polars.selectors import _expand_selectors
     >>> import polars.selectors as cs
     >>> df = pl.DataFrame(
     ...     {
+    ...         "colw": ["a", "b"],
     ...         "colx": ["x", "y"],
     ...         "coly": [123, 456],
     ...         "colz": [2.0, 5.5],
     ...     }
     ... )
-    >>> selector_column_names(df, cs.numeric())
-    ('coly', 'colz')
-    >>> selector_column_names(df, cs.first() | cs.last())
-    ('colx', 'colz')
-    >>> selector_column_names(df, ~(cs.first() | cs.last()))
-    ('coly',)
+    >>> _expand_selectors(df, ["colx", cs.numeric()])
+    ['colx', 'coly', 'colz']
+    >>> _expand_selectors(df, cs.string(), cs.float())
+    ['colw', 'colx', 'colz']
+
     """
-    return tuple(frame.clear().select(selector).columns)
+    expanded: list[Any] = []
+    for item in (
+        *(
+            items
+            if isinstance(items, Collection) and not isinstance(items, str)
+            else [items]
+        ),
+        *more_items,
+    ):
+        if is_selector(item):
+            selector_cols = expand_selector(frame, item)
+            expanded.extend(selector_cols)
+        else:
+            expanded.append(item)
+    return expanded
 
 
 class _selector_proxy_(Expr):
@@ -99,6 +190,11 @@ class _selector_proxy_(Expr):
             "params": parameters,
             "name": name,
         }
+
+    def __hash__(self) -> int:
+        # note: this is a suitable hash for selectors (but NOT expressions in general),
+        # as the repr is guaranteed to be unique across all selector/param permutations
+        return hash(repr(self))
 
     def __invert__(self) -> Self:
         """Invert the selector."""
@@ -121,7 +217,7 @@ class _selector_proxy_(Expr):
             set_ops = {"and": "&", "or": "|", "sub": "-"}
             if selector_name in set_ops:
                 op = set_ops[selector_name]
-                return f" {op} ".join(repr(p) for p in params.values())
+                return "(%s)" % f" {op} ".join(repr(p) for p in params.values())
             else:
                 str_params = ",".join(
                     (repr(v)[1:-1] if k.startswith("*") else f"{k}={v!r}")
@@ -326,10 +422,10 @@ def by_dtype(
         elif isinstance(tp, Collection):
             for t in tp:
                 if not is_polars_dtype(t):
-                    raise TypeError(f"Invalid dtype: {t!r}")
+                    raise TypeError(f"invalid dtype: {t!r}")
                 all_dtypes.append(t)
         else:
-            raise TypeError(f"Invalid dtype: {tp!r}")
+            raise TypeError(f"invalid dtype: {tp!r}")
 
     return _selector_proxy_(
         F.col(*all_dtypes), name="by_dtype", parameters={"dtypes": all_dtypes}
@@ -395,7 +491,7 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
         elif isinstance(nm, Collection):
             for n in nm:
                 if not isinstance(n, str):
-                    raise TypeError(f"Invalid name: {n!r}")
+                    raise TypeError(f"invalid name: {n!r}")
                 all_names.append(n)
         else:
             TypeError(f"Invalid name: {nm!r}")
@@ -843,6 +939,19 @@ def first() -> SelectorType:
     │ y   │
     └─────┘
 
+    Select everything  *except* for the first column:
+
+    >>> df.select(~cs.first())
+    shape: (2, 3)
+    ┌─────┬─────┬─────┐
+    │ bar ┆ baz ┆ zap │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ f64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 123 ┆ 2.0 ┆ 0   │
+    │ 456 ┆ 5.5 ┆ 1   │
+    └─────┴─────┴─────┘
+
     See Also
     --------
     all : Select all columns.
@@ -966,6 +1075,146 @@ def integer() -> SelectorType:
     )
 
 
+def signed_integer() -> SelectorType:
+    """
+    Select all signed integer columns.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": [-123, -456],
+    ...         "bar": [3456, 6789],
+    ...         "baz": [7654, 4321],
+    ...         "zap": ["ab", "cd"],
+    ...     },
+    ...     schema_overrides={"bar": pl.UInt32, "baz": pl.UInt64},
+    ... )
+
+    Select all signed integer columns:
+
+    >>> df.select(cs.signed_integer())
+    shape: (2, 1)
+    ┌──────┐
+    │ foo  │
+    │ ---  │
+    │ i64  │
+    ╞══════╡
+    │ -123 │
+    │ -456 │
+    └──────┘
+
+    >>> df.select(~cs.signed_integer())
+    shape: (2, 3)
+    ┌──────┬──────┬─────┐
+    │ bar  ┆ baz  ┆ zap │
+    │ ---  ┆ ---  ┆ --- │
+    │ u32  ┆ u64  ┆ str │
+    ╞══════╪══════╪═════╡
+    │ 3456 ┆ 7654 ┆ ab  │
+    │ 6789 ┆ 4321 ┆ cd  │
+    └──────┴──────┴─────┘
+
+    Select all integer columns (both signed and unsigned):
+
+    >>> df.select(cs.integer())
+    shape: (2, 3)
+    ┌──────┬──────┬──────┐
+    │ foo  ┆ bar  ┆ baz  │
+    │ ---  ┆ ---  ┆ ---  │
+    │ i64  ┆ u32  ┆ u64  │
+    ╞══════╪══════╪══════╡
+    │ -123 ┆ 3456 ┆ 7654 │
+    │ -456 ┆ 6789 ┆ 4321 │
+    └──────┴──────┴──────┘
+
+    See Also
+    --------
+    by_dtype : Select columns by dtype.
+    float : Select all float columns.
+    integer: Select all integer columns.
+    numeric : Select all numeric columns.
+    unsigned_integer: Select all unsigned integer columns.
+
+    """
+    return _selector_proxy_(
+        F.col(SIGNED_INTEGER_DTYPES),
+        name="signed_integer",
+    )
+
+
+def unsigned_integer() -> SelectorType:
+    """
+    Select all unsigned integer columns.
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": [-123, -456],
+    ...         "bar": [3456, 6789],
+    ...         "baz": [7654, 4321],
+    ...         "zap": ["ab", "cd"],
+    ...     },
+    ...     schema_overrides={"bar": pl.UInt32, "baz": pl.UInt64},
+    ... )
+
+    Select all unsigned integer columns:
+
+    >>> df.select(cs.unsigned_integer())
+    shape: (2, 2)
+    ┌──────┬──────┐
+    │ bar  ┆ baz  │
+    │ ---  ┆ ---  │
+    │ u32  ┆ u64  │
+    ╞══════╪══════╡
+    │ 3456 ┆ 7654 │
+    │ 6789 ┆ 4321 │
+    └──────┴──────┘
+
+    Select all columns *except* for those that are unsigned integers:
+
+    >>> df.select(~cs.unsigned_integer())
+    shape: (2, 2)
+    ┌──────┬─────┐
+    │ foo  ┆ zap │
+    │ ---  ┆ --- │
+    │ i64  ┆ str │
+    ╞══════╪═════╡
+    │ -123 ┆ ab  │
+    │ -456 ┆ cd  │
+    └──────┴─────┘
+
+    Select all integer columns (both signed and unsigned):
+
+    >>> df.select(cs.integer())
+    shape: (2, 3)
+    ┌──────┬──────┬──────┐
+    │ foo  ┆ bar  ┆ baz  │
+    │ ---  ┆ ---  ┆ ---  │
+    │ i64  ┆ u32  ┆ u64  │
+    ╞══════╪══════╪══════╡
+    │ -123 ┆ 3456 ┆ 7654 │
+    │ -456 ┆ 6789 ┆ 4321 │
+    └──────┴──────┴──────┘
+
+    See Also
+    --------
+    by_dtype : Select columns by dtype.
+    float : Select all float columns.
+    integer: Select all integer columns.
+    numeric : Select all numeric columns.
+    signed_integer: Select all signed integer columns.
+
+    """
+    return _selector_proxy_(
+        F.col(UNSIGNED_INTEGER_DTYPES),
+        name="unsigned_integer",
+    )
+
+
 def last() -> SelectorType:
     """
     Select the last column in the current scope.
@@ -994,6 +1243,19 @@ def last() -> SelectorType:
     │ 0   │
     │ 1   │
     └─────┘
+
+    Select everything  *except* for the last column:
+
+    >> df.select(~cs.last())
+    shape: (2, 3)
+    ┌─────┬─────┬─────┐
+    │ foo ┆ bar ┆ baz │
+    │ --- ┆ --- ┆ --- │
+    │ str ┆ i64 ┆ f64 │
+    ╞═════╪═════╪═════╡
+    │ x   ┆ 123 ┆ 2.0 │
+    │ y   ┆ 456 ┆ 5.5 │
+    └─────┴─────┴─────┘
 
     See Also
     --------
@@ -1274,6 +1536,7 @@ def string(include_categorical: bool = False) -> SelectorType:
     return _selector_proxy_(
         F.col(string_dtypes),
         name="string",
+        parameters={"include_categorical": include_categorical},
     )
 
 
@@ -1365,6 +1628,6 @@ __all__ = [
     "temporal",
     "string",
     "is_selector",
-    "selector_column_names",
+    "expand_selector",
     "SelectorType",
 ]

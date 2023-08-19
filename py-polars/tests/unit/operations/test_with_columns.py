@@ -1,5 +1,3 @@
-import pytest
-
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -79,18 +77,17 @@ def test_with_columns() -> None:
     assert_frame_equal(dx, expected)
 
     # mixed
-    with pytest.deprecated_call():
-        dx = df.with_columns(
-            [(pl.col("a") * pl.col("b")).alias("d")],
-            ~pl.col("c").alias("e"),
-            f=srs_unnamed,
-            g=True,
-            h=1,
-            i=3.2,
-            j="a",  # Note: string interpreted as column name, resolves to `pl.col("a")`
-            k=None,
-            l=datetime.datetime(2001, 1, 1, 0, 0),
-        )
+    dx = df.with_columns(
+        (pl.col("a") * pl.col("b")).alias("d"),
+        ~pl.col("c").alias("e"),
+        f=srs_unnamed,
+        g=True,
+        h=1,
+        i=3.2,
+        j="a",  # Note: string interpreted as column name, resolves to `pl.col("a")`
+        k=None,
+        l=datetime.datetime(2001, 1, 1, 0, 0),
+    )
     assert_frame_equal(dx, expected)
 
     # automatically upconvert multi-output expressions to struct
@@ -152,13 +149,3 @@ def test_with_columns_single_series() -> None:
 
     expected = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
     assert_frame_equal(result.collect(), expected)
-
-
-def test_with_columns_deprecation_exprs_keyword() -> None:
-    df = pl.DataFrame({"a": [1, 2]})
-
-    with pytest.deprecated_call():
-        result = df.with_columns(exprs=1.0)
-
-    expected = pl.DataFrame({"a": [1, 2], "literal": [1.0, 1.0]})
-    assert_frame_equal(result, expected)

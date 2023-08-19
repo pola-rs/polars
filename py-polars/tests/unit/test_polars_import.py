@@ -41,6 +41,7 @@ def _import_timings_as_frame(best_of: int) -> pl.DataFrame:
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Unreliable on Windows")
+@pytest.mark.slow()
 def test_polars_import() -> None:
     # note: take the fastest of several runs to reduce noise.
     df_import = _import_timings_as_frame(best_of=3)

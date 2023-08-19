@@ -15,12 +15,12 @@ from pathlib import Path
 EXCLUDE = frozenset(["polars/utils/polars_version.py"])
 
 
-class StackLevelChecker(NodeVisitor):
+class StackLevelChecker(NodeVisitor):  # noqa: D101
     def __init__(self, file) -> None:
         self.file = file
         self.violations = set()
 
-    def visit_Call(self, node: ast.Call) -> None:
+    def visit_Call(self, node: ast.Call) -> None:  # noqa: D102
         for keyword in node.keywords:
             if keyword.arg == "stacklevel" and isinstance(keyword.value, ast.Constant):
                 self.violations.add(

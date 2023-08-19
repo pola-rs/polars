@@ -1,6 +1,7 @@
 use std::io::BufWriter;
 use std::ops::Deref;
 
+use either::Either;
 use numpy::IntoPyArray;
 use polars::frame::row::{rows_to_schema_supertypes, Row};
 #[cfg(feature = "avro")]
@@ -60,11 +61,11 @@ impl PyDataFrame {
             DataType::Null => {
                 fld.coerce(DataType::Boolean);
                 fld
-            }
+            },
             DataType::Decimal(_, _) => {
                 fld.coerce(DataType::Decimal(None, None));
                 fld
-            }
+            },
             _ => fld,
         });
         let mut schema = Schema::from_iter(fields);
@@ -138,7 +139,7 @@ impl PyDataFrame {
         skip_rows, projection, separator, rechunk, columns, encoding, n_threads, path,
         overwrite_dtype, overwrite_dtype_slice, low_memory, comment_char, quote_char,
         null_values, missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header,
-        row_count, sample_size, eol_char)
+        row_count, sample_size, eol_char, raise_if_empty)
     )]
     pub fn read_csv(
         py_f: &PyAny,
@@ -167,6 +168,7 @@ impl PyDataFrame {
         row_count: Option<(String, IdxSize)>,
         sample_size: usize,
         eol_char: &str,
+        raise_if_empty: bool,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -226,6 +228,7 @@ impl PyDataFrame {
             .with_skip_rows_after_header(skip_rows_after_header)
             .with_row_count(row_count)
             .sample_size(sample_size)
+            .raise_if_empty(raise_if_empty)
             .finish()
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
@@ -262,7 +265,7 @@ impl PyDataFrame {
                     .use_statistics(use_statistics)
                     .set_rechunk(rechunk)
                     .finish()
-            }
+            },
             Rust(f) => ParquetReader::new(f.into_inner())
                 .with_projection(projection)
                 .with_columns(columns)
@@ -392,7 +395,7 @@ impl PyDataFrame {
                         .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
                     Ok(out.into())
                 }
-            }
+            },
         }
     }
 
@@ -545,6 +548,7 @@ impl PyDataFrame {
         py_f: PyObject,
         has_header: bool,
         separator: u8,
+        line_terminator: String,
         quote: u8,
         batch_size: usize,
         datetime_format: Option<String>,
@@ -552,6 +556,7 @@ impl PyDataFrame {
         time_format: Option<String>,
         float_precision: Option<usize>,
         null_value: Option<String>,
+        quote_style: Option<Wrap<QuoteStyle>>,
     ) -> PyResult<()> {
         let null = null_value.unwrap_or_default();
 
@@ -562,6 +567,7 @@ impl PyDataFrame {
                 CsvWriter::new(f)
                     .has_header(has_header)
                     .with_delimiter(separator)
+                    .with_line_terminator(line_terminator)
                     .with_quoting_char(quote)
                     .with_batch_size(batch_size)
                     .with_datetime_format(datetime_format)
@@ -569,6 +575,7 @@ impl PyDataFrame {
                     .with_time_format(time_format)
                     .with_float_precision(float_precision)
                     .with_null_value(null)
+                    .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or(Default::default()))
                     .finish(&mut self.df)
                     .map_err(PyPolarsErr::from)
             })?;
@@ -577,6 +584,7 @@ impl PyDataFrame {
             CsvWriter::new(&mut buf)
                 .has_header(has_header)
                 .with_delimiter(separator)
+                .with_line_terminator(line_terminator)
                 .with_quoting_char(quote)
                 .with_batch_size(batch_size)
                 .with_datetime_format(datetime_format)
@@ -584,6 +592,7 @@ impl PyDataFrame {
                 .with_time_format(time_format)
                 .with_float_precision(float_precision)
                 .with_null_value(null)
+                .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or(Default::default()))
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }
@@ -634,7 +643,7 @@ impl PyDataFrame {
                     DataType::Object(_) => {
                         let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
                         obj.to_object(py)
-                    }
+                    },
                     _ => Wrap(s.get(idx).unwrap()).into_py(py),
                 }),
             )
@@ -658,7 +667,7 @@ impl PyDataFrame {
                                 let obj: Option<&ObjectValue> =
                                     s.get_object(idx).map(|any| any.into());
                                 obj.to_object(py)
-                            }
+                            },
                             // safety: we are in bounds.
                             _ => unsafe { Wrap(s.get_unchecked(idx)).into_py(py) },
                         }),
@@ -677,7 +686,7 @@ impl PyDataFrame {
                 None => st = Some(dt_i.clone()),
                 Some(ref mut st) => {
                     *st = try_get_supertype(st, dt_i).ok()?;
-                }
+                },
             }
         }
         let st = st?;
@@ -1103,7 +1112,7 @@ impl PyDataFrame {
                 };
                 // unpack the wrapper in a PyDataFrame
                 let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
-                "Could net get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
+                "Could not get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
             );
                 // Downcast to Rust
                 let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
@@ -1302,43 +1311,43 @@ impl PyDataFrame {
                 Some(DataType::Int32) => {
                     apply_lambda_with_primitive_out_type::<Int32Type>(df, py, lambda, 0, None)
                         .into_series()
-                }
+                },
                 Some(DataType::Int64) => {
                     apply_lambda_with_primitive_out_type::<Int64Type>(df, py, lambda, 0, None)
                         .into_series()
-                }
+                },
                 Some(DataType::UInt32) => {
                     apply_lambda_with_primitive_out_type::<UInt32Type>(df, py, lambda, 0, None)
                         .into_series()
-                }
+                },
                 Some(DataType::UInt64) => {
                     apply_lambda_with_primitive_out_type::<UInt64Type>(df, py, lambda, 0, None)
                         .into_series()
-                }
+                },
                 Some(DataType::Float32) => {
                     apply_lambda_with_primitive_out_type::<Float32Type>(df, py, lambda, 0, None)
                         .into_series()
-                }
+                },
                 Some(DataType::Float64) => {
                     apply_lambda_with_primitive_out_type::<Float64Type>(df, py, lambda, 0, None)
                         .into_series()
-                }
+                },
                 Some(DataType::Boolean) => {
                     apply_lambda_with_bool_out_type(df, py, lambda, 0, None).into_series()
-                }
+                },
                 Some(DataType::Date) => {
                     apply_lambda_with_primitive_out_type::<Int32Type>(df, py, lambda, 0, None)
                         .into_date()
                         .into_series()
-                }
+                },
                 Some(DataType::Datetime(tu, tz)) => {
                     apply_lambda_with_primitive_out_type::<Int64Type>(df, py, lambda, 0, None)
                         .into_datetime(tu, tz)
                         .into_series()
-                }
+                },
                 Some(DataType::Utf8) => {
                     apply_lambda_with_utf8_out_type(df, py, lambda, 0, None).into_series()
-                }
+                },
                 _ => return apply_lambda_unknown(df, py, lambda, inference_size),
             };
 
@@ -1356,17 +1365,20 @@ impl PyDataFrame {
         Ok(hash.into_series().into())
     }
 
-    pub fn transpose(&self, include_header: bool, names: &str) -> PyResult<Self> {
-        let mut df = self.df.transpose().map_err(PyPolarsErr::from)?;
-        if include_header {
-            let s = Utf8Chunked::from_iter_values(
-                names,
-                self.df.get_columns().iter().map(|s| s.name()),
-            )
-            .into_series();
-            df.insert_at_idx(0, s).unwrap();
-        }
-        Ok(df.into())
+    #[pyo3(signature = (keep_names_as, column_names))]
+    pub fn transpose(&self, keep_names_as: Option<&str>, column_names: &PyAny) -> PyResult<Self> {
+        let new_col_names = if let Ok(name) = column_names.extract::<Vec<String>>() {
+            Some(Either::Right(name))
+        } else if let Ok(name) = column_names.extract::<String>() {
+            Some(Either::Left(name))
+        } else {
+            None
+        };
+        Ok(self
+            .df
+            .transpose(keep_names_as, new_col_names)
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
     pub fn upsample(
         &self,

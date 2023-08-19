@@ -2,6 +2,7 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
+use crate::error::PyPolarsErr;
 use crate::PyExpr;
 
 #[pymethods]
@@ -17,11 +18,12 @@ impl PyExpr {
             strict,
             exact,
             cache,
+            use_earliest: None,
         };
         self.inner.clone().str().to_date(options).into()
     }
 
-    #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache))]
+    #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache, use_earliest))]
     #[allow(clippy::too_many_arguments)]
     fn str_to_datetime(
         &self,
@@ -31,12 +33,14 @@ impl PyExpr {
         strict: bool,
         exact: bool,
         cache: bool,
+        use_earliest: Option<bool>,
     ) -> Self {
         let options = StrptimeOptions {
             format,
             strict,
             exact,
             cache,
+            use_earliest,
         };
         self.inner
             .clone()
@@ -52,6 +56,7 @@ impl PyExpr {
             strict,
             cache,
             exact: true,
+            use_earliest: None,
         };
         self.inner.clone().str().to_time(options).into()
     }
@@ -84,6 +89,7 @@ impl PyExpr {
         self.inner.clone().str().to_lowercase().into()
     }
 
+    #[cfg(feature = "nightly")]
     fn str_to_titlecase(&self) -> Self {
         self.inner.clone().str().to_titlecase().into()
     }
@@ -238,6 +244,17 @@ impl PyExpr {
 
     fn str_extract_all(&self, pat: Self) -> Self {
         self.inner.clone().str().extract_all(pat.inner).into()
+    }
+
+    #[cfg(feature = "extract_groups")]
+    fn str_extract_groups(&self, pat: &str) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .str()
+            .extract_groups(pat)
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
 
     fn str_count_match(&self, pat: &str) -> Self {

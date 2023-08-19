@@ -28,7 +28,8 @@ class ExprBinaryNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Expr
+            Expression of data type :class:`Boolean`.
 
         See Also
         --------
@@ -74,7 +75,8 @@ class ExprBinaryNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Expr
+            Expression of data type :class:`Boolean`.
 
         See Also
         --------
@@ -120,7 +122,8 @@ class ExprBinaryNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Expr
+            Expression of data type :class:`Boolean`.
 
         See Also
         --------
@@ -174,7 +177,7 @@ class ExprBinaryNameSpace:
             return wrap_expr(self._pyexpr.bin_base64_decode(strict))
         else:
             raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+                f"encoding must be one of {{'hex', 'base64'}}, got {encoding!r}"
             )
 
     def encode(self, encoding: TransferEncoding) -> Expr:
@@ -188,7 +191,9 @@ class ExprBinaryNameSpace:
 
         Returns
         -------
-        Binary array with values encoded using provided encoding
+        Expr
+            Expression of data type :class:`Utf8` with values encoded using provided
+            encoding.
 
         Examples
         --------
@@ -211,6 +216,7 @@ class ExprBinaryNameSpace:
         │ yellow ┆ [binary data] ┆ ffff00           │
         │ blue   ┆ [binary data] ┆ 0000ff           │
         └────────┴───────────────┴──────────────────┘
+
         """
         if encoding == "hex":
             return wrap_expr(self._pyexpr.bin_hex_encode())
@@ -218,5 +224,5 @@ class ExprBinaryNameSpace:
             return wrap_expr(self._pyexpr.bin_base64_encode())
         else:
             raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+                f"encoding must be one of {{'hex', 'base64'}}, got {encoding!r}"
             )

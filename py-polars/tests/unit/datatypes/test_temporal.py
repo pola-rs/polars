@@ -1891,7 +1891,7 @@ def test_iso_year() -> None:
     assert pl.Series([date(2022, 1, 1)]).dt.iso_year()[0] == 2021
 
 
-def test_replace_timezone() -> None:
+def test_replace_time_zone() -> None:
     ny = ZoneInfo("America/New_York")
     assert pl.DataFrame({"a": [datetime(2022, 9, 25, 14)]}).with_columns(
         pl.col("a").dt.replace_time_zone("America/New_York").alias("b")
@@ -1910,7 +1910,7 @@ def test_replace_timezone() -> None:
 )
 @pytest.mark.parametrize("from_tz", ["Asia/Seoul", None])
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
-def test_replace_timezone_from_to(
+def test_replace_time_zone_from_to(
     from_tz: str,
     to_tz: str,
     tzinfo: timezone | ZoneInfo,
@@ -1956,27 +1956,10 @@ def test_strptime_with_invalid_tz() -> None:
         )
 
 
-def test_utc_deprecation() -> None:
-    with pytest.warns(
-        DeprecationWarning,
-        match="The `utc` argument is now a no-op and has no effect. You can safely remove it",
-    ):
-        pl.Series(["2020-01-01 03:00:00"]).str.strptime(
-            pl.Datetime("us"), "%Y-%m-%d %H:%M:%S", utc=True
-        )
-    with pytest.warns(
-        DeprecationWarning,
-        match="The `utc` argument is now a no-op and has no effect. You can safely remove it",
-    ):
-        pl.Series(["2020-01-01 03:00:00"]).str.to_datetime(
-            "%Y-%m-%d %H:%M:%S", utc=True
-        )
-
-
 def test_strptime_unguessable_format() -> None:
     with pytest.raises(
         ComputeError,
-        match="could not find an appropriate format to parse dates, please define a fmt",
+        match="could not find an appropriate format to parse dates, please define a format",
     ):
         pl.Series(["foobar"]).str.strptime(pl.Datetime)
 
@@ -2412,6 +2395,48 @@ def test_truncate_by_multiple_weeks() -> None:
         "5w": [date(2022, 3, 21), date(2022, 10, 31)],
         "17w": [date(2021, 12, 27), date(2022, 8, 8)],
     }
+
+
+def test_truncate_use_earliest() -> None:
+    ser = pl.date_range(
+        date(2020, 10, 25),
+        datetime(2020, 10, 25, 2),
+        "30m",
+        eager=True,
+        time_zone="Europe/London",
+    ).dt.offset_by("15m")
+    df = ser.to_frame()
+    df = df.with_columns(
+        use_earliest=pl.col("date").dt.dst_offset() == pl.duration(hours=1)
+    )
+    result = df.select(
+        pl.when(pl.col("use_earliest"))
+        .then(pl.col("date").dt.truncate("30m", use_earliest=True))
+        .otherwise(pl.col("date").dt.truncate("30m", use_earliest=False))
+    )
+    expected = pl.date_range(
+        date(2020, 10, 25),
+        datetime(2020, 10, 25, 2),
+        "30m",
+        eager=True,
+        time_zone="Europe/London",
+    ).to_frame()
+    assert_frame_equal(result, expected)
+
+
+def test_truncate_ambiguous() -> None:
+    ser = pl.date_range(
+        date(2020, 10, 25),
+        datetime(2020, 10, 25, 2),
+        "30m",
+        eager=True,
+        time_zone="Europe/London",
+    ).dt.offset_by("15m")
+    with pytest.raises(
+        ComputeError,
+        match="datetime '2020-10-25 01:00:00' is ambiguous in time zone 'Europe/London'",
+    ):
+        ser.dt.truncate("30m")
 
 
 def test_round_by_week() -> None:

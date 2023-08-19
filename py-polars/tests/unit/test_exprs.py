@@ -720,13 +720,13 @@ def test_map_dict() -> None:
 
     with pytest.raises(
         pl.ComputeError,
-        match="Remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion.",
+        match="remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion",
     ):
         df_int_as_str.with_columns(pl.col("int").map_dict(int_dict))
 
     with pytest.raises(
         pl.ComputeError,
-        match="Remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion.",
+        match="remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion",
     ):
         df_int_as_str.with_columns(pl.col("int").map_dict(int_with_none_dict))
 
@@ -790,8 +790,8 @@ def test_lit_dtypes() -> None:
             "f32": lit_series(0, pl.Float32),
             "u16": lit_series(0, pl.UInt16),
             "i16": lit_series(0, pl.Int16),
-            "i64": lit_series([8], None),
-            "list_i64": lit_series([[1, 2, 3]], None),
+            "i64": lit_series(pl.Series([8]), None),
+            "list_i64": lit_series(pl.Series([[1, 2, 3]]), None),
         }
     )
     assert df.dtypes == [
@@ -833,7 +833,7 @@ def test_lit_dtypes() -> None:
 def test_incompatible_lit_dtype() -> None:
     with pytest.raises(
         TypeError,
-        match=r"Time zone of dtype \(Asia/Kathmandu\) differs from time zone of value \(UTC\).",
+        match=r"time zone of dtype \('Asia/Kathmandu'\) differs from time zone of value \(datetime.timezone.utc\)",
     ):
         pl.lit(
             datetime(2020, 1, 1, tzinfo=timezone.utc),
@@ -870,7 +870,7 @@ def test_exclude(input: tuple[Any, ...], expected: list[str]) -> None:
     assert df.select(pl.all().exclude(*input)).columns == expected
 
 
-@pytest.mark.parametrize("input", [(5,), (["a"], "b"), (pl.Int64, "a")])
+@pytest.mark.parametrize("input", [(5,), (["a"], date.today()), (pl.Int64, "a")])
 def test_exclude_invalid_input(input: tuple[Any, ...]) -> None:
     df = pl.DataFrame(schema=["a", "b", "c"])
     with pytest.raises(TypeError):
@@ -974,23 +974,6 @@ def test_tail() -> None:
     assert df.select(pl.col("a").tail(3)).to_dict(False) == {"a": [3, 4, 5]}
     assert df.select(pl.col("a").tail(10)).to_dict(False) == {"a": [1, 2, 3, 4, 5]}
     assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(False) == {"a": [4, 5]}
-
-
-def test_cache_expr(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-    df = pl.DataFrame(
-        {
-            "x": [3, 3, 3, 5, 8],
-        }
-    )
-    x = (pl.col("x") * 10).cache()
-
-    assert (df.groupby(1).agg([x * x * x])).to_dict(False) == {
-        "literal": [1],
-        "x": [[27000, 27000, 27000, 125000, 512000]],
-    }
-    _, err = capfd.readouterr()
-    assert """cache hit: [(col("x")) * (10)].cache()""" in err
 
 
 @pytest.mark.parametrize(

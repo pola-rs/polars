@@ -12,25 +12,29 @@ from polars.datatypes import (
     DataTypeClass,
     List,
     Struct,
+    UInt64,
+    Utf8,
     dtype_to_py_type,
     unpack_dtypes,
 )
 from polars.exceptions import ComputeError, InvalidAssert
 from polars.lazyframe import LazyFrame
 from polars.series import Series
+from polars.utils.deprecation import deprecate_function
 
 
 def assert_frame_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
     *,
+    check_row_order: bool = True,
+    check_column_order: bool = True,
     check_dtype: bool = True,
     check_exact: bool = False,
     rtol: float = 1.0e-5,
     atol: float = 1.0e-8,
     nans_compare_equal: bool = True,
-    check_column_order: bool = True,
-    check_row_order: bool = True,
+    categorical_as_str: bool = False,
 ) -> None:
     """
     Raise detailed AssertionError if `left` does NOT equal `right`.
@@ -41,6 +45,13 @@ def assert_frame_equal(
         the dataframe to compare.
     right
         the dataframe to compare with.
+    check_row_order
+        if False, frames will compare equal if the required rows are present,
+        irrespective of the order in which they appear; as this requires
+        sorting, you cannot set on frames that contain unsortable columns.
+    check_column_order
+        if False, frames will compare equal if the required columns are present,
+        irrespective of the order in which they appear.
     check_dtype
         if True, data types need to match exactly.
     check_exact
@@ -52,13 +63,9 @@ def assert_frame_equal(
         absolute tolerance for inexact checking.
     nans_compare_equal
         if your assert/test requires float NaN != NaN, set this to False.
-    check_column_order
-        if False, frames will compare equal if the required columns are present,
-        irrespective of the order in which they appear.
-    check_row_order
-        if False, frames will compare equal if the required rows are present,
-        irrespective of the order in which they appear; as this requires
-        sorting, you cannot set on frames that contain unsortable columns.
+    categorical_as_str
+        Cast categorical columns to string before comparing. Enabling this helps
+        compare dataframes that do not share the same string cache.
 
     Examples
     --------
@@ -82,17 +89,17 @@ def assert_frame_equal(
     left_not_right = [c for c in left.columns if c not in right.columns]
     if left_not_right:
         raise AssertionError(
-            f"Columns {left_not_right} in left frame, but not in right."
+            f"columns {left_not_right!r} in left frame, but not in right"
         )
     right_not_left = [c for c in right.columns if c not in left.columns]
     if right_not_left:
         raise AssertionError(
-            f"Columns {right_not_left} in right frame, but not in left."
+            f"columns {right_not_left!r} in right frame, but not in left"
         )
 
     if check_column_order and left.columns != right.columns:
         raise AssertionError(
-            f"Columns are not in the same order:\n{left.columns!r}\n{right.columns!r}"
+            f"columns are not in the same order:\n{left.columns!r}\n{right.columns!r}"
         )
 
     if not check_row_order:
@@ -101,7 +108,7 @@ def assert_frame_equal(
             right = right.sort(by=left.columns)
         except ComputeError as exc:
             raise InvalidAssert(
-                "Cannot set 'check_row_order=False' on frame with unsortable columns."
+                "cannot set 'check_row_order=False' on frame with unsortable columns"
             ) from exc
 
     # note: does not assume a particular column order
@@ -110,14 +117,15 @@ def assert_frame_equal(
             _assert_series_inner(
                 left[c],  # type: ignore[arg-type, index]
                 right[c],  # type: ignore[arg-type, index]
-                check_dtype,
-                check_exact,
-                nans_compare_equal,
-                atol,
-                rtol,
+                check_dtype=check_dtype,
+                check_exact=check_exact,
+                atol=atol,
+                rtol=rtol,
+                nans_compare_equal=nans_compare_equal,
+                categorical_as_str=categorical_as_str,
             )
         except AssertionError as exc:
-            msg = f"Values for column {c!r} are different."
+            msg = f"values for column {c!r} are different."
             raise AssertionError(msg) from exc
 
 
@@ -125,13 +133,14 @@ def assert_frame_not_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
     *,
+    check_row_order: bool = True,
+    check_column_order: bool = True,
     check_dtype: bool = True,
     check_exact: bool = False,
     rtol: float = 1.0e-5,
     atol: float = 1.0e-8,
     nans_compare_equal: bool = True,
-    check_column_order: bool = True,
-    check_row_order: bool = True,
+    categorical_as_str: bool = False,
 ) -> None:
     """
     Raise AssertionError if `left` DOES equal `right`.
@@ -142,6 +151,13 @@ def assert_frame_not_equal(
         the dataframe to compare.
     right
         the dataframe to compare with.
+    check_row_order
+        if False, frames will compare equal if the required rows are present,
+        irrespective of the order in which they appear; as this requires
+        sorting, you cannot set on frames that contain unsortable columns.
+    check_column_order
+        if False, frames will compare equal if the required columns are present,
+        irrespective of the order in which they appear.
     check_dtype
         if True, data types need to match exactly.
     check_exact
@@ -153,13 +169,9 @@ def assert_frame_not_equal(
         absolute tolerance for inexact checking.
     nans_compare_equal
         if your assert/test requires float NaN != NaN, set this to False.
-    check_column_order
-        if False, frames will compare equal if the required columns are present,
-        irrespective of the order in which they appear.
-    check_row_order
-        if False, frames will compare equal if the required rows are present,
-        irrespective of the order in which they appear; as this requires
-        sorting, you cannot set on frames that contain unsortable columns.
+    categorical_as_str
+        Cast categorical columns to string before comparing. Enabling this helps
+        compare dataframes that do not share the same string cache.
 
     Examples
     --------
@@ -173,18 +185,19 @@ def assert_frame_not_equal(
         assert_frame_equal(
             left=left,
             right=right,
+            check_column_order=check_column_order,
+            check_row_order=check_row_order,
             check_dtype=check_dtype,
             check_exact=check_exact,
             rtol=rtol,
             atol=atol,
             nans_compare_equal=nans_compare_equal,
-            check_column_order=check_column_order,
-            check_row_order=check_row_order,
+            categorical_as_str=categorical_as_str,
         )
     except AssertionError:
         return
     else:
-        raise AssertionError("Expected the input frames to be unequal.")
+        raise AssertionError("expected the input frames to be unequal")
 
 
 def assert_series_equal(
@@ -197,6 +210,7 @@ def assert_series_equal(
     rtol: float = 1.0e-5,
     atol: float = 1.0e-8,
     nans_compare_equal: bool = True,
+    categorical_as_str: bool = False,
 ) -> None:
     """
     Raise detailed AssertionError if `left` does NOT equal `right`.
@@ -220,6 +234,9 @@ def assert_series_equal(
         absolute tolerance for inexact checking.
     nans_compare_equal
         if your assert/test requires float NaN != NaN, set this to False.
+    categorical_as_str
+        Cast categorical columns to string before comparing. Enabling this helps
+        compare dataframes that do not share the same string cache.
 
     Examples
     --------
@@ -242,7 +259,14 @@ def assert_series_equal(
         raise_assert_detail("Series", "Name mismatch", left.name, right.name)
 
     _assert_series_inner(
-        left, right, check_dtype, check_exact, nans_compare_equal, atol, rtol
+        left,
+        right,
+        check_dtype=check_dtype,
+        check_exact=check_exact,
+        atol=atol,
+        rtol=rtol,
+        nans_compare_equal=nans_compare_equal,
+        categorical_as_str=categorical_as_str,
     )
 
 
@@ -256,6 +280,7 @@ def assert_series_not_equal(
     rtol: float = 1.0e-5,
     atol: float = 1.0e-8,
     nans_compare_equal: bool = True,
+    categorical_as_str: bool = False,
 ) -> None:
     """
     Raise AssertionError if `left` DOES equal `right`.
@@ -279,6 +304,9 @@ def assert_series_not_equal(
         absolute tolerance for inexact checking.
     nans_compare_equal
         if your assert/test requires float NaN != NaN, set this to False.
+    categorical_as_str
+        Cast categorical columns to string before comparing. Enabling this helps
+        compare dataframes that do not share the same string cache.
 
     Examples
     --------
@@ -298,21 +326,24 @@ def assert_series_not_equal(
             rtol=rtol,
             atol=atol,
             nans_compare_equal=nans_compare_equal,
+            categorical_as_str=categorical_as_str,
         )
     except AssertionError:
         return
     else:
-        raise AssertionError("Expected the input Series to be unequal.")
+        raise AssertionError("expected the input Series to be unequal")
 
 
 def _assert_series_inner(
     left: Series,
     right: Series,
+    *,
     check_dtype: bool,
     check_exact: bool,
-    nans_compare_equal: bool,
     atol: float,
     rtol: float,
+    nans_compare_equal: bool,
+    categorical_as_str: bool,
 ) -> None:
     """Compare Series dtype + values."""
     if check_dtype and left.dtype != right.dtype:
@@ -322,6 +353,10 @@ def _assert_series_inner(
         raise_assert_detail(
             "Series", "null_count is not equal", left.null_count(), right.null_count()
         )
+
+    if categorical_as_str and left.dtype == Categorical:
+        left = left.cast(Utf8)
+        right = right.cast(Utf8)
 
     # create mask of which (if any) values are unequal
     unequal = left.ne_missing(right)
@@ -342,9 +377,10 @@ def _assert_series_inner(
             right=right.filter(unequal),
             check_dtype=check_dtype,
             check_exact=check_exact,
-            nans_compare_equal=nans_compare_equal,
             atol=atol,
             rtol=rtol,
+            nans_compare_equal=nans_compare_equal,
+            categorical_as_str=categorical_as_str,
         ):
             return
 
@@ -372,7 +408,9 @@ def _assert_series_inner(
 
             if all(tp in UNSIGNED_INTEGER_DTYPES for tp in (left.dtype, right.dtype)):
                 # avoid potential "subtract-with-overflow" panic on uint math
-                s_diff = Series("diff", [abs(v1 - v2) for v1, v2 in zip(left, right)])
+                s_diff = Series(
+                    "diff", [abs(v1 - v2) for v1, v2 in zip(left, right)], dtype=UInt64
+                )
             else:
                 s_diff = (left - right).abs()
 
@@ -407,9 +445,10 @@ def _assert_series_nested(
     right: Series,
     check_dtype: bool,
     check_exact: bool,
-    nans_compare_equal: bool,
     atol: float,
     rtol: float,
+    nans_compare_equal: bool,
+    categorical_as_str: bool,
 ) -> bool:
     # check that float values exist at _some_ level of nesting
     if not any(tp in FLOAT_DTYPES for tp in unpack_dtypes(left.dtype, right.dtype)):
@@ -440,9 +479,10 @@ def _assert_series_nested(
                 s2,
                 check_dtype=check_dtype,
                 check_exact=check_exact,
-                nans_compare_equal=nans_compare_equal,
                 atol=atol,
                 rtol=rtol,
+                nans_compare_equal=nans_compare_equal,
+                categorical_as_str=categorical_as_str,
             )
         return True
 
@@ -466,9 +506,10 @@ def _assert_series_nested(
                 s2,
                 check_dtype=check_dtype,
                 check_exact=check_exact,
-                nans_compare_equal=nans_compare_equal,
                 atol=atol,
                 rtol=rtol,
+                nans_compare_equal=nans_compare_equal,
+                categorical_as_str=categorical_as_str,
             )
         return True
     else:
@@ -509,6 +550,10 @@ def is_categorical_dtype(data_type: Any) -> bool:
     )
 
 
+@deprecate_function(
+    "Use `assert_frame_equal` instead and pass `categorical_as_str=True`.",
+    version="0.18.13",
+)
 def assert_frame_equal_local_categoricals(df_a: DataFrame, df_b: DataFrame) -> None:
     """Assert frame equal for frames containing categoricals."""
     for (a_name, a_value), (b_name, b_value) in zip(

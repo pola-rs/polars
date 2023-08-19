@@ -1,13 +1,8 @@
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING
 
-from polars import functions as F
 from polars.series.utils import expr_dispatch
-from polars.utils._wrap import wrap_s
-from polars.utils.decorators import deprecated_alias
-from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from polars import Expr, Series
@@ -83,6 +78,7 @@ class StringNameSpace:
         exact: bool = True,
         cache: bool = True,
         utc: bool | None = None,
+        use_earliest: bool | None = None,
     ) -> Series:
         """
         Convert a Utf8 column into a Datetime column.
@@ -121,6 +117,12 @@ class StringNameSpace:
                 Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
                 and offset-aware strings are converted to
                 ``pl.Datetime(time_unit, "UTC")``.
+        use_earliest
+            Determine how to deal with ambiguous datetimes:
+
+            - ``None`` (default): raise
+            - ``True``: use the earliest datetime
+            - ``False``: use the latest datetime
 
         Examples
         --------
@@ -170,7 +172,6 @@ class StringNameSpace:
 
         """
 
-    @deprecated_alias(datatype="dtype", fmt="format")
     def strptime(
         self,
         dtype: PolarsTemporalType,
@@ -179,7 +180,7 @@ class StringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool | None = None,
+        use_earliest: bool | None = None,
     ) -> Series:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -204,15 +205,12 @@ class StringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
-        utc
-            Parse time zone aware datetimes as UTC. This may be useful if you have data
-            with mixed offsets.
+        use_earliest
+            Determine how to deal with ambiguous datetimes:
 
-            .. deprecated:: 0.18.0
-                This is now a no-op, you can safely remove it.
-                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
-                and offset-aware strings are converted to
-                ``pl.Datetime(time_unit, "UTC")``.
+            - ``None`` (default): raise
+            - ``True``: use the earliest datetime
+            - ``False``: use the latest datetime
 
         Notes
         -----
@@ -261,30 +259,6 @@ class StringNameSpace:
                 2001-07-08
         ]
         """
-        if utc is not None:
-            warnings.warn(
-                "The `utc` argument is now a no-op and has no effect. "
-                "You can safely remove it. "
-                "Offset-naive strings are parsed as ``pl.Datetime(time_unit)``, "
-                "and offset-aware strings are converted to "
-                '``pl.Datetime(time_unit, "UTC")``.',
-                DeprecationWarning,
-                stacklevel=find_stacklevel(),
-            )
-        s = wrap_s(self._s)
-        return (
-            s.to_frame()
-            .select(
-                F.col(s.name).str.strptime(
-                    dtype,
-                    format,
-                    strict=strict,
-                    exact=exact,
-                    cache=cache,
-                )
-            )
-            .to_series()
-        )
 
     def to_decimal(
         self,
@@ -331,7 +305,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series[u32]
+        Series
+            Series of data type :class:`UInt32`.
 
         Examples
         --------
@@ -354,7 +329,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series[u32]
+        Series
+            Series of data type :class:`UInt32`.
 
         Notes
         -----
@@ -387,7 +363,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series of dtype Utf8
+        Series
+            Series of data type :class:`Utf8`.
 
         Examples
         --------
@@ -436,7 +413,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Series
+            Series of data type :class:`Boolean`.
 
         Examples
         --------
@@ -543,7 +521,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Utf8 array with values encoded using provided encoding
+        Series
+            Series of data type :class:`Utf8`.
 
         Examples
         --------
@@ -612,8 +591,9 @@ class StringNameSpace:
 
         Returns
         -------
-        Utf8 array. Contain null if original value is null or the json_path return
-        nothing.
+        Series
+            Series of data type :class:`Utf8`. Contains null values if the original
+            value is null or the json_path returns nothing.
 
         Examples
         --------
@@ -647,6 +627,12 @@ class StringNameSpace:
             Group 0 mean the whole pattern, first group begin at index 1
             Default to the first capture group
 
+        Returns
+        -------
+        Series
+            Series of data type :class:`Utf8`. Contains null values if the original
+            value is null or regex captures nothing.
+
         Notes
         -----
         To modify regular expression behaviour (such as multi-line matching)
@@ -670,10 +656,6 @@ class StringNameSpace:
         See the regex crate's section on `grouping and flags
         <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
         additional information about the use of inline expression modifiers.
-
-        Returns
-        -------
-        Utf8 array. Contain null if original value is null or regex capture nothing.
 
         Examples
         --------
@@ -749,7 +731,8 @@ class StringNameSpace:
 
         Returns
         -------
-        List[Utf8]
+        Series
+            Series of data type ``List(Utf8)``.
 
         Examples
         --------
@@ -764,6 +747,62 @@ class StringNameSpace:
 
         '''
 
+    def extract_groups(self, pattern: str) -> Series:
+        r"""
+        Extract all capture groups for the given regex pattern.
+
+        Parameters
+        ----------
+        pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
+
+        Notes
+        -----
+        All group names are **strings**.
+
+        If your pattern contains unnamed groups, their numerical position is converted
+        to a string.
+
+        For example, we can access the first group via the string `"1"`::
+
+            >>> (
+            ...     pl.Series(["foo bar baz"])
+            ...     .str.extract_groups(r"(\w+) (.+) (\w+)")
+            ...     .struct["1"]
+            ... )
+            shape: (1,)
+            Series: '1' [str]
+            [
+                "foo"
+            ]
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     name="url",
+        ...     values=[
+        ...         "http://vote.com/ballon_dor?candidate=messi&ref=python",
+        ...         "http://vote.com/ballon_dor?candidate=weghorst&ref=polars",
+        ...         "http://vote.com/ballon_dor?error=404&ref=rust",
+        ...     ],
+        ... )
+        >>> s.str.extract_groups(r"candidate=(?<candidate>\w+)&ref=(?<ref>\w+)")
+        shape: (3,)
+        Series: 'url' [struct[2]]
+        [
+            {"messi","python"}
+            {"weghorst","polars"}
+            {null,null}
+        ]
+
+        """
+
     def count_match(self, pattern: str) -> Series:
         r"""
         Count all successive non-overlapping regex matches.
@@ -776,7 +815,9 @@ class StringNameSpace:
 
         Returns
         -------
-        UInt32 array. Contain null if original value is null or regex capture nothing.
+        Series
+            Series of data type :class:`UInt32`. Contains null values if the original
+            value is null or if the regex captures nothing.
 
         Examples
         --------
@@ -805,7 +846,8 @@ class StringNameSpace:
 
         Returns
         -------
-        List of Utf8 type
+        Series
+            Series of data type ``List(Utf8)``.
 
         """
 
@@ -864,7 +906,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Struct of Utf8 type
+        Series
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
 
         """
 
@@ -921,11 +964,10 @@ class StringNameSpace:
 
         Returns
         -------
-        Struct of Utf8 type
+        Series
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
 
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(F.col(s.name).str.splitn(by, n)).to_series()
 
     def replace(
         self, pattern: str, value: str, *, literal: bool = False, n: int = 1
@@ -1268,7 +1310,7 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of dtype Utf8.
+            Series of data type :class:`Struct` with fields of data type :class:`Utf8`.
 
         Examples
         --------
@@ -1303,7 +1345,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Exploded column with string datatype.
+        Series
+            Series of data type :class:`Utf8`.
 
         Examples
         --------
@@ -1340,7 +1383,8 @@ class StringNameSpace:
 
         Returns
         -------
-        Series of parsed integers in i32 format
+        Series
+            Series of data type :class:`Int32`.
 
         Examples
         --------
