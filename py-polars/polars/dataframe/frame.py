@@ -2249,6 +2249,7 @@ class DataFrame:
         *,
         pretty: bool = ...,
         row_oriented: bool = ...,
+        storage_options: dict[str, Any] | None = None,
     ) -> str:
         ...
 
@@ -2259,6 +2260,7 @@ class DataFrame:
         *,
         pretty: bool = ...,
         row_oriented: bool = ...,
+        storage_options: dict[str, Any] | None = None,
     ) -> None:
         ...
 
@@ -2268,6 +2270,7 @@ class DataFrame:
         *,
         pretty: bool = False,
         row_oriented: bool = False,
+        storage_options: dict[str, Any] | None = None,
     ) -> str | None:
         """
         Serialize to JSON representation.
@@ -2281,6 +2284,11 @@ class DataFrame:
             Pretty serialize json.
         row_oriented
             Write to row oriented json. This is slower, but more common.
+        storage_options
+            Important: this only works if file is type string
+            Extra options that make sense for ``fsspec.open()`` or a particular storage
+            connection, e.g. host, port, username, password, etc.
+
 
         See Also
         --------
@@ -2300,22 +2308,25 @@ class DataFrame:
         '[{"foo":1,"bar":6},{"foo":2,"bar":7},{"foo":3,"bar":8}]'
 
         """
-        if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
-        to_string_io = (file is not None) and isinstance(file, StringIO)
-        if file is None or to_string_io:
-            with BytesIO() as buf:
-                self._df.write_json(buf, pretty, row_oriented)
-                json_bytes = buf.getvalue()
+        from polars.io._utils import _prepare_write_file_arg
 
-            json_str = json_bytes.decode("utf8")
-            if to_string_io:
-                file.write(json_str)  # type: ignore[union-attr]
+        storage_options = storage_options or {}
+
+        with _prepare_write_file_arg(file, **storage_options) as file:
+            to_string_io = (file is not None) and isinstance(file, StringIO)
+            if file is None or to_string_io:
+                with BytesIO() as buf:
+                    self._df.write_json(buf, pretty, row_oriented)
+                    json_bytes = buf.getvalue()
+
+                json_str = json_bytes.decode("utf8")
+                if to_string_io:
+                    file.write(json_str)  # type: ignore[union-attr]
+                else:
+                    return json_str
             else:
-                return json_str
-        else:
-            self._df.write_json(file, pretty, row_oriented)
-        return None
+                self._df.write_json(file, pretty, row_oriented)
+            return None
 
     @overload
     def write_ndjson(self, file: None = None) -> str:
@@ -2472,6 +2483,7 @@ class DataFrame:
             or integer, then quotes will be used even if they aren`t strictly
             necessary.
         storage_options
+            Important: this only works if file is type string
             Extra options that make sense for ``fsspec.open()`` or a particular storage
             connection, e.g. host, port, username, password, etc.
 
@@ -2544,6 +2556,7 @@ class DataFrame:
         compression : {'uncompressed', 'snappy', 'deflate'}
             Compression method. Defaults to "uncompressed".
         storage_options
+            Important: this only works if file is type string
             Extra options that make sense for ``fsspec.open()`` or a particular storage
             connection, e.g. host, port, username, password, etc.
 
@@ -2740,6 +2753,7 @@ class DataFrame:
               scrolling region begin at row 10, column D (5th col), supply (1, 0, 9, 4).
               Using cell notation for (row, col), supplying ("A2", 9, 4) is equivalent.
         storage_options
+            Important: this only works if file is type string
             Extra options that make sense for ``fsspec.open()`` or a particular storage
             connection, e.g. host, port, username, password, etc.
 
@@ -3176,6 +3190,7 @@ class DataFrame:
             Use C++ parquet implementation vs Rust parquet implementation.
             At the moment C++ supports more features.
         storage_options
+            Important: this only works if file is type string
             Extra options that make sense for ``fsspec.open()`` or a particular storage
             connection, e.g. host, port, username, password, etc.
         pyarrow_options

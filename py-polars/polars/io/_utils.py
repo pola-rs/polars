@@ -20,6 +20,8 @@ from polars.exceptions import NoDataError
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
+    from io import IOBase
+
     from xlsxwriter import Workbook
 
 
@@ -238,8 +240,8 @@ def _prepare_write_file_arg(
 
 
 @overload
-def _prepare_write_file_arg(
-    file: str | Path | BytesIO | BinaryIO, **kwargs: Any
+def _prepare_write_file_arg(  # type: ignore[misc]
+    file: BinaryIO | BytesIO | str | Path, **kwargs: Any
 ) -> ContextManager[str | BytesIO | BinaryIO]:
     ...
 
@@ -254,17 +256,36 @@ def _prepare_write_file_arg(
 
 @overload
 def _prepare_write_file_arg(
+    file: str | Path | IOBase | None, **kwargs: Any
+) -> ContextManager[str | IOBase | None]:
+    ...
+
+
+@overload
+def _prepare_write_file_arg(
     file: str | Path | BytesIO | Workbook | None, **kwargs: Any
 ) -> ContextManager[str | BytesIO | Workbook | None]:
     ...
 
 
+@overload
 def _prepare_write_file_arg(
-    file: str | Path | BytesIO | BinaryIO | TextIOWrapper | Workbook | None,
+    file: str | Path | BytesIO | IOBase | BinaryIO | TextIOWrapper | Workbook | None,
+    **kwargs: Any,
+) -> ContextManager[
+    str | BytesIO | IOBase | BinaryIO | TextIOWrapper | Workbook | None
+]:
+    ...
+
+
+def _prepare_write_file_arg(
+    file: str | Path | BytesIO | IOBase | BinaryIO | TextIOWrapper | Workbook | None,
     encoding: str | None = None,
     pyarrow_options: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> ContextManager[str | BytesIO | BinaryIO | TextIOWrapper | Workbook | None]:
+) -> ContextManager[
+    str | BytesIO | IOBase | BinaryIO | TextIOWrapper | Workbook | None
+]:
     """Prepare file argument."""
 
     # Small helper to use a variable as context
