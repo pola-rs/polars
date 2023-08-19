@@ -11,6 +11,7 @@ from typing import (
     ContextManager,
     Iterator,
     TextIO,
+    TypeVar,
     cast,
     overload,
 )
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
     from io import IOBase
 
     from xlsxwriter import Workbook
+
+    T = TypeVar("T", str, Path, TextIOWrapper, BytesIO, BinaryIO, IOBase, Workbook)
 
 
 def _is_glob_pattern(file: str) -> bool:
@@ -248,43 +251,11 @@ def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
             return BytesIO(f.read().decode(encoding).encode("utf8"))
 
 
-@overload
-def _prepare_write_file_arg(file: str | Path, **kwargs: Any) -> ContextManager[str]:
-    ...
-
-
-@overload
 def _prepare_write_file_arg(
-    file: TextIOWrapper, **kwargs: Any
-) -> ContextManager[TextIOWrapper]:
-    ...
-
-
-@overload
-def _prepare_write_file_arg(file: BytesIO, **kwargs: Any) -> ContextManager[BytesIO]:
-    ...
-
-
-@overload
-def _prepare_write_file_arg(file: BinaryIO, **kwargs: Any) -> ContextManager[BinaryIO]:
-    ...
-
-
-@overload
-def _prepare_write_file_arg(file: IOBase, **kwargs: Any) -> ContextManager[IOBase]:
-    ...
-
-
-@overload
-def _prepare_write_file_arg(file: Workbook, **kwargs: Any) -> ContextManager[Workbook]:
-    ...
-
-
-def _prepare_write_file_arg(
-    file: str | Path | BytesIO | IOBase | BinaryIO | TextIOWrapper | Workbook,
+    file: T,
     pyarrow_options: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> ContextManager[str | BytesIO | IOBase | BinaryIO | TextIOWrapper | Workbook]:
+) -> ContextManager[T]:
     """Prepare file argument."""
 
     # Small helper to use a variable as context
