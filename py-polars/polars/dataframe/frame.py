@@ -83,6 +83,7 @@ from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
+    deprecate_function,
     deprecate_renamed_methods,
     deprecate_renamed_parameter,
 )
@@ -1033,6 +1034,11 @@ class DataFrame:
         )
         return self
 
+    def _replace(self, column: str, new_column: Series) -> Self:
+        """Replace a column by a new Series (in place)."""
+        self._df.replace(column, new_column._s)
+        return self
+
     @property
     def shape(self) -> tuple[int, int]:
         """
@@ -1701,7 +1707,7 @@ class DataFrame:
                 self.replace_at_idx(col_selection, s)
             # df["foo"]
             elif isinstance(col_selection, str):
-                self.replace(col_selection, s)
+                self._replace(col_selection, s)
         else:
             raise TypeError(
                 f"cannot use `__setitem__` on DataFrame"
@@ -4380,6 +4386,13 @@ class DataFrame:
         """
         return self._df.frame_equal(other._df, null_equal)
 
+    @deprecate_function(
+        "DataFrame.replace is deprecated and will be removed in a future version. "
+        "Please use\n"
+        "    df = df.with_columns(new_column.alias(column_name))\n"
+        "instead.",
+        version="0.19.0",
+    )
     def replace(self, column: str, new_column: Series) -> Self:
         """
         Replace a column by a new Series.
@@ -4395,7 +4408,7 @@ class DataFrame:
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
         >>> s = pl.Series([10, 20, 30])
-        >>> df.replace("foo", s)  # works in-place!
+        >>> df.replace("foo", s)  # works in-place!  # doctest: +SKIP
         shape: (3, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
@@ -4408,8 +4421,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        self._df.replace(column, new_column._s)
-        return self
+        return self._replace(column, new_column)
 
     def slice(self, offset: int, length: int | None = None) -> Self:
         """
