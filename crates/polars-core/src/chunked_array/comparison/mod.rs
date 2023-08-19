@@ -884,31 +884,50 @@ impl Not for BooleanChunked {
 }
 
 impl BooleanChunked {
-    /// Check if all values are `true`
-    pub fn all(&self) -> bool {
-        self.downcast_iter().all(compute::boolean::all)
-    }
-
-    /// Check if any value is `true`
+    /// Returns whether any of the values in the column are `true`.
+    ///
+    /// Null values are ignored.
     pub fn any(&self) -> bool {
         self.downcast_iter().any(compute::boolean::any)
     }
 
-    // Three-valued versions which can return None
-    pub fn all_3val(&self, drop_nulls: bool) -> Option<bool> {
-        if drop_nulls || self.null_count() == 0 {
-            Some(self.all())
-        } else {
-            None
-        }
+    /// Returns whether all values in the array are `true`.
+    ///
+    /// Null values are ignored.
+    pub fn all(&self) -> bool {
+        self.downcast_iter().all(compute::boolean::all)
     }
-    pub fn any_3val(&self, drop_nulls: bool) -> Option<bool> {
-        let res = self.any();
-        if drop_nulls || res {
-            Some(res)
-        } else {
-            None
+
+    /// Returns whether any of the values in the column are `true`.
+    ///
+    /// The output is unknown (`None`) if the array contains any null values and
+    /// no `true` values.
+    pub fn any_kleene(&self) -> Option<bool> {
+        let mut result = Some(false);
+        for arr in self.downcast_iter() {
+            match compute::boolean_kleene::any(arr) {
+                Some(true) => return Some(true),
+                None => result = None,
+                _ => (),
+            };
         }
+        result
+    }
+
+    /// Returns whether all values in the column are `true`.
+    ///
+    /// The output is unknown (`None`) if the array contains any null values and
+    /// no `false` values.
+    pub fn all_kleene(&self) -> Option<bool> {
+        let mut result = Some(true);
+        for arr in self.downcast_iter() {
+            match compute::boolean_kleene::all(arr) {
+                Some(false) => return Some(false),
+                None => result = None,
+                _ => (),
+            };
+        }
+        result
     }
 }
 

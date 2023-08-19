@@ -1145,12 +1145,12 @@ impl PyExpr {
             .with_fmt("extend")
             .into()
     }
-    fn any(&self, drop_nulls: bool) -> Self {
-        self.inner.clone().any(drop_nulls).into()
-    }
 
-    fn all(&self, drop_nulls: bool) -> Self {
-        self.inner.clone().all(drop_nulls).into()
+    fn any(&self, ignore_nulls: bool) -> Self {
+        self.inner.clone().any(ignore_nulls).into()
+    }
+    fn all(&self, ignore_nulls: bool) -> Self {
+        self.inner.clone().all(ignore_nulls).into()
     }
 
     fn log(&self, base: f64) -> Self {
