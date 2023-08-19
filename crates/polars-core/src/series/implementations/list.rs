@@ -1,8 +1,12 @@
 use std::any::Any;
 use std::borrow::Cow;
 
+#[cfg(feature = "groupby_list")]
+use ahash::RandomState;
+
 use super::{private, IntoSeries, SeriesTrait};
 use crate::chunked_array::comparison::*;
+use crate::chunked_array::ops::compare_inner::{IntoPartialEqInner, PartialEqInner};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::{AsSinglePtr, Settings};
 use crate::frame::groupby::*;
@@ -47,6 +51,26 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
 
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+    }
+
+    #[cfg(feature = "groupby_list")]
+    fn vec_hash(&self, _build_hasher: RandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
+        self.0.vec_hash(_build_hasher, _buf)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "groupby_list")]
+    fn vec_hash_combine(
+        &self,
+        _build_hasher: RandomState,
+        _hashes: &mut [u64],
+    ) -> PolarsResult<()> {
+        self.0.vec_hash_combine(_build_hasher, _hashes)?;
+        Ok(())
+    }
+
+    fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
+        (&self.0).into_partial_eq_inner()
     }
 }
 

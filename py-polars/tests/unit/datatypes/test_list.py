@@ -190,6 +190,25 @@ def test_groupby_list_column() -> None:
     }
 
 
+def test_groupby_multiple_keys_contains_list_column() -> None:
+    df = (
+        pl.DataFrame(
+            {
+                "a": ["x", "x", "y", "y"],
+                "b": [[1, 2], [1, 2], [3, 4, 5], [6]],
+                "c": [3, 2, 1, 0],
+            }
+        )
+        .groupby(["a", "b"], maintain_order=True)
+        .agg(pl.all())
+    )
+    assert df.to_dict(False) == {
+        "a": ["x", "y", "y"],
+        "b": [[1, 2], [3, 4, 5], [6]],
+        "c": [[3, 2], [1], [0]],
+    }
+
+
 def test_fast_explode_flag() -> None:
     df1 = pl.DataFrame({"values": [[[1, 2]]]})
     assert df1.clone().vstack(df1)["values"].flags["FAST_EXPLODE"]

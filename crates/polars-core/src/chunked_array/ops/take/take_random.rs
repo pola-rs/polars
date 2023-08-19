@@ -540,10 +540,10 @@ impl<'a> TakeRandom for BoolTakeRandomSingleChunk<'a> {
 }
 
 pub struct ListTakeRandom<'a> {
-    inner_type: DataType,
-    name: &'a str,
-    chunks: Vec<&'a ListArray<i64>>,
-    chunk_lens: Vec<IdxSize>,
+    pub(crate) inner_type: DataType,
+    pub(crate) name: &'a str,
+    pub(crate) chunks: Vec<&'a ListArray<i64>>,
+    pub(crate) chunk_lens: Vec<IdxSize>,
 }
 
 impl<'a> TakeRandom for ListTakeRandom<'a> {
@@ -579,8 +579,8 @@ impl<'a> TakeRandom for ListTakeRandom<'a> {
 }
 
 pub struct ListTakeRandomSingleChunk<'a> {
-    arr: &'a ListArray<i64>,
-    name: &'a str,
+    pub(crate) arr: &'a ListArray<i64>,
+    pub(crate) name: &'a str,
 }
 
 impl<'a> TakeRandom for ListTakeRandomSingleChunk<'a> {
