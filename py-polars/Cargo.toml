@@ -26,7 +26,7 @@ pyo3-built = { version = "0.4", optional = true }
 serde_json = { version = "1", optional = true }
 smartstring = "1"
 thiserror = "1"
-rayon = "1.6"
+rayon = "1.6" # NOTE should also be upgraded in polars workspace
 
 [dependencies.polars]
 path = "../crates/polars"
