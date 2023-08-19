@@ -3199,7 +3199,7 @@ class DataFrame:
 
         storage_options = storage_options or {}
         with _prepare_write_file_arg(
-            file, **storage_options
+            file, pyarrow_options=pyarrow_options, **storage_options
         ) as file:
             if use_pyarrow:
                 tbl = self.to_arrow()

@@ -225,85 +225,13 @@ def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
             return BytesIO(f.read().decode(encoding).encode("utf8"))
 
 
-# @overload
-# def _prepare_write_file_arg(
-#     file: str | TextIO | Path | BinaryIO | bytes, storage_options: dict[str, Any]
-# ) -> ContextManager[str | BinaryIO]:
-#     ...
-
-
-# def _prepare_write_file_arg(
-#     file: str | Path | BytesIO,
-#     encoding: str | None = None,
-#     pyarrow_options: dict[str, Any] | None = None,
-#     storage_options: dict[str, Any] | None = None,
-# ) -> ContextManager[str | BytesIO]:
-#     """
-#     Prepare file argument.
-
-#     Utility for write_[parquet]. Returned value is always usable as a context.
-
-#     When fsspec is installed, remote file(s) is (are) opened with
-#     `fsspec.open(file, **kwargs)`
-#     """
-
-#     # Small helper to use a variable as context
-#     @contextmanager
-#     def managed_file(file: Any) -> Iterator[Any]:
-#         try:
-#             yield file
-#         finally:
-#             pass
-
-#     has_non_utf8_non_utf8_lossy_encoding = (
-#         encoding not in {"utf8", "utf8-lossy"} if encoding else False
-#     )
-#     if storage_options is None and isinstance(file, (str, Path)):
-#         if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
-#             return managed_file(normalise_filepath(file, check_not_directory=False))
-#         else:
-#             return managed_file(normalise_filepath(file))
-#     elif storage_options is not None and isinstance(file, str):
-#         # make sure that this is before fsspec
-#         # as fsspec needs requests to be installed
-#         # to read from http
-#         if _FSSPEC_AVAILABLE:
-#             from fsspec.utils import infer_storage_options
-
-#             if not has_non_utf8_non_utf8_lossy_encoding:
-#                 if infer_storage_options(file)["protocol"] == "file":
-#                     return managed_file(normalise_filepath(file, False))
-#             storage_options["mode"] = "wb"
-#             storage_options["encoding"] = encoding
-#             return fsspec.open(file, **storage_options)
-
-#     return managed_file(file)
-
 def _prepare_write_file_arg(
     file: str | Path | BytesIO,
     encoding: str | None = None,
+    pyarrow_options: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> ContextManager[str | BytesIO]:
-    """
-    Prepare file argument.
-
-    Utility for write_[parquet]. (not to be used by scan_[parquet]).
-    Returned value is always usable as a context.
-
-    A :class:`BytesIO` file is returned as a :class:`BytesIO`.
-    A local path is returned as a string.
-    An http URL is read into a buffer and returned as a :class:`BytesIO`.
-
-    When ``encoding`` is not ``utf8`` or ``utf8-lossy``, the whole file is
-    first read in python and decoded using the specified encoding and
-    returned as a :class:`BytesIO` (for usage with ``read_csv``).
-
-    When fsspec is installed, remote file(s) is (are) opened with
-    `fsspec.open(file, **kwargs)` or `fsspec.open_files(file, **kwargs)`.
-    If encoding is not ``utf8`` or ``utf8-lossy``, decoding is handled by
-    fsspec too.
-
-    """
+    """Prepare file argument."""
 
     # Small helper to use a variable as context
     @contextmanager
@@ -318,16 +246,13 @@ def _prepare_write_file_arg(
     )
     encoding_str = encoding if encoding else "utf8"
 
-    if isinstance(file, Path):
-        if has_non_utf8_non_utf8_lossy_encoding:
-            return _check_empty(
-                BytesIO(file.read_bytes().decode(encoding_str).encode("utf8")),
-                context=f"Path ({file!r})",
-                raise_if_empty=True
-            )
-        return managed_file(normalise_filepath(file, False))
+    if kwargs.__len__() == 0 and isinstance(file, (str, Path)):
+        if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
+            return managed_file(normalise_filepath(file, check_not_directory=False))
+        else:
+            return managed_file(normalise_filepath(file))
 
-    if isinstance(file, str):
+    if kwargs.__len__() > 0 and isinstance(file, str):
         # make sure that this is before fsspec
         # as fsspec needs requests to be installed
         # to read from http
@@ -342,14 +267,5 @@ def _prepare_write_file_arg(
             kwargs["mode"] = "wb"
             kwargs["encoding"] = encoding
             return fsspec.open(file, **kwargs)
-
-    if isinstance(file, str):
-        file = normalise_filepath(file, False)
-        if has_non_utf8_non_utf8_lossy_encoding:
-            with Path(file).open(encoding=encoding_str) as f:
-                return _check_empty(
-                    BytesIO(f.read().encode("utf8")), context=f"{file!r}",
-                    raise_if_empty=True
-                )
 
     return managed_file(file)
