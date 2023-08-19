@@ -15,20 +15,24 @@ if TYPE_CHECKING:
 
 
 @overload
-def all(exprs: Series) -> bool:  # type: ignore[misc]
+def all(exprs: Series, *, ignore_nulls: bool = ...) -> bool | None:  # type: ignore[misc]
     ...
 
 
 @overload
 def all(
-    exprs: IntoExpr | Iterable[IntoExpr] | None = ..., *more_exprs: IntoExpr
+    exprs: IntoExpr | Iterable[IntoExpr] | None = ...,
+    *more_exprs: IntoExpr,
+    ignore_nulls: bool = ...,
 ) -> Expr:
     ...
 
 
 @deprecate_renamed_parameter("columns", "exprs", version="0.18.7")
 def all(
-    exprs: IntoExpr | Iterable[IntoExpr] | None = None, *more_exprs: IntoExpr
+    exprs: IntoExpr | Iterable[IntoExpr] | None = None,
+    *more_exprs: IntoExpr,
+    ignore_nulls: bool = True,
 ) -> Expr | bool | None:
     """
     Either return an expression representing all columns, or evaluate a bitwise AND operation.
@@ -50,6 +54,14 @@ def all(
         parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
+    ignore_nulls
+        Ignore null values (default).
+
+        If set to ``False``, `Kleene logic`_ is used to deal with nulls:
+        if the column contains any null values and no ``True`` values,
+        the output is ``None``.
+
+        .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
     See Also
     --------
@@ -96,27 +108,33 @@ def all(
                 "passing a Series to `all` is deprecated. Use `Series.all()` instead.",
                 version="0.18.7",
             )
-            return exprs.all()
+            return exprs.all(ignore_nulls=ignore_nulls)
         elif isinstance(exprs, str):
-            return F.col(exprs).all()
+            return F.col(exprs).all(ignore_nulls=ignore_nulls)
 
     _warn_for_deprecated_horizontal_use("all")
     return F.all_horizontal(exprs, *more_exprs)
 
 
 @overload
-def any(exprs: Series) -> bool:  # type: ignore[misc]
+def any(exprs: Series, *, ignore_nulls: bool = ...) -> bool | None:  # type: ignore[misc]
     ...
 
 
 @overload
-def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
+def any(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    ignore_nulls: bool = ...,
+) -> Expr:
     ...
 
 
 @deprecate_renamed_parameter("columns", "exprs", version="0.18.7")
 def any(
-    exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    ignore_nulls: bool = True,
 ) -> Expr | bool | None:
     """
     Evaluate a bitwise OR operation.
@@ -141,6 +159,14 @@ def any(
         parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
         Additional columns to use in the aggregation, specified as positional arguments.
+    ignore_nulls
+        Ignore null values (default).
+
+        If set to ``False``, `Kleene logic`_ is used to deal with nulls:
+        if the column contains any null values and no ``True`` values,
+        the output is ``None``.
+
+        .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
     Examples
     --------
@@ -167,9 +193,9 @@ def any(
                 "passing a Series to `any` is deprecated. Use `Series.any()` instead.",
                 version="0.18.7",
             )
-            return exprs.any()
+            return exprs.any(ignore_nulls=ignore_nulls)
         elif isinstance(exprs, str):
-            return F.col(exprs).any()
+            return F.col(exprs).any(ignore_nulls=ignore_nulls)
 
     _warn_for_deprecated_horizontal_use("any")
     return F.any_horizontal(exprs, *more_exprs)
