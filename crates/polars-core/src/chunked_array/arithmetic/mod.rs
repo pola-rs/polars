@@ -15,7 +15,7 @@ use polars_arrow::utils::combine_validities_and;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::utils::{align_chunks_binary_owned};
+use crate::utils::align_chunks_binary_owned;
 
 pub trait ArrayArithmetics
 where

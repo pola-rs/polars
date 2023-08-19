@@ -14,30 +14,14 @@ use polars_arrow::prelude::FromData;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::utils::align_chunks_binary;
 
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    /// First ensure that the chunks of lhs and rhs match and then iterates over the chunks and applies
-    /// the comparison operator.
-    fn comparison(
-        &self,
-        rhs: &ChunkedArray<T>,
-        f: impl Fn(&PrimitiveArray<T::Native>, &PrimitiveArray<T::Native>) -> BooleanArray,
-    ) -> BooleanChunked {
-        let chunks = self
-            .downcast_iter()
-            .zip(rhs.downcast_iter())
-            .map(|(left, right)| f(left, right));
-        ChunkedArray::from_chunk_iter("", chunks)
-    }
-
     // Also includes validity in comparison.
     pub fn not_equal_and_validity(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
-        let (lhs, rhs) = align_chunks_binary(self, rhs);
-        lhs.comparison(&rhs, |x, y| comparison::neq_and_validity(x, y))
+        arity::binary_mut(self, rhs, |a, b| comparison::neq_and_validity(a, b))
     }
 }
 
@@ -64,11 +48,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                lhs.comparison(&rhs, |x, y| comparison::eq(x, y))
-            },
+            _ => arity::binary_mut(self, rhs, |a, b| comparison::eq(a, b)),
         }
     }
 
@@ -89,11 +69,7 @@ where
                     rhs.is_null()
                 }
             },
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                lhs.comparison(&rhs, |x, y| comparison::eq_and_validity(x, y))
-            },
+            _ => arity::binary_mut(self, rhs, |a, b| comparison::eq_and_validity(a, b)),
         }
     }
 
@@ -114,11 +90,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                lhs.comparison(&rhs, |x, y| comparison::neq(x, y))
-            },
+            _ => arity::binary_mut(self, rhs, |a, b| comparison::neq(a, b)),
         }
     }
 
@@ -139,11 +111,7 @@ where
                     rhs.is_not_null()
                 }
             },
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                lhs.comparison(&rhs, |x, y| comparison::neq_and_validity(x, y))
-            },
+            _ => arity::binary_mut(self, rhs, |a, b| comparison::neq_and_validity(a, b)),
         }
     }
 
@@ -164,11 +132,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                lhs.comparison(&rhs, |x, y| comparison::gt(x, y))
-            },
+            _ => arity::binary_mut(self, rhs, |a, b| comparison::gt(a, b)),
         }
     }
 
@@ -189,11 +153,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                lhs.comparison(&rhs, |x, y| comparison::gt_eq(x, y))
-            },
+            _ => arity::binary_mut(self, rhs, |a, b| comparison::gt_eq(a, b)),
         }
     }
 
@@ -214,11 +174,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                lhs.comparison(&rhs, |x, y| comparison::lt(x, y))
-            },
+            _ => arity::binary_mut(self, rhs, |a, b| comparison::lt(a, b)),
         }
     }
 
@@ -239,25 +195,9 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                lhs.comparison(&rhs, |x, y| comparison::lt_eq(x, y))
-            },
+            _ => arity::binary_mut(self, rhs, |a, b| comparison::lt_eq(a, b)),
         }
     }
-}
-
-fn compare_bools(
-    lhs: &BooleanChunked,
-    rhs: &BooleanChunked,
-    f: impl Fn(&BooleanArray, &BooleanArray) -> BooleanArray,
-) -> BooleanChunked {
-    let chunks = lhs
-        .downcast_iter()
-        .zip(rhs.downcast_iter())
-        .map(|(l, r)| f(l, r));
-    ChunkedArray::from_chunk_iter("", chunks)
 }
 
 impl ChunkCompare<&BooleanChunked> for BooleanChunked {
@@ -278,11 +218,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 }
             },
             (1, _) => rhs.equal(self),
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                compare_bools(&lhs, &rhs, |lhs, rhs| comparison::eq(lhs, rhs))
-            },
+            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::eq(lhs, rhs)),
         }
     }
 
@@ -321,11 +257,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 }
             },
             (1, _) => rhs.equal_missing(self),
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                compare_bools(&lhs, &rhs, |lhs, rhs| comparison::eq_and_validity(lhs, rhs))
-            },
+            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::eq_and_validity(lhs, rhs)),
         }
     }
 
@@ -344,11 +276,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 }
             },
             (1, _) => rhs.not_equal(self),
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                compare_bools(&lhs, &rhs, |lhs, rhs| comparison::neq(lhs, rhs))
-            },
+            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::neq(lhs, rhs)),
         }
     }
 
@@ -381,13 +309,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                 }
             },
             (1, _) => rhs.not_equal_missing(self),
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                compare_bools(&lhs, &rhs, |lhs, rhs| {
-                    comparison::neq_and_validity(lhs, rhs)
-                })
-            },
+            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::neq_and_validity(lhs, rhs)),
         }
     }
 
@@ -414,11 +336,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                compare_bools(&lhs, &rhs, |lhs, rhs| comparison::gt(lhs, rhs))
-            },
+            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::gt(lhs, rhs)),
         }
     }
 
@@ -445,11 +363,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                compare_bools(&lhs, &rhs, |lhs, rhs| comparison::gt_eq(lhs, rhs))
-            },
+            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::gt_eq(lhs, rhs)),
         }
     }
 
@@ -476,11 +390,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                compare_bools(&lhs, &rhs, |lhs, rhs| comparison::lt(lhs, rhs))
-            },
+            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::lt(lhs, rhs)),
         }
     }
 
@@ -507,11 +417,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => {
-                // Same length.
-                let (lhs, rhs) = align_chunks_binary(self, rhs);
-                compare_bools(&lhs, &rhs, |lhs, rhs| comparison::lt_eq(lhs, rhs))
-            },
+            _ => arity::binary_mut(self, rhs, |lhs, rhs| comparison::lt_eq(lhs, rhs)),
         }
     }
 }
@@ -551,20 +457,6 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
     }
 }
 
-impl BinaryChunked {
-    fn comparison(
-        &self,
-        rhs: &BinaryChunked,
-        f: impl Fn(&BinaryArray<i64>, &BinaryArray<i64>) -> BooleanArray,
-    ) -> BooleanChunked {
-        let chunks = self
-            .downcast_iter()
-            .zip(rhs.downcast_iter())
-            .map(|(left, right)| f(left, right));
-        ChunkedArray::from_chunk_iter("", chunks)
-    }
-}
-
 impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     type Item = BooleanChunked;
 
@@ -583,8 +475,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 BooleanChunked::full_null("", rhs.len())
             }
         } else {
-            let (lhs, rhs) = align_chunks_binary(self, rhs);
-            lhs.comparison(&rhs, comparison::binary::eq)
+            arity::binary_mut(self, rhs, comparison::binary::eq)
         }
     }
 
@@ -603,8 +494,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 rhs.is_null()
             }
         } else {
-            let (lhs, rhs) = align_chunks_binary(self, rhs);
-            lhs.comparison(&rhs, comparison::binary::eq_and_validity)
+            arity::binary_mut(self, rhs, comparison::binary::eq_and_validity)
         }
     }
 
@@ -623,8 +513,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 BooleanChunked::full_null("", rhs.len())
             }
         } else {
-            let (lhs, rhs) = align_chunks_binary(self, rhs);
-            lhs.comparison(&rhs, comparison::binary::neq)
+            arity::binary_mut(self, rhs, comparison::binary::neq)
         }
     }
 
@@ -643,8 +532,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 rhs.is_not_null()
             }
         } else {
-            let (lhs, rhs) = align_chunks_binary(self, rhs);
-            lhs.comparison(&rhs, comparison::binary::neq_and_validity)
+            arity::binary_mut(self, rhs, comparison::binary::neq_and_validity)
         }
     }
 
@@ -663,8 +551,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 BooleanChunked::full_null("", self.len())
             }
         } else {
-            let (lhs, rhs) = align_chunks_binary(self, rhs);
-            lhs.comparison(&rhs, |l, r| comparison::gt(l, r))
+            arity::binary_mut(self, rhs, comparison::binary::gt)
         }
     }
 
@@ -683,8 +570,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 BooleanChunked::full_null("", self.len())
             }
         } else {
-            let (lhs, rhs) = align_chunks_binary(self, rhs);
-            lhs.comparison(&rhs, |l, r| comparison::gt_eq(l, r))
+            arity::binary_mut(self, rhs, comparison::binary::gt_eq)
         }
     }
 
@@ -703,8 +589,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 BooleanChunked::full_null("", self.len())
             }
         } else {
-            let (lhs, rhs) = align_chunks_binary(self, rhs);
-            lhs.comparison(&rhs, |l, r| comparison::lt(l, r))
+            arity::binary_mut(self, rhs, comparison::binary::lt)
         }
     }
 
@@ -723,8 +608,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
                 BooleanChunked::full_null("", self.len())
             }
         } else {
-            let (lhs, rhs) = align_chunks_binary(self, rhs);
-            lhs.comparison(&rhs, |l, r| comparison::lt_eq(l, r))
+            arity::binary_mut(self, rhs, comparison::binary::lt_eq)
         }
     }
 }
@@ -905,12 +789,11 @@ impl ChunkCompare<&StructChunked> for StructChunked {
 impl ChunkCompare<&ArrayChunked> for ArrayChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
-        let (a, b) = align_chunks_binary(self, rhs);
-        let chunks = a
-            .downcast_iter()
-            .zip(b.downcast_iter())
-            .map(|(a, b)| polars_arrow::kernels::comparison::fixed_size_list_eq(a, b));
-        ChunkedArray::from_chunk_iter(self.name(), chunks)
+        arity::binary_mut(
+            self,
+            rhs,
+            polars_arrow::kernels::comparison::fixed_size_list_eq,
+        )
     }
 
     fn equal_missing(&self, rhs: &ArrayChunked) -> BooleanChunked {
@@ -919,12 +802,11 @@ impl ChunkCompare<&ArrayChunked> for ArrayChunked {
     }
 
     fn not_equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
-        let (a, b) = align_chunks_binary(self, rhs);
-        let chunks = a
-            .downcast_iter()
-            .zip(b.downcast_iter())
-            .map(|(a, b)| polars_arrow::kernels::comparison::fixed_size_list_neq(a, b));
-        ChunkedArray::from_chunk_iter(self.name(), chunks)
+        arity::binary_mut(
+            self,
+            rhs,
+            polars_arrow::kernels::comparison::fixed_size_list_neq,
+        )
     }
 
     fn not_equal_missing(&self, rhs: &ArrayChunked) -> Self::Item {

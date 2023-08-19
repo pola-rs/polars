@@ -2,7 +2,6 @@ use num::pow::Pow;
 use polars_arrow::kernels::pow::pow as pow_kernel;
 use polars_core::export::num;
 use polars_core::export::num::{Float, ToPrimitive};
-use polars_core::utils::align_chunks_binary;
 
 use super::*;
 
@@ -64,13 +63,9 @@ where
             exponent.apply(|exp| Pow::pow(base, exp)).into_series(),
         ))
     } else {
-        let (ca_1, ca_2) = align_chunks_binary(base, exponent);
-        let chunks = ca_1
-            .downcast_iter()
-            .zip(ca_2.downcast_iter())
-            .map(|(arr_1, arr_2)| pow_kernel(arr_1, arr_2));
         Ok(Some(
-            ChunkedArray::from_chunk_iter(ca_1.name(), chunks).into_series(),
+            polars_core::chunked_array::ops::arity::binary_mut(base, exponent, pow_kernel)
+                .into_series(),
         ))
     }
 }

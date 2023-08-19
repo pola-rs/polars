@@ -1,8 +1,44 @@
 use arrow::array::Array;
+use polars_arrow::utils::combine_validities_and;
 
-use crate::datatypes::{HasUnderlyingArray, StaticallyMatchesPolarsType};
+use crate::chunked_array::ops::apply::collect_array;
+use crate::datatypes::{
+    HasUnderlyingArray, PolarsNumericType, StaticArray, StaticallyMatchesPolarsType,
+};
 use crate::prelude::{ChunkedArray, PolarsDataType};
 use crate::utils::align_chunks_binary;
+
+pub fn binary_elementwise_values<T, U, V, F>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsNumericType,
+    ChunkedArray<T>: HasUnderlyingArray,
+    ChunkedArray<U>: HasUnderlyingArray,
+    F: for<'a> FnMut(
+        <<ChunkedArray<T> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>,
+        <<ChunkedArray<U> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>,
+    ) -> V::Native,
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let iter = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| {
+            let validity = combine_validities_and(lhs_arr.validity(), rhs_arr.validity());
+
+            let iter = lhs_arr
+                .values_iter()
+                .zip(rhs_arr.values_iter())
+                .map(|(lhs_val, rhs_val)| op(lhs_val, rhs_val));
+            collect_array(iter, validity)
+        });
+    ChunkedArray::from_chunk_iter(lhs.name(), iter)
+}
 
 /// Applies a kernel that produces `Array` types.
 pub fn binary_mut<T, U, V, F, Arr>(

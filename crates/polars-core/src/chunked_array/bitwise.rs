@@ -6,7 +6,6 @@ use polars_arrow::utils::combine_validities_and;
 
 use super::arithmetic::arithmetic_helper;
 use super::*;
-use crate::utils::align_chunks_binary;
 
 impl<T> BitAnd for &ChunkedArray<T>
 where
@@ -73,12 +72,7 @@ impl BitOr for &BooleanChunked {
             _ => {},
         }
 
-        let (lhs, rhs) = align_chunks_binary(self, rhs);
-        let chunks = lhs
-            .downcast_iter()
-            .zip(rhs.downcast_iter())
-            .map(|(lhs, rhs)| compute::boolean_kleene::or(lhs, rhs));
-        BooleanChunked::from_chunk_iter(self.name(), chunks)
+        arity::binary_mut(self, rhs, compute::boolean_kleene::or)
     }
 }
 
@@ -123,16 +117,11 @@ impl BitXor for &BooleanChunked {
             _ => {},
         }
 
-        let (l, r) = align_chunks_binary(self, rhs);
-        let chunks = l
-            .downcast_iter()
-            .zip(r.downcast_iter())
-            .map(|(l_arr, r_arr)| {
-                let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
-                let values = l_arr.values() ^ r_arr.values();
-                BooleanArray::from_data_default(values, validity)
-            });
-        ChunkedArray::from_chunk_iter(self.name(), chunks)
+        arity::binary_mut(self, rhs, |l_arr, r_arr| {
+            let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
+            let values = l_arr.values() ^ r_arr.values();
+            BooleanArray::from_data_default(values, validity)
+        })
     }
 }
 
@@ -169,12 +158,7 @@ impl BitAnd for &BooleanChunked {
             _ => {},
         }
 
-        let (lhs, rhs) = align_chunks_binary(self, rhs);
-        let chunks = lhs
-            .downcast_iter()
-            .zip(rhs.downcast_iter())
-            .map(|(lhs, rhs)| compute::boolean_kleene::and(lhs, rhs));
-        BooleanChunked::from_chunk_iter(self.name(), chunks)
+        arity::binary_mut(self, rhs, compute::boolean_kleene::and)
     }
 }
 
