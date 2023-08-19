@@ -225,10 +225,9 @@ def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
             return BytesIO(f.read().decode(encoding).encode("utf8"))
 
 
-
 # @overload
 # def _prepare_write_file_arg(
-#     file: str | TextIO | Path | BinaryIO | bytes, storage_options: dict[str, Any] 
+#     file: str | TextIO | Path | BinaryIO | bytes, storage_options: dict[str, Any]
 # ) -> ContextManager[str | BinaryIO]:
 #     ...
 
