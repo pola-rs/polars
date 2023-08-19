@@ -2,16 +2,9 @@ from __future__ import annotations
 
 import glob
 from contextlib import contextmanager
-from io import BytesIO, StringIO
+from io import BytesIO, StringIO, TextIOWrapper
 from pathlib import Path
-from typing import (
-    Any,
-    BinaryIO,
-    ContextManager,
-    Iterator,
-    TextIO,
-    overload,
-)
+from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, cast, overload
 
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
@@ -225,12 +218,27 @@ def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
             return BytesIO(f.read().decode(encoding).encode("utf8"))
 
 
+@overload
 def _prepare_write_file_arg(
-    file: str | Path | BytesIO,
+    file: str | Path | BytesIO, **kwargs: Any
+) -> ContextManager[str | BytesIO]:
+    ...
+
+
+@overload
+def _prepare_write_file_arg(
+    file: str | Path | BytesIO | TextIOWrapper,
+    **kwargs: Any,
+) -> ContextManager[str | BytesIO | TextIOWrapper]:
+    ...
+
+
+def _prepare_write_file_arg(
+    file: str | Path | BytesIO | TextIOWrapper,
     encoding: str | None = None,
     pyarrow_options: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> ContextManager[str | BytesIO]:
+) -> ContextManager[str | BytesIO | TextIOWrapper]:
     """Prepare file argument."""
 
     # Small helper to use a variable as context
@@ -246,11 +254,14 @@ def _prepare_write_file_arg(
     )
     encoding_str = encoding if encoding else "utf8"
 
-    if kwargs.__len__() == 0 and isinstance(file, (str, Path)):
-        if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
-            return managed_file(normalise_filepath(file, check_not_directory=False))
-        else:
-            return managed_file(normalise_filepath(file))
+    if kwargs.__len__() == 0:
+        if isinstance(file, (str, Path)):
+            if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
+                return managed_file(normalise_filepath(file, check_not_directory=False))
+            else:
+                return managed_file(normalise_filepath(file))
+        elif isinstance(file, TextIOWrapper):
+            return managed_file(cast(TextIOWrapper, file.buffer))
 
     if kwargs.__len__() > 0 and isinstance(file, str):
         # make sure that this is before fsspec

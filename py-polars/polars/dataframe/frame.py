@@ -6,7 +6,7 @@ import os
 import random
 from collections import defaultdict
 from collections.abc import Sized
-from io import BytesIO, StringIO, TextIOWrapper
+from io import BytesIO, StringIO
 from operator import itemgetter
 from pathlib import Path
 from typing import (
@@ -23,7 +23,6 @@ from typing import (
     NoReturn,
     Sequence,
     TypeVar,
-    cast,
     overload,
 )
 
@@ -107,7 +106,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from datetime import timedelta
-    from io import IOBase
+    from io import IOBase, TextIOWrapper
     from typing import Literal
 
     import deltalake
@@ -2381,6 +2380,7 @@ class DataFrame:
         float_precision: int | None = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
+        storage_options: dict[str, Any] | None = None,
     ) -> str:
         ...
 
@@ -2400,6 +2400,7 @@ class DataFrame:
         float_precision: int | None = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
+        storage_options: dict[str, Any] | None = None,
     ) -> None:
         ...
 
@@ -2418,6 +2419,7 @@ class DataFrame:
         float_precision: int | None = None,
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
+        storage_options: dict[str, Any] | None = None,
     ) -> str | None:
         """
         Write to comma-separated values (CSV) file.
@@ -2469,6 +2471,9 @@ class DataFrame:
             Namely, when writing a field that does not parse as a valid float
             or integer, then quotes will be used even if they aren`t strictly
             necessary.
+        storage_options
+            Extra options that make sense for ``fsspec.open()`` or a particular storage
+            connection, e.g. host, port, username, password, etc.
 
 
         Examples
@@ -2497,25 +2502,26 @@ class DataFrame:
         if file is None:
             buffer = file = BytesIO()
             should_return_buffer = True
-        elif isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
-        elif isinstance(file, TextIOWrapper):
-            file = cast(TextIOWrapper, file.buffer)
 
-        self._df.write_csv(
-            file,
-            has_header,
-            ord(separator),
-            line_terminator,
-            ord(quote),
-            batch_size,
-            datetime_format,
-            date_format,
-            time_format,
-            float_precision,
-            null_value,
-            quote_style,
-        )
+        from polars.io._utils import _prepare_write_file_arg
+
+        storage_options = storage_options or {}
+
+        with _prepare_write_file_arg(file, **storage_options) as file:
+            self._df.write_csv(
+                file,
+                has_header,
+                ord(separator),
+                line_terminator,
+                ord(quote),
+                batch_size,
+                datetime_format,
+                date_format,
+                time_format,
+                float_precision,
+                null_value,
+                quote_style,
+            )
 
         if should_return_buffer:
             return str(buffer.getvalue(), encoding="utf-8")
