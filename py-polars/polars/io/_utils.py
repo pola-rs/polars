@@ -38,25 +38,17 @@ def _is_local_file(file: str) -> bool:
 
 
 def _raise_fsspec_import_error(file: str) -> None:
-    if file.startswith("s3://") or file.startswith("s3a://"):
-        raise ImportError(
-            "fsspec and s3fs needs to be installed to read files from AWS. Please run `pip install fsspec s3fs`"
-        )
-    elif file.startswith("gs://") or file.startswith("gcs://"):
-        raise ImportError(
-            "fsspec and gcsfs needs to be installed to read files from Google Cloud. Please run `pip install fsspec gcsfs`"
-        )
-    elif (
-        file.startswith("az://")
-        or file.startswith("abfss://")
-        or file.startswith("abfs://")
-        or file.startswith("adl://")
+    if any(file.startswith(prefix) for prefix in ["s3://", "s3a://"]):
+        err_msg = "fsspec and s3fs needs to be installed to read files from AWS. Please run `pip install fsspec s3fs`"
+    elif any(file.startswith(prefix) for prefix in ["gs://", "gcs://"]):
+        err_msg = "fsspec and gcsfs needs to be installed to read files from Google Cloud. Please run `pip install fsspec gcsfs`"
+    elif any(
+        file.startswith(prefix) for prefix in ["az://", "abfss://", "abfs://", "adl://"]
     ):
-        raise ImportError(
-            "fsspec and adlfs needs to be installed to read files from Azure. Please run `pip install fsspec adlfs`"
-        )
+        err_msg = "fsspec and adlfs needs to be installed to read files from Azure. Please run `pip install fsspec adlfs`"
     else:
-        raise ImportError("fsspec needs to be installed to make use of storage_options")
+        err_msg = "fsspec needs to be installed to make use of storage_options"
+    raise ImportError(err_msg)
 
 
 @overload
