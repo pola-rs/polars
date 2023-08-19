@@ -7,11 +7,11 @@ where
     T: PolarsNumericType,
     T::Native: PartialOrd,
 {
-    let op = |l: &T::Native, r: &T::Native| {
+    let op = |l: T::Native, r: T::Native| {
         if l < r {
-            *l
+            l
         } else {
-            *r
+            r
         }
     };
     arity::binary_elementwise_values(left, right, op)
@@ -22,11 +22,11 @@ where
     T: PolarsNumericType,
     T::Native: PartialOrd,
 {
-    let op = |l: &T::Native, r: &T::Native| {
+    let op = |l: T::Native, r: T::Native| {
         if l > r {
-            *l
+            l
         } else {
-            *r
+            r
         }
     };
     arity::binary_elementwise_values(left, right, op)

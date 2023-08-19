@@ -19,15 +19,15 @@ pub trait StaticArray: Array {
 }
 
 impl<T: NumericNative> StaticArray for PrimitiveArray<T> {
-    type ValueT<'a> = &'a T;
-    type ValueIterT<'a> = std::slice::Iter<'a, T>;
+    type ValueT<'a> = T;
+    type ValueIterT<'a> = std::iter::Copied<std::slice::Iter<'a, T>>;
 
     fn values_iter(&self) -> Self::ValueIterT<'_> {
-        self.values_iter()
+        self.values_iter().copied()
     }
 
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
-        self.iter()
+        ZipValidity::new_with_validity(self.values().iter().copied(), self.validity())
     }
 }
 

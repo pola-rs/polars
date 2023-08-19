@@ -163,7 +163,7 @@ pub mod checked {
 
             Ok(
                 arity::binary_elementwise(lhs, rhs, |opt_l, opt_r| match (opt_l, opt_r) {
-                    (Some(l), Some(r)) => l.checked_div(r),
+                    (Some(l), Some(r)) => l.checked_div(&r),
                     _ => None,
                 })
                 .into_series(),
