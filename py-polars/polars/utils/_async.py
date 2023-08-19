@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 class _AsyncDataFrameResult:
     queue: Queue
-    _result: DataFrame
+    _result: DataFrame | Exception
 
     def __init__(self, queue) -> None:
         self.queue = queue
@@ -20,9 +20,12 @@ class _AsyncDataFrameResult:
 
     def get(self, block=True, timeout=None) -> DataFrame:
         if self._result is not None:
+            if isinstance(self._result, Exception):
+                raise self._result
             return self._result
-        self._result = self.queue.get(block=block, timeout=timeout)
-        return self._result
 
-    def _callback(self, df):
-        self.queue.put_nowait(wrap_df(df))
+        self._result = self.queue.get(block=block, timeout=timeout)
+        if isinstance(self._result, Exception):
+            raise self._result
+        self._result = wrap_df(self._result)
+        return self._result

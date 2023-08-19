@@ -1756,7 +1756,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
         result = _AsyncDataFrameResult(queue_class(maxsize=1))
-        ldf.collect_with_callback(result._callback)
+        ldf.collect_with_callback(result.queue)
         return result
 
     def sink_parquet(

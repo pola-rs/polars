@@ -444,19 +444,31 @@ impl PyLazyFrame {
         Ok(df.into())
     }
 
-    #[pyo3(signature = (lambda,))]
-    fn collect_with_callback(&self, py: Python, lambda: PyObject) {
+    #[pyo3(signature = (queue,))]
+    fn collect_with_callback(&self, py: Python, queue: PyObject) {
         py.allow_threads(|| {
             let ldf = self.ldf.clone();
 
             rayon::spawn(move || {
-                let result = ldf.collect().map(PyDataFrame::new);
+                let result = ldf
+                    .collect()
+                    .map(PyDataFrame::new)
+                    .map_err(PyPolarsErr::from);
 
-                if let Ok(df) = result {
-                    Python::with_gil(|py| {
-                        lambda.call1(py, (df,)).ok();
-                    })
-                }
+                Python::with_gil(|py| match result {
+                    Ok(df) => {
+                        queue
+                            .call_method1(py, "put_nowait", (df,))
+                            .map_err(|err| err.restore(py))
+                            .ok();
+                    },
+                    Err(err) => {
+                        queue
+                            .call_method1(py, "put_nowait", (PyErr::from(err).to_object(py),))
+                            .map_err(|err| err.restore(py))
+                            .ok();
+                    },
+                });
             });
         });
     }
