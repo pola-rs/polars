@@ -240,24 +240,6 @@ class ExprMetaNameSpace:
         --------
         >>> e = (pl.col("foo") * pl.col("bar")).sum().over(pl.col("ham")) / 2
         >>> e.meta.tree_format(return_as_string=True)  # doctest: +SKIP
-            binary: /
-
-              |              |
-
-            lit(2)           window
-
-                             |               |
-
-                             col(ham)        sum
-
-                                             |
-
-                                             binary: *
-
-                                             |                |
-
-                                             col(bar)         col(foo)
-
 
         """
         s = self._pyexpr.meta_tree_format()
