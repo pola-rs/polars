@@ -2532,6 +2532,7 @@ class DataFrame:
         self,
         file: BinaryIO | BytesIO | str | Path,
         compression: AvroCompression = "uncompressed",
+        storage_options: dict[str, Any] | None = None,
     ) -> None:
         """
         Write to Apache Avro file.
@@ -2542,7 +2543,10 @@ class DataFrame:
             File path to which the file should be written.
         compression : {'uncompressed', 'snappy', 'deflate'}
             Compression method. Defaults to "uncompressed".
-
+        storage_options
+            Extra options that make sense for ``fsspec.open()`` or a particular storage
+            connection, e.g. host, port, username, password, etc.
+    
         Examples
         --------
         >>> import pathlib
@@ -2560,10 +2564,13 @@ class DataFrame:
         """
         if compression is None:
             compression = "uncompressed"
-        if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
-
-        self._df.write_avro(file, compression)
+        
+        from polars.io._utils import _prepare_write_file_arg
+        storage_options = storage_options or {}
+        
+        with _prepare_write_file_arg(file, **storage_options) as file:
+            self._df.write_avro(file, compression)
+            
 
     def write_excel(
         self,

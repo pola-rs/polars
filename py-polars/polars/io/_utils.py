@@ -218,6 +218,13 @@ def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
             return BytesIO(f.read().decode(encoding).encode("utf8"))
 
 
+
+@overload
+def _prepare_write_file_arg(
+    file: str | Path | BytesIO | BinaryIO, **kwargs: Any
+) -> ContextManager[str | BytesIO | BinaryIO]:
+    ...
+
 @overload
 def _prepare_write_file_arg(
     file: str | Path | BytesIO, **kwargs: Any
@@ -234,11 +241,11 @@ def _prepare_write_file_arg(
 
 
 def _prepare_write_file_arg(
-    file: str | Path | BytesIO | TextIOWrapper,
+    file: str | Path | BytesIO | BinaryIO | TextIOWrapper,
     encoding: str | None = None,
     pyarrow_options: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> ContextManager[str | BytesIO | TextIOWrapper]:
+) -> ContextManager[str | BytesIO | BinaryIO | TextIOWrapper]:
     """Prepare file argument."""
 
     # Small helper to use a variable as context
