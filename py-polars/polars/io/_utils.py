@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import glob
 from contextlib import contextmanager
+from io import BytesIO, StringIO, TextIOWrapper
 from pathlib import Path
 from typing import (
+    TYPE_CHECKING,
     Any,
     BinaryIO,
     ContextManager,
     Iterator,
     TextIO,
-    TypeVar,
     cast,
     overload,
-    TYPE_CHECKING
 )
 
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
@@ -20,8 +20,10 @@ from polars.exceptions import NoDataError
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
+    from io import IOBase
+
     from xlsxwriter import Workbook
-    from io import BytesIO, IOBase, StringIO, TextIOWrapper
+
 
 def _is_glob_pattern(file: str) -> bool:
     return any(char in file for char in ["*", "?", "["])
@@ -230,15 +232,43 @@ def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
             return BytesIO(f.read().decode(encoding).encode("utf8"))
 
 
-T = TypeVar("T", str, Path, TextIOWrapper, BytesIO, BinaryIO, IOBase, Workbook)
+@overload
+def _prepare_write_file_arg(file: str | Path, **kwargs: Any) -> ContextManager[str]:
+    ...
+
+
+@overload
+def _prepare_write_file_arg(
+    file: TextIOWrapper, **kwargs: Any
+) -> ContextManager[TextIOWrapper]:
+    ...
+
+
+@overload
+def _prepare_write_file_arg(file: BytesIO, **kwargs: Any) -> ContextManager[BytesIO]:
+    ...
+
+
+@overload
+def _prepare_write_file_arg(file: BinaryIO, **kwargs: Any) -> ContextManager[BinaryIO]:
+    ...
+
+
+@overload
+def _prepare_write_file_arg(file: IOBase, **kwargs: Any) -> ContextManager[IOBase]:
+    ...
+
+
+@overload
+def _prepare_write_file_arg(file: Workbook, **kwargs: Any) -> ContextManager[Workbook]:
+    ...
 
 
 def _prepare_write_file_arg(
-    file: T,
-    encoding: str | None = None,
+    file: str | Path | BytesIO | IOBase | BinaryIO | TextIOWrapper | Workbook,
     pyarrow_options: dict[str, Any] | None = None,
     **kwargs: Any,
-) -> ContextManager[T]:
+) -> ContextManager[str | BytesIO | IOBase | BinaryIO | TextIOWrapper | Workbook]:
     """Prepare file argument."""
 
     # Small helper to use a variable as context
@@ -271,5 +301,10 @@ def _prepare_write_file_arg(
                 return managed_file(normalise_filepath(file, False))
             kwargs["mode"] = "wb"
             return fsspec.open(file, **kwargs)
-
+        else:
+            raise (
+                ImportError(
+                    "Storage_options requires fsspec; please run `pip install fsspec`"
+                )
+            )
     return managed_file(file)
