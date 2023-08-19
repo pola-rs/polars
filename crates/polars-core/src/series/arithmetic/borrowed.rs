@@ -118,7 +118,6 @@ pub mod checked {
     use num_traits::{CheckedDiv, One, ToPrimitive, Zero};
 
     use super::*;
-    use crate::utils::align_chunks_binary;
 
     pub trait NumOpsDispatchCheckedInner: PolarsDataType + Sized {
         /// Checked integer division. Computes self / rhs, returning None if rhs == 0 or the division results in overflow.
@@ -161,24 +160,14 @@ pub mod checked {
             // Note that the physical type correctness is checked!
             // The ChunkedArray with the wrong dtype is dropped after this operation
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
-            let (l, r) = align_chunks_binary(lhs, rhs);
 
-            Ok((l)
-                .downcast_iter()
-                .zip(r.downcast_iter())
-                .flat_map(|(l_arr, r_arr)| {
-                    l_arr
-                        .into_iter()
-                        .zip(r_arr)
-                        // we don't use a kernel, because the checked div also supplies nulls.
-                        // so the usual bit combining is not enough.
-                        .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
-                            (Some(l), Some(r)) => l.checked_div(r),
-                            _ => None,
-                        })
+            Ok(
+                arity::binary_elementwise(lhs, rhs, |opt_l, opt_r| match (opt_l, opt_r) {
+                    (Some(l), Some(r)) => l.checked_div(r),
+                    _ => None,
                 })
-                .collect::<ChunkedArray<T>>()
-                .into_series())
+                .into_series(),
+            )
         }
     }
 
@@ -187,30 +176,22 @@ pub mod checked {
             // Safety:
             // see check_div for chunkedarray<T>
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
-            let (l, r) = align_chunks_binary(lhs, rhs);
 
-            Ok((l)
-                .downcast_iter()
-                .zip(r.downcast_iter())
-                .flat_map(|(l_arr, r_arr)| {
-                    l_arr
-                        .into_iter()
-                        .zip(r_arr)
-                        // we don't use a kernel, because the checked div also supplies nulls.
-                        // so the usual bit combining is not enough.
-                        .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
-                            (Some(l), Some(r)) => {
-                                if r.is_zero() {
-                                    None
-                                } else {
-                                    Some(l / r)
-                                }
-                            },
-                            _ => None,
-                        })
+            Ok(
+                arity::binary_elementwise::<_, _, Float32Type, _>(lhs, rhs, |opt_l, opt_r| match (
+                    opt_l, opt_r,
+                ) {
+                    (Some(l), Some(r)) => {
+                        if r.is_zero() {
+                            None
+                        } else {
+                            Some(l / r)
+                        }
+                    },
+                    _ => None,
                 })
-                .collect::<Float32Chunked>()
-                .into_series())
+                .into_series(),
+            )
         }
     }
 
@@ -219,30 +200,22 @@ pub mod checked {
             // Safety:
             // see check_div
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
-            let (l, r) = align_chunks_binary(lhs, rhs);
 
-            Ok((l)
-                .downcast_iter()
-                .zip(r.downcast_iter())
-                .flat_map(|(l_arr, r_arr)| {
-                    l_arr
-                        .into_iter()
-                        .zip(r_arr)
-                        // we don't use a kernel, because the checked div also supplies nulls.
-                        // so the usual bit combining is not enough.
-                        .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
-                            (Some(l), Some(r)) => {
-                                if r.is_zero() {
-                                    None
-                                } else {
-                                    Some(l / r)
-                                }
-                            },
-                            _ => None,
-                        })
+            Ok(
+                arity::binary_elementwise::<_, _, Float64Type, _>(lhs, rhs, |opt_l, opt_r| match (
+                    opt_l, opt_r,
+                ) {
+                    (Some(l), Some(r)) => {
+                        if r.is_zero() {
+                            None
+                        } else {
+                            Some(l / r)
+                        }
+                    },
+                    _ => None,
                 })
-                .collect::<Float64Chunked>()
-                .into_series())
+                .into_series(),
+            )
         }
     }
 

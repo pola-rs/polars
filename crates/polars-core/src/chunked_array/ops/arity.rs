@@ -1,4 +1,4 @@
-use arrow::array::Array;
+use arrow::array::{Array, PrimitiveArray};
 use polars_arrow::utils::combine_validities_and;
 
 use crate::chunked_array::ops::apply::collect_array;
@@ -8,6 +8,38 @@ use crate::datatypes::{
 use crate::prelude::{ChunkedArray, PolarsDataType};
 use crate::utils::align_chunks_binary;
 
+#[inline]
+pub fn binary_elementwise<T, U, V, F>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsNumericType,
+    ChunkedArray<T>: HasUnderlyingArray,
+    ChunkedArray<U>: HasUnderlyingArray,
+    F: for<'a> FnMut(
+        Option<<<ChunkedArray<T> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
+        Option<<<ChunkedArray<U> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
+    ) -> Option<V::Native>,
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let iter = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| {
+            lhs_arr
+                .iter()
+                .zip(rhs_arr.iter())
+                .map(|(lhs_opt_val, rhs_opt_val)| op(lhs_opt_val, rhs_opt_val))
+                .collect::<PrimitiveArray<V::Native>>()
+        });
+    ChunkedArray::from_chunk_iter(lhs.name(), iter)
+}
+
+#[inline]
 pub fn binary_elementwise_values<T, U, V, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
@@ -41,6 +73,7 @@ where
 }
 
 /// Applies a kernel that produces `Array` types.
+#[inline]
 pub fn binary_mut_with_options<T, U, V, F, Arr>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
@@ -92,6 +125,7 @@ where
 ///
 /// # Safety
 /// Caller must ensure that the returned `ArrayRef` belongs to `T: PolarsDataType`.
+#[inline]
 pub unsafe fn binary_mut_unchecked_same_type<T, U, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
