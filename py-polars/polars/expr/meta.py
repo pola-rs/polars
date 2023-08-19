@@ -98,19 +98,19 @@ class ExprMetaNameSpace:
         --------
         >>> e = pl.col("foo") * pl.col("bar")
         >>> e.meta.output_name()
-        "foo"
+        'foo'
         >>> e_filter = pl.col("foo").filter(pl.col("bar") == 13)
         >>> e_filter.meta.output_name()
-        "foo"
+        'foo'
         >>> e_sum_over = pl.sum("foo").over("groups")
         >>> e_sum_over.meta.output_name()
-        "foo"
+        'foo'
         >>> e_sum_slice = pl.sum("foo").slice(pl.count() - 10, pl.col("bar"))
         >>> e_sum_slice.meta.output_name()
-        "foo"
+        'foo'
         >>> e_count = pl.count()
-        >>> e.meta.output_name()
-        "count"
+        >>> e_count.meta.output_name()
+        'count'
 
         """
         return self._pyexpr.meta_output_name()
@@ -128,10 +128,7 @@ class ExprMetaNameSpace:
 
         Examples
         --------
-        >>> e = pl.col("foo")
-        >>> e.meta.pop()
-        [<polars.expr.expr.Expr at 0x10975a890>]
-        >>> e_alias = pl.col("foo").alias("bar")
+        >>> e = pl.col("foo").alias("bar")
         >>> first = e.meta.pop()[0]
         >>> first.meta == pl.col("foo")
         True
@@ -158,7 +155,7 @@ class ExprMetaNameSpace:
         ['foo', 'groups']
         >>> e_sum_slice = pl.sum("foo").slice(pl.count() - 10, pl.col("bar"))
         >>> e_sum_slice.meta.root_names()
-        "foo"
+        ['foo', 'bar']
 
         """
         return self._pyexpr.meta_root_names()
@@ -238,6 +235,29 @@ class ExprMetaNameSpace:
         ----------
         return_as_string:
             If True, return as string rather than printing to stdout.
+
+        Examples
+        --------
+        >>> e = (pl.col("foo") * pl.col("bar")).sum().over(pl.col("ham")) / 2
+        >>> e.meta.tree_format(return_as_string=True)  # doctest: +SKIP
+            binary: /
+
+              |              |
+
+            lit(2)           window
+
+                             |               |
+
+                             col(ham)        sum
+
+                                             |
+
+                                             binary: *
+
+                                             |                |
+
+                                             col(bar)         col(foo)
+
 
         """
         s = self._pyexpr.meta_tree_format()
