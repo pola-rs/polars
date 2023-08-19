@@ -944,6 +944,82 @@ class DateTimeNameSpace:
 
         """
 
+    def minute_of_day(self) -> Series:
+        """
+        Extract the minute of the day from the underlying DateTime representation.
+
+        Applies to Datetime columns.
+
+        Returns the minute number from 0 to 1439.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`UInt32`.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 1, 1, 4, 0)
+        >>> date = pl.date_range(start, stop, interval="2m", eager=True)
+        >>> date
+        shape: (3,)
+        Series: 'date' [datetime[μs]]
+        [
+                2001-01-01 00:00:00
+                2001-01-01 00:02:00
+                2001-01-01 00:04:00
+        ]
+        >>> date.dt.minute_of_day()
+        shape: (3,)
+        Series: 'date' [u32]
+        [
+                0
+                2
+                64
+        ]
+
+        """
+
+    def second_of_day(self) -> Series:
+        """
+        Extract the second of the day from the underlying DateTime representation.
+
+        Applies to Datetime columns.
+
+        Returns the second number from 0 to 86399.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`UInt32`.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 1, 1, 4, 0)
+        >>> date = pl.date_range(start, stop, interval="2m", eager=True)
+        >>> date
+        shape: (3,)
+        Series: 'date' [datetime[μs]]
+        [
+                2001-01-01 00:00:10
+                2001-01-01 00:02:20
+                2001-01-01 01:00:00
+        ]
+        >>> date.dt.second_of_day()
+        shape: (3,)
+        Series: 'date' [u32]
+        [
+                10
+                1440
+                3600
+        ]
+
+        """
+
     def timestamp(self, time_unit: TimeUnit = "us") -> Series:
         """
         Return a timestamp in the given time unit.

@@ -38,7 +38,7 @@ impl FunctionExpr {
                 let dtype = match fun {
                     Year | IsoYear => DataType::Int32,
                     Month | Quarter | Week | WeekDay | Day | OrdinalDay | Hour | Minute
-                    | Millisecond | Microsecond | Nanosecond | Second => DataType::UInt32,
+                    | Millisecond | Microsecond | Nanosecond | Second | MinuteOfDay | SecondOfDay => DataType::UInt32,
                     TimeStamp(_) => DataType::Int64,
                     IsLeapYear => DataType::Boolean,
                     Time => DataType::Time,

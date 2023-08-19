@@ -119,6 +119,23 @@ pub trait DatetimeMethods: AsDatetime {
         cast_and_apply(self.as_datetime(), temporal::nanosecond)
     }
 
+    /// Extract minute of the day from underlying NaiveDateTime representation.
+    /// Returns the minute number from 0 to 1439.
+    fn minute_of_day(&self) -> UInt32Chunked {
+        let hours: UInt32Chunked = cast_and_apply(self.as_datetime(), temporal::hour);
+        let mins: UInt32Chunked = cast_and_apply(self.as_datetime(), temporal::minute);
+        (hours * 60) + mins
+    }
+
+    /// Extract second of the day from underlying NaiveDateTime representation.
+    /// Returns the second number from 0 to 86399.
+    fn second_of_day(&self) -> UInt32Chunked {
+        let hours: UInt32Chunked = cast_and_apply(self.as_datetime(), temporal::hour);
+        let mins: UInt32Chunked = cast_and_apply(self.as_datetime(), temporal::minute);
+        let secs: UInt32Chunked = cast_and_apply(self.as_datetime(), temporal::second);
+        (hours * 3600) + (mins * 60) + secs
+    }
+
     /// Returns the day of year starting from 1.
     ///
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)

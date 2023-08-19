@@ -20,6 +20,14 @@ pub trait TimeMethods {
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
     fn nanosecond(&self) -> UInt32Chunked;
 
+    /// Extract minute of the day from underlying NaiveDateTime representation.
+    /// Returns the minute number from 0 to 1439.
+    fn minute_of_day(&self) -> UInt32Chunked;
+
+    /// Extract second of the day from underlying NaiveDateTime representation.
+    /// Returns the second number from 0 to 86399.
+    fn second_of_day(&self) -> UInt32Chunked;
+
     fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> TimeChunked;
 }
 
@@ -40,6 +48,23 @@ impl TimeMethods for TimeChunked {
     /// Returns the second number from 0 to 59.
     fn second(&self) -> UInt32Chunked {
         self.apply_kernel_cast::<UInt32Type>(&time_to_second)
+    }
+
+    /// Extract minute of the day from underlying NaiveDateTime representation.
+    /// Returns the minute number from 0 to 1439.
+    fn minute_of_day(&self) -> UInt32Chunked {
+        let hours: UInt32Chunked = self.apply_kernel_cast::<UInt32Type>(&time_to_hour);
+        let mins: UInt32Chunked = self.apply_kernel_cast::<UInt32Type>(&time_to_minute);
+        (hours * 60) + mins
+    }
+
+    /// Extract second of the dat from underlying NaiveDateTime representation.
+    /// Returns the second number from 0 to 86399.
+    fn second_of_day(&self) -> UInt32Chunked {
+        let hours: UInt32Chunked = self.apply_kernel_cast::<UInt32Type>(&time_to_hour);
+        let mins: UInt32Chunked = self.apply_kernel_cast::<UInt32Type>(&time_to_minute);
+        let secs: UInt32Chunked = self.apply_kernel_cast::<UInt32Type>(&time_to_second);
+        (hours * 3600) + (mins * 60) + secs
     }
 
     /// Extract second from underlying NaiveDateTime representation.

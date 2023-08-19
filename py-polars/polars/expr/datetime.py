@@ -1198,6 +1198,12 @@ class ExprDateTimeNameSpace:
             else sec
         )
 
+    def minute_of_day(self) -> Expr:
+        return wrap_expr(self._pyexpr.dt_minute_of_day())
+
+    def second_of_day(self) -> Expr:
+        return wrap_expr(self._pyexpr.dt_second_of_day())
+
     def millisecond(self) -> Expr:
         """
         Extract milliseconds from underlying DateTime representation.

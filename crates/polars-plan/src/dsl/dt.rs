@@ -192,6 +192,18 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Second))
     }
 
+    /// Get the minute of day of a Datetime/Time64
+    pub fn minute_of_day(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MinuteOfDay))
+    }
+
+    /// Get the second of day of a Datetime/Time64
+    pub fn second_of_day(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::SecondOfDay))
+    }
+
     /// Get the millisecond of a Time64 (scaled from nanosecs)
     pub fn millisecond(self) -> Expr {
         self.0

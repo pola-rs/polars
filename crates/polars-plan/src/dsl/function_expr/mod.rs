@@ -747,6 +747,8 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Millisecond => map!(datetime::millisecond),
             Microsecond => map!(datetime::microsecond),
             Nanosecond => map!(datetime::nanosecond),
+            MinuteOfDay => map!(datetime::minute_of_day),
+            SecondOfDay => map!(datetime::second_of_day),
             TimeStamp(tu) => map!(datetime::timestamp, tu),
             Truncate(truncate_options) => {
                 map!(datetime::truncate, &truncate_options)

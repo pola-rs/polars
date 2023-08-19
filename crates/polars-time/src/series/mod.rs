@@ -173,6 +173,32 @@ pub trait TemporalMethods: AsSeries {
         }
     }
 
+    /// Extract minute of the day from underlying NaiveDateTime representation.
+    /// Returns the minute number from 0 to 1439.
+    fn minute_of_day(&self) -> PolarsResult<UInt32Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.minute_of_day()),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => s.time().map(|ca| ca.minute_of_day()),
+            dt => polars_bail!(opq = minute_of_day, dt),
+        }
+    }
+
+    /// Extract second of the day from underlying NaiveDateTime representation.
+    /// Returns the second number from 0 to 86399.
+    fn second_of_day(&self) -> PolarsResult<UInt32Chunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.second_of_day()),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => s.time().map(|ca| ca.second_of_day()),
+            dt => polars_bail!(opq = second_of_day, dt),
+        }
+    }
+
     /// Extract day from underlying NaiveDateTime representation.
     /// Returns the day of month starting from 1.
     ///

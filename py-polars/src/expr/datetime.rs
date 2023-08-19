@@ -136,6 +136,12 @@ impl PyExpr {
     fn dt_second(&self) -> Self {
         self.clone().inner.dt().second().into()
     }
+    fn dt_minute_of_day(&self) -> Self {
+        self.clone().inner.dt().minute_of_day().into()
+    }
+    fn dt_second_of_day(&self) -> Self {
+        self.clone().inner.dt().second_of_day().into()
+    }
     fn dt_millisecond(&self) -> Self {
         self.clone().inner.dt().millisecond().into()
     }

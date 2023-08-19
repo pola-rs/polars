@@ -30,6 +30,8 @@ pub enum TemporalFunction {
     Millisecond,
     Microsecond,
     Nanosecond,
+    MinuteOfDay,
+    SecondOfDay,
     TimeStamp(TimeUnit),
     Truncate(TruncateOptions),
     #[cfg(feature = "date_offset")]
@@ -93,6 +95,8 @@ impl Display for TemporalFunction {
             Millisecond => "millisecond",
             Microsecond => "microsecond",
             Nanosecond => "nanosecond",
+            MinuteOfDay => "minute_of_day",
+            SecondOfDay => "second_of_day",
             TimeStamp(tu) => return write!(f, "dt.timestamp({tu})"),
             Truncate(..) => "truncate",
             #[cfg(feature = "date_offset")]
@@ -211,6 +215,12 @@ pub(super) fn microsecond(s: &Series) -> PolarsResult<Series> {
 }
 pub(super) fn nanosecond(s: &Series) -> PolarsResult<Series> {
     s.nanosecond().map(|ca| ca.into_series())
+}
+pub(super) fn minute_of_day(s: &Series) -> PolarsResult<Series> {
+    s.minute_of_day().map(|ca| ca.into_series())
+}
+pub(super) fn second_of_day(s: &Series) -> PolarsResult<Series> {
+    s.second_of_day().map(|ca| ca.into_series())
 }
 pub(super) fn timestamp(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
     s.timestamp(tu).map(|ca| ca.into_series())
