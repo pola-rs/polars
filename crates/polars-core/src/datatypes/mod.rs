@@ -12,6 +12,7 @@ mod aliases;
 mod any_value;
 mod dtype;
 mod field;
+mod from_values;
 mod static_array;
 mod time_unit;
 
