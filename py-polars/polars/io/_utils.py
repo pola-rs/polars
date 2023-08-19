@@ -38,13 +38,13 @@ def _is_local_file(file: str) -> bool:
 
 
 def _raise_fsspec_import_error(file: str) -> None:
-    if file.startswith("s3://"):
+    if file.startswith("s3://") or file.startswith("s3a://"):
         raise ImportError(
-            "fsspec and s3fs needs to be installed to read files from s3. Please run `pip install fsspec s3fs`"
+            "fsspec and s3fs needs to be installed to read files from AWS. Please run `pip install fsspec s3fs`"
         )
     elif file.startswith("gs://") or file.startswith("gcs://"):
         raise ImportError(
-            "fsspec and gcsfcs needs to be installed to read files from gcp. Please run `pip install fsspec gcsfcs`"
+            "fsspec and gcsfs needs to be installed to read files from Google Cloud. Please run `pip install fsspec gcsfs`"
         )
     elif (
         file.startswith("az://")
@@ -53,7 +53,7 @@ def _raise_fsspec_import_error(file: str) -> None:
         or file.startswith("adl://")
     ):
         raise ImportError(
-            "fsspec and adlfs needs to be installed to read files from gcp.  Please run `pip install fsspec adlfs`"
+            "fsspec and adlfs needs to be installed to read files from Azure. Please run `pip install fsspec adlfs`"
         )
     else:
         raise ImportError("fsspec needs to be installed to make use of storage_options")
