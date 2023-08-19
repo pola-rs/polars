@@ -3116,6 +3116,7 @@ class DataFrame:
         self,
         file: None,
         compression: IpcCompression = "uncompressed",
+        storage_options: dict[str, Any] | None = None,
     ) -> BytesIO:
         ...
 
@@ -3124,6 +3125,7 @@ class DataFrame:
         self,
         file: BinaryIO | BytesIO | str | Path,
         compression: IpcCompression = "uncompressed",
+        storage_options: dict[str, Any] | None = None,
     ) -> None:
         ...
 
@@ -3131,6 +3133,7 @@ class DataFrame:
         self,
         file: BinaryIO | BytesIO | str | Path | None,
         compression: IpcCompression = "uncompressed",
+        storage_options: dict[str, Any] | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -3142,6 +3145,11 @@ class DataFrame:
             ``None``, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
+        storage_options
+            Important: this only works if file is type string
+            Extra options that make sense for ``fsspec.open()`` or a particular storage
+            connection, e.g. host, port, username, password, etc.
+
 
         Examples
         --------
@@ -3158,17 +3166,20 @@ class DataFrame:
         >>> df.write_ipc(path)
 
         """
+        from polars.io._utils import _prepare_write_file_arg
+
         return_bytes = file is None
         if return_bytes:
             file = BytesIO()
-        elif isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
 
-        if compression is None:
-            compression = "uncompressed"
+        storage_options = storage_options or {}
 
-        self._df.write_ipc(file, compression)
-        return file if return_bytes else None  # type: ignore[return-value]
+        with _prepare_write_file_arg(file, **storage_options) as file:
+            if compression is None:
+                compression = "uncompressed"
+
+            self._df.write_ipc(file, compression)
+            return file if return_bytes else None  # type: ignore[return-value]
 
     def write_parquet(
         self,
