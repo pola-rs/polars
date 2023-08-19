@@ -61,9 +61,3 @@ def test_bool_literal_expressions() -> None:
     assert val(True | pl.col("x")) == {"literal": [True, True]}
     assert val(False ^ pl.col("x")) == {"literal": [False, True]}
     assert val(True ^ pl.col("x")) == {"literal": [True, False]}
-
-
-def test_all_empty() -> None:
-    s = pl.Series([], dtype=pl.Boolean)
-    assert s.all()
-    assert not s.any()
