@@ -37,6 +37,28 @@ def _is_local_file(file: str) -> bool:
         return False
 
 
+def _raise_fsspec_import_error(file: str) -> None:
+    if file.startswith("s3://"):
+        raise ImportError(
+            "fsspec and s3fs needs to be installed to read files from s3. Please run `pip install fsspec s3fs`"
+        )
+    elif file.startswith("gs://") or file.startswith("gcs://"):
+        raise ImportError(
+            "fsspec and gcsfcs needs to be installed to read files from gcp. Please run `pip install fsspec gcsfcs`"
+        )
+    elif (
+        file.startswith("az://")
+        or file.startswith("abfss://")
+        or file.startswith("abfs://")
+        or file.startswith("adl://")
+    ):
+        raise ImportError(
+            "fsspec and adlfs needs to be installed to read files from gcp.  Please run `pip install fsspec adlfs`"
+        )
+    else:
+        raise ImportError("fsspec needs to be installed to make use of storage_options")
+
+
 @overload
 def _prepare_file_arg(
     file: str | list[str] | Path | BinaryIO | bytes, **kwargs: Any
@@ -179,10 +201,8 @@ def _prepare_file_arg(
                 )
             kwargs["encoding"] = encoding
             return fsspec.open(file, **kwargs)
-
-        # todo! add azure/ gcp/ ?
-        if file.startswith("s3://"):
-            raise ImportError("fsspec needs to be installed to read files from s3")
+        else:
+            _raise_fsspec_import_error(file)
 
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _FSSPEC_AVAILABLE:
@@ -302,9 +322,5 @@ def _prepare_write_file_arg(
             kwargs["mode"] = "wb"
             return fsspec.open(file, **kwargs)
         else:
-            raise (
-                ImportError(
-                    "Storage_options requires fsspec; please run `pip install fsspec`"
-                )
-            )
+            _raise_fsspec_import_error(file)
     return managed_file(file)
