@@ -1,7 +1,6 @@
 use num::Float;
 use polars_arrow::kernels::atan2::atan2 as atan2_kernel;
 use polars_core::export::num;
-use polars_core::utils::align_chunks_binary;
 
 use super::*;
 
@@ -129,13 +128,8 @@ where
 
         Ok(Some(x.apply(|v| y_value.atan2(v)).into_series()))
     } else {
-        let (ca_1, ca_2) = align_chunks_binary(y, x);
-        let chunks = ca_1
-            .downcast_iter()
-            .zip(ca_2.downcast_iter())
-            .map(|(arr_1, arr_2)| atan2_kernel(arr_1, arr_2));
         Ok(Some(
-            ChunkedArray::from_chunk_iter(ca_1.name(), chunks).into_series(),
+            polars_core::prelude::arity::binary_mut(y, x, atan2_kernel).into_series(),
         ))
     }
 }
