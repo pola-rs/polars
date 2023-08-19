@@ -232,8 +232,8 @@ def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
 
 @overload
 def _prepare_write_file_arg(
-    file: str | Path | BytesIO | Workbook | None, **kwargs: Any
-) -> ContextManager[str | BytesIO | Workbook | None]:
+    file: str | Path | BytesIO, **kwargs: Any
+) -> ContextManager[str | BytesIO]:
     ...
 
 
@@ -246,16 +246,16 @@ def _prepare_write_file_arg(
 
 @overload
 def _prepare_write_file_arg(
-    file: str | Path | BytesIO, **kwargs: Any
-) -> ContextManager[str | BytesIO]:
+    file: str | Path | BytesIO | TextIOWrapper,
+    **kwargs: Any,
+) -> ContextManager[str | BytesIO | TextIOWrapper]:
     ...
 
 
 @overload
 def _prepare_write_file_arg(
-    file: str | Path | BytesIO | TextIOWrapper,
-    **kwargs: Any,
-) -> ContextManager[str | BytesIO | TextIOWrapper]:
+    file: str | Path | BytesIO | Workbook | None, **kwargs: Any
+) -> ContextManager[str | BytesIO | Workbook | None]:
     ...
 
 
