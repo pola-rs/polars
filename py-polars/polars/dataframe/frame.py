@@ -3197,9 +3197,9 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
 
-        storage_options = storage_options or {}
-
-        with _prepare_write_file_arg(file, **storage_options) as file:
+        with _prepare_write_file_arg(
+            file, pyarrow_options=pyarrow_options, storage_options=storage_options
+        ) as file:
             if use_pyarrow:
                 tbl = self.to_arrow()
                 data = {}
@@ -3216,34 +3216,37 @@ class DataFrame:
                 # needed below
                 import pyarrow.parquet  # noqa: F401
 
-            if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
-                pyarrow_options["compression"] = (
-                    None if compression == "uncompressed" else compression
-                )
-                pyarrow_options["compression_level"] = compression_level
-                pyarrow_options["write_statistics"] = statistics
-                pyarrow_options["row_group_size"] = row_group_size
+                if pyarrow_options is not None and pyarrow_options.get(
+                    "partition_cols"
+                ):
+                    pyarrow_options["compression"] = (
+                        None if compression == "uncompressed" else compression
+                    )
+                    pyarrow_options["compression_level"] = compression_level
+                    pyarrow_options["write_statistics"] = statistics
+                    pyarrow_options["row_group_size"] = row_group_size
 
-                pa.parquet.write_to_dataset(
-                    table=tbl,
-                    root_path=file,
-                    **(pyarrow_options or {}),
-                )
+                    pa.parquet.write_to_dataset(
+                        table=tbl,
+                        root_path=file,
+                        **(pyarrow_options or {}),
+                    )
+                else:
+                    pa.parquet.write_table(
+                        table=tbl,
+                        where=file,
+                        row_group_size=row_group_size,
+                        compression=None
+                        if compression == "uncompressed"
+                        else compression,
+                        compression_level=compression_level,
+                        write_statistics=statistics,
+                        **(pyarrow_options or {}),
+                    )
             else:
-                pa.parquet.write_table(
-                    table=tbl,
-                    where=file,
-                    row_group_size=row_group_size,
-                    compression=None if compression == "uncompressed" else compression,
-                    compression_level=compression_level,
-                    write_statistics=statistics,
-                    **(pyarrow_options or {}),
+                self._df.write_parquet(
+                    file, compression, compression_level, statistics, row_group_size
                 )
-
-        else:
-            self._df.write_parquet(
-                file, compression, compression_level, statistics, row_group_size
-            )
 
     @deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
     def write_database(
