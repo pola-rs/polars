@@ -2546,7 +2546,8 @@ class DataFrame:
         storage_options
             Extra options that make sense for ``fsspec.open()`` or a particular storage
             connection, e.g. host, port, username, password, etc.
-    
+
+
         Examples
         --------
         >>> import pathlib
@@ -2564,13 +2565,13 @@ class DataFrame:
         """
         if compression is None:
             compression = "uncompressed"
-        
+
         from polars.io._utils import _prepare_write_file_arg
+
         storage_options = storage_options or {}
-        
+
         with _prepare_write_file_arg(file, **storage_options) as file:
             self._df.write_avro(file, compression)
-            
 
     def write_excel(
         self,
@@ -2738,7 +2739,9 @@ class DataFrame:
               the `top_row` and `top_col`. Thus, to freeze only the top row and have the
               scrolling region begin at row 10, column D (5th col), supply (1, 0, 9, 4).
               Using cell notation for (row, col), supplying ("A2", 9, 4) is equivalent.
-
+        storage_options
+            Extra options that make sense for ``fsspec.open()`` or a particular storage
+            connection, e.g. host, port, username, password, etc.
 
         Notes
         -----
@@ -2942,10 +2945,10 @@ class DataFrame:
             ) from None
 
         from polars.io._utils import _prepare_write_file_arg
+
         storage_options = storage_options or {}
-        
+
         with _prepare_write_file_arg(workbook, **storage_options) as workbook:
-        
             # setup workbook/worksheet
             wb, ws, can_close = _xl_setup_workbook(workbook, worksheet)
             df, is_empty = self, not len(self)
