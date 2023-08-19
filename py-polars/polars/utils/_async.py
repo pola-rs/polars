@@ -14,7 +14,7 @@ class _AsyncDataFrameResult:
     queue: Queue
     _result: DataFrame | Exception
 
-    def __init__(self, queue) -> None:
+    def __init__(self, queue: Queue[DataFrame | Exception]) -> None:
         self.queue = queue
         self._result = None
 
@@ -27,5 +27,9 @@ class _AsyncDataFrameResult:
         self._result = self.queue.get(block=block, timeout=timeout)
         if isinstance(self._result, Exception):
             raise self._result
-        self._result = wrap_df(self._result)
         return self._result
+
+    def _callback(self, obj):
+        if not isinstance(obj, Exception):
+            obj = wrap_df(obj)
+        self.queue.put_nowait(obj)

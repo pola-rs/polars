@@ -1674,10 +1674,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return wrap_df(ldf.collect())
 
-    def async_collect(
+    def collect_async(
         self,
         *,
-        queue_class: type[Queue] = Queue,
+        queue_class: type[Queue[DataFrame | Exception]] = Queue,
         type_coercion: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
@@ -1756,7 +1756,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
         result = _AsyncDataFrameResult(queue_class(maxsize=1))
-        ldf.collect_with_callback(result.queue)
+        ldf.collect_with_callback(result._callback)
         return result
 
     def sink_parquet(

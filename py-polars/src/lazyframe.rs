@@ -444,8 +444,8 @@ impl PyLazyFrame {
         Ok(df.into())
     }
 
-    #[pyo3(signature = (queue,))]
-    fn collect_with_callback(&self, py: Python, queue: PyObject) {
+    #[pyo3(signature = (lambda,))]
+    fn collect_with_callback(&self, py: Python, lambda: PyObject) {
         py.allow_threads(|| {
             let ldf = self.ldf.clone();
 
@@ -457,14 +457,11 @@ impl PyLazyFrame {
 
                 Python::with_gil(|py| match result {
                     Ok(df) => {
-                        queue
-                            .call_method1(py, "put_nowait", (df,))
-                            .map_err(|err| err.restore(py))
-                            .ok();
+                        lambda.call1(py, (df,)).map_err(|err| err.restore(py)).ok();
                     },
                     Err(err) => {
-                        queue
-                            .call_method1(py, "put_nowait", (PyErr::from(err).to_object(py),))
+                        lambda
+                            .call1(py, (PyErr::from(err).to_object(py),))
                             .map_err(|err| err.restore(py))
                             .ok();
                     },
