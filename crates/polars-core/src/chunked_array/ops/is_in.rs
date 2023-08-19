@@ -36,6 +36,41 @@ where
     Ok(ca)
 }
 
+fn is_in_helper2<'a, T>(ca: &'a ChunkedArray<T>, other: &Series) -> PolarsResult<BooleanChunked>
+where
+    T: PolarsDataType,
+    ChunkedArray<T>: HasUnderlyingArray,
+    <<ChunkedArray<T> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>: Hash + Eq + Copy,
+{
+    let mut set = PlHashSet::with_capacity(other.len());
+
+    let other = ca.unpack_series_matching_type(other)?;
+    other.downcast_iter().for_each(|iter| {
+        iter.iter().for_each(|opt_val| {
+            if let Some(v) = opt_val {
+                set.insert(v);
+            }
+        })
+    });
+    Ok(ca.apply_values(|val| set.contains(&val)))
+
+    // let name = ca.name();
+    //
+    // let mut ca: BooleanChunked = ca
+    //     .into_iter()
+    //     .map(|opt_val| {
+    //
+    //         // Safety
+    //         // bit sizes are/ should be equal
+    //         let ptr = &opt_val as *const Option<T::Native> as *const Option<P>;
+    //         let opt_val = *ptr;
+    //         set.contains(&opt_val)
+    //     })
+    //     .collect_trusted();
+    // ca.rename(name);
+    // Ok(ca)
+}
+
 impl<T> IsIn for ChunkedArray<T>
 where
     T: PolarsNumericType,

@@ -4,7 +4,7 @@ use polars_arrow::trusted_len::TrustedLen;
 
 use crate::prelude::StaticArray;
 
-pub trait FromValuesIter
+pub trait ArrayFromElementIter
 where
     Self: Sized,
 {
@@ -15,7 +15,7 @@ where
     fn array_from_values_iter<I: TrustedLen<Item = Self>>(iter: I) -> Self::ArrayType;
 }
 
-impl FromValuesIter for bool {
+impl ArrayFromElementIter for bool {
     type ArrayType = BooleanArray;
 
     fn array_from_iter<I: TrustedLen<Item = Option<Self>>>(iter: I) -> Self::ArrayType {
@@ -31,7 +31,7 @@ impl FromValuesIter for bool {
 
 macro_rules! impl_primitive {
     ($tp:ty) => {
-        impl FromValuesIter for $tp {
+        impl ArrayFromElementIter for $tp {
             type ArrayType = PrimitiveArray<Self>;
 
             fn array_from_iter<I: TrustedLen<Item = Option<Self>>>(iter: I) -> Self::ArrayType {
@@ -56,7 +56,7 @@ impl_primitive!(i16);
 impl_primitive!(i32);
 impl_primitive!(i64);
 
-impl FromValuesIter for &str {
+impl ArrayFromElementIter for &str {
     type ArrayType = Utf8Array<i64>;
 
     fn array_from_iter<I: TrustedLen<Item = Option<Self>>>(iter: I) -> Self::ArrayType {
