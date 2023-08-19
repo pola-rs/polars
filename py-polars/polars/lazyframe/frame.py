@@ -5,6 +5,7 @@ import os
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
+from queue import Queue
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -50,6 +51,7 @@ from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.groupby import LazyGroupBy
 from polars.selectors import _expand_selectors, expand_selector
 from polars.slice import LazyPolarsSlice
+from polars.utils._async import _AsyncDataFrameResult
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -1671,6 +1673,91 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             streaming,
         )
         return wrap_df(ldf.collect())
+
+    def async_collect(
+        self,
+        *,
+        queue_class: type[Queue] = Queue,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        streaming: bool = False,
+    ) -> _AsyncDataFrameResult:
+        """
+        Collect dataframe asynchronously in thread pool.
+
+        Collects into a DataFrame, like :func:`collect`
+        but instead of returning dataframe directly its collected inside thread pool
+        and gets put into queue of specified `queue_class` with `put_nowait`,
+        while this method returns instantly.
+
+        May be useful if you use gevent and want to relase control to other greenlets
+        while dataframe is being collected if using gevent.queue.Queue as `queue_class`.
+
+        For collection of multiple lazy frames in parallel
+        please use :func:`polars.collect_all`.
+
+        See Also
+        --------
+        polars.collect_all : Collect multiple LazyFrames at the same time.
+
+        Returns
+        -------
+        Wrapper that has `get` method with (block=True, timeout=None) signature
+        and `queue` attribute with constructed queue.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "b", "c"],
+        ...         "b": [1, 2, 3, 4, 5, 6],
+        ...         "c": [6, 5, 4, 3, 2, 1],
+        ...     }
+        ... )
+        >>> a = lf.groupby("a", maintain_order=True).agg(pl.all().sum()).async_collect()
+        >>> a.get()
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 4   ┆ 10  │
+        │ b   ┆ 11  ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
+
+        """
+        if no_optimization:
+            predicate_pushdown = False
+            projection_pushdown = False
+            slice_pushdown = False
+            comm_subplan_elim = False
+            comm_subexpr_elim = False
+
+        if streaming:
+            comm_subplan_elim = False
+
+        ldf = self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            comm_subplan_elim,
+            comm_subexpr_elim,
+            streaming,
+        )
+
+        result = _AsyncDataFrameResult(queue_class(maxsize=1))
+        ldf.collect_with_callback(result._callback)
+        return result
 
     def sink_parquet(
         self,
