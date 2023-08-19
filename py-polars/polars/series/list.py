@@ -57,7 +57,7 @@ class ListNameSpace:
         │ true  │
         │ false │
         │ false │
-        │ false │
+        │ true  │
         │ true  │
         │ null  │
         └───────┘

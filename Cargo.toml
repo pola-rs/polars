@@ -53,12 +53,10 @@ xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 
 [workspace.dependencies.arrow]
 package = "arrow2"
-# git = "https://github.com/jorgecarleitao/arrow2"
-# git = "https://github.com/ritchie46/arrow2"
-# rev = "9beabec8cfb5502582d31ab898fdd36e7af0873c"
-# path = "../arrow2"
-# branch = "duration_json"
-version = "0.17.4"
+git = "https://github.com/jorgecarleitao/arrow2"
+rev = "7edf5f9e359e0ed02e9d0c6b9318b06964d805f0"
+# branch = ""
+# version = "0.17.4"
 default-features = false
 features = [
   "compute_aggregate",

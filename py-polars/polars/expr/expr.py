@@ -317,67 +317,23 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.to_physical())
 
-    def any(self, drop_nulls: bool = True) -> Self:
+    @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
+    def any(self, *, ignore_nulls: bool = True) -> Self:
         """
-        Check if any boolean value in a Boolean column is `True`.
+        Return whether any of the values in the column are ``True``.
+
+        Only works on columns of data type :class:`Boolean`.
 
         Parameters
         ----------
-        drop_nulls
-            If False, return None if there are nulls but no Trues.
+        ignore_nulls
+            Ignore null values (default).
 
-        Returns
-        -------
-        Expr
-            Expression of data type :class:`Boolean`.
+            If set to ``False``, `Kleene logic`_ is used to deal with nulls:
+            if the column contains any null values and no ``True`` values,
+            the output is null.
 
-        Examples
-        --------
-        >>> df = pl.DataFrame({"TF": [True, False], "FF": [False, False]})
-        >>> df.select(pl.all().any())
-        shape: (1, 2)
-        ┌──────┬───────┐
-        │ TF   ┆ FF    │
-        │ ---  ┆ ---   │
-        │ bool ┆ bool  │
-        ╞══════╪═══════╡
-        │ true ┆ false │
-        └──────┴───────┘
-        >>> df = pl.DataFrame(dict(x=[None, False], y=[None, True]))
-        >>> df.select(pl.col("x").any(True), pl.col("y").any(True))
-        shape: (1, 2)
-        ┌───────┬──────┐
-        │ x     ┆ y    │
-        │ ---   ┆ ---  │
-        │ bool  ┆ bool │
-        ╞═══════╪══════╡
-        │ false ┆ true │
-        └───────┴──────┘
-        >>> df.select(pl.col("x").any(False), pl.col("y").any(False))
-        shape: (1, 2)
-        ┌──────┬──────┐
-        │ x    ┆ y    │
-        │ ---  ┆ ---  │
-        │ bool ┆ bool │
-        ╞══════╪══════╡
-        │ null ┆ true │
-        └──────┴──────┘
-
-        """
-        return self._from_pyexpr(self._pyexpr.any(drop_nulls))
-
-    def all(self, drop_nulls: bool = True) -> Self:
-        """
-        Check if all boolean values in a Boolean column are `True`.
-
-        This method is an expression - not to be confused with
-        :func:`polars.all` which is a function to select all columns.
-
-        Parameters
-        ----------
-        drop_nulls
-            If False, return None if there are any nulls.
-
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Returns
         -------
@@ -387,39 +343,97 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"TT": [True, True], "TF": [True, False], "FF": [False, False]}
+        ...     {
+        ...         "a": [True, False],
+        ...         "b": [False, False],
+        ...         "c": [None, False],
+        ...     }
         ... )
-        >>> df.select(pl.col("*").all())
+        >>> df.select(pl.col("*").any())
         shape: (1, 3)
         ┌──────┬───────┬───────┐
-        │ TT   ┆ TF    ┆ FF    │
+        │ a    ┆ b     ┆ c     │
         │ ---  ┆ ---   ┆ ---   │
         │ bool ┆ bool  ┆ bool  │
         ╞══════╪═══════╪═══════╡
         │ true ┆ false ┆ false │
         └──────┴───────┴───────┘
-        >>> df = pl.DataFrame(dict(x=[None, False], y=[None, True]))
-        >>> df.select(pl.col("x").all(True), pl.col("y").all(True))
-        shape: (1, 2)
-        ┌───────┬───────┐
-        │ x     ┆ y     │
-        │ ---   ┆ ---   │
-        │ bool  ┆ bool  │
-        ╞═══════╪═══════╡
-        │ false ┆ false │
-        └───────┴───────┘
-        >>> df.select(pl.col("x").all(False), pl.col("y").all(False))
-        shape: (1, 2)
-        ┌──────┬──────┐
-        │ x    ┆ y    │
-        │ ---  ┆ ---  │
-        │ bool ┆ bool │
-        ╞══════╪══════╡
-        │ null ┆ null │
-        └──────┴──────┘
+
+        Enable Kleene logic by setting ``ignore_nulls=False``.
+
+        >>> df.select(pl.col("*").any(ignore_nulls=False))
+        shape: (1, 3)
+        ┌──────┬───────┬──────┐
+        │ a    ┆ b     ┆ c    │
+        │ ---  ┆ ---   ┆ ---  │
+        │ bool ┆ bool  ┆ bool │
+        ╞══════╪═══════╪══════╡
+        │ true ┆ false ┆ null │
+        └──────┴───────┴──────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.all(drop_nulls))
+        return self._from_pyexpr(self._pyexpr.any(ignore_nulls))
+
+    @deprecate_renamed_parameter("drop_nulls", "ignore_nulls", version="0.19.0")
+    def all(self, *, ignore_nulls: bool = True) -> Self:
+        """
+        Return whether all values in the column are ``True``.
+
+        Only works on columns of data type :class:`Boolean`.
+
+        .. note::
+            This method is not to be confused with the function :func:`polars.all`,
+            which can be used to select all columns.
+
+        Parameters
+        ----------
+        ignore_nulls
+            Ignore null values (default).
+
+            If set to ``False``, `Kleene logic`_ is used to deal with nulls:
+            if the column contains any null values and no ``True`` values,
+            the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [True, True],
+        ...         "b": [False, True],
+        ...         "c": [None, True],
+        ...     }
+        ... )
+        >>> df.select(pl.col("*").all())
+        shape: (1, 3)
+        ┌──────┬───────┬──────┐
+        │ a    ┆ b     ┆ c    │
+        │ ---  ┆ ---   ┆ ---  │
+        │ bool ┆ bool  ┆ bool │
+        ╞══════╪═══════╪══════╡
+        │ true ┆ false ┆ true │
+        └──────┴───────┴──────┘
+
+        Enable Kleene logic by setting ``ignore_nulls=False``.
+
+        >>> df.select(pl.col("*").all(ignore_nulls=False))
+        shape: (1, 3)
+        ┌──────┬───────┬──────┐
+        │ a    ┆ b     ┆ c    │
+        │ ---  ┆ ---   ┆ ---  │
+        │ bool ┆ bool  ┆ bool │
+        ╞══════╪═══════╪══════╡
+        │ true ┆ false ┆ null │
+        └──────┴───────┴──────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.all(ignore_nulls))
 
     def arg_true(self) -> Self:
         """

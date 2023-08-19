@@ -9,11 +9,11 @@ use crate::{map, wrap};
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum BooleanFunction {
-    All {
-        drop_nulls: bool,
-    },
     Any {
-        drop_nulls: bool,
+        ignore_nulls: bool,
+    },
+    All {
+        ignore_nulls: bool,
     },
     IsNot,
     IsNull,
@@ -77,8 +77,8 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: BooleanFunction) -> Self {
         use BooleanFunction::*;
         match func {
-            All { drop_nulls } => map!(all, drop_nulls),
-            Any { drop_nulls } => map!(any, drop_nulls),
+            Any { ignore_nulls } => map!(any, ignore_nulls),
+            All { ignore_nulls } => map!(all, ignore_nulls),
             IsNot => map!(is_not),
             IsNull => map!(is_null),
             IsNotNull => map!(is_not_null),
@@ -106,14 +106,22 @@ impl From<BooleanFunction> for FunctionExpr {
     }
 }
 
-fn all(s: &Series, drop_nulls: bool) -> PolarsResult<Series> {
-    let boolean = s.bool()?;
-    Ok(Series::new(s.name(), [boolean.all_3val(drop_nulls)]))
+fn any(s: &Series, ignore_nulls: bool) -> PolarsResult<Series> {
+    let ca = s.bool()?;
+    if ignore_nulls {
+        Ok(Series::new(s.name(), [ca.any()]))
+    } else {
+        Ok(Series::new(s.name(), [ca.any_kleene()]))
+    }
 }
 
-fn any(s: &Series, drop_nulls: bool) -> PolarsResult<Series> {
-    let boolean = s.bool()?;
-    Ok(Series::new(s.name(), [boolean.any_3val(drop_nulls)]))
+fn all(s: &Series, ignore_nulls: bool) -> PolarsResult<Series> {
+    let ca = s.bool()?;
+    if ignore_nulls {
+        Ok(Series::new(s.name(), [ca.all()]))
+    } else {
+        Ok(Series::new(s.name(), [ca.all_kleene()]))
+    }
 }
 
 fn is_not(s: &Series) -> PolarsResult<Series> {
