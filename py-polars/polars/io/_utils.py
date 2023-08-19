@@ -25,7 +25,9 @@ if TYPE_CHECKING:
 
     from xlsxwriter import Workbook
 
-    FileType = TypeVar("FileType", str, Path, TextIOWrapper, BytesIO, BinaryIO, IOBase, Workbook)
+    FileType = TypeVar(
+        "FileType", str, Path, TextIOWrapper, BytesIO, BinaryIO, IOBase, Workbook
+    )
 
 
 def _is_glob_pattern(file: str) -> bool:
