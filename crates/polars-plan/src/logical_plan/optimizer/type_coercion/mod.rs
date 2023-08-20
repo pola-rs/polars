@@ -360,7 +360,7 @@ impl OptimizationRule for TypeCoercionRule {
                             strict: false,
                         }
                     },
-                    (dt, DataType::Utf8) => {
+                    (dt, DataType::Utf8) | (DataType::Utf8, dt) => {
                         polars_bail!(ComputeError: "cannot compare {:?} to {:?} type in 'is_in' operation", dt, type_other)
                     },
                     (DataType::List(_), _) | (_, DataType::List(_)) => return Ok(None),

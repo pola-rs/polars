@@ -131,3 +131,10 @@ def test_is_in_series() -> None:
 def test_is_in_invalid_shape() -> None:
     with pytest.raises(pl.ComputeError):
         pl.Series("a", [1, 2, 3]).is_in([[]])
+
+
+def test_is_in_utf8_int_symmetry() -> None:
+    with pytest.raises(pl.ComputeError):
+        pl.Series([1]).is_in(pl.Series(["a"]))
+    with pytest.raises(pl.ComputeError):
+        pl.Series(["a"]).is_in(pl.Series([1]))
