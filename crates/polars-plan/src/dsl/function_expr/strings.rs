@@ -339,9 +339,7 @@ pub(super) fn strip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
                 .into_series())
         }
     } else {
-        Ok(ca
-            .apply_values(|s| Cow::Borrowed(s.trim()))
-            .into_series())
+        Ok(ca.apply_values(|s| Cow::Borrowed(s.trim())).into_series())
     }
 }
 

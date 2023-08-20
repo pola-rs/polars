@@ -1,6 +1,7 @@
 //! Implementations of the ChunkApply Trait.
 use std::borrow::Cow;
 use std::convert::TryFrom;
+use std::error::Error;
 
 use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
@@ -33,6 +34,27 @@ where
 
         ChunkedArray::from_chunk_iter(self.name(), iter)
     }
+
+    pub fn try_apply_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
+    where
+        U: PolarsDataType,
+        F: FnMut(
+                Option<<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
+            ) -> Result<Option<K>, E>
+            + Copy,
+        K: ArrayFromElementIter,
+        K::ArrayType: StaticallyMatchesPolarsType<U>,
+        E: Error,
+    {
+        let iter = self.downcast_iter().map(|arr| {
+            let element_iter = arr.iter().map(op);
+            let array = K::try_array_from_iter(element_iter)?;
+            Ok(array.with_validity_typed(arr.validity().cloned()))
+        });
+
+        ChunkedArray::try_from_chunk_iter(self.name(), iter)
+    }
+
     pub fn apply_generic<'a, U, K, F>(&'a self, op: F) -> ChunkedArray<U>
     where
         U: PolarsDataType,

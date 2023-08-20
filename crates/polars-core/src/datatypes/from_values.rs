@@ -1,6 +1,7 @@
 use std::borrow::Cow;
+use std::error::Error;
 
-use arrow::array::{BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
+use arrow::array::{BinaryArray, BooleanArray, MutablePrimitiveArray, PrimitiveArray, Utf8Array};
 use polars_arrow::array::utf8::{BinaryFromIter, Utf8FromIter};
 use polars_arrow::trusted_len::TrustedLen;
 
@@ -15,6 +16,10 @@ where
     fn array_from_iter<I: TrustedLen<Item = Option<Self>>>(iter: I) -> Self::ArrayType;
 
     fn array_from_values_iter<I: TrustedLen<Item = Self>>(iter: I) -> Self::ArrayType;
+
+    fn try_array_from_iter<E: Error, I: TrustedLen<Item = Result<Option<Self>, E>>>(
+        iter: I,
+    ) -> Result<Self::ArrayType, E>;
 }
 
 impl ArrayFromElementIter for bool {
@@ -28,6 +33,13 @@ impl ArrayFromElementIter for bool {
     fn array_from_values_iter<I: TrustedLen<Item = Self>>(iter: I) -> Self::ArrayType {
         // SAFETY: guarded by `TrustedLen` trait
         unsafe { BooleanArray::from_trusted_len_values_iter_unchecked(iter) }
+    }
+
+    fn try_array_from_iter<E: Error, I: TrustedLen<Item = Result<Option<Self>, E>>>(
+        iter: I,
+    ) -> Result<Self::ArrayType, E> {
+        // SAFETY: guarded by `TrustedLen` trait
+        unsafe { BooleanArray::try_from_trusted_len_iter_unchecked(iter) }
     }
 }
 
@@ -44,6 +56,14 @@ macro_rules! impl_primitive {
             fn array_from_values_iter<I: TrustedLen<Item = Self>>(iter: I) -> Self::ArrayType {
                 // SAFETY: guarded by `TrustedLen` trait
                 unsafe { PrimitiveArray::from_trusted_len_values_iter_unchecked(iter) }
+            }
+            fn try_array_from_iter<E: Error, I: TrustedLen<Item = Result<Option<Self>, E>>>(
+                iter: I,
+            ) -> Result<Self::ArrayType, E> {
+                // SAFETY: guarded by `TrustedLen` trait
+                unsafe {
+                    Ok(MutablePrimitiveArray::try_from_trusted_len_iter_unchecked(iter)?.into())
+                }
             }
         }
     };
@@ -69,9 +89,14 @@ impl ArrayFromElementIter for &str {
     }
 
     fn array_from_values_iter<I: TrustedLen<Item = Self>>(iter: I) -> Self::ArrayType {
-        // SAFETY: guarded by `TrustedLen` trait
         let len = iter.size_hint().0;
         Utf8Array::from_values_iter(iter, len, len * 24)
+    }
+    fn try_array_from_iter<E: Error, I: TrustedLen<Item = Result<Option<Self>, E>>>(
+        iter: I,
+    ) -> Result<Self::ArrayType, E> {
+        // SAFETY: guarded by `TrustedLen` trait
+        unsafe { Utf8Array::try_from_trusted_len_iter_unchecked(iter) }
     }
 }
 
@@ -88,6 +113,12 @@ impl ArrayFromElementIter for Cow<'_, str> {
         let len = iter.size_hint().0;
         Utf8Array::from_values_iter(iter, len, len * 24)
     }
+    fn try_array_from_iter<E: Error, I: TrustedLen<Item = Result<Option<Self>, E>>>(
+        iter: I,
+    ) -> Result<Self::ArrayType, E> {
+        // SAFETY: guarded by `TrustedLen` trait
+        unsafe { Utf8Array::try_from_trusted_len_iter_unchecked(iter) }
+    }
 }
 
 impl ArrayFromElementIter for Cow<'_, [u8]> {
@@ -102,5 +133,11 @@ impl ArrayFromElementIter for Cow<'_, [u8]> {
         // SAFETY: guarded by `TrustedLen` trait
         let len = iter.size_hint().0;
         BinaryArray::from_values_iter(iter, len, len * 24)
+    }
+    fn try_array_from_iter<E: Error, I: TrustedLen<Item = Result<Option<Self>, E>>>(
+        iter: I,
+    ) -> Result<Self::ArrayType, E> {
+        // SAFETY: guarded by `TrustedLen` trait
+        unsafe { BinaryArray::try_from_trusted_len_iter_unchecked(iter) }
     }
 }
