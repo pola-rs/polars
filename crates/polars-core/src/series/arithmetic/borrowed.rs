@@ -698,21 +698,21 @@ where
     #[must_use]
     pub fn lhs_sub<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        self.apply_on_values(|v| lhs - v)
+        self.apply_values(|v| lhs - v)
     }
 
     /// Apply lhs / self
     #[must_use]
     pub fn lhs_div<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        self.apply_on_values(|v| lhs / v)
+        self.apply_values(|v| lhs / v)
     }
 
     /// Apply lhs % self
     #[must_use]
     pub fn lhs_rem<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        self.apply_on_values(|v| lhs % v)
+        self.apply_values(|v| lhs % v)
     }
 }
 

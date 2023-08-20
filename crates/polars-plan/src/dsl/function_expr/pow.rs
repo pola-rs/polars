@@ -42,7 +42,7 @@ where
             a if a == 1.0 => base.clone().into_series(),
             // specialized sqrt will ensure (-inf)^0.5 = NaN
             // and will likely be faster as well.
-            a if a == 0.5 => base.apply_on_values(|v| v.sqrt()).into_series(),
+            a if a == 0.5 => base.apply_values(|v| v.sqrt()).into_series(),
             a if a.fract() == 0.0 && a < 10.0 && a > 1.0 => {
                 let mut out = base.clone();
 
@@ -52,7 +52,7 @@ where
                 out.into_series()
             },
             _ => base
-                .apply_on_values(|v| Pow::pow(v, exponent_value))
+                .apply_values(|v| Pow::pow(v, exponent_value))
                 .into_series(),
         };
         Ok(Some(s))
@@ -63,7 +63,7 @@ where
 
         Ok(Some(
             exponent
-                .apply_on_values(|exp| Pow::pow(base, exp))
+                .apply_values(|exp| Pow::pow(base, exp))
                 .into_series(),
         ))
     } else {
@@ -133,7 +133,7 @@ where
     T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
     ChunkedArray<T>: IntoSeries,
 {
-    Ok(base.apply_on_values(|v| v.sqrt()).into_series())
+    Ok(base.apply_values(|v| v.sqrt()).into_series())
 }
 
 pub(super) fn cbrt(base: &Series) -> PolarsResult<Series> {
@@ -160,5 +160,5 @@ where
     T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
     ChunkedArray<T>: IntoSeries,
 {
-    Ok(base.apply_on_values(|v| v.cbrt()).into_series())
+    Ok(base.apply_values(|v| v.cbrt()).into_series())
 }

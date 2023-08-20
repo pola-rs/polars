@@ -18,7 +18,7 @@ where
     T: PolarsDataType,
     Self: HasUnderlyingArray,
 {
-    pub fn apply_values<'a, U, K, F>(&'a self, op: F) -> ChunkedArray<U>
+    pub fn apply_values_generic<'a, U, K, F>(&'a self, op: F) -> ChunkedArray<U>
     where
         U: PolarsDataType,
         F: FnMut(<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>) -> K + Copy,
@@ -33,7 +33,7 @@ where
 
         ChunkedArray::from_chunk_iter(self.name(), iter)
     }
-    pub fn apply2<'a, U, K, F>(&'a self, op: F) -> ChunkedArray<U>
+    pub fn apply_generic<'a, U, K, F>(&'a self, op: F) -> ChunkedArray<U>
     where
         U: PolarsDataType,
         F: FnMut(
@@ -172,7 +172,7 @@ where
 {
     type FuncRet = T::Native;
 
-    fn apply_on_values<F>(&'a self, f: F) -> Self
+    fn apply_values<F>(&'a self, f: F) -> Self
     where
         F: Fn(T::Native) -> T::Native + Copy,
     {
@@ -234,7 +234,7 @@ where
 impl<'a> ChunkApply<'a, bool> for BooleanChunked {
     type FuncRet = bool;
 
-    fn apply_on_values<F>(&self, f: F) -> Self
+    fn apply_values<F>(&self, f: F) -> Self
     where
         F: Fn(bool) -> bool + Copy,
     {
@@ -299,7 +299,7 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
     where
         F: Fn(Option<bool>) -> Option<bool> + Copy,
     {
-        self.apply2(f)
+        self.apply_generic(f)
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -356,11 +356,11 @@ impl BinaryChunked {
 impl<'a> ChunkApply<'a, &'a str> for Utf8Chunked {
     type FuncRet = Cow<'a, str>;
 
-    fn apply_on_values<F>(&'a self, f: F) -> Self
+    fn apply_values<F>(&'a self, f: F) -> Self
     where
         F: Fn(&'a str) -> Cow<'a, str> + Copy,
     {
-        ChunkedArray::apply_values(self, f)
+        ChunkedArray::apply_values_generic(self, f)
     }
 
     fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
@@ -374,7 +374,7 @@ impl<'a> ChunkApply<'a, &'a str> for Utf8Chunked {
     where
         F: Fn(Option<&'a str>) -> Option<Cow<'a, str>> + Copy,
     {
-        self.apply2(f)
+        self.apply_generic(f)
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -399,11 +399,11 @@ impl<'a> ChunkApply<'a, &'a str> for Utf8Chunked {
 impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
     type FuncRet = Cow<'a, [u8]>;
 
-    fn apply_on_values<F>(&'a self, f: F) -> Self
+    fn apply_values<F>(&'a self, f: F) -> Self
     where
         F: Fn(&'a [u8]) -> Cow<'a, [u8]> + Copy,
     {
-        apply!(self, f)
+        self.apply_values_generic(f)
     }
 
     fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
@@ -417,7 +417,7 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
     where
         F: Fn(Option<&'a [u8]>) -> Option<Cow<'a, [u8]>> + Copy,
     {
-        self.apply2(f)
+        self.apply_generic(f)
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -505,7 +505,7 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
     type FuncRet = Series;
 
     /// Apply a closure `F` elementwise.
-    fn apply_on_values<F>(&'a self, f: F) -> Self
+    fn apply_values<F>(&'a self, f: F) -> Self
     where
         F: Fn(Series) -> Series + Copy,
     {
@@ -591,7 +591,7 @@ where
 {
     type FuncRet = T;
 
-    fn apply_on_values<F>(&'a self, f: F) -> Self
+    fn apply_values<F>(&'a self, f: F) -> Self
     where
         F: Fn(&'a T) -> T + Copy,
     {
@@ -631,30 +631,5 @@ where
                 idx += 1;
             })
         });
-    }
-}
-
-impl<'a, T: PolarsDataType> ChunkApplyCast<'a> for ChunkedArray<T>
-where
-    ChunkedArray<T>: HasUnderlyingArray,
-{
-    fn branch_apply_cast_numeric_no_null<F, R>(&'a self, f: F) -> ChunkedArray<R>
-    where
-        F: Fn(
-                Option<<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
-            ) -> R::Native
-            + Copy,
-        R: PolarsNumericType,
-    {
-        let chunks = self.downcast_iter().map(|array| {
-            if array.null_count() == 0 {
-                let values = array.values_iter().map(|v| f(Some(v)));
-                collect_array(values, None)
-            } else {
-                let values = array.iter().map(f);
-                collect_array(values, None)
-            }
-        });
-        ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
 }

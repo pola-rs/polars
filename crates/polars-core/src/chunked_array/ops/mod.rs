@@ -296,17 +296,6 @@ pub trait ChunkCast {
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series>;
 }
 
-pub trait ChunkApplyCast<'a>: HasUnderlyingArray {
-    /// Apply a closure on optional values and cast to Numeric ChunkedArray without null values.
-    fn branch_apply_cast_numeric_no_null<F, R>(&'a self, f: F) -> ChunkedArray<R>
-    where
-        F: Fn(
-                Option<<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
-            ) -> R::Native
-            + Copy,
-        R: PolarsNumericType;
-}
-
 /// Fastest way to do elementwise operations on a [`ChunkedArray<T>`] when the operation is cheaper than
 /// branching due to null checking.
 pub trait ChunkApply<'a, T> {
@@ -322,11 +311,11 @@ pub trait ChunkApply<'a, T> {
     /// ```
     /// use polars_core::prelude::*;
     /// fn double(ca: &UInt32Chunked) -> UInt32Chunked {
-    ///     ca.apply_on_values(|v| v * 2)
+    ///     ca.apply_values(|v| v * 2)
     /// }
     /// ```
     #[must_use]
-    fn apply_on_values<F>(&'a self, f: F) -> Self
+    fn apply_values<F>(&'a self, f: F) -> Self
     where
         F: Fn(T) -> Self::FuncRet + Copy;
 

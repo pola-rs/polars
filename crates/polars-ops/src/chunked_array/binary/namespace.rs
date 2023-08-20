@@ -68,7 +68,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     fn hex_encode(&self) -> Series {
         let ca = self.as_binary();
         unsafe {
-            ca.apply_on_values(|s| hex::encode(s).into_bytes().into())
+            ca.apply_values(|s| hex::encode(s).into_bytes().into())
                 .cast_unchecked(&DataType::Utf8)
                 .unwrap()
         }
@@ -98,7 +98,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     fn base64_encode(&self) -> Series {
         let ca = self.as_binary();
         unsafe {
-            ca.apply_on_values(|s| general_purpose::STANDARD.encode(s).into_bytes().into())
+            ca.apply_values(|s| general_purpose::STANDARD.encode(s).into_bytes().into())
                 .cast_unchecked(&DataType::Utf8)
                 .unwrap()
         }

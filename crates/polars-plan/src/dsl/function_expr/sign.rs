@@ -27,7 +27,7 @@ where
     T::Native: num::Float,
     ChunkedArray<T>: IntoSeries,
 {
-    ca.apply_on_values(signum_improved)
+    ca.apply_values(signum_improved)
         .into_series()
         .cast(&Int64)
 }
