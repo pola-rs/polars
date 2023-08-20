@@ -695,14 +695,15 @@ def test_offset_by_expressions() -> None:
         {
             "a": [
                 datetime(2020, 10, 25),
-                datetime(2020, 1, 2),
+                datetime(2021, 1, 2),
                 None,
-                datetime(2020, 1, 4),
+                datetime(2021, 1, 4),
                 None,
             ],
             "b": ["1d", "10d", "3d", None, None],
         }
     )
+    df = df.sort("a")
     result = df.select(
         c=pl.col("a").dt.offset_by(pl.col("b")),
         d=pl.col("a").dt.cast_time_unit("ms").dt.offset_by(pl.col("b")),
@@ -719,10 +720,10 @@ shape: (5, 4)
 │ ---                 ┆ ---                 ┆ ---                         ┆ ---        │
 │ datetime[μs]        ┆ datetime[ms]        ┆ datetime[μs, Europe/London] ┆ date       │
 ╞═════════════════════╪═════════════════════╪═════════════════════════════╪════════════╡
+│ null                ┆ null                ┆ null                        ┆ null       │
+│ null                ┆ null                ┆ null                        ┆ null       │
 │ 2020-10-26 00:00:00 ┆ 2020-10-26 00:00:00 ┆ 2020-10-26 00:00:00 GMT     ┆ 2020-10-26 │
-│ 2020-01-12 00:00:00 ┆ 2020-01-12 00:00:00 ┆ 2020-01-12 00:00:00 GMT     ┆ 2020-01-12 │
-│ null                ┆ null                ┆ null                        ┆ null       │
-│ null                ┆ null                ┆ null                        ┆ null       │
+│ 2021-01-12 00:00:00 ┆ 2021-01-12 00:00:00 ┆ 2021-01-12 00:00:00 GMT     ┆ 2021-01-12 │
 │ null                ┆ null                ┆ null                        ┆ null       │
 └─────────────────────┴─────────────────────┴─────────────────────────────┴────────────┘
 """
@@ -735,6 +736,35 @@ shape: (5, 4)
         "e": {"SORTED_ASC": False, "SORTED_DESC": False},
         "f": {"SORTED_ASC": False, "SORTED_DESC": False},
     }
+
+    # Check single-row cases
+    for i in range(len(df)):
+        df_slice = df[i : i + 1]
+        result = df_slice.select(
+            c=pl.col("a").dt.offset_by(pl.col("b")),
+            d=pl.col("a").dt.cast_time_unit("ms").dt.offset_by(pl.col("b")),
+            e=pl.col("a")
+            .dt.replace_time_zone("Europe/London")
+            .dt.offset_by(pl.col("b")),
+            f=pl.col("a").dt.date().dt.offset_by(pl.col("b")),
+        )
+        assert_frame_equal(result, expected[i : i + 1])
+        if df_slice["b"].item() is None:
+            # Offset is None, so result will be all-None, so sortedness isn't preserved.
+            assert result.flags == {
+                "c": {"SORTED_ASC": False, "SORTED_DESC": False},
+                "d": {"SORTED_ASC": False, "SORTED_DESC": False},
+                "e": {"SORTED_ASC": False, "SORTED_DESC": False},
+                "f": {"SORTED_ASC": False, "SORTED_DESC": False},
+            }
+        else:
+            # For tz-aware, sortedness is not preserved.
+            assert result.flags == {
+                "c": {"SORTED_ASC": True, "SORTED_DESC": False},
+                "d": {"SORTED_ASC": True, "SORTED_DESC": False},
+                "e": {"SORTED_ASC": False, "SORTED_DESC": False},
+                "f": {"SORTED_ASC": True, "SORTED_DESC": False},
+            }
 
 
 @pytest.mark.parametrize(
