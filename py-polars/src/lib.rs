@@ -128,6 +128,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::collect_all))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::collect_all_with_callback))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::cols))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_lf))

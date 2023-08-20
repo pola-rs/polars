@@ -1696,7 +1696,6 @@ dependencies = [
  "polars-lazy",
  "pyo3",
  "pyo3-built",
- "rayon",
  "serde_json",
  "smartstring",
  "thiserror",

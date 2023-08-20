@@ -449,7 +449,7 @@ impl PyLazyFrame {
         py.allow_threads(|| {
             let ldf = self.ldf.clone();
 
-            rayon::spawn(move || {
+            polars_core::POOL.spawn(move || {
                 let result = ldf
                     .collect()
                     .map(PyDataFrame::new)

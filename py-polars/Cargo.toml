@@ -26,8 +26,6 @@ pyo3-built = { version = "0.4", optional = true }
 serde_json = { version = "1", optional = true }
 smartstring = "1"
 thiserror = "1"
-# NOTE: rayon should also be upgraded in polars workspace
-rayon = "1.6"
 
 [dependencies.polars]
 path = "../crates/polars"

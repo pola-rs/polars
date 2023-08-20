@@ -1676,8 +1676,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def collect_async(
         self,
+        queue: Queue[DataFrame | Exception],
         *,
-        queue_class: type[Queue[DataFrame | Exception]] = Queue,
         type_coercion: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
@@ -1687,32 +1687,45 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = False,
-    ) -> _AsyncDataFrameResult:
+    ) -> _AsyncDataFrameResult[DataFrame]:
         """
         Collect dataframe asynchronously in thread pool.
 
         Collects into a DataFrame, like :func:`collect`
         but instead of returning dataframe directly its collected inside thread pool
-        and gets put into queue of specified `queue_class` with `put_nowait`,
-        while this method returns instantly.
+        and gets put into `queue` with `put_nowait` method,
+        while this method returns almost instantly.
 
-        May be useful if you use gevent and want to relase control to other greenlets
-        while dataframe is being collected if using gevent.queue.Queue as `queue_class`.
+        May be useful if you use gevent or asyncio and want to release control to other
+        greenlets/tasks while LazyFrames are being collected.
+        You must use correct queue in that case.
+        Given `queue` must be thread safe!
 
-        For collection of multiple lazy frames in parallel
-        please use :func:`polars.collect_all`.
+        For gevent use
+        [`gevent.queue.Queue`](https://www.gevent.org/api/gevent.queue.html#gevent.queue.Queue).
+
+        For asyncio
+        [`asyncio.queues.Queue`](https://docs.python.org/3/library/asyncio-queue.html#queue)
+        can not be used, since it's not thread safe!
+        For that purpose use [janus](https://github.com/aio-libs/janus) library.
+
+        Results are put in queue exactly once using `put_nowait`.
+        Note if error ocurred then Exception will be put in the queue instead of result
+        which is then raised by returned wrapper `get` method.
 
         See Also
         --------
         polars.collect_all : Collect multiple LazyFrames at the same time.
+        polars.collect_all_async: Collect multiple LazyFrames at the same time lazily.
 
         Returns
         -------
-        Wrapper that has `get` method with (block=True, timeout=None) signature
-        and `queue` attribute with constructed queue.
+        Wrapper that has `get` method and `queue` attribute with given queue.
+        `get` accepts kwargs that are passed down to `queue.get`.
 
         Examples
         --------
+        >>> import queue
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": ["a", "b", "a", "b", "b", "c"],
@@ -1720,7 +1733,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> a = lf.groupby("a", maintain_order=True).agg(pl.all().sum()).async_collect()
+        >>> a = lf.groupby("a", maintain_order=True).agg(pl.all().sum()).collect_async(
+        ...     queue.Queue()
+        ... )
         >>> a.get()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
@@ -1755,7 +1770,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             streaming,
         )
 
-        result = _AsyncDataFrameResult(queue_class(maxsize=1))
+        result = _AsyncDataFrameResult(queue)
         ldf.collect_with_callback(result._callback)
         return result
 
