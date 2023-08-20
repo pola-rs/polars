@@ -305,6 +305,30 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
+    #[cfg(feature = "ipc_streaming")]
+    #[pyo3(signature = (py_f, columns, projection, n_rows, row_count, rechunk))]
+    pub fn read_ipc_stream(
+        py_f: &PyAny,
+        columns: Option<Vec<String>>,
+        projection: Option<Vec<usize>>,
+        n_rows: Option<usize>,
+        row_count: Option<(String, IdxSize)>,
+        rechunk: bool,
+    ) -> PyResult<Self> {
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
+        let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
+        let df = IpcStreamReader::new(mmap_bytes_r)
+            .with_projection(projection)
+            .with_columns(columns)
+            .with_n_rows(n_rows)
+            .with_row_count(row_count)
+            .set_rechunk(rechunk)
+            .finish()
+            .map_err(PyPolarsErr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
+    #[staticmethod]
     #[cfg(feature = "avro")]
     #[pyo3(signature = (py_f, columns, projection, n_rows))]
     pub fn read_avro(
@@ -619,6 +643,32 @@ impl PyDataFrame {
             let mut buf = get_file_like(py_f, true)?;
 
             IpcWriter::new(&mut buf)
+                .with_compression(compression.0)
+                .finish(&mut self.df)
+                .map_err(PyPolarsErr::from)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "ipc_streaming")]
+    pub fn write_ipc_stream(
+        &mut self,
+        py: Python,
+        py_f: PyObject,
+        compression: Wrap<Option<IpcCompression>>,
+    ) -> PyResult<()> {
+        if let Ok(s) = py_f.extract::<&str>(py) {
+            py.allow_threads(|| {
+                let f = std::fs::File::create(s).unwrap();
+                IpcStreamWriter::new(f)
+                    .with_compression(compression.0)
+                    .finish(&mut self.df)
+                    .map_err(PyPolarsErr::from)
+            })?;
+        } else {
+            let mut buf = get_file_like(py_f, true)?;
+
+            IpcStreamWriter::new(&mut buf)
                 .with_compression(compression.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
