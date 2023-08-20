@@ -299,7 +299,7 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
     where
         F: Fn(Option<bool>) -> Option<bool> + Copy,
     {
-        self.into_iter().map(f).collect_trusted()
+        self.apply2(f)
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -360,14 +360,7 @@ impl<'a> ChunkApply<'a, &'a str> for Utf8Chunked {
     where
         F: Fn(&'a str) -> Cow<'a, str> + Copy,
     {
-        use polars_arrow::array::utf8::Utf8FromIter;
-        let chunks = self.downcast_iter().map(|arr| {
-            let iter = arr.values_iter().map(f);
-            let size_hint = (arr.get_values_size() as f64 * 1.3) as usize;
-            let new = Utf8Array::<i64>::from_values_iter(iter, arr.len(), size_hint);
-            new.with_validity(arr.validity().cloned())
-        });
-        Utf8Chunked::from_chunk_iter(self.name(), chunks)
+        ChunkedArray::apply_values(self, f)
     }
 
     fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
@@ -381,9 +374,7 @@ impl<'a> ChunkApply<'a, &'a str> for Utf8Chunked {
     where
         F: Fn(Option<&'a str>) -> Option<Cow<'a, str>> + Copy,
     {
-        let mut ca: Self = self.into_iter().map(f).collect_trusted();
-        ca.rename(self.name());
-        ca
+        self.apply2(f)
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -426,9 +417,7 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
     where
         F: Fn(Option<&'a [u8]>) -> Option<Cow<'a, [u8]>> + Copy,
     {
-        let mut ca: Self = self.into_iter().map(f).collect_trusted();
-        ca.rename(self.name());
-        ca
+        self.apply2(f)
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -649,19 +638,6 @@ impl<'a, T: PolarsDataType> ChunkApplyCast<'a> for ChunkedArray<T>
 where
     ChunkedArray<T>: HasUnderlyingArray,
 {
-    fn apply_cast_numeric<F, R>(&'a self, f: F) -> ChunkedArray<R>
-    where
-        F: Fn(<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>) -> R::Native
-            + Copy,
-        R: PolarsNumericType,
-    {
-        let chunks = self.downcast_iter().map(|array| {
-            let values = array.values_iter().map(f);
-            collect_array(values, array.validity().cloned())
-        });
-        ChunkedArray::from_chunk_iter(self.name(), chunks)
-    }
-
     fn branch_apply_cast_numeric_no_null<F, R>(&'a self, f: F) -> ChunkedArray<R>
     where
         F: Fn(

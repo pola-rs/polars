@@ -297,16 +297,6 @@ pub trait ChunkCast {
 }
 
 pub trait ChunkApplyCast<'a>: HasUnderlyingArray {
-    /// Apply a closure elementwise and cast to a Numeric [`ChunkedArray`]. This is fastest when the null check branching is more expensive
-    /// than the closure application.
-    ///
-    /// Null values remain null.
-    fn apply_cast_numeric<F, R>(&'a self, f: F) -> ChunkedArray<R>
-    where
-        F: Fn(<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>) -> R::Native
-            + Copy,
-        R: PolarsNumericType;
-
     /// Apply a closure on optional values and cast to Numeric ChunkedArray without null values.
     fn branch_apply_cast_numeric_no_null<F, R>(&'a self, f: F) -> ChunkedArray<R>
     where

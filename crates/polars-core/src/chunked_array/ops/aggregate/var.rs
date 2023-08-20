@@ -23,7 +23,7 @@ where
         let n_values = n_values as f64;
 
         let mean = self.mean()?;
-        let squared = self.apply_cast_numeric::<_, Float64Type>(|value| {
+        let squared: Float64Chunked = ChunkedArray::apply_values(self, |value| {
             let tmp = value.to_f64().unwrap() - mean;
             tmp * tmp
         });
