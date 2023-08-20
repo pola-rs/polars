@@ -340,11 +340,11 @@ impl IsIn for StructChunked {
                 }
 
                 let mut anyvalues = Vec::with_capacity(other.len() * other.fields().len());
-                // Safety:
+                // SAFETY:
                 // the iterator is unsafe as the lifetime is tied to the iterator
                 // so we copy to an owned buffer first
-                other.into_iter().for_each(|val| {
-                    anyvalues.extend_from_slice(val);
+                other.into_iter().for_each(|vals| {
+                    anyvalues.extend_from_slice(vals);
                 });
 
                 // then we fill the set
@@ -359,7 +359,14 @@ impl IsIn for StructChunked {
                 // and then we check for membership
                 let mut ca: BooleanChunked = self_ca
                     .into_iter()
-                    .map(|vals| set.contains(&vals))
+                    .map(|vals| {
+                        // If all rows are null we see the struct row as missing.
+                        if !vals.iter().all(|val| matches!(val, AnyValue::Null)) {
+                            Some(set.contains(&vals))
+                        } else {
+                            None
+                        }
+                    })
                     .collect();
                 ca.rename(self.name());
                 Ok(ca)
