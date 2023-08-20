@@ -50,7 +50,7 @@ impl ChunkVar<f32> for Float32Chunked {
         let n_values = n_values as f32;
 
         let mean = self.mean()? as f32;
-        let squared = self.apply(|value| {
+        let squared = self.apply_on_values(|value| {
             let tmp = value - mean;
             tmp * tmp
         });
@@ -74,7 +74,7 @@ impl ChunkVar<f64> for Float64Chunked {
         let n_values = n_values as f64;
 
         let mean = self.mean()?;
-        let squared = self.apply(|value| {
+        let squared = self.apply_on_values(|value| {
             let tmp = value - mean;
             tmp * tmp
         });

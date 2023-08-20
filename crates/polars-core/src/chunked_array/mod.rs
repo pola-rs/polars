@@ -69,7 +69,7 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 /// ```rust
 /// # use polars_core::prelude::*;
 /// fn apply_cosine(ca: &Float32Chunked) -> Float32Chunked {
-///     ca.apply(|v| v.cos())
+///     ca.apply_on_values(|v| v.cos())
 /// }
 /// ```
 ///

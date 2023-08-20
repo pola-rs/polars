@@ -11,7 +11,7 @@ use polars_arrow::bitmap::unary_mut;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::utils::{CustomIterTools, NoNull};
+use crate::utils::CustomIterTools;
 
 impl<T> ChunkedArray<T>
 where
@@ -80,24 +80,6 @@ macro_rules! apply {
             $self
                 .into_iter()
                 .map(|opt_v| opt_v.map($f))
-                .collect_trusted()
-        }
-    }};
-}
-
-macro_rules! apply_enumerate {
-    ($self:expr, $f:expr) => {{
-        if !$self.has_validity() {
-            $self
-                .into_no_null_iter()
-                .enumerate()
-                .map($f)
-                .collect_trusted()
-        } else {
-            $self
-                .into_iter()
-                .enumerate()
-                .map(|(idx, opt_v)| opt_v.map(|v| $f((idx, v))))
                 .collect_trusted()
         }
     }};
@@ -190,7 +172,7 @@ where
 {
     type FuncRet = T::Native;
 
-    fn apply<F>(&'a self, f: F) -> Self
+    fn apply_on_values<F>(&'a self, f: F) -> Self
     where
         F: Fn(T::Native) -> T::Native + Copy,
     {
@@ -219,7 +201,7 @@ where
         Ok(ca)
     }
 
-    fn apply_on_opt<F>(&'a self, f: F) -> Self
+    fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<T::Native>) -> Option<T::Native> + Copy,
     {
@@ -230,44 +212,6 @@ where
         Self::from_chunk_iter(self.name(), chunks)
     }
 
-    fn apply_with_idx<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, T::Native)) -> T::Native + Copy,
-    {
-        if !self.has_validity() {
-            let ca: NoNull<_> = self
-                .into_no_null_iter()
-                .enumerate()
-                .map(f)
-                .collect_trusted();
-            ca.into_inner()
-        } else {
-            // we know that we only iterate over length == self.len()
-            unsafe {
-                self.downcast_iter()
-                    .flatten()
-                    .trust_my_length(self.len())
-                    .enumerate()
-                    .map(|(idx, opt_v)| opt_v.map(|v| f((idx, *v))))
-                    .collect_trusted()
-            }
-        }
-    }
-
-    fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, Option<T::Native>)) -> Option<T::Native> + Copy,
-    {
-        // we know that we only iterate over length == self.len()
-        unsafe {
-            self.downcast_iter()
-                .flatten()
-                .trust_my_length(self.len())
-                .enumerate()
-                .map(|(idx, v)| f((idx, v.copied())))
-                .collect_trusted()
-        }
-    }
     fn apply_to_slice<F, V>(&'a self, f: F, slice: &mut [V])
     where
         F: Fn(Option<T::Native>, &V) -> V,
@@ -290,7 +234,7 @@ where
 impl<'a> ChunkApply<'a, bool> for BooleanChunked {
     type FuncRet = bool;
 
-    fn apply<F>(&self, f: F) -> Self
+    fn apply_on_values<F>(&self, f: F) -> Self
     where
         F: Fn(bool) -> bool + Copy,
     {
@@ -351,25 +295,11 @@ impl<'a> ChunkApply<'a, bool> for BooleanChunked {
         Ok(ret)
     }
 
-    fn apply_on_opt<F>(&'a self, f: F) -> Self
+    fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<bool>) -> Option<bool> + Copy,
     {
         self.into_iter().map(f).collect_trusted()
-    }
-
-    fn apply_with_idx<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, bool)) -> bool + Copy,
-    {
-        apply_enumerate!(self, f)
-    }
-
-    fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, Option<bool>)) -> Option<bool> + Copy,
-    {
-        self.into_iter().enumerate().map(f).collect_trusted()
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -426,7 +356,7 @@ impl BinaryChunked {
 impl<'a> ChunkApply<'a, &'a str> for Utf8Chunked {
     type FuncRet = Cow<'a, str>;
 
-    fn apply<F>(&'a self, f: F) -> Self
+    fn apply_on_values<F>(&'a self, f: F) -> Self
     where
         F: Fn(&'a str) -> Cow<'a, str> + Copy,
     {
@@ -447,27 +377,11 @@ impl<'a> ChunkApply<'a, &'a str> for Utf8Chunked {
         try_apply!(self, f)
     }
 
-    fn apply_on_opt<F>(&'a self, f: F) -> Self
+    fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<&'a str>) -> Option<Cow<'a, str>> + Copy,
     {
         let mut ca: Self = self.into_iter().map(f).collect_trusted();
-        ca.rename(self.name());
-        ca
-    }
-
-    fn apply_with_idx<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, &'a str)) -> Cow<'a, str> + Copy,
-    {
-        apply_enumerate!(self, f)
-    }
-
-    fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, Option<&'a str>)) -> Option<Cow<'a, str>> + Copy,
-    {
-        let mut ca: Self = self.into_iter().enumerate().map(f).collect_trusted();
         ca.rename(self.name());
         ca
     }
@@ -494,7 +408,7 @@ impl<'a> ChunkApply<'a, &'a str> for Utf8Chunked {
 impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
     type FuncRet = Cow<'a, [u8]>;
 
-    fn apply<F>(&'a self, f: F) -> Self
+    fn apply_on_values<F>(&'a self, f: F) -> Self
     where
         F: Fn(&'a [u8]) -> Cow<'a, [u8]> + Copy,
     {
@@ -508,27 +422,11 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
         try_apply!(self, f)
     }
 
-    fn apply_on_opt<F>(&'a self, f: F) -> Self
+    fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<&'a [u8]>) -> Option<Cow<'a, [u8]>> + Copy,
     {
         let mut ca: Self = self.into_iter().map(f).collect_trusted();
-        ca.rename(self.name());
-        ca
-    }
-
-    fn apply_with_idx<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, &'a [u8])) -> Cow<'a, [u8]> + Copy,
-    {
-        apply_enumerate!(self, f)
-    }
-
-    fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, Option<&'a [u8]>)) -> Option<Cow<'a, [u8]>> + Copy,
-    {
-        let mut ca: Self = self.into_iter().enumerate().map(f).collect_trusted();
         ca.rename(self.name());
         ca
     }
@@ -618,7 +516,7 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
     type FuncRet = Series;
 
     /// Apply a closure `F` elementwise.
-    fn apply<F>(&'a self, f: F) -> Self
+    fn apply_on_values<F>(&'a self, f: F) -> Self
     where
         F: Fn(Series) -> Series + Copy,
     {
@@ -666,7 +564,7 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
         Ok(ca)
     }
 
-    fn apply_on_opt<F>(&'a self, f: F) -> Self
+    fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<Series>) -> Option<Series> + Copy,
     {
@@ -674,54 +572,6 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
             return self.clone();
         }
         self.into_iter().map(f).collect_trusted()
-    }
-
-    /// Apply a closure elementwise. The closure gets the index of the element as first argument.
-    fn apply_with_idx<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, Series)) -> Series + Copy,
-    {
-        if self.is_empty() {
-            return self.clone();
-        }
-        let mut fast_explode = true;
-        let mut function = |(idx, s)| {
-            let out = f((idx, s));
-            if out.is_empty() {
-                fast_explode = false;
-            }
-            out
-        };
-        let mut ca: ListChunked = apply_enumerate!(self, function);
-        if fast_explode {
-            ca.set_fast_explode()
-        }
-        ca
-    }
-
-    /// Apply a closure elementwise. The closure gets the index of the element as first argument.
-    fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, Option<Series>)) -> Option<Series> + Copy,
-    {
-        if self.is_empty() {
-            return self.clone();
-        }
-        let mut fast_explode = true;
-        let function = |(idx, s)| {
-            let out = f((idx, s));
-            if let Some(out) = &out {
-                if out.is_empty() {
-                    fast_explode = false;
-                }
-            }
-            out
-        };
-        let mut ca: ListChunked = self.into_iter().enumerate().map(function).collect_trusted();
-        if fast_explode {
-            ca.set_fast_explode()
-        }
-        ca
     }
 
     fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
@@ -752,7 +602,7 @@ where
 {
     type FuncRet = T;
 
-    fn apply<F>(&'a self, f: F) -> Self
+    fn apply_on_values<F>(&'a self, f: F) -> Self
     where
         F: Fn(&'a T) -> T + Copy,
     {
@@ -768,27 +618,13 @@ where
         todo!()
     }
 
-    fn apply_on_opt<F>(&'a self, f: F) -> Self
+    fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<&'a T>) -> Option<T> + Copy,
     {
         let mut ca: ObjectChunked<T> = self.into_iter().map(f).collect();
         ca.rename(self.name());
         ca
-    }
-
-    fn apply_with_idx<F>(&'a self, _f: F) -> Self
-    where
-        F: Fn((usize, &'a T)) -> T + Copy,
-    {
-        todo!()
-    }
-
-    fn apply_with_idx_on_opt<F>(&'a self, _f: F) -> Self
-    where
-        F: Fn((usize, Option<&'a T>)) -> Option<T> + Copy,
-    {
-        todo!()
     }
 
     fn apply_to_slice<F, V>(&'a self, f: F, slice: &mut [V])

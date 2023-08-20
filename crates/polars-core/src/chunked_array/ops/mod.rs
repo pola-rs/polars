@@ -332,11 +332,11 @@ pub trait ChunkApply<'a, T> {
     /// ```
     /// use polars_core::prelude::*;
     /// fn double(ca: &UInt32Chunked) -> UInt32Chunked {
-    ///     ca.apply(|v| v * 2)
+    ///     ca.apply_on_values(|v| v * 2)
     /// }
     /// ```
     #[must_use]
-    fn apply<F>(&'a self, f: F) -> Self
+    fn apply_on_values<F>(&'a self, f: F) -> Self
     where
         F: Fn(T) -> Self::FuncRet + Copy;
 
@@ -347,21 +347,9 @@ pub trait ChunkApply<'a, T> {
 
     /// Apply a closure elementwise including null values.
     #[must_use]
-    fn apply_on_opt<F>(&'a self, f: F) -> Self
+    fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<T>) -> Option<Self::FuncRet> + Copy;
-
-    /// Apply a closure elementwise. The closure gets the index of the element as first argument.
-    #[must_use]
-    fn apply_with_idx<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, T)) -> Self::FuncRet + Copy;
-
-    /// Apply a closure elementwise. The closure gets the index of the element as first argument.
-    #[must_use]
-    fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, Option<T>)) -> Option<Self::FuncRet> + Copy;
 
     /// Apply a closure elementwise and write results to a mutable slice.
     fn apply_to_slice<F, S>(&'a self, f: F, slice: &mut [S])
