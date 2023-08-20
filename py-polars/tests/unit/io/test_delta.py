@@ -197,7 +197,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
         pl.Series(
             "date_ns",
             [datetime(2010, 1, 1, 0, 0)],
-            dtype=pl.Datetime(time_unit="ns"),
+            dtype=pl.Datetime(time_unit="ns", time_zone="ETC"),
         ),
         pl.Series(
             "date_us",
@@ -262,7 +262,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
                 [
                     pl.Field(
                         "date_range",
-                        pl.List(pl.Datetime(time_unit="ms", time_zone=None)),
+                        pl.List(pl.Datetime(time_unit="ms", time_zone="UTC")),
                     ),
                     pl.Field(
                         "date_us", pl.List(pl.Datetime(time_unit="ms", time_zone=None))
