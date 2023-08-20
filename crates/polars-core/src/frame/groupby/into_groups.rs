@@ -177,8 +177,8 @@ where
                 // convince the compiler that we are this type.
                 let ca: &Int8Chunked =
                     unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int8Type>) };
-                let ca = ca.reinterpret_unsigned();
-                num_groups_proxy(&ca, multithreaded, sorted)
+                let s = ca.reinterpret_unsigned();
+                return s.group_tuples(multithreaded, sorted);
             },
             #[cfg(feature = "performant")]
             DataType::UInt8 => {
@@ -192,8 +192,8 @@ where
                 // convince the compiler that we are this type.
                 let ca: &Int16Chunked =
                     unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int16Type>) };
-                let ca = ca.reinterpret_unsigned();
-                num_groups_proxy(&ca, multithreaded, sorted)
+                let s = ca.reinterpret_unsigned();
+                return s.group_tuples(multithreaded, sorted);
             },
             #[cfg(feature = "performant")]
             DataType::UInt16 => {

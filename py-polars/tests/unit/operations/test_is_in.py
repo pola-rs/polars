@@ -44,14 +44,9 @@ def test_is_in_empty_list_4639() -> None:
     df = pl.DataFrame({"a": [1, None]})
     empty_list: list[int] = []
 
-    print(df.with_columns(pl.col("a").is_in(empty_list)))
     assert df.with_columns([pl.col("a").is_in(empty_list).alias("a_in_list")]).to_dict(
         False
-    ) == {"a": [1, None], "a_in_list": [False, False]}
-    # df = pl.DataFrame()
-    # assert df.with_columns(
-    #     [pl.lit(None).cast(pl.Int64).is_in(empty_list).alias("in_empty_list")]
-    # ).to_dict(False) == {"in_empty_list": [False]}
+    ) == {"a": [1, None], "a_in_list": [False, None]}
 
 
 def test_is_in_struct() -> None:
