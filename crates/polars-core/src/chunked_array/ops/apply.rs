@@ -92,7 +92,7 @@ where
     }
 }
 
-pub(super) fn collect_array<T: NativeType, I: TrustedLen<Item = T>>(
+fn collect_array<T: NativeType, I: TrustedLen<Item = T>>(
     iter: I,
     validity: Option<Bitmap>,
 ) -> PrimitiveArray<T> {

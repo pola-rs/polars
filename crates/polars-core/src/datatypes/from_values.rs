@@ -10,6 +10,7 @@ use polars_arrow::array::utf8::{BinaryFromIter, Utf8FromIter};
 use polars_arrow::prelude::FromData;
 use polars_arrow::trusted_len::TrustedLen;
 
+use crate::datatypes::NumericNative;
 use crate::prelude::StaticArray;
 
 pub trait ArrayFromElementIter
@@ -59,48 +60,34 @@ impl ArrayFromElementIter for bool {
     }
 }
 
-macro_rules! impl_primitive {
-    ($tp:ty) => {
-        impl ArrayFromElementIter for $tp {
-            type ArrayType = PrimitiveArray<Self>;
+impl<T> ArrayFromElementIter for T
+where
+    T: NumericNative,
+{
+    type ArrayType = PrimitiveArray<Self>;
 
-            fn array_from_iter<I: TrustedLen<Item = Option<Self>>>(iter: I) -> Self::ArrayType {
-                // SAFETY: guarded by `TrustedLen` trait
-                unsafe { PrimitiveArray::from_trusted_len_iter_unchecked(iter) }
-            }
+    fn array_from_iter<I: TrustedLen<Item = Option<Self>>>(iter: I) -> Self::ArrayType {
+        // SAFETY: guarded by `TrustedLen` trait
+        unsafe { PrimitiveArray::from_trusted_len_iter_unchecked(iter) }
+    }
 
-            fn array_from_values_iter<I: TrustedLen<Item = Self>>(iter: I) -> Self::ArrayType {
-                // SAFETY: guarded by `TrustedLen` trait
-                unsafe { PrimitiveArray::from_trusted_len_values_iter_unchecked(iter) }
-            }
-            fn try_array_from_iter<E: Error, I: TrustedLen<Item = Result<Option<Self>, E>>>(
-                iter: I,
-            ) -> Result<Self::ArrayType, E> {
-                // SAFETY: guarded by `TrustedLen` trait
-                unsafe {
-                    Ok(MutablePrimitiveArray::try_from_trusted_len_iter_unchecked(iter)?.into())
-                }
-            }
-            fn try_array_from_values_iter<E: Error, I: TrustedLen<Item = Result<Self, E>>>(
-                iter: I,
-            ) -> Result<Self::ArrayType, E> {
-                let values: Vec<_> = iter.collect::<Result<Vec<_>, _>>()?;
-                Ok(PrimitiveArray::from_vec(values))
-            }
-        }
-    };
+    fn array_from_values_iter<I: TrustedLen<Item = Self>>(iter: I) -> Self::ArrayType {
+        // SAFETY: guarded by `TrustedLen` trait
+        unsafe { PrimitiveArray::from_trusted_len_values_iter_unchecked(iter) }
+    }
+    fn try_array_from_iter<E: Error, I: TrustedLen<Item = Result<Option<Self>, E>>>(
+        iter: I,
+    ) -> Result<Self::ArrayType, E> {
+        // SAFETY: guarded by `TrustedLen` trait
+        unsafe { Ok(MutablePrimitiveArray::try_from_trusted_len_iter_unchecked(iter)?.into()) }
+    }
+    fn try_array_from_values_iter<E: Error, I: TrustedLen<Item = Result<Self, E>>>(
+        iter: I,
+    ) -> Result<Self::ArrayType, E> {
+        let values: Vec<_> = iter.collect::<Result<Vec<_>, _>>()?;
+        Ok(PrimitiveArray::from_vec(values))
+    }
 }
-
-impl_primitive!(u8);
-impl_primitive!(u16);
-impl_primitive!(u32);
-impl_primitive!(u64);
-impl_primitive!(i8);
-impl_primitive!(i16);
-impl_primitive!(i32);
-impl_primitive!(i64);
-impl_primitive!(f32);
-impl_primitive!(f64);
 
 impl ArrayFromElementIter for &str {
     type ArrayType = Utf8Array<i64>;

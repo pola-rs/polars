@@ -1,15 +1,15 @@
-use arrow::array::{Array, PrimitiveArray};
+use arrow::array::{Array};
 use polars_arrow::utils::combine_validities_and;
 
-use crate::chunked_array::ops::apply::collect_array;
 use crate::datatypes::{
-    HasUnderlyingArray, PolarsNumericType, StaticArray, StaticallyMatchesPolarsType,
+    ArrayFromElementIter, HasUnderlyingArray, PolarsNumericType, StaticArray,
+    StaticallyMatchesPolarsType,
 };
 use crate::prelude::{ChunkedArray, PolarsDataType};
 use crate::utils::align_chunks_binary;
 
 #[inline]
-pub fn binary_elementwise<T, U, V, F>(
+pub fn binary_elementwise<T, U, V, F, K>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
@@ -17,30 +17,32 @@ pub fn binary_elementwise<T, U, V, F>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsNumericType,
+    V: PolarsDataType,
     ChunkedArray<T>: HasUnderlyingArray,
     ChunkedArray<U>: HasUnderlyingArray,
     F: for<'a> FnMut(
         Option<<<ChunkedArray<T> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
         Option<<<ChunkedArray<U> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
-    ) -> Option<V::Native>,
+    ) -> Option<K>,
+    K: ArrayFromElementIter,
+    K::ArrayType: StaticallyMatchesPolarsType<V>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
         .downcast_iter()
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| {
-            lhs_arr
+            let element_iter = lhs_arr
                 .iter()
                 .zip(rhs_arr.iter())
-                .map(|(lhs_opt_val, rhs_opt_val)| op(lhs_opt_val, rhs_opt_val))
-                .collect::<PrimitiveArray<V::Native>>()
+                .map(|(lhs_opt_val, rhs_opt_val)| op(lhs_opt_val, rhs_opt_val));
+            K::array_from_iter(element_iter)
         });
     ChunkedArray::from_chunk_iter(lhs.name(), iter)
 }
 
 #[inline]
-pub fn binary_elementwise_values<T, U, V, F>(
+pub fn binary_elementwise_values<T, U, V, F, K>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
@@ -54,7 +56,9 @@ where
     F: for<'a> FnMut(
         <<ChunkedArray<T> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>,
         <<ChunkedArray<U> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>,
-    ) -> V::Native,
+    ) -> K,
+    K: ArrayFromElementIter,
+    K::ArrayType: StaticallyMatchesPolarsType<V>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -63,11 +67,13 @@ where
         .map(|(lhs_arr, rhs_arr)| {
             let validity = combine_validities_and(lhs_arr.validity(), rhs_arr.validity());
 
-            let iter = lhs_arr
+            let element_iter = lhs_arr
                 .values_iter()
                 .zip(rhs_arr.values_iter())
                 .map(|(lhs_val, rhs_val)| op(lhs_val, rhs_val));
-            collect_array(iter, validity)
+
+            let array = K::array_from_values_iter(element_iter);
+            array.with_validity_typed(validity)
         });
     ChunkedArray::from_chunk_iter(lhs.name(), iter)
 }
