@@ -195,7 +195,6 @@ pub(super) fn date_offset(s: &[Series]) -> PolarsResult<Series> {
                 },
                 _ => false,
             };
-            // println!("preserve sortednes")
             out.cast(&DataType::Datetime(*tu, tz.clone()))
         },
         dt => polars_bail!(
