@@ -59,7 +59,7 @@ lazy = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
 # more fast paths, slower compilation
-performant = ["polars-arrow/performant"]
+performant = ["polars-arrow/performant", "reinterpret"]
 
 # extra utilities for Utf8Chunked
 strings = ["regex", "polars-arrow/strings", "arrow/compute_substring", "polars-error/regex"]
@@ -77,7 +77,7 @@ sort_multiple = []
 rows = []
 
 # operations
-is_in = []
+is_in = ["reinterpret"]
 zip_with = []
 round_series = []
 checked_arithmetic = []

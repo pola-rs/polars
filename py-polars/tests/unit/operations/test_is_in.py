@@ -44,14 +44,9 @@ def test_is_in_empty_list_4639() -> None:
     df = pl.DataFrame({"a": [1, None]})
     empty_list: list[int] = []
 
-    print(df.with_columns(pl.col("a").is_in(empty_list)))
     assert df.with_columns([pl.col("a").is_in(empty_list).alias("a_in_list")]).to_dict(
         False
-    ) == {"a": [1, None], "a_in_list": [False, False]}
-    # df = pl.DataFrame()
-    # assert df.with_columns(
-    #     [pl.lit(None).cast(pl.Int64).is_in(empty_list).alias("in_empty_list")]
-    # ).to_dict(False) == {"in_empty_list": [False]}
+    ) == {"a": [1, None], "a_in_list": [False, None]}
 
 
 def test_is_in_struct() -> None:
@@ -69,6 +64,23 @@ def test_is_in_struct() -> None:
         "struct_elem": [{"a": 1, "b": 11}],
         "struct_list": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 3, "b": 13}]],
     }
+
+
+def test_is_in_null_prop() -> None:
+    assert pl.Series([None], dtype=pl.Float32).is_in(pl.Series([42])).item() is None
+    assert (
+        pl.Series([{"a": None}], dtype=pl.Struct({"a": pl.Float32}))
+        .is_in(pl.Series([{"a": 42}]))
+        .item()
+        is None
+    )
+    assert pl.Series([None], dtype=pl.Boolean).is_in(pl.Series([42])).item() is None
+    assert (
+        pl.Series([{"a": None}], dtype=pl.Struct({"a": pl.Boolean}))
+        .is_in(pl.Series([{"a": 42}]))
+        .item()
+        is None
+    )
 
 
 def test_is_in_df() -> None:

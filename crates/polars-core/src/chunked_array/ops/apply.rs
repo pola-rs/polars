@@ -13,6 +13,45 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::{CustomIterTools, NoNull};
 
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+    Self: HasUnderlyingArray,
+{
+    pub fn apply_values<'a, U, K, F>(&'a self, op: F) -> ChunkedArray<U>
+    where
+        U: PolarsDataType,
+        F: FnMut(<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>) -> K + Copy,
+        K: ArrayFromElementIter,
+        K::ArrayType: StaticallyMatchesPolarsType<U>,
+    {
+        let iter = self.downcast_iter().map(|arr| {
+            let element_iter = arr.values_iter().map(op);
+            let array = K::array_from_values_iter(element_iter);
+            array.with_validity_typed(arr.validity().cloned())
+        });
+
+        ChunkedArray::from_chunk_iter(self.name(), iter)
+    }
+    pub fn apply2<'a, U, K, F>(&'a self, op: F) -> ChunkedArray<U>
+    where
+        U: PolarsDataType,
+        F: FnMut(
+                Option<<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
+            ) -> Option<K>
+            + Copy,
+        K: ArrayFromElementIter,
+        K::ArrayType: StaticallyMatchesPolarsType<U>,
+    {
+        let iter = self.downcast_iter().map(|arr| {
+            let element_iter = arr.iter().map(op);
+            K::array_from_iter(element_iter)
+        });
+
+        ChunkedArray::from_chunk_iter(self.name(), iter)
+    }
+}
+
 pub(super) fn collect_array<T: NativeType, I: TrustedLen<Item = T>>(
     iter: I,
     validity: Option<Bitmap>,

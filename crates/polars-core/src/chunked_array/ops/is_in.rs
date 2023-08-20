@@ -3,42 +3,29 @@ use std::hash::Hash;
 use crate::prelude::*;
 use crate::utils::{try_get_supertype, CustomIterTools};
 
-unsafe fn is_in_helper<T, P>(ca: &ChunkedArray<T>, other: &Series) -> PolarsResult<BooleanChunked>
+fn is_in_helper<'a, T>(ca: &'a ChunkedArray<T>, other: &Series) -> PolarsResult<BooleanChunked>
 where
-    T: PolarsNumericType,
-    P: Eq + Hash + Copy,
+    T: PolarsDataType,
+    ChunkedArray<T>: HasUnderlyingArray,
+    <<ChunkedArray<T> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>: Hash + Eq + Copy,
 {
     let mut set = PlHashSet::with_capacity(other.len());
 
     let other = ca.unpack_series_matching_type(other)?;
     other.downcast_iter().for_each(|iter| {
-        iter.into_iter().for_each(|opt_val| {
-            // Safety
-            // bit sizes are/ should be equal
-            let ptr = &opt_val.copied() as *const Option<T::Native> as *const Option<P>;
-            let opt_val = *ptr;
-            set.insert(opt_val);
+        iter.iter().for_each(|opt_val| {
+            if let Some(v) = opt_val {
+                set.insert(v);
+            }
         })
     });
-
-    let name = ca.name();
-    let mut ca: BooleanChunked = ca
-        .into_iter()
-        .map(|opt_val| {
-            // Safety
-            // bit sizes are/ should be equal
-            let ptr = &opt_val as *const Option<T::Native> as *const Option<P>;
-            let opt_val = *ptr;
-            set.contains(&opt_val)
-        })
-        .collect_trusted();
-    ca.rename(name);
-    Ok(ca)
+    Ok(ca.apply_values(|val| set.contains(&val)))
 }
 
 impl<T> IsIn for ChunkedArray<T>
 where
-    T: PolarsNumericType,
+    T: PolarsIntegerType,
+    T::Native: Hash + Eq,
 {
     fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         // We check implicitly cast to supertype here
@@ -88,24 +75,7 @@ where
                     let right = other.cast(&st)?;
                     return left.is_in(&right);
                 }
-                // now that the types are equal, we coerce every 32 bit array to u32
-                // and every 64 bit array to u64 (including floats)
-                // this allows hashing them and greatly reduces the number of code paths.
-                match self.dtype() {
-                    DataType::UInt64 | DataType::Int64 | DataType::Float64 => unsafe {
-                        is_in_helper::<T, u64>(self, other)
-                    },
-                    DataType::UInt32 | DataType::Int32 | DataType::Float32 => unsafe {
-                        is_in_helper::<T, u32>(self, other)
-                    },
-                    DataType::UInt8 | DataType::Int8 => unsafe {
-                        is_in_helper::<T, u8>(self, other)
-                    },
-                    DataType::UInt16 | DataType::Int16 => unsafe {
-                        is_in_helper::<T, u16>(self, other)
-                    },
-                    dt => polars_bail!(opq = is_in, dt),
-                }
+                is_in_helper(self, other)
             }
         }
         .map(|mut ca| {
@@ -114,6 +84,26 @@ where
         })
     }
 }
+
+impl IsIn for Float32Chunked {
+    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
+        let other = other.cast(&DataType::Float32)?;
+        let other = other.f32().unwrap();
+        let other = other.reinterpret_unsigned();
+        let ca = self.reinterpret_unsigned();
+        ca.is_in(&other)
+    }
+}
+impl IsIn for Float64Chunked {
+    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
+        let other = other.cast(&DataType::Float64)?;
+        let other = other.f64().unwrap();
+        let other = other.reinterpret_unsigned();
+        let ca = self.reinterpret_unsigned();
+        ca.is_in(&other)
+    }
+}
+
 impl IsIn for Utf8Chunked {
     fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         match other.dtype() {
@@ -209,20 +199,7 @@ impl IsIn for BinaryChunked {
                 Ok(ca)
             }
             DataType::Binary => {
-                let mut set = PlHashSet::with_capacity(other.len());
-
-                let other = other.binary()?;
-                other.downcast_iter().for_each(|iter| {
-                    iter.into_iter().for_each(|opt_val| {
-                        set.insert(opt_val);
-                    })
-                });
-                let mut ca: BooleanChunked = self
-                    .into_iter()
-                    .map(|opt_val| set.contains(&opt_val))
-                    .collect_trusted();
-                ca.rename(self.name());
-                Ok(ca)
+                is_in_helper(self, other)
             }
             _ => polars_bail!(opq = is_in, self.dtype(), other.dtype()),
         }
@@ -363,11 +340,11 @@ impl IsIn for StructChunked {
                 }
 
                 let mut anyvalues = Vec::with_capacity(other.len() * other.fields().len());
-                // Safety:
+                // SAFETY:
                 // the iterator is unsafe as the lifetime is tied to the iterator
                 // so we copy to an owned buffer first
-                other.into_iter().for_each(|val| {
-                    anyvalues.extend_from_slice(val);
+                other.into_iter().for_each(|vals| {
+                    anyvalues.extend_from_slice(vals);
                 });
 
                 // then we fill the set
@@ -382,7 +359,14 @@ impl IsIn for StructChunked {
                 // and then we check for membership
                 let mut ca: BooleanChunked = self_ca
                     .into_iter()
-                    .map(|vals| set.contains(&vals))
+                    .map(|vals| {
+                        // If all rows are null we see the struct row as missing.
+                        if !vals.iter().all(|val| matches!(val, AnyValue::Null)) {
+                            Some(set.contains(&vals))
+                        } else {
+                            None
+                        }
+                    })
                     .collect();
                 ca.rename(self.name());
                 Ok(ca)

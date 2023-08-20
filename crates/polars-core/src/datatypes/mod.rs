@@ -12,6 +12,7 @@ mod aliases;
 mod any_value;
 mod dtype;
 mod field;
+mod from_values;
 mod static_array;
 mod time_unit;
 
@@ -31,6 +32,7 @@ use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 pub use dtype::*;
 pub use field::*;
+pub use from_values::ArrayFromElementIter;
 use num_traits::{Bounded, FromPrimitive, Num, NumCast, Zero};
 use polars_arrow::data_types::IsFloat;
 #[cfg(feature = "serde")]
