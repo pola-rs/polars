@@ -1061,39 +1061,47 @@ def apply(
     --------
     >>> df = pl.DataFrame(
     ...     {
-    ...         "a": [7, 2, 3, 4],
-    ...         "b": [2, 5, 6, 7],
+    ...         "group": [1, 1, 2],
+    ...         "a": [1, 3, 3],
+    ...         "b": [5, 6, 7],
     ...     }
     ... )
     >>> df
-    shape: (4, 2)
-    ┌─────┬─────┐
-    │ a   ┆ b   │
-    │ --- ┆ --- │
-    │ i64 ┆ i64 │
-    ╞═════╪═════╡
-    │ 7   ┆ 2   │
-    │ 2   ┆ 5   │
-    │ 3   ┆ 6   │
-    │ 4   ┆ 7   │
-    └─────┴─────┘
+    shape: (3, 3)
+    ┌───────┬─────┬─────┐
+    │ group ┆ a   ┆ b   │
+    │ ---   ┆ --- ┆ --- │
+    │ i64   ┆ i64 ┆ i64 │
+    ╞═══════╪═════╪═════╡
+    │ 1     ┆ 1   ┆ 5   │
+    │ 1     ┆ 3   ┆ 6   │
+    │ 2     ┆ 3   ┆ 7   │
+    └───────┴─────┴─────┘
+    >>> (
+    ...     df.groupby("group").agg(
+    ...         pl.apply(
+    ...             exprs=["a", "b"],
+    ...             function=lambda list_of_series: list_of_series[0]
+    ...             / list_of_series[0].sum()
+    ...             + list_of_series[1],
+    ...         ).alias("my_custom_aggregation")
+    ...     )
+    ... ).sort("group")
+    shape: (2, 2)
+    ┌───────┬───────────────────────┐
+    │ group ┆ my_custom_aggregation │
+    │ ---   ┆ ---                   │
+    │ i64   ┆ list[f64]             │
+    ╞═══════╪═══════════════════════╡
+    │ 1     ┆ [5.25, 6.75]          │
+    │ 2     ┆ [8.0]                 │
+    └───────┴───────────────────────┘
 
-    Calculate product of ``a``.
+    The output for group `1` can be understood as follows:
 
-    >>> df.with_columns(  # doctest: +SKIP
-    ...     pl.col("a").apply(lambda x: x * x).alias("product_a")
-    ... )
-    shape: (4, 3)
-    ┌─────┬─────┬───────────┐
-    │ a   ┆ b   ┆ product_a │
-    │ --- ┆ --- ┆ ---       │
-    │ i64 ┆ i64 ┆ i64       │
-    ╞═════╪═════╪═══════════╡
-    │ 7   ┆ 2   ┆ 49        │
-    │ 2   ┆ 5   ┆ 4         │
-    │ 3   ┆ 6   ┆ 9         │
-    │ 4   ┆ 7   ┆ 16        │
-    └─────┴─────┴───────────┘
+    - group `1` contains series `'a': [1, 3]` and `'b': [4, 5]`
+    - applying the function to those lists of Series, one gets the output
+      `[1 / 4 + 5, 3 / 4 + 6]`, i.e. `[5.25, 6.75]`
     """
     exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(
