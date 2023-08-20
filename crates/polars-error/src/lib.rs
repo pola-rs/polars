@@ -140,6 +140,11 @@ macro_rules! polars_err {
             op = concat!("`", stringify!($op), "`"), got = $arg, expected = $expected
         )
     };
+    (un_impl = $op:ident) => {
+        $crate::polars_err!(
+            InvalidOperation: "{} operation is not implemented.", concat!("`", stringify!($op), "`")
+        )
+    };
     (op = $op:expr, $arg:expr) => {
         $crate::polars_err!(
             InvalidOperation: "{} operation not supported for dtype `{}`", $op, $arg

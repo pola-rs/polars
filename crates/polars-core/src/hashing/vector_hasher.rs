@@ -25,7 +25,7 @@ pub trait VecHash {
     ///
     /// This currently only works with the AHash RandomState hasher builder.
     fn vec_hash(&self, _random_state: RandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
-        unimplemented!()
+        polars_bail!(un_impl = vec_hash);
     }
 
     fn vec_hash_combine(
@@ -33,7 +33,7 @@ pub trait VecHash {
         _random_state: RandomState,
         _hashes: &mut [u64],
     ) -> PolarsResult<()> {
-        unimplemented!()
+        polars_bail!(un_impl = vec_hash_combine);
     }
 }
 
@@ -342,7 +342,7 @@ impl VecHash for ListChunked {
         for arr in self.downcast_iter() {
             _buf.extend(
                 numeric_list_bytes_iter(arr)?.map(|opt_bytes| match opt_bytes {
-                    Some(s) => _random_state.hash_one(s),
+                    Some(s) => xxh3_64_with_seed(s, null_h),
                     None => null_h,
                 }),
             )
