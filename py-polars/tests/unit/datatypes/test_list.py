@@ -439,6 +439,14 @@ def test_list_recursive_categorical_cast() -> None:
     assert s.to_list() == values
 
 
+def test_non_nested_cast_to_list() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    df = df.with_columns([pl.col("a").cast(pl.List(pl.Int64))])
+
+    assert df.to_dict(False) == {"a": [[1], [2], [3]]}
+
+
 def test_list_new_from_index_logical() -> None:
     s = (
         pl.select(pl.struct(pl.Series("a", [date(2001, 1, 1)])).implode())

@@ -54,7 +54,7 @@ xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 [workspace.dependencies.arrow]
 package = "arrow2"
 git = "https://github.com/jorgecarleitao/arrow2"
-rev = "2b3e2a9e83725a557d78b90cd39298c5bef0ca4a"
+rev = "3d7d9acdda34f36d904e362de411792714794331"
 # branch = ""
 # version = "0.17.4"
 default-features = false
