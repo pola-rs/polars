@@ -4,14 +4,7 @@ import glob
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import (
-    Any,
-    BinaryIO,
-    ContextManager,
-    Iterator,
-    TextIO,
-    overload,
-)
+from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
 
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError

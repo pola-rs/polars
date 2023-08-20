@@ -3,12 +3,7 @@ from typing import Any
 from polars.dependencies import _HYPOTHESIS_AVAILABLE
 
 if _HYPOTHESIS_AVAILABLE:
-    from polars.testing.parametric.primitives import (
-        column,
-        columns,
-        dataframes,
-        series,
-    )
+    from polars.testing.parametric.primitives import column, columns, dataframes, series
     from polars.testing.parametric.profiles import load_profile, set_profile
     from polars.testing.parametric.strategies import (
         all_strategies,

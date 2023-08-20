@@ -153,6 +153,9 @@ ignore = [
 [tool.ruff.pycodestyle]
 max-doc-length = 88
 
+[tool.ruff.isort]
+split-on-trailing-comma = false
+
 [tool.ruff.flake8-tidy-imports]
 ban-relative-imports = "all"
 

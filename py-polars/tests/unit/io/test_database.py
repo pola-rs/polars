@@ -12,11 +12,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import (
-        DbReadEngine,
-        DbWriteEngine,
-        DbWriteMode,
-    )
+    from polars.type_aliases import DbReadEngine, DbWriteEngine, DbWriteMode
 
 
 @pytest.fixture()
