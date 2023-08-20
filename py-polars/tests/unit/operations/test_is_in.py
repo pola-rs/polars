@@ -66,6 +66,23 @@ def test_is_in_struct() -> None:
     }
 
 
+def test_is_in_null_prop() -> None:
+    assert pl.Series([None], dtype=pl.Float32).is_in(pl.Series([42])).item() is None
+    assert (
+        pl.Series([{"a": None}], dtype=pl.Struct({"a": pl.Float32}))
+        .is_in(pl.Series([{"a": 42}]))
+        .item()
+        is None
+    )
+    assert pl.Series([None], dtype=pl.Boolean).is_in(pl.Series([42])).item() is None
+    assert (
+        pl.Series([{"a": None}], dtype=pl.Struct({"a": pl.Boolean}))
+        .is_in(pl.Series([{"a": 42}]))
+        .item()
+        is None
+    )
+
+
 def test_is_in_df() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     assert df.select(pl.col("a").is_in([1, 2]))["a"].to_list() == [
