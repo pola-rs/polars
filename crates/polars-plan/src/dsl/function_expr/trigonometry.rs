@@ -129,7 +129,7 @@ where
         Ok(Some(x.apply_values(|v| y_value.atan2(v)).into_series()))
     } else {
         Ok(Some(
-            polars_core::prelude::arity::binary_mut(y, x, atan2_kernel).into_series(),
+            polars_core::prelude::arity::binary(y, x, atan2_kernel).into_series(),
         ))
     }
 }

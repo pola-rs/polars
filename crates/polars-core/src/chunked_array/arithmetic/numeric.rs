@@ -12,7 +12,7 @@ where
     F: Fn(T::Native, T::Native) -> T::Native,
 {
     let mut ca = match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => arity::binary_mut(lhs, rhs, |lhs, rhs| kernel(lhs, rhs)),
+        (a, b) if a == b => arity::binary(lhs, rhs, |lhs, rhs| kernel(lhs, rhs)),
         // broadcast right path
         (_, 1) => {
             let opt_rhs = rhs.get(0);

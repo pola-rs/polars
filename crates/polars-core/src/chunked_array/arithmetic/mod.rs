@@ -148,7 +148,7 @@ impl Add for &BinaryChunked {
             };
         }
 
-        arity::binary_mut(self, rhs, concat_binary)
+        arity::binary(self, rhs, concat_binary)
     }
 }
 
@@ -197,7 +197,7 @@ impl Add for &BooleanChunked {
         if self.len() == 1 {
             return rhs.add(self);
         }
-        arity::binary_mut(self, rhs, add_boolean)
+        arity::binary(self, rhs, add_boolean)
     }
 }
 

@@ -78,7 +78,7 @@ fn floor_div_ca<T: PolarsNumericType>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) 
             ChunkedArray::full_null(a.name(), a.len())
         };
     }
-    arity::binary_mut(a, b, floor_div_array)
+    arity::binary(a, b, floor_div_array)
 }
 
 pub fn floor_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {

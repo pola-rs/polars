@@ -68,7 +68,7 @@ where
         ))
     } else {
         Ok(Some(
-            polars_core::chunked_array::ops::arity::binary_mut(base, exponent, pow_kernel)
+            polars_core::chunked_array::ops::arity::binary(base, exponent, pow_kernel)
                 .into_series(),
         ))
     }

@@ -282,7 +282,7 @@ fn array_set_operation(
 pub fn list_set_operation(a: &ListChunked, b: &ListChunked, set_op: SetOperation) -> ListChunked {
     // we use the unsafe variant because we want to keep the nested logical types type.
     unsafe {
-        arity::binary_mut_unchecked_same_type(
+        arity::binary_unchecked_same_type(
             a,
             b,
             |a, b| array_set_operation(a, b, set_op).boxed(),
