@@ -1,4 +1,5 @@
 from __future__ import annotations
+import warnings
 
 import datetime as dt
 import json
@@ -216,3 +217,15 @@ def test_expr_exact_warning_message() -> None:
         df.select(pl.col("a").apply(lambda x: x + 1))
 
     assert len(warnings) == 1
+
+def test_groupby_apply_no_warning_10632() -> None:
+    df = pl.DataFrame(
+    {
+        "group": [1, 1, 2],
+        "a": [1, 2, 3],
+        "b": [4, 5, 6],
+    }
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        df.groupby('group').agg(pl.col('a').apply(lambda x: str(x)))

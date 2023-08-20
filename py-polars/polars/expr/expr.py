@@ -3813,32 +3813,22 @@ class Expr:
 
         """
         # input x: Series of type list containing the group values
-        from polars.utils.udfs import warn_on_inefficient_apply
-
-        root_names = self.meta.root_names()
-        if len(root_names) > 0:
-            warn_on_inefficient_apply(function, columns=root_names, apply_target="expr")
-
         if pass_name:
 
             def wrap_f(x: Series) -> Series:  # pragma: no cover
                 def inner(s: Series) -> Series:  # pragma: no cover
                     return function(s.alias(x.name))
 
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", PolarsInefficientApplyWarning)
-                    return x.apply(
-                        inner, return_dtype=return_dtype, skip_nulls=skip_nulls
-                    )
+                return x.apply(
+                    inner, return_dtype=return_dtype, skip_nulls=skip_nulls
+                )
 
         else:
 
             def wrap_f(x: Series) -> Series:  # pragma: no cover
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", PolarsInefficientApplyWarning)
-                    return x.apply(
-                        function, return_dtype=return_dtype, skip_nulls=skip_nulls
-                    )
+                return x.apply(
+                    function, return_dtype=return_dtype, skip_nulls=skip_nulls
+                )
 
         if strategy == "thread_local":
             return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)

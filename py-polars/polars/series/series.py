@@ -1,4 +1,6 @@
 from __future__ import annotations
+import inspect
+from pathlib import Path
 
 import contextlib
 import math
@@ -4819,7 +4821,21 @@ class Series:
         else:
             pl_return_dtype = py_type_to_dtype(return_dtype)
 
-        warn_on_inefficient_apply(function, columns=[self.name], apply_target="series")
+        frame = getattr(inspect.currentframe(), 'f_back')
+        try:
+            if Path(inspect.getfile(frame)) == Path(__file__).parent.parent / 'expr/expr.py':
+                if not isinstance(self.dtype, List):
+                    # Don't emit warning if self.dtype is List, as the `apply` might have been
+                    # applied in a groupby context, in which case the warning  might not be
+                    # correct, see https://github.com/pola-rs/polars/issues/10632
+                    # TODO: find a better way to do this, so that we can emit the warning for
+                    # List dtype too.
+                    warn_on_inefficient_apply(function, columns=[self.name], apply_target="expr")
+            else:
+                warn_on_inefficient_apply(function, columns=[self.name], apply_target="series")
+        finally:
+            del frame
+
         return self._from_pyseries(
             self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
         )
