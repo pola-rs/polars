@@ -8827,11 +8827,11 @@ class Expr:
             except OverflowError as exc:
                 if is_keys:
                     raise ValueError(
-                        f"remapping keys for map_dict could not be converted to {dtype!r}: {str(exc)}"
+                        f"remapping keys for map_dict could not be converted to {dtype!r}: {exc!s}"
                     ) from exc
                 else:
                     raise ValueError(
-                        f"choose a more suitable output dtype for map_dict as remapping value could not be converted to {dtype!r}: {str(exc)}"
+                        f"choose a more suitable output dtype for map_dict as remapping value could not be converted to {dtype!r}: {exc!s}"
                     ) from exc
 
             if is_keys:

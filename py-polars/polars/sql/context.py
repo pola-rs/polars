@@ -1,13 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import (
-    TYPE_CHECKING,
-    Collection,
-    Generic,
-    Mapping,
-    overload,
-)
+from typing import TYPE_CHECKING, Collection, Generic, Mapping, overload
 
 from polars.dataframe import DataFrame
 from polars.lazyframe import LazyFrame

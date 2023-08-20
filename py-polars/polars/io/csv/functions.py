@@ -1,15 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    BinaryIO,
-    Callable,
-    Mapping,
-    Sequence,
-    TextIO,
-)
+from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, Sequence, TextIO
 
 import polars._reexport as pl
 from polars.datatypes import N_INFER_DEFAULT, Utf8
