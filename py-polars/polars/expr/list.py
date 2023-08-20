@@ -60,7 +60,7 @@ class ExprListNameSpace:
         │ true  │
         │ false │
         │ false │
-        │ false │
+        │ true  │
         │ true  │
         │ null  │
         └───────┘

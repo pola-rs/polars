@@ -23,7 +23,7 @@ where
         let n_values = n_values as f64;
 
         let mean = self.mean()?;
-        let squared = self.apply_cast_numeric::<_, Float64Type>(|value| {
+        let squared: Float64Chunked = ChunkedArray::apply_values_generic(self, |value| {
             let tmp = value.to_f64().unwrap() - mean;
             tmp * tmp
         });
@@ -50,7 +50,7 @@ impl ChunkVar<f32> for Float32Chunked {
         let n_values = n_values as f32;
 
         let mean = self.mean()? as f32;
-        let squared = self.apply(|value| {
+        let squared = self.apply_values(|value| {
             let tmp = value - mean;
             tmp * tmp
         });
@@ -74,7 +74,7 @@ impl ChunkVar<f64> for Float64Chunked {
         let n_values = n_values as f64;
 
         let mean = self.mean()?;
-        let squared = self.apply(|value| {
+        let squared = self.apply_values(|value| {
             let tmp = value - mean;
             tmp * tmp
         });

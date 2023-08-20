@@ -7,14 +7,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, overload
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.datatypes import (
-    N_INFER_DEFAULT,
-    Categorical,
-    List,
-    Object,
-    Struct,
-    Utf8,
-)
+from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, Struct, Utf8
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError

@@ -101,6 +101,7 @@ dtype-u16 = []
 avro = ["polars/avro"]
 parquet = ["polars/parquet"]
 ipc = ["polars/ipc"]
+ipc_streaming = ["polars/ipc_streaming"]
 is_in = ["polars/is_in"]
 json = ["polars/serde", "serde_json", "polars/json"]
 trigonometry = ["polars/trigonometry"]
@@ -145,6 +146,7 @@ all = [
   "json",
   "parquet",
   "ipc",
+  "ipc_streaming",
   "avro",
   "is_in",
   "repeat_by",

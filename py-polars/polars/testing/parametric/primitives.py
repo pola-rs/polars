@@ -8,12 +8,7 @@ from textwrap import dedent
 from typing import TYPE_CHECKING, Any, Collection, Sequence, overload
 
 from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
-from hypothesis.strategies import (
-    booleans,
-    composite,
-    lists,
-    sampled_from,
-)
+from hypothesis.strategies import booleans, composite, lists, sampled_from
 from hypothesis.strategies._internal.utils import defines_strategy
 
 from polars.dataframe import DataFrame

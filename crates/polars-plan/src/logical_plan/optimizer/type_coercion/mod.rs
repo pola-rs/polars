@@ -369,7 +369,11 @@ impl OptimizationRule for TypeCoercionRule {
                     // if right is another type, we cast it to left
                     // we do not use super-type as an `is_in` operation should not
                     // cast the whole column implicitly.
-                    (a, b) if a != b => {
+                    (a, b)
+                        if a != b
+                        // For integer/ float comparison we let them use supertypes.
+                        && !(a.is_integer() && b.is_float()) =>
+                    {
                         AExpr::Cast {
                             expr: other_node,
                             data_type: type_left,

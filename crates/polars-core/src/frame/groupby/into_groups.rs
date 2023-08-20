@@ -172,30 +172,30 @@ where
                 let ca = self.bit_repr_small();
                 num_groups_proxy(&ca, multithreaded, sorted)
             },
-            #[cfg(feature = "performant")]
+            #[cfg(all(feature = "performant", feature = "dtype-i8", feature = "dtype-u8"))]
             DataType::Int8 => {
                 // convince the compiler that we are this type.
                 let ca: &Int8Chunked =
                     unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int8Type>) };
-                let ca = ca.reinterpret_unsigned();
-                num_groups_proxy(&ca, multithreaded, sorted)
+                let s = ca.reinterpret_unsigned();
+                return s.group_tuples(multithreaded, sorted);
             },
-            #[cfg(feature = "performant")]
+            #[cfg(all(feature = "performant", feature = "dtype-i8", feature = "dtype-u8"))]
             DataType::UInt8 => {
                 // convince the compiler that we are this type.
                 let ca: &UInt8Chunked =
                     unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt8Type>) };
                 num_groups_proxy(ca, multithreaded, sorted)
             },
-            #[cfg(feature = "performant")]
+            #[cfg(all(feature = "performant", feature = "dtype-i16", feature = "dtype-u16"))]
             DataType::Int16 => {
                 // convince the compiler that we are this type.
                 let ca: &Int16Chunked =
                     unsafe { &*(self as *const ChunkedArray<T> as *const ChunkedArray<Int16Type>) };
-                let ca = ca.reinterpret_unsigned();
-                num_groups_proxy(&ca, multithreaded, sorted)
+                let s = ca.reinterpret_unsigned();
+                return s.group_tuples(multithreaded, sorted);
             },
-            #[cfg(feature = "performant")]
+            #[cfg(all(feature = "performant", feature = "dtype-i16", feature = "dtype-u16"))]
             DataType::UInt16 => {
                 // convince the compiler that we are this type.
                 let ca: &UInt16Chunked = unsafe {

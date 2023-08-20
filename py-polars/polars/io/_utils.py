@@ -4,6 +4,7 @@ import glob
 from contextlib import contextmanager
 from io import BytesIO, StringIO, TextIOWrapper
 from pathlib import Path
+
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -15,6 +16,7 @@ from typing import (
     cast,
     overload,
 )
+
 
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
@@ -36,7 +38,7 @@ def _is_glob_pattern(file: str) -> bool:
 
 def _is_local_file(file: str) -> bool:
     try:
-        next(glob.iglob(file, recursive=True))
+        next(glob.iglob(file, recursive=True))  # noqa: PTH207
         return True
     except StopIteration:
         return False

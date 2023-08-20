@@ -5,7 +5,7 @@ from polars.io.csv import read_csv, read_csv_batched, scan_csv
 from polars.io.database import read_database
 from polars.io.delta import read_delta, scan_delta
 from polars.io.excel import read_excel
-from polars.io.ipc import read_ipc, read_ipc_schema, scan_ipc
+from polars.io.ipc import read_ipc, read_ipc_schema, read_ipc_stream, scan_ipc
 from polars.io.json import read_json
 from polars.io.ndjson import read_ndjson, scan_ndjson
 from polars.io.parquet import read_parquet, read_parquet_schema, scan_parquet
@@ -19,6 +19,7 @@ __all__ = [
     "read_delta",
     "read_excel",
     "read_ipc",
+    "read_ipc_stream",
     "read_ipc_schema",
     "read_json",
     "read_ndjson",

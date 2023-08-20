@@ -139,7 +139,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
-                self.0.vec_hash(random_state, buf);
+                self.0.vec_hash(random_state, buf)?;
                 Ok(())
             }
 
@@ -148,7 +148,7 @@ macro_rules! impl_dyn_series {
                 build_hasher: RandomState,
                 hashes: &mut [u64],
             ) -> PolarsResult<()> {
-                self.0.vec_hash_combine(build_hasher, hashes);
+                self.0.vec_hash_combine(build_hasher, hashes)?;
                 Ok(())
             }
 
