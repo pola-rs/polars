@@ -1,8 +1,13 @@
 use std::borrow::Cow;
 use std::error::Error;
 
-use arrow::array::{BinaryArray, BooleanArray, MutablePrimitiveArray, PrimitiveArray, Utf8Array};
+use arrow::array::{
+    BinaryArray, BooleanArray, MutableBinaryArray, MutableBinaryValuesArray, MutablePrimitiveArray,
+    MutableUtf8Array, MutableUtf8ValuesArray, PrimitiveArray, Utf8Array,
+};
+use arrow::bitmap::Bitmap;
 use polars_arrow::array::utf8::{BinaryFromIter, Utf8FromIter};
+use polars_arrow::prelude::FromData;
 use polars_arrow::trusted_len::TrustedLen;
 
 use crate::prelude::StaticArray;
@@ -18,6 +23,10 @@ where
     fn array_from_values_iter<I: TrustedLen<Item = Self>>(iter: I) -> Self::ArrayType;
 
     fn try_array_from_iter<E: Error, I: TrustedLen<Item = Result<Option<Self>, E>>>(
+        iter: I,
+    ) -> Result<Self::ArrayType, E>;
+
+    fn try_array_from_values_iter<E: Error, I: TrustedLen<Item = Result<Self, E>>>(
         iter: I,
     ) -> Result<Self::ArrayType, E>;
 }
@@ -40,6 +49,13 @@ impl ArrayFromElementIter for bool {
     ) -> Result<Self::ArrayType, E> {
         // SAFETY: guarded by `TrustedLen` trait
         unsafe { BooleanArray::try_from_trusted_len_iter_unchecked(iter) }
+    }
+    fn try_array_from_values_iter<E: Error, I: TrustedLen<Item = Result<Self, E>>>(
+        iter: I,
+    ) -> Result<Self::ArrayType, E> {
+        // SAFETY: guarded by `TrustedLen` trait
+        let values = unsafe { Bitmap::try_from_trusted_len_iter_unchecked(iter) }?;
+        Ok(BooleanArray::from_data_default(values, None))
     }
 }
 
@@ -64,6 +80,12 @@ macro_rules! impl_primitive {
                 unsafe {
                     Ok(MutablePrimitiveArray::try_from_trusted_len_iter_unchecked(iter)?.into())
                 }
+            }
+            fn try_array_from_values_iter<E: Error, I: TrustedLen<Item = Result<Self, E>>>(
+                iter: I,
+            ) -> Result<Self::ArrayType, E> {
+                let values: Vec<_> = iter.collect::<Result<Vec<_>, _>>()?;
+                Ok(PrimitiveArray::from_vec(values))
             }
         }
     };
@@ -95,8 +117,19 @@ impl ArrayFromElementIter for &str {
     fn try_array_from_iter<E: Error, I: TrustedLen<Item = Result<Option<Self>, E>>>(
         iter: I,
     ) -> Result<Self::ArrayType, E> {
-        // SAFETY: guarded by `TrustedLen` trait
-        unsafe { Utf8Array::try_from_trusted_len_iter_unchecked(iter) }
+        let len = iter.size_hint().0;
+        let mut mutable = MutableUtf8Array::<i64>::with_capacities(len, len * 24);
+        mutable.extend_fallible(iter)?;
+        Ok(mutable.into())
+    }
+
+    fn try_array_from_values_iter<E: Error, I: TrustedLen<Item = Result<Self, E>>>(
+        iter: I,
+    ) -> Result<Self::ArrayType, E> {
+        let len = iter.size_hint().0;
+        let mut mutable = MutableUtf8ValuesArray::<i64>::with_capacities(len, len * 24);
+        mutable.extend_fallible(iter)?;
+        Ok(mutable.into())
     }
 }
 
@@ -116,8 +149,19 @@ impl ArrayFromElementIter for Cow<'_, str> {
     fn try_array_from_iter<E: Error, I: TrustedLen<Item = Result<Option<Self>, E>>>(
         iter: I,
     ) -> Result<Self::ArrayType, E> {
-        // SAFETY: guarded by `TrustedLen` trait
-        unsafe { Utf8Array::try_from_trusted_len_iter_unchecked(iter) }
+        let len = iter.size_hint().0;
+        let mut mutable = MutableUtf8Array::<i64>::with_capacities(len, len * 24);
+        mutable.extend_fallible(iter)?;
+        Ok(mutable.into())
+    }
+
+    fn try_array_from_values_iter<E: Error, I: TrustedLen<Item = Result<Self, E>>>(
+        iter: I,
+    ) -> Result<Self::ArrayType, E> {
+        let len = iter.size_hint().0;
+        let mut mutable = MutableUtf8ValuesArray::<i64>::with_capacities(len, len * 24);
+        mutable.extend_fallible(iter)?;
+        Ok(mutable.into())
     }
 }
 
@@ -137,7 +181,18 @@ impl ArrayFromElementIter for Cow<'_, [u8]> {
     fn try_array_from_iter<E: Error, I: TrustedLen<Item = Result<Option<Self>, E>>>(
         iter: I,
     ) -> Result<Self::ArrayType, E> {
-        // SAFETY: guarded by `TrustedLen` trait
-        unsafe { BinaryArray::try_from_trusted_len_iter_unchecked(iter) }
+        let len = iter.size_hint().0;
+        let mut mutable = MutableBinaryArray::<i64>::with_capacities(len, len * 24);
+        mutable.extend_fallible(iter)?;
+        Ok(mutable.into())
+    }
+
+    fn try_array_from_values_iter<E: Error, I: TrustedLen<Item = Result<Self, E>>>(
+        iter: I,
+    ) -> Result<Self::ArrayType, E> {
+        let len = iter.size_hint().0;
+        let mut mutable = MutableBinaryValuesArray::<i64>::with_capacities(len, len * 24);
+        mutable.extend_fallible(iter)?;
+        Ok(mutable.into())
     }
 }

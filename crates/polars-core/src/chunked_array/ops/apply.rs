@@ -35,6 +35,24 @@ where
         ChunkedArray::from_chunk_iter(self.name(), iter)
     }
 
+    pub fn try_apply_values_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
+    where
+        U: PolarsDataType,
+        F: FnMut(<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>) -> Result<K, E>
+            + Copy,
+        K: ArrayFromElementIter,
+        K::ArrayType: StaticallyMatchesPolarsType<U>,
+        E: Error,
+    {
+        let iter = self.downcast_iter().map(|arr| {
+            let element_iter = arr.values_iter().map(op);
+            let array = K::try_array_from_values_iter(element_iter)?;
+            Ok(array.with_validity_typed(arr.validity().cloned()))
+        });
+
+        ChunkedArray::try_from_chunk_iter(self.name(), iter)
+    }
+
     pub fn try_apply_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
     where
         U: PolarsDataType,
@@ -389,7 +407,7 @@ impl<'a> ChunkApply<'a, &'a str> for Utf8Chunked {
     where
         F: Fn(&'a str) -> PolarsResult<Cow<'a, str>> + Copy,
     {
-        try_apply!(self, f)
+        self.try_apply_values_generic(f)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
@@ -432,7 +450,7 @@ impl<'a> ChunkApply<'a, &'a [u8]> for BinaryChunked {
     where
         F: Fn(&'a [u8]) -> PolarsResult<Cow<'a, [u8]>> + Copy,
     {
-        try_apply!(self, f)
+        self.try_apply_values_generic(f)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
