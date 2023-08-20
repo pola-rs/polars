@@ -165,13 +165,13 @@ def read_excel(
     try:
         import xlsx2csv
     except ImportError:
-        raise ImportError(
-            "xlsx2csv is not installed. Please run `pip install xlsx2csv`"
+        raise ModuleNotFoundError(
+            "xlsx2csv is not installed\n\nPlease run: `pip install xlsx2csv`"
         ) from None
 
     if sheet_id is not None and sheet_name is not None:
         raise ValueError(
-            f"Cannot specify both `sheet_name` ({sheet_name!r}) and `sheet_id` ({sheet_id!r})"
+            f"cannot specify both `sheet_name` ({sheet_name!r}) and `sheet_id` ({sheet_id!r})"
         )
 
     if isinstance(source, (str, Path)):

@@ -168,7 +168,9 @@ def _prepare_file_arg(
 
         # todo! add azure/ gcp/ ?
         if file.startswith("s3://"):
-            raise ImportError("fsspec needs to be installed to read files from s3")
+            raise ModuleNotFoundError(
+                "fsspec needs to be installed to read files from S3"
+            )
 
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _FSSPEC_AVAILABLE:

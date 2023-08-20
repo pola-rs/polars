@@ -136,7 +136,7 @@ def concat(
 
     if how == "align":
         if not isinstance(elems[0], (pl.DataFrame, pl.LazyFrame)):
-            raise RuntimeError(
+            raise TypeError(
                 f"'align' strategy is not supported for {type(elems[0]).__name__!r}"
             )
 
@@ -194,14 +194,12 @@ def concat(
         if how == "vertical":
             out = wrap_s(plr.concat_series(elems))
         else:
-            raise ValueError("'Series' only allows {'vertical'} concat strategy")
+            raise ValueError("Series only allows {'vertical'} concat strategy")
 
     elif isinstance(first, pl.Expr):
         return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], rechunk))
     else:
-        raise ValueError(
-            f"did not expect type: {type(first).__name__!r} in 'pl.concat'"
-        )
+        raise TypeError(f"did not expect type: {type(first).__name__!r} in `concat`")
 
     if rechunk:
         return out.rechunk()

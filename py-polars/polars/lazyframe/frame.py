@@ -720,9 +720,9 @@ class LazyFrame:
         return self._ldf.width()
 
     def __bool__(self) -> NoReturn:
-        raise ValueError(
+        raise TypeError(
             "the truth value of a LazyFrame is ambiguous"
-            "\n\nLazyFrames cannot be used in boolean context with and/or/not operators"
+            "\n\nLazyFrames cannot be used in boolean context with and/or/not operators."
         )
 
     def _comparison_error(self, operator: str) -> NoReturn:
@@ -760,8 +760,8 @@ class LazyFrame:
     def __getitem__(self, item: int | range | slice) -> LazyFrame:
         if not isinstance(item, slice):
             raise TypeError(
-                "'LazyFrame' object is not subscriptable (aside from slicing). Use"
-                " 'select()' or 'filter()' instead"
+                "'LazyFrame' object is not subscriptable (aside from slicing)"
+                "\n\nUse `select()` or `filter()` instead."
             )
         return LazyPolarsSlice(self).apply(item)
 
@@ -1117,7 +1117,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 import matplotlib.image as mpimg
                 import matplotlib.pyplot as plt
             except ImportError:
-                raise ImportError(
+                raise ModuleNotFoundError(
                     "matplotlib should be installed to show graph"
                 ) from None
             plt.figure(figsize=figsize)
@@ -1577,7 +1577,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 plt.show()
 
             except ImportError:
-                raise ImportError(
+                raise ModuleNotFoundError(
                     "matplotlib should be installed to show profiling plot"
                 ) from None
 
@@ -3178,7 +3178,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         if not isinstance(other, LazyFrame):
             raise TypeError(
-                f"expected 'other' join table to be a LazyFrame, not a {type(other).__name__!r}"
+                f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             )
 
         if isinstance(on, (str, pl.Expr)):
@@ -3358,7 +3358,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         if not isinstance(other, LazyFrame):
             raise TypeError(
-                f"expected 'other' join table to be a LazyFrame, not a {type(other).__name__!r}"
+                f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             )
 
         if how == "cross":

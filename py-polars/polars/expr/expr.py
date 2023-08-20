@@ -132,8 +132,8 @@ class Expr:
         return self._pyexpr.to_str()
 
     def __bool__(self) -> NoReturn:
-        raise ValueError(
-            "since Expr are lazy, the truthiness of an Expr is ambiguous."
+        raise TypeError(
+            "the truth value of an Expr is ambiguous"
             "\n\nHint: use '&' or '|' to logically combine Expr, not 'and'/'or', and"
             " use 'x.is_in([y,z])' instead of 'x in [y,z]' to check membership"
         )
@@ -246,7 +246,8 @@ class Expr:
         if num_expr > 1:
             if num_expr < len(inputs):
                 raise ValueError(
-                    "Numpy ufunc with more than one expression can only be used if all non-expression inputs are provided as keyword arguments only"
+                    "NumPy ufunc with more than one expression can only be used"
+                    " if all non-expression inputs are provided as keyword arguments only"
                 )
 
             exprs = parse_as_list_of_expressions(inputs)
@@ -893,8 +894,8 @@ class Expr:
                 exclude_dtypes.append(item)
             else:
                 raise TypeError(
-                    "invalid input for `exclude`. Expected one or more `str`,"
-                    f"`DataType`, or selector; found {type(item).__name__!r} instead"
+                    "invalid input for `exclude`"
+                    f"\n\nExpected one or more `str`, `DataType`, or selector; found {type(item).__name__!r} instead."
                 )
 
         if exclude_cols and exclude_dtypes:
@@ -2483,13 +2484,12 @@ class Expr:
 
         """
         if value is not None and strategy is not None:
-            raise ValueError("cannot specify both 'value' and 'strategy'")
+            raise ValueError("cannot specify both `value` and `strategy`")
         elif value is None and strategy is None:
-            raise ValueError("must specify either a fill 'value' or 'strategy'")
+            raise ValueError("must specify either a fill `value` or `strategy`")
         elif strategy not in ("forward", "backward") and limit is not None:
             raise ValueError(
-                "can only specify 'limit' when strategy is set to "
-                "'backward' or 'forward'"
+                "can only specify `limit` when strategy is set to 'backward' or 'forward'"
             )
 
         if value is not None:
@@ -4944,7 +4944,7 @@ class Expr:
             return (self >= lower_bound) & (self < upper_bound)
         else:
             raise ValueError(
-                "closed must be one of {'left', 'right', 'both', 'none'},"
+                "`closed` must be one of {'left', 'right', 'both', 'none'},"
                 f" got {closed!r}"
             )
 
@@ -8260,7 +8260,7 @@ class Expr:
 
         """
         if isinstance(value, Expr):
-            raise TypeError(f"'value' must be a supported literal; found {value!r}")
+            raise TypeError(f"`value` must be a supported literal; found {value!r}")
 
         return self._from_pyexpr(self._pyexpr.extend_constant(value, n))
 
@@ -8805,7 +8805,7 @@ class Expr:
                             )
                             if dtype != s.dtype:
                                 raise ValueError(
-                                    f"remapping values for map_dict could not be converted to {dtype!r}: found {s.dtype!r}"
+                                    f"remapping values for `map_dict` could not be converted to {dtype!r}: found {s.dtype!r}"
                                 )
                 else:
                     # dtype was set, which should always be the case when:
@@ -8821,13 +8821,13 @@ class Expr:
                     )
                     if dtype != s.dtype:
                         raise ValueError(
-                            f"remapping {'keys' if is_keys else 'values'} for map_dict could not be converted to {dtype!r}: found {s.dtype!r}"
+                            f"remapping {'keys' if is_keys else 'values'} for `map_dict` could not be converted to {dtype!r}: found {s.dtype!r}"
                         )
 
             except OverflowError as exc:
                 if is_keys:
                     raise ValueError(
-                        f"remapping keys for map_dict could not be converted to {dtype!r}: {exc!s}"
+                        f"remapping keys for `map_dict` could not be converted to {dtype!r}: {exc!s}"
                     ) from exc
                 else:
                     raise ValueError(
@@ -8842,7 +8842,7 @@ class Expr:
                     pass
                 else:
                     raise ValueError(
-                        f"remapping keys for map_dict could not be converted to {dtype!r} without losing values in the conversion"
+                        f"remapping keys for `map_dict` could not be converted to {dtype!r} without losing values in the conversion"
                     )
             else:
                 # values = remapping.values()
@@ -8852,7 +8852,7 @@ class Expr:
                     pass
                 else:
                     raise ValueError(
-                        f"remapping values for map_dict could not be converted to {dtype!r} without losing values in the conversion"
+                        f"remapping values for `map_dict` could not be converted to {dtype!r} without losing values in the conversion"
                     )
 
             return s
@@ -9178,7 +9178,7 @@ def _prepare_rolling_window_args(
 ) -> tuple[str, int]:
     if isinstance(window_size, int):
         if window_size < 1:
-            raise ValueError("'window_size' should be positive")
+            raise ValueError("`window_size` must be positive")
 
         if min_periods is None:
             min_periods = window_size

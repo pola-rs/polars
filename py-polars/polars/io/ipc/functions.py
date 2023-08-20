@@ -84,7 +84,7 @@ def read_ipc(
     with _prepare_file_arg(source, use_pyarrow=use_pyarrow, **storage_options) as data:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
-                raise ImportError(
+                raise ModuleNotFoundError(
                     "'pyarrow' is required when using"
                     " 'read_ipc(..., use_pyarrow=True)'"
                 )
@@ -160,7 +160,7 @@ def read_ipc_stream(
     with _prepare_file_arg(source, use_pyarrow=use_pyarrow, **storage_options) as data:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
-                raise ImportError(
+                raise ModuleNotFoundError(
                     "'pyarrow' is required when using"
                     " 'read_ipc_stream(..., use_pyarrow=True)'"
                 )
