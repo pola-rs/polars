@@ -4,7 +4,6 @@ import contextlib
 import math
 import operator
 import os
-import warnings
 from datetime import timedelta
 from functools import partial, reduce
 from typing import (
@@ -35,7 +34,6 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.exceptions import PolarsInefficientApplyWarning
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
@@ -3819,9 +3817,7 @@ class Expr:
                 def inner(s: Series) -> Series:  # pragma: no cover
                     return function(s.alias(x.name))
 
-                return x.apply(
-                    inner, return_dtype=return_dtype, skip_nulls=skip_nulls
-                )
+                return x.apply(inner, return_dtype=return_dtype, skip_nulls=skip_nulls)
 
         else:
 
