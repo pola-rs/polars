@@ -3515,7 +3515,8 @@ class DataFrame:
         to which they can be cast. This affects the following data types:
 
         - Unsigned integers
-        - :class:`Datetime` types with millisecond or nanosecond precision
+        - :class:`Datetime` types with millisecond or nanosecond precision,
+            regardless of timezone
         - :class:`Utf8`, :class:`Binary`, and :class:`List` ('large' types)
 
         Polars columns are always nullable. To write data to a delta table with
