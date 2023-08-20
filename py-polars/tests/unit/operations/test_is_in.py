@@ -83,6 +83,10 @@ def test_is_in_null_prop() -> None:
     )
 
 
+def test_is_in_9070() -> None:
+    assert not pl.Series([1]).is_in(pl.Series([1.99])).item()
+
+
 def test_is_in_df() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     assert df.select(pl.col("a").is_in([1, 2]))["a"].to_list() == [
