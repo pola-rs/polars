@@ -731,7 +731,7 @@ def test_offset_by_expressions() -> None:
     # test add days from column (containing nulls)
     expected["NEW_DATE_COL"] = [
         datetime(2023, 11, 16, 0, 0),
-        datetime(2023, 12, 1, 0, 0),
+        None,
         datetime(2024, 1, 26, 0, 0),
     ]
     assert (
