@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from polars.utils._wrap import wrap_df
 
 if TYPE_CHECKING:
     from queue import Queue
 
-    from polars import DataFrame
     from polars.polars import PyDataFrame
 
 
@@ -16,13 +15,13 @@ T = TypeVar("T")
 
 class _AsyncDataFrameResult(Generic[T]):
     queue: Queue[Exception | T]
-    _result: DataFrame | Exception | None
+    _result: Exception | T | None
 
     def __init__(self, queue: Queue[Exception | T]) -> None:
         self.queue = queue
         self._result = None
 
-    def get(self, **kwargs) -> T:
+    def get(self, **kwargs: Any) -> T:
         if self._result is not None:
             if isinstance(self._result, Exception):
                 raise self._result
@@ -41,4 +40,4 @@ class _AsyncDataFrameResult(Generic[T]):
     def _callback_all(self, obj: list[PyDataFrame] | Exception) -> None:
         if not isinstance(obj, Exception):
             obj = [wrap_df(pydf) for pydf in obj]
-        self.queue.put_nowait(obj)
+        self.queue.put_nowait(obj)  # type: ignore[arg-type]

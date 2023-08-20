@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-from queue import Queue
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
 import polars._reexport as pl
@@ -29,6 +28,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
+    from queue import Queue
     from typing import Collection, Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -1799,7 +1799,7 @@ def collect_all_async(
     For that purpose use [janus](https://github.com/aio-libs/janus) library.
 
     Results are put in queue exactly once using `put_nowait`.
-    Note if error ocurred then Exception will be put in the queue instead of result
+    Note if error occurred then Exception will be put in the queue instead of result
     which is then raised by returned wrapper `get` method.
 
     See Also

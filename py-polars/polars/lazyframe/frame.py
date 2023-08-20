@@ -5,7 +5,6 @@ import os
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
-from queue import Queue
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -77,6 +76,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from io import IOBase
+    from queue import Queue
     from typing import Literal
 
     import pyarrow as pa
@@ -1710,7 +1710,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         For that purpose use [janus](https://github.com/aio-libs/janus) library.
 
         Results are put in queue exactly once using `put_nowait`.
-        Note if error ocurred then Exception will be put in the queue instead of result
+        Note if error occurred then Exception will be put in the queue instead of result
         which is then raised by returned wrapper `get` method.
 
         See Also
@@ -1733,8 +1733,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> a = lf.groupby("a", maintain_order=True).agg(pl.all().sum()).collect_async(
-        ...     queue.Queue()
+        >>> a = (
+        ...     lf.groupby("a", maintain_order=True)
+        ...     .agg(pl.all().sum())
+        ...     .collect_async(queue.Queue())
         ... )
         >>> a.get()
         shape: (3, 3)
