@@ -72,7 +72,7 @@ impl BitOr for &BooleanChunked {
             _ => {},
         }
 
-        arity::binary_mut(self, rhs, compute::boolean_kleene::or)
+        arity::binary(self, rhs, compute::boolean_kleene::or)
     }
 }
 
@@ -117,7 +117,7 @@ impl BitXor for &BooleanChunked {
             _ => {},
         }
 
-        arity::binary_mut(self, rhs, |l_arr, r_arr| {
+        arity::binary(self, rhs, |l_arr, r_arr| {
             let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
             let values = l_arr.values() ^ r_arr.values();
             BooleanArray::from_data_default(values, validity)
@@ -158,7 +158,7 @@ impl BitAnd for &BooleanChunked {
             _ => {},
         }
 
-        arity::binary_mut(self, rhs, compute::boolean_kleene::and)
+        arity::binary(self, rhs, compute::boolean_kleene::and)
     }
 }
 

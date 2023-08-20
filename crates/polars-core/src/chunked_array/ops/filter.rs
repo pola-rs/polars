@@ -30,7 +30,7 @@ where
         }
         check_filter_len!(self, filter);
         Ok(unsafe {
-            arity::binary_mut_unchecked_same_type(
+            arity::binary_unchecked_same_type(
                 self,
                 filter,
                 |left, mask| filter_fn(left, mask).unwrap(),
@@ -52,7 +52,7 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
         }
         check_filter_len!(self, filter);
         Ok(unsafe {
-            arity::binary_mut_unchecked_same_type(
+            arity::binary_unchecked_same_type(
                 self,
                 filter,
                 |left, mask| filter_fn(left, mask).unwrap(),
@@ -81,7 +81,7 @@ impl ChunkFilter<BinaryType> for BinaryChunked {
         }
         check_filter_len!(self, filter);
         Ok(unsafe {
-            arity::binary_mut_unchecked_same_type(
+            arity::binary_unchecked_same_type(
                 self,
                 filter,
                 |left, mask| filter_fn(left, mask).unwrap(),
@@ -105,7 +105,7 @@ impl ChunkFilter<ListType> for ListChunked {
             };
         }
         Ok(unsafe {
-            arity::binary_mut_unchecked_same_type(
+            arity::binary_unchecked_same_type(
                 self,
                 filter,
                 |left, mask| filter_fn(left, mask).unwrap(),
@@ -130,7 +130,7 @@ impl ChunkFilter<FixedSizeListType> for ArrayChunked {
             };
         }
         Ok(unsafe {
-            arity::binary_mut_unchecked_same_type(
+            arity::binary_unchecked_same_type(
                 self,
                 filter,
                 |left, mask| filter_fn(left, mask).unwrap(),

@@ -31,7 +31,7 @@ where
             ));
         }
 
-        Ok(arity::binary_mut(self, by, |arr, by| {
+        Ok(arity::binary(self, by, |arr, by| {
             let iter = arr.into_iter().zip(by).map(|(opt_v, opt_by)| {
                 opt_by.map(|by| std::iter::repeat(opt_v.copied()).take(*by as usize))
             });
@@ -56,7 +56,7 @@ impl RepeatBy for BooleanChunked {
             ));
         }
 
-        Ok(arity::binary_mut(self, by, |arr, by| {
+        Ok(arity::binary(self, by, |arr, by| {
             let iter = arr.into_iter().zip(by).map(|(opt_v, opt_by)| {
                 opt_by.map(|by| std::iter::repeat(opt_v).take(*by as usize))
             });
@@ -80,7 +80,7 @@ impl RepeatBy for Utf8Chunked {
             ));
         }
 
-        Ok(arity::binary_mut(self, by, |arr, by| {
+        Ok(arity::binary(self, by, |arr, by| {
             let iter = arr.into_iter().zip(by).map(|(opt_v, opt_by)| {
                 opt_by.map(|by| std::iter::repeat(opt_v).take(*by as usize))
             });
@@ -104,7 +104,7 @@ impl RepeatBy for BinaryChunked {
             ));
         }
 
-        Ok(arity::binary_mut(self, by, |arr, by| {
+        Ok(arity::binary(self, by, |arr, by| {
             let iter = arr.into_iter().zip(by).map(|(opt_v, opt_by)| {
                 opt_by.map(|by| std::iter::repeat(opt_v).take(*by as usize))
             });
