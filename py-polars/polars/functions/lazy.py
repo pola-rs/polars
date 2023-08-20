@@ -1798,13 +1798,21 @@ def collect_all_async(
     can not be used, since it's not thread safe!
     For that purpose use [janus](https://github.com/aio-libs/janus) library.
 
+    Notes
+    -----
     Results are put in queue exactly once using `put_nowait`.
-    Note if error occurred then Exception will be put in the queue instead of result
+    If error occurred then Exception will be put in the queue instead of result
     which is then raised by returned wrapper `get` method.
+
+    Warnings
+    --------
+    This functionality is experimental and may change without it being considered a
+    breaking change.
 
     See Also
     --------
     polars.collect_all : Collect multiple LazyFrames at the same time.
+    LazyFrame.collect_async: To collect single frame.
 
     Returns
     -------

@@ -17,6 +17,8 @@ class _AsyncDataFrameResult(Generic[T]):
     queue: Queue[Exception | T]
     _result: Exception | T | None
 
+    __slots__ = ("queue", "_result")
+
     def __init__(self, queue: Queue[Exception | T]) -> None:
         self.queue = queue
         self._result = None
