@@ -50,6 +50,7 @@ from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.groupby import LazyGroupBy
 from polars.selectors import _expand_selectors, expand_selector
 from polars.slice import LazyPolarsSlice
+from polars.utils._async import _AsyncDataFrameResult
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -75,6 +76,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from io import IOBase
+    from queue import Queue
     from typing import Literal
 
     import pyarrow as pa
@@ -1671,6 +1673,115 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             streaming,
         )
         return wrap_df(ldf.collect())
+
+    def collect_async(
+        self,
+        queue: Queue[DataFrame | Exception],
+        *,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        streaming: bool = False,
+    ) -> _AsyncDataFrameResult[DataFrame]:
+        """
+        Collect dataframe asynchronously in thread pool.
+
+        Collects into a DataFrame, like :func:`collect`
+        but instead of returning dataframe directly its collected inside thread pool
+        and gets put into `queue` with `put_nowait` method,
+        while this method returns almost instantly.
+
+        May be useful if you use gevent or asyncio and want to release control to other
+        greenlets/tasks while LazyFrames are being collected.
+        You must use correct queue in that case.
+        Given `queue` must be thread safe!
+
+        For gevent use
+        [`gevent.queue.Queue`](https://www.gevent.org/api/gevent.queue.html#gevent.queue.Queue).
+
+        For asyncio
+        [`asyncio.queues.Queue`](https://docs.python.org/3/library/asyncio-queue.html#queue)
+        can not be used, since it's not thread safe!
+        For that purpose use [janus](https://github.com/aio-libs/janus) library.
+
+        Notes
+        -----
+        Results are put in queue exactly once using `put_nowait`.
+        If error occurred then Exception will be put in the queue instead of result
+        which is then raised by returned wrapper `get` method.
+
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
+
+        See Also
+        --------
+        polars.collect_all : Collect multiple LazyFrames at the same time.
+        polars.collect_all_async: Collect multiple LazyFrames at the same time lazily.
+
+        Returns
+        -------
+        Wrapper that has `get` method and `queue` attribute with given queue.
+        `get` accepts kwargs that are passed down to `queue.get`.
+
+        Examples
+        --------
+        >>> import queue
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "b", "c"],
+        ...         "b": [1, 2, 3, 4, 5, 6],
+        ...         "c": [6, 5, 4, 3, 2, 1],
+        ...     }
+        ... )
+        >>> a = (
+        ...     lf.groupby("a", maintain_order=True)
+        ...     .agg(pl.all().sum())
+        ...     .collect_async(queue.Queue())
+        ... )
+        >>> a.get()
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 4   ┆ 10  │
+        │ b   ┆ 11  ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
+
+        """
+        if no_optimization:
+            predicate_pushdown = False
+            projection_pushdown = False
+            slice_pushdown = False
+            comm_subplan_elim = False
+            comm_subexpr_elim = False
+
+        if streaming:
+            comm_subplan_elim = False
+
+        ldf = self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            comm_subplan_elim,
+            comm_subexpr_elim,
+            streaming,
+        )
+
+        result = _AsyncDataFrameResult(queue)
+        ldf.collect_with_callback(result._callback)
+        return result
 
     def sink_parquet(
         self,

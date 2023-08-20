@@ -444,6 +444,32 @@ impl PyLazyFrame {
         Ok(df.into())
     }
 
+    #[pyo3(signature = (lambda,))]
+    fn collect_with_callback(&self, py: Python, lambda: PyObject) {
+        py.allow_threads(|| {
+            let ldf = self.ldf.clone();
+
+            polars_core::POOL.spawn(move || {
+                let result = ldf
+                    .collect()
+                    .map(PyDataFrame::new)
+                    .map_err(PyPolarsErr::from);
+
+                Python::with_gil(|py| match result {
+                    Ok(df) => {
+                        lambda.call1(py, (df,)).map_err(|err| err.restore(py)).ok();
+                    },
+                    Err(err) => {
+                        lambda
+                            .call1(py, (PyErr::from(err).to_object(py),))
+                            .map_err(|err| err.restore(py))
+                            .ok();
+                    },
+                });
+            });
+        });
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "parquet"))]
     #[pyo3(signature = (path, compression, compression_level, statistics, row_group_size, data_pagesize_limit, maintain_order))]
