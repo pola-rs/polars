@@ -151,10 +151,7 @@ pub(super) fn date_offset(s: &[Series]) -> PolarsResult<Series> {
             let out = apply_offsets_to_datetime(datetime, offsets, Duration::add_ms, None)?;
             // sortedness is only guaranteed to be preserved if a constant offset is being added to every datetime
             preserve_sortedness = match offsets.len() {
-                1 => match offsets.get(0) {
-                    Some(_) => true,
-                    None => false,
-                },
+                1 => offsets.get(0).is_some(),
                 _ => false,
             };
             out.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
@@ -176,7 +173,7 @@ pub(super) fn date_offset(s: &[Series]) -> PolarsResult<Series> {
                     datetime,
                     offsets,
                     offset_fn,
-                    Some(&tz.parse::<Tz>().expect("Time zone already validated")),
+                    tz.parse::<Tz>().ok().as_ref(),
                 )?,
                 _ => apply_offsets_to_datetime(datetime, offsets, offset_fn, None)?,
             };
