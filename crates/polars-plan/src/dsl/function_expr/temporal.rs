@@ -130,9 +130,9 @@ fn apply_offsets_to_datetime(
             };
             datetime.0.try_apply(|v| offset_fn(&offset, v, time_zone))
         },
-        _ => try_binary_elementwise_values(datetime, offsets, |lhs: i64, rhs: &str| {
-            let offset = Duration::parse(rhs);
-            offset_fn(&offset, lhs, time_zone)
+        _ => try_binary_elementwise_values(datetime, offsets, |timestamp: i64, offset: &str| {
+            let offset = Duration::parse(offset);
+            offset_fn(&offset, timestamp, time_zone)
         }),
     }
 }

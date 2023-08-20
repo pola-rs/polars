@@ -485,6 +485,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             DateOffset => {
                 map_as_slice!(temporal::date_offset)
             },
+
             #[cfg(feature = "trigonometry")]
             Trigonometry(trig_function) => {
                 map!(trigonometry::apply_trigonometric_function, trig_function)
