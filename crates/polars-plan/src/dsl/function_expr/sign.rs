@@ -27,7 +27,7 @@ where
     T::Native: num::Float,
     ChunkedArray<T>: IntoSeries,
 {
-    ca.apply(signum_improved).into_series().cast(&Int64)
+    ca.apply_values(signum_improved).into_series().cast(&Int64)
 }
 
 // Wrapper for the signum function that handles +/-0.0 inputs differently

@@ -296,27 +296,6 @@ pub trait ChunkCast {
     unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series>;
 }
 
-pub trait ChunkApplyCast<'a>: HasUnderlyingArray {
-    /// Apply a closure elementwise and cast to a Numeric [`ChunkedArray`]. This is fastest when the null check branching is more expensive
-    /// than the closure application.
-    ///
-    /// Null values remain null.
-    fn apply_cast_numeric<F, R>(&'a self, f: F) -> ChunkedArray<R>
-    where
-        F: Fn(<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>) -> R::Native
-            + Copy,
-        R: PolarsNumericType;
-
-    /// Apply a closure on optional values and cast to Numeric ChunkedArray without null values.
-    fn branch_apply_cast_numeric_no_null<F, R>(&'a self, f: F) -> ChunkedArray<R>
-    where
-        F: Fn(
-                Option<<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
-            ) -> R::Native
-            + Copy,
-        R: PolarsNumericType;
-}
-
 /// Fastest way to do elementwise operations on a [`ChunkedArray<T>`] when the operation is cheaper than
 /// branching due to null checking.
 pub trait ChunkApply<'a, T> {
@@ -332,11 +311,11 @@ pub trait ChunkApply<'a, T> {
     /// ```
     /// use polars_core::prelude::*;
     /// fn double(ca: &UInt32Chunked) -> UInt32Chunked {
-    ///     ca.apply(|v| v * 2)
+    ///     ca.apply_values(|v| v * 2)
     /// }
     /// ```
     #[must_use]
-    fn apply<F>(&'a self, f: F) -> Self
+    fn apply_values<F>(&'a self, f: F) -> Self
     where
         F: Fn(T) -> Self::FuncRet + Copy;
 
@@ -347,21 +326,9 @@ pub trait ChunkApply<'a, T> {
 
     /// Apply a closure elementwise including null values.
     #[must_use]
-    fn apply_on_opt<F>(&'a self, f: F) -> Self
+    fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<T>) -> Option<Self::FuncRet> + Copy;
-
-    /// Apply a closure elementwise. The closure gets the index of the element as first argument.
-    #[must_use]
-    fn apply_with_idx<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, T)) -> Self::FuncRet + Copy;
-
-    /// Apply a closure elementwise. The closure gets the index of the element as first argument.
-    #[must_use]
-    fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, Option<T>)) -> Option<Self::FuncRet> + Copy;
 
     /// Apply a closure elementwise and write results to a mutable slice.
     fn apply_to_slice<F, S>(&'a self, f: F, slice: &mut [S])

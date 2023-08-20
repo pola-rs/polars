@@ -189,7 +189,7 @@ impl Add for &BooleanChunked {
         if rhs.len() == 1 {
             let rhs = rhs.get(0);
             return match rhs {
-                Some(rhs) => self.apply_cast_numeric(|v| v as IdxSize + rhs as IdxSize),
+                Some(rhs) => self.apply_values_generic(|v| v as IdxSize + rhs as IdxSize),
                 None => IdxCa::full_null(self.name(), self.len()),
             };
         }

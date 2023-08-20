@@ -234,50 +234,50 @@ pub mod checked {
                 UInt8 => s
                     .u8()
                     .unwrap()
-                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_u8().unwrap())))
+                    .apply(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_u8().unwrap())))
                     .into_series(),
                 #[cfg(feature = "dtype-i8")]
                 Int8 => s
                     .i8()
                     .unwrap()
-                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_i8().unwrap())))
+                    .apply(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_i8().unwrap())))
                     .into_series(),
                 #[cfg(feature = "dtype-i16")]
                 Int16 => s
                     .i16()
                     .unwrap()
-                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_i16().unwrap())))
+                    .apply(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_i16().unwrap())))
                     .into_series(),
                 #[cfg(feature = "dtype-u16")]
                 UInt16 => s
                     .u16()
                     .unwrap()
-                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_u16().unwrap())))
+                    .apply(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_u16().unwrap())))
                     .into_series(),
                 UInt32 => s
                     .u32()
                     .unwrap()
-                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_u32().unwrap())))
+                    .apply(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_u32().unwrap())))
                     .into_series(),
                 Int32 => s
                     .i32()
                     .unwrap()
-                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_i32().unwrap())))
+                    .apply(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_i32().unwrap())))
                     .into_series(),
                 UInt64 => s
                     .u64()
                     .unwrap()
-                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_u64().unwrap())))
+                    .apply(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_u64().unwrap())))
                     .into_series(),
                 Int64 => s
                     .i64()
                     .unwrap()
-                    .apply_on_opt(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_i64().unwrap())))
+                    .apply(|opt_v| opt_v.and_then(|v| v.checked_div(rhs.to_i64().unwrap())))
                     .into_series(),
                 Float32 => s
                     .f32()
                     .unwrap()
-                    .apply_on_opt(|opt_v| {
+                    .apply(|opt_v| {
                         opt_v.and_then(|v| {
                             let res = rhs.to_f32().unwrap();
                             if res.is_zero() {
@@ -291,7 +291,7 @@ pub mod checked {
                 Float64 => s
                     .f64()
                     .unwrap()
-                    .apply_on_opt(|opt_v| {
+                    .apply(|opt_v| {
                         opt_v.and_then(|v| {
                             let res = rhs.to_f64().unwrap();
                             if res.is_zero() {
@@ -698,21 +698,21 @@ where
     #[must_use]
     pub fn lhs_sub<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        self.apply(|v| lhs - v)
+        self.apply_values(|v| lhs - v)
     }
 
     /// Apply lhs / self
     #[must_use]
     pub fn lhs_div<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        self.apply(|v| lhs / v)
+        self.apply_values(|v| lhs / v)
     }
 
     /// Apply lhs % self
     #[must_use]
     pub fn lhs_rem<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
-        self.apply(|v| lhs % v)
+        self.apply_values(|v| lhs % v)
     }
 }
 

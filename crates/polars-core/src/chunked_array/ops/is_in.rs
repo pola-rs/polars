@@ -19,7 +19,7 @@ where
             }
         })
     });
-    Ok(ca.apply_values(|val| set.contains(&val)))
+    Ok(ca.apply_values_generic(|val| set.contains(&val)))
 }
 
 impl<T> IsIn for ChunkedArray<T>
@@ -256,7 +256,7 @@ impl IsIn for BooleanChunked {
                 } else {
                     !(other.sum().unwrap() as usize + nc) == other.len()
                 };
-                Ok(self.apply(|v| if v { has_true } else { has_false }))
+                Ok(self.apply_values(|v| if v { has_true } else { has_false }))
             }
             _ => polars_bail!(opq = is_in, self.dtype(), other.dtype()),
         }

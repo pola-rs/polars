@@ -57,9 +57,9 @@ fn floor_div_ca<T: PolarsNumericType>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) 
         let name = a.name();
         return if let Some(a) = a.get(0) {
             let mut out = if b.null_count() == 0 {
-                b.apply(|b| floor_div_element(a, b))
+                b.apply_values(|b| floor_div_element(a, b))
             } else {
-                b.apply_on_opt(|b| b.map(|b| floor_div_element(a, b)))
+                b.apply(|b| b.map(|b| floor_div_element(a, b)))
             };
             out.rename(name);
             out
@@ -70,9 +70,9 @@ fn floor_div_ca<T: PolarsNumericType>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) 
     if b.len() == 1 {
         return if let Some(b) = b.get(0) {
             if a.null_count() == 0 {
-                a.apply(|a| floor_div_element(a, b))
+                a.apply_values(|a| floor_div_element(a, b))
             } else {
-                a.apply_on_opt(|a| a.map(|a| floor_div_element(a, b)))
+                a.apply(|a| a.map(|a| floor_div_element(a, b)))
             }
         } else {
             ChunkedArray::full_null(a.name(), a.len())

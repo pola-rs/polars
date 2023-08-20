@@ -148,7 +148,7 @@
 //! let ca = UInt32Chunked::new("foo", &[1, 2, 3]);
 //!
 //! // 1 / ca
-//! let divide_one_by_ca = ca.apply(|rhs| 1 / rhs);
+//! let divide_one_by_ca = ca.apply_values(|rhs| 1 / rhs);
 //! ```
 //!
 //! ## Comparisons
@@ -245,11 +245,11 @@
 //!
 //! // apply a closure over all values
 //! let s = Series::new("foo", &[Some(1), Some(2), None]);
-//! s.i32()?.apply(|value| value * 20);
+//! s.i32()?.apply_values(|value| value * 20);
 //!
 //! // count string lengths
 //! let s = Series::new("foo", &["foo", "bar", "foobar"]);
-//! s.utf8()?.apply_cast_numeric::<_, UInt64Type>(|str_val| str_val.len() as u64);
+//! s.utf8()?.apply_values_generic(|str_val| str_val.len() as u64);
 //!
 //! # Ok(())
 //! # }
