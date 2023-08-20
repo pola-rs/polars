@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -10,7 +10,7 @@ import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ComputeError, InvalidOperationError
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -693,86 +693,48 @@ def test_offset_by_truncate_sorted_flag() -> None:
 def test_offset_by_expressions() -> None:
     df = pl.DataFrame(
         {
-            "DATE_COL": [
-                datetime(2023, 11, 1),
-                datetime(2023, 12, 1),
-                datetime(2024, 1, 1),
+            "a": [
+                datetime(2020, 10, 25),
+                datetime(2020, 1, 2),
+                None,
+                datetime(2020, 1, 4),
+                None,
             ],
-            "ADD_DAYS": [15, None, 25],
-            "ADD_MONTHS": [2, 4, 6],
+            "b": ["1d", "10d", "3d", None, None],
         }
     )
-
-    expected = {
-        "DATE_COL": [
-            datetime(2023, 11, 1, 0, 0),
-            datetime(2023, 12, 1, 0, 0),
-            datetime(2024, 1, 1, 0, 0),
-        ],
-        "ADD_DAYS": [15, None, 25],
-        "ADD_MONTHS": [2, 4, 6],
+    result = df.select(
+        c=pl.col("a").dt.offset_by(pl.col("b")),
+        d=pl.col("a").dt.cast_time_unit("ms").dt.offset_by(pl.col("b")),
+        e=pl.col("a").dt.replace_time_zone("Europe/London").dt.offset_by(pl.col("b")),
+        f=pl.col("a").dt.date().dt.offset_by(pl.col("b")),
+    )
+    expected = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+shape: (5, 4)
+┌─────────────────────┬─────────────────────┬─────────────────────────────┬────────────┐
+│ c                   ┆ d                   ┆ e                           ┆ f          │
+│ ---                 ┆ ---                 ┆ ---                         ┆ ---        │
+│ datetime[μs]        ┆ datetime[ms]        ┆ datetime[μs, Europe/London] ┆ date       │
+╞═════════════════════╪═════════════════════╪═════════════════════════════╪════════════╡
+│ 2020-10-26 00:00:00 ┆ 2020-10-26 00:00:00 ┆ 2020-10-26 00:00:00 GMT     ┆ 2020-10-26 │
+│ 2020-01-12 00:00:00 ┆ 2020-01-12 00:00:00 ┆ 2020-01-12 00:00:00 GMT     ┆ 2020-01-12 │
+│ null                ┆ null                ┆ null                        ┆ null       │
+│ null                ┆ null                ┆ null                        ┆ null       │
+│ null                ┆ null                ┆ null                        ┆ null       │
+└─────────────────────┴─────────────────────┴─────────────────────────────┴────────────┘
+"""
+        ),
+    )
+    assert_frame_equal(result, expected)
+    assert result.flags == {
+        "c": {"SORTED_ASC": False, "SORTED_DESC": False},
+        "d": {"SORTED_ASC": False, "SORTED_DESC": False},
+        "e": {"SORTED_ASC": False, "SORTED_DESC": False},
+        "f": {"SORTED_ASC": False, "SORTED_DESC": False},
     }
-
-    # test add months from column
-    expected["NEW_DATE_COL"] = [
-        datetime(2024, 1, 1, 0, 0),
-        datetime(2024, 4, 1, 0, 0),
-        datetime(2024, 7, 1, 0, 0),
-    ]
-    assert (
-        df.with_columns(
-            NEW_DATE_COL=pl.col("DATE_COL").dt.offset_by(
-                pl.format("{}mo", "ADD_MONTHS")
-            )
-        ).to_dict(as_series=False)
-        == expected
-    )
-
-    # test add days from column (containing nulls)
-    expected["NEW_DATE_COL"] = [
-        datetime(2023, 11, 16, 0, 0),
-        None,
-        datetime(2024, 1, 26, 0, 0),
-    ]
-    assert (
-        df.with_columns(
-            NEW_DATE_COL=pl.col("DATE_COL").dt.offset_by(pl.format("{}d", "ADD_DAYS"))
-        ).to_dict(as_series=False)
-        == expected
-    )
-
-    # test add from string
-    expected["NEW_DATE_COL"] = [
-        datetime(2023, 11, 21, 0, 10),
-        datetime(2023, 12, 21, 0, 10),
-        datetime(2024, 1, 21, 0, 10),
-    ]
-    assert (
-        df.with_columns(NEW_DATE_COL=pl.col("DATE_COL").dt.offset_by("20d10m")).to_dict(
-            as_series=False
-        )
-        == expected
-    )
-
-    # test sorted flags from single offset
-    df = df.sort("DATE_COL")
-    assert (
-        df.with_columns(NEW_DATE_COL=pl.col("DATE_COL").dt.offset_by("10d"))
-        .get_column("NEW_DATE_COL")
-        .flags["SORTED_ASC"]
-    )
-
-    # test sorted flags from multiple offsets
-    assert (
-        df.with_columns(
-            NEW_DATE_COL=pl.col("DATE_COL").dt.offset_by(
-                pl.format("{}mo", "ADD_MONTHS")
-            )
-        )
-        .get_column("NEW_DATE_COL")
-        .flags["SORTED_ASC"]
-        is False
-    )
 
 
 @pytest.mark.parametrize(
