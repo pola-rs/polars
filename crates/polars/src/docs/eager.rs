@@ -249,7 +249,7 @@
 //!
 //! // count string lengths
 //! let s = Series::new("foo", &["foo", "bar", "foobar"]);
-//! s.utf8()?.apply_cast_numeric::<_, UInt64Type>(|str_val| str_val.len() as u64);
+//! s.utf8()?.apply_values_generic(|str_val| str_val.len() as u64);
 //!
 //! # Ok(())
 //! # }
