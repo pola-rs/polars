@@ -10,7 +10,7 @@ def test_projection_on_semi_join_4789() -> None:
 
     ab = lfa.join(lfb, on="p", how="semi").inspect()
 
-    intermediate_agg = (ab.groupby("a").agg([pl.col("a").alias("seq")])).select(
+    intermediate_agg = (ab.group_by("a").agg([pl.col("a").alias("seq")])).select(
         ["a", "seq"]
     )
 
@@ -25,7 +25,7 @@ def test_melt_projection_pd_block_4997() -> None:
         .with_row_count()
         .lazy()
         .melt(id_vars="row_nr")
-        .groupby("row_nr")
+        .group_by("row_nr")
         .agg(pl.col("variable").alias("result"))
         .collect()
     ).to_dict(False) == {"row_nr": [0], "result": [["col1", "col2"]]}
@@ -49,7 +49,7 @@ def test_groupby_projection_pushdown() -> None:
         in (
             pl.DataFrame({"c0": [], "c1": [], "c2": []})
             .lazy()
-            .groupby("c0")
+            .group_by("c0")
             .agg(
                 [
                     pl.col("c1").sum().alias("sum(c1)"),
@@ -139,7 +139,7 @@ def test_double_projection_union() -> None:
 
     q = pl.concat([q, lf2])
 
-    q = q.groupby("c", maintain_order=True).agg([pl.col("a")])
+    q = q.group_by("c", maintain_order=True).agg([pl.col("a")])
     assert q.collect().to_dict(False) == {
         "c": [1, 2, 3],
         "a": [[1, 2, 5, 7], [3, 4, 6], [8]],
@@ -253,7 +253,7 @@ def test_distinct_projection_pd_7578() -> None:
         }
     )
 
-    q = df.lazy().unique().groupby("bar").agg(pl.count())
+    q = df.lazy().unique().group_by("bar").agg(pl.count())
     assert q.collect().sort("bar").to_dict(False) == {
         "bar": ["a", "b"],
         "count": [3, 2],

@@ -59,7 +59,7 @@ def test_array_in_groupby() -> None:
         ]
     )
 
-    assert next(iter(df.groupby("id", maintain_order=True)))[1]["list"].to_list() == [
+    assert next(iter(df.group_by("id", maintain_order=True)))[1]["list"].to_list() == [
         [1, 2]
     ]
 
@@ -68,8 +68,8 @@ def test_array_in_groupby() -> None:
         schema={"a": pl.Array(inner=pl.Int64, width=2), "g": pl.Int64},
     )
 
-    out0 = df.groupby("g").agg(pl.col("a")).sort("g")
-    out1 = df.set_sorted("g").groupby("g").agg(pl.col("a"))
+    out0 = df.group_by("g").agg(pl.col("a")).sort("g")
+    out1 = df.set_sorted("g").group_by("g").agg(pl.col("a"))
 
     for out in [out0, out1]:
         assert out.schema == {

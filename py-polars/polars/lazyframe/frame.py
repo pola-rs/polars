@@ -47,7 +47,7 @@ from polars.dependencies import dataframe_api_compat, subprocess
 from polars.io._utils import _is_local_file
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
-from polars.lazyframe.groupby import LazyGroupBy
+from polars.lazyframe.group_by import LazyGroupBy
 from polars.selectors import _expand_selectors, expand_selector
 from polars.slice import LazyPolarsSlice
 from polars.utils._async import _AsyncDataFrameResult
@@ -992,7 +992,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort(
         ...     "a"
         ... ).explain()  # doctest: +SKIP
         """
@@ -1071,7 +1071,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort(
         ...     "a"
         ... ).show_graph()  # doctest: +SKIP
 
@@ -1496,7 +1496,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort(
         ...     "a"
         ... ).profile()  # doctest: +SKIP
         (shape: (3, 3)
@@ -1639,7 +1639,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).collect()
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -1741,7 +1741,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> a = (
-        ...     lf.groupby("a", maintain_order=True)
+        ...     lf.group_by("a", maintain_order=True)
         ...     .agg(pl.all().sum())
         ...     .collect_async(queue.Queue())
         ... )
@@ -2020,7 +2020,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).fetch(2)
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).fetch(2)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -2472,7 +2472,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> lf.groupby("a").agg(pl.col("b").sum()).collect()  # doctest: +IGNORE_RESULT
+        >>> lf.group_by("a").agg(pl.col("b").sum()).collect()  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -2487,7 +2487,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Set ``maintain_order=True`` to ensure the order of the groups is consistent with
         the input.
 
-        >>> lf.groupby("a", maintain_order=True).agg(pl.col("c")).collect()
+        >>> lf.group_by("a", maintain_order=True).agg(pl.col("c")).collect()
         shape: (3, 2)
         ┌─────┬───────────┐
         │ a   ┆ c         │
@@ -2501,7 +2501,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Group by multiple columns by passing a list of column names.
 
-        >>> lf.groupby(["a", "b"]).agg(pl.max("c")).collect()  # doctest: +SKIP
+        >>> lf.group_by(["a", "b"]).agg(pl.max("c")).collect()  # doctest: +SKIP
         shape: (4, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -2517,7 +2517,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Or use positional arguments to group by multiple columns in the same way.
         Expressions are also accepted.
 
-        >>> lf.groupby("a", pl.col("b") // 2).agg(
+        >>> lf.group_by("a", pl.col("b") // 2).agg(
         ...     pl.col("c").mean()
         ... ).collect()  # doctest: +SKIP
         shape: (3, 3)
@@ -2644,7 +2644,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     pl.col("dt").str.strptime(pl.Datetime).set_sorted()
         ... )
         >>> out = (
-        ...     df.groupby_rolling(index_column="dt", period="2d")
+        ...     df.group_by_rolling(index_column="dt", period="2d")
         ...     .agg(
         ...         [
         ...             pl.sum("a").alias("sum_a"),
@@ -2815,7 +2815,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         .. code-block:: python
 
             # polars
-            df.groupby_dynamic("ts", every="1d").agg(pl.col("value").sum())
+            df.group_by_dynamic("ts", every="1d").agg(pl.col("value").sum())
 
         is equivalent to
 
@@ -2861,7 +2861,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Group by windows of 1 hour starting at 2021-12-16 00:00:00.
 
-        >>> lf.groupby_dynamic("time", every="1h", closed="right").agg(
+        >>> lf.group_by_dynamic("time", every="1h", closed="right").agg(
         ...     [
         ...         pl.col("time").min().alias("time_min"),
         ...         pl.col("time").max().alias("time_max"),
@@ -2881,7 +2881,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The window boundaries can also be added to the aggregation result
 
-        >>> lf.groupby_dynamic(
+        >>> lf.group_by_dynamic(
         ...     "time", every="1h", include_boundaries=True, closed="right"
         ... ).agg([pl.col("time").count().alias("time_count")]).collect()
         shape: (4, 4)
@@ -2899,7 +2899,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         When closed="left", should not include right end of interval
         [lower_bound, upper_bound)
 
-        >>> lf.groupby_dynamic("time", every="1h", closed="left").agg(
+        >>> lf.group_by_dynamic("time", every="1h", closed="left").agg(
         ...     [
         ...         pl.col("time").count().alias("time_count"),
         ...         pl.col("time").alias("time_agg_list"),
@@ -2919,7 +2919,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         When closed="both" the time values at the window boundaries belong to 2 groups.
 
-        >>> lf.groupby_dynamic("time", every="1h", closed="both").agg(
+        >>> lf.group_by_dynamic("time", every="1h", closed="both").agg(
         ...     pl.col("time").count().alias("time_count")
         ... ).collect()
         shape: (5, 2)
@@ -2964,7 +2964,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2021-12-16 03:00:00 ┆ a      │
         └─────────────────────┴────────┘
         >>> (
-        ...     lf.groupby_dynamic(
+        ...     lf.group_by_dynamic(
         ...         "time",
         ...         every="1h",
         ...         closed="both",
@@ -2995,7 +2995,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "A": ["A", "A", "B", "B", "B", "C"],
         ...     }
         ... )
-        >>> lf.groupby_dynamic(
+        >>> lf.group_by_dynamic(
         ...     "idx",
         ...     every="2i",
         ...     period="3i",

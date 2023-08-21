@@ -5,7 +5,7 @@ def test_profile_columns() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
 
     # profile lazyframe operation/plan
-    lazy = ldf.groupby("a").agg(pl.implode("b"))
+    lazy = ldf.group_by("a").agg(pl.implode("b"))
     profiling_info = lazy.profile()
     # ┌──────────────┬───────┬─────┐
     # │ node         ┆ start ┆ end │

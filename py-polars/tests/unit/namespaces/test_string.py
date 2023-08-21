@@ -316,7 +316,7 @@ def test_auto_explode() -> None:
     )
     pl.col("val").str.concat(delimiter=",")
     grouped = (
-        df.groupby("id")
+        df.group_by("id")
         .agg(pl.col("val").str.concat(delimiter=",").alias("grouped"))
         .get_column("grouped")
     )

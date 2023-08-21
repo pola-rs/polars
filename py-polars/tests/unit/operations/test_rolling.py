@@ -64,7 +64,7 @@ def test_rolling_kernels_and_groupby_rolling(
     )
     out2 = (
         example_df.set_sorted("dt")
-        .groupby_rolling("dt", period=period, closed=closed)
+        .group_by_rolling("dt", period=period, closed=closed)
         .agg(
             [
                 pl.col("values").sum().alias("sum"),
@@ -153,7 +153,7 @@ def test_rolling_negative_offset(
             "value": [1, 2, 3, 4],
         }
     )
-    result = df.groupby_rolling("ts", period="2d", offset=offset, closed=closed).agg(
+    result = df.group_by_rolling("ts", period="2d", offset=offset, closed=closed).agg(
         pl.col("value")
     )
     expected = pl.DataFrame(
@@ -279,7 +279,7 @@ def test_rolling_groupby_extrema() -> None:
     ).with_columns(pl.col("col1").reverse().alias("row_nr"))
 
     assert (
-        df.groupby_rolling(
+        df.group_by_rolling(
             index_column="row_nr",
             period="3i",
         )
@@ -318,7 +318,7 @@ def test_rolling_groupby_extrema() -> None:
     ).with_columns(pl.col("col1").alias("row_nr"))
 
     assert (
-        df.groupby_rolling(
+        df.group_by_rolling(
             index_column="row_nr",
             period="3i",
         )
@@ -356,7 +356,7 @@ def test_rolling_groupby_extrema() -> None:
     ).with_columns(pl.col("col1").sort().alias("row_nr"))
 
     assert (
-        df.groupby_rolling(
+        df.group_by_rolling(
             index_column="row_nr",
             period="3i",
         )
@@ -387,7 +387,7 @@ def test_rolling_slice_pushdown() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "a", "b"], "c": [1, 3, 5]}).lazy()
     df = (
         df.sort("a")
-        .groupby_rolling(
+        .group_by_rolling(
             "a",
             by="b",
             period="2i",
@@ -411,7 +411,7 @@ def test_groupby_dynamic_slice_pushdown() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "a", "b"], "c": [1, 3, 5]}).lazy()
     df = (
         df.sort("a")
-        .groupby_dynamic(
+        .group_by_dynamic(
             "a",
             by="b",
             every="2i",
@@ -439,7 +439,7 @@ def test_overlapping_groups_4628() -> None:
         }
     )
     assert (
-        df.groupby_rolling(index_column=pl.col("index").set_sorted(), period="3i").agg(
+        df.group_by_rolling(index_column=pl.col("index").set_sorted(), period="3i").agg(
             [
                 pl.col("val").diff(n=1).alias("val.diff"),
                 (pl.col("val") - pl.col("val").shift(1)).alias("val - val.shift"),
@@ -531,7 +531,7 @@ def test_dynamic_groupby_timezone_awareness(
     )
 
     assert (
-        df.groupby_dynamic(
+        df.group_by_dynamic(
             "datetime",
             every=every,
             offset=offset,
@@ -549,7 +549,7 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
     stop = datetime(2022, 12, 16, hour=3, tzinfo=tzinfo)
     df = pl.DataFrame({"date": pl.date_range(start, stop, "30m", eager=True)})
 
-    assert df.groupby_dynamic(
+    assert df.group_by_dynamic(
         "date",
         every="31m",
         include_boundaries=True,
@@ -591,7 +591,7 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         {"date": pl.date_range(start, stop, "12h", eager=True)}
     ).with_columns(pl.col("date").dt.weekday().alias("day"))
 
-    result = df.groupby_dynamic(
+    result = df.group_by_dynamic(
         "date",
         every="1w",
         period="3d",
@@ -616,7 +616,7 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         "data_day": [1, 1],
     }
     # start by saturday
-    result = df.groupby_dynamic(
+    result = df.group_by_dynamic(
         "date",
         every="1w",
         period="3d",
@@ -659,7 +659,7 @@ def test_groupby_dynamic_by_monday_and_offset_5444() -> None:
         }
     ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d").set_sorted())
 
-    result = df.groupby_dynamic(
+    result = df.group_by_dynamic(
         "date", every="1w", offset="1d", by="label", start_by="monday"
     ).agg(pl.col("value").sum())
 
@@ -677,7 +677,9 @@ def test_groupby_dynamic_by_monday_and_offset_5444() -> None:
     # test empty
     result_empty = (
         df.filter(pl.col("date") == date(1, 1, 1))
-        .groupby_dynamic("date", every="1w", offset="1d", by="label", start_by="monday")
+        .group_by_dynamic(
+            "date", every="1w", offset="1d", by="label", start_by="monday"
+        )
         .agg(pl.col("value").sum())
     )
     assert result_empty.schema == result.schema
@@ -695,7 +697,7 @@ def test_groupby_rolling_iter() -> None:
     # Without 'by' argument
     result1 = [
         (name, data.shape)
-        for name, data in df.groupby_rolling(index_column="date", period="2d")
+        for name, data in df.group_by_rolling(index_column="date", period="2d")
     ]
     expected1 = [
         (date(2020, 1, 1), (1, 3)),
@@ -707,7 +709,7 @@ def test_groupby_rolling_iter() -> None:
     # With 'by' argument
     result2 = [
         (name, data.shape)
-        for name, data in df.groupby_rolling(index_column="date", period="2d", by="a")
+        for name, data in df.group_by_rolling(index_column="date", period="2d", by="a")
     ]
     expected2 = [
         ((1, date(2020, 1, 1)), (1, 3)),
@@ -724,11 +726,11 @@ def test_groupby_rolling_negative_period() -> None:
     with pytest.raises(
         ComputeError, match="rolling window period should be strictly positive"
     ):
-        df.groupby_rolling("ts", period="-1d", offset="-1d").agg(pl.col("value"))
+        df.group_by_rolling("ts", period="-1d", offset="-1d").agg(pl.col("value"))
     with pytest.raises(
         ComputeError, match="rolling window period should be strictly positive"
     ):
-        df.lazy().groupby_rolling("ts", period="-1d", offset="-1d").agg(
+        df.lazy().group_by_rolling("ts", period="-1d", offset="-1d").agg(
             pl.col("value")
         ).collect()
     with pytest.raises(ComputeError, match="window size should be strictly positive"):
@@ -750,7 +752,7 @@ def test_rolling_skew_window_offset() -> None:
 def test_rolling_kernels_groupby_dynamic_7548() -> None:
     assert pl.DataFrame(
         {"time": pl.arange(0, 4, eager=True), "value": pl.arange(0, 4, eager=True)}
-    ).groupby_dynamic("time", every="1i", period="3i").agg(
+    ).group_by_dynamic("time", every="1i", period="3i").agg(
         pl.col("value"),
         pl.col("value").min().alias("min_value"),
         pl.col("value").max().alias("max_value"),

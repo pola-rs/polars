@@ -60,7 +60,7 @@ def test_cse_expr_groupby() -> None:
     derived = pl.col("a") * pl.col("b")
 
     q = (
-        q.groupby("a")
+        q.group_by("a")
         .agg(derived.sum().alias("sum"), derived.min().alias("min"))
         .sort("min")
     )

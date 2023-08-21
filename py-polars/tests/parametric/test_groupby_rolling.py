@@ -43,7 +43,7 @@ def test_groupby_rolling(
     )
     df = dataframe.sort("ts").unique("ts")
     try:
-        result = df.groupby_rolling(
+        result = df.group_by_rolling(
             "ts", period=period, offset=offset, closed=closed
         ).agg(pl.col("value"))
     except pl.exceptions.PolarsPanicError as exc:

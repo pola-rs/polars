@@ -129,7 +129,7 @@ shape: (5, 8)
 >>> # and continue in python
 >>> lf = context.execute(query)
 >>> (lf.join(other_table)
-...      .groupby("foo")
+...      .group_by("foo")
 ...      .agg(
 ...     pl.col("sum_v1").count()
 ... ).collect())

@@ -30,7 +30,7 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.dataframe._html import NotebookFormatter
-from polars.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
+from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -4966,7 +4966,7 @@ class DataFrame:
         ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> df.groupby("a").agg(pl.col("b").sum())  # doctest: +IGNORE_RESULT
+        >>> df.group_by("a").agg(pl.col("b").sum())  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -4981,7 +4981,7 @@ class DataFrame:
         Set ``maintain_order=True`` to ensure the order of the groups is consistent with
         the input.
 
-        >>> df.groupby("a", maintain_order=True).agg(pl.col("c"))
+        >>> df.group_by("a", maintain_order=True).agg(pl.col("c"))
         shape: (3, 2)
         ┌─────┬───────────┐
         │ a   ┆ c         │
@@ -4995,7 +4995,7 @@ class DataFrame:
 
         Group by multiple columns by passing a list of column names.
 
-        >>> df.groupby(["a", "b"]).agg(pl.max("c"))  # doctest: +IGNORE_RESULT
+        >>> df.group_by(["a", "b"]).agg(pl.max("c"))  # doctest: +IGNORE_RESULT
         shape: (4, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -5011,7 +5011,7 @@ class DataFrame:
         Or use positional arguments to group by multiple columns in the same way.
         Expressions are also accepted.
 
-        >>> df.groupby("a", pl.col("b") // 2).agg(pl.col("c").mean())  # doctest: +SKIP
+        >>> df.group_by("a", pl.col("b") // 2).agg(pl.col("c").mean())  # doctest: +SKIP
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -5026,7 +5026,7 @@ class DataFrame:
         The ``GroupBy`` object returned by this method is iterable, returning the name
         and data of each group.
 
-        >>> for name, data in df.groupby("a"):  # doctest: +SKIP
+        >>> for name, data in df.group_by("a"):  # doctest: +SKIP
         ...     print(name)
         ...     print(data)
         ...
@@ -5170,7 +5170,7 @@ class DataFrame:
         >>> df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_columns(
         ...     pl.col("dt").str.strptime(pl.Datetime).set_sorted()
         ... )
-        >>> out = df.groupby_rolling(index_column="dt", period="2d").agg(
+        >>> out = df.group_by_rolling(index_column="dt", period="2d").agg(
         ...     [
         ...         pl.sum("a").alias("sum_a"),
         ...         pl.min("a").alias("min_a"),
@@ -5325,7 +5325,7 @@ class DataFrame:
         .. code-block:: python
 
             # polars
-            df.groupby_dynamic("ts", every="1d").agg(pl.col("value").sum())
+            df.group_by_dynamic("ts", every="1d").agg(pl.col("value").sum())
 
         is equivalent to
 
@@ -5371,7 +5371,7 @@ class DataFrame:
 
         Group by windows of 1 hour starting at 2021-12-16 00:00:00.
 
-        >>> df.groupby_dynamic("time", every="1h", closed="right").agg(
+        >>> df.group_by_dynamic("time", every="1h", closed="right").agg(
         ...     [
         ...         pl.col("time").min().alias("time_min"),
         ...         pl.col("time").max().alias("time_max"),
@@ -5391,7 +5391,7 @@ class DataFrame:
 
         The window boundaries can also be added to the aggregation result
 
-        >>> df.groupby_dynamic(
+        >>> df.group_by_dynamic(
         ...     "time", every="1h", include_boundaries=True, closed="right"
         ... ).agg([pl.col("time").count().alias("time_count")])
         shape: (4, 4)
@@ -5409,7 +5409,7 @@ class DataFrame:
         When closed="left", should not include right end of interval
         [lower_bound, upper_bound)
 
-        >>> df.groupby_dynamic("time", every="1h", closed="left").agg(
+        >>> df.group_by_dynamic("time", every="1h", closed="left").agg(
         ...     [
         ...         pl.col("time").count().alias("time_count"),
         ...         pl.col("time").alias("time_agg_list"),
@@ -5429,7 +5429,7 @@ class DataFrame:
 
         When closed="both" the time values at the window boundaries belong to 2 groups.
 
-        >>> df.groupby_dynamic("time", every="1h", closed="both").agg(
+        >>> df.group_by_dynamic("time", every="1h", closed="both").agg(
         ...     [pl.col("time").count().alias("time_count")]
         ... )
         shape: (5, 2)
@@ -5473,7 +5473,7 @@ class DataFrame:
         │ 2021-12-16 02:30:00 ┆ a      │
         │ 2021-12-16 03:00:00 ┆ a      │
         └─────────────────────┴────────┘
-        >>> df.groupby_dynamic(
+        >>> df.group_by_dynamic(
         ...     "time",
         ...     every="1h",
         ...     closed="both",
@@ -5504,7 +5504,7 @@ class DataFrame:
         ...     }
         ... )
         >>> (
-        ...     df.groupby_dynamic(
+        ...     df.group_by_dynamic(
         ...         "idx",
         ...         every="2i",
         ...         period="3i",
@@ -8512,7 +8512,7 @@ class DataFrame:
         In aggregate context there is also an equivalent method for returning the
         unique values per-group:
 
-        >>> df_agg_nunique = df.groupby(by=["a"]).n_unique()
+        >>> df_agg_nunique = df.group_by(by=["a"]).n_unique()
 
         Examples
         --------

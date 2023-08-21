@@ -26,16 +26,16 @@ def test_groupby() -> None:
         }
     )
 
-    assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
+    assert df.group_by("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
 
     # Use lazy API in eager groupby
-    assert sorted(df.groupby("a").agg([pl.sum("b")]).rows()) == [
+    assert sorted(df.group_by("a").agg([pl.sum("b")]).rows()) == [
         ("a", 4),
         ("b", 11),
         ("c", 6),
     ]
     # test if it accepts a single expression
-    assert df.groupby("a", maintain_order=True).agg(pl.sum("b")).rows() == [
+    assert df.group_by("a", maintain_order=True).agg(pl.sum("b")).rows() == [
         ("a", 4),
         ("b", 11),
         ("c", 6),
@@ -50,10 +50,10 @@ def test_groupby() -> None:
     )
 
     # check if this query runs and thus column names propagate
-    df.groupby("b").agg(pl.col("c").forward_fill()).explode("c")
+    df.group_by("b").agg(pl.col("c").forward_fill()).explode("c")
 
     # get a specific column
-    result = df.groupby("b", maintain_order=True).agg(pl.count("a"))
+    result = df.group_by("b", maintain_order=True).agg(pl.count("a"))
     assert result.rows() == [("a", 2), ("b", 3)]
     assert result.columns == ["b", "a"]
 
@@ -86,21 +86,21 @@ def df() -> pl.DataFrame:
 def test_groupby_shorthands(
     df: pl.DataFrame, method: str, expected: list[tuple[Any]]
 ) -> None:
-    gb = df.groupby("b", maintain_order=True)
+    gb = df.group_by("b", maintain_order=True)
     result = getattr(gb, method)()
     assert result.rows() == expected
 
-    gb_lazy = df.lazy().groupby("b", maintain_order=True)
+    gb_lazy = df.lazy().group_by("b", maintain_order=True)
     result = getattr(gb_lazy, method)().collect()
     assert result.rows() == expected
 
 
 def test_groupby_shorthand_quantile(df: pl.DataFrame) -> None:
-    result = df.groupby("b", maintain_order=True).quantile(0.5)
+    result = df.group_by("b", maintain_order=True).quantile(0.5)
     expected = [("a", 2.0, 1.0), ("b", 4.0, 1.0)]
     assert result.rows() == expected
 
-    result = df.lazy().groupby("b", maintain_order=True).quantile(0.5).collect()
+    result = df.lazy().group_by("b", maintain_order=True).quantile(0.5).collect()
     assert result.rows() == expected
 
 
@@ -114,25 +114,25 @@ def test_groupby_args() -> None:
     )
 
     # Single column name
-    assert df.groupby("a").agg("b").columns == ["a", "b"]
+    assert df.group_by("a").agg("b").columns == ["a", "b"]
     # Column names as list
     expected = ["a", "b", "c"]
-    assert df.groupby(["a", "b"]).agg("c").columns == expected
+    assert df.group_by(["a", "b"]).agg("c").columns == expected
     # Column names as positional arguments
-    assert df.groupby("a", "b").agg("c").columns == expected
+    assert df.group_by("a", "b").agg("c").columns == expected
     # With keyword argument
-    assert df.groupby("a", "b", maintain_order=True).agg("c").columns == expected
+    assert df.group_by("a", "b", maintain_order=True).agg("c").columns == expected
     # Multiple aggregations as list
-    assert df.groupby("a").agg(["b", "c"]).columns == expected
+    assert df.group_by("a").agg(["b", "c"]).columns == expected
     # Multiple aggregations as positional arguments
-    assert df.groupby("a").agg("b", "c").columns == expected
+    assert df.group_by("a").agg("b", "c").columns == expected
     # Multiple aggregations as keyword arguments
-    assert df.groupby("a").agg(q="b", r="c").columns == ["a", "q", "r"]
+    assert df.group_by("a").agg(q="b", r="c").columns == ["a", "q", "r"]
 
 
 def test_groupby_empty() -> None:
     df = pl.DataFrame({"a": [1, 1, 2]})
-    result = df.groupby("a").agg()
+    result = df.group_by("a").agg()
     expected = pl.DataFrame({"a": [1, 2]})
     assert_frame_equal(result, expected, check_row_order=False)
 
@@ -151,21 +151,21 @@ def test_groupby_iteration() -> None:
         [("b", 2, 5), ("b", 4, 3), ("b", 5, 2)],
         [("c", 6, 1)],
     ]
-    for i, (group, data) in enumerate(df.groupby("foo", maintain_order=True)):
+    for i, (group, data) in enumerate(df.group_by("foo", maintain_order=True)):
         assert group == expected_names[i]
         assert data.rows() == expected_rows[i]
 
     # Grouped by ALL columns should give groups of a single row
-    result = list(df.groupby(["foo", "bar", "baz"]))
+    result = list(df.group_by(["foo", "bar", "baz"]))
     assert len(result) == 6
 
     # Iterating over groups should also work when grouping by expressions
-    result2 = list(df.groupby(["foo", pl.col("bar") * pl.col("baz")]))
+    result2 = list(df.group_by(["foo", pl.col("bar") * pl.col("baz")]))
     assert len(result2) == 5
 
     # Single column, alias in groupby
     df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6]})
-    gb = df.groupby((pl.col("foo") // 2).alias("bar"), maintain_order=True)
+    gb = df.group_by((pl.col("foo") // 2).alias("bar"), maintain_order=True)
     result3 = [(group, df.rows()) for group, df in gb]
     expected3 = [(0, [(1,)]), (1, [(2,), (3,)]), (2, [(4,), (5,)]), (3, [(6,)])]
     assert result3 == expected3
@@ -190,14 +190,14 @@ def test_groupby_agg_input_types(lazy: bool) -> None:
 
     for bad_param in bad_agg_parameters():
         with pytest.raises(TypeError):  # noqa: PT012
-            result = df_or_lazy.groupby("a").agg(bad_param)
+            result = df_or_lazy.group_by("a").agg(bad_param)
             if lazy:
                 result.collect()  # type: ignore[union-attr]
 
     expected = pl.DataFrame({"a": [1, 2], "b": [3, 7]})
 
     for good_param in good_agg_parameters():
-        result = df_or_lazy.groupby("a", maintain_order=True).agg(good_param)
+        result = df_or_lazy.group_by("a", maintain_order=True).agg(good_param)
         if lazy:
             result = result.collect()  # type: ignore[union-attr]
         assert_frame_equal(result, expected)
@@ -212,7 +212,7 @@ def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
 
     for bad_param in bad_agg_parameters():
         with pytest.raises(TypeError):  # noqa: PT012
-            result = df_or_lazy.groupby_dynamic(
+            result = df_or_lazy.group_by_dynamic(
                 index_column="index_column", every="2i", closed="right"
             ).agg(bad_param)
             if lazy:
@@ -221,7 +221,7 @@ def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
     expected = pl.DataFrame({"index_column": [-2, 0, 2], "b": [1, 4, 2]})
 
     for good_param in good_agg_parameters():
-        result = df_or_lazy.groupby_dynamic(
+        result = df_or_lazy.group_by_dynamic(
             index_column="index_column", every="2i", closed="right"
         ).agg(good_param)
         if lazy:
@@ -239,7 +239,7 @@ def test_groupby_sorted_empty_dataframe_3680() -> None:
         )
         .lazy()
         .sort("key")
-        .groupby("key")
+        .group_by("key")
         .tail(1)
         .collect()
     )
@@ -256,7 +256,7 @@ def test_groupby_custom_agg_empty_list() -> None:
                 pl.Series("val", [], dtype=pl.Float64),
             ]
         )
-        .groupby("key")
+        .group_by("key")
         .agg(
             [
                 pl.col("val").mean().alias("mean"),
@@ -277,7 +277,7 @@ def test_apply_after_take_in_groupby_3869() -> None:
                 "v": [3, 1, 2, 5, 6, 4],
             }
         )
-        .groupby("k", maintain_order=True)
+        .group_by("k", maintain_order=True)
         .agg(
             pl.col("v").take(pl.col("t").arg_max()).sqrt()
         )  # <- fails for sqrt, exp, log, pow, etc.
@@ -290,7 +290,7 @@ def test_groupby_signed_transmutes() -> None:
     for dt in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]:
         df = (
             df.with_columns([pl.col("foo").cast(dt), pl.col("bar")])
-            .groupby("foo", maintain_order=True)
+            .group_by("foo", maintain_order=True)
             .agg(pl.col("bar").median())
         )
 
@@ -343,7 +343,7 @@ def test_unique_order() -> None:
 def test_groupby_dynamic_flat_agg_4814() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [1, 8, 12]}).set_sorted("a")
 
-    assert df.groupby_dynamic("a", every="1i", period="2i").agg(
+    assert df.group_by_dynamic("a", every="1i", period="2i").agg(
         [
             (pl.col("b").sum() / pl.col("a").sum()).alias("sum_ratio_1"),
             (pl.col("b").last() / pl.col("a").last()).alias("last_ratio_1"),
@@ -382,7 +382,7 @@ def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038(
             .with_columns(pl.col("a").dt.replace_time_zone(time_zone))
             .lazy()
             .set_sorted("a")
-            .groupby_dynamic("a", every=every, period=period)
+            .group_by_dynamic("a", every=every, period=period)
             .agg([pl.col("b").var().sqrt().alias("corr")])
         )
         .collect()
@@ -396,7 +396,7 @@ def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038(
 
 def test_take_in_groupby() -> None:
     df = pl.DataFrame({"group": [1, 1, 1, 2, 2, 2], "values": [10, 200, 3, 40, 500, 6]})
-    assert df.groupby("group").agg(
+    assert df.group_by("group").agg(
         pl.col("values").take(1) - pl.col("values").take(2)
     ).sort("group").to_dict(False) == {"group": [1, 2], "values": [197, 494]}
 
@@ -408,7 +408,7 @@ def test_groupby_wildcard() -> None:
             "b": [1, 2],
         }
     )
-    assert df.groupby([pl.col("*")], maintain_order=True).agg(
+    assert df.group_by([pl.col("*")], maintain_order=True).agg(
         [pl.col("a").first().suffix("_agg")]
     ).to_dict(False) == {"a": [1, 2], "b": [1, 2], "a_agg": [1, 2]}
 
@@ -434,7 +434,7 @@ def test_groupby_null_propagation_6185() -> None:
 
     expected = {"B": [1, 2], "A": [None, None]}
     assert (
-        df_1.groupby("B").agg((expr - expr.mean()).mean()).sort("B").to_dict(False)
+        df_1.group_by("B").agg((expr - expr.mean()).mean()).sort("B").to_dict(False)
         == expected
     )
 
@@ -444,7 +444,7 @@ def test_groupby_when_then_with_binary_and_agg_in_pred_6202() -> None:
         {"code": ["a", "b", "b", "b", "a"], "xx": [1.0, -1.5, -0.2, -3.9, 3.0]}
     )
     assert (
-        df.groupby("code", maintain_order=True).agg(
+        df.group_by("code", maintain_order=True).agg(
             [pl.when(pl.col("xx") > pl.min("xx")).then(True).otherwise(False)]
         )
     ).to_dict(False) == {
@@ -473,7 +473,7 @@ def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -
     # Without 'by' argument
     result1 = [
         (name, data.shape)
-        for name, data in df.groupby_dynamic("datetime", every=every, closed="left")
+        for name, data in df.group_by_dynamic("datetime", every=every, closed="left")
     ]
     expected1 = [
         (datetime(2020, 1, 1, 10, tzinfo=tzinfo), (2, 3)),
@@ -484,7 +484,7 @@ def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -
     # With 'by' argument
     result2 = [
         (name, data.shape)
-        for name, data in df.groupby_dynamic(
+        for name, data in df.group_by_dynamic(
             "datetime", every=every, closed="left", by="a"
         )
     ]
@@ -511,7 +511,7 @@ def test_groupby_dynamic_lazy(every: str | timedelta, tzinfo: ZoneInfo | None) -
         }
     )
     df = (
-        ldf.groupby_dynamic("time", every=every, closed="right")
+        ldf.group_by_dynamic("time", every=every, closed="right")
         .agg(
             [
                 pl.col("time").min().alias("time_min"),
@@ -548,7 +548,7 @@ def test_overflow_mean_partitioned_groupby_5194(dtype: pl.PolarsDataType) -> Non
             pl.Series("group", [1, 2] * 50_000, dtype=dtype),
         ]
     )
-    assert df.groupby("group").agg(pl.col("data").mean()).sort(by="group").to_dict(
+    assert df.group_by("group").agg(pl.col("data").mean()).sort(by="group").to_dict(
         False
     ) == {"group": [1, 2], "data": [10000000.0, 10000000.0]}
 
@@ -569,7 +569,7 @@ def test_groupby_dynamic_elementwise_following_mean_agg_6904(
         .with_columns(pl.col("a").dt.replace_time_zone(time_zone))
         .lazy()
         .set_sorted("a")
-        .groupby_dynamic("a", every="10s", period="100s")
+        .group_by_dynamic("a", every="10s", period="100s")
         .agg([pl.col("b").mean().sin().alias("c")])
         .collect()
     )
@@ -595,7 +595,7 @@ def test_groupby_multiple_column_reference() -> None:
             "val": [1, 20, 100, 2000, 10000, 200000],
         }
     )
-    res = df.groupby("gr").agg(
+    res = df.group_by("gr").agg(
         pl.col("val") + pl.col("val").shift().fill_null(0),
     )
 
@@ -625,7 +625,7 @@ def test_groupby_empty_groups(
     expected_dtype: pl.DataType,
 ) -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [1, 2]})
-    result = df.groupby("b", maintain_order=True).agg(
+    result = df.group_by("b", maintain_order=True).agg(
         getattr(pl.col("a").filter(pl.col("b") != 2), aggregation)(*args)
     )
     expected = pl.DataFrame({"b": [1, 2], "a": expected_values}).with_columns(
@@ -743,7 +743,7 @@ def test_perfect_hash_table_null_values_8663() -> None:
         dtype=pl.Categorical,
     )
 
-    assert s.to_frame("a").groupby("a").agg(pl.col("a").alias("agg")).to_dict(
+    assert s.to_frame("a").group_by("a").agg(pl.col("a").alias("agg")).to_dict(
         False
     ) == {
         "a": [
@@ -836,6 +836,6 @@ def test_perfect_hash_table_null_values_8663() -> None:
 def test_groupby_partitioned_ending_cast(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
     df = pl.DataFrame({"a": [1] * 5, "b": [1] * 5})
-    out = df.groupby(["a", "b"]).agg(pl.count().cast(pl.Int64).alias("num"))
+    out = df.group_by(["a", "b"]).agg(pl.count().cast(pl.Int64).alias("num"))
     expected = pl.DataFrame({"a": [1], "b": [1], "num": [5]})
     assert_frame_equal(out, expected)

@@ -115,7 +115,7 @@ def test_unset_sorted_on_append() -> None:
         ]
     ).sort("key")
     df = pl.concat([df1, df2], rechunk=False)
-    assert df.groupby("key").count()["count"].to_list() == [4, 4]
+    assert df.group_by("key").count()["count"].to_list() == [4, 4]
 
 
 def test_categorical_error_on_local_cmp() -> None:
@@ -307,11 +307,11 @@ def test_nested_categorical_aggregation_7848() -> None:
             "group": [1, 1, 2, 2, 2, 3, 3],
             "letter": ["a", "b", "c", "d", "e", "f", "g"],
         }
-    ).with_columns([pl.col("letter").cast(pl.Categorical)]).groupby(
+    ).with_columns([pl.col("letter").cast(pl.Categorical)]).group_by(
         maintain_order=True, by=["group"]
     ).all().with_columns(
         [pl.col("letter").list.lengths().alias("c_group")]
-    ).groupby(
+    ).group_by(
         by=["c_group"], maintain_order=True
     ).agg(
         pl.col("letter")

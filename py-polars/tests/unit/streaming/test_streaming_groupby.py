@@ -25,7 +25,7 @@ def test_streaming_groupby_sorted_fast_path_nulls_10273() -> None:
     assert (
         df.set_sorted("x")
         .lazy()
-        .groupby("x")
+        .group_by("x")
         .agg(pl.count())
         .collect(streaming=True)
         .sort("x")
@@ -47,7 +47,7 @@ def test_streaming_groupby_types() -> None:
         out = (
             (
                 df.lazy()
-                .groupby(by)
+                .group_by(by)
                 .agg(
                     [
                         pl.col("person_name").first().alias("str_first"),
@@ -107,7 +107,7 @@ def test_streaming_groupby_types() -> None:
     with pytest.raises(pl.DuplicateError):
         (
             df.lazy()
-            .groupby("person_id")
+            .group_by("person_id")
             .agg(
                 [
                     pl.col("person_name").first().alias("str_first"),
@@ -132,7 +132,7 @@ def test_streaming_groupby_min_max() -> None:
     )
     out = (
         df.lazy()
-        .groupby("year")
+        .group_by("year")
         .agg([pl.min("person_id").alias("min"), pl.max("person_id").alias("max")])
         .collect()
         .sort("year")
@@ -144,15 +144,15 @@ def test_streaming_groupby_min_max() -> None:
 def test_streaming_non_streaming_gb() -> None:
     n = 100
     df = pl.DataFrame({"a": np.random.randint(0, 20, n)})
-    q = df.lazy().groupby("a").agg(pl.count()).sort("a")
+    q = df.lazy().group_by("a").agg(pl.count()).sort("a")
     assert_frame_equal(q.collect(streaming=True), q.collect())
 
     q = df.lazy().with_columns(pl.col("a").cast(pl.Utf8))
-    q = q.groupby("a").agg(pl.count()).sort("a")
+    q = q.group_by("a").agg(pl.count()).sort("a")
     assert_frame_equal(q.collect(streaming=True), q.collect())
     q = df.lazy().with_columns(pl.col("a").alias("b"))
     q = (
-        q.groupby(["a", "b"])
+        q.group_by(["a", "b"])
         .agg(pl.count(), pl.col("a").sum().alias("sum_a"))
         .sort("a")
     )
@@ -175,7 +175,7 @@ def test_streaming_groupby_sorted_fast_path() -> None:
         for df_ in [df, df_sorted]:
             out = (
                 df_.lazy()
-                .groupby("a")
+                .group_by("a")
                 .agg(
                     [
                         pl.first("a").alias("first"),
@@ -209,7 +209,7 @@ def test_streaming_groupby_ooc_q1(monkeypatch: Any, random_integers: pl.Series) 
     result = (
         s.to_frame()
         .lazy()
-        .groupby("a")
+        .group_by("a")
         .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
         .sort("a")
         .collect(streaming=True)
@@ -234,7 +234,7 @@ def test_streaming_groupby_ooc_q2(monkeypatch: Any, random_integers: pl.Series) 
         s.cast(str)
         .to_frame()
         .lazy()
-        .groupby("a")
+        .group_by("a")
         .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
         .sort("a")
         .collect(streaming=True)
@@ -258,7 +258,7 @@ def test_streaming_groupby_ooc_q3(monkeypatch: Any, random_integers: pl.Series) 
     result = (
         pl.DataFrame({"a": s, "b": s})
         .lazy()
-        .groupby(["a", "b"])
+        .group_by(["a", "b"])
         .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
         .sort("a")
         .collect(streaming=True)
@@ -280,9 +280,9 @@ def test_streaming_groupby_struct_key() -> None:
         {"A": [1, 2, 3, 2], "B": ["google", "ms", "apple", "ms"], "C": [2, 3, 4, 3]}
     )
     df1 = df.lazy().with_columns(pl.struct(["A", "C"]).alias("tuples"))
-    assert df1.groupby("tuples").agg(pl.count(), pl.col("B").first()).sort("B").collect(
-        streaming=True
-    ).to_dict(False) == {
+    assert df1.group_by("tuples").agg(pl.count(), pl.col("B").first()).sort(
+        "B"
+    ).collect(streaming=True).to_dict(False) == {
         "tuples": [{"A": 3, "C": 4}, {"A": 1, "C": 2}, {"A": 2, "C": 3}],
         "count": [1, 1, 2],
         "B": ["apple", "google", "ms"],
@@ -310,7 +310,7 @@ def test_streaming_groupby_all_numeric_types_stability_8570() -> None:
             dfd = (
                 dfc.lazy()
                 .with_columns(pl.col("z").cast(dtype))
-                .groupby(keys)
+                .group_by(keys)
                 .agg(pl.col("z").sum().alias("z_sum"))
                 .collect(streaming=True)
             )
@@ -335,7 +335,7 @@ def test_streaming_groupby_categorical_aggregate() -> None:
                     ),
                 }
             )
-            .groupby(["a", "b"])
+            .group_by(["a", "b"])
             .agg([pl.col("a").first().alias("sum")])
             .collect(streaming=True)
         )
@@ -360,7 +360,7 @@ def test_streaming_groupby_list_9758() -> None:
     payload = {"a": [[1, 2]]}
     assert (
         pl.LazyFrame(payload)
-        .groupby("a")
+        .group_by("a")
         .first()
         .collect(streaming=True)
         .to_dict(False)
@@ -377,7 +377,7 @@ def test_streaming_restart_non_streamable_groupby() -> None:
             (pl.col("id3") > pl.col("id3_right"))
             & (pl.col("id3") - pl.col("id3_right") < 30)
         )
-        .groupby(["id2", "id3", "id3_right"])
+        .group_by(["id2", "id3", "id3_right"])
         .agg(
             pl.col("value").apply(lambda x: x).sum() * pl.col("value").sum()
         )  # non-streamable UDF + nested_agg
@@ -394,7 +394,7 @@ def test_groupby_min_max_string_type() -> None:
     for streaming in [True, False]:
         assert (
             table.lazy()
-            .groupby("a")
+            .group_by("a")
             .agg([pl.min("b").alias("min"), pl.max("b").alias("max")])
             .collect(streaming=streaming)
             .sort("a")

@@ -1205,7 +1205,7 @@ class Expr:
         ...         "value": [94, 95, 96, 97, 97, 99],
         ...     }
         ... )
-        >>> df.groupby("group", maintain_order=True).agg(pl.col("value").agg_groups())
+        >>> df.group_by("group", maintain_order=True).agg(pl.col("value").agg_groups())
         shape: (2, 2)
         ┌───────┬───────────┐
         │ group ┆ value     │
@@ -1912,7 +1912,7 @@ class Expr:
         ...         "value": [1, 98, 2, 3, 99, 4],
         ...     }
         ... )
-        >>> df.groupby("group").agg(pl.col("value").sort())  # doctest: +IGNORE_RESULT
+        >>> df.group_by("group").agg(pl.col("value").sort())  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌───────┬────────────┐
         │ group ┆ value      │
@@ -2242,7 +2242,7 @@ class Expr:
 
         When sorting in a groupby context, the groups are sorted.
 
-        >>> df.groupby("group").agg(
+        >>> df.group_by("group").agg(
         ...     pl.col("value1").sort_by("value2")
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
@@ -2258,7 +2258,7 @@ class Expr:
         Take a single row from each group where a column attains its minimal value
         within that group.
 
-        >>> df.groupby("group").agg(
+        >>> df.group_by("group").agg(
         ...     pl.all().sort_by("value2").first()
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 3)
@@ -2312,7 +2312,7 @@ class Expr:
         ...         "value": [1, 98, 2, 3, 99, 4],
         ...     }
         ... )
-        >>> df.groupby("group", maintain_order=True).agg(pl.col("value").take(1))
+        >>> df.group_by("group", maintain_order=True).agg(pl.col("value").take(1))
         shape: (2, 2)
         ┌───────┬───────┐
         │ group ┆ value │
@@ -3576,7 +3576,7 @@ class Expr:
         ...         "b": [1, 2, 3],
         ...     }
         ... )
-        >>> df.groupby("group_col").agg(
+        >>> df.group_by("group_col").agg(
         ...     [
         ...         pl.col("b").filter(pl.col("b") < 2).sum().alias("lt"),
         ...         pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
@@ -3614,7 +3614,7 @@ class Expr:
         ...         "b": [1, 2, 3],
         ...     }
         ... )
-        >>> df.groupby("group_col").agg(
+        >>> df.group_by("group_col").agg(
         ...     [
         ...         pl.col("b").where(pl.col("b") < 2).sum().alias("lt"),
         ...         pl.col("b").where(pl.col("b") >= 2).sum().alias("gte"),
@@ -3791,7 +3791,7 @@ class Expr:
 
         In a GroupBy context the function is applied by group:
 
-        >>> df.lazy().groupby("b", maintain_order=True).agg(
+        >>> df.lazy().group_by("b", maintain_order=True).agg(
         ...     pl.col("a").apply(lambda x: x.sum())
         ... ).collect()
         shape: (3, 2)
@@ -3807,7 +3807,7 @@ class Expr:
 
         It is better to implement this with an expression:
 
-        >>> df.groupby("b", maintain_order=True).agg(
+        >>> df.group_by("b", maintain_order=True).agg(
         ...     pl.col("a").sum(),
         ... )  # doctest: +IGNORE_RESULT
 
@@ -3897,7 +3897,7 @@ class Expr:
         ...         "values": [[1, 2], [2, 3], [4]],
         ...     }
         ... )
-        >>> df.groupby("group").agg(pl.col("values").flatten())  # doctest: +SKIP
+        >>> df.group_by("group").agg(pl.col("values").flatten())  # doctest: +SKIP
         shape: (2, 2)
         ┌───────┬───────────┐
         │ group ┆ values    │
