@@ -9,7 +9,7 @@
 //! * [Start a lazy computation](#start-a-lazy-computation)
 //! * [Filter](#filter)
 //! * [Sort](#sort)
-//! * [GroupBy](#groupby)
+//! * [GroupBy](#group_by)
 //! * [Joins](#joins)
 //! * [Conditionally apply](#conditionally-apply)
 //! * [Black box function](#black-box-function)
@@ -106,7 +106,7 @@
 //!
 //! ## Groupby
 //!
-//! This example is from the polars [user guide](https://pola-rs.github.io/polars-book/user-guide/concepts/contexts/#groupby-aggregation).
+//! This example is from the polars [user guide](https://pola-rs.github.io/polars-book/user-guide/concepts/contexts/#group_by-aggregation).
 //!
 //! ```
 //! use polars::prelude::*;
@@ -116,7 +116,7 @@
 //!     .has_header(true)
 //!     .with_delimiter(b',')
 //!     .finish()?
-//!     .groupby([col("comment_karma")])
+//!     .group_by([col("comment_karma")])
 //!     .agg([col("name").n_unique().alias("unique_names"), col("link_karma").max()])
 //!     // take only 100 rows.
 //!     .fetch(100)?;

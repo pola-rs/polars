@@ -6,7 +6,7 @@ use ahash::RandomState;
 use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::frame::groupby::*;
+use crate::frame::group_by::*;
 use crate::frame::hash_join::*;
 use crate::prelude::*;
 

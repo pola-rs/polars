@@ -298,7 +298,7 @@ impl OptimizationRule for TypeCoercionRule {
 
                 // only cast if the type is not already the super type.
                 // this can prevent an expensive flattening and subsequent aggregation
-                // in a groupby context. To be able to cast the groups need to be
+                // in a group_by context. To be able to cast the groups need to be
                 // flattened
                 let new_node_truthy = if type_true != st {
                     expr_arena.add(AExpr::Cast {
@@ -462,7 +462,7 @@ impl OptimizationRule for TypeCoercionRule {
                 }
                 // only cast if the type is not already the super type.
                 // this can prevent an expensive flattening and subsequent aggregation
-                // in a groupby context. To be able to cast the groups need to be
+                // in a group_by context. To be able to cast the groups need to be
                 // flattened
                 let new_node_self = if type_self != super_type {
                     expr_arena.add(AExpr::Cast {

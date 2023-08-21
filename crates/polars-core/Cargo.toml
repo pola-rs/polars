@@ -92,8 +92,8 @@ row_hash = []
 reinterpret = []
 take_opt_iter = []
 mode = []
-# allow groupby operation on list type
-groupby_list = []
+# allow group_by operation on list type
+group_by_list = []
 # cumsum, cummin, etc.
 cum_agg = []
 # rolling window functions
@@ -114,7 +114,7 @@ semi_anti_join = []
 chunked_ids = []
 describe = []
 timezones = ["chrono-tz", "arrow/chrono-tz", "polars-arrow/timezones"]
-dynamic_groupby = ["dtype-datetime", "dtype-date"]
+dynamic_group_by = ["dtype-datetime", "dtype-date"]
 
 # opt-in datatypes for Series
 dtype-date = ["temporal"]

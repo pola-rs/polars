@@ -121,7 +121,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         self.add_alp(lp)
     }
 
-    pub fn groupby(
+    pub fn group_by(
         self,
         keys: Vec<Node>,
         aggs: Vec<Node>,
@@ -143,7 +143,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
         );
         schema.merge(other);
 
-        #[cfg(feature = "dynamic_groupby")]
+        #[cfg(feature = "dynamic_group_by")]
         {
             let index_columns = &[
                 options

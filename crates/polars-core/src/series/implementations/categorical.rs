@@ -8,7 +8,7 @@ use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{IntoPartialOrdInner, PartialOrdInner};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::frame::groupby::*;
+use crate::frame::group_by::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
 #[cfg(feature = "is_in")]
 use crate::frame::hash_join::_check_categorical_src;

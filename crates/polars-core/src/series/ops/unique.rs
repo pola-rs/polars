@@ -2,7 +2,7 @@
 use std::hash::Hash;
 
 #[cfg(feature = "unique_counts")]
-use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
+use crate::frame::group_by::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 #[cfg(feature = "unique_counts")]
 use crate::utils::NoNull;

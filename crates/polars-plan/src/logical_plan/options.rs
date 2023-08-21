@@ -8,7 +8,7 @@ use polars_io::ipc::IpcCompression;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetCompression;
 use polars_io::RowCount;
-#[cfg(feature = "dynamic_groupby")]
+#[cfg(feature = "dynamic_group_by")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -105,9 +105,9 @@ pub struct UnionOptions {
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {
-    #[cfg(feature = "dynamic_groupby")]
+    #[cfg(feature = "dynamic_group_by")]
     pub dynamic: Option<DynamicGroupOptions>,
-    #[cfg(feature = "dynamic_groupby")]
+    #[cfg(feature = "dynamic_group_by")]
     pub rolling: Option<RollingGroupOptions>,
     /// Take only a slice of the result
     pub slice: Option<(i64, usize)>,
@@ -195,7 +195,7 @@ pub struct FunctionOptions {
     // If set to `false` the physical engine will ensure the left input
     // expression is the output name.
     pub allow_rename: bool,
-    // if set, then the `Series` passed to the function in the groupby operation
+    // if set, then the `Series` passed to the function in the group_by operation
     // will ensure the name is set. This is an extra heap allocation per group.
     pub pass_name_to_apply: bool,
     // For example a `unique` or a `slice`

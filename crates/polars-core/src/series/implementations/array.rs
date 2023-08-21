@@ -5,7 +5,7 @@ use super::{private, IntoSeries, SeriesTrait};
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::{AsSinglePtr, Settings};
-use crate::frame::groupby::*;
+use crate::frame::group_by::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 #[cfg(feature = "chunked_ids")]

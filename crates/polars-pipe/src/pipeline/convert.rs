@@ -8,8 +8,8 @@ use polars_core::with_match_physical_integer_polars_type;
 use polars_plan::prelude::*;
 
 use crate::executors::operators::HstackOperator;
-use crate::executors::sinks::groupby::aggregates::convert_to_hash_agg;
-use crate::executors::sinks::groupby::GenericGroupby2;
+use crate::executors::sinks::group_by::aggregates::convert_to_hash_agg;
+use crate::executors::sinks::group_by::GenericGroupby2;
 use crate::executors::sinks::*;
 use crate::executors::{operators, sources};
 use crate::expressions::PhysicalPipedExpr;
@@ -241,13 +241,13 @@ where
                     (keys, aggs, input_schema.clone())
                 },
                 Some(keys) => {
-                    let mut groupby_out_schema = Schema::with_capacity(input_schema.len());
+                    let mut group_by_out_schema = Schema::with_capacity(input_schema.len());
                     let key_names = PlHashSet::from_iter(keys.iter().map(|s| s.as_ref()));
                     let keys = keys
                         .iter()
                         .map(|key| {
                             let (_, name, dtype) = input_schema.get_full(key.as_str()).unwrap();
-                            groupby_out_schema.with_column(name.clone(), dtype.clone());
+                            group_by_out_schema.with_column(name.clone(), dtype.clone());
                             expr_arena.add(AExpr::Column(Arc::from(key.as_str())))
                         })
                         .collect();
@@ -260,7 +260,7 @@ where
                             } else {
                                 let (_, name, dtype) =
                                     input_schema.get_full(name.as_str()).unwrap();
-                                groupby_out_schema.with_column(name.clone(), dtype.clone());
+                                group_by_out_schema.with_column(name.clone(), dtype.clone());
                                 let col = expr_arena.add(AExpr::Column(Arc::from(name.as_str())));
                                 Some(match options.keep_strategy {
                                     UniqueKeepStrategy::First | UniqueKeepStrategy::Any => {
@@ -276,7 +276,7 @@ where
                             }
                         })
                         .collect();
-                    (keys, aggs, groupby_out_schema.into())
+                    (keys, aggs, group_by_out_schema.into())
                 },
             };
 
@@ -300,7 +300,7 @@ where
             }
             let aggregation_columns = Arc::new(aggregation_columns);
 
-            let groupby_sink = Box::new(GenericGroupby2::new(
+            let group_by_sink = Box::new(GenericGroupby2::new(
                 key_columns,
                 aggregation_columns,
                 Arc::from(agg_fns),
@@ -309,7 +309,7 @@ where
                 options.slice,
             ));
 
-            Box::new(ReProjectSink::new(input_schema, groupby_sink))
+            Box::new(ReProjectSink::new(input_schema, group_by_sink))
         },
         Aggregate {
             input,
@@ -356,7 +356,7 @@ where
                 ) {
                     (dt, 1) if dt.is_integer() => {
                         with_match_physical_integer_polars_type!(dt, |$T| {
-                            Box::new(groupby::PrimitiveGroupbySink::<$T>::new(
+                            Box::new(group_by::PrimitiveGroupbySink::<$T>::new(
                                 key_columns[0].clone(),
                                 aggregation_columns,
                                 agg_fns,
@@ -366,7 +366,7 @@ where
                             )) as Box<dyn Sink>
                         })
                     },
-                    (DataType::Utf8, 1) => Box::new(groupby::Utf8GroupbySink::new(
+                    (DataType::Utf8, 1) => Box::new(group_by::Utf8GroupbySink::new(
                         key_columns[0].clone(),
                         aggregation_columns,
                         agg_fns,
