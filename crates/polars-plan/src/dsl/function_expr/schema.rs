@@ -390,16 +390,26 @@ impl<'a> FieldsMapper<'a> {
         time_zone: Option<&str>,
     ) -> PolarsResult<DataType> {
         let data_dtype = self.map_to_supertype()?.dtype;
-        let (data_tu, data_tz) = match data_dtype {
-            DataType::Datetime(tu, tz) => (tu, tz),
+        match data_dtype {
+            DataType::Datetime(tu, tz) => {
+                self.map_datetime_to_date_range_dtype(tu, tz, time_unit, time_zone)
+            },
             DataType::Date => {
                 let schema_dtype = self.map_date_to_date_range_dtype(every, time_unit, time_zone);
-                return Ok(schema_dtype);
+                Ok(schema_dtype)
             },
             _ => polars_bail!(ComputeError: "expected Date or Datetime, got {}", data_dtype),
-        };
-
-        let schema_time_zone = match (data_tz, time_zone) {
+        }
+    }
+    #[cfg(feature = "temporal")]
+    fn map_datetime_to_date_range_dtype(
+        &self,
+        data_time_unit: TimeUnit,
+        data_time_zone: Option<String>,
+        given_time_unit: Option<&TimeUnit>,
+        given_time_zone: Option<&str>,
+    ) -> PolarsResult<DataType> {
+        let schema_time_zone = match (data_time_zone, given_time_zone) {
             (Some(data_tz), Some(given_tz)) => {
                 polars_ensure!(
                     data_tz == given_tz,
@@ -413,12 +423,12 @@ impl<'a> FieldsMapper<'a> {
             (Some(data_tz), None) => Some(data_tz),
             (_, _) => None,
         };
-        let schema_time_unit = time_unit.unwrap_or(&data_tu);
+        let schema_time_unit = given_time_unit.unwrap_or(&data_time_unit);
 
         let schema_dtype = DataType::Datetime(*schema_time_unit, schema_time_zone);
         Ok(schema_dtype)
     }
-
+    #[cfg(feature = "temporal")]
     fn map_date_to_date_range_dtype(
         &self,
         every: &Duration,
