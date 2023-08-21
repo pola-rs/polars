@@ -216,8 +216,8 @@
 //!     - `dataframe_arithmetic` - Arithmetic on (Dataframe and DataFrames) and (DataFrame on Series)
 //!     - `partition_by` - Split into multiple DataFrames partitioned by groups.
 //! * `Series`/`Expression` operations:
-//!     - `is_in` - [Check for membership in `Series`](crate::chunked_array::ops::IsIn)
-//!     - `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip)
+//!     - `is_in` - Check for membership in `Series`.
+//!     - `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip).
 //!     - `round_series` - round underlying float types of `Series`.
 //!     - `repeat_by` - [Repeat element in an Array N times, where N is given by another array.
 //!     - `is_first` - Check if element is first unique value.
