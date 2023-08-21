@@ -3,18 +3,25 @@ from __future__ import annotations
 import os
 import sqlite3
 import sys
+from contextlib import suppress
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from adbc_driver_sqlite.dbapi import connect as adbc_sqlite_connect
 from sqlalchemy import create_engine
 
 import polars as pl
 
 if TYPE_CHECKING:
     from polars.type_aliases import DbReadEngine
+
+
+def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
+    with suppress(ModuleNotFoundError):  # not available on 3.8/windows
+        from adbc_driver_sqlite.dbapi import connect
+
+        return connect(*args, **kwargs)
 
 
 @pytest.fixture()
