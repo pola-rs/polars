@@ -422,14 +422,18 @@ where
         // Safety:
         // we just checked it is ascii
         unsafe { std::str::from_utf8_unchecked(bytes) }
-    } else if ignore_errors {
-        buf.builder.append_null();
-        return Ok(());
-    } else if !ignore_errors && std::str::from_utf8(bytes).is_err() {
-        polars_bail!(ComputeError: "invalid utf-8 sequence");
     } else {
-        buf.builder.append_null();
-        return Ok(());
+        match std::str::from_utf8(bytes) {
+            Ok(val) => val,
+            Err(_) => {
+                if ignore_errors {
+                    buf.builder.append_null();
+                    return Ok(());
+                } else {
+                    polars_bail!(ComputeError: "invalid utf-8 sequence");
+                }
+            },
+        }
     };
 
     let pattern = match &buf.compiled {
@@ -437,8 +441,12 @@ where
         None => match infer_pattern_single(val) {
             Some(pattern) => pattern,
             None => {
-                buf.builder.append_null();
-                return Ok(());
+                if ignore_errors {
+                    buf.builder.append_null();
+                    return Ok(());
+                } else {
+                    polars_bail!(ComputeError: "could not find a 'date/datetime' pattern for {}", val)
+                }
             },
         },
     };
@@ -449,9 +457,13 @@ where
             buf.builder.append_option(parsed);
             Ok(())
         },
-        Err(_) => {
-            buf.builder.append_null();
-            Ok(())
+        Err(err) => {
+            if ignore_errors {
+                buf.builder.append_null();
+                Ok(())
+            } else {
+                Err(err)
+            }
         },
     }
 }

@@ -1443,22 +1443,32 @@ def test_csv_quote_styles() -> None:
 
 
 def test_ignore_errors_casting_dtypes() -> None:
-    csv = '''inventory
+    csv = """inventory
     10
 
     400
     90
-    '''
+    """
 
     assert pl.read_csv(
         source=io.StringIO(csv),
-        dtypes={'inventory': pl.Int8},
+        dtypes={"inventory": pl.Int8},
         ignore_errors=True,
-    ).to_dict(False) == {'inventory': [10, None, None, 90]}
+    ).to_dict(False) == {"inventory": [10, None, None, 90]}
 
     with pytest.raises(pl.ComputeError):
         pl.read_csv(
             source=io.StringIO(csv),
-            dtypes={'inventory': pl.Int8},
+            dtypes={"inventory": pl.Int8},
+            ignore_errors=False,
+        )
+
+
+def test_ignore_errors_date_parser() -> None:
+    data_invalid_date = "int,float,date\n3,3.4,X"
+    with pytest.raises(pl.ComputeError):
+        pl.read_csv(
+            source=io.StringIO(data_invalid_date),
+            dtypes={"date": pl.Date},
             ignore_errors=False,
         )
