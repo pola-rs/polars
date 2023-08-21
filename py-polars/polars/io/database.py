@@ -80,15 +80,15 @@ class ConnectionExecutor:
     def _normalise_cursor(self, conn: ConnectionOrCursor) -> Cursor:
         """Normalise a connection object such that we have the query executor."""
         if self.driver == "sqlalchemy" and type(conn).__name__ == "Engine":
-            # sqlalchemy engine; direct use is deprecated - get the connection
+            # sqlalchemy engine; direct use is deprecated, so get the connection
             return conn.connect()  # type: ignore[union-attr]
-        elif hasattr(conn, "execute"):
-            # can directly execute (given a cursor, sqlalchemy connection, etc)
-            return conn  # type: ignore[return-value]
         elif hasattr(conn, "cursor"):
-            # no execute method, get the cursor (eg: generic dbapi2)
-            cursor = cursor() if callable(cursor := conn.cursor) else cursor  # type: ignore[redundant-expr]
+            # connection has a dedicated cursor; prefer over direct execute
+            cursor = cursor() if callable(cursor := conn.cursor) else cursor
             return cursor
+        elif hasattr(conn, "execute"):
+            # can execute (given a cursor, sqlalchemy connection, etc)
+            return conn  # type: ignore[return-value]
 
         raise TypeError(
             f"Unrecognised {conn!r} object; unable to find 'execute' method"
