@@ -2533,7 +2533,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         exprs = parse_as_list_of_expressions(by, *more_by)
-        lgb = self._ldf.groupby(exprs, maintain_order)
+        lgb = self._ldf.group_by(exprs, maintain_order)
         return LazyGroupBy(lgb)
 
     def groupby_rolling(
@@ -2681,7 +2681,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
 
-        lgb = self._ldf.groupby_rolling(
+        lgb = self._ldf.group_by_rolling(
             index_column, period, offset, closed, pyexprs_by, check_sorted
         )
         return LazyGroupBy(lgb)
@@ -3026,7 +3026,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every = _timedelta_to_pl_duration(every)
 
         pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
-        lgb = self._ldf.groupby_dynamic(
+        lgb = self._ldf.group_by_dynamic(
             index_column,
             every,
             period,

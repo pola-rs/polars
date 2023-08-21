@@ -1130,16 +1130,16 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn groupby_apply(
+    pub fn group_by_apply(
         &self,
         by: Vec<&str>,
         lambda: PyObject,
         maintain_order: bool,
     ) -> PyResult<Self> {
         let gb = if maintain_order {
-            self.df.groupby_stable(&by)
+            self.df.group_by_stable(&by)
         } else {
-            self.df.groupby(&by)
+            self.df.group_by(&by)
         }
         .map_err(PyPolarsErr::from)?;
 
