@@ -249,7 +249,7 @@ impl<'a> BatchedCsvReaderMmap<'a> {
                         self.starting_point_offset,
                     )?;
 
-                    cast_columns(&mut df, &self.to_cast, false)?;
+                    cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
 
                     update_string_stats(&self.str_capacities, &self.str_columns, &df)?;
                     if let Some(rc) = &self.row_count {

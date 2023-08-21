@@ -32,7 +32,7 @@ use crate::chunked_array::Settings;
 use crate::prelude::unique::rank::rank;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::{_split_offsets, split_ca, split_series, Wrap};
+use crate::utils::{_split_offsets, get_casting_failures, split_ca, split_series, Wrap};
 use crate::POOL;
 
 /// # Series
@@ -790,14 +790,12 @@ impl Series {
         }
         let s = self.0.cast(dtype)?;
         if null_count != s.null_count() {
-            let failure_mask = !self.is_null() & s.is_null();
-            let failures = self.filter_threaded(&failure_mask, false)?.unique()?;
+            let failures = get_casting_failures(self, &s)?;
             polars_bail!(
                 ComputeError:
                 "strict conversion from `{}` to `{}` failed for column: {}, value(s) {}; \
                 if you were trying to cast Utf8 to temporal dtypes, consider using `strptime`",
                 self.dtype(), dtype, s.name(), failures.fmt_list(),
-
             );
         } else {
             Ok(s)
