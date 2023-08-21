@@ -346,7 +346,7 @@ fn is_in_struct(ca_in: &StructChunked, other: &Series) -> PolarsResult<BooleanCh
 }
 
 pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
-    match s.dtype().to_physical() {
+    match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(_) => {
             use polars_core::frame::hash_join::_check_categorical_src;
@@ -388,7 +388,8 @@ pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
             let s = ca.reinterpret_unsigned();
             is_in(&s, &other)
         },
-        dt if dt.is_integer() => {
+        dt if dt.to_physical().is_integer() => {
+            let s = s.to_physical_repr();
             with_match_physical_integer_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_in_numeric(ca, other)
