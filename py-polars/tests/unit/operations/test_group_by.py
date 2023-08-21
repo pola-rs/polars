@@ -839,3 +839,44 @@ def test_group_by_partitioned_ending_cast(monkeypatch: Any) -> None:
     out = df.group_by(["a", "b"]).agg(pl.count().cast(pl.Int64).alias("num"))
     expected = pl.DataFrame({"a": [1], "b": [1], "num": [5]})
     assert_frame_equal(out, expected)
+
+
+def test_group_by_alias_groupby() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2], "b": [3, 4, 5]})
+
+    result = df.groupby("a").agg(pl.sum("b"))
+
+    expected = df.group_by("a").agg(pl.sum("b"))
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_group_by_rolling_alias_groupby_rolling() -> None:
+    df = pl.DataFrame(
+        {
+            "date": pl.date_range(
+                datetime(2020, 1, 1), datetime(2020, 1, 5), eager=True
+            ),
+            "value": [1, 2, 3, 4, 5],
+        }
+    )
+
+    result = df.groupby_rolling("date", period="2d").agg(pl.sum("value"))
+
+    expected = df.group_by_rolling("date", period="2d").agg(pl.sum("value"))
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_group_by_dynamic_alias_groupby_dynamic() -> None:
+    df = pl.DataFrame(
+        {
+            "date": pl.date_range(
+                datetime(2020, 1, 1), datetime(2020, 1, 5), eager=True
+            ),
+            "value": [1, 2, 3, 4, 5],
+        }
+    )
+
+    result = df.groupby_dynamic("date", every="2d").agg(pl.sum("value"))
+
+    expected = df.group_by_dynamic("date", every="2d").agg(pl.sum("value"))
+    assert_frame_equal(result, expected, check_row_order=False)
