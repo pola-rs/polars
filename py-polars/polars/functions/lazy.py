@@ -185,7 +185,8 @@ def col(
             return wrap_expr(plr.dtype_cols(dtypes))
         else:
             raise TypeError(
-                f"invalid input for `col`. Expected `str` or `DataType`, got {type(name).__name__!r}"
+                "invalid input for `col`"
+                f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}."
             )
 
     if isinstance(name, str):
@@ -204,12 +205,14 @@ def col(
             return wrap_expr(plr.dtype_cols(names))
         else:
             raise TypeError(
-                "invalid input for `col`. Expected iterable of type `str` or `DataType`,"
+                "invalid input for `col`"
+                "\n\nExpected iterable of type `str` or `DataType`,"
                 f" got iterable of type {type(item).__name__!r}"
             )
     else:
         raise TypeError(
-            f"invalid input for `col`. Expected `str` or `DataType`, got {type(name).__name__!r}"
+            "invalid input for `col`"
+            f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}"
         )
 
 

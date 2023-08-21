@@ -285,7 +285,7 @@ class ExprStringNameSpace:
         elif dtype == Time:
             return self.to_time(format, strict=strict, cache=cache)
         else:
-            raise ValueError("dtype should be of type {Date, Datetime, Time}")
+            raise ValueError("`dtype` must be of type {Date, Datetime, Time}")
 
     def to_decimal(
         self,

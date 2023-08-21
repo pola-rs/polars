@@ -138,14 +138,14 @@ def test_init_inputs(monkeypatch: Any) -> None:
     # Bad inputs
     with pytest.raises(TypeError):
         pl.Series([1, 2, 3], [1, 2, 3])
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         pl.Series({"a": [1, 2, 3]})
     with pytest.raises(OverflowError):
         pl.Series("bigint", [2**64])
 
     # numpy not available
     monkeypatch.setattr(pl.series.series, "_check_for_numpy", lambda x: False)
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
 
@@ -345,31 +345,37 @@ def test_arithmetic(s: pl.Series) -> None:
     assert ((1.0 + a) == [2, 3]).sum() == 2
     assert ((1.0 % a) == [0, 1]).sum() == 2
 
+
+def test_arithmetic_datetime() -> None:
     a = pl.Series("a", [datetime(2021, 1, 1)])
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         a // 2
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         a / 2
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         a * 2
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         a % 2
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         a**2
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         2 / a
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         2 // a
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         2 * a
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         2 % a
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         2**a
-    with pytest.raises(ValueError):
+
+    with pytest.raises(TypeError):
         +a
+
+
+def test_arithmetic_string() -> None:
     a = pl.Series("a", [""])
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         +a
 
 
@@ -385,7 +391,7 @@ def test_power() -> None:
     assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**None, pl.Series([None] * len(a), dtype=Float64))
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         c**2
     with pytest.raises(pl.ColumnNotFoundError):
         a ** "hi"  # type: ignore[operator]
@@ -393,7 +399,7 @@ def test_power() -> None:
     # rpow
     assert_series_equal(2.0**a, pl.Series("literal", [2.0, 4.0], dtype=Float64))
     assert_series_equal(2**b, pl.Series("literal", [None, 4.0], dtype=Float64))
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         2**c
     with pytest.raises(pl.ColumnNotFoundError):
         "hi" ** a
@@ -840,18 +846,18 @@ def test_set_value_as_list_fail() -> None:
 
     # for other types it is not allowed
     s = pl.Series("a", ["a", "b", "c"])
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         s[[0, 1]] = ["d", "e"]
 
     s = pl.Series("a", [True, False, False])
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         s[[0, 1]] = [True, False]
 
 
 @pytest.mark.parametrize("key", [True, False, 1.0])
 def test_set_invalid_key(key: Any) -> None:
     s = pl.Series("a", [1, 2, 3])
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         s[key] = 1
 
 
@@ -1145,7 +1151,7 @@ def test_empty() -> None:
         assert a.name == empty_a.name
         assert len(empty_a) == n
 
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         not empty_a
 
 
@@ -1470,10 +1476,10 @@ def test_bitwise() -> None:
     assert_series_equal(out["xor"], pl.Series("xor", [2, 6, 6]))
 
     # ensure mistaken use of logical 'and'/'or' raises an exception
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         a and b
 
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         a or b
 
 
@@ -1621,17 +1627,17 @@ def test_comparisons_bool_series_to_int() -> None:
         r"cannot do arithmetic with series of dtype: Boolean"
         r" and argument of type: 'bool'"
     )
-    with pytest.raises(ValueError, match=match):
+    with pytest.raises(TypeError, match=match):
         srs_bool - 1
-    with pytest.raises(ValueError, match=match):
+    with pytest.raises(TypeError, match=match):
         srs_bool + 1
     match = (
         r"cannot do arithmetic with series of dtype: Boolean"
         r" and argument of type: 'bool'"
     )
-    with pytest.raises(ValueError, match=match):
+    with pytest.raises(TypeError, match=match):
         srs_bool % 2
-    with pytest.raises(ValueError, match=match):
+    with pytest.raises(TypeError, match=match):
         srs_bool * 1
 
     from operator import ge, gt, le, lt

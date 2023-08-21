@@ -320,8 +320,9 @@ class Series:
                 dtype_if_empty=dtype_if_empty,
             )
         else:
-            raise ValueError(
-                f"Series constructor called with unsupported type; got {type(values).__name__!r}"
+            raise TypeError(
+                f"Series constructor called with unsupported type {type(values).__name__!r}"
+                " for the `values` parameter"
             )
 
     @classmethod
@@ -352,8 +353,7 @@ class Series:
         """
         Get a pointer to the start of the values buffer of a numeric Series.
 
-        This will raise an error if the
-        ``Series`` contains multiple chunks
+        This will raise an error if the ``Series`` contains multiple chunks.
 
         This will return the offset, length and the pointer itself.
 
@@ -416,7 +416,7 @@ class Series:
         return (self._s.len(),)
 
     def __bool__(self) -> NoReturn:
-        raise ValueError(
+        raise TypeError(
             "the truth value of a Series is ambiguous"
             "\n\nHint: use '&' or '|' to chain Series boolean results together, not and/or."
             " To check if a Series contains any values, use `is_empty()`."
@@ -673,7 +673,7 @@ class Series:
             other = maybe_cast(other, self.dtype)
             f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
-            raise ValueError(
+            raise TypeError(
                 f"cannot do arithmetic with series of dtype: {self.dtype} and argument"
                 f" of type: {type(other).__name__!r}"
             )
@@ -725,7 +725,7 @@ class Series:
         if isinstance(other, pl.Expr):
             return F.lit(self) / other
         if self.is_temporal():
-            raise ValueError("first cast to integer before dividing datelike dtypes")
+            raise TypeError("first cast to integer before dividing datelike dtypes")
 
         # this branch is exactly the floordiv function without rounding the floats
         if self.is_float() or self.dtype == Decimal:
@@ -745,7 +745,7 @@ class Series:
         if isinstance(other, pl.Expr):
             return F.lit(self) // other
         if self.is_temporal():
-            raise ValueError("first cast to integer before dividing datelike dtypes")
+            raise TypeError("first cast to integer before dividing datelike dtypes")
 
         if not isinstance(other, pl.Expr):
             other = F.lit(other)
@@ -772,7 +772,7 @@ class Series:
         if isinstance(other, pl.Expr):
             return F.lit(self) * other
         if self.is_temporal():
-            raise ValueError("first cast to integer before multiplying datelike dtypes")
+            raise TypeError("first cast to integer before multiplying datelike dtypes")
         elif isinstance(other, pl.DataFrame):
             return other * self
         else:
@@ -790,14 +790,14 @@ class Series:
         if isinstance(other, pl.Expr):
             return F.lit(self).__mod__(other)
         if self.is_temporal():
-            raise ValueError(
+            raise TypeError(
                 "first cast to integer before applying modulo on datelike dtypes"
             )
         return self._arithmetic(other, "rem", "rem_<>")
 
     def __rmod__(self, other: Any) -> Series:
         if self.is_temporal():
-            raise ValueError(
+            raise TypeError(
                 "first cast to integer before applying modulo on datelike dtypes"
             )
         return self._arithmetic(other, "rem", "rem_<>_rhs")
@@ -812,7 +812,7 @@ class Series:
 
     def __rtruediv__(self, other: Any) -> Series:
         if self.is_temporal():
-            raise ValueError("first cast to integer before dividing datelike dtypes")
+            raise TypeError("first cast to integer before dividing datelike dtypes")
         if self.is_float():
             self.__rfloordiv__(other)
 
@@ -822,12 +822,12 @@ class Series:
 
     def __rfloordiv__(self, other: Any) -> Series:
         if self.is_temporal():
-            raise ValueError("first cast to integer before dividing datelike dtypes")
+            raise TypeError("first cast to integer before dividing datelike dtypes")
         return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rmul__(self, other: Any) -> Series:
         if self.is_temporal():
-            raise ValueError("first cast to integer before multiplying datelike dtypes")
+            raise TypeError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
     def __pow__(self, exponent: int | float | None | Series) -> Series:
@@ -835,7 +835,7 @@ class Series:
 
     def __rpow__(self, other: Any) -> Series:
         if self.is_temporal():
-            raise ValueError(
+            raise TypeError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
         return self.to_frame().select(other ** F.col(self.name)).to_series()
@@ -1010,7 +1010,7 @@ class Series:
             if self.is_numeric() or self.is_temporal():
                 self.set_at_idx(key, value)  # type: ignore[arg-type]
                 return None
-            raise ValueError(
+            raise TypeError(
                 f"cannot set Series of dtype: {self.dtype!r} with list/tuple as value;"
                 " use a scalar value"
             )
@@ -1036,7 +1036,7 @@ class Series:
             s = self._from_pyseries(sequence_to_pyseries("", key, dtype=UInt32))
             self.__setitem__(s, value)
         else:
-            raise ValueError(f'cannot use "{key!r}" for indexing')
+            raise TypeError(f'cannot use "{key!r}" for indexing')
 
     def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
         """
@@ -1075,7 +1075,7 @@ class Series:
                 elif isinstance(arg, Series):
                     args.append(arg.view(ignore_nulls=True))
                 else:
-                    raise ValueError(
+                    raise TypeError(
                         f"unsupported type {type(arg).__name__!r} for {arg!r}"
                     )
 
@@ -1551,7 +1551,7 @@ class Series:
 
         """
         if self.is_temporal():
-            raise ValueError(
+            raise TypeError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
         if _check_for_numpy(exponent) and isinstance(exponent, np.ndarray):
@@ -3764,7 +3764,7 @@ class Series:
         elif signed is False:
             return self.dtype in UNSIGNED_INTEGER_DTYPES
 
-        raise ValueError(f"'signed' must be None, True or False; given {signed!r}")
+        raise ValueError(f"`signed` must be None, True or False; got {signed!r}")
 
     def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
         """

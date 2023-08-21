@@ -45,7 +45,7 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
 def test_read_excel_all_sheets_with_sheet_name(excel_file_path: Path) -> None:
     with pytest.raises(
         ValueError,
-        match=r"Cannot specify both `sheet_name` \('Sheet1'\) and `sheet_id` \(1\)",
+        match=r"cannot specify both `sheet_name` \('Sheet1'\) and `sheet_id` \(1\)",
     ):
         pl.read_excel(excel_file_path, sheet_id=1, sheet_name="Sheet1")
 

@@ -477,7 +477,7 @@ def test_from_pandas_dataframe() -> None:
     assert df.rows() == [(1, 2, 3), (4, 5, 6)]
 
     # if not a pandas dataframe, raise a ValueError
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         _ = pl.from_pandas([1, 2])  # type: ignore[call-overload]
 
 

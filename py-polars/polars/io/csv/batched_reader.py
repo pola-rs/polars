@@ -68,7 +68,7 @@ class BatchedCsvReader:
             elif isinstance(dtypes, Sequence):
                 dtype_slice = dtypes
             else:
-                raise ValueError("dtype arg should be list or dict")
+                raise TypeError("`dtypes` arg should be list or dict")
 
         processed_null_values = _process_null_values(null_values)
         projection, columns = handle_projection_columns(columns)

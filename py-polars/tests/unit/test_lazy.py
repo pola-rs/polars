@@ -63,7 +63,7 @@ def test_lazyframe_membership_operator() -> None:
     assert "phone" not in ldf
 
     # note: cannot use lazyframe in boolean context
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         not ldf
 
 
@@ -675,7 +675,7 @@ def test_fill_null() -> None:
         df.fill_null()
     with pytest.raises(ValueError, match="cannot specify both"):
         df.fill_null(value=3.0, strategy="max")
-    with pytest.raises(ValueError, match="can only specify 'limit'"):
+    with pytest.raises(ValueError, match="can only specify `limit`"):
         df.fill_null(strategy="max", limit=2)
 
 

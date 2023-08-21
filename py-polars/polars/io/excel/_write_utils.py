@@ -493,7 +493,7 @@ def _xl_setup_table_options(
         )
         for key in table_style:
             if key not in valid_options:
-                raise ValueError(f"invalid table style key:{key!r}")
+                raise ValueError(f"invalid table style key: {key!r}")
 
         table_options = table_style.copy()
         table_style = table_options.pop("style", None)
