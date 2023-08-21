@@ -276,6 +276,15 @@ def test_read_database_mocked() -> None:
             "no such table: imaginary_table",
             id="Invalid read DB kwargs",
         ),
+        pytest.param(
+            "read_database",
+            None,
+            "SELECT * FROM imaginary_table",
+            sys.getsizeof,  # not a connection
+            TypeError,
+            "Unrecognised connection .* unable to find 'execute' method",
+            id="Invalid read DB kwargs",
+        ),
     ],
 )
 def test_read_database_exceptions(

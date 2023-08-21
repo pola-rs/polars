@@ -96,7 +96,7 @@ class ConnectionExecutor:
             return conn  # type: ignore[return-value]
 
         raise TypeError(
-            f"Unrecognised {conn!r} object; unable to find 'execute' method"
+            f"Unrecognised connection {conn!r}; unable to find 'execute' method"
         )
 
     @staticmethod
