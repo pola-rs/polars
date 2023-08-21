@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - crates/**
+      - Cargo.toml
       - py-polars/src/**
       - py-polars/Cargo.toml
       - .github/workflows/lint-py-polars.yml
@@ -12,6 +13,7 @@ on:
       - main
     paths:
       - crates/**
+      - Cargo.toml
       - py-polars/src/**
       - py-polars/Cargo.toml
       - .github/workflows/lint-py-polars.yml
