@@ -67,7 +67,7 @@ impl Display for BooleanFunction {
             #[cfg(feature = "is_in")]
             IsIn => "is_in",
             AnyHorizontal => "any_horizontal",
-            AllHorizontal => "any_horizontal",
+            AllHorizontal => "all_horizontal",
         };
         write!(f, "{s}")
     }
