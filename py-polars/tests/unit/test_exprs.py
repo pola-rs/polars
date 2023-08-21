@@ -425,18 +425,18 @@ def test_abs_expr() -> None:
 def test_logical_boolean() -> None:
     # note, cannot use expressions in logical
     # boolean context (eg: and/or/not operators)
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         pl.col("colx") and pl.col("coly")
 
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         pl.col("colx") or pl.col("coly")
 
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         df.select([(pl.col("a") > pl.col("b")) and (pl.col("b") > pl.col("b"))])
 
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         df.select([(pl.col("a") > pl.col("b")) or (pl.col("b") > pl.col("b"))])
 
 
@@ -720,13 +720,13 @@ def test_map_dict() -> None:
 
     with pytest.raises(
         pl.ComputeError,
-        match="remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion",
+        match="remapping keys for `map_dict` could not be converted to Utf8 without losing values in the conversion",
     ):
         df_int_as_str.with_columns(pl.col("int").map_dict(int_dict))
 
     with pytest.raises(
         pl.ComputeError,
-        match="remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion",
+        match="remapping keys for `map_dict` could not be converted to Utf8 without losing values in the conversion",
     ):
         df_int_as_str.with_columns(pl.col("int").map_dict(int_with_none_dict))
 

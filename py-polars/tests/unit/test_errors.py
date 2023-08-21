@@ -117,13 +117,13 @@ def test_join_lazy_on_df() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected 'other' .* to be a LazyFrame.* not a 'DataFrame'",
+        match="expected `other` .* to be a LazyFrame.* not a 'DataFrame'",
     ):
         df_left.lazy().join(df_right, on="Id")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected 'other' .* to be a LazyFrame.* not a 'DataFrame'",
+        match="expected `other` .* to be a LazyFrame.* not a 'DataFrame'",
     ):
         df_left.lazy().join_asof(df_right, on="Id")  # type: ignore[arg-type]
 
@@ -298,7 +298,7 @@ def test_series_concat_err(how: ConcatMethod) -> None:
     s = pl.Series([1, 2, 3])
     with pytest.raises(
         ValueError,
-        match="'Series' only allows {'vertical'} concat strategy",
+        match="Series only allows {'vertical'} concat strategy",
     ):
         pl.concat([s, s], how=how)
 
@@ -591,7 +591,7 @@ def test_lit_agg_err() -> None:
 def test_window_size_validation() -> None:
     df = pl.DataFrame({"x": [1.0]})
 
-    with pytest.raises(ValueError, match=r"'window_size' should be positive"):
+    with pytest.raises(ValueError, match=r"`window_size` must be positive"):
         df.with_columns(trailing_min=pl.col("x").rolling_min(window_size=-3))
 
 
@@ -605,7 +605,7 @@ def test_invalid_getitem_key_err() -> None:
 def test_invalid_groupby_arg() -> None:
     df = pl.DataFrame({"a": [1]})
     with pytest.raises(
-        ValueError, match="specifying aggregations as a dictionary is not supported"
+        TypeError, match="specifying aggregations as a dictionary is not supported"
     ):
         df.groupby(1).agg({"a": "sum"})
 

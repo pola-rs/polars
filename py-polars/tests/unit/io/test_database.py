@@ -118,7 +118,7 @@ def test_read_database(
             "SELECT * FROM test_data",
             "sqlite",
             ValueError,
-            "engine 'not_engine' not implemented; use connectorx or adbc",
+            "engine must be one of {'connectorx', 'adbc'}, got 'not_engine'",
             id="Not an available sql engine",
         ),
         pytest.param(
@@ -142,7 +142,7 @@ def test_read_database(
             "SELECT * FROM test_data",
             sqlite3.connect(":memory:"),
             TypeError,
-            "expect connection to be a URI string",
+            "expected connection to be a URI string",
             id="Invalid connection URI",
         ),
     ],
@@ -233,7 +233,7 @@ def test_write_database(
         {"table_name": "w.x.y.z"},
         {"if_exists": "crunk", "table_name": f"main.{tbl_name}"},
     ):
-        with pytest.raises(ValueError):
+        with pytest.raises((ValueError, NotImplementedError)):
             sample_df.write_database(
                 connection=f"sqlite:///{test_db}",
                 engine=engine,
