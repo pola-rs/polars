@@ -10,6 +10,7 @@ mod floor_divide;
 mod fused;
 #[cfg(feature = "is_first")]
 mod is_first;
+#[cfg(feature = "is_in")]
 mod is_in;
 #[cfg(feature = "is_unique")]
 mod is_unique;
