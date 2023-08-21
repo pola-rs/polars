@@ -2438,14 +2438,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return self._from_pyldf(self._ldf.select_seq(pyexprs))
 
-    def groupby(
+    def group_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
         maintain_order: bool = False,
     ) -> LazyGroupBy:
         """
-        Start a groupby operation.
+        Start a group by operation.
 
         Parameters
         ----------
@@ -2536,7 +2536,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lgb = self._ldf.group_by(exprs, maintain_order)
         return LazyGroupBy(lgb)
 
-    def groupby_rolling(
+    def group_by_rolling(
         self,
         index_column: IntoExpr,
         *,
@@ -2686,7 +2686,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return LazyGroupBy(lgb)
 
-    def groupby_dynamic(
+    def group_by_dynamic(
         self,
         index_column: IntoExpr,
         *,
@@ -5333,3 +5333,175 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             result = result.drop(row_count_name)
 
         return self._from_pyldf(result._ldf)
+
+    def groupby(
+        self,
+        by: IntoExpr | Iterable[IntoExpr],
+        *more_by: IntoExpr,
+        maintain_order: bool = False,
+    ) -> LazyGroupBy:
+        """
+        Start a group by operation.
+
+        Alias for :func:`LazyFrame.group_by`.
+
+        Parameters
+        ----------
+        by
+            Column(s) to group by. Accepts expression input. Strings are parsed as
+            column names.
+        *more_by
+            Additional columns to group by, specified as positional arguments.
+        maintain_order
+            Ensure that the order of the groups is consistent with the input data.
+            This is slower than a default groupby.
+            Settings this to ``True`` blocks the possibility
+            to run on the streaming engine.
+
+        """
+        return self.group_by(by, *more_by, maintain_order=maintain_order)
+
+    def groupby_rolling(
+        self,
+        index_column: IntoExpr,
+        *,
+        period: str | timedelta,
+        offset: str | timedelta | None = None,
+        closed: ClosedInterval = "right",
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        check_sorted: bool = True,
+    ) -> LazyGroupBy:
+        """
+        Create rolling groups based on a time, Int32, or Int64 column.
+
+        Alias for :func:`LazyFrame.group_by_rolling`.
+
+        Parameters
+        ----------
+        index_column
+            Column used to group based on the time window.
+            Often of type Date/Datetime.
+            This column must be sorted in ascending order (or, if `by` is specified,
+            then it must be sorted in ascending order within each group).
+
+            In case of a rolling groupby on indices, dtype needs to be one of
+            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
+            performance matters use an Int64 column.
+        period
+            length of the window - must be non-negative
+        offset
+            offset of the window. Default is -period
+        closed : {'right', 'left', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive).
+        by
+            Also group by this column/these columns
+        check_sorted
+            When the ``by`` argument is given, polars can not check sortedness
+            by the metadata and has to do a full scan on the index column to
+            verify data is sorted. This is expensive. If you are sure the
+            data within the by groups is sorted, you can set this to ``False``.
+            Doing so incorrectly will lead to incorrect output
+
+        Returns
+        -------
+        LazyGroupBy
+            Object you can call ``.agg`` on to aggregate by groups, the result
+            of which will be sorted by `index_column` (but note that if `by` columns are
+            passed, it will only be sorted within each `by` group).
+
+        """
+        return self.group_by_rolling(
+            index_column,
+            period=period,
+            offset=offset,
+            closed=closed,
+            by=by,
+            check_sorted=check_sorted,
+        )
+
+    def groupby_dynamic(
+        self,
+        index_column: IntoExpr,
+        *,
+        every: str | timedelta,
+        period: str | timedelta | None = None,
+        offset: str | timedelta | None = None,
+        truncate: bool = True,
+        include_boundaries: bool = False,
+        closed: ClosedInterval = "left",
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        start_by: StartBy = "window",
+        check_sorted: bool = True,
+    ) -> LazyGroupBy:
+        """
+        Group based on a time value (or index value of type Int32, Int64).
+
+        Alias for :func:`LazyFrame.group_by_rolling`.
+
+        Parameters
+        ----------
+        index_column
+            Column used to group based on the time window.
+            Often of type Date/Datetime.
+            This column must be sorted in ascending order (or, if `by` is specified,
+            then it must be sorted in ascending order within each group).
+
+            In case of a dynamic groupby on indices, dtype needs to be one of
+            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
+            performance matters use an Int64 column.
+        every
+            interval of the window
+        period
+            length of the window, if None it is equal to 'every'
+        offset
+            offset of the window if None and period is None it will be equal to negative
+            `every`
+        truncate
+            truncate the time value to the window lower bound
+        include_boundaries
+            Add the lower and upper bound of the window to the "_lower_bound" and
+            "_upper_bound" columns. This will impact performance because it's harder to
+            parallelize
+        closed : {'right', 'left', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive).
+        by
+            Also group by this column/these columns
+        start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
+            The strategy to determine the start of the first window by.
+
+            * 'window': Truncate the start of the window with the 'every' argument.
+              Note that weekly windows start on Monday.
+            * 'datapoint': Start from the first encountered data point.
+            * a day of the week (only takes effect if `every` contains ``'w'``):
+
+              * 'monday': Start the window on the Monday before the first data point.
+              * 'tuesday': Start the window on the Tuesday before the first data point.
+              * ...
+              * 'sunday': Start the window on the Sunday before the first data point.
+        check_sorted
+            When the ``by`` argument is given, polars can not check sortedness
+            by the metadata and has to do a full scan on the index column to
+            verify data is sorted. This is expensive. If you are sure the
+            data within the by groups is sorted, you can set this to ``False``.
+            Doing so incorrectly will lead to incorrect output
+
+        Returns
+        -------
+        LazyGroupBy
+            Object you can call ``.agg`` on to aggregate by groups, the result
+            of which will be sorted by `index_column` (but note that if `by` columns are
+            passed, it will only be sorted within each `by` group).
+
+        """  # noqa: W505
+        return self.group_by_dynamic(
+            index_column,
+            every=every,
+            period=period,
+            offset=offset,
+            truncate=truncate,
+            include_boundaries=include_boundaries,
+            closed=closed,
+            by=by,
+            start_by=start_by,
+            check_sorted=check_sorted,
+        )
