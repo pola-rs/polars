@@ -1312,6 +1312,24 @@ def test_read_csv_chunked() -> None:
     assert df.filter(pl.col("count") < pl.col("count").shift(1)).is_empty()
 
 
+def test_read_csv_parse_integer() -> None:
+    # 2147483647 is max value of i32
+    csv = """value
+    2147483647
+    2147483648
+    9589934591
+    9589934592
+    9999999999
+    10000000000
+    """
+
+    assert pl.read_csv(
+        source=io.StringIO(csv),
+        dtypes={"value": pl.Int32},
+        ignore_errors=True,
+    ).to_dict(False) == {"value": [2147483647, None, None, None, None, None]}
+
+
 def test_read_empty_csv(io_files_path: Path) -> None:
     with pytest.raises(NoDataError) as err:
         pl.read_csv(io_files_path / "empty.csv")

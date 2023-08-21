@@ -34,25 +34,25 @@ impl PrimitiveParser for Float64Type {
 impl PrimitiveParser for UInt32Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<u32> {
-        lexical::parse(bytes).ok()
+        atoi::atoi::<u32>(bytes)
     }
 }
 impl PrimitiveParser for UInt64Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<u64> {
-        lexical::parse(bytes).ok()
+        atoi::atoi::<u64>(bytes)
     }
 }
 impl PrimitiveParser for Int32Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<i32> {
-        lexical::parse(bytes).ok()
+        atoi::atoi::<i32>(bytes)
     }
 }
 impl PrimitiveParser for Int64Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<i64> {
-        lexical::parse(bytes).ok()
+        atoi::atoi::<i64>(bytes)
     }
 }
 
