@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 def test_error_on_empty_groupby() -> None:
     with pytest.raises(
-        pl.ComputeError, match="at least one key is required in a groupby operation"
+        pl.ComputeError, match="at least one key is required in a group_by operation"
     ):
         pl.DataFrame({"x": [0, 0, 1, 1]}).groupby([]).agg(pl.count())
 
@@ -618,7 +618,7 @@ def test_no_sorted_err() -> None:
     )
     with pytest.raises(
         pl.InvalidOperationError,
-        match=r"argument in operation 'groupby_dynamic' is not explicitly sorted",
+        match=r"argument in operation 'group_by_dynamic' is not explicitly sorted",
     ):
         df.groupby_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
 

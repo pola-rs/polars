@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-#[cfg(feature = "groupby_list")]
+#[cfg(feature = "group_by_list")]
 use ahash::RandomState;
 
 use super::{private, IntoSeries, SeriesTrait};
@@ -9,7 +9,7 @@ use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{IntoPartialEqInner, PartialEqInner};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::{AsSinglePtr, Settings};
-use crate::frame::groupby::*;
+use crate::frame::group_by::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 #[cfg(feature = "chunked_ids")]
@@ -53,13 +53,13 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 
-    #[cfg(feature = "groupby_list")]
+    #[cfg(feature = "group_by_list")]
     fn vec_hash(&self, _build_hasher: RandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.vec_hash(_build_hasher, _buf)?;
         Ok(())
     }
 
-    #[cfg(feature = "groupby_list")]
+    #[cfg(feature = "group_by_list")]
     fn vec_hash_combine(
         &self,
         _build_hasher: RandomState,

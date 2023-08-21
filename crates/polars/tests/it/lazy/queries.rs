@@ -33,8 +33,8 @@ fn test_drop() -> PolarsResult<()> {
 }
 
 #[test]
-#[cfg(feature = "dynamic_groupby")]
-fn test_special_groupby_schemas() -> PolarsResult<()> {
+#[cfg(feature = "dynamic_group_by")]
+fn test_special_group_by_schemas() -> PolarsResult<()> {
     let df = df![
         "a" => [1, 2, 3, 4, 5],
         "b" => [1, 2, 3, 4, 5],
@@ -44,7 +44,7 @@ fn test_special_groupby_schemas() -> PolarsResult<()> {
         .clone()
         .lazy()
         .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
-        .groupby_rolling(
+        .group_by_rolling(
             col("a"),
             [],
             RollingGroupOptions {
@@ -69,7 +69,7 @@ fn test_special_groupby_schemas() -> PolarsResult<()> {
     let out = df
         .lazy()
         .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
-        .groupby_dynamic(
+        .group_by_dynamic(
             col("a"),
             [],
             DynamicGroupOptions {
@@ -108,7 +108,7 @@ fn max_on_empty_df_3027() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .groupby(&[col("id"), col("name")])
+        .group_by(&[col("id"), col("name")])
         .agg(&[col("numb").max()])
         .collect()?;
     assert_eq!(out.shape(), (0, 3));
@@ -144,7 +144,7 @@ fn test_sorted_path() -> PolarsResult<()> {
         .lazy()
         .with_row_count("row_nr", None)
         .explode(["a"])
-        .groupby(["row_nr"])
+        .group_by(["row_nr"])
         .agg([col("a").count().alias("count")])
         .collect()?;
 
@@ -215,7 +215,7 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .groupby_stable([col("cars")])
+        .group_by_stable([col("cars")])
         .agg([apply_multiple(
             multiply,
             [col("A"), col("B")],
@@ -233,7 +233,7 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_groupby_on_lists() -> PolarsResult<()> {
+fn test_group_by_on_lists() -> PolarsResult<()> {
     let s0 = Series::new("", [1i32, 2, 3]);
     let s1 = Series::new("groups", [4i32, 5]);
 
@@ -247,7 +247,7 @@ fn test_groupby_on_lists() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .groupby([col("groups")])
+        .group_by([col("groups")])
         .agg([col("arrays").first()])
         .collect()?;
 
@@ -258,7 +258,7 @@ fn test_groupby_on_lists() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .groupby([col("groups")])
+        .group_by([col("groups")])
         .agg([col("arrays").implode()])
         .collect()?;
 

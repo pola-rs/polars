@@ -248,14 +248,14 @@ def test_groupby_rolling_dynamic_sortedness_check() -> None:
     # no `by` argument
     with pytest.raises(
         pl.InvalidOperationError,
-        match=r"argument in operation 'groupby_dynamic' is not explicitly sorted",
+        match=r"argument in operation 'group_by_dynamic' is not explicitly sorted",
     ):
         df.groupby_dynamic("idx", every="2i").agg(pl.col("idx").alias("idx1"))
 
     # no `by` argument
     with pytest.raises(
         pl.InvalidOperationError,
-        match=r"argument in operation 'groupby_rolling' is not explicitly sorted",
+        match=r"argument in operation 'group_by_rolling' is not explicitly sorted",
     ):
         df.groupby_rolling("idx", period="2i").agg(pl.col("idx").alias("idx1"))
 

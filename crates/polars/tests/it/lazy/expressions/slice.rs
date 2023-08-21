@@ -14,7 +14,7 @@ fn test_slice_args() -> PolarsResult<()> {
         "vals" => 0i32..30
     ]?
     .lazy()
-    .groupby_stable([col("groups")])
+    .group_by_stable([col("groups")])
     .agg([col("vals").slice(lit(0i64), count() * lit(0.2))])
     .collect()?;
 

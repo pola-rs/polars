@@ -3,7 +3,7 @@ mod positioning;
 use std::borrow::Cow;
 
 use polars_core::export::rayon::prelude::*;
-use polars_core::frame::groupby::expr::PhysicalAggExpr;
+use polars_core::frame::group_by::expr::PhysicalAggExpr;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
@@ -75,7 +75,7 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
 ///
 /// # Note
 /// Polars'/arrow memory is not ideal for transposing operations like pivots.
-/// If you have a relatively large table, consider using a groupby over a pivot.
+/// If you have a relatively large table, consider using a group_by over a pivot.
 pub fn pivot<I0, S0, I1, S1, I2, S2>(
     pivot_df: &DataFrame,
     values: I0,
@@ -121,7 +121,7 @@ where
 ///
 /// # Note
 /// Polars'/arrow memory is not ideal for transposing operations like pivots.
-/// If you have a relatively large table, consider using a groupby over a pivot.
+/// If you have a relatively large table, consider using a group_by over a pivot.
 pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
     pivot_df: &DataFrame,
     values: I0,
@@ -167,12 +167,12 @@ where
 #[allow(clippy::too_many_arguments)]
 fn pivot_impl(
     pivot_df: &DataFrame,
-    // these columns will be aggregated in the nested groupby
+    // these columns will be aggregated in the nested group_by
     values: &[String],
-    // keys of the first groupby operation
+    // keys of the first group_by operation
     index: &[String],
-    // these columns will be used for a nested groupby
-    // the rows of this nested groupby will be pivoted as header column values
+    // these columns will be used for a nested group_by
+    // the rows of this nested group_by will be pivoted as header column values
     columns: &[String],
     // aggregation function
     agg_fn: Option<PivotAgg>,
@@ -189,10 +189,10 @@ fn pivot_impl(
     let mut count = 0;
     let out: PolarsResult<()> = POOL.install(|| {
         for column_column_name in columns {
-            let mut groupby = index.to_vec();
-            groupby.push(column_column_name.clone());
+            let mut group_by = index.to_vec();
+            group_by.push(column_column_name.clone());
 
-            let groups = pivot_df.groupby_stable(groupby)?.take_groups();
+            let groups = pivot_df.group_by_stable(group_by)?.take_groups();
 
             // these are the row locations
             if !stable {

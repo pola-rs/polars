@@ -333,7 +333,7 @@ class GroupBy:
             raise TypeError("cannot call `apply` when grouping by an expression")
 
         return self.df.__class__._from_pydf(
-            self.df._df.groupby_apply(by, function, self.maintain_order)
+            self.df._df.group_by_apply(by, function, self.maintain_order)
         )
 
     def head(self, n: int = 5) -> DataFrame:

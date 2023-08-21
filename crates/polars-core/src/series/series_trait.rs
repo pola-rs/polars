@@ -48,7 +48,7 @@ pub(crate) mod private {
     use crate::chunked_array::ops::compare_inner::{PartialEqInner, PartialOrdInner};
     use crate::chunked_array::Settings;
     #[cfg(feature = "rows")]
-    use crate::frame::groupby::GroupsProxy;
+    use crate::frame::group_by::GroupsProxy;
 
     pub trait PrivateSeriesNumeric {
         fn bit_repr_is_large(&self) -> bool {

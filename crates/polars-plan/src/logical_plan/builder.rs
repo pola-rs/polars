@@ -546,14 +546,14 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn groupby<E: AsRef<[Expr]>>(
+    pub fn group_by<E: AsRef<[Expr]>>(
         self,
         keys: Vec<Expr>,
         aggs: E,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
-        #[cfg(feature = "dynamic_groupby")] dynamic_options: Option<DynamicGroupOptions>,
-        #[cfg(feature = "dynamic_groupby")] rolling_options: Option<RollingGroupOptions>,
+        #[cfg(feature = "dynamic_group_by")] dynamic_options: Option<DynamicGroupOptions>,
+        #[cfg(feature = "dynamic_group_by")] rolling_options: Option<RollingGroupOptions>,
     ) -> Self {
         let current_schema = try_delayed!(self.0.schema(), &self.0, into);
         let current_schema = current_schema.as_ref();
@@ -594,7 +594,7 @@ impl LogicalPlanBuilder {
             try_delayed!(check_names(), &self.0, into)
         }
 
-        #[cfg(feature = "dynamic_groupby")]
+        #[cfg(feature = "dynamic_group_by")]
         {
             let index_columns = &[
                 rolling_options
@@ -616,14 +616,14 @@ impl LogicalPlanBuilder {
             }
         }
 
-        #[cfg(feature = "dynamic_groupby")]
+        #[cfg(feature = "dynamic_group_by")]
         let options = GroupbyOptions {
             dynamic: dynamic_options,
             rolling: rolling_options,
             slice: None,
         };
 
-        #[cfg(not(feature = "dynamic_groupby"))]
+        #[cfg(not(feature = "dynamic_group_by"))]
         let options = GroupbyOptions { slice: None };
 
         LogicalPlan::Aggregate {

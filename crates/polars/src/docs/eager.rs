@@ -18,7 +18,7 @@
 //! * [Filter](#filter)
 //! * [Sort](#sort)
 //! * [Joins](#joins)
-//! * [GroupBy](#groupby)
+//! * [GroupBy](#group_by)
 //!     - [pivot](#pivot)
 //! * [Melt](#melt)
 //! * [Explode](#explode)
@@ -400,20 +400,20 @@
 //!
 //! ## Groupby
 //!
-//! Note that Polars lazy is a lot more powerful in and more performant in groupby operations.
+//! Note that Polars lazy is a lot more powerful in and more performant in group_by operations.
 //! In lazy a myriad of aggregations can be combined from expressions.
 //!
 //! See more in:
 //!
-//! * [Groupby](crate::frame::groupby::GroupBy)
+//! * [Groupby](crate::frame::group_by::GroupBy)
 //!
 //! ### GroupBy
 //! ```
 //! use polars::prelude::*;
 //!
 //! # fn example(df: &DataFrame) -> PolarsResult<()> {
-//!  // groupby "groups" | sum "foo"
-//!  let out = df.groupby(["groups"])?
+//!  // group_by "groups" | sum "foo"
+//!  let out = df.group_by(["groups"])?
 //!     .select(["foo"])
 //!     .sum();
 //!
@@ -434,7 +434,7 @@
 //!      "bar" => ["k", "l", "m", "n", "0"]
 //!      )?;
 //!
-//! // groupby "foo" | pivot "bar" column | aggregate "N"
+//! // group_by "foo" | pivot "bar" column | aggregate "N"
 //!  let pivoted = pivot::pivot(&df, ["foo"], ["bar"], ["N"], false, Some(first()), None);
 //!
 //! // pivoted:
