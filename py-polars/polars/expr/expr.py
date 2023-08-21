@@ -3845,7 +3845,15 @@ class Expr:
         elif strategy == "threading":
 
             def wrap_threading(x: Series) -> Series:
+                def get_lazy_promise(df: DataFrame) -> LazyFrame:
+                    return df.lazy().select(
+                        F.col("x").map(wrap_f, agg_list=True, return_dtype=return_dtype)
+                    )
+
                 df = x.to_frame("x")
+
+                if x.len() == 0:
+                    return get_lazy_promise(df).collect().to_series()
 
                 n_threads = threadpool_size()
                 chunk_size = x.len() // n_threads
@@ -3857,11 +3865,6 @@ class Expr:
                         chunk_size + 1 if i < remainder else chunk_size
                         for i in range(n_threads)
                     ]
-
-                def get_lazy_promise(df: DataFrame) -> LazyFrame:
-                    return df.lazy().select(
-                        F.col("x").map(wrap_f, agg_list=True, return_dtype=return_dtype)
-                    )
 
                 # create partitions with LazyFrames
                 # these are promises on a computation

@@ -391,3 +391,25 @@ def test_apply_dict_order_10128() -> None:
 def test_apply_10237() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     assert df.select(pl.all().apply(lambda x: x > 50))["a"].to_list() == [False] * 3
+
+
+def test_apply_on_empty_col_10639() -> None:
+    df = pl.DataFrame({"A": [], "B": []})
+    res = df.groupby("B").agg(
+        pl.col("A")
+        .apply(lambda x: x, return_dtype=pl.Int32, strategy="threading")
+        .alias("Foo")
+    )
+    assert res.to_dict(False) == {
+        "B": [],
+        "Foo": [],
+    }
+    res = df.groupby("B").agg(
+        pl.col("A")
+        .apply(lambda x: x, return_dtype=pl.Int32, strategy="thread_local")
+        .alias("Foo")
+    )
+    assert res.to_dict(False) == {
+        "B": [],
+        "Foo": [],
+    }
