@@ -841,16 +841,20 @@ def test_group_by_partitioned_ending_cast(monkeypatch: Any) -> None:
     assert_frame_equal(out, expected)
 
 
-def test_group_by_alias_groupby() -> None:
+def test_groupby_deprecated() -> None:
     df = pl.DataFrame({"a": [1, 1, 2], "b": [3, 4, 5]})
 
-    result = df.groupby("a").agg(pl.sum("b"))
+    with pytest.deprecated_call():
+        result = df.groupby("a").agg(pl.sum("b"))
+    with pytest.deprecated_call():
+        result_lazy = df.lazy().groupby("a").agg(pl.sum("b")).collect()
 
     expected = df.group_by("a").agg(pl.sum("b"))
     assert_frame_equal(result, expected, check_row_order=False)
+    assert_frame_equal(result_lazy, expected, check_row_order=False)
 
 
-def test_group_by_rolling_alias_groupby_rolling() -> None:
+def test_groupby_rolling_deprecated() -> None:
     df = pl.DataFrame(
         {
             "date": pl.date_range(
@@ -860,13 +864,22 @@ def test_group_by_rolling_alias_groupby_rolling() -> None:
         }
     )
 
-    result = df.groupby_rolling("date", period="2d").agg(pl.sum("value"))
+    with pytest.deprecated_call():
+        result = df.groupby_rolling("date", period="2d").agg(pl.sum("value"))
+    with pytest.deprecated_call():
+        result_lazy = (
+            df.lazy()
+            .groupby_rolling("date", period="2d")
+            .agg(pl.sum("value"))
+            .collect()
+        )
 
     expected = df.group_by_rolling("date", period="2d").agg(pl.sum("value"))
     assert_frame_equal(result, expected, check_row_order=False)
+    assert_frame_equal(result_lazy, expected, check_row_order=False)
 
 
-def test_group_by_dynamic_alias_groupby_dynamic() -> None:
+def test_groupby_dynamic_deprecated() -> None:
     df = pl.DataFrame(
         {
             "date": pl.date_range(
@@ -876,7 +889,13 @@ def test_group_by_dynamic_alias_groupby_dynamic() -> None:
         }
     )
 
-    result = df.groupby_dynamic("date", every="2d").agg(pl.sum("value"))
+    with pytest.deprecated_call():
+        result = df.groupby_dynamic("date", every="2d").agg(pl.sum("value"))
+    with pytest.deprecated_call():
+        result_lazy = (
+            df.lazy().groupby_dynamic("date", every="2d").agg(pl.sum("value")).collect()
+        )
 
     expected = df.group_by_dynamic("date", every="2d").agg(pl.sum("value"))
     assert_frame_equal(result, expected, check_row_order=False)
+    assert_frame_equal(result_lazy, expected, check_row_order=False)

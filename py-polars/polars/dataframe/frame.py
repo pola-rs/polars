@@ -84,6 +84,7 @@ from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
+    deprecate_renamed_function,
     deprecate_renamed_methods,
     deprecate_renamed_parameter,
 )
@@ -9677,6 +9678,7 @@ class DataFrame:
         """
         return self.lazy().update(other.lazy(), on, how).collect(no_optimization=True)
 
+    @deprecate_renamed_function("group_by", version="0.19.0")
     def groupby(
         self,
         by: IntoExpr | Iterable[IntoExpr],
@@ -9713,6 +9715,7 @@ class DataFrame:
         """
         return self.group_by(by, *more_by, maintain_order=maintain_order)
 
+    @deprecate_renamed_function("group_by_rolling", version="0.19.0")
     def groupby_rolling(
         self,
         index_column: IntoExpr,
@@ -9764,6 +9767,7 @@ class DataFrame:
             check_sorted=check_sorted,
         )
 
+    @deprecate_renamed_function("group_by_dynamic", version="0.19.0")
     def groupby_dynamic(
         self,
         index_column: IntoExpr,

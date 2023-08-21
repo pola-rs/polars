@@ -5334,6 +5334,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._from_pyldf(result._ldf)
 
+    @deprecate_renamed_function("group_by", version="0.19.0")
     def groupby(
         self,
         by: IntoExpr | Iterable[IntoExpr],
@@ -5361,6 +5362,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.group_by(by, *more_by, maintain_order=maintain_order)
 
+    @deprecate_renamed_function("group_by_rolling", version="0.19.0")
     def groupby_rolling(
         self,
         index_column: IntoExpr,
@@ -5419,6 +5421,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             check_sorted=check_sorted,
         )
 
+    @deprecate_renamed_function("group_by_dynamic", version="0.19.0")
     def groupby_dynamic(
         self,
         index_column: IntoExpr,
