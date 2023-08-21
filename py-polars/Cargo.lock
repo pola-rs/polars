@@ -886,15 +886,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lexical"
-version = "6.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7aefb36fd43fef7003334742cbf77b243fcd36418a1d1bdd480d613a67968f6"
-dependencies = [
- "lexical-core",
-]
-
-[[package]]
 name = "lexical-core"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1467,13 +1458,13 @@ version = "0.32.0"
 dependencies = [
  "ahash",
  "arrow2",
+ "atoi",
  "bytes",
  "chrono",
  "chrono-tz",
  "fast-float",
  "flate2",
  "home",
- "lexical",
  "lexical-core",
  "memchr",
  "memmap2",
