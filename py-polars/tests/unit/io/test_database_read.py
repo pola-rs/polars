@@ -130,6 +130,10 @@ def create_temp_sqlite_db(test_db: str) -> None:
                 "date": pl.Utf8,
             },
             ["2020-01-01", "2021-12-31"],
+            marks=pytest.mark.skipif(
+                sys.version_info < (3, 9) or sys.platform == "win32",
+                reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+            ),
             id="conn: adbc",
         ),
     ],
