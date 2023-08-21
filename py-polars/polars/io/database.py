@@ -248,6 +248,10 @@ def read_database(  # noqa: D417
     ...     connection=conn,
     ... )  # doctest: +SKIP
 
+    See Also
+    --------
+    read_database_uri : Create a DataFrame from a SQL query using a URI string.
+
     """
     if isinstance(connection, str):
         issue_deprecation_warning(
@@ -323,14 +327,14 @@ def read_database_uri(
 
     Examples
     --------
-    Read a DataFrame from a SQL query using a single thread:
+    Create a DataFrame from a SQL query using a single thread:
 
     >>> uri = "postgresql://username:password@server:port/database"
     >>> query = "SELECT * FROM lineitem"
     >>> pl.read_database_uri(query, uri)  # doctest: +SKIP
 
-    Read a DataFrame in parallel using 10 threads by automatically partitioning the
-    provided SQL on the partition column:
+    Create a DataFrame in parallel using 10 threads by automatically partitioning
+    the provided SQL on the partition column:
 
     >>> uri = "postgresql://username:password@server:port/database"
     >>> query = "SELECT * FROM lineitem"
@@ -342,8 +346,8 @@ def read_database_uri(
     ...     engine="connectorx",
     ... )  # doctest: +SKIP
 
-    Read a DataFrame in parallel using 2 threads by explicitly providing two SQL
-    queries:
+    Create a DataFrame in parallel using 2 threads by explicitly providing two
+    SQL queries:
 
     >>> uri = "postgresql://username:password@server:port/database"
     >>> queries = [
@@ -359,6 +363,10 @@ def read_database_uri(
     ...     "snowflake://user:pass@company-org/testdb/public?warehouse=test&role=myrole",
     ...     engine="adbc",
     ... )  # doctest: +SKIP
+
+    See Also
+    --------
+    read_database : Create a DataFrame from a SQL query using a connection object.
 
     """  # noqa: W505
     if not isinstance(uri, str):
