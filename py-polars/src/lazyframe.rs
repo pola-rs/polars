@@ -531,6 +531,48 @@ impl PyLazyFrame {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    #[cfg(all(feature = "streaming", feature = "csv"))]
+    #[pyo3(signature = (path, has_header, separator, line_terminator, quote, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style))]
+    fn sink_csv(
+        &self,
+        py: Python,
+        path: PathBuf,
+        has_header: bool,
+        separator: u8,
+        line_terminator: String,
+        quote: u8,
+        batch_size: usize,
+        datetime_format: Option<String>,
+        date_format: Option<String>,
+        time_format: Option<String>,
+        float_precision: Option<usize>,
+        null_value: Option<String>,
+        quote_style: Option<Wrap<QuoteStyle>>,
+    ) -> PyResult<()> {
+        let options = CsvWriterOptions {
+            has_header,
+            separator,
+            line_terminator,
+            quote,
+            batch_size,
+            datetime_format,
+            date_format,
+            time_format,
+            float_precision,
+            null_value,
+            quote_style,
+        };
+
+        // if we don't allow threads and we have udfs trying to acquire the gil from different
+        // threads we deadlock.
+        py.allow_threads(|| {
+            let ldf = self.ldf.clone();
+            ldf.sink_csv(path, options).map_err(PyPolarsErr::from)
+        })?;
+        Ok(())
+    }
+
     fn fetch(&self, py: Python, n_rows: usize) -> PyResult<PyDataFrame> {
         let ldf = self.ldf.clone();
         let df = py.allow_threads(|| ldf.fetch(n_rows).map_err(PyPolarsErr::from))?;

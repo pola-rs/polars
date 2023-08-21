@@ -418,6 +418,19 @@ def test_sink_ipc(io_files_path: Path, tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
+def test_sink_csv(io_files_path: Path, tmp_path: Path) -> None:
+    source_file = io_files_path / "small.parquet"
+    target_file = tmp_path / "sink.csv"
+
+    pl.scan_parquet(source_file).sink_csv(target_file)
+
+    with pl.StringCache():
+        source_data = pl.read_parquet(source_file)
+        target_data = pl.read_csv(target_file)
+        assert_frame_equal(target_data, source_data)
+
+
+@pytest.mark.write_disk()
 def test_fetch_union(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
