@@ -57,6 +57,8 @@ _ARROW_DRIVER_REGISTRY_: dict[str, _DriverProperties_] = {
 class ConnectionExecutor:
     """Abstraction for querying databases with user-supplied connection objects."""
 
+    acquired_cursor = False
+
     def __init__(self, connection: ConnectionOrCursor) -> None:
         self.driver = type(connection).__module__.split(".", 1)[0].lower()
         self.cursor = self._normalise_cursor(connection)
@@ -71,8 +73,9 @@ class ConnectionExecutor:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        # close the cursor (but not the connection)
-        self.cursor.close()
+        # iif we created it, close the cursor
+        if self.acquired_cursor:
+            self.cursor.close()
 
     def __repr__(self) -> str:
         return f"<{type(self).__name__} module={self.driver!r}>"
@@ -81,13 +84,15 @@ class ConnectionExecutor:
         """Normalise a connection object such that we have the query executor."""
         if self.driver == "sqlalchemy" and type(conn).__name__ == "Engine":
             # sqlalchemy engine; direct use is deprecated, so get the connection
+            self.acquired_cursor = True
             return conn.connect()  # type: ignore[union-attr]
         elif hasattr(conn, "cursor"):
             # connection has a dedicated cursor; prefer over direct execute
             cursor = cursor() if callable(cursor := conn.cursor) else cursor
+            self.acquired_cursor = True
             return cursor
         elif hasattr(conn, "execute"):
-            # can execute (given a cursor, sqlalchemy connection, etc)
+            # can execute directly (given cursor, sqlalchemy connection, etc)
             return conn  # type: ignore[return-value]
 
         raise TypeError(
