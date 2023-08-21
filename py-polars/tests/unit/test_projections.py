@@ -313,3 +313,10 @@ def test_projection_join_names_9955() -> None:
         "yearID": pl.Int64,
         "lgID": pl.Utf8,
     }
+
+
+def test_projection_rename_10595() -> None:
+    lf = pl.LazyFrame(schema=["a", "b"])
+    assert lf.select("a", "b").rename({"b": "a", "a": "b"}).select(
+        "a"
+    ).collect().schema == {"a": pl.Float32}
