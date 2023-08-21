@@ -1440,3 +1440,35 @@ def test_csv_quote_styles() -> None:
         df.write_csv(quote_style="non_numeric", quote="8")
         == '8float8,8string8,8int8,8bool8\n1.0,8a8,1,8true8\n2.0,8abc8,2,8false8\n,8"hello8,3,\n'
     )
+
+
+def test_ignore_errors_casting_dtypes() -> None:
+    csv = """inventory
+    10
+
+    400
+    90
+    """
+
+    assert pl.read_csv(
+        source=io.StringIO(csv),
+        dtypes={"inventory": pl.Int8},
+        ignore_errors=True,
+    ).to_dict(False) == {"inventory": [10, None, None, 90]}
+
+    with pytest.raises(pl.ComputeError):
+        pl.read_csv(
+            source=io.StringIO(csv),
+            dtypes={"inventory": pl.Int8},
+            ignore_errors=False,
+        )
+
+
+def test_ignore_errors_date_parser() -> None:
+    data_invalid_date = "int,float,date\n3,3.4,X"
+    with pytest.raises(pl.ComputeError):
+        pl.read_csv(
+            source=io.StringIO(data_invalid_date),
+            dtypes={"date": pl.Date},
+            ignore_errors=False,
+        )
