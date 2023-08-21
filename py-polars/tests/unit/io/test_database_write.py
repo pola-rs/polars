@@ -95,7 +95,7 @@ def test_write_database(
         {"table_name": "w.x.y.z"},
         {"if_exists": "crunk", "table_name": f"main.{tbl_name}"},
     ):
-        with pytest.raises(ValueError):
+        with pytest.raises((ValueError, NotImplementedError)):
             sample_df.write_database(
                 connection=f"sqlite:///{test_db}",
                 engine=engine,

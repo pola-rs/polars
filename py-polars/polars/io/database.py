@@ -358,7 +358,7 @@ def read_database_uri(
     """  # noqa: W505
     if not isinstance(uri, str):
         raise TypeError(
-            f"expected connection to be a URI string; found {type(connection).__name__!r}"
+            f"expected connection to be a URI string; found {type(uri).__name__!r}"
         )
     elif engine is None:
         engine = "connectorx"
@@ -375,7 +375,7 @@ def read_database_uri(
     elif engine == "adbc":
         if not isinstance(query, str):
             raise ValueError("only a single SQL query string is accepted for adbc")
-        return _read_sql_adbc(query, connection)
+        return _read_sql_adbc(query, uri)
     else:
         raise ValueError(
             f"engine must be one of {{'connectorx', 'adbc'}}, got {engine!r}"

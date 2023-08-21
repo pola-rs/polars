@@ -237,7 +237,7 @@ def test_read_database_mocked() -> None:
             "SELECT * FROM test_data",
             "sqlite",
             ValueError,
-            "engine 'not_an_engine' not implemented; use connectorx or adbc",
+            "engine must be one of {'connectorx', 'adbc'}, got 'not_an_engine'",
             id="Not an available sql engine",
         ),
         pytest.param(
@@ -264,7 +264,7 @@ def test_read_database_mocked() -> None:
             "SELECT * FROM test_data",
             sqlite3.connect(":memory:"),
             TypeError,
-            "expect connection to be a URI string",
+            "expected connection to be a URI string",
             id="Invalid connection URI",
         ),
         pytest.param(
