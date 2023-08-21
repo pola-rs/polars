@@ -5,6 +5,7 @@ from datetime import date, datetime, time
 import pandas as pd
 
 import polars as pl
+from polars.testing import assert_series_equal
 
 
 def test_dtype() -> None:
@@ -437,6 +438,15 @@ def test_list_recursive_categorical_cast() -> None:
     s = pl.Series(values).cast(dtype)
     assert s.dtype == dtype
     assert s.to_list() == values
+
+
+def test_non_nested_cast_to_list() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    df = df.with_columns([pl.col("a").cast(pl.List(pl.Int64))])
+
+    expected = pl.Series("a", [[1], [2], [3]])
+    assert_series_equal(df.to_series(), expected)
 
 
 def test_list_new_from_index_logical() -> None:
