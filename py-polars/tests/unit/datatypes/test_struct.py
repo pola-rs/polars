@@ -607,7 +607,7 @@ def test_nested_struct_sliced_append() -> None:
     ]
 
 
-def test_struct_groupby_field_agg_4216() -> None:
+def test_struct_group_by_field_agg_4216() -> None:
     df = pl.DataFrame([{"a": {"b": 1}, "c": 0}])
     assert df.group_by("c").agg(pl.col("a").struct.field("b").count()).to_dict(
         False

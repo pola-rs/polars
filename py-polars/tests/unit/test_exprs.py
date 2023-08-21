@@ -178,7 +178,7 @@ def test_entropy() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_dot_in_groupby() -> None:
+def test_dot_in_group_by() -> None:
     df = pl.DataFrame(
         {
             "group": ["a", "a", "a", "b", "b", "b"],

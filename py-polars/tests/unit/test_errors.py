@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from polars.type_aliases import ConcatMethod
 
 
-def test_error_on_empty_groupby() -> None:
+def test_error_on_empty_group_by() -> None:
     with pytest.raises(
         pl.ComputeError, match="at least one key is required in a group_by operation"
     ):
@@ -568,7 +568,7 @@ def test_invalid_inner_type_cast_list() -> None:
         ),
     ],
 )
-def test_groupby_dynamic_validation(every: str, match: str) -> None:
+def test_group_by_dynamic_validation(every: str, match: str) -> None:
     df = pl.DataFrame(
         {
             "index": [0, 0, 1, 1],
@@ -602,7 +602,7 @@ def test_invalid_getitem_key_err() -> None:
         df["x", "y"]  # type: ignore[index]
 
 
-def test_invalid_groupby_arg() -> None:
+def test_invalid_group_by_arg() -> None:
     df = pl.DataFrame({"a": [1]})
     with pytest.raises(
         TypeError, match="specifying aggregations as a dictionary is not supported"

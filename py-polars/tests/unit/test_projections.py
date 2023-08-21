@@ -43,7 +43,7 @@ def test_double_projection_pushdown() -> None:
     )
 
 
-def test_groupby_projection_pushdown() -> None:
+def test_group_by_projection_pushdown() -> None:
     assert (
         "PROJECT 2/3 COLUMNS"
         in (
@@ -132,7 +132,7 @@ def test_double_projection_union() -> None:
         }
     ).lazy()
 
-    # in this query the groupby projects only 2 columns, that's one
+    # in this query the group_by projects only 2 columns, that's one
     # less than the upstream projection so the union will fail if
     # the select node does not prune one column
     q = lf1.select(["a", "b", "c"])

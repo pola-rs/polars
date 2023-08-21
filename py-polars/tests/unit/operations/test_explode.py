@@ -25,7 +25,7 @@ def test_explode_multiple() -> None:
     assert_frame_equal(df.explode("a", "b"), expected)
 
 
-def test_groupby_flatten_list() -> None:
+def test_group_by_flatten_list() -> None:
     df = pl.DataFrame({"group": ["a", "b", "b"], "values": [[1, 2], [2, 3], [4]]})
     result = df.group_by("group", maintain_order=True).agg(pl.col("values").flatten())
 
@@ -33,7 +33,7 @@ def test_groupby_flatten_list() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_groupby_flatten_string() -> None:
+def test_group_by_flatten_string() -> None:
     df = pl.DataFrame({"group": ["a", "b", "b"], "values": ["foo", "bar", "baz"]})
     result = df.group_by("group", maintain_order=True).agg(
         pl.col("values").str.explode()

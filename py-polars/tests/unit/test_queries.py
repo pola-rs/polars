@@ -30,7 +30,7 @@ def test_sort_by_bools() -> None:
     assert out.shape == (3, 4)
 
 
-def test_repeat_expansion_in_groupby() -> None:
+def test_repeat_expansion_in_group_by() -> None:
     out = (
         pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
         .group_by("g", maintain_order=True)
@@ -114,7 +114,7 @@ def test_maintain_order_after_sampling() -> None:
     ) == {"type": ["A", "B", "C", "D"], "value": [5, 8, 5, 7]}
 
 
-def test_sorted_groupby_optimization(monkeypatch: Any) -> None:
+def test_sorted_group_by_optimization(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_NO_STREAMING_GROUPBY", "1")
 
     df = pl.DataFrame({"a": np.random.randint(0, 5, 20)})
@@ -147,7 +147,7 @@ def test_median_on_shifted_col_3522() -> None:
     assert diffs.select(pl.col("foo").median()).to_series()[0] == 36828.5
 
 
-def test_groupby_agg_equals_zero_3535() -> None:
+def test_group_by_agg_equals_zero_3535() -> None:
     # setup test frame
     df = pl.DataFrame(
         data=[

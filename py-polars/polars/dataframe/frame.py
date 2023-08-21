@@ -4941,7 +4941,7 @@ class DataFrame:
             Additional columns to group by, specified as positional arguments.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
-            This is slower than a default groupby.
+            This is slower than a default group by.
             Settings this to ``True`` blocks the possibility
             to run on the streaming engine.
 
@@ -5076,9 +5076,9 @@ class DataFrame:
         """
         Create rolling groups based on a time, Int32, or Int64 column.
 
-        Different from a ``dynamic_groupby`` the windows are now determined by the
+        Different from a ``group_by_dynamic`` the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals use
-        *groupby_dynamic*.
+        :func:`DataFrame.group_by_dynamic`.
 
         If you have a time series ``<t_0, t_1, ..., t_n>``, then by default the
         windows created will be
@@ -5115,7 +5115,7 @@ class DataFrame:
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        In case of a groupby_rolling on an integer column, the windows are defined by:
+        In case of a group_by_rolling on an integer column, the windows are defined by:
 
         - **"1i"      # length 1**
         - **"10i"     # length 10**
@@ -5128,7 +5128,7 @@ class DataFrame:
             This column must be sorted in ascending order (or, if `by` is specified,
             then it must be sorted in ascending order within each group).
 
-            In case of a rolling groupby on indices, dtype needs to be one of
+            In case of a rolling group by on indices, dtype needs to be one of
             {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
             performance matters use an Int64 column.
         period
@@ -5155,7 +5155,7 @@ class DataFrame:
 
         See Also
         --------
-        groupby_dynamic
+        group_by_dynamic
 
         Examples
         --------
@@ -5218,7 +5218,7 @@ class DataFrame:
         Group based on a time value (or index value of type Int32, Int64).
 
         Time windows are calculated and rows are assigned to windows. Different from a
-        normal groupby is that a row can be member of multiple groups. The time/index
+        normal group by is that a row can be member of multiple groups. The time/index
         window could be seen as a rolling window, with a window size determined by
         dates/times/values instead of slots in the DataFrame.
 
@@ -5255,7 +5255,7 @@ class DataFrame:
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        In case of a groupby_dynamic on an integer column, the windows are defined by:
+        In case of a group_by_dynamic on an integer column, the windows are defined by:
 
         - "1i"      # length 1
         - "10i"     # length 10
@@ -5272,7 +5272,7 @@ class DataFrame:
             This column must be sorted in ascending order (or, if `by` is specified,
             then it must be sorted in ascending order within each group).
 
-            In case of a dynamic groupby on indices, dtype needs to be one of
+            In case of a dynamic group by on indices, dtype needs to be one of
             {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
             performance matters use an Int64 column.
         every
@@ -5445,7 +5445,7 @@ class DataFrame:
         │ 2021-12-16 03:00:00 ┆ 1          │
         └─────────────────────┴────────────┘
 
-        Dynamic groupbys can also be combined with grouping on normal keys
+        Dynamic group bys can also be combined with grouping on normal keys
 
         >>> df = pl.DataFrame(
         ...     {
@@ -5495,7 +5495,7 @@ class DataFrame:
         │ b      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 1          │
         └────────┴─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
 
-        Dynamic groupby on an index column
+        Dynamic group by on an index column
 
         >>> df = pl.DataFrame(
         ...     {
@@ -9697,7 +9697,7 @@ class DataFrame:
             Additional columns to group by, specified as positional arguments.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
-            This is slower than a default groupby.
+            This is slower than a default group by.
             Settings this to ``True`` blocks the possibility
             to run on the streaming engine.
 
@@ -9736,7 +9736,7 @@ class DataFrame:
             This column must be sorted in ascending order (or, if `by` is specified,
             then it must be sorted in ascending order within each group).
 
-            In case of a rolling groupby on indices, dtype needs to be one of
+            In case of a rolling group by on indices, dtype needs to be one of
             {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
             performance matters use an Int64 column.
         period
@@ -9791,7 +9791,7 @@ class DataFrame:
             This column must be sorted in ascending order (or, if `by` is specified,
             then it must be sorted in ascending order within each group).
 
-            In case of a dynamic groupby on indices, dtype needs to be one of
+            In case of a dynamic group by on indices, dtype needs to be one of
             {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
             performance matters use an Int64 column.
         every

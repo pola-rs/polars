@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     data=st.data(),
     time_unit=strategy_time_unit,
 )
-def test_groupby_rolling(
+def test_group_by_rolling(
     period: str,
     offset: str,
     closed: ClosedInterval,

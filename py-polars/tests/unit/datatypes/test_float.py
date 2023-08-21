@@ -1,7 +1,7 @@
 import polars as pl
 
 
-def test_nan_in_groupby_agg() -> None:
+def test_nan_in_group_by_agg() -> None:
     df = pl.DataFrame(
         {
             "key": ["a", "a", "a", "a"],

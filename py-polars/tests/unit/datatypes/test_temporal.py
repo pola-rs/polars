@@ -637,7 +637,7 @@ def test_explode_date() -> None:
         ]
 
 
-def test_groupby_dynamic_when_conversion_crosses_dates_7274() -> None:
+def test_group_by_dynamic_when_conversion_crosses_dates_7274() -> None:
     df = (
         pl.DataFrame(
             data={
@@ -882,7 +882,7 @@ def test_read_utc_times_parquet() -> None:
 
 
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
-def test_default_negative_every_offset_dynamic_groupby(time_zone: str | None) -> None:
+def test_default_negative_every_offset_dynamic_group_by(time_zone: str | None) -> None:
     # 2791
     dts = [
         datetime(2020, 1, 1),
@@ -918,7 +918,7 @@ def test_default_negative_every_offset_dynamic_groupby(time_zone: str | None) ->
         ("1w", timedelta(weeks=2)),
     ],
 )
-def test_groupby_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
+def test_group_by_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
     start_dt = datetime(2021, 11, 7)
     end_dt = start_dt + offset
     date_range = pl.date_range(
@@ -996,7 +996,7 @@ def test_groupby_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
         ),
     ],
 )
-def test_groupby_dynamic_startby_monday_crossing_dst(
+def test_group_by_dynamic_startby_monday_crossing_dst(
     start_by: StartBy, expected_time: list[datetime], expected_value: list[float]
 ) -> None:
     start_dt = datetime(2021, 11, 7)
@@ -1015,7 +1015,7 @@ def test_groupby_dynamic_startby_monday_crossing_dst(
     assert_frame_equal(result, expected)
 
 
-def test_groupby_dynamic_startby_monday_dst_8737() -> None:
+def test_group_by_dynamic_startby_monday_dst_8737() -> None:
     start_dt = datetime(2021, 11, 6, 20)
     stop_dt = datetime(2021, 11, 7, 20)
     date_range = pl.date_range(
@@ -1037,7 +1037,7 @@ def test_groupby_dynamic_startby_monday_dst_8737() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_groupby_dynamic_monthly_crossing_dst() -> None:
+def test_group_by_dynamic_monthly_crossing_dst() -> None:
     start_dt = datetime(2021, 11, 1)
     end_dt = datetime(2021, 12, 1)
     date_range = pl.date_range(
@@ -1052,7 +1052,7 @@ def test_groupby_dynamic_monthly_crossing_dst() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_groupby_dynamic_2d_9333() -> None:
+def test_group_by_dynamic_2d_9333() -> None:
     df = pl.DataFrame({"ts": [datetime(2000, 1, 1, 3)], "values": [10.0]})
     df = df.with_columns(pl.col("ts").set_sorted())
     result = df.group_by_dynamic("ts", every="2d").agg(pl.col("values"))
@@ -1190,7 +1190,7 @@ def test_add_duration_3786() -> None:
     }
 
 
-def test_rolling_groupby_by_argument() -> None:
+def test_rolling_group_by_by_argument() -> None:
     df = pl.DataFrame({"times": range(10), "groups": [1] * 4 + [2] * 6})
 
     out = df.group_by_rolling("times", period="5i", by=["groups"]).agg(
@@ -1219,7 +1219,7 @@ def test_rolling_groupby_by_argument() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_groupby_rolling_mean_3020() -> None:
+def test_group_by_rolling_mean_3020() -> None:
     df = pl.DataFrame(
         {
             "Date": [
@@ -1648,7 +1648,7 @@ def test_unique_counts_on_dates() -> None:
     }
 
 
-def test_groupby_rolling_by_ordering() -> None:
+def test_group_by_rolling_by_ordering() -> None:
     # we must check that the keys still match the time labels after the rolling window
     # with a `by` argument.
     df = pl.DataFrame(
@@ -1694,7 +1694,7 @@ def test_groupby_rolling_by_ordering() -> None:
     }
 
 
-def test_groupby_rolling_by_() -> None:
+def test_group_by_rolling_by_() -> None:
     df = pl.DataFrame({"group": pl.arange(0, 3, eager=True)}).join(
         pl.DataFrame(
             {
@@ -2571,7 +2571,7 @@ def test_datetime_cum_agg_schema() -> None:
     }
 
 
-def test_rolling_groupby_empty_groups_by_take_6330() -> None:
+def test_rolling_group_by_empty_groups_by_take_6330() -> None:
     df = (
         pl.DataFrame({"Event": ["Rain", "Sun"]})
         .join(
@@ -2777,7 +2777,7 @@ def test_pytime_conversion(tm: time) -> None:
         )
     ],
 )
-def test_groupby_dynamic(
+def test_group_by_dynamic(
     input_df: pl.DataFrame, expected_grouped_df: pl.DataFrame
 ) -> None:
     result = (

@@ -44,13 +44,13 @@ def example_df() -> pl.DataFrame:
     ["1d", "2d", "3d", timedelta(days=1), timedelta(days=2), timedelta(days=3)],
 )
 @pytest.mark.parametrize("closed", ["left", "right", "none", "both"])
-def test_rolling_kernels_and_groupby_rolling(
+def test_rolling_kernels_and_group_by_rolling(
     example_df: pl.DataFrame, period: str | timedelta, closed: ClosedInterval
 ) -> None:
     out1 = example_df.select(
         [
             pl.col("dt"),
-            # this differs from groupby aggregation because the empty window is
+            # this differs from group_by aggregation because the empty window is
             # null here
             # where the sum aggregation of an empty set is 0
             pl.col("values")
@@ -269,7 +269,7 @@ def test_rolling_extrema() -> None:
     }
 
 
-def test_rolling_groupby_extrema() -> None:
+def test_rolling_group_by_extrema() -> None:
     # ensure we hit different branches so create
 
     df = pl.DataFrame(
@@ -407,7 +407,7 @@ def test_rolling_slice_pushdown() -> None:
     }
 
 
-def test_groupby_dynamic_slice_pushdown() -> None:
+def test_group_by_dynamic_slice_pushdown() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "a", "b"], "c": [1, 3, 5]}).lazy()
     df = (
         df.sort("a")
@@ -512,7 +512,7 @@ def test_rolling_var_numerical_stability_5197() -> None:
         (timedelta(days=3), timedelta(days=-1)),
     ],
 )
-def test_dynamic_groupby_timezone_awareness(
+def test_dynamic_group_by_timezone_awareness(
     every: str | timedelta, offset: str | timedelta
 ) -> None:
     df = pl.DataFrame(
@@ -543,7 +543,7 @@ def test_dynamic_groupby_timezone_awareness(
 
 
 @pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
-def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
+def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
     # start by datapoint
     start = datetime(2022, 12, 16, tzinfo=tzinfo)
     stop = datetime(2022, 12, 16, hour=3, tzinfo=tzinfo)
@@ -642,7 +642,7 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
     }
 
 
-def test_groupby_dynamic_by_monday_and_offset_5444() -> None:
+def test_group_by_dynamic_by_monday_and_offset_5444() -> None:
     df = pl.DataFrame(
         {
             "date": [
@@ -685,7 +685,7 @@ def test_groupby_dynamic_by_monday_and_offset_5444() -> None:
     assert result_empty.schema == result.schema
 
 
-def test_groupby_rolling_iter() -> None:
+def test_group_by_rolling_iter() -> None:
     df = pl.DataFrame(
         {
             "date": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 5)],
@@ -719,7 +719,7 @@ def test_groupby_rolling_iter() -> None:
     assert result2 == expected2
 
 
-def test_groupby_rolling_negative_period() -> None:
+def test_group_by_rolling_negative_period() -> None:
     df = pl.DataFrame({"ts": [datetime(2020, 1, 1)], "value": [1]}).with_columns(
         pl.col("ts").set_sorted()
     )
@@ -749,7 +749,7 @@ def test_rolling_skew_window_offset() -> None:
     ] == 0.6612545648596286
 
 
-def test_rolling_kernels_groupby_dynamic_7548() -> None:
+def test_rolling_kernels_group_by_dynamic_7548() -> None:
     assert pl.DataFrame(
         {"time": pl.arange(0, 4, eager=True), "value": pl.arange(0, 4, eager=True)}
     ).group_by_dynamic("time", every="1i", period="3i").agg(

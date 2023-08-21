@@ -6,7 +6,7 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
-def test_shuffle_groupby_reseed() -> None:
+def test_shuffle_group_by_reseed() -> None:
     def unique_shuffle_groups(n: int, seed: int | None) -> int:
         ls = [1, 2, 3] * n  # 1, 2, 3, 1, 2, 3...
         groups = sorted(list(range(n)) * 3)  # 0, 0, 0, 1, 1, 1, ...

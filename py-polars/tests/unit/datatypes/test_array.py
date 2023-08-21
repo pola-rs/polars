@@ -51,7 +51,7 @@ def test_array_construction() -> None:
     assert df.rows() == []
 
 
-def test_array_in_groupby() -> None:
+def test_array_in_group_by() -> None:
     df = pl.DataFrame(
         [
             pl.Series("id", [1, 2]),

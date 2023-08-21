@@ -744,7 +744,7 @@ def test_shift() -> None:
     assert_frame_equal(a, b)
 
 
-def test_custom_groupby() -> None:
+def test_custom_group_by() -> None:
     df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     out = df.group_by("b", maintain_order=True).agg(
         [pl.col("a").apply(lambda x: x.sum(), return_dtype=pl.Int64)]
@@ -981,7 +981,7 @@ def test_init_series_edge_cases() -> None:
     assert df3.columns == ["column_0", "column_1"]
 
 
-def test_head_groupby() -> None:
+def test_head_group_by() -> None:
     commodity_prices = {
         "commodity": [
             "Wheat",
@@ -1854,7 +1854,7 @@ def test_create_df_from_object() -> None:
 
 
 def test_hashing_on_python_objects() -> None:
-    # see if we can do a groupby, drop_duplicates on a DataFrame with objects.
+    # see if we can do a group_by, drop_duplicates on a DataFrame with objects.
     # this requires that the hashing and aggregations are done on python objects
 
     df = pl.DataFrame({"a": [1, 1, 3, 4], "b": [1, 1, 2, 2]})
@@ -1943,7 +1943,7 @@ def test_apply_dataframe_return() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_groupby_cat_list() -> None:
+def test_group_by_cat_list() -> None:
     grouped = (
         pl.DataFrame(
             [
@@ -1961,7 +1961,7 @@ def test_groupby_cat_list() -> None:
     assert out[0] == "a"
 
 
-def test_groupby_agg_n_unique_floats() -> None:
+def test_group_by_agg_n_unique_floats() -> None:
     # tests proper dispatch
     df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 2.0]})
 
@@ -2048,7 +2048,7 @@ def test_extension() -> None:
     assert sys.getrefcount(foos[0]) == base_count
 
 
-def test_groupby_order_dispatch() -> None:
+def test_group_by_order_dispatch() -> None:
     df = pl.DataFrame({"x": list("bab"), "y": range(3)})
 
     result = df.group_by("x", maintain_order=True).count()
@@ -2062,7 +2062,7 @@ def test_groupby_order_dispatch() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_partitioned_groupby_order() -> None:
+def test_partitioned_group_by_order() -> None:
     # check if group ordering is maintained.
     # we only have 30 groups, so this triggers a partitioned group by
     df = pl.DataFrame({"x": [chr(v) for v in range(33, 63)], "y": range(30)})
@@ -2721,7 +2721,7 @@ def test_empty_is_in() -> None:
     assert df_empty_isin.schema == {"foo": pl.Utf8}
 
 
-def test_groupby_slice_expression_args() -> None:
+def test_group_by_slice_expression_args() -> None:
     df = pl.DataFrame({"groups": ["a"] * 10 + ["b"] * 20, "vals": range(30)})
 
     out = (

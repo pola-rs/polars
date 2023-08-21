@@ -13,7 +13,7 @@ pytestmark = pytest.mark.xdist_group("streaming")
 
 
 @pytest.mark.slow()
-def test_streaming_groupby_sorted_fast_path_nulls_10273() -> None:
+def test_streaming_group_by_sorted_fast_path_nulls_10273() -> None:
     df = pl.Series(
         name="x",
         values=(
@@ -32,7 +32,7 @@ def test_streaming_groupby_sorted_fast_path_nulls_10273() -> None:
     ).to_dict(False) == {"x": [None, 0, 1, 2, 3], "count": [100, 100, 100, 100, 100]}
 
 
-def test_streaming_groupby_types() -> None:
+def test_streaming_group_by_types() -> None:
     df = pl.DataFrame(
         {
             "person_id": [1, 1],
@@ -123,7 +123,7 @@ def test_streaming_groupby_types() -> None:
         )
 
 
-def test_streaming_groupby_min_max() -> None:
+def test_streaming_group_by_min_max() -> None:
     df = pl.DataFrame(
         {
             "person_id": [1, 2, 3, 4, 5, 6],
@@ -159,7 +159,7 @@ def test_streaming_non_streaming_gb() -> None:
     assert_frame_equal(q.collect(streaming=True), q.collect())
 
 
-def test_streaming_groupby_sorted_fast_path() -> None:
+def test_streaming_group_by_sorted_fast_path() -> None:
     a = np.random.randint(0, 20, 80)
     df = pl.DataFrame(
         {
@@ -202,7 +202,9 @@ def random_integers() -> pl.Series:
 
 
 @pytest.mark.write_disk()
-def test_streaming_groupby_ooc_q1(monkeypatch: Any, random_integers: pl.Series) -> None:
+def test_streaming_group_by_ooc_q1(
+    monkeypatch: Any, random_integers: pl.Series
+) -> None:
     s = random_integers
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
@@ -226,7 +228,9 @@ def test_streaming_groupby_ooc_q1(monkeypatch: Any, random_integers: pl.Series) 
 
 
 @pytest.mark.write_disk()
-def test_streaming_groupby_ooc_q2(monkeypatch: Any, random_integers: pl.Series) -> None:
+def test_streaming_group_by_ooc_q2(
+    monkeypatch: Any, random_integers: pl.Series
+) -> None:
     s = random_integers
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
@@ -251,7 +255,9 @@ def test_streaming_groupby_ooc_q2(monkeypatch: Any, random_integers: pl.Series) 
 
 
 @pytest.mark.write_disk()
-def test_streaming_groupby_ooc_q3(monkeypatch: Any, random_integers: pl.Series) -> None:
+def test_streaming_group_by_ooc_q3(
+    monkeypatch: Any, random_integers: pl.Series
+) -> None:
     s = random_integers
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
@@ -275,7 +281,7 @@ def test_streaming_groupby_ooc_q3(monkeypatch: Any, random_integers: pl.Series) 
     assert_frame_equal(result, expected)
 
 
-def test_streaming_groupby_struct_key() -> None:
+def test_streaming_group_by_struct_key() -> None:
     df = pl.DataFrame(
         {"A": [1, 2, 3, 2], "B": ["google", "ms", "apple", "ms"], "C": [2, 3, 4, 3]}
     )
@@ -290,7 +296,7 @@ def test_streaming_groupby_struct_key() -> None:
 
 
 @pytest.mark.slow()
-def test_streaming_groupby_all_numeric_types_stability_8570() -> None:
+def test_streaming_group_by_all_numeric_types_stability_8570() -> None:
     m = 1000
     n = 1000
 
@@ -317,7 +323,7 @@ def test_streaming_groupby_all_numeric_types_stability_8570() -> None:
             assert dfd["z_sum"].sum() == dfc["z"].sum()
 
 
-def test_streaming_groupby_categorical_aggregate() -> None:
+def test_streaming_group_by_categorical_aggregate() -> None:
     with pl.StringCache():
         out = (
             pl.LazyFrame(
@@ -356,7 +362,7 @@ def test_streaming_groupby_categorical_aggregate() -> None:
     }
 
 
-def test_streaming_groupby_list_9758() -> None:
+def test_streaming_group_by_list_9758() -> None:
     payload = {"a": [[1, 2]]}
     assert (
         pl.LazyFrame(payload)
@@ -368,7 +374,7 @@ def test_streaming_groupby_list_9758() -> None:
     )
 
 
-def test_streaming_restart_non_streamable_groupby() -> None:
+def test_streaming_restart_non_streamable_group_by() -> None:
     df = pl.DataFrame({"id": [1], "id2": [1], "id3": [1], "value": [1]})
     res = (
         df.lazy()
@@ -386,7 +392,7 @@ def test_streaming_restart_non_streamable_groupby() -> None:
     assert """--- PIPELINE""" in res.explain(streaming=True)
 
 
-def test_groupby_min_max_string_type() -> None:
+def test_group_by_min_max_string_type() -> None:
     table = pl.from_dict({"a": [1, 1, 2, 2, 2], "b": ["a", "b", "c", "d", None]})
 
     expected = {"a": [1, 2], "min": ["a", "c"], "max": ["b", "d"]}

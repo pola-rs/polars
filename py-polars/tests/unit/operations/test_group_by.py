@@ -17,7 +17,7 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
-def test_groupby() -> None:
+def test_group_by() -> None:
     df = pl.DataFrame(
         {
             "a": ["a", "b", "a", "b", "b", "c"],
@@ -28,7 +28,7 @@ def test_groupby() -> None:
 
     assert df.group_by("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
 
-    # Use lazy API in eager groupby
+    # Use lazy API in eager group_by
     assert sorted(df.group_by("a").agg([pl.sum("b")]).rows()) == [
         ("a", 4),
         ("b", 11),
@@ -83,7 +83,7 @@ def df() -> pl.DataFrame:
         ("n_unique", [("a", 2, 2), ("b", 3, 2)]),
     ],
 )
-def test_groupby_shorthands(
+def test_group_by_shorthands(
     df: pl.DataFrame, method: str, expected: list[tuple[Any]]
 ) -> None:
     gb = df.group_by("b", maintain_order=True)
@@ -95,7 +95,7 @@ def test_groupby_shorthands(
     assert result.rows() == expected
 
 
-def test_groupby_shorthand_quantile(df: pl.DataFrame) -> None:
+def test_group_by_shorthand_quantile(df: pl.DataFrame) -> None:
     result = df.group_by("b", maintain_order=True).quantile(0.5)
     expected = [("a", 2.0, 1.0), ("b", 4.0, 1.0)]
     assert result.rows() == expected
@@ -104,7 +104,7 @@ def test_groupby_shorthand_quantile(df: pl.DataFrame) -> None:
     assert result.rows() == expected
 
 
-def test_groupby_args() -> None:
+def test_group_by_args() -> None:
     df = pl.DataFrame(
         {
             "a": ["a", "b", "a", "b", "b", "c"],
@@ -130,14 +130,14 @@ def test_groupby_args() -> None:
     assert df.group_by("a").agg(q="b", r="c").columns == ["a", "q", "r"]
 
 
-def test_groupby_empty() -> None:
+def test_group_by_empty() -> None:
     df = pl.DataFrame({"a": [1, 1, 2]})
     result = df.group_by("a").agg()
     expected = pl.DataFrame({"a": [1, 2]})
     assert_frame_equal(result, expected, check_row_order=False)
 
 
-def test_groupby_iteration() -> None:
+def test_group_by_iteration() -> None:
     df = pl.DataFrame(
         {
             "foo": ["a", "b", "a", "b", "b", "c"],
@@ -163,7 +163,7 @@ def test_groupby_iteration() -> None:
     result2 = list(df.group_by(["foo", pl.col("bar") * pl.col("baz")]))
     assert len(result2) == 5
 
-    # Single column, alias in groupby
+    # Single column, alias in group_by
     df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6]})
     gb = df.group_by((pl.col("foo") // 2).alias("bar"), maintain_order=True)
     result3 = [(group, df.rows()) for group, df in gb]
@@ -184,7 +184,7 @@ def good_agg_parameters() -> list[pl.Expr | list[pl.Expr]]:
 
 
 @pytest.mark.parametrize("lazy", [True, False])
-def test_groupby_agg_input_types(lazy: bool) -> None:
+def test_group_by_agg_input_types(lazy: bool) -> None:
     df = pl.DataFrame({"a": [1, 1, 2, 2], "b": [1, 2, 3, 4]})
     df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
 
@@ -204,7 +204,7 @@ def test_groupby_agg_input_types(lazy: bool) -> None:
 
 
 @pytest.mark.parametrize("lazy", [True, False])
-def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
+def test_group_by_dynamic_agg_input_types(lazy: bool) -> None:
     df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
         "index_column"
     )
@@ -229,7 +229,7 @@ def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
         assert_frame_equal(result, expected)
 
 
-def test_groupby_sorted_empty_dataframe_3680() -> None:
+def test_group_by_sorted_empty_dataframe_3680() -> None:
     df = (
         pl.DataFrame(
             [
@@ -248,7 +248,7 @@ def test_groupby_sorted_empty_dataframe_3680() -> None:
     assert df.schema == {"key": pl.Categorical, "val": pl.Float64}
 
 
-def test_groupby_custom_agg_empty_list() -> None:
+def test_group_by_custom_agg_empty_list() -> None:
     assert (
         pl.DataFrame(
             [
@@ -268,7 +268,7 @@ def test_groupby_custom_agg_empty_list() -> None:
     ).dtypes == [pl.Categorical, pl.Float64, pl.Float64, pl.Float64, pl.Float64]
 
 
-def test_apply_after_take_in_groupby_3869() -> None:
+def test_apply_after_take_in_group_by_3869() -> None:
     assert (
         pl.DataFrame(
             {
@@ -284,7 +284,7 @@ def test_apply_after_take_in_groupby_3869() -> None:
     ).to_dict(False) == {"k": ["a", "b"], "v": [1.4142135623730951, 2.0]}
 
 
-def test_groupby_signed_transmutes() -> None:
+def test_group_by_signed_transmutes() -> None:
     df = pl.DataFrame({"foo": [-1, -2, -3, -4, -5], "bar": [500, 600, 700, 800, 900]})
 
     for dt in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]:
@@ -340,7 +340,7 @@ def test_unique_order() -> None:
     }
 
 
-def test_groupby_dynamic_flat_agg_4814() -> None:
+def test_group_by_dynamic_flat_agg_4814() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [1, 8, 12]}).set_sorted("a")
 
     assert df.group_by_dynamic("a", every="1i", period="2i").agg(
@@ -365,7 +365,7 @@ def test_groupby_dynamic_flat_agg_4814() -> None:
     ],
 )
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
-def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038(
+def test_group_by_dynamic_overlapping_groups_flat_apply_multiple_5038(
     every: str | timedelta, period: str | timedelta, time_zone: str | None
 ) -> None:
     res = (
@@ -394,14 +394,14 @@ def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038(
     assert res["a"] == [None]
 
 
-def test_take_in_groupby() -> None:
+def test_take_in_group_by() -> None:
     df = pl.DataFrame({"group": [1, 1, 1, 2, 2, 2], "values": [10, 200, 3, 40, 500, 6]})
     assert df.group_by("group").agg(
         pl.col("values").take(1) - pl.col("values").take(2)
     ).sort("group").to_dict(False) == {"group": [1, 2], "values": [197, 494]}
 
 
-def test_groupby_wildcard() -> None:
+def test_group_by_wildcard() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2],
@@ -413,7 +413,7 @@ def test_groupby_wildcard() -> None:
     ).to_dict(False) == {"a": [1, 2], "b": [1, 2], "a_agg": [1, 2]}
 
 
-def test_groupby_all_masked_out() -> None:
+def test_group_by_all_masked_out() -> None:
     df = pl.DataFrame(
         {
             "val": pl.Series(
@@ -427,7 +427,7 @@ def test_groupby_all_masked_out() -> None:
     assert_frame_equal(parts[0], df)
 
 
-def test_groupby_null_propagation_6185() -> None:
+def test_group_by_null_propagation_6185() -> None:
     df_1 = pl.DataFrame({"A": [0, 0], "B": [1, 2]})
 
     expr = pl.col("A").filter(pl.col("A") > 0)
@@ -439,7 +439,7 @@ def test_groupby_null_propagation_6185() -> None:
     )
 
 
-def test_groupby_when_then_with_binary_and_agg_in_pred_6202() -> None:
+def test_group_by_when_then_with_binary_and_agg_in_pred_6202() -> None:
     df = pl.DataFrame(
         {"code": ["a", "b", "b", "b", "a"], "xx": [1.0, -1.5, -0.2, -3.9, 3.0]}
     )
@@ -455,7 +455,7 @@ def test_groupby_when_then_with_binary_and_agg_in_pred_6202() -> None:
 
 @pytest.mark.parametrize("every", ["1h", timedelta(hours=1)])
 @pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
-def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -> None:
+def test_group_by_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -> None:
     time_zone = tzinfo.key if tzinfo is not None else None
     df = pl.DataFrame(
         {
@@ -498,7 +498,7 @@ def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -
 
 @pytest.mark.parametrize("every", ["1h", timedelta(hours=1)])
 @pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
-def test_groupby_dynamic_lazy(every: str | timedelta, tzinfo: ZoneInfo | None) -> None:
+def test_group_by_dynamic_lazy(every: str | timedelta, tzinfo: ZoneInfo | None) -> None:
     ldf = pl.LazyFrame(
         {
             "time": pl.date_range(
@@ -541,7 +541,7 @@ def test_groupby_dynamic_lazy(every: str | timedelta, tzinfo: ZoneInfo | None) -
 
 @pytest.mark.slow()
 @pytest.mark.parametrize("dtype", [pl.Int32, pl.UInt32])
-def test_overflow_mean_partitioned_groupby_5194(dtype: pl.PolarsDataType) -> None:
+def test_overflow_mean_partitioned_group_by_5194(dtype: pl.PolarsDataType) -> None:
     df = pl.DataFrame(
         [
             pl.Series("data", [10_00_00_00] * 100_000, dtype=dtype),
@@ -554,7 +554,7 @@ def test_overflow_mean_partitioned_groupby_5194(dtype: pl.PolarsDataType) -> Non
 
 
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
-def test_groupby_dynamic_elementwise_following_mean_agg_6904(
+def test_group_by_dynamic_elementwise_following_mean_agg_6904(
     time_zone: str | None,
 ) -> None:
     df = (
@@ -587,7 +587,7 @@ def test_groupby_dynamic_elementwise_following_mean_agg_6904(
     )
 
 
-def test_groupby_multiple_column_reference() -> None:
+def test_group_by_multiple_column_reference() -> None:
     # Issue #7181
     df = pl.DataFrame(
         {
@@ -618,7 +618,7 @@ def test_groupby_multiple_column_reference() -> None:
         ("quantile", [0.5], [1.0, None], pl.Float64),
     ],
 )
-def test_groupby_empty_groups(
+def test_group_by_empty_groups(
     aggregation: str,
     args: list[object],
     expected_values: list[object],
@@ -833,7 +833,7 @@ def test_perfect_hash_table_null_values_8663() -> None:
     }
 
 
-def test_groupby_partitioned_ending_cast(monkeypatch: Any) -> None:
+def test_group_by_partitioned_ending_cast(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
     df = pl.DataFrame({"a": [1] * 5, "b": [1] * 5})
     out = df.group_by(["a", "b"]).agg(pl.count().cast(pl.Int64).alias("num"))

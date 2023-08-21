@@ -439,7 +439,7 @@ def test_schemas(
     for key, dtype in expected_select.items():
         assert schema[key] == dtype
 
-    # test groupby schema
+    # test group_by schema
     schema = df.group_by(pl.lit(1)).agg(expr).schema
     for key, dtype in expected_gb.items():
         assert schema[key] == dtype

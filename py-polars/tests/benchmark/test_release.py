@@ -186,7 +186,7 @@ def test_boolean_min_max_agg() -> None:
     }
 
 
-def test_categorical_vs_str_groupby() -> None:
+def test_categorical_vs_str_group_by() -> None:
     # this triggers the perfect hash table
     s = pl.Series("a", np.random.randint(0, 50, 100))
     s_with_nulls = pl.select(

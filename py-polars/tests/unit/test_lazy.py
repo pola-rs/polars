@@ -152,7 +152,7 @@ def test_or() -> None:
     assert out.rows() == [(1, 1.0), (3, 3.0)]
 
 
-def test_groupby_apply() -> None:
+def test_group_by_apply() -> None:
     ldf = (
         pl.LazyFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 3.0]})
         .group_by("a")
@@ -221,7 +221,7 @@ def test_apply_custom_function() -> None:
     assert_frame_equal(df, expected)
 
 
-def test_groupby() -> None:
+def test_group_by() -> None:
     ldf = pl.LazyFrame({"a": [1.0, None, 3.0, 4.0], "groups": ["a", "a", "b", "b"]})
 
     expected = pl.DataFrame({"groups": ["a", "b"], "a": [1.0, 3.5]})
@@ -391,7 +391,7 @@ def test_fold_filter() -> None:
     assert out.rows() == [(1, 0), (2, 1), (3, 2)]
 
 
-def test_head_groupby() -> None:
+def test_head_group_by() -> None:
     commodity_prices = {
         "commodity": [
             "Wheat",
@@ -555,7 +555,7 @@ def test_sort() -> None:
     assert_series_equal(ldf.collect()["a"], pl.Series("a", [1, 2, 2, 3]))
 
 
-def test_custom_groupby() -> None:
+def test_custom_group_by() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     out = (
         ldf.group_by("b", maintain_order=True)

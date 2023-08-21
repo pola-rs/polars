@@ -80,8 +80,8 @@ def test_hmean_with_str_column() -> None:
 
 def test_list_aggregation_that_filters_all_data_6017() -> None:
     out = (
-        pl.DataFrame({"col_to_groupby": [2], "flt": [1672740910.967138], "col3": [1]})
-        .group_by("col_to_groupby")
+        pl.DataFrame({"col_to_group_by": [2], "flt": [1672740910.967138], "col3": [1]})
+        .group_by("col_to_group_by")
         .agg(
             (pl.col("flt").filter(pl.col("col3") == 0).diff() * 1000)
             .diff()
@@ -89,8 +89,8 @@ def test_list_aggregation_that_filters_all_data_6017() -> None:
         )
     )
 
-    assert out.schema == {"col_to_groupby": pl.Int64, "calc": pl.List(pl.Float64)}
-    assert out.to_dict(False) == {"col_to_groupby": [2], "calc": [[]]}
+    assert out.schema == {"col_to_group_by": pl.Int64, "calc": pl.List(pl.Float64)}
+    assert out.to_dict(False) == {"col_to_group_by": [2], "calc": [[]]}
 
 
 def test_median() -> None:
@@ -247,7 +247,7 @@ def test_err_on_implode_and_agg() -> None:
     ):
         df.group_by("type").agg(pl.col("type").implode().first().alias("foo"))
 
-    # implode + function should be allowed in groupby
+    # implode + function should be allowed in group_by
     assert df.group_by("type", maintain_order=True).agg(
         pl.col("type").implode().list.head().alias("foo")
     ).to_dict(False) == {

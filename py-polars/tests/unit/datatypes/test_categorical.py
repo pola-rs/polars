@@ -87,8 +87,8 @@ def test_categorical_describe_3487() -> None:
 @StringCache()
 def test_categorical_is_in_list() -> None:
     # this requires type coercion to cast.
-    # we should not cast within the function as this would be expensive within a groupby
-    # context that would be a cast per group
+    # we should not cast within the function as this would be expensive within a
+    # group by context that would be a cast per group
     df = pl.DataFrame(
         {"a": [1, 2, 3, 1, 2], "b": ["a", "b", "c", "d", "e"]}
     ).with_columns(pl.col("b").cast(pl.Categorical))

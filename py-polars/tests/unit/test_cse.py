@@ -199,7 +199,7 @@ def test_windows_cse_excluded() -> None:
 
 
 @pytest.mark.skip()
-def test_cse_groupby_10215() -> None:
+def test_cse_group_by_10215() -> None:
     q = (
         pl.DataFrame(
             {
@@ -295,7 +295,7 @@ def test_cse_10452() -> None:
     assert q.collect(comm_subexpr_elim=True).to_dict(False) == {"b": [13, 14, 15]}
 
 
-def test_cse_groupby_ternary_10490() -> None:
+def test_cse_group_by_ternary_10490() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 1, 2, 2],

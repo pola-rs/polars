@@ -72,7 +72,7 @@ def test_empty_9137() -> None:
     assert out.dtypes == [pl.Float32, pl.Float32]
 
 
-def test_empty_groupby_apply_err() -> None:
+def test_empty_group_by_apply_err() -> None:
     df = pl.DataFrame(schema={"x": pl.Int64})
     with pytest.raises(
         pl.ComputeError, match=r"cannot group_by \+ apply on empty 'DataFrame'"

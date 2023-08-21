@@ -24,7 +24,7 @@ def good_agg_parameters() -> list[pl.Expr | list[pl.Expr]]:
     ]
 
 
-def test_groupby_rolling_apply() -> None:
+def test_group_by_rolling_apply() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3, 4, 5],
@@ -49,7 +49,7 @@ def test_groupby_rolling_apply() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_rolling_groupby_overlapping_groups() -> None:
+def test_rolling_group_by_overlapping_groups() -> None:
     # this first aggregates overlapping groups so they cannot be naively flattened
     df = pl.DataFrame({"a": [41, 60, 37, 51, 52, 39, 40]})
 
@@ -73,7 +73,7 @@ def test_rolling_groupby_overlapping_groups() -> None:
 
 
 @pytest.mark.parametrize("lazy", [True, False])
-def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
+def test_group_by_rolling_agg_input_types(lazy: bool) -> None:
     df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
         "index_column"
     )
@@ -98,7 +98,7 @@ def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
         assert_frame_equal(result, expected)
 
 
-def test_groupby_rolling_negative_offset_3914() -> None:
+def test_group_by_rolling_negative_offset_3914() -> None:
     df = pl.DataFrame(
         {
             "datetime": pl.date_range(
@@ -143,7 +143,7 @@ def test_groupby_rolling_negative_offset_3914() -> None:
 
 
 @pytest.mark.parametrize("time_zone", [None, "US/Central"])
-def test_groupby_rolling_negative_offset_crossing_dst(time_zone: str | None) -> None:
+def test_group_by_rolling_negative_offset_crossing_dst(time_zone: str | None) -> None:
     df = pl.DataFrame(
         {
             "datetime": pl.date_range(
@@ -188,7 +188,7 @@ def test_groupby_rolling_negative_offset_crossing_dst(time_zone: str | None) -> 
         ("1d", "none", [[9], [155], [], []]),
     ],
 )
-def test_groupby_rolling_non_negative_offset_9077(
+def test_group_by_rolling_non_negative_offset_9077(
     time_zone: str | None,
     offset: str,
     closed: ClosedInterval,
@@ -224,7 +224,7 @@ def test_groupby_rolling_non_negative_offset_9077(
     assert_frame_equal(result, expected)
 
 
-def test_groupby_rolling_dynamic_sortedness_check() -> None:
+def test_group_by_rolling_dynamic_sortedness_check() -> None:
     # when the by argument is passed, the sortedness flag
     # will be unset as the take shuffles data, so we must explicitly
     # check the sortedness
@@ -260,7 +260,7 @@ def test_groupby_rolling_dynamic_sortedness_check() -> None:
         df.group_by_rolling("idx", period="2i").agg(pl.col("idx").alias("idx1"))
 
 
-def test_groupby_rolling_empty_groups_9973() -> None:
+def test_group_by_rolling_empty_groups_9973() -> None:
     dt1 = date(2001, 1, 1)
     dt2 = date(2001, 1, 2)
 

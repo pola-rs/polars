@@ -48,7 +48,7 @@ def test_cse_expr_selection_streaming(monkeypatch: Any, capfd: Any) -> None:
 
 
 @pytest.mark.skip(reason="activate once fixed")
-def test_cse_expr_groupby() -> None:
+def test_cse_expr_group_by() -> None:
     q = pl.LazyFrame(
         {
             "a": [1, 2, 3, 4],

@@ -356,7 +356,7 @@ def test_sort_slice_fast_path_5245() -> None:
     }
 
 
-def test_explicit_list_agg_sort_in_groupby() -> None:
+def test_explicit_list_agg_sort_in_group_by() -> None:
     df = pl.DataFrame({"A": ["a", "a", "a", "b", "b", "a"], "B": [1, 2, 3, 4, 5, 6]})
 
     # this was col().implode().sort() before we changed the logic
@@ -647,7 +647,7 @@ def test_sort_top_k_fast_path() -> None:
     }
 
 
-def test_sorted_flag_groupby_dynamic() -> None:
+def test_sorted_flag_group_by_dynamic() -> None:
     df = pl.DataFrame({"ts": [date(2020, 1, 1), date(2020, 1, 2)], "val": [1, 2]})
     assert (
         (

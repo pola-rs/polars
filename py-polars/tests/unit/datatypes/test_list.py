@@ -89,11 +89,11 @@ def test_cast_inner() -> None:
     )
 
 
-def test_list_empty_groupby_result_3521() -> None:
+def test_list_empty_group_by_result_3521() -> None:
     # Create a left relation where the join column contains a null value
     left = pl.DataFrame().with_columns(
         [
-            pl.lit(1).alias("groupby_column"),
+            pl.lit(1).alias("group_by_column"),
             pl.lit(None).cast(pl.Int32).alias("join_column"),
         ]
     )
@@ -110,9 +110,9 @@ def test_list_empty_groupby_result_3521() -> None:
     # This will panic on polars version 0.13.38 and 0.13.39
     assert (
         left.join(right, on="join_column", how="left")
-        .group_by("groupby_column")
+        .group_by("group_by_column")
         .agg(pl.col("n_unique_column").drop_nulls())
-    ).to_dict(False) == {"groupby_column": [1], "n_unique_column": [[]]}
+    ).to_dict(False) == {"group_by_column": [1], "n_unique_column": [[]]}
 
 
 def test_list_fill_null() -> None:
@@ -176,7 +176,7 @@ def test_inner_type_categorical_on_rechunk() -> None:
     assert pl.concat([df, df], rechunk=True).dtypes == [pl.List(pl.Categorical)]
 
 
-def test_groupby_list_column() -> None:
+def test_group_by_list_column() -> None:
     df = (
         pl.DataFrame({"a": ["a", "b", "a"]})
         .with_columns(pl.col("a").cast(pl.Categorical))
@@ -190,7 +190,7 @@ def test_groupby_list_column() -> None:
     }
 
 
-def test_groupby_multiple_keys_contains_list_column() -> None:
+def test_group_by_multiple_keys_contains_list_column() -> None:
     df = (
         pl.DataFrame(
             {
