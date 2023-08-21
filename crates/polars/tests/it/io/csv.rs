@@ -442,6 +442,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
             "b",
             DataType::Datetime(TimeUnit::Nanoseconds, None),
         )]))))
+        .with_ignore_errors(true)
         .finish()?;
 
     assert_eq!(
