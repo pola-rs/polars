@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import sys
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, Iterable, Self, Sequence, TypedDict
+from typing import TYPE_CHECKING, Any, Iterable, Sequence, TypedDict
 
 from polars.convert import from_arrow
 from polars.utils.deprecation import (
@@ -13,6 +13,11 @@ from polars.utils.deprecation import (
 
 if TYPE_CHECKING:
     from types import TracebackType
+
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 
     from polars import DataFrame
     from polars.dependencies import pyarrow as pa
