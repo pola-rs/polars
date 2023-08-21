@@ -501,11 +501,6 @@ pub trait SeriesTrait:
         invalid_operation_panic!(peak_min, self)
     }
 
-    /// Check if elements of this Series are in the right Series, or List values of the right Series.
-    #[cfg(feature = "is_in")]
-    fn is_in(&self, _other: &Series) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_in, self._dtype());
-    }
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, _by: &IdxCa) -> PolarsResult<ListChunked> {
         polars_bail!(opq = repeat_by, self._dtype());

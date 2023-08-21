@@ -78,7 +78,7 @@ extract_jsonpath = ["polars-plan/extract_jsonpath", "polars-ops/extract_jsonpath
 
 # operations
 approx_unique = ["polars-plan/approx_unique"]
-is_in = ["polars-plan/is_in"]
+is_in = ["polars-plan/is_in", "polars-ops/is_in"]
 repeat_by = ["polars-plan/repeat_by"]
 round_series = ["polars-plan/round_series", "polars-ops/round_series"]
 is_first = ["polars-plan/is_first"]

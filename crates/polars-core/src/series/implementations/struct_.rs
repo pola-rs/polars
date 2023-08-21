@@ -346,11 +346,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.apply_fields(|s| s.shift(periods)).into_series()
     }
 
-    #[cfg(feature = "is_in")]
-    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
-        self.0.is_in(other)
-    }
-
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }

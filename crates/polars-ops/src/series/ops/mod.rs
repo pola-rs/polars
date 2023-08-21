@@ -10,6 +10,7 @@ mod floor_divide;
 mod fused;
 #[cfg(feature = "is_first")]
 mod is_first;
+mod is_in;
 #[cfg(feature = "is_unique")]
 mod is_unique;
 #[cfg(feature = "log")]
@@ -36,6 +37,8 @@ pub use floor_divide::*;
 pub use fused::*;
 #[cfg(feature = "is_first")]
 pub use is_first::*;
+#[cfg(feature = "is_in")]
+pub use is_in::*;
 #[cfg(feature = "is_unique")]
 pub use is_unique::*;
 #[cfg(feature = "log")]
