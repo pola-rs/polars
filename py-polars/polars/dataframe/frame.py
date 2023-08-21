@@ -2345,8 +2345,8 @@ class DataFrame:
             Write to row oriented json. This is slower, but more common.
         storage_options
             Important: this only works if file is type string
-            Extra options that make sense for ``fsspec.open()`` or a particular storage
-            connection, e.g. host, port, username, password, etc.
+            Extra options for the storage backends supported by `fsspec`.
+            For cloud storages, this may include configurations for authentication etc.
 
 
         See Also
@@ -2365,6 +2365,15 @@ class DataFrame:
         '{"columns":[{"name":"foo","datatype":"Int64","bit_settings":"","values":[1,2,3]},{"name":"bar","datatype":"Int64","bit_settings":"","values":[6,7,8]}]}'
         >>> df.write_json(row_oriented=True)
         '[{"foo":1,"bar":6},{"foo":2,"bar":7},{"foo":3,"bar":8}]'
+
+        Read a file in s3 bucket:
+        >>> file = "s3://bucket/path/to/file.json/"
+        >>> storage_options = {
+        ...     "AWS_REGION": "eu-central-1",
+        ...     "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
+        ...     "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
+        ... }
+        >>> df.write_json(file, storage_options=storage_options)  # doctest: +SKIP
 
         """
         from polars.io._utils import _prepare_write_file_arg
@@ -2418,8 +2427,8 @@ class DataFrame:
             (default), the output is returned as a string instead.
         storage_options
             Important: this only works if file is type string
-            Extra options that make sense for ``fsspec.open()`` or a particular storage
-            connection, e.g. host, port, username, password, etc.
+            Extra options for the storage backends supported by `fsspec`.
+            For cloud storages, this may include configurations for authentication etc.
 
 
         Examples
@@ -2432,6 +2441,17 @@ class DataFrame:
         ... )
         >>> df.write_ndjson()
         '{"foo":1,"bar":6}\n{"foo":2,"bar":7}\n{"foo":3,"bar":8}\n'
+
+
+        Read a file in s3 bucket:
+        >>> file = "s3://bucket/path/to/file.json/"
+        >>> storage_options = {
+        ...     "AWS_REGION": "eu-central-1",
+        ...     "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
+        ...     "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
+        ... }
+        >>> df.write_ndjson(file, storage_options=storage_options)  # doctest: +SKIP
+
 
         """
         from polars.io._utils import _prepare_write_file_arg
@@ -2563,8 +2583,8 @@ class DataFrame:
             necessary.
         storage_options
             Important: this only works if file is type string
-            Extra options that make sense for ``fsspec.open()`` or a particular storage
-            connection, e.g. host, port, username, password, etc.
+            Extra options for the storage backends supported by `fsspec`.
+            For cloud storages, this may include configurations for authentication etc.
 
 
         Examples
@@ -2580,6 +2600,16 @@ class DataFrame:
         ... )
         >>> path: pathlib.Path = dirpath / "new_file.csv"
         >>> df.write_csv(path, separator=",")
+
+
+        Read a file in s3 bucket:
+        >>> file = "s3://bucket/path/to/file.csv/"
+        >>> storage_options = {
+        ...     "AWS_REGION": "eu-central-1",
+        ...     "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
+        ...     "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
+        ... }
+        >>> df.write_csv(file, storage_options=storage_options)  # doctest: +SKIP
 
         """
         if len(separator) > 1:
@@ -2636,8 +2666,8 @@ class DataFrame:
             Compression method. Defaults to "uncompressed".
         storage_options
             Important: this only works if file is type string
-            Extra options that make sense for ``fsspec.open()`` or a particular storage
-            connection, e.g. host, port, username, password, etc.
+            Extra options for the storage backends supported by `fsspec`.
+            For cloud storages, this may include configurations for authentication etc.
 
 
         Examples
@@ -2654,6 +2684,14 @@ class DataFrame:
         >>> path: pathlib.Path = dirpath / "new_file.avro"
         >>> df.write_avro(path)
 
+        Read a file in s3 bucket:
+        >>> file = "s3://bucket/path/to/file.avro/"
+        >>> storage_options = {
+        ...     "AWS_REGION": "eu-central-1",
+        ...     "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
+        ...     "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
+        ... }
+        >>> df.write_avro(file, storage_options=storage_options)  # doctest: +SKIP
         """
         if compression is None:
             compression = "uncompressed"
@@ -2833,8 +2871,8 @@ class DataFrame:
               Using cell notation for (row, col), supplying ("A2", 9, 4) is equivalent.
         storage_options
             Important: this only works if file is type string
-            Extra options that make sense for ``fsspec.open()`` or a particular storage
-            connection, e.g. host, port, username, password, etc.
+            Extra options for the storage backends supported by `fsspec`.
+            For cloud storages, this may include configurations for authentication etc.
 
         Notes
         -----
@@ -3028,6 +3066,16 @@ class DataFrame:
         ...     sheet_zoom=125,
         ... )
 
+
+        Read a file in s3 bucket:
+        >>> file = "s3://bucket/path/to/file.xlsx/"
+        >>> storage_options = {
+        ...     "AWS_REGION": "eu-central-1",
+        ...     "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
+        ...     "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
+        ... }
+        >>> df.write_excel(file, storage_options=storage_options)  # doctest: +SKIP
+
         """  # noqa: W505
         try:
             import xlsxwriter
@@ -3208,8 +3256,8 @@ class DataFrame:
             Compression method. Defaults to "uncompressed".
         storage_options
             Important: this only works if file is type string
-            Extra options that make sense for ``fsspec.open()`` or a particular storage
-            connection, e.g. host, port, username, password, etc.
+            Extra options for the storage backends supported by `fsspec`.
+            For cloud storages, this may include configurations for authentication etc.
 
 
         Examples
@@ -3225,6 +3273,16 @@ class DataFrame:
         ... )
         >>> path: pathlib.Path = dirpath / "new_file.arrow"
         >>> df.write_ipc(path)
+
+
+        Read a file in s3 bucket:
+        >>> file = "s3://bucket/path/to/file.ipc/"
+        >>> storage_options = {
+        ...     "AWS_REGION": "eu-central-1",
+        ...     "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
+        ...     "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
+        ... }
+        >>> df.write_ipc(file, storage_options=storage_options)  # doctest: +SKIP
 
         """
         from polars.io._utils import _prepare_write_file_arg
@@ -3344,8 +3402,8 @@ class DataFrame:
             At the moment C++ supports more features.
         storage_options
             Important: this only works if file is type string
-            Extra options that make sense for ``fsspec.open()`` or a particular storage
-            connection, e.g. host, port, username, password, etc.
+            Extra options for the storage backends supported by `fsspec`.
+            For cloud storages, this may include configurations for authentication etc.
         pyarrow_options
             Arguments passed to ``pyarrow.parquet.write_table``.
 
@@ -3380,6 +3438,15 @@ class DataFrame:
         ...     use_pyarrow=True,
         ...     pyarrow_options={"partition_cols": ["watermark"]},
         ... )
+
+        Read a file in s3 bucket:
+        >>> file = "s3://bucket/path/to/file.parquet/"
+        >>> storage_options = {
+        ...     "AWS_REGION": "eu-central-1",
+        ...     "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
+        ...     "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
+        ... }
+        >>> df.write_parquet(file, storage_options=storage_options)  # doctest: +SKIP
 
         """
         from polars.io._utils import _prepare_write_file_arg
