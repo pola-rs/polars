@@ -2308,7 +2308,7 @@ class DataFrame:
         *,
         pretty: bool = ...,
         row_oriented: bool = ...,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: dict[str, Any] | None = ...,
     ) -> str:
         ...
 
@@ -2319,7 +2319,7 @@ class DataFrame:
         *,
         pretty: bool = ...,
         row_oriented: bool = ...,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: dict[str, Any] | None = ...,
     ) -> None:
         ...
 
@@ -2391,7 +2391,7 @@ class DataFrame:
     def write_ndjson(
         self,
         file: None = None,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: dict[str, Any] | None = ...,
     ) -> str:
         ...
 
@@ -2399,7 +2399,7 @@ class DataFrame:
     def write_ndjson(
         self,
         file: IOBase | str | Path,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: dict[str, Any] | None = ...,
     ) -> None:
         ...
 
@@ -2470,7 +2470,7 @@ class DataFrame:
         float_precision: int | None = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: dict[str, Any] | None = ...,
     ) -> str:
         ...
 
@@ -2490,7 +2490,7 @@ class DataFrame:
         float_precision: int | None = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
-        storage_options: dict[str, Any] | None = None,
+        storage_options: dict[str, Any] | None = ...,
     ) -> None:
         ...
 
@@ -3175,7 +3175,7 @@ class DataFrame:
         self,
         file: None,
         compression: IpcCompression = "uncompressed",
-        storage_options: dict[str, Any] | None = None,
+        storage_options: dict[str, Any] | None = ...,
     ) -> BytesIO:
         ...
 
@@ -3184,7 +3184,7 @@ class DataFrame:
         self,
         file: BinaryIO | BytesIO | str | Path,
         compression: IpcCompression = "uncompressed",
-        storage_options: dict[str, Any] | None = None,
+        storage_options: dict[str, Any] | None = ...,
     ) -> None:
         ...
 
