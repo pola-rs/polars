@@ -66,7 +66,7 @@ from polars.io.excel._write_utils import (
     _xl_unique_table_name,
     _XLFormatCache,
 )
-from polars.selectors import _expand_selectors
+from polars.selectors import _expand_selector_dicts, _expand_selectors
 from polars.slice import PolarsSlice
 from polars.utils._construction import (
     _post_apply_columns,
@@ -120,8 +120,10 @@ if TYPE_CHECKING:
         AsofJoinStrategy,
         AvroCompression,
         ClosedInterval,
+        ColumnFormatDict,
         ColumnNameOrSelector,
         ColumnTotalsDefinition,
+        ColumnWidthsDefinition,
         ComparisonOperator,
         ConditionalFormatDict,
         CsvEncoding,
@@ -2626,12 +2628,12 @@ class DataFrame:
         position: tuple[int, int] | str = "A1",
         table_style: str | dict[str, Any] | None = None,
         table_name: str | None = None,
-        column_formats: dict[str | tuple[str, ...], str | dict[str, str]] | None = None,
+        column_formats: ColumnFormatDict | None = None,
         dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
         conditional_formats: ConditionalFormatDict | None = None,
         header_format: dict[str, Any] | None = None,
         column_totals: ColumnTotalsDefinition | None = None,
-        column_widths: dict[str | tuple[str, ...], int] | int | None = None,
+        column_widths: ColumnWidthsDefinition | None = None,
         row_totals: RowTotalsDefinition | None = None,
         row_heights: dict[int | tuple[int, ...], int] | int | None = None,
         sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
@@ -2674,9 +2676,9 @@ class DataFrame:
             Name of the output table object in the worksheet; can then be referred to
             in the sheet by formulae/charts, or by subsequent ``xlsxwriter`` operations.
         column_formats : dict
-            A ``{colname:str,}`` dictionary for applying an Excel format string to the
-            given columns. Formats defined here (such as "dd/mm/yyyy", "0.00%", etc)
-            will override any defined in ``dtype_formats`` (below).
+            A ``{colname(s):str,}`` or ``{selector:str,}`` dictionary for applying an
+            Excel format string to the given columns. Formats defined here (such as
+            "dd/mm/yyyy", "0.00%", etc) will override any defined in ``dtype_formats``.
         dtype_formats : dict
             A ``{dtype:str,}`` dictionary that sets the default Excel format for the
             given dtype. (This can be overridden on a per-column basis by the
@@ -2684,8 +2686,8 @@ class DataFrame:
             ``pl.FLOAT_DTYPES`` as the dtype/format key, to simplify setting uniform
             integer and float formats.
         conditional_formats : dict
-            A ``{colname(s):str,}``, ``{colname(s):dict,}``, or ``{colname(s):list,}``
-            dictionary defining conditional format options for the specified columns.
+            A dictionary of colname (or selector) keys to a format str, dict, or list
+            that defines conditional formatting options for the specified columns.
 
             * If supplying a string typename, should be one of the valid ``xlsxwriter``
               types such as "3_color_scale", "data_bar", etc.
@@ -2711,9 +2713,9 @@ class DataFrame:
             Valid total function names are "average", "count_nums", "count", "max",
             "min", "std_dev", "sum", and "var".
         column_widths : {dict, int}
-            A ``{colname:int,}`` dict or single integer that sets (or overrides if
-            autofitting) table column widths in integer pixel units. If given as an
-            integer the same value is used for all table columns.
+            A ``{colname:int,}`` or ``{selector:int,}`` dict or a single integer that
+            sets (or overrides if autofitting) table column widths, in integer pixel
+            units. If given as an integer the same value is used for all table columns.
         row_totals : {dict, bool}
             Add a row-total column to the right-hand side of the exported table.
 
@@ -2754,7 +2756,7 @@ class DataFrame:
               "formula" (mandatory), one of "insert_before" or "insert_after", and
               optionally "return_dtype". The latter is used to appropriately format the
               output of the formula and allow it to participate in row/column totals.
-        float_precision : {dict, int}
+        float_precision : int
             Default number of decimals displayed for floating point columns (note that
             this is purely a formatting directive; the actual values are not rounded).
         has_header : bool
@@ -2764,7 +2766,7 @@ class DataFrame:
         autofit : bool
             Calculate individual column widths from the data.
         hidden_columns : list
-             A list of table columns to hide in the worksheet.
+             A list or selector representing table columns to hide in the worksheet.
         hide_gridlines : bool
             Do not display any gridlines on the output worksheet.
         sheet_zoom : int
@@ -2783,7 +2785,6 @@ class DataFrame:
               the `top_row` and `top_col`. Thus, to freeze only the top row and have the
               scrolling region begin at row 10, column D (5th col), supply (1, 0, 9, 4).
               Using cell notation for (row, col), supplying ("A2", 9, 4) is equivalent.
-
 
         Notes
         -----
@@ -3062,9 +3063,13 @@ class DataFrame:
                 )
 
         # additional column-level properties
-        hidden_columns = hidden_columns or ()
+        hidden_columns = _expand_selectors(df, hidden_columns or ())
         if isinstance(column_widths, int):
             column_widths = {column: column_widths for column in df.columns}
+        else:
+            column_widths = _expand_selector_dicts(  # type: ignore[assignment]
+                df, column_widths, expand_keys=True, expand_values=False
+            )
         column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
 
         for column in df.columns:
