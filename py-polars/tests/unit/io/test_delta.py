@@ -344,6 +344,7 @@ def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
     pa_schema = pa.schema([("a", pa.int64())])
     df.write_delta(tmp_path, delta_write_options={"schema": pa_schema})
 
+
 @pytest.mark.parametrize(
     "series",
     [
@@ -352,31 +353,31 @@ def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
             [datetime(2010, 1, 1, 0, 0)],
             dtype=pl.Datetime(time_unit="us", time_zone="UTC"),
         ),
-            pl.Series(
+        pl.Series(
             "date",
             [datetime(2010, 1, 1, 0, 0)],
             dtype=pl.Datetime(time_unit="ns", time_zone="EST"),
         ),
-            pl.Series(
+        pl.Series(
             "date",
             [datetime(2010, 1, 1, 0, 0)],
             dtype=pl.Datetime(time_unit="ms", time_zone="EST"),
         ),
-    ]
+    ],
 )
 def test_write_delta_with_tz_in_df(series: pl.Series, tmp_path: Path) -> None:
     df = series.to_frame()
-    
+
     pa_schema = pa.schema([("date", pa.timestamp("us"))])
-    
+
     df.write_delta(tmp_path, mode="append")
     # write second time because delta-rs also casts timestamp with tz to timestamp no tz
     df.write_delta(tmp_path, mode="append")
-    
+
     tbl = DeltaTable(tmp_path)
     assert pa_schema == tbl.schema().to_pyarrow()
 
     tbl.load_version(0)
-    
+
     df_delta = pl.read_delta(tmp_path.as_posix(), version=0)
-    assert_frame_equal(df_delta, df.select(pl.col('date').cast(pl.Datetime('us'))))
+    assert_frame_equal(df_delta, df.select(pl.col("date").cast(pl.Datetime("us"))))
