@@ -211,7 +211,7 @@ def test_arr_contains_categorical() -> None:
         {"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]}
     ).lazy()
     df = df.with_columns(pl.col("str").cast(pl.Categorical))
-    df_groups = df.groupby("group").agg([pl.col("str").alias("str_list")])
+    df_groups = df.group_by("group").agg([pl.col("str").alias("str_list")])
     assert df_groups.filter(pl.col("str_list").list.contains("C")).collect().to_dict(
         False
     ) == {"group": [2], "str_list": [["A", "C"]]}
@@ -364,7 +364,7 @@ def test_list_function_group_awareness() -> None:
         }
     )
 
-    assert df.groupby("group").agg(
+    assert df.group_by("group").agg(
         [
             pl.col("a").implode().list.get(0).alias("get"),
             pl.col("a").implode().list.take([0]).alias("take"),

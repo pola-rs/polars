@@ -20,7 +20,7 @@
 //!     - Type coercion optimizer
 //!     - Selection (filter, where clause)
 //!     - Projection (select foo from bar)
-//!     - Aggregation (groupby)
+//!     - Aggregation (group_by)
 //!         - all eager aggregations supported
 //!     - Joins
 //!     - WithColumn operation

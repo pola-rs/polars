@@ -24,7 +24,7 @@ fn execute_projection_cached_window_fns(
 ) -> PolarsResult<Vec<Series>> {
     // We partition by normal expression and window expression
     // - the normal expressions can run in parallel
-    // - the window expression take more memory and often use the same groupby keys and join tuples
+    // - the window expression take more memory and often use the same group_by keys and join tuples
     //   so they are cached and run sequential
 
     // the partitioning messes with column order, so we also store the idx
@@ -36,7 +36,7 @@ fn execute_projection_cached_window_fns(
     let mut other = Vec::with_capacity(exprs.len());
 
     // first we partition the window function by the values they group over.
-    // the groupby values should be cached
+    // the group_by values should be cached
     let mut index = 0u32;
     exprs.iter().for_each(|phys| {
         index += 1;
@@ -45,11 +45,11 @@ fn execute_projection_cached_window_fns(
         let mut is_window = false;
         for e in e.into_iter() {
             if let Expr::Window { partition_by, .. } = e {
-                let groupby = format!("{:?}", partition_by.as_slice());
-                if let Some(tpl) = windows.iter_mut().find(|tpl| tpl.0 == groupby) {
+                let group_by = format!("{:?}", partition_by.as_slice());
+                if let Some(tpl) = windows.iter_mut().find(|tpl| tpl.0 == group_by) {
                     tpl.1.push((index, phys.clone()))
                 } else {
-                    windows.push((groupby, vec![(index, phys.clone())]))
+                    windows.push((group_by, vec![(index, phys.clone())]))
                 }
                 is_window = true;
                 break;

@@ -36,7 +36,7 @@ use crate::pipeline::morsels_per_sink;
 ///
 /// - 3. One or more sinks
 ///         A sink needs all data in scope to finalize a pipeline branch.
-///         Think of sorts, preparing a build phase of a join, groupby + aggregations.
+///         Think of sorts, preparing a build phase of a join, group_by + aggregations.
 ///
 /// This struct will have the SOS (source, operators, sinks) of its own pipeline branch, but also
 /// the SOS of other branches. The SOS are stored data oriented and the sinks have an offset that

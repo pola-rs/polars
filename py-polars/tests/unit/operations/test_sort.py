@@ -314,7 +314,7 @@ def test_sorted_flag_unset_by_arithmetic_4937() -> None:
         }
     )
 
-    assert df.sort("price").groupby("ts").agg(
+    assert df.sort("price").group_by("ts").agg(
         [
             (pl.col("price") * pl.col("mask")).max().alias("pmax"),
             (pl.col("price") * pl.col("mask")).min().alias("pmin"),
@@ -332,7 +332,7 @@ def test_unset_sorted_flag_after_extend() -> None:
 
     df1.extend(df2)
     assert not df1["Add"].flags["SORTED_ASC"]
-    df = df1.groupby("Add").agg([pl.col("Batch").min()]).sort("Add")
+    df = df1.group_by("Add").agg([pl.col("Batch").min()]).sort("Add")
     assert df["Add"].flags["SORTED_ASC"]
     assert df.to_dict(False) == {"Add": [37, 41], "Batch": [48, 49]}
 
@@ -356,12 +356,12 @@ def test_sort_slice_fast_path_5245() -> None:
     }
 
 
-def test_explicit_list_agg_sort_in_groupby() -> None:
+def test_explicit_list_agg_sort_in_group_by() -> None:
     df = pl.DataFrame({"A": ["a", "a", "a", "b", "b", "a"], "B": [1, 2, 3, 4, 5, 6]})
 
     # this was col().implode().sort() before we changed the logic
-    result = df.groupby("A").agg(pl.col("B").sort(descending=True)).sort("A")
-    expected = df.groupby("A").agg(pl.col("B").sort(descending=True)).sort("A")
+    result = df.group_by("A").agg(pl.col("B").sort(descending=True)).sort("A")
+    expected = df.group_by("A").agg(pl.col("B").sort(descending=True)).sort("A")
     assert_frame_equal(result, expected)
 
 
@@ -388,7 +388,7 @@ def test_sorted_join_query_5406() -> None:
     df1 = df.sort(by=["Datetime", "RowId"])
 
     filter1 = (
-        df1.groupby(["Datetime", "Group"])
+        df1.group_by(["Datetime", "Group"])
         .agg([pl.all().sort_by("Value", descending=True).first()])
         .sort(["Datetime", "RowId"])
     )
@@ -535,7 +535,7 @@ def test_sort_by_logical() -> None:
             "num": [3, 4, 1],
         }
     )
-    assert df.groupby("name").agg([pl.col("num").sort_by(["dt1", "dt2"])]).sort(
+    assert df.group_by("name").agg([pl.col("num").sort_by(["dt1", "dt2"])]).sort(
         "name"
     ).to_dict(False) == {"name": ["a", "b"], "num": [[3, 1], [4]]}
 
@@ -647,11 +647,11 @@ def test_sort_top_k_fast_path() -> None:
     }
 
 
-def test_sorted_flag_groupby_dynamic() -> None:
+def test_sorted_flag_group_by_dynamic() -> None:
     df = pl.DataFrame({"ts": [date(2020, 1, 1), date(2020, 1, 2)], "val": [1, 2]})
     assert (
         (
-            df.groupby_dynamic(pl.col("ts").set_sorted(), every="1d").agg(
+            df.group_by_dynamic(pl.col("ts").set_sorted(), every="1d").agg(
                 pl.col("val").sum()
             )
         )

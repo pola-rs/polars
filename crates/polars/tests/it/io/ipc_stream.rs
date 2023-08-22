@@ -2,7 +2,6 @@
 mod test {
     use std::io::Cursor;
 
-    use polars::export::arrow::io::ipc::write;
     use polars_core::df;
     use polars_core::prelude::*;
     use polars_io::ipc::*;
@@ -105,11 +104,7 @@ mod test {
     fn test_write_with_compression() {
         let mut df = create_df();
 
-        let compressions = vec![
-            None,
-            Some(write::Compression::LZ4),
-            Some(write::Compression::ZSTD),
-        ];
+        let compressions = vec![None, Some(IpcCompression::LZ4), Some(IpcCompression::ZSTD)];
 
         for compression in compressions.into_iter() {
             let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());

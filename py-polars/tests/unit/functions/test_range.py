@@ -230,7 +230,10 @@ def test_date_range_lazy_time_zones_invalid() -> None:
     stop = datetime(2020, 1, 2, tzinfo=ZoneInfo("Asia/Kathmandu"))
     with pytest.raises(
         ComputeError,
-        match="Given time_zone is different from that of timezone aware datetimes. Given: 'Pacific/Tarawa', got: 'Asia/Kathmandu",
+        match=(
+            "`time_zone` does not match the data"
+            "\n\nData has time zone 'Asia/Kathmandu', got 'Pacific/Tarawa'."
+        ),
     ), pytest.warns(TimeZoneAwareConstructorWarning, match="Series with UTC"):
         (
             pl.DataFrame({"start": [start], "stop": [stop]})
@@ -380,10 +383,7 @@ def test_timezone_aware_date_range() -> None:
             eager=True,
         )
 
-    with pytest.raises(
-        ComputeError,
-        match=r"Given time_zone is different from that of timezone aware datetimes",
-    ):
+    with pytest.raises(ComputeError, match="`time_zone` does not match the data"):
         pl.date_range(
             low, high, interval=timedelta(days=5), time_zone="UTC", eager=True
         )

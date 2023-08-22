@@ -3,7 +3,7 @@ use hashbrown::HashMap;
 use rayon::prelude::*;
 
 use super::*;
-use crate::frame::groupby::hashing::{populate_multiple_key_hashmap, HASHMAP_INIT_SIZE};
+use crate::frame::group_by::hashing::{populate_multiple_key_hashmap, HASHMAP_INIT_SIZE};
 use crate::frame::hash_join::{
     get_hash_tbl_threaded_join_mut_partitioned, get_hash_tbl_threaded_join_partitioned,
 };

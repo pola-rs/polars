@@ -12,7 +12,7 @@ fn test_pearson_corr() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .groupby_stable([col("uid")])
+        .group_by_stable([col("uid")])
         // a double aggregation expression.
         .agg([pearson_corr(col("day"), col("cumcases"), 1).alias("pearson_corr")])
         .collect()?;
@@ -22,7 +22,7 @@ fn test_pearson_corr() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .groupby_stable([col("uid")])
+        .group_by_stable([col("uid")])
         // a double aggregation expression.
         .agg([pearson_corr(col("day"), col("cumcases"), 1)
             .pow(2.0)

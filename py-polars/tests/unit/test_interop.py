@@ -477,7 +477,7 @@ def test_from_pandas_dataframe() -> None:
     assert df.rows() == [(1, 2, 3), (4, 5, 6)]
 
     # if not a pandas dataframe, raise a ValueError
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         _ = pl.from_pandas([1, 2])  # type: ignore[call-overload]
 
 
@@ -1074,7 +1074,7 @@ def test_to_init_repr() -> None:
 
 def test_untrusted_categorical_input() -> None:
     df = pd.DataFrame({"x": pd.Categorical(["x"], ["x", "y"])})
-    assert pl.from_pandas(df).groupby("x").count().to_dict(False) == {
+    assert pl.from_pandas(df).group_by("x").count().to_dict(False) == {
         "x": ["x"],
         "count": [1],
     }

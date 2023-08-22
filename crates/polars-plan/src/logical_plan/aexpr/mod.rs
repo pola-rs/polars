@@ -4,7 +4,7 @@ mod schema;
 use std::sync::Arc;
 
 use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_core::frame::groupby::GroupByMethod;
+use polars_core::frame::group_by::GroupByMethod;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};

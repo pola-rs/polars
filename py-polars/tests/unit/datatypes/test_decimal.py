@@ -180,7 +180,7 @@ def test_decimal_aggregations() -> None:
         }
     )
 
-    assert df.groupby("g", maintain_order=True).agg(
+    assert df.group_by("g", maintain_order=True).agg(
         sum=pl.sum("a"),
         min=pl.min("a"),
         max=pl.max("a"),

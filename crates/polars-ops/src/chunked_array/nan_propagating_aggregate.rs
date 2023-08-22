@@ -9,7 +9,7 @@ use polars_arrow::kernels::take_agg::{
 };
 use polars_arrow::utils::CustomIterTools;
 use polars_core::export::num::Bounded;
-use polars_core::frame::groupby::aggregations::{
+use polars_core::frame::group_by::aggregations::{
     _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window_no_nulls,
     _rolling_apply_agg_window_nulls, _slice_from_offsets, _use_rolling_kernels,
 };

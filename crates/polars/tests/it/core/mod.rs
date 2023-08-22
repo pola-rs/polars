@@ -1,5 +1,5 @@
 mod date_like;
-mod groupby;
+mod group_by;
 mod joins;
 mod list;
 mod ops;

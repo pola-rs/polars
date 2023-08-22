@@ -12,10 +12,10 @@ fn join_nans_outer() -> PolarsResult<()> {
         .lazy();
     let a1 = df1
         .clone()
-        .groupby(vec![col("w").alias("w"), col("t")])
+        .group_by(vec![col("w").alias("w"), col("t")])
         .agg(vec![col("c").sum().alias("c_sum")]);
     let a2 = df1
-        .groupby(vec![col("w").alias("w"), col("t")])
+        .group_by(vec![col("w").alias("w"), col("t")])
         .agg(vec![col("c").max().alias("c_max")]);
 
     let res = a1
@@ -42,7 +42,7 @@ fn join_empty_datasets() -> PolarsResult<()> {
     .unwrap();
 
     a.lazy()
-        .groupby([col("foo")])
+        .group_by([col("foo")])
         .agg([all().last()])
         .inner_join(b.lazy(), "foo", "foo")
         .collect()

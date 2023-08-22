@@ -353,7 +353,7 @@ fn prepare_excluded(
         }
     }
 
-    // exclude groupby keys
+    // exclude group_by keys
     for mut expr in keys.iter() {
         // Allow a number of aliases of a column expression, still exclude column from aggregation
         loop {

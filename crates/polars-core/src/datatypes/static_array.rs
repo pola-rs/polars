@@ -1,4 +1,5 @@
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
+use arrow::bitmap::Bitmap;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
@@ -16,18 +17,22 @@ pub trait StaticArray: Array {
 
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter>;
     fn values_iter(&self) -> Self::ValueIterT<'_>;
+    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self;
 }
 
 impl<T: NumericNative> StaticArray for PrimitiveArray<T> {
-    type ValueT<'a> = &'a T;
-    type ValueIterT<'a> = std::slice::Iter<'a, T>;
+    type ValueT<'a> = T;
+    type ValueIterT<'a> = std::iter::Copied<std::slice::Iter<'a, T>>;
 
     fn values_iter(&self) -> Self::ValueIterT<'_> {
-        self.values_iter()
+        self.values_iter().copied()
     }
 
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
-        self.iter()
+        ZipValidity::new_with_validity(self.values().iter().copied(), self.validity())
+    }
+    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity(validity)
     }
 }
 
@@ -42,6 +47,9 @@ impl StaticArray for BooleanArray {
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
         self.iter()
     }
+    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity(validity)
+    }
 }
 
 impl StaticArray for Utf8Array<i64> {
@@ -54,6 +62,9 @@ impl StaticArray for Utf8Array<i64> {
 
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
         self.iter()
+    }
+    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity(validity)
     }
 }
 
@@ -68,6 +79,9 @@ impl StaticArray for BinaryArray<i64> {
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
         self.iter()
     }
+    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity(validity)
+    }
 }
 
 impl StaticArray for ListArray<i64> {
@@ -80,6 +94,9 @@ impl StaticArray for ListArray<i64> {
 
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
         self.iter()
+    }
+    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity(validity)
     }
 }
 
@@ -95,6 +112,9 @@ impl StaticArray for FixedSizeListArray {
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
         self.iter()
     }
+    fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
+        self.with_validity(validity)
+    }
 }
 
 #[cfg(feature = "object")]
@@ -107,6 +127,9 @@ impl<T: PolarsObject> StaticArray for ObjectArray<T> {
     }
 
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {
+        todo!()
+    }
+    fn with_validity_typed(self, _validity: Option<Bitmap>) -> Self {
         todo!()
     }
 }

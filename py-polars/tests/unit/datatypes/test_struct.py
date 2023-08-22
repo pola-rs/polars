@@ -188,7 +188,7 @@ def test_value_counts_expr() -> None:
 
     df = pl.DataFrame({"session": [1, 1, 1], "id": [2, 2, 3]})
 
-    assert df.groupby("session").agg(
+    assert df.group_by("session").agg(
         [pl.col("id").value_counts(sort=True).first()]
     ).to_dict(False) == {"session": [1], "id": [{"id": 2, "counts": 2}]}
 
@@ -375,7 +375,7 @@ def test_struct_agg_all() -> None:
         }
     )
 
-    assert df.groupby("group", maintain_order=True).all().to_dict(False) == {
+    assert df.group_by("group", maintain_order=True).all().to_dict(False) == {
         "group": ["a", "b"],
         "col1": [
             [{"x": 1, "y": 100}, {"x": 2, "y": 200}],
@@ -607,9 +607,9 @@ def test_nested_struct_sliced_append() -> None:
     ]
 
 
-def test_struct_groupby_field_agg_4216() -> None:
+def test_struct_group_by_field_agg_4216() -> None:
     df = pl.DataFrame([{"a": {"b": 1}, "c": 0}])
-    assert df.groupby("c").agg(pl.col("a").struct.field("b").count()).to_dict(
+    assert df.group_by("c").agg(pl.col("a").struct.field("b").count()).to_dict(
         False
     ) == {"c": [0], "b": [1]}
 
@@ -816,7 +816,7 @@ def test_struct_name_passed_in_agg_apply() -> None:
         ]
     ).alias("index")
 
-    assert pl.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6], "C": [1, 2, 2]}).groupby(
+    assert pl.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6], "C": [1, 2, 2]}).group_by(
         "C"
     ).agg(struct_expr).sort("C", descending=True).to_dict(False) == {
         "C": [2, 1],
@@ -828,7 +828,7 @@ def test_struct_name_passed_in_agg_apply() -> None:
 
     df = pl.DataFrame({"val": [-3, -2, -1, 0, 1, 2, 3], "k": [0] * 7})
 
-    assert df.groupby("k").agg(
+    assert df.group_by("k").agg(
         pl.struct(
             [
                 pl.col("val").value_counts(sort=True).struct.field("val").alias("val"),

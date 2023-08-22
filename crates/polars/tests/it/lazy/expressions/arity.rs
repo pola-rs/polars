@@ -10,7 +10,7 @@ fn test_list_broadcast() {
     ]
     .unwrap()
     .lazy()
-    .groupby([col("g")])
+    .group_by([col("g")])
     .agg([col("a").unique_counts() * count()])
     .collect()
     .unwrap();
@@ -161,7 +161,7 @@ fn test_when_then_otherwise_single_bool() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .groupby_stable([col("key")])
+        .group_by_stable([col("key")])
         .agg([when(col("val").null_count().gt(lit(0)))
             .then(Null {}.lit())
             .otherwise(col("val").sum())
@@ -191,7 +191,7 @@ fn test_update_groups_in_cast() -> PolarsResult<()> {
     // in aggregation that cast coerces a list and the cast may forget to update groups
     let out = df
         .lazy()
-        .groupby_stable([col("group")])
+        .group_by_stable([col("group")])
         .agg([col("id").unique_counts() * lit(-1)])
         .collect()?;
 
@@ -214,7 +214,7 @@ fn test_when_then_otherwise_sum_in_agg() -> PolarsResult<()> {
 
     let q = df
         .lazy()
-        .groupby([col("groups")])
+        .group_by([col("groups")])
         .agg([when(all().exclude(["groups"]).sum().eq(lit(1)))
             .then(all().exclude(["groups"]).sum())
             .otherwise(lit(NULL))])
@@ -292,7 +292,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .groupby([col("name")])
+        .group_by([col("name")])
         .agg([when(col("value").sum().eq(lit(3)))
             .then(col("value").rank(Default::default(), None))
             .otherwise(lit(Series::new("", &[10 as IdxSize])))])
@@ -312,7 +312,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .groupby([col("name")])
+        .group_by([col("name")])
         .agg([when(col("value").sum().eq(lit(3)))
             .then(lit(Series::new("", &[10 as IdxSize])).alias("value"))
             .otherwise(col("value").rank(Default::default(), None))])
@@ -332,7 +332,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .groupby([col("name")])
+        .group_by([col("name")])
         .agg([when(col("value").sum().eq(lit(3)))
             .then(col("value").rank(Default::default(), None))
             .otherwise(Null {}.lit())])
@@ -346,7 +346,7 @@ fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
     // swapped branch
     let out = df
         .lazy()
-        .groupby([col("name")])
+        .group_by([col("name")])
         .agg([when(col("value").sum().eq(lit(3)))
             .then(Null {}.lit().alias("value"))
             .otherwise(col("value").rank(Default::default(), None))])
@@ -370,7 +370,7 @@ fn test_binary_group_consistency() -> PolarsResult<()> {
     .lazy();
 
     let out = lf
-        .groupby([col("category")])
+        .group_by([col("category")])
         .agg([col("name").filter(col("score").eq(col("score").max()))])
         .sort("category", Default::default())
         .collect()?;

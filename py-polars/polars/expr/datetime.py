@@ -395,7 +395,7 @@ class ExprDateTimeNameSpace:
         """
         if not isinstance(time, (dt.time, pl.Expr)):
             raise TypeError(
-                f"expected 'time' to be a python time or polars expression, found {time!r}"
+                f"expected 'time' to be a Python time or Polars expression, found {type(time).__name__!r}"
             )
         time = parse_as_expression(time)
         return wrap_expr(self._pyexpr.dt_combine(time, time_unit))

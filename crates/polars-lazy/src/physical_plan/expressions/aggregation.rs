@@ -6,7 +6,7 @@ use polars_arrow::export::arrow::compute::concatenate::concatenate;
 use polars_arrow::export::arrow::offset::Offsets;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::utils::CustomIterTools;
-use polars_core::frame::groupby::{GroupByMethod, GroupsProxy};
+use polars_core::frame::group_by::{GroupByMethod, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 #[cfg(feature = "dtype-struct")]
@@ -426,7 +426,7 @@ impl PartitionedAggregation for AggregationExpr {
                         for (_, idx) in groups {
                             let ca = unsafe {
                                 // Safety
-                                // The indexes of the groupby operation are never out of bounds
+                                // The indexes of the group_by operation are never out of bounds
                                 ca.take_unchecked(idx.into())
                             };
                             process_group(ca)?;

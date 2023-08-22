@@ -80,6 +80,7 @@ impl CsvSource {
             .with_chunk_size(chunk_size)
             .with_row_count(file_options.row_count)
             .with_try_parse_dates(options.try_parse_dates)
+            .truncate_ragged_lines(options.truncate_ragged_lines)
             .raise_if_empty(options.raise_if_empty);
 
         let reader = Box::new(reader);

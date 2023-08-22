@@ -317,7 +317,7 @@ impl SQLContext {
 
         // Check for group by
         // After projection since there might be number.
-        let groupby_keys: Vec<Expr> = select_stmt
+        let group_by_keys: Vec<Expr> = select_stmt
             .group_by
             .iter()
             .map(|e| match e {
@@ -325,7 +325,7 @@ impl SQLContext {
                     let idx = match idx.parse::<usize>() {
                         Ok(0) | Err(_) => Err(polars_err!(
                             ComputeError:
-                            "groupby error: a positive number or an expression expected, got {}",
+                            "group_by error: a positive number or an expression expected, got {}",
                             idx
                         )),
                         Ok(idx) => Ok(idx),
@@ -334,16 +334,16 @@ impl SQLContext {
                 },
                 SqlExpr::Value(_) => Err(polars_err!(
                     ComputeError:
-                    "groupby error: a positive number or an expression expected",
+                    "group_by error: a positive number or an expression expected",
                 )),
                 _ => parse_sql_expr(e, self),
             })
             .collect::<PolarsResult<_>>()?;
 
-        if groupby_keys.is_empty() {
+        if group_by_keys.is_empty() {
             lf = lf.select(projections)
         } else {
-            lf = self.process_groupby(lf, contains_wildcard, &groupby_keys, &projections)?;
+            lf = self.process_group_by(lf, contains_wildcard, &group_by_keys, &projections)?;
 
             // Apply optional 'having' clause, post-aggregation
             lf = match select_stmt.having.as_ref() {
@@ -481,31 +481,31 @@ impl SQLContext {
         Ok(lf.sort_by_exprs(&by, descending, false, false))
     }
 
-    fn process_groupby(
+    fn process_group_by(
         &mut self,
         lf: LazyFrame,
         contains_wildcard: bool,
-        groupby_keys: &[Expr],
+        group_by_keys: &[Expr],
         projections: &[Expr],
     ) -> PolarsResult<LazyFrame> {
-        // check groupby and projection due to difference between SQL and polars
+        // check group_by and projection due to difference between SQL and polars
         // Return error on wild card, shouldn't process this
         polars_ensure!(
             !contains_wildcard,
-            ComputeError: "groupby error: can't process wildcard in groupby"
+            ComputeError: "group_by error: can't process wildcard in group_by"
         );
         let schema_before = lf.schema()?;
 
-        let groupby_keys_schema =
-            expressions_to_schema(groupby_keys, &schema_before, Context::Default)?;
+        let group_by_keys_schema =
+            expressions_to_schema(group_by_keys, &schema_before, Context::Default)?;
 
-        // remove the groupby keys as polars adds those implicitly
+        // remove the group_by keys as polars adds those implicitly
         let mut aggregation_projection = Vec::with_capacity(projections.len());
         let mut aliases: BTreeSet<&str> = BTreeSet::new();
 
         for mut e in projections {
             // if it is a simple expression & has alias,
-            // we must defer the aliasing until after the groupby
+            // we must defer the aliasing until after the group_by
             if e.clone().meta().is_simple_projection() {
                 if let Expr::Alias(expr, name) = e {
                     aliases.insert(name);
@@ -514,12 +514,12 @@ impl SQLContext {
             }
 
             let field = e.to_field(&schema_before, Context::Default)?;
-            if groupby_keys_schema.get(&field.name).is_none() {
+            if group_by_keys_schema.get(&field.name).is_none() {
                 aggregation_projection.push(e.clone())
             }
         }
 
-        let aggregated = lf.groupby(groupby_keys).agg(&aggregation_projection);
+        let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
         let projection_schema =
             expressions_to_schema(projections, &schema_before, Context::Default)?;
         // a final projection to get the proper order
@@ -527,7 +527,7 @@ impl SQLContext {
             .iter_names()
             .zip(projections)
             .map(|(name, projection_expr)| {
-                if groupby_keys_schema.get(name).is_some() || aliases.contains(name.as_str()) {
+                if group_by_keys_schema.get(name).is_some() || aliases.contains(name.as_str()) {
                     projection_expr.clone()
                 } else {
                     col(name)

@@ -13,3 +13,6 @@ arrow = { workspace = true }
 object_store = { version = "0.6.0", default-features = false, optional = true }
 regex = { workspace = true, optional = true }
 thiserror = { workspace = true }
+
+[features]
+python = []

@@ -22,7 +22,7 @@ where
     a.map_many(function, &[b], output_type)
 }
 
-/// Like [`map_binary`], but used in a groupby-aggregation context.
+/// Like [`map_binary`], but used in a group_by-aggregation context.
 ///
 /// See [`Expr::apply`] for the difference between [`map`](Expr::map) and [`apply`](Expr::apply).
 pub fn apply_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr

@@ -7,7 +7,7 @@ pub use dispatcher::PipeLine;
 use polars_core::prelude::*;
 use polars_core::POOL;
 
-pub use crate::executors::sinks::groupby::aggregates::can_convert_to_hash_agg;
+pub use crate::executors::sinks::group_by::aggregates::can_convert_to_hash_agg;
 
 pub(crate) fn morsels_per_sink() -> usize {
     POOL.current_num_threads()

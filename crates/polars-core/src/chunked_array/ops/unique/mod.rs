@@ -8,10 +8,10 @@ use arrow::bitmap::MutableBitmap;
 #[cfg(feature = "object")]
 use crate::datatypes::ObjectType;
 use crate::datatypes::PlHashSet;
-use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
-use crate::frame::groupby::GroupsProxy;
+use crate::frame::group_by::hashing::HASHMAP_INIT_SIZE;
+use crate::frame::group_by::GroupsProxy;
 #[cfg(feature = "mode")]
-use crate::frame::groupby::IntoGroupsProxy;
+use crate::frame::group_by::IntoGroupsProxy;
 use crate::prelude::*;
 use crate::series::IsSorted;
 

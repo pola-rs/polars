@@ -2,19 +2,12 @@ from __future__ import annotations
 
 import io
 import re
-from itertools import zip_longest
+from itertools import chain, zip_longest
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, overload
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.datatypes import (
-    N_INFER_DEFAULT,
-    Categorical,
-    List,
-    Object,
-    Struct,
-    Utf8,
-)
+from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, Struct, Utf8
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
@@ -298,7 +291,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     for dtype in set(schema.values()):
         if dtype in (List, Struct, Object):
             raise NotImplementedError(
-                f"'from_repr' does not support {dtype.base_type()} dtype"
+                f"`from_repr` does not support data type {dtype.base_type().__name__!r}"
             )
 
     # construct DataFrame from string series and cast from repr to native dtype
@@ -523,7 +516,7 @@ def from_arrow(
         | pa.Array
         | pa.ChunkedArray
         | pa.RecordBatch
-        | Iterable[pa.RecordBatch]
+        | Iterable[pa.RecordBatch | pa.Table]
     ),
     schema: SchemaDefinition | None = None,
     *,
@@ -539,7 +532,7 @@ def from_arrow(
     Parameters
     ----------
     data : :class:`pyarrow.Table`, :class:`pyarrow.Array`, one or more :class:`pyarrow.RecordBatch`
-        Data representing an Arrow Table, Array, or sequence of RecordBatches.
+        Data representing an Arrow Table, Array, or sequence of RecordBatches or Tables.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -616,7 +609,11 @@ def from_arrow(
         data = [data]
     if isinstance(data, Iterable):
         return pl.DataFrame._from_arrow(
-            data=pa.Table.from_batches(data),
+            data=pa.Table.from_batches(
+                chain.from_iterable(
+                    (b.to_batches() if isinstance(b, pa.Table) else [b]) for b in data
+                )
+            ),
             rechunk=rechunk,
             schema=schema,
             schema_overrides=schema_overrides,
@@ -727,6 +724,6 @@ def from_pandas(
             include_index=include_index,
         )
     else:
-        raise ValueError(
+        raise TypeError(
             f"expected pandas DataFrame or Series, got {type(data).__name__!r}"
         )

@@ -30,10 +30,10 @@ def test_sort_by_bools() -> None:
     assert out.shape == (3, 4)
 
 
-def test_repeat_expansion_in_groupby() -> None:
+def test_repeat_expansion_in_group_by() -> None:
     out = (
         pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
-        .groupby("g", maintain_order=True)
+        .group_by("g", maintain_order=True)
         .agg(pl.repeat(1, pl.count()).cumsum())
         .to_dict(False)
     )
@@ -48,7 +48,7 @@ def test_agg_after_head() -> None:
     expected = pl.DataFrame({"a": [1, 2, 3], "b": [6, 9, 21]})
 
     for maintain_order in [True, False]:
-        out = df.groupby("a", maintain_order=maintain_order).agg(
+        out = df.group_by("a", maintain_order=maintain_order).agg(
             [pl.col("b").head(3).sum()]
         )
 
@@ -71,7 +71,7 @@ def test_overflow_uint16_agg_mean() -> None:
                 pl.col("col3").cast(pl.UInt16),
             ]
         )
-        .groupby(["col1"])
+        .group_by(["col1"])
         .agg(pl.col("col3").mean())
         .to_dict(False)
     ) == {"col1": ["A"], "col3": [64.0]}
@@ -86,7 +86,7 @@ def test_binary_on_list_agg_3345() -> None:
     )
 
     assert (
-        df.groupby(["group"], maintain_order=True)
+        df.group_by(["group"], maintain_order=True)
         .agg(
             [
                 (
@@ -109,12 +109,12 @@ def test_maintain_order_after_sampling() -> None:
             "value": [1, 3, 2, 3, 4, 5, 3, 4],
         }
     )
-    assert df.groupby("type", maintain_order=True).agg(pl.col("value").sum()).to_dict(
+    assert df.group_by("type", maintain_order=True).agg(pl.col("value").sum()).to_dict(
         False
     ) == {"type": ["A", "B", "C", "D"], "value": [5, 8, 5, 7]}
 
 
-def test_sorted_groupby_optimization(monkeypatch: Any) -> None:
+def test_sorted_group_by_optimization(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_NO_STREAMING_GROUPBY", "1")
 
     df = pl.DataFrame({"a": np.random.randint(0, 5, 20)})
@@ -124,11 +124,11 @@ def test_sorted_groupby_optimization(monkeypatch: Any) -> None:
     for descending in [True, False]:
         sorted_implicit = (
             df.with_columns(pl.col("a").sort(descending=descending))
-            .groupby("a")
+            .group_by("a")
             .agg(pl.count())
         )
         sorted_explicit = (
-            df.groupby("a").agg(pl.count()).sort("a", descending=descending)
+            df.group_by("a").agg(pl.count()).sort("a", descending=descending)
         )
         assert_frame_equal(sorted_explicit, sorted_implicit)
 
@@ -147,7 +147,7 @@ def test_median_on_shifted_col_3522() -> None:
     assert diffs.select(pl.col("foo").median()).to_series()[0] == 36828.5
 
 
-def test_groupby_agg_equals_zero_3535() -> None:
+def test_group_by_agg_equals_zero_3535() -> None:
     # setup test frame
     df = pl.DataFrame(
         data=[
@@ -165,7 +165,7 @@ def test_groupby_agg_equals_zero_3535() -> None:
         ],
     )
     # group by the key, aggregating the two numeric cols
-    assert df.groupby(pl.col("key"), maintain_order=True).agg(
+    assert df.group_by(pl.col("key"), maintain_order=True).agg(
         [pl.col("val1").sum(), pl.col("val2").sum()]
     ).to_dict(False) == {
         "key": ["aa", "bb", "cc"],
@@ -190,7 +190,7 @@ def test_arithmetic_in_aggregation_3739() -> None:
                 "y": [2, 0, 2, 0],
             }
         )
-        .groupby("key")
+        .group_by("key")
         .agg(
             [
                 demean_dot(),
@@ -228,7 +228,7 @@ def test_opaque_filter_on_lists_3784() -> None:
     ).lazy()
     df = df.with_columns(pl.col("str").cast(pl.Categorical))
 
-    df_groups = df.groupby("group").agg([pl.col("str").alias("str_list")])
+    df_groups = df.group_by("group").agg([pl.col("str").alias("str_list")])
 
     pre = "A"
     succ = "B"
@@ -263,7 +263,7 @@ def test_ternary_none_struct() -> None:
 
     assert (
         pl.DataFrame({"groups": [1, 2, 3, 4], "values": [None, None, 1, 2]})
-        .groupby("groups", maintain_order=True)
+        .group_by("groups", maintain_order=True)
         .agg([map_expr("values")])
     ).to_dict(False) == {
         "groups": [1, 2, 3, 4],

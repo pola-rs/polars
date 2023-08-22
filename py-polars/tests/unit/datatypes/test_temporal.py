@@ -529,7 +529,7 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
         }
     ).set_sorted("event_date")
     df = df.with_columns(pl.col("event_date").dt.replace_time_zone(time_zone))
-    out = df.groupby_dynamic(
+    out = df.group_by_dynamic(
         index_column="event_date",
         every="1mo",
         period="2mo",
@@ -562,7 +562,7 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
     ).set_sorted("event_date")
     df = df.with_columns(pl.col("event_date").dt.replace_time_zone(time_zone))
 
-    out = df.groupby_dynamic(
+    out = df.group_by_dynamic(
         index_column="event_date",
         every="1mo",
         by=["admin", "five_type", "actor"],
@@ -586,7 +586,7 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
             .set_sorted("idx")
         )
 
-        out = df.groupby_dynamic(
+        out = df.group_by_dynamic(
             "idx", every="2i", period="3i", include_boundaries=True
         ).agg(pl.col("A"))
 
@@ -624,7 +624,7 @@ def test_explode_date() -> None:
             }
         )
         out = (
-            df.groupby("b", maintain_order=True)
+            df.group_by("b", maintain_order=True)
             .agg([pl.col("a"), pl.col("c").pct_change()])
             .explode(["a", "c"])
         )
@@ -637,7 +637,7 @@ def test_explode_date() -> None:
         ]
 
 
-def test_groupby_dynamic_when_conversion_crosses_dates_7274() -> None:
+def test_group_by_dynamic_when_conversion_crosses_dates_7274() -> None:
     df = (
         pl.DataFrame(
             data={
@@ -658,7 +658,7 @@ def test_groupby_dynamic_when_conversion_crosses_dates_7274() -> None:
             .set_sorted()
         )
     )
-    result = df.groupby_dynamic(
+    result = df.group_by_dynamic(
         index_column="timestamp", every="1d", closed="left"
     ).agg(pl.col("value").count())
     expected = pl.DataFrame({"timestamp": [datetime(1970, 1, 1)], "value": [2]})
@@ -667,7 +667,7 @@ def test_groupby_dynamic_when_conversion_crosses_dates_7274() -> None:
         pl.col("value").cast(pl.UInt32),
     )
     assert_frame_equal(result, expected)
-    result = df.groupby_dynamic(
+    result = df.group_by_dynamic(
         index_column="timestamp_utc", every="1d", closed="left"
     ).agg(pl.col("value").count())
     expected = pl.DataFrame(
@@ -701,7 +701,7 @@ def test_rolling() -> None:
 
     period: str | timedelta
     for period in ("2d", timedelta(days=2)):  # type: ignore[assignment]
-        out = df.groupby_rolling(index_column="dt", period=period).agg(
+        out = df.group_by_rolling(index_column="dt", period=period).agg(
             [
                 pl.sum("a").alias("sum_a"),
                 pl.min("a").alias("min_a"),
@@ -882,7 +882,7 @@ def test_read_utc_times_parquet() -> None:
 
 
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
-def test_default_negative_every_offset_dynamic_groupby(time_zone: str | None) -> None:
+def test_default_negative_every_offset_dynamic_group_by(time_zone: str | None) -> None:
     # 2791
     dts = [
         datetime(2020, 1, 1),
@@ -892,7 +892,7 @@ def test_default_negative_every_offset_dynamic_groupby(time_zone: str | None) ->
     ]
     df = pl.DataFrame({"dt": dts, "idx": range(len(dts))}).set_sorted("dt")
     df = df.with_columns(pl.col("dt").dt.replace_time_zone(time_zone))
-    out = df.groupby_dynamic(index_column="dt", every="1mo", closed="right").agg(
+    out = df.group_by_dynamic(index_column="dt", every="1mo", closed="right").agg(
         pl.col("idx")
     )
 
@@ -918,14 +918,14 @@ def test_default_negative_every_offset_dynamic_groupby(time_zone: str | None) ->
         ("1w", timedelta(weeks=2)),
     ],
 )
-def test_groupby_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
+def test_group_by_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
     start_dt = datetime(2021, 11, 7)
     end_dt = start_dt + offset
     date_range = pl.date_range(
         start_dt, end_dt, rule, time_zone="US/Central", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
-    result = df.groupby_dynamic("time", every=rule, start_by="datapoint").agg(
+    result = df.group_by_dynamic("time", every=rule, start_by="datapoint").agg(
         pl.col("value").mean()
     )
     expected = pl.DataFrame(
@@ -996,7 +996,7 @@ def test_groupby_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
         ),
     ],
 )
-def test_groupby_dynamic_startby_monday_crossing_dst(
+def test_group_by_dynamic_startby_monday_crossing_dst(
     start_by: StartBy, expected_time: list[datetime], expected_value: list[float]
 ) -> None:
     start_dt = datetime(2021, 11, 7)
@@ -1005,7 +1005,7 @@ def test_groupby_dynamic_startby_monday_crossing_dst(
         start_dt, end_dt, "1d", time_zone="US/Central", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
-    result = df.groupby_dynamic("time", every="1w", start_by=start_by).agg(
+    result = df.group_by_dynamic("time", every="1w", start_by=start_by).agg(
         pl.col("value").mean()
     )
     expected = pl.DataFrame(
@@ -1015,14 +1015,14 @@ def test_groupby_dynamic_startby_monday_crossing_dst(
     assert_frame_equal(result, expected)
 
 
-def test_groupby_dynamic_startby_monday_dst_8737() -> None:
+def test_group_by_dynamic_startby_monday_dst_8737() -> None:
     start_dt = datetime(2021, 11, 6, 20)
     stop_dt = datetime(2021, 11, 7, 20)
     date_range = pl.date_range(
         start_dt, stop_dt, "1d", time_zone="US/Central", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
-    result = df.groupby_dynamic("time", every="1w", start_by="monday").agg(
+    result = df.group_by_dynamic("time", every="1w", start_by="monday").agg(
         pl.col("value").mean()
     )
     expected = pl.DataFrame(
@@ -1037,14 +1037,14 @@ def test_groupby_dynamic_startby_monday_dst_8737() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_groupby_dynamic_monthly_crossing_dst() -> None:
+def test_group_by_dynamic_monthly_crossing_dst() -> None:
     start_dt = datetime(2021, 11, 1)
     end_dt = datetime(2021, 12, 1)
     date_range = pl.date_range(
         start_dt, end_dt, "1mo", time_zone="US/Central", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
-    result = df.groupby_dynamic("time", every="1mo").agg(pl.col("value").mean())
+    result = df.group_by_dynamic("time", every="1mo").agg(pl.col("value").mean())
     expected = pl.DataFrame(
         {"time": date_range, "value": range(len(date_range))},
         schema_overrides={"value": pl.Float64},
@@ -1052,10 +1052,10 @@ def test_groupby_dynamic_monthly_crossing_dst() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_groupby_dynamic_2d_9333() -> None:
+def test_group_by_dynamic_2d_9333() -> None:
     df = pl.DataFrame({"ts": [datetime(2000, 1, 1, 3)], "values": [10.0]})
     df = df.with_columns(pl.col("ts").set_sorted())
-    result = df.groupby_dynamic("ts", every="2d").agg(pl.col("values"))
+    result = df.group_by_dynamic("ts", every="2d").agg(pl.col("values"))
     expected = pl.DataFrame({"ts": [datetime(1999, 12, 31, 0)], "values": [[10.0]]})
     assert_frame_equal(result, expected)
 
@@ -1190,10 +1190,10 @@ def test_add_duration_3786() -> None:
     }
 
 
-def test_rolling_groupby_by_argument() -> None:
+def test_rolling_group_by_by_argument() -> None:
     df = pl.DataFrame({"times": range(10), "groups": [1] * 4 + [2] * 6})
 
-    out = df.groupby_rolling("times", period="5i", by=["groups"]).agg(
+    out = df.group_by_rolling("times", period="5i", by=["groups"]).agg(
         pl.col("times").alias("agg_list")
     )
 
@@ -1219,7 +1219,7 @@ def test_rolling_groupby_by_argument() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_groupby_rolling_mean_3020() -> None:
+def test_group_by_rolling_mean_3020() -> None:
     df = pl.DataFrame(
         {
             "Date": [
@@ -1237,7 +1237,7 @@ def test_groupby_rolling_mean_3020() -> None:
 
     period: str | timedelta
     for period in ("1w", timedelta(days=7)):  # type: ignore[assignment]
-        result = df.groupby_rolling(index_column="Date", period=period).agg(
+        result = df.group_by_rolling(index_column="Date", period=period).agg(
             pl.col("val").mean().alias("val_mean")
         )
         expected = pl.DataFrame(
@@ -1539,7 +1539,7 @@ def test_duration_aggregations() -> None:
         }
     )
     df = df.with_columns((pl.col("end") - pl.col("start")).alias("duration"))
-    assert df.groupby("group", maintain_order=True).agg(
+    assert df.group_by("group", maintain_order=True).agg(
         [
             pl.col("duration").mean().alias("mean"),
             pl.col("duration").sum().alias("sum"),
@@ -1648,7 +1648,7 @@ def test_unique_counts_on_dates() -> None:
     }
 
 
-def test_groupby_rolling_by_ordering() -> None:
+def test_group_by_rolling_by_ordering() -> None:
     # we must check that the keys still match the time labels after the rolling window
     # with a `by` argument.
     df = pl.DataFrame(
@@ -1667,7 +1667,7 @@ def test_groupby_rolling_by_ordering() -> None:
         }
     ).set_sorted("dt")
 
-    assert df.groupby_rolling(
+    assert df.group_by_rolling(
         index_column="dt",
         period="2m",
         closed="both",
@@ -1694,7 +1694,7 @@ def test_groupby_rolling_by_ordering() -> None:
     }
 
 
-def test_groupby_rolling_by_() -> None:
+def test_group_by_rolling_by_() -> None:
     df = pl.DataFrame({"group": pl.arange(0, 3, eager=True)}).join(
         pl.DataFrame(
             {
@@ -1707,13 +1707,13 @@ def test_groupby_rolling_by_() -> None:
     )
     out = (
         df.sort("datetime")
-        .groupby_rolling(index_column="datetime", by="group", period=timedelta(days=3))
+        .group_by_rolling(index_column="datetime", by="group", period=timedelta(days=3))
         .agg([pl.count().alias("count")])
     )
 
     expected = (
         df.sort(["group", "datetime"])
-        .groupby_rolling(index_column="datetime", by="group", period="3d")
+        .group_by_rolling(index_column="datetime", by="group", period="3d")
         .agg([pl.count().alias("count")])
     )
     assert_frame_equal(out.sort(["group", "datetime"]), expected)
@@ -2571,7 +2571,7 @@ def test_datetime_cum_agg_schema() -> None:
     }
 
 
-def test_rolling_groupby_empty_groups_by_take_6330() -> None:
+def test_rolling_group_by_empty_groups_by_take_6330() -> None:
     df = (
         pl.DataFrame({"Event": ["Rain", "Sun"]})
         .join(
@@ -2585,7 +2585,7 @@ def test_rolling_groupby_empty_groups_by_take_6330() -> None:
         .set_sorted("Date")
     )
     assert (
-        df.groupby_rolling(
+        df.group_by_rolling(
             index_column="Date",
             period="2i",
             offset="-2i",
@@ -2777,12 +2777,12 @@ def test_pytime_conversion(tm: time) -> None:
         )
     ],
 )
-def test_groupby_dynamic(
+def test_group_by_dynamic(
     input_df: pl.DataFrame, expected_grouped_df: pl.DataFrame
 ) -> None:
     result = (
         input_df.sort("dt")
-        .groupby_dynamic("dt", every="1q")
+        .group_by_dynamic("dt", every="1q")
         .agg(pl.col("dt").count().alias("num_points"))
         .sort("dt")
     )

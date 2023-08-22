@@ -105,6 +105,38 @@ pub fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFram
 }
 
 #[pyfunction]
+pub fn collect_all_with_callback(lfs: Vec<PyLazyFrame>, lambda: PyObject, py: Python) {
+    use polars_core::utils::rayon::prelude::*;
+
+    py.allow_threads(|| {
+        polars_core::POOL.install(move || {
+            polars_core::POOL.spawn(move || {
+                let result = lfs
+                    .par_iter()
+                    .map(|lf| {
+                        let df = lf.ldf.clone().collect()?;
+                        Ok(PyDataFrame::new(df))
+                    })
+                    .collect::<polars_core::error::PolarsResult<Vec<_>>>()
+                    .map_err(PyPolarsErr::from);
+
+                Python::with_gil(|py| match result {
+                    Ok(dfs) => {
+                        lambda.call1(py, (dfs,)).map_err(|err| err.restore(py)).ok();
+                    },
+                    Err(err) => {
+                        lambda
+                            .call1(py, (PyErr::from(err).to_object(py),))
+                            .map_err(|err| err.restore(py))
+                            .ok();
+                    },
+                })
+            })
+        });
+    });
+}
+
+#[pyfunction]
 pub fn cols(names: Vec<String>) -> PyExpr {
     dsl::cols(names).into()
 }

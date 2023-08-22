@@ -445,7 +445,7 @@ def test_compressed_csv(io_files_path: Path) -> None:
         """\
         a,b,c
         1,a,1.0
-        2,b,2.0,
+        2,b,2.0
         3,c,3.0
         """
     )
@@ -462,7 +462,7 @@ def test_compressed_csv(io_files_path: Path) -> None:
 
     # now from disk
     csv_file = io_files_path / "gzipped.csv"
-    out = pl.read_csv(str(csv_file))
+    out = pl.read_csv(str(csv_file), truncate_ragged_lines=True)
     assert_frame_equal(out, expected)
 
     # now with column projection
@@ -1440,3 +1440,57 @@ def test_csv_quote_styles() -> None:
         df.write_csv(quote_style="non_numeric", quote="8")
         == '8float8,8string8,8int8,8bool8\n1.0,8a8,1,8true8\n2.0,8abc8,2,8false8\n,8"hello8,3,\n'
     )
+
+
+def test_ignore_errors_casting_dtypes() -> None:
+    csv = """inventory
+    10
+
+    400
+    90
+    """
+
+    assert pl.read_csv(
+        source=io.StringIO(csv),
+        dtypes={"inventory": pl.Int8},
+        ignore_errors=True,
+    ).to_dict(False) == {"inventory": [10, None, None, 90]}
+
+    with pytest.raises(pl.ComputeError):
+        pl.read_csv(
+            source=io.StringIO(csv),
+            dtypes={"inventory": pl.Int8},
+            ignore_errors=False,
+        )
+
+
+def test_ignore_errors_date_parser() -> None:
+    data_invalid_date = "int,float,date\n3,3.4,X"
+    with pytest.raises(pl.ComputeError):
+        pl.read_csv(
+            source=io.StringIO(data_invalid_date),
+            dtypes={"date": pl.Date},
+            ignore_errors=False,
+        )
+
+
+def test_csv_ragged_lines() -> None:
+    expected = {"column_1": ["A", "B", "C"]}
+    assert (
+        pl.read_csv(
+            io.StringIO("A\nB,ragged\nC"), has_header=False, truncate_ragged_lines=True
+        ).to_dict(False)
+        == expected
+    )
+    assert (
+        pl.read_csv(
+            io.StringIO("A\nB\nC,ragged"), has_header=False, truncate_ragged_lines=True
+        ).to_dict(False)
+        == expected
+    )
+
+    for s in ["A\nB,ragged\nC", "A\nB\nC,ragged"]:
+        with pytest.raises(pl.ComputeError, match=r"found more fields than defined"):
+            pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
+        with pytest.raises(pl.ComputeError, match=r"found more fields than defined"):
+            pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)

@@ -140,9 +140,9 @@ fn upsample_impl(
         upsample_single_impl(source, index_column, every, offset)
     } else {
         let gb = if stable {
-            source.groupby_stable(by)
+            source.group_by_stable(by)
         } else {
-            source.groupby(by)
+            source.group_by(by)
         };
         // don't parallelize this, this may SO on large data.
         gb?.apply(|df| {

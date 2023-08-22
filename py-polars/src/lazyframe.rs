@@ -147,7 +147,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (path, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_char, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
-        encoding, row_count, try_parse_dates, eol_char, raise_if_empty,
+        encoding, row_count, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines
     )
     )]
     fn new_from_csv(
@@ -173,6 +173,7 @@ impl PyLazyFrame {
         try_parse_dates: bool,
         eol_char: &str,
         raise_if_empty: bool,
+        truncate_ragged_lines: bool,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -207,6 +208,7 @@ impl PyLazyFrame {
             .with_try_parse_dates(try_parse_dates)
             .with_null_values(null_values)
             .with_missing_is_null(!missing_utf8_is_empty_string)
+            .truncate_ragged_lines(truncate_ragged_lines)
             .raise_if_empty(raise_if_empty);
 
         if let Some(lambda) = with_schema_modify {
@@ -444,6 +446,32 @@ impl PyLazyFrame {
         Ok(df.into())
     }
 
+    #[pyo3(signature = (lambda,))]
+    fn collect_with_callback(&self, py: Python, lambda: PyObject) {
+        py.allow_threads(|| {
+            let ldf = self.ldf.clone();
+
+            polars_core::POOL.spawn(move || {
+                let result = ldf
+                    .collect()
+                    .map(PyDataFrame::new)
+                    .map_err(PyPolarsErr::from);
+
+                Python::with_gil(|py| match result {
+                    Ok(df) => {
+                        lambda.call1(py, (df,)).map_err(|err| err.restore(py)).ok();
+                    },
+                    Err(err) => {
+                        lambda
+                            .call1(py, (PyErr::from(err).to_object(py),))
+                            .map_err(|err| err.restore(py))
+                            .ok();
+                    },
+                });
+            });
+        });
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "parquet"))]
     #[pyo3(signature = (path, compression, compression_level, statistics, row_group_size, data_pagesize_limit, maintain_order))]
@@ -524,19 +552,19 @@ impl PyLazyFrame {
         ldf.select_seq(exprs).into()
     }
 
-    fn groupby(&mut self, by: Vec<PyExpr>, maintain_order: bool) -> PyLazyGroupBy {
+    fn group_by(&mut self, by: Vec<PyExpr>, maintain_order: bool) -> PyLazyGroupBy {
         let ldf = self.ldf.clone();
         let by = by.to_exprs();
         let lazy_gb = if maintain_order {
-            ldf.groupby_stable(by)
+            ldf.group_by_stable(by)
         } else {
-            ldf.groupby(by)
+            ldf.group_by(by)
         };
 
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }
 
-    fn groupby_rolling(
+    fn group_by_rolling(
         &mut self,
         index_column: PyExpr,
         period: &str,
@@ -551,7 +579,7 @@ impl PyLazyFrame {
             .into_iter()
             .map(|pyexpr| pyexpr.inner)
             .collect::<Vec<_>>();
-        let lazy_gb = ldf.groupby_rolling(
+        let lazy_gb = ldf.group_by_rolling(
             index_column.inner,
             by,
             RollingGroupOptions {
@@ -567,7 +595,7 @@ impl PyLazyFrame {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn groupby_dynamic(
+    fn group_by_dynamic(
         &mut self,
         index_column: PyExpr,
         every: &str,
@@ -586,7 +614,7 @@ impl PyLazyFrame {
             .map(|pyexpr| pyexpr.inner)
             .collect::<Vec<_>>();
         let ldf = self.ldf.clone();
-        let lazy_gb = ldf.groupby_dynamic(
+        let lazy_gb = ldf.group_by_dynamic(
             index_column.inner,
             by,
             DynamicGroupOptions {

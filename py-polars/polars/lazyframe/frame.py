@@ -47,9 +47,10 @@ from polars.dependencies import dataframe_api_compat, subprocess
 from polars.io._utils import _is_local_file
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
-from polars.lazyframe.groupby import LazyGroupBy
+from polars.lazyframe.group_by import LazyGroupBy
 from polars.selectors import _expand_selectors, expand_selector
 from polars.slice import LazyPolarsSlice
+from polars.utils._async import _AsyncDataFrameResult
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -75,6 +76,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from io import IOBase
+    from queue import Queue
     from typing import Literal
 
     import pyarrow as pa
@@ -341,6 +343,7 @@ class LazyFrame:
         try_parse_dates: bool = False,
         eol_char: str = "\n",
         raise_if_empty: bool = True,
+        truncate_ragged_lines: bool = True,
     ) -> Self:
         """
         Lazily read from a CSV file or multiple files via glob patterns.
@@ -383,6 +386,7 @@ class LazyFrame:
             try_parse_dates,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
+            truncate_ragged_lines=truncate_ragged_lines,
         )
         return self
 
@@ -718,9 +722,9 @@ class LazyFrame:
         return self._ldf.width()
 
     def __bool__(self) -> NoReturn:
-        raise ValueError(
+        raise TypeError(
             "the truth value of a LazyFrame is ambiguous"
-            "\n\nLazyFrames cannot be used in boolean context with and/or/not operators"
+            "\n\nLazyFrames cannot be used in boolean context with and/or/not operators."
         )
 
     def _comparison_error(self, operator: str) -> NoReturn:
@@ -758,8 +762,8 @@ class LazyFrame:
     def __getitem__(self, item: int | range | slice) -> LazyFrame:
         if not isinstance(item, slice):
             raise TypeError(
-                "'LazyFrame' object is not subscriptable (aside from slicing). Use"
-                " 'select()' or 'filter()' instead"
+                "'LazyFrame' object is not subscriptable (aside from slicing)"
+                "\n\nUse `select()` or `filter()` instead."
             )
         return LazyPolarsSlice(self).apply(item)
 
@@ -990,7 +994,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort(
         ...     "a"
         ... ).explain()  # doctest: +SKIP
         """
@@ -1069,7 +1073,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort(
         ...     "a"
         ... ).show_graph()  # doctest: +SKIP
 
@@ -1115,7 +1119,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 import matplotlib.image as mpimg
                 import matplotlib.pyplot as plt
             except ImportError:
-                raise ImportError(
+                raise ModuleNotFoundError(
                     "matplotlib should be installed to show graph"
                 ) from None
             plt.figure(figsize=figsize)
@@ -1494,7 +1498,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort(
         ...     "a"
         ... ).profile()  # doctest: +SKIP
         (shape: (3, 3)
@@ -1508,15 +1512,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
          │ c   ┆ 6   ┆ 1   │
          └─────┴─────┴─────┘,
          shape: (3, 3)
-         ┌────────────────────────┬───────┬──────┐
-         │ node                   ┆ start ┆ end  │
-         │ ---                    ┆ ---   ┆ ---  │
-         │ str                    ┆ u64   ┆ u64  │
-         ╞════════════════════════╪═══════╪══════╡
-         │ optimization           ┆ 0     ┆ 5    │
-         │ groupby_partitioned(a) ┆ 5     ┆ 470  │
-         │ sort(a)                ┆ 475   ┆ 1964 │
-         └────────────────────────┴───────┴──────┘)
+         ┌─────────────────────────┬───────┬──────┐
+         │ node                    ┆ start ┆ end  │
+         │ ---                     ┆ ---   ┆ ---  │
+         │ str                     ┆ u64   ┆ u64  │
+         ╞═════════════════════════╪═══════╪══════╡
+         │ optimization            ┆ 0     ┆ 5    │
+         │ group_by_partitioned(a) ┆ 5     ┆ 470  │
+         │ sort(a)                 ┆ 475   ┆ 1964 │
+         └─────────────────────────┴───────┴──────┘)
 
         """
         if no_optimization:
@@ -1575,7 +1579,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 plt.show()
 
             except ImportError:
-                raise ImportError(
+                raise ModuleNotFoundError(
                     "matplotlib should be installed to show profiling plot"
                 ) from None
 
@@ -1637,7 +1641,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).collect()
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -1671,6 +1675,115 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             streaming,
         )
         return wrap_df(ldf.collect())
+
+    def collect_async(
+        self,
+        queue: Queue[DataFrame | Exception],
+        *,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        streaming: bool = False,
+    ) -> _AsyncDataFrameResult[DataFrame]:
+        """
+        Collect dataframe asynchronously in thread pool.
+
+        Collects into a DataFrame, like :func:`collect`
+        but instead of returning dataframe directly its collected inside thread pool
+        and gets put into `queue` with `put_nowait` method,
+        while this method returns almost instantly.
+
+        May be useful if you use gevent or asyncio and want to release control to other
+        greenlets/tasks while LazyFrames are being collected.
+        You must use correct queue in that case.
+        Given `queue` must be thread safe!
+
+        For gevent use
+        [`gevent.queue.Queue`](https://www.gevent.org/api/gevent.queue.html#gevent.queue.Queue).
+
+        For asyncio
+        [`asyncio.queues.Queue`](https://docs.python.org/3/library/asyncio-queue.html#queue)
+        can not be used, since it's not thread safe!
+        For that purpose use [janus](https://github.com/aio-libs/janus) library.
+
+        Notes
+        -----
+        Results are put in queue exactly once using `put_nowait`.
+        If error occurred then Exception will be put in the queue instead of result
+        which is then raised by returned wrapper `get` method.
+
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
+
+        See Also
+        --------
+        polars.collect_all : Collect multiple LazyFrames at the same time.
+        polars.collect_all_async: Collect multiple LazyFrames at the same time lazily.
+
+        Returns
+        -------
+        Wrapper that has `get` method and `queue` attribute with given queue.
+        `get` accepts kwargs that are passed down to `queue.get`.
+
+        Examples
+        --------
+        >>> import queue
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "b", "c"],
+        ...         "b": [1, 2, 3, 4, 5, 6],
+        ...         "c": [6, 5, 4, 3, 2, 1],
+        ...     }
+        ... )
+        >>> a = (
+        ...     lf.group_by("a", maintain_order=True)
+        ...     .agg(pl.all().sum())
+        ...     .collect_async(queue.Queue())
+        ... )
+        >>> a.get()
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 4   ┆ 10  │
+        │ b   ┆ 11  ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
+
+        """
+        if no_optimization:
+            predicate_pushdown = False
+            projection_pushdown = False
+            slice_pushdown = False
+            comm_subplan_elim = False
+            comm_subexpr_elim = False
+
+        if streaming:
+            comm_subplan_elim = False
+
+        ldf = self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            comm_subplan_elim,
+            comm_subexpr_elim,
+            streaming,
+        )
+
+        result = _AsyncDataFrameResult(queue)
+        ldf.collect_with_callback(result._callback)
+        return result
 
     def sink_parquet(
         self,
@@ -1909,7 +2022,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).fetch(2)
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).fetch(2)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -2327,14 +2440,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return self._from_pyldf(self._ldf.select_seq(pyexprs))
 
-    def groupby(
+    def group_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
         maintain_order: bool = False,
     ) -> LazyGroupBy:
         """
-        Start a groupby operation.
+        Start a group by operation.
 
         Parameters
         ----------
@@ -2345,7 +2458,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Additional columns to group by, specified as positional arguments.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
-            This is slower than a default groupby.
+            This is slower than a default group by.
             Settings this to ``True`` blocks the possibility
             to run on the streaming engine.
 
@@ -2361,7 +2474,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> lf.groupby("a").agg(pl.col("b").sum()).collect()  # doctest: +IGNORE_RESULT
+        >>> lf.group_by("a").agg(pl.col("b").sum()).collect()  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -2376,7 +2489,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Set ``maintain_order=True`` to ensure the order of the groups is consistent with
         the input.
 
-        >>> lf.groupby("a", maintain_order=True).agg(pl.col("c")).collect()
+        >>> lf.group_by("a", maintain_order=True).agg(pl.col("c")).collect()
         shape: (3, 2)
         ┌─────┬───────────┐
         │ a   ┆ c         │
@@ -2390,7 +2503,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Group by multiple columns by passing a list of column names.
 
-        >>> lf.groupby(["a", "b"]).agg(pl.max("c")).collect()  # doctest: +SKIP
+        >>> lf.group_by(["a", "b"]).agg(pl.max("c")).collect()  # doctest: +SKIP
         shape: (4, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -2406,7 +2519,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Or use positional arguments to group by multiple columns in the same way.
         Expressions are also accepted.
 
-        >>> lf.groupby("a", pl.col("b") // 2).agg(
+        >>> lf.group_by("a", pl.col("b") // 2).agg(
         ...     pl.col("c").mean()
         ... ).collect()  # doctest: +SKIP
         shape: (3, 3)
@@ -2422,10 +2535,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         exprs = parse_as_list_of_expressions(by, *more_by)
-        lgb = self._ldf.groupby(exprs, maintain_order)
+        lgb = self._ldf.group_by(exprs, maintain_order)
         return LazyGroupBy(lgb)
 
-    def groupby_rolling(
+    def group_by_rolling(
         self,
         index_column: IntoExpr,
         *,
@@ -2438,9 +2551,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Create rolling groups based on a time, Int32, or Int64 column.
 
-        Different from a ``dynamic_groupby`` the windows are now determined by the
+        Different from a ``dynamic_group_by`` the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals
-        use *groupby_dynamic*.
+        use :func:`LazyFrame.group_by_dynamic`.
 
         If you have a time series ``<t_0, t_1, ..., t_n>``, then by default the
         windows created will be
@@ -2477,7 +2590,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        In case of a groupby_rolling on an integer column, the windows are defined by:
+        In case of a group_by_rolling on an integer column, the windows are defined by:
 
         - "1i"      # length 1
         - "10i"     # length 10
@@ -2490,7 +2603,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             This column must be sorted in ascending order (or, if `by` is specified,
             then it must be sorted in ascending order within each group).
 
-            In case of a rolling groupby on indices, dtype needs to be one of
+            In case of a rolling group by on indices, dtype needs to be one of
             {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
             performance matters use an Int64 column.
         period
@@ -2517,7 +2630,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         See Also
         --------
-        groupby_dynamic
+        group_by_dynamic
 
         Examples
         --------
@@ -2533,7 +2646,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     pl.col("dt").str.strptime(pl.Datetime).set_sorted()
         ... )
         >>> out = (
-        ...     df.groupby_rolling(index_column="dt", period="2d")
+        ...     df.group_by_rolling(index_column="dt", period="2d")
         ...     .agg(
         ...         [
         ...             pl.sum("a").alias("sum_a"),
@@ -2570,12 +2683,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
 
-        lgb = self._ldf.groupby_rolling(
+        lgb = self._ldf.group_by_rolling(
             index_column, period, offset, closed, pyexprs_by, check_sorted
         )
         return LazyGroupBy(lgb)
 
-    def groupby_dynamic(
+    def group_by_dynamic(
         self,
         index_column: IntoExpr,
         *,
@@ -2593,7 +2706,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Group based on a time value (or index value of type Int32, Int64).
 
         Time windows are calculated and rows are assigned to windows. Different from a
-        normal groupby is that a row can be member of multiple groups. The time/index
+        normal group by is that a row can be member of multiple groups. The time/index
         window could be seen as a rolling window, with a window size determined by
         dates/times/values instead of slots in the DataFrame.
 
@@ -2630,7 +2743,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        In case of a groupby_dynamic on an integer column, the windows are defined by:
+        In case of a group_by_dynamic on an integer column, the windows are defined by:
 
         - "1i"      # length 1
         - "10i"     # length 10
@@ -2647,7 +2760,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             This column must be sorted in ascending order (or, if `by` is specified,
             then it must be sorted in ascending order within each group).
 
-            In case of a dynamic groupby on indices, dtype needs to be one of
+            In case of a dynamic group by on indices, dtype needs to be one of
             {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
             performance matters use an Int64 column.
         every
@@ -2695,7 +2808,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         See Also
         --------
-        groupby_rolling
+        group_by_rolling
 
         Notes
         -----
@@ -2704,7 +2817,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         .. code-block:: python
 
             # polars
-            df.groupby_dynamic("ts", every="1d").agg(pl.col("value").sum())
+            df.group_by_dynamic("ts", every="1d").agg(pl.col("value").sum())
 
         is equivalent to
 
@@ -2750,7 +2863,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Group by windows of 1 hour starting at 2021-12-16 00:00:00.
 
-        >>> lf.groupby_dynamic("time", every="1h", closed="right").agg(
+        >>> lf.group_by_dynamic("time", every="1h", closed="right").agg(
         ...     [
         ...         pl.col("time").min().alias("time_min"),
         ...         pl.col("time").max().alias("time_max"),
@@ -2770,7 +2883,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The window boundaries can also be added to the aggregation result
 
-        >>> lf.groupby_dynamic(
+        >>> lf.group_by_dynamic(
         ...     "time", every="1h", include_boundaries=True, closed="right"
         ... ).agg([pl.col("time").count().alias("time_count")]).collect()
         shape: (4, 4)
@@ -2788,7 +2901,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         When closed="left", should not include right end of interval
         [lower_bound, upper_bound)
 
-        >>> lf.groupby_dynamic("time", every="1h", closed="left").agg(
+        >>> lf.group_by_dynamic("time", every="1h", closed="left").agg(
         ...     [
         ...         pl.col("time").count().alias("time_count"),
         ...         pl.col("time").alias("time_agg_list"),
@@ -2808,7 +2921,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         When closed="both" the time values at the window boundaries belong to 2 groups.
 
-        >>> lf.groupby_dynamic("time", every="1h", closed="both").agg(
+        >>> lf.group_by_dynamic("time", every="1h", closed="both").agg(
         ...     pl.col("time").count().alias("time_count")
         ... ).collect()
         shape: (5, 2)
@@ -2824,7 +2937,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2021-12-16 03:00:00 ┆ 1          │
         └─────────────────────┴────────────┘
 
-        Dynamic groupbys can also be combined with grouping on normal keys
+        Dynamic group bys can also be combined with grouping on normal keys
 
         >>> lf = pl.LazyFrame(
         ...     {
@@ -2853,7 +2966,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2021-12-16 03:00:00 ┆ a      │
         └─────────────────────┴────────┘
         >>> (
-        ...     lf.groupby_dynamic(
+        ...     lf.group_by_dynamic(
         ...         "time",
         ...         every="1h",
         ...         closed="both",
@@ -2876,7 +2989,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 1          │
         └────────┴─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
 
-        Dynamic groupby on an index column
+        Dynamic group by on an index column
 
         >>> lf = pl.LazyFrame(
         ...     {
@@ -2884,7 +2997,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "A": ["A", "A", "B", "B", "B", "C"],
         ...     }
         ... )
-        >>> lf.groupby_dynamic(
+        >>> lf.group_by_dynamic(
         ...     "idx",
         ...     every="2i",
         ...     period="3i",
@@ -2915,7 +3028,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every = _timedelta_to_pl_duration(every)
 
         pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
-        lgb = self._ldf.groupby_dynamic(
+        lgb = self._ldf.group_by_dynamic(
             index_column,
             every,
             period,
@@ -2941,7 +3054,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by: str | Sequence[str] | None = None,
         strategy: AsofJoinStrategy = "backward",
         suffix: str = "_right",
-        tolerance: str | int | float | None = None,
+        tolerance: str | int | float | timedelta | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> Self:
@@ -2961,8 +3074,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
           - A "forward" search selects the first row in the right DataFrame whose
             'on' key is greater than or equal to the left's key.
 
-        - A "nearest" search selects the last row in the right DataFrame whose value
-          is nearest to the left's key.
+            A "nearest" search selects the last row in the right DataFrame whose value
+            is nearest to the left's key. String keys are not currently supported for a
+            nearest search.
 
         The default is "backward".
 
@@ -2990,8 +3104,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         tolerance
             Numeric tolerance. By setting this the join will only be done if the near
             keys are within this distance. If an asof join is done on columns of dtype
-            "Date", "Datetime", "Duration" or "Time" you use the following string
-            language:
+            "Date", "Datetime", "Duration" or "Time", use either a datetime.timedelta
+            object or the following string language:
 
                 - 1ns   (1 nanosecond)
                 - 1us   (1 microsecond)
@@ -3066,7 +3180,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         if not isinstance(other, LazyFrame):
             raise TypeError(
-                f"expected 'other' join table to be a LazyFrame, not a {type(other).__name__!r}"
+                f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             )
 
         if isinstance(on, (str, pl.Expr)):
@@ -3091,6 +3205,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         tolerance_num: float | int | None = None
         if isinstance(tolerance, str):
             tolerance_str = tolerance
+        elif isinstance(tolerance, timedelta):
+            tolerance_str = _timedelta_to_pl_duration(tolerance)
         else:
             tolerance_num = tolerance
 
@@ -3244,7 +3360,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         if not isinstance(other, LazyFrame):
             raise TypeError(
-                f"expected 'other' join table to be a LazyFrame, not a {type(other).__name__!r}"
+                f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             )
 
         if how == "cross":
@@ -5219,3 +5335,178 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             result = result.drop(row_count_name)
 
         return self._from_pyldf(result._ldf)
+
+    @deprecate_renamed_function("group_by", version="0.19.0")
+    def groupby(
+        self,
+        by: IntoExpr | Iterable[IntoExpr],
+        *more_by: IntoExpr,
+        maintain_order: bool = False,
+    ) -> LazyGroupBy:
+        """
+        Start a group by operation.
+
+        Alias for :func:`LazyFrame.group_by`.
+
+        Parameters
+        ----------
+        by
+            Column(s) to group by. Accepts expression input. Strings are parsed as
+            column names.
+        *more_by
+            Additional columns to group by, specified as positional arguments.
+        maintain_order
+            Ensure that the order of the groups is consistent with the input data.
+            This is slower than a default group by.
+            Settings this to ``True`` blocks the possibility
+            to run on the streaming engine.
+
+        """
+        return self.group_by(by, *more_by, maintain_order=maintain_order)
+
+    @deprecate_renamed_function("group_by_rolling", version="0.19.0")
+    def groupby_rolling(
+        self,
+        index_column: IntoExpr,
+        *,
+        period: str | timedelta,
+        offset: str | timedelta | None = None,
+        closed: ClosedInterval = "right",
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        check_sorted: bool = True,
+    ) -> LazyGroupBy:
+        """
+        Create rolling groups based on a time, Int32, or Int64 column.
+
+        Alias for :func:`LazyFrame.group_by_rolling`.
+
+        Parameters
+        ----------
+        index_column
+            Column used to group based on the time window.
+            Often of type Date/Datetime.
+            This column must be sorted in ascending order (or, if `by` is specified,
+            then it must be sorted in ascending order within each group).
+
+            In case of a rolling group by on indices, dtype needs to be one of
+            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
+            performance matters use an Int64 column.
+        period
+            length of the window - must be non-negative
+        offset
+            offset of the window. Default is -period
+        closed : {'right', 'left', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive).
+        by
+            Also group by this column/these columns
+        check_sorted
+            When the ``by`` argument is given, polars can not check sortedness
+            by the metadata and has to do a full scan on the index column to
+            verify data is sorted. This is expensive. If you are sure the
+            data within the by groups is sorted, you can set this to ``False``.
+            Doing so incorrectly will lead to incorrect output
+
+        Returns
+        -------
+        LazyGroupBy
+            Object you can call ``.agg`` on to aggregate by groups, the result
+            of which will be sorted by `index_column` (but note that if `by` columns are
+            passed, it will only be sorted within each `by` group).
+
+        """
+        return self.group_by_rolling(
+            index_column,
+            period=period,
+            offset=offset,
+            closed=closed,
+            by=by,
+            check_sorted=check_sorted,
+        )
+
+    @deprecate_renamed_function("group_by_dynamic", version="0.19.0")
+    def groupby_dynamic(
+        self,
+        index_column: IntoExpr,
+        *,
+        every: str | timedelta,
+        period: str | timedelta | None = None,
+        offset: str | timedelta | None = None,
+        truncate: bool = True,
+        include_boundaries: bool = False,
+        closed: ClosedInterval = "left",
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        start_by: StartBy = "window",
+        check_sorted: bool = True,
+    ) -> LazyGroupBy:
+        """
+        Group based on a time value (or index value of type Int32, Int64).
+
+        Alias for :func:`LazyFrame.group_by_rolling`.
+
+        Parameters
+        ----------
+        index_column
+            Column used to group based on the time window.
+            Often of type Date/Datetime.
+            This column must be sorted in ascending order (or, if `by` is specified,
+            then it must be sorted in ascending order within each group).
+
+            In case of a dynamic group by on indices, dtype needs to be one of
+            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
+            performance matters use an Int64 column.
+        every
+            interval of the window
+        period
+            length of the window, if None it is equal to 'every'
+        offset
+            offset of the window if None and period is None it will be equal to negative
+            `every`
+        truncate
+            truncate the time value to the window lower bound
+        include_boundaries
+            Add the lower and upper bound of the window to the "_lower_bound" and
+            "_upper_bound" columns. This will impact performance because it's harder to
+            parallelize
+        closed : {'right', 'left', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive).
+        by
+            Also group by this column/these columns
+        start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
+            The strategy to determine the start of the first window by.
+
+            * 'window': Truncate the start of the window with the 'every' argument.
+              Note that weekly windows start on Monday.
+            * 'datapoint': Start from the first encountered data point.
+            * a day of the week (only takes effect if `every` contains ``'w'``):
+
+              * 'monday': Start the window on the Monday before the first data point.
+              * 'tuesday': Start the window on the Tuesday before the first data point.
+              * ...
+              * 'sunday': Start the window on the Sunday before the first data point.
+        check_sorted
+            When the ``by`` argument is given, polars can not check sortedness
+            by the metadata and has to do a full scan on the index column to
+            verify data is sorted. This is expensive. If you are sure the
+            data within the by groups is sorted, you can set this to ``False``.
+            Doing so incorrectly will lead to incorrect output
+
+        Returns
+        -------
+        LazyGroupBy
+            Object you can call ``.agg`` on to aggregate by groups, the result
+            of which will be sorted by `index_column` (but note that if `by` columns are
+            passed, it will only be sorted within each `by` group).
+
+        """  # noqa: W505
+        return self.group_by_dynamic(
+            index_column,
+            every=every,
+            period=period,
+            offset=offset,
+            truncate=truncate,
+            include_boundaries=include_boundaries,
+            closed=closed,
+            by=by,
+            start_by=start_by,
+            check_sorted=check_sorted,
+        )
