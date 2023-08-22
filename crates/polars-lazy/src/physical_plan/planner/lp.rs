@@ -153,8 +153,8 @@ pub fn create_physical_plan(
         Sink { payload, .. } => {
             match payload {
                 SinkType::Memory => panic!("Memory Sink not supported in the standard engine."),
-                SinkType::File{..} => panic!(
-                    "sink_parquet not yet supported in standard engine. Use 'collect().write_parquet()'"
+                SinkType::File{file_type, ..} => panic!(
+                    "sink_{file_type:?} not yet supported in standard engine. Use 'collect().write_parquet()'"
                 ),
                 #[cfg(feature = "cloud")]
                 SinkType::Cloud{..} => panic!("Cloud Sink not supported in standard engine.")
