@@ -73,7 +73,7 @@ class ConnectionExecutor:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        # iif we created it, close the cursor
+        # iif we created it, close the cursor (NOT the connection)
         if self.acquired_cursor:
             self.cursor.close()
 
@@ -134,6 +134,7 @@ class ConnectionExecutor:
                 yield from rows
 
     def _from_arrow(self, batch_size: int | None) -> DataFrame | None:
+        """Return resultset data in Arrow format for frame init."""
         from polars import DataFrame
 
         for driver, driver_properties in _ARROW_DRIVER_REGISTRY_.items():
@@ -153,6 +154,7 @@ class ConnectionExecutor:
         return None
 
     def _from_rows(self, batch_size: int | None) -> DataFrame | None:
+        """Return resultset data row-wise for frame init."""
         from polars import DataFrame
 
         if hasattr(self.result, "fetchall"):

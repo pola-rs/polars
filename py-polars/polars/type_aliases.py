@@ -196,30 +196,30 @@ PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
 FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
 
 
-# minimal protocol objects that can reasonably represent
+# minimal protocol definitions that can reasonably represent
 # an executable connection, cursor, or equivalent object
-class BasicConnection(Protocol):
+class BasicConnection(Protocol):  # noqa: D101
     def close(self) -> None:
-        pass
+        """Close the connection."""
 
     def cursor(self, *args: Any, **kwargs: Any) -> Any:
-        pass
+        """Return a cursor object."""
 
 
-class BasicCursor(Protocol):
+class BasicCursor(Protocol):  # noqa: D101
     def close(self) -> None:
-        pass
+        """Close the cursor."""
 
     def execute(self, *args: Any, **kwargs: Any) -> Any:
-        pass
+        """Execute a query."""
 
 
-class Cursor(BasicCursor):
+class Cursor(BasicCursor):  # noqa: D101
     def fetchall(self, *args: Any, **kwargs: Any) -> Any:
-        pass
+        """Fetch all results."""
 
     def fetchmany(self, *args: Any, **kwargs: Any) -> Any:
-        pass
+        """Fetch results in batches."""
 
 
 ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor]
