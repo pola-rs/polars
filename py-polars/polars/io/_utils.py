@@ -36,7 +36,7 @@ def _is_glob_pattern(file: str) -> bool:
 
 def _is_local_file(file: str) -> bool:
     try:
-        next(glob.iglob(file, recursive=True))  # noqa: PTH207
+        next(glob.iglob(file, recursive=True))
         return True
     except StopIteration:
         return False
@@ -200,6 +200,7 @@ def _prepare_file_arg(
             return fsspec.open(file, **kwargs)
         else:
             _raise_fsspec_import_error(file)
+
 
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _FSSPEC_AVAILABLE:

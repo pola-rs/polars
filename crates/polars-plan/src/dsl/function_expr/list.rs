@@ -55,7 +55,7 @@ pub(super) fn contains(args: &mut [Series]) -> PolarsResult<Option<Series>> {
     let list = &args[0];
     let is_in = &args[1];
 
-    is_in.is_in(list).map(|mut ca| {
+    polars_ops::prelude::is_in(is_in, list).map(|mut ca| {
         ca.rename(list.name());
         Some(ca.into_series())
     })

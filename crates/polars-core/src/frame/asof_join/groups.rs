@@ -9,7 +9,7 @@ use rayon::prelude::*;
 use smartstring::alias::String as SmartString;
 
 use super::*;
-use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
+use crate::frame::group_by::hashing::HASHMAP_INIT_SIZE;
 #[cfg(feature = "dtype-categorical")]
 use crate::frame::hash_join::_check_categorical_src;
 use crate::frame::hash_join::{

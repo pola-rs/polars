@@ -11,7 +11,7 @@ pub use batched_read::*;
 use polars_arrow::array::*;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
-use polars_core::utils::accumulate_dataframes_vertical;
+use polars_core::utils::{accumulate_dataframes_vertical, get_casting_failures};
 use polars_core::POOL;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
@@ -32,21 +32,33 @@ pub(crate) fn cast_columns(
     df: &mut DataFrame,
     to_cast: &[Field],
     parallel: bool,
+    ignore_errors: bool,
 ) -> PolarsResult<()> {
-    let cast_fn = |s: &Series, fld: &Field| match (s.dtype(), fld.data_type()) {
-        #[cfg(feature = "temporal")]
-        (DataType::Utf8, DataType::Date) => s
-            .utf8()
-            .unwrap()
-            .as_date(None, false)
-            .map(|ca| ca.into_series()),
-        #[cfg(feature = "temporal")]
-        (DataType::Utf8, DataType::Datetime(tu, _)) => s
-            .utf8()
-            .unwrap()
-            .as_datetime(None, *tu, false, false, None, None)
-            .map(|ca| ca.into_series()),
-        (_, dt) => s.cast(dt),
+    let cast_fn = |s: &Series, fld: &Field| {
+        let out = match (s.dtype(), fld.data_type()) {
+            #[cfg(feature = "temporal")]
+            (DataType::Utf8, DataType::Date) => s
+                .utf8()
+                .unwrap()
+                .as_date(None, false)
+                .map(|ca| ca.into_series()),
+            #[cfg(feature = "temporal")]
+            (DataType::Utf8, DataType::Datetime(tu, _)) => s
+                .utf8()
+                .unwrap()
+                .as_datetime(None, *tu, false, false, None, None)
+                .map(|ca| ca.into_series()),
+            (_, dt) => s.cast(dt),
+        }?;
+        if !ignore_errors && s.null_count() != out.null_count() {
+            let failures = get_casting_failures(s, &out)?;
+            polars_bail!(
+                ComputeError:
+                "parsing to `{}` failed for column: {}, value(s) {};",
+                fld.data_type(), s.name(), failures.fmt_list(),
+            )
+        }
+        Ok(out)
     };
 
     if parallel {
@@ -618,7 +630,7 @@ impl<'a> CoreReader<'a> {
                                 local_df.with_row_count_mut(&rc.name, Some(rc.offset));
                             };
 
-                            cast_columns(&mut local_df, &self.to_cast, false)?;
+                            cast_columns(&mut local_df, &self.to_cast, false, self.ignore_errors)?;
                             let s = predicate.evaluate(&local_df)?;
                             let mask = s.bool()?;
                             local_df = local_df.filter(mask)?;
@@ -681,7 +693,7 @@ impl<'a> CoreReader<'a> {
                             update_string_stats(&str_capacities, &str_columns, &df)?;
                         }
 
-                        cast_columns(&mut df, &self.to_cast, false)?;
+                        cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
                         if let Some(rc) = &self.row_count {
                             df.with_row_count_mut(&rc.name, Some(rc.offset));
                         }
@@ -731,7 +743,7 @@ impl<'a> CoreReader<'a> {
                             )
                         };
 
-                        cast_columns(&mut df, &self.to_cast, false)?;
+                        cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
                         if let Some(rc) = &self.row_count {
                             df.with_row_count_mut(&rc.name, Some(rc.offset));
                         }

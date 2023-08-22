@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use polars_core::frame::groupby::GroupsProxy;
+use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;
@@ -133,7 +133,7 @@ impl PhysicalExpr for ColumnExpr {
                         match df.get_columns().get(idx) {
                             Some(out) => self.process_by_idx(out, state, schema, df, true),
                             None => {
-                                // partitioned groupby special case
+                                // partitioned group_by special case
                                 if let Some(schema) = state.get_schema() {
                                     self.process_from_state_schema(df, state, &schema)
                                 } else {

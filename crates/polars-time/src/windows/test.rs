@@ -93,7 +93,7 @@ fn test_groups_large_interval() {
 
     let dur = Duration::parse("2d");
     let w = Window::new(Duration::parse("2d"), dur, Duration::from_nsecs(0));
-    let (groups, _, _) = groupby_windows(
+    let (groups, _, _) = group_by_windows(
         w,
         &ts,
         ClosedWindow::Both,
@@ -108,7 +108,7 @@ fn test_groups_large_interval() {
     assert_eq!(groups[1], [1, 1]);
     assert_eq!(groups[2], [1, 3]);
     assert_eq!(groups[3], [3, 1]);
-    let (groups, _, _) = groupby_windows(
+    let (groups, _, _) = group_by_windows(
         w,
         &ts,
         ClosedWindow::Left,
@@ -120,7 +120,7 @@ fn test_groups_large_interval() {
     );
     assert_eq!(groups.len(), 3);
     assert_eq!(groups[2], [3, 1]);
-    let (groups, _, _) = groupby_windows(
+    let (groups, _, _) = group_by_windows(
         w,
         &ts,
         ClosedWindow::Right,
@@ -191,7 +191,7 @@ fn test_boundaries() {
     assert_eq!(b.start, start.timestamp_nanos());
 
     // test closed: "both" (includes both ends of the interval)
-    let (groups, lower, higher) = groupby_windows(
+    let (groups, lower, higher) = group_by_windows(
         w,
         &ts,
         ClosedWindow::Both,
@@ -287,7 +287,7 @@ fn test_boundaries() {
     assert_eq!(groups[2], [4, 3]);
 
     // test closed: "left" (should not include right end of interval)
-    let (groups, _, _) = groupby_windows(
+    let (groups, _, _) = group_by_windows(
         w,
         &ts,
         ClosedWindow::Left,
@@ -302,7 +302,7 @@ fn test_boundaries() {
     assert_eq!(groups[2], [4, 2]); // 02:00:00 -> 02:30:00
 
     // test closed: "right" (should not include left end of interval)
-    let (groups, _, _) = groupby_windows(
+    let (groups, _, _) = group_by_windows(
         w,
         &ts,
         ClosedWindow::Right,
@@ -317,7 +317,7 @@ fn test_boundaries() {
     assert_eq!(groups[2], [5, 2]); // 02:00:00 -> 02:30:00
 
     // test closed: "none" (should not include left or right end of interval)
-    let (groups, _, _) = groupby_windows(
+    let (groups, _, _) = group_by_windows(
         w,
         &ts,
         ClosedWindow::None,
@@ -367,7 +367,7 @@ fn test_boundaries_2() {
 
     assert_eq!(b.start, start.timestamp_nanos() + offset.duration_ns());
 
-    let (groups, lower, higher) = groupby_windows(
+    let (groups, lower, higher) = group_by_windows(
         w,
         &ts,
         ClosedWindow::Left,
@@ -475,7 +475,7 @@ fn test_boundaries_ms() {
     assert_eq!(b.start, start.timestamp_millis());
 
     // test closed: "both" (includes both ends of the interval)
-    let (groups, lower, higher) = groupby_windows(
+    let (groups, lower, higher) = group_by_windows(
         w,
         &ts,
         ClosedWindow::Both,
@@ -571,7 +571,7 @@ fn test_boundaries_ms() {
     assert_eq!(groups[2], [4, 3]);
 
     // test closed: "left" (should not include right end of interval)
-    let (groups, _, _) = groupby_windows(
+    let (groups, _, _) = group_by_windows(
         w,
         &ts,
         ClosedWindow::Left,
@@ -586,7 +586,7 @@ fn test_boundaries_ms() {
     assert_eq!(groups[2], [4, 2]); // 02:00:00 -> 02:30:00
 
     // test closed: "right" (should not include left end of interval)
-    let (groups, _, _) = groupby_windows(
+    let (groups, _, _) = group_by_windows(
         w,
         &ts,
         ClosedWindow::Right,
@@ -601,7 +601,7 @@ fn test_boundaries_ms() {
     assert_eq!(groups[2], [5, 2]); // 02:00:00 -> 02:30:00
 
     // test closed: "none" (should not include left or right end of interval)
-    let (groups, _, _) = groupby_windows(
+    let (groups, _, _) = group_by_windows(
         w,
         &ts,
         ClosedWindow::None,
@@ -638,7 +638,7 @@ fn test_rolling_lookback() {
     .unwrap(); // unwrapping as we pass None as the time zone
 
     // full lookbehind
-    let groups = groupby_values(
+    let groups = group_by_values(
         Duration::parse("2h"),
         Duration::parse("-2h"),
         &dates,
@@ -659,7 +659,7 @@ fn test_rolling_lookback() {
     assert_eq!(groups[8], [5, 4]); // bound: 02:00 -> 04:00     time: 04:00
 
     // partial lookbehind
-    let groups = groupby_values(
+    let groups = group_by_values(
         Duration::parse("2h"),
         Duration::parse("-1h"),
         &dates,
@@ -680,7 +680,7 @@ fn test_rolling_lookback() {
     assert_eq!(groups[8], [7, 2]);
 
     // no lookbehind
-    let groups = groupby_values(
+    let groups = group_by_values(
         Duration::parse("2h"),
         Duration::parse("0h"),
         &dates,
@@ -709,13 +709,20 @@ fn test_rolling_lookback() {
         ClosedWindow::None,
     ] {
         let offset = Duration::parse("-2h");
-        let g0 = groupby_values_iter_lookbehind(period, offset, &dates, closed_window, tu, None, 0)
-            .collect::<PolarsResult<Vec<_>>>()
-            .unwrap();
-        let g1 =
-            groupby_values_iter_partial_lookbehind(period, offset, &dates, closed_window, tu, None)
+        let g0 =
+            group_by_values_iter_lookbehind(period, offset, &dates, closed_window, tu, None, 0)
                 .collect::<PolarsResult<Vec<_>>>()
                 .unwrap();
+        let g1 = group_by_values_iter_partial_lookbehind(
+            period,
+            offset,
+            &dates,
+            closed_window,
+            tu,
+            None,
+        )
+        .collect::<PolarsResult<Vec<_>>>()
+        .unwrap();
         assert_eq!(g0, g1);
     }
 }
@@ -746,7 +753,7 @@ fn test_end_membership() {
     // 2021-03-01 -> 2021-05-01     members: None
     // 2021-04-01 -> 2021-06-01     members: [1]
     // 2021-05-01 -> 2021-07-01     members: [1]
-    let (groups, _, _) = groupby_windows(
+    let (groups, _, _) = group_by_windows(
         window,
         &time,
         ClosedWindow::Left,
@@ -763,14 +770,14 @@ fn test_end_membership() {
 }
 
 #[test]
-fn test_groupby_windows_membership_2791() {
+fn test_group_by_windows_membership_2791() {
     let dates = [0, 0, 2, 2];
     let window = Window::new(
         Duration::parse("1ms"),
         Duration::parse("1ms"),
         Duration::parse("0ns"),
     );
-    let (groups, _, _) = groupby_windows(
+    let (groups, _, _) = group_by_windows(
         window,
         &dates,
         ClosedWindow::Left,
@@ -785,7 +792,7 @@ fn test_groupby_windows_membership_2791() {
 }
 
 #[test]
-fn test_groupby_windows_duplicates_2931() {
+fn test_group_by_windows_duplicates_2931() {
     let dates = [0, 3, 3, 5, 5];
     let window = Window::new(
         Duration::parse("1ms"),
@@ -793,7 +800,7 @@ fn test_groupby_windows_duplicates_2931() {
         Duration::parse("0ns"),
     );
 
-    let (groups, _, _) = groupby_windows(
+    let (groups, _, _) = group_by_windows(
         window,
         &dates,
         ClosedWindow::Left,
@@ -807,7 +814,7 @@ fn test_groupby_windows_duplicates_2931() {
 }
 
 #[test]
-fn test_groupby_windows_offsets_3776() {
+fn test_group_by_windows_offsets_3776() {
     let dates = &[
         NaiveDate::from_ymd_opt(2020, 12, 1).unwrap(),
         NaiveDate::from_ymd_opt(2021, 2, 1).unwrap(),
@@ -823,7 +830,7 @@ fn test_groupby_windows_offsets_3776() {
         Duration::parse("2d"),
         Duration::parse("-2d"),
     );
-    let (groups, _, _) = groupby_windows(
+    let (groups, _, _) = group_by_windows(
         window,
         &ts,
         ClosedWindow::Right,

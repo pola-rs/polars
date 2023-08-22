@@ -291,7 +291,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     for dtype in set(schema.values()):
         if dtype in (List, Struct, Object):
             raise NotImplementedError(
-                f"'from_repr' does not support {dtype.base_type()} dtype"
+                f"`from_repr` does not support data type {dtype.base_type().__name__!r}"
             )
 
     # construct DataFrame from string series and cast from repr to native dtype
@@ -720,6 +720,6 @@ def from_pandas(
             include_index=include_index,
         )
     else:
-        raise ValueError(
+        raise TypeError(
             f"expected pandas DataFrame or Series, got {type(data).__name__!r}"
         )

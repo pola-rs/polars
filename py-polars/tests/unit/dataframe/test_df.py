@@ -56,7 +56,7 @@ def test_init_empty() -> None:
 
     # note: cannot use df (empty or otherwise) in boolean context
     empty_df = pl.DataFrame()
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         not empty_df
 
 
@@ -2387,7 +2387,7 @@ def test_arithmetic() -> None:
     assert_frame_equal(out, expected)
 
     # cannot do arithmetic with a sequence
-    with pytest.raises(ValueError, match="operation not supported"):
+    with pytest.raises(TypeError, match="operation not supported"):
         _ = df + [1]  # type: ignore[operator]
 
 
@@ -3069,14 +3069,14 @@ def test_set() -> None:
         df["new"] = np.random.rand(10)
 
     with pytest.raises(
-        ValueError,
-        match=r"not allowed to set 'DataFrame' by boolean mask in the row position."
+        TypeError,
+        match=r"not allowed to set DataFrame by boolean mask in the row position"
         r"\n\nConsider using `DataFrame.with_columns`.",
     ):
         df[df["ham"] > 0.5, "ham"] = "a"
     with pytest.raises(
-        ValueError,
-        match=r"not allowed to set 'DataFrame' by boolean mask in the row position."
+        TypeError,
+        match=r"not allowed to set DataFrame by boolean mask in the row position"
         r"\n\nConsider using `DataFrame.with_columns`.",
     ):
         df[[True, False], "ham"] = "a"
@@ -3101,9 +3101,9 @@ def test_set() -> None:
     assert df[0, "b"] == 2
 
     # row and col selection have to be int or str
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         df[:, [1]] = 1  # type: ignore[index]
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         df[True, :] = 1  # type: ignore[index]
 
     # needs to be a 2 element tuple
@@ -3315,7 +3315,7 @@ def test_item() -> None:
     df = pl.DataFrame({})
     with pytest.raises(ValueError, match=r".* frame has shape \(0, 0\)"):
         df.item()
-    with pytest.raises(ValueError, match="column index 10 is out of bounds"):
+    with pytest.raises(IndexError, match="column index 10 is out of bounds"):
         df.item(0, 10)
 
 

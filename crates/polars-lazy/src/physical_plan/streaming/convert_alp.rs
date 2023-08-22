@@ -365,7 +365,7 @@ pub(crate) fn insert_streaming_nodes(
                 #[allow(unused_mut)]
                 let mut can_stream = true;
 
-                #[cfg(feature = "dynamic_groupby")]
+                #[cfg(feature = "dynamic_group_by")]
                 {
                     if options.rolling.is_some() || options.dynamic.is_some() {
                         can_stream = false
@@ -387,7 +387,7 @@ pub(crate) fn insert_streaming_nodes(
                         expr_arena
                             .get(*node)
                             .get_type(schema, Context::Default, expr_arena)
-                            // ensure we don't groupby list
+                            // ensure we don't group_by list
                             .map(|dt| !matches!(dt, DataType::List(_)))
                             .unwrap_or(false)
                     })

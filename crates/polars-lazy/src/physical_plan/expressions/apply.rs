@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use polars_core::frame::groupby::GroupsProxy;
+use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 #[cfg(feature = "parquet")]
@@ -285,7 +285,7 @@ impl PhysicalExpr for ApplyExpr {
         polars_ensure!(
             self.allow_group_aware,
             expr = self.expr,
-            ComputeError: "this expression cannot run in the groupby context",
+            ComputeError: "this expression cannot run in the group_by context",
         );
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;

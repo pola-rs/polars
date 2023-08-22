@@ -12,17 +12,17 @@ fn partitionable_gb(
     expr_arena: &Arena<AExpr>,
     apply: &Option<Arc<dyn DataFrameUdf>>,
 ) -> bool {
-    // We first check if we can partition the groupby on the latest moment.
+    // We first check if we can partition the group_by on the latest moment.
     let mut partitionable = true;
 
     // checks:
-    //      1. complex expressions in the groupby itself are also not partitionable
+    //      1. complex expressions in the group_by itself are also not partitionable
     //          in this case anything more than col("foo")
     //      2. a custom function cannot be partitioned
     //      3. we don't bother with more than 2 keys, as the cardinality likely explodes
     //         by the combinations
     if !keys.is_empty() && keys.len() < 3 && apply.is_none() {
-        // complex expressions in the groupby itself are also not partitionable
+        // complex expressions in the group_by itself are also not partitionable
         // in this case anything more than col("foo")
         for key in keys {
             if (expr_arena).iter(*key).count() > 1 {
@@ -405,7 +405,7 @@ pub fn create_physical_plan(
             )?;
 
             let _slice = options.slice;
-            #[cfg(feature = "dynamic_groupby")]
+            #[cfg(feature = "dynamic_group_by")]
             if let Some(options) = options.dynamic {
                 let input = create_physical_plan(input, lp_arena, expr_arena)?;
                 return Ok(Box::new(executors::GroupByDynamicExec {
@@ -419,7 +419,7 @@ pub fn create_physical_plan(
                 }));
             }
 
-            #[cfg(feature = "dynamic_groupby")]
+            #[cfg(feature = "dynamic_group_by")]
             if let Some(options) = options.rolling {
                 let input = create_physical_plan(input, lp_arena, expr_arena)?;
                 return Ok(Box::new(executors::GroupByRollingExec {
@@ -433,7 +433,7 @@ pub fn create_physical_plan(
                 }));
             }
 
-            // We first check if we can partition the groupby on the latest moment.
+            // We first check if we can partition the group_by on the latest moment.
             let partitionable = partitionable_gb(&keys, &aggs, &input_schema, expr_arena, &apply);
             if partitionable {
                 let from_partitioned_ds = (&*lp_arena).iter(input).any(|(_, lp)| {

@@ -6,7 +6,7 @@
 //! pivot is here, because we want to be able to pass expressions to the pivot operation.
 //!
 
-use polars_core::frame::groupby::expr::PhysicalAggExpr;
+use polars_core::frame::group_by::expr::PhysicalAggExpr;
 use polars_core::prelude::*;
 use polars_ops::pivot::PivotAgg;
 

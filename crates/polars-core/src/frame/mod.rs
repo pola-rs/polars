@@ -22,7 +22,7 @@ mod chunks;
 pub(crate) mod cross_join;
 pub mod explode;
 mod from;
-pub mod groupby;
+pub mod group_by;
 pub mod hash_join;
 #[cfg(feature = "rows")]
 pub mod row;
@@ -34,7 +34,7 @@ pub use chunks::*;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
-use crate::frame::groupby::GroupsIndicator;
+use crate::frame::group_by::GroupsIndicator;
 #[cfg(feature = "row_hash")]
 use crate::hashing::df_rows_to_hashes_threaded_vertical;
 #[cfg(feature = "zip_with")]
@@ -3097,7 +3097,7 @@ impl DataFrame {
 
         let columns = match (keep, maintain_order) {
             (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, true) => {
-                let gb = df.groupby_stable(names)?;
+                let gb = df.group_by_stable(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
@@ -3106,7 +3106,7 @@ impl DataFrame {
             (UniqueKeepStrategy::Last, true) => {
                 // maintain order by last values, so the sorted groups are not correct as they
                 // are sorted by the first value
-                let gb = df.groupby(names)?;
+                let gb = df.group_by(names)?;
                 let groups = gb.get_groups();
 
                 let func = |g: GroupsIndicator| match g {
@@ -3126,14 +3126,14 @@ impl DataFrame {
                 return Ok(unsafe { df.take_unchecked(&last_idx) });
             },
             (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, false) => {
-                let gb = df.groupby(names)?;
+                let gb = df.group_by(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
                 df.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
             },
             (UniqueKeepStrategy::Last, false) => {
-                let gb = df.groupby(names)?;
+                let gb = df.group_by(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
@@ -3166,7 +3166,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        let gb = self.groupby(self.get_column_names())?;
+        let gb = self.group_by(self.get_column_names())?;
         let groups = gb.take_groups();
         Ok(is_unique_helper(
             groups,
@@ -3190,7 +3190,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        let gb = self.groupby(self.get_column_names())?;
+        let gb = self.group_by(self.get_column_names())?;
         let groups = gb.take_groups();
         Ok(is_unique_helper(
             groups,
@@ -3332,9 +3332,9 @@ impl DataFrame {
         include_key: bool,
     ) -> PolarsResult<Vec<DataFrame>> {
         let groups = if stable {
-            self.groupby_stable(cols)?.take_groups()
+            self.group_by_stable(cols)?.take_groups()
         } else {
-            self.groupby(cols)?.take_groups()
+            self.group_by(cols)?.take_groups()
         };
 
         // drop key columns prior to calculation if requested

@@ -41,7 +41,7 @@ use crate::chunked_array::ops::compare_inner::{
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::frame::groupby::*;
+use crate::frame::group_by::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 #[cfg(feature = "checked_arithmetic")]
@@ -459,10 +459,6 @@ macro_rules! impl_dyn_series {
                 self.0.peak_min()
             }
 
-            #[cfg(feature = "is_in")]
-            fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
-                IsIn::is_in(&self.0, other)
-            }
             #[cfg(feature = "repeat_by")]
             fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
                 RepeatBy::repeat_by(&self.0, by)

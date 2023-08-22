@@ -282,7 +282,7 @@ pub(super) fn process_binary(
 
         // only cast if the type is not already the super type.
         // this can prevent an expensive flattening and subsequent aggregation
-        // in a groupby context. To be able to cast the groups need to be
+        // in a group_by context. To be able to cast the groups need to be
         // flattened
         let new_node_left = if type_left != st {
             expr_arena.add(AExpr::Cast {
