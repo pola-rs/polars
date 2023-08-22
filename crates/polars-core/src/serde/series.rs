@@ -264,13 +264,18 @@ impl<'de> Deserialize<'de> for Series {
                             .unwrap())
                     },
                     #[cfg(feature = "dtype-array")]
-                    DataType::Array(dt, size) => unsafe {
-                        let mut values: Vec<Series> = map.next_value()?;
+                    DataType::Array(dt, size) => {
+                        let mut values: Vec<Option<Series>> = map.next_value()?;
                         let mut builder =
                             get_fixed_size_list_builder(&dt, values.len(), size, &name).unwrap();
-                        for (i, s) in values.iter_mut().enumerate() {
-                            let s = s.rechunk();
-                            builder.push_unchecked(s.to_arrow(0).as_ref(), i)
+
+                        for s in values.iter_mut() {
+                            match s {
+                                None => unsafe { builder.push_null() },
+                                Some(s) => {
+                                    builder.push(s.rechunk().to_arrow(0)).unwrap();
+                                },
+                            }
                         }
                         Ok(builder.finish().into_series())
                     },
