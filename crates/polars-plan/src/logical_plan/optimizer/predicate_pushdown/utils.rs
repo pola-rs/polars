@@ -123,7 +123,7 @@ pub(super) fn predicate_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExp
             | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
             | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
             | AExpr::Explode {..}
-            // A groupby needs all rows for aggregation
+            // A group_by needs all rows for aggregation
             | AExpr::Window {..}
         )
     };
@@ -158,7 +158,7 @@ pub(super) fn projection_is_definite_pushdown_boundary(
              | Nth(_)
              | Slice {..}
              | Take {..}
-            // A groupby needs all rows for aggregation
+            // A group_by needs all rows for aggregation
             | Window {..}
             | Literal(LiteralValue::Range {..}) => true,
             // The series might be used in a comparison with exactly the right length

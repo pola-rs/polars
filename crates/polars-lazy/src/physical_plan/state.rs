@@ -5,7 +5,7 @@ use std::sync::{Mutex, RwLock};
 use bitflags::bitflags;
 use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
-use polars_core::frame::groupby::GroupsProxy;
+use polars_core::frame::group_by::GroupsProxy;
 use polars_core::frame::hash_join::ChunkJoinOptIds;
 use polars_core::prelude::*;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]

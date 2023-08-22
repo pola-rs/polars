@@ -91,7 +91,7 @@ where
     }
 
     pub fn finish(self, df: &DataFrame) -> PolarsResult<()> {
-        let groups = df.groupby(self.by.clone())?;
+        let groups = df.group_by(self.by.clone())?;
         let groups = groups.get_groups();
 
         // don't parallelize this

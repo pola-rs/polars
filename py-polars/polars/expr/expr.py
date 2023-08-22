@@ -132,8 +132,8 @@ class Expr:
         return self._pyexpr.to_str()
 
     def __bool__(self) -> NoReturn:
-        raise ValueError(
-            "since Expr are lazy, the truthiness of an Expr is ambiguous."
+        raise TypeError(
+            "the truth value of an Expr is ambiguous"
             "\n\nHint: use '&' or '|' to logically combine Expr, not 'and'/'or', and"
             " use 'x.is_in([y,z])' instead of 'x in [y,z]' to check membership"
         )
@@ -246,7 +246,8 @@ class Expr:
         if num_expr > 1:
             if num_expr < len(inputs):
                 raise ValueError(
-                    "Numpy ufunc with more than one expression can only be used if all non-expression inputs are provided as keyword arguments only"
+                    "NumPy ufunc with more than one expression can only be used"
+                    " if all non-expression inputs are provided as keyword arguments only"
                 )
 
             exprs = parse_as_list_of_expressions(inputs)
@@ -443,6 +444,11 @@ class Expr:
             Modifies number of rows returned, so will fail in combination with other
             expressions. Use as only expression in `select` / `with_columns`.
 
+        See Also
+        --------
+        Series.arg_true : Return indices where Series is True
+        polars.arg_where
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2, 1]})
@@ -457,11 +463,6 @@ class Expr:
         │ 1   │
         │ 3   │
         └─────┘
-
-        See Also
-        --------
-        Series.arg_true : Return indices where Series is True
-        polars.arg_where
 
         """
         return self._from_pyexpr(py_arg_where(self._pyexpr))
@@ -893,8 +894,8 @@ class Expr:
                 exclude_dtypes.append(item)
             else:
                 raise TypeError(
-                    "invalid input for `exclude`. Expected one or more `str`,"
-                    f"`DataType`, or selector; found {type(item).__name__!r} instead"
+                    "invalid input for `exclude`"
+                    f"\n\nExpected one or more `str`, `DataType`, or selector; found {type(item).__name__!r} instead."
                 )
 
         if exclude_cols and exclude_dtypes:
@@ -1204,7 +1205,7 @@ class Expr:
         ...         "value": [94, 95, 96, 97, 97, 99],
         ...     }
         ... )
-        >>> df.groupby("group", maintain_order=True).agg(pl.col("value").agg_groups())
+        >>> df.group_by("group", maintain_order=True).agg(pl.col("value").agg_groups())
         shape: (2, 2)
         ┌───────┬───────────┐
         │ group ┆ value     │
@@ -1850,7 +1851,7 @@ class Expr:
         Sort this column.
 
         When used in a projection/selection context, the whole column is sorted.
-        When used in a groupby context, the groups are sorted.
+        When used in a group by context, the groups are sorted.
 
         Parameters
         ----------
@@ -1903,7 +1904,7 @@ class Expr:
         │ null │
         └──────┘
 
-        When sorting in a groupby context, the groups are sorted.
+        When sorting in a group by context, the groups are sorted.
 
         >>> df = pl.DataFrame(
         ...     {
@@ -1911,7 +1912,7 @@ class Expr:
         ...         "value": [1, 98, 2, 3, 99, 4],
         ...     }
         ... )
-        >>> df.groupby("group").agg(pl.col("value").sort())  # doctest: +IGNORE_RESULT
+        >>> df.group_by("group").agg(pl.col("value").sort())  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌───────┬────────────┐
         │ group ┆ value      │
@@ -2157,7 +2158,7 @@ class Expr:
         Sort this column by the ordering of other columns.
 
         When used in a projection/selection context, the whole column is sorted.
-        When used in a groupby context, the groups are sorted.
+        When used in a group by context, the groups are sorted.
 
         Parameters
         ----------
@@ -2239,9 +2240,9 @@ class Expr:
         │ b     │
         └───────┘
 
-        When sorting in a groupby context, the groups are sorted.
+        When sorting in a group by context, the groups are sorted.
 
-        >>> df.groupby("group").agg(
+        >>> df.group_by("group").agg(
         ...     pl.col("value1").sort_by("value2")
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
@@ -2257,7 +2258,7 @@ class Expr:
         Take a single row from each group where a column attains its minimal value
         within that group.
 
-        >>> df.groupby("group").agg(
+        >>> df.group_by("group").agg(
         ...     pl.all().sort_by("value2").first()
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 3)
@@ -2311,7 +2312,7 @@ class Expr:
         ...         "value": [1, 98, 2, 3, 99, 4],
         ...     }
         ... )
-        >>> df.groupby("group", maintain_order=True).agg(pl.col("value").take(1))
+        >>> df.group_by("group", maintain_order=True).agg(pl.col("value").take(1))
         shape: (2, 2)
         ┌───────┬───────┐
         │ group ┆ value │
@@ -2483,13 +2484,12 @@ class Expr:
 
         """
         if value is not None and strategy is not None:
-            raise ValueError("cannot specify both 'value' and 'strategy'")
+            raise ValueError("cannot specify both `value` and `strategy`")
         elif value is None and strategy is None:
-            raise ValueError("must specify either a fill 'value' or 'strategy'")
+            raise ValueError("must specify either a fill `value` or `strategy`")
         elif strategy not in ("forward", "backward") and limit is not None:
             raise ValueError(
-                "can only specify 'limit' when strategy is set to "
-                "'backward' or 'forward'"
+                "can only specify `limit` when strategy is set to 'backward' or 'forward'"
             )
 
         if value is not None:
@@ -3056,7 +3056,7 @@ class Expr:
         """
         Compute expressions over the given groups.
 
-        This expression is similar to performing a groupby aggregation and joining the
+        This expression is similar to performing a group by aggregation and joining the
         result back into the original dataframe.
 
         The outcome is similar to how `window functions
@@ -3576,7 +3576,7 @@ class Expr:
         ...         "b": [1, 2, 3],
         ...     }
         ... )
-        >>> df.groupby("group_col").agg(
+        >>> df.group_by("group_col").agg(
         ...     [
         ...         pl.col("b").filter(pl.col("b") < 2).sum().alias("lt"),
         ...         pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
@@ -3614,7 +3614,7 @@ class Expr:
         ...         "b": [1, 2, 3],
         ...     }
         ... )
-        >>> df.groupby("group_col").agg(
+        >>> df.group_by("group_col").agg(
         ...     [
         ...         pl.col("b").where(pl.col("b") < 2).sum().alias("lt"),
         ...         pl.col("b").where(pl.col("b") >= 2).sum().alias("gte"),
@@ -3786,6 +3786,7 @@ class Expr:
 
         In a GroupBy context, each element of the Series is itself a Series:
 
+<<<<<<< HEAD
         >>> df.lazy().groupby("b").agg(pl.col("a")).sort("b").collect()
         shape: (3, 2)
         ┌─────┬───────────┐
@@ -3809,6 +3810,10 @@ class Expr:
 
         >>> df.lazy().groupby("b").agg(pl.col("a").apply(lambda x: x.sum())).sort(
         ...     "b"
+=======
+        >>> df.lazy().group_by("b", maintain_order=True).agg(
+        ...     pl.col("a").apply(lambda x: x.sum())
+>>>>>>> upstream/main
         ... ).collect()
         shape: (3, 2)
         ┌─────┬─────┐
@@ -3823,7 +3828,7 @@ class Expr:
 
         Tip: again, it is better to implement this with an expression:
 
-        >>> df.groupby("b", maintain_order=True).agg(
+        >>> df.group_by("b", maintain_order=True).agg(
         ...     pl.col("a").sum(),
         ... )  # doctest: +IGNORE_RESULT
 
@@ -3861,7 +3866,15 @@ class Expr:
         elif strategy == "threading":
 
             def wrap_threading(x: Series) -> Series:
+                def get_lazy_promise(df: DataFrame) -> LazyFrame:
+                    return df.lazy().select(
+                        F.col("x").map(wrap_f, agg_list=True, return_dtype=return_dtype)
+                    )
+
                 df = x.to_frame("x")
+
+                if x.len() == 0:
+                    return get_lazy_promise(df).collect().to_series()
 
                 n_threads = threadpool_size()
                 chunk_size = x.len() // n_threads
@@ -3873,11 +3886,6 @@ class Expr:
                         chunk_size + 1 if i < remainder else chunk_size
                         for i in range(n_threads)
                     ]
-
-                def get_lazy_promise(df: DataFrame) -> LazyFrame:
-                    return df.lazy().select(
-                        F.col("x").map(wrap_f, agg_list=True, return_dtype=return_dtype)
-                    )
 
                 # create partitions with LazyFrames
                 # these are promises on a computation
@@ -3910,7 +3918,7 @@ class Expr:
         ...         "values": [[1, 2], [2, 3], [4]],
         ...     }
         ... )
-        >>> df.groupby("group").agg(pl.col("values").flatten())  # doctest: +SKIP
+        >>> df.group_by("group").agg(pl.col("values").flatten())  # doctest: +SKIP
         shape: (2, 2)
         ┌───────┬───────────┐
         │ group ┆ values    │
@@ -4238,21 +4246,22 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     pl.col("x").eq_missing(pl.col("y")).alias("x == y"),
+        ...     pl.col("x").eq(pl.col("y")).alias("x eq y"),
+        ...     pl.col("x").eq_missing(pl.col("y")).alias("x eq_missing y"),
         ... )
-        shape: (6, 3)
-        ┌──────┬──────┬────────┐
-        │ x    ┆ y    ┆ x == y │
-        │ ---  ┆ ---  ┆ ---    │
-        │ f64  ┆ f64  ┆ bool   │
-        ╞══════╪══════╪════════╡
-        │ 1.0  ┆ 2.0  ┆ false  │
-        │ 2.0  ┆ 2.0  ┆ true   │
-        │ NaN  ┆ NaN  ┆ false  │
-        │ 4.0  ┆ 4.0  ┆ true   │
-        │ null ┆ 5.0  ┆ false  │
-        │ null ┆ null ┆ true   │
-        └──────┴──────┴────────┘
+        shape: (6, 4)
+        ┌──────┬──────┬────────┬────────────────┐
+        │ x    ┆ y    ┆ x eq y ┆ x eq_missing y │
+        │ ---  ┆ ---  ┆ ---    ┆ ---            │
+        │ f64  ┆ f64  ┆ bool   ┆ bool           │
+        ╞══════╪══════╪════════╪════════════════╡
+        │ 1.0  ┆ 2.0  ┆ false  ┆ false          │
+        │ 2.0  ┆ 2.0  ┆ true   ┆ true           │
+        │ NaN  ┆ NaN  ┆ false  ┆ false          │
+        │ 4.0  ┆ 4.0  ┆ true   ┆ true           │
+        │ null ┆ 5.0  ┆ null   ┆ false          │
+        │ null ┆ null ┆ null   ┆ true           │
+        └──────┴──────┴────────┴────────────────┘
 
         """
         return self._from_pyexpr(self._pyexpr.eq_missing(self._to_expr(other)._pyexpr))
@@ -4452,21 +4461,22 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     pl.col("x").ne_missing(pl.col("y")).alias("x != y"),
+        ...     pl.col("x").ne(pl.col("y")).alias("x ne y"),
+        ...     pl.col("x").ne_missing(pl.col("y")).alias("x ne_missing y"),
         ... )
-        shape: (6, 3)
-        ┌──────┬──────┬────────┐
-        │ x    ┆ y    ┆ x != y │
-        │ ---  ┆ ---  ┆ ---    │
-        │ f64  ┆ f64  ┆ bool   │
-        ╞══════╪══════╪════════╡
-        │ 1.0  ┆ 2.0  ┆ true   │
-        │ 2.0  ┆ 2.0  ┆ false  │
-        │ NaN  ┆ NaN  ┆ true   │
-        │ 4.0  ┆ 4.0  ┆ false  │
-        │ null ┆ 5.0  ┆ true   │
-        │ null ┆ null ┆ false  │
-        └──────┴──────┴────────┘
+        shape: (6, 4)
+        ┌──────┬──────┬────────┬────────────────┐
+        │ x    ┆ y    ┆ x ne y ┆ x ne_missing y │
+        │ ---  ┆ ---  ┆ ---    ┆ ---            │
+        │ f64  ┆ f64  ┆ bool   ┆ bool           │
+        ╞══════╪══════╪════════╪════════════════╡
+        │ 1.0  ┆ 2.0  ┆ true   ┆ true           │
+        │ 2.0  ┆ 2.0  ┆ false  ┆ false          │
+        │ NaN  ┆ NaN  ┆ true   ┆ true           │
+        │ 4.0  ┆ 4.0  ┆ false  ┆ false          │
+        │ null ┆ 5.0  ┆ null   ┆ true           │
+        │ null ┆ null ┆ null   ┆ false          │
+        └──────┴──────┴────────┴────────────────┘
 
         """
         return self._from_pyexpr(self._pyexpr.neq_missing(self._to_expr(other)._pyexpr))
@@ -4527,6 +4537,10 @@ class Expr:
         other
             Numeric literal or expression value.
 
+        See Also
+        --------
+        truediv
+
         Examples
         --------
         >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
@@ -4546,10 +4560,6 @@ class Expr:
         │ 4   ┆ 2.0 ┆ 2    │
         │ 5   ┆ 2.5 ┆ 2    │
         └─────┴─────┴──────┘
-
-        See Also
-        --------
-        truediv
 
         """
         return self.__floordiv__(other)
@@ -4663,6 +4673,10 @@ class Expr:
         0/0: Invalid operation - mathematically undefined, returns NaN.
         n/0: On finite operands gives an exact infinite result, eg: ±infinity.
 
+        See Also
+        --------
+        floordiv
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -4684,10 +4698,6 @@ class Expr:
         │ 1   ┆ -4.0 ┆ 0.5  ┆ -0.25 │
         │ 2   ┆ -0.5 ┆ 1.0  ┆ -4.0  │
         └─────┴──────┴──────┴───────┘
-
-        See Also
-        --------
-        floordiv
 
         """
         return self.__truediv__(other)
@@ -4960,7 +4970,7 @@ class Expr:
             return (self >= lower_bound) & (self < upper_bound)
         else:
             raise ValueError(
-                "closed must be one of {'left', 'right', 'both', 'none'},"
+                "`closed` must be one of {'left', 'right', 'both', 'none'},"
                 f" got {closed!r}"
             )
 
@@ -5247,7 +5257,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -5453,7 +5463,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -5686,7 +5696,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -5919,7 +5929,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -6151,7 +6161,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -6383,7 +6393,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -6618,7 +6628,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -6779,7 +6789,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -8276,7 +8286,7 @@ class Expr:
 
         """
         if isinstance(value, Expr):
-            raise TypeError(f"'value' must be a supported literal; found {value!r}")
+            raise TypeError(f"`value` must be a supported literal; found {value!r}")
 
         return self._from_pyexpr(self._pyexpr.extend_constant(value, n))
 
@@ -8459,7 +8469,7 @@ class Expr:
             Number of valid values there should be in the window before the expression
             is evaluated. valid values = `length - null_count`
         parallel
-            Run in parallel. Don't do this in a groupby or another operation that
+            Run in parallel. Don't do this in a group by or another operation that
             already has much parallelization.
 
         Warnings
@@ -8821,7 +8831,7 @@ class Expr:
                             )
                             if dtype != s.dtype:
                                 raise ValueError(
-                                    f"remapping values for map_dict could not be converted to {dtype!r}: found {s.dtype!r}"
+                                    f"remapping values for `map_dict` could not be converted to {dtype!r}: found {s.dtype!r}"
                                 )
                 else:
                     # dtype was set, which should always be the case when:
@@ -8837,13 +8847,13 @@ class Expr:
                     )
                     if dtype != s.dtype:
                         raise ValueError(
-                            f"remapping {'keys' if is_keys else 'values'} for map_dict could not be converted to {dtype!r}: found {s.dtype!r}"
+                            f"remapping {'keys' if is_keys else 'values'} for `map_dict` could not be converted to {dtype!r}: found {s.dtype!r}"
                         )
 
             except OverflowError as exc:
                 if is_keys:
                     raise ValueError(
-                        f"remapping keys for map_dict could not be converted to {dtype!r}: {exc!s}"
+                        f"remapping keys for `map_dict` could not be converted to {dtype!r}: {exc!s}"
                     ) from exc
                 else:
                     raise ValueError(
@@ -8858,7 +8868,7 @@ class Expr:
                     pass
                 else:
                     raise ValueError(
-                        f"remapping keys for map_dict could not be converted to {dtype!r} without losing values in the conversion"
+                        f"remapping keys for `map_dict` could not be converted to {dtype!r} without losing values in the conversion"
                     )
             else:
                 # values = remapping.values()
@@ -8868,7 +8878,7 @@ class Expr:
                     pass
                 else:
                     raise ValueError(
-                        f"remapping values for map_dict could not be converted to {dtype!r} without losing values in the conversion"
+                        f"remapping values for `map_dict` could not be converted to {dtype!r} without losing values in the conversion"
                     )
 
             return s
@@ -9194,7 +9204,7 @@ def _prepare_rolling_window_args(
 ) -> tuple[str, int]:
     if isinstance(window_size, int):
         if window_size < 1:
-            raise ValueError("'window_size' should be positive")
+            raise ValueError("`window_size` must be positive")
 
         if min_periods is None:
             min_periods = window_size

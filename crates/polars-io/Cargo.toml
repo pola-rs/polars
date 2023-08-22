@@ -95,6 +95,7 @@ gcp = ["object_store/gcp", "cloud", "polars-core/gcp"]
 partition = ["polars-core/partition_by"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 simd = []
+python = ["polars-error/python"]
 
 [package.metadata.docs.rs]
 all-features = true

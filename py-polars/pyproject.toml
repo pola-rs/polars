@@ -81,7 +81,7 @@ module = [
   "polars.polars",
   "pyarrow.*",
   "pydantic",
-  "sqlalchemy",
+  "sqlalchemy.*",
   "xlsx2csv",
   "xlsxwriter.*",
   "zoneinfo",

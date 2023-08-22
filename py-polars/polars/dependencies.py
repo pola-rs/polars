@@ -94,7 +94,7 @@ class _LazyModule(ModuleType):
             # all other attribute access raises a helpful exception
             pfx = self._mod_pfx.get(self._module_name, "")
             raise ModuleNotFoundError(
-                f"{pfx}{attr} requires '{self._module_name}' module to be installed"
+                f"{pfx}{attr} requires {self._module_name!r} module to be installed"
             ) from None
 
 

@@ -43,6 +43,7 @@ Database
    :toctree: api/
 
    read_database
+   read_database_uri
    DataFrame.write_database
 
 JSON

@@ -1,4 +1,4 @@
-use polars_core::frame::groupby::GroupsIndicator;
+use polars_core::frame::group_by::GroupsIndicator;
 
 use super::*;
 

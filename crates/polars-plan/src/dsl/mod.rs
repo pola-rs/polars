@@ -599,7 +599,7 @@ impl Expr {
         }
     }
 
-    /// Apply a function/closure over the groups. This should only be used in a groupby aggregation.
+    /// Apply a function/closure over the groups. This should only be used in a group_by aggregation.
     ///
     /// It is the responsibility of the caller that the schema is correct by giving
     /// the correct output_type. If None given the output type of the input expr is used.
@@ -637,7 +637,7 @@ impl Expr {
         }
     }
 
-    /// Apply a function/closure over the groups with many arguments. This should only be used in a groupby aggregation.
+    /// Apply a function/closure over the groups with many arguments. This should only be used in a group_by aggregation.
     ///
     /// See the [`Expr::apply`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
     pub fn apply_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
@@ -867,7 +867,7 @@ impl Expr {
     }
 
     /// Apply window function over a subgroup.
-    /// This is similar to a groupby + aggregation + self join.
+    /// This is similar to a group_by + aggregation + self join.
     /// Or similar to [window functions in Postgres](https://www.postgresql.org/docs/9.1/tutorial-window.html).
     ///
     /// # Example
@@ -1057,7 +1057,7 @@ impl Expr {
     }
 
     /// Sort this column by the ordering of another column.
-    /// Can also be used in a groupby context to sort the groups.
+    /// Can also be used in a group_by context to sort the groups.
     pub fn sort_by<E: AsRef<[IE]>, IE: Into<Expr> + Clone, R: AsRef<[bool]>>(
         self,
         by: E,
@@ -1878,7 +1878,7 @@ where
     }
 }
 
-/// Apply a function/closure over the groups of multiple columns. This should only be used in a groupby aggregation.
+/// Apply a function/closure over the groups of multiple columns. This should only be used in a group_by aggregation.
 ///
 /// It is the responsibility of the caller that the schema is correct by giving
 /// the correct output_type. If None given the output type of the input expr is used.

@@ -6,7 +6,7 @@
 //! * Performance increase in take kernel
 //! * Performance increase in ChunkedArray builders
 //! * Join operation on multiple columns.
-//! * ~3.5 x performance increase in groupby operations (measured on db-benchmark),
+//! * ~3.5 x performance increase in group_by operations (measured on db-benchmark),
 //!   due to embarrassingly parallel grouping and better branch prediction (tight loops).
 //! * Performance increase on join operation due to better branch prediction.
 //! * Categorical datatype and global string cache (BETA).

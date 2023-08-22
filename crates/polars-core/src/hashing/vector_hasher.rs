@@ -1,7 +1,7 @@
 use arrow::bitmap::utils::get_bit_unchecked;
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
-#[cfg(feature = "groupby_list")]
+#[cfg(feature = "group_by_list")]
 use polars_arrow::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use polars_arrow::utils::CustomIterTools;
 use rayon::prelude::*;
@@ -328,7 +328,7 @@ impl VecHash for Float64Chunked {
     }
 }
 
-#[cfg(feature = "groupby_list")]
+#[cfg(feature = "group_by_list")]
 impl VecHash for ListChunked {
     fn vec_hash(&self, _random_state: RandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
         polars_ensure!(

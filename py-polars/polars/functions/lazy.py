@@ -185,7 +185,8 @@ def col(
             return wrap_expr(plr.dtype_cols(dtypes))
         else:
             raise TypeError(
-                f"invalid input for `col`. Expected `str` or `DataType`, got {type(name).__name__!r}"
+                "invalid input for `col`"
+                f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}."
             )
 
     if isinstance(name, str):
@@ -204,12 +205,14 @@ def col(
             return wrap_expr(plr.dtype_cols(names))
         else:
             raise TypeError(
-                "invalid input for `col`. Expected iterable of type `str` or `DataType`,"
+                "invalid input for `col`"
+                "\n\nExpected iterable of type `str` or `DataType`,"
                 f" got iterable of type {type(item).__name__!r}"
             )
     else:
         raise TypeError(
-            f"invalid input for `col`. Expected `str` or `DataType`, got {type(name).__name__!r}"
+            "invalid input for `col`"
+            f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}"
         )
 
 
@@ -300,7 +303,7 @@ def count(column: str | Series | None = None) -> Expr | int:
     ╞═══════╡
     │ 3     │
     └───────┘
-    >>> df.groupby("c", maintain_order=True).agg(pl.count())
+    >>> df.group_by("c", maintain_order=True).agg(pl.count())
     shape: (2, 2)
     ┌─────┬───────┐
     │ c   ┆ count │
@@ -1080,7 +1083,7 @@ def apply(
     │ 2     ┆ 3   ┆ 7   │
     └───────┴─────┴─────┘
     >>> (
-    ...     df.groupby("group").agg(
+    ...     df.group_by("group").agg(
     ...         pl.apply(
     ...             exprs=["a", "b"],
     ...             function=lambda list_of_series: list_of_series[0]
@@ -1921,6 +1924,10 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
 
+    See Also
+    --------
+    Series.arg_true : Return indices where Series is True
+
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
@@ -1935,10 +1942,6 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
         1
         3
     ]
-
-    See Also
-    --------
-    Series.arg_true : Return indices where Series is True
 
     """
     if eager:

@@ -112,9 +112,8 @@ def read_parquet(
     ) as source_prep:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
-                raise ImportError(
-                    "'pyarrow' is required when using"
-                    " 'read_parquet(..., use_pyarrow=True)'"
+                raise ModuleNotFoundError(
+                    "'pyarrow' is required when using `read_parquet(..., use_pyarrow=True)`"
                 )
 
             import pyarrow as pa

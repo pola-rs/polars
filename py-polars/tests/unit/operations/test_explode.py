@@ -25,17 +25,17 @@ def test_explode_multiple() -> None:
     assert_frame_equal(df.explode("a", "b"), expected)
 
 
-def test_groupby_flatten_list() -> None:
+def test_group_by_flatten_list() -> None:
     df = pl.DataFrame({"group": ["a", "b", "b"], "values": [[1, 2], [2, 3], [4]]})
-    result = df.groupby("group", maintain_order=True).agg(pl.col("values").flatten())
+    result = df.group_by("group", maintain_order=True).agg(pl.col("values").flatten())
 
     expected = pl.DataFrame({"group": ["a", "b"], "values": [[1, 2], [2, 3, 4]]})
     assert_frame_equal(result, expected)
 
 
-def test_groupby_flatten_string() -> None:
+def test_group_by_flatten_string() -> None:
     df = pl.DataFrame({"group": ["a", "b", "b"], "values": ["foo", "bar", "baz"]})
-    result = df.groupby("group", maintain_order=True).agg(
+    result = df.group_by("group", maintain_order=True).agg(
         pl.col("values").str.explode()
     )
 
@@ -217,7 +217,7 @@ def test_explode_in_agg_context() -> None:
     assert (
         df.with_row_count("row_nr")
         .explode("idxs")
-        .groupby("row_nr")
+        .group_by("row_nr")
         .agg(pl.col("array").flatten())
     ).to_dict(False) == {
         "row_nr": [0, 1, 2],
@@ -231,7 +231,7 @@ def test_explode_inner_lists_3985() -> None:
     ).lazy()
 
     assert (
-        df.groupby("id")
+        df.group_by("id")
         .agg(pl.col("categories"))
         .with_columns(pl.col("categories").list.eval(pl.element().list.explode()))
     ).collect().to_dict(False) == {"id": [1], "categories": [["a", "b", "a", "c"]]}
@@ -291,7 +291,7 @@ def test_logical_explode() -> None:
             {"cats": ["Value1", "Value2", "Value1"]},
             schema_overrides={"cats": pl.Categorical},
         )
-        .groupby(1)
+        .group_by(1)
         .agg(pl.struct("cats"))
         .explode("cats")
         .unnest("cats")

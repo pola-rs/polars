@@ -65,7 +65,7 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         let df = DataFrame::new_no_checks(vec![]);
         let gb = df
-            .groupby_with_series(self.0.fields().to_vec(), multithreaded, sorted)
+            .group_by_with_series(self.0.fields().to_vec(), multithreaded, sorted)
             .unwrap();
         Ok(gb.take_groups())
     }
@@ -344,11 +344,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     fn shift(&self, periods: i64) -> Series {
         self.0.apply_fields(|s| s.shift(periods)).into_series()
-    }
-
-    #[cfg(feature = "is_in")]
-    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
-        self.0.is_in(other)
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

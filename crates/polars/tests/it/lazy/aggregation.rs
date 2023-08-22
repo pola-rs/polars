@@ -51,7 +51,7 @@ fn test_lazy_agg() {
 
     let lf = df
         .lazy()
-        .groupby([col("date")])
+        .group_by([col("date")])
         .agg([
             col("rain").min().alias("min"),
             col("rain").sum().alias("sum"),
@@ -90,7 +90,7 @@ fn test_apply_multiple_error() {
     let _res = df
         .lazy()
         .with_streaming(false)
-        .groupby_stable([col("rf")])
+        .group_by_stable([col("rf")])
         .agg([issue()])
         .collect()
         .unwrap();
