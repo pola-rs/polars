@@ -54,7 +54,7 @@ from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
 from polars.functions import col, lit
-from polars.io._utils import _is_glob_pattern, _is_local_file
+from polars.io._utils import _is_glob_pattern, _is_local_file, _prepare_write_file_arg
 from polars.io.excel._write_utils import (
     _unpack_multi_column_dict,
     _xl_apply_conditional_formats,
@@ -2376,8 +2376,6 @@ class DataFrame:
         >>> df.write_json(file, storage_options=storage_options)  # doctest: +SKIP
 
         """
-        from polars.io._utils import _prepare_write_file_arg
-
         storage_options = storage_options or {}
 
         with _prepare_write_file_arg(file, **storage_options) as file:
@@ -2454,8 +2452,6 @@ class DataFrame:
 
 
         """
-        from polars.io._utils import _prepare_write_file_arg
-
         storage_options = storage_options or {}
 
         with _prepare_write_file_arg(file, **storage_options) as file:
@@ -2624,8 +2620,6 @@ class DataFrame:
             buffer = file = BytesIO()
             should_return_buffer = True
 
-        from polars.io._utils import _prepare_write_file_arg
-
         storage_options = storage_options or {}
 
         with _prepare_write_file_arg(file, **storage_options) as file:
@@ -2695,8 +2689,6 @@ class DataFrame:
         """
         if compression is None:
             compression = "uncompressed"
-
-        from polars.io._utils import _prepare_write_file_arg
 
         storage_options = storage_options or {}
 
@@ -3085,8 +3077,6 @@ class DataFrame:
                 "Excel export requires xlsxwriter; please run `pip install XlsxWriter`"
             ) from None
 
-        from polars.io._utils import _prepare_write_file_arg
-
         storage_options = storage_options or {}
 
         with _prepare_write_file_arg(workbook, **storage_options) as workbook:
@@ -3285,8 +3275,6 @@ class DataFrame:
         >>> df.write_ipc(file, storage_options=storage_options)  # doctest: +SKIP
 
         """
-        from polars.io._utils import _prepare_write_file_arg
-
         return_bytes = file is None
         if return_bytes:
             file = BytesIO()
@@ -3449,8 +3437,6 @@ class DataFrame:
         >>> df.write_parquet(file, storage_options=storage_options)  # doctest: +SKIP
 
         """
-        from polars.io._utils import _prepare_write_file_arg
-
         if compression is None:
             compression = "uncompressed"
 
