@@ -568,7 +568,7 @@ fn test_comment_lines() -> PolarsResult<()> {
 #[test]
 fn test_null_values_argument() -> PolarsResult<()> {
     let csv = r"1,a,foo
-null-value,b,bar,
+null-value,b,bar
 3,null-value,ham
 ";
 
@@ -826,7 +826,10 @@ fn test_scientific_floats() -> PolarsResult<()> {
 fn test_tsv_header_offset() -> PolarsResult<()> {
     let csv = "foo\tbar\n\t1000011\t1\n\t1000026\t2\n\t1000949\t2";
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file).with_delimiter(b'\t').finish()?;
+    let df = CsvReader::new(file)
+        .truncate_ragged_lines(true)
+        .with_delimiter(b'\t')
+        .finish()?;
 
     assert_eq!(df.shape(), (3, 2));
     assert_eq!(df.dtypes(), &[DataType::Utf8, DataType::Int64]);
@@ -925,7 +928,7 @@ foo,bar
         .finish()?;
     assert_eq!(df.get_column_names(), &["foo", "bar"]);
     assert_eq!(df.shape(), (1, 2));
-    let df = CsvReader::new(file).finish()?;
+    let df = CsvReader::new(file).truncate_ragged_lines(true).finish()?;
     assert_eq!(df.shape(), (5, 1));
 
     Ok(())
