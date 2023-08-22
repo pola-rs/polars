@@ -3159,6 +3159,7 @@ class DataFrame:
                         has_header=has_header,
                         format_cache=fmt_cache,
                     )
+
             # additional column-level properties
             hidden_columns = _expand_selectors(df, hidden_columns or ())
             if isinstance(column_widths, int):
@@ -3176,6 +3177,7 @@ class DataFrame:
                 if column in column_widths:  # type: ignore[operator]
                     ws.set_column_pixels(
                         col_idx, col_idx, column_widths[column], None, options  # type: ignore[index]
+                    )
                 # additional column-level properties
                 hidden_columns = hidden_columns or ()
 
