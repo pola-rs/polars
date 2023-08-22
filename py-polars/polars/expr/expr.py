@@ -4225,21 +4225,23 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     pl.col("x").eq_missing(pl.col("y")).alias("x == y"),
+        ...     pl.col("x").eq(pl.col("y")).alias("x eq y"),
+        ...     pl.col("x").eq_missing(pl.col("y")).alias("x eq_missing y"),
         ... )
-        shape: (6, 3)
-        ┌──────┬──────┬────────┐
-        │ x    ┆ y    ┆ x == y │
-        │ ---  ┆ ---  ┆ ---    │
-        │ f64  ┆ f64  ┆ bool   │
-        ╞══════╪══════╪════════╡
-        │ 1.0  ┆ 2.0  ┆ false  │
-        │ 2.0  ┆ 2.0  ┆ true   │
-        │ NaN  ┆ NaN  ┆ false  │
-        │ 4.0  ┆ 4.0  ┆ true   │
-        │ null ┆ 5.0  ┆ false  │
-        │ null ┆ null ┆ true   │
-        └──────┴──────┴────────┘
+        Out[6]:
+        shape: (6, 4)
+        ┌──────┬──────┬────────┬────────────────┐
+        │ x    ┆ y    ┆ x eq y ┆ x eq_missing y │
+        │ ---  ┆ ---  ┆ ---    ┆ ---            │
+        │ f64  ┆ f64  ┆ bool   ┆ bool           │
+        ╞══════╪══════╪════════╪════════════════╡
+        │ 1.0  ┆ 2.0  ┆ false  ┆ false          │
+        │ 2.0  ┆ 2.0  ┆ true   ┆ true           │
+        │ NaN  ┆ NaN  ┆ false  ┆ false          │
+        │ 4.0  ┆ 4.0  ┆ true   ┆ true           │
+        │ null ┆ 5.0  ┆ null   ┆ false          │
+        │ null ┆ null ┆ null   ┆ true           │
+        └──────┴──────┴────────┴────────────────┘
 
         """
         return self._from_pyexpr(self._pyexpr.eq_missing(self._to_expr(other)._pyexpr))
@@ -4439,21 +4441,22 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     pl.col("x").ne_missing(pl.col("y")).alias("x != y"),
+        ...     pl.col("x").ne(pl.col("y")).alias("x ne y"),
+        ...     pl.col("x").ne_missing(pl.col("y")).alias("x ne_missing y"),
         ... )
-        shape: (6, 3)
-        ┌──────┬──────┬────────┐
-        │ x    ┆ y    ┆ x != y │
-        │ ---  ┆ ---  ┆ ---    │
-        │ f64  ┆ f64  ┆ bool   │
-        ╞══════╪══════╪════════╡
-        │ 1.0  ┆ 2.0  ┆ true   │
-        │ 2.0  ┆ 2.0  ┆ false  │
-        │ NaN  ┆ NaN  ┆ true   │
-        │ 4.0  ┆ 4.0  ┆ false  │
-        │ null ┆ 5.0  ┆ true   │
-        │ null ┆ null ┆ false  │
-        └──────┴──────┴────────┘
+        shape: (6, 4)
+        ┌──────┬──────┬────────┬────────────────┐
+        │ x    ┆ y    ┆ x ne y ┆ x ne_missing y │
+        │ ---  ┆ ---  ┆ ---    ┆ ---            │
+        │ f64  ┆ f64  ┆ bool   ┆ bool           │
+        ╞══════╪══════╪════════╪════════════════╡
+        │ 1.0  ┆ 2.0  ┆ true   ┆ true           │
+        │ 2.0  ┆ 2.0  ┆ false  ┆ false          │
+        │ NaN  ┆ NaN  ┆ true   ┆ true           │
+        │ 4.0  ┆ 4.0  ┆ false  ┆ false          │
+        │ null ┆ 5.0  ┆ null   ┆ true           │
+        │ null ┆ null ┆ null   ┆ false          │
+        └──────┴──────┴────────┴────────────────┘
 
         """
         return self._from_pyexpr(self._pyexpr.neq_missing(self._to_expr(other)._pyexpr))
