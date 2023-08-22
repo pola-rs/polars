@@ -461,6 +461,10 @@ class ExprDateTimeNameSpace:
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
 
+        See Also
+        --------
+        to_string : The identical expression for which ``strftime`` is an alias.
+
         Examples
         --------
         >>> from datetime import datetime
@@ -488,10 +492,6 @@ class ExprDateTimeNameSpace:
         │ 2020-04-01 00:00:00 ┆ 2020/04/01 00:00:00 │
         │ 2020-05-01 00:00:00 ┆ 2020/05/01 00:00:00 │
         └─────────────────────┴─────────────────────┘
-
-        See Also
-        --------
-        to_string : The identical expression for which ``strftime`` is an alias.
 
         """
         return self.to_string(format)

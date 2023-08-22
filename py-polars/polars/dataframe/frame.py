@@ -1201,6 +1201,10 @@ class DataFrame:
 
         The datatypes can also be found in column headers when printing the DataFrame.
 
+        See Also
+        --------
+        schema : Returns a {colname:dtype} mapping.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -1223,10 +1227,6 @@ class DataFrame:
         │ 2   ┆ 7.0 ┆ b   │
         │ 3   ┆ 8.0 ┆ c   │
         └─────┴─────┴─────┘
-
-        See Also
-        --------
-        schema : Returns a {colname:dtype} mapping.
 
         """
         return self._df.dtypes()
@@ -1835,6 +1835,10 @@ class DataFrame:
         column
             Optional column index or name.
 
+        See Also
+        --------
+        row: Get the values of a single row, either by index or by predicate.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
@@ -1844,10 +1848,6 @@ class DataFrame:
         5
         >>> df.item(2, "b")
         6
-
-        See Also
-        --------
-        row: Get the values of a single row, either by index or by predicate.
 
         """
         if row is None and column is None:
@@ -8816,6 +8816,12 @@ class DataFrame:
         You should NEVER use this method to iterate over a DataFrame; if you require
         row-iteration you should strongly prefer use of ``iter_rows()`` instead.
 
+        See Also
+        --------
+        iter_rows : Row iterator over frame data (does not materialise all rows).
+        rows : Materialise all frame data as a list of rows (potentially expensive).
+        item: Return dataframe element as a scalar.
+
         Examples
         --------
         Specify an index to return the row at the given index as a tuple.
@@ -8840,12 +8846,6 @@ class DataFrame:
 
         >>> df.row(by_predicate=(pl.col("ham") == "b"))
         (2, 7, 'b')
-
-        See Also
-        --------
-        iter_rows : Row iterator over frame data (does not materialise all rows).
-        rows : Materialise all frame data as a list of rows (potentially expensive).
-        item: Return dataframe element as a scalar.
 
         """
         if index is not None and by_predicate is not None:
@@ -8927,6 +8927,11 @@ class DataFrame:
         -------
         list of tuples (default) or dictionaries of row values
 
+        See Also
+        --------
+        iter_rows : Row iterator over frame data (does not materialise all rows).
+        rows_by_key : Materialises frame data as a key-indexed dictionary.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -8943,11 +8948,6 @@ class DataFrame:
          {'x': 'b', 'y': 2, 'z': 3},
          {'x': 'b', 'y': 3, 'z': 6},
          {'x': 'a', 'y': 4, 'z': 9}]
-
-        See Also
-        --------
-        iter_rows : Row iterator over frame data (does not materialise all rows).
-        rows_by_key : Materialises frame data as a key-indexed dictionary.
 
         """
         if named:
@@ -8996,6 +8996,11 @@ class DataFrame:
         natively only supports up to ``μs``-precision; `ns`-precision values will be
         truncated to microseconds on conversion to Python. If this matters to your
         use-case you should export to a different format (such as Arrow or NumPy).
+
+        See Also
+        --------
+        rows : Materialise all frame data as a list of rows (potentially expensive).
+        iter_rows : Row iterator over frame data (does not materialise all rows).
 
         Examples
         --------
@@ -9048,11 +9053,6 @@ class DataFrame:
              ('b', 'q'): [{'w': 'b', 'x': 'q', 'y': 2.5, 'z': 8},
                           {'w': 'b', 'x': 'q', 'y': 3.0, 'z': 7}],
              ('a', 'k'): [{'w': 'a', 'x': 'k', 'y': 4.5, 'z': 6}]})
-
-        See Also
-        --------
-        rows : Materialise all frame data as a list of rows (potentially expensive).
-        iter_rows : Row iterator over frame data (does not materialise all rows).
 
         """
         from polars.selectors import expand_selector, is_selector
@@ -9168,6 +9168,11 @@ class DataFrame:
         -------
         iterator of tuples (default) or dictionaries (if named) of python row values
 
+        See Also
+        --------
+        rows : Materialises all frame data as a list of rows (potentially expensive).
+        rows_by_key : Materialises frame data as a key-indexed dictionary.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -9180,11 +9185,6 @@ class DataFrame:
         [1, 3, 5]
         >>> [row["b"] for row in df.iter_rows(named=True)]
         [2, 4, 6]
-
-        See Also
-        --------
-        rows : Materialises all frame data as a list of rows (potentially expensive).
-        rows_by_key : Materialises frame data as a key-indexed dictionary.
 
         """
         # load into the local namespace for a (minor) performance boost in the hot loops

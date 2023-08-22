@@ -652,6 +652,10 @@ class LazyFrame:
         """
         Get dtypes of columns in LazyFrame.
 
+        See Also
+        --------
+        schema : Returns a {colname:dtype} mapping.
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -663,10 +667,6 @@ class LazyFrame:
         ... )
         >>> lf.dtypes
         [Int64, Float64, Utf8]
-
-        See Also
-        --------
-        schema : Returns a {colname:dtype} mapping.
 
         """
         return self._ldf.dtypes()

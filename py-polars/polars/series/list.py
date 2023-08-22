@@ -603,6 +603,10 @@ class ListNameSpace:
         other
             Right hand side of the set operation.
 
+        See Also
+        --------
+        polars.Series.list.diff: Calculates the n-th discrete difference of every sublist.
+
         Examples
         --------
         >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
@@ -616,10 +620,6 @@ class ListNameSpace:
                 []
                 [5, 7]
         ]
-
-        See Also
-        --------
-        polars.Series.list.diff: Calculates the n-th discrete difference of every sublist.
 
         """  # noqa: W505.
 

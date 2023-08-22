@@ -170,16 +170,16 @@ def read_csv(
     -------
     DataFrame
 
+    See Also
+    --------
+    scan_csv : Lazily read from a CSV file or multiple files via glob patterns.
+
     Notes
     -----
     This operation defaults to a `rechunk` operation at the end, meaning that
     all data will be stored continuously in memory.
     Set `rechunk=False` if you are benchmarking the csv-reader. A `rechunk` is
     an expensive operation.
-
-    See Also
-    --------
-    scan_csv : Lazily read from a CSV file or multiple files via glob patterns.
 
     """
     _check_arg_is_1byte("separator", separator, False)

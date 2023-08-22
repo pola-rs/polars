@@ -617,6 +617,11 @@ class Series:
         other
             A literal or expression value to compare with.
 
+        See Also
+        --------
+        ne_missing
+        eq
+
         Examples
         --------
         >>> s1 = pl.Series("a", [333, 200, None])
@@ -637,11 +642,6 @@ class Series:
             true
             true
         ]
-
-        See Also
-        --------
-        ne_missing
-        eq
 
         """  # noqa: W505
 
@@ -668,6 +668,11 @@ class Series:
         other
             A literal or expression value to compare with.
 
+        See Also
+        --------
+        eq_missing
+        ne
+
         Examples
         --------
         >>> s1 = pl.Series("a", [333, 200, None])
@@ -688,11 +693,6 @@ class Series:
             false
             false
         ]
-
-        See Also
-        --------
-        eq_missing
-        ne
 
         """  # noqa: W505
 

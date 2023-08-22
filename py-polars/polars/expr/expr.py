@@ -444,6 +444,11 @@ class Expr:
             Modifies number of rows returned, so will fail in combination with other
             expressions. Use as only expression in `select` / `with_columns`.
 
+        See Also
+        --------
+        Series.arg_true : Return indices where Series is True
+        polars.arg_where
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2, 1]})
@@ -458,11 +463,6 @@ class Expr:
         │ 1   │
         │ 3   │
         └─────┘
-
-        See Also
-        --------
-        Series.arg_true : Return indices where Series is True
-        polars.arg_where
 
         """
         return self._from_pyexpr(py_arg_where(self._pyexpr))
@@ -4517,6 +4517,10 @@ class Expr:
         other
             Numeric literal or expression value.
 
+        See Also
+        --------
+        truediv
+
         Examples
         --------
         >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
@@ -4536,10 +4540,6 @@ class Expr:
         │ 4   ┆ 2.0 ┆ 2    │
         │ 5   ┆ 2.5 ┆ 2    │
         └─────┴─────┴──────┘
-
-        See Also
-        --------
-        truediv
 
         """
         return self.__floordiv__(other)
@@ -4653,6 +4653,10 @@ class Expr:
         0/0: Invalid operation - mathematically undefined, returns NaN.
         n/0: On finite operands gives an exact infinite result, eg: ±infinity.
 
+        See Also
+        --------
+        floordiv
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -4674,10 +4678,6 @@ class Expr:
         │ 1   ┆ -4.0 ┆ 0.5  ┆ -0.25 │
         │ 2   ┆ -0.5 ┆ 1.0  ┆ -4.0  │
         └─────┴──────┴──────┴───────┘
-
-        See Also
-        --------
-        floordiv
 
         """
         return self.__truediv__(other)
