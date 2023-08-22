@@ -1,5 +1,9 @@
+use std::ops::{AddAssign, MulAssign, SubAssign};
+
 use arrow::array::Utf8Array;
 use arrow::bitmap::MutableBitmap;
+use atoi::{MaxNumDigits, Sign};
+use num_traits::{CheckedAdd, CheckedMul, CheckedSub, One, Zero};
 use polars_arrow::prelude::FromDataUtf8;
 use polars_core::prelude::*;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
@@ -31,29 +35,115 @@ impl PrimitiveParser for Float64Type {
     }
 }
 
-impl PrimitiveParser for UInt32Type {
-    #[inline]
-    fn parse(bytes: &[u8]) -> Option<u32> {
-        atoi::atoi::<u32>(bytes)
-    }
+macro_rules! impl_integer_parser {
+    ($t:ty, $native_t: ty) => {
+        impl PrimitiveParser for $t
+        where
+            $native_t: Zero
+                + One
+                + AddAssign
+                + MulAssign
+                + SubAssign
+                + CheckedAdd
+                + CheckedSub
+                + CheckedMul
+                + MaxNumDigits,
+        {
+            #[inline]
+            fn parse(text: &[u8]) -> Option<Self::Native> {
+                let mut index;
+                let mut number = <$native_t>::zero();
+
+                let (sign, offset) = text
+                    .first()
+                    .and_then(|&byte| Sign::try_from(byte))
+                    .map(|sign| (sign, 1))
+                    .unwrap_or((Sign::Plus, 0));
+
+                index = offset;
+
+                // Having two dedicated loops for both the negative and the nonnegative case is rather
+                // verbose, yet performed up to 40% better then a more terse single loop with
+                // `number += digit * signum`.
+                let value = match sign {
+                    Sign::Plus => {
+                        let max_safe_digits =
+                            std::cmp::max(1, <$native_t>::max_num_digits(nth(10))) - 1;
+                        let max_safe_index = std::cmp::min(text.len(), max_safe_digits + offset);
+                        while index != max_safe_index {
+                            if let Some(digit) = atoi::ascii_to_digit::<$native_t>(text[index]) {
+                                number *= nth::<$native_t>(10);
+                                number += digit;
+                                index += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        // We parsed the digits, which do not need checking now lets see the next one:
+                        let mut number = Some(number);
+                        while index != text.len() {
+                            if let Some(digit) = atoi::ascii_to_digit::<$native_t>(text[index]) {
+                                number = number.and_then(|n| n.checked_mul(nth(10)));
+                                number = number.and_then(|n| n.checked_add(digit));
+                                index += 1;
+                            } else {
+                                return None;
+                            }
+                        }
+                        number
+                    },
+                    Sign::Minus => {
+                        let max_safe_digits =
+                            std::cmp::max(1, <$native_t>::max_num_digits_negative(nth(10))) - 1;
+                        let max_safe_index = std::cmp::min(text.len(), max_safe_digits + offset);
+                        while index != max_safe_index {
+                            if let Some(digit) = atoi::ascii_to_digit::<$native_t>(text[index]) {
+                                number *= nth::<$native_t>(10);
+                                number -= digit;
+                                index += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        // We parsed the digits, which do not need checking now lets see the next one:
+                        let mut number = Some(number);
+                        while index != text.len() {
+                            if let Some(digit) = atoi::ascii_to_digit::<$native_t>(text[index]) {
+                                number = number.and_then(|n| n.checked_mul(nth(10)));
+                                number = number.and_then(|n| n.checked_sub(digit));
+                                index += 1;
+                            } else {
+                                return None;
+                            }
+                        }
+                        number
+                    },
+                };
+                match (value, index) {
+                    (_, 0) | (None, _) => None,
+                    (Some(n), _) => Some(n),
+                }
+            }
+        }
+    };
 }
-impl PrimitiveParser for UInt64Type {
-    #[inline]
-    fn parse(bytes: &[u8]) -> Option<u64> {
-        atoi::atoi::<u64>(bytes)
+
+impl_integer_parser!(UInt32Type, u32);
+impl_integer_parser!(UInt64Type, u64);
+impl_integer_parser!(Int32Type, i32);
+impl_integer_parser!(Int64Type, i64);
+
+// At least for primitive types this function does not incur runtime costs, since it is only called
+// with constants
+fn nth<I>(n: u8) -> I
+where
+    I: Zero + One,
+{
+    let mut i = I::zero();
+    for _ in 0..n {
+        i = i + I::one();
     }
-}
-impl PrimitiveParser for Int32Type {
-    #[inline]
-    fn parse(bytes: &[u8]) -> Option<i32> {
-        atoi::atoi::<i32>(bytes)
-    }
-}
-impl PrimitiveParser for Int64Type {
-    #[inline]
-    fn parse(bytes: &[u8]) -> Option<i64> {
-        atoi::atoi::<i64>(bytes)
-    }
+    i
 }
 
 trait ParsedBuffer {
