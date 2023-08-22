@@ -274,10 +274,6 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    #[cfg(feature = "is_in")]
-    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
-        IsIn::is_in(&self.0, other)
-    }
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
         RepeatBy::repeat_by(&self.0, by)

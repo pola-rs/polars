@@ -10,8 +10,6 @@ use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
 use crate::frame::group_by::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
-#[cfg(feature = "is_in")]
-use crate::frame::hash_join::_check_categorical_src;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 
@@ -358,11 +356,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    #[cfg(feature = "is_in")]
-    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
-        _check_categorical_src(self.dtype(), other.dtype())?;
-        self.0.logical().is_in(&other.to_physical_repr())
-    }
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
         let out = self.0.logical().repeat_by(by)?;

@@ -88,7 +88,7 @@ extract_jsonpath = ["polars-ops/extract_jsonpath"]
 
 # operations
 approx_unique = ["polars-ops/approx_unique"]
-is_in = ["polars-core/is_in"]
+is_in = ["polars-ops/is_in"]
 repeat_by = ["polars-core/repeat_by"]
 round_series = ["polars-core/round_series"]
 is_first = ["polars-core/is_first", "polars-ops/is_first"]

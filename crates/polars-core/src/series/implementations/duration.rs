@@ -444,10 +444,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     fn peak_min(&self) -> BooleanChunked {
         self.0.peak_min()
     }
-    #[cfg(feature = "is_in")]
-    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
-        self.0.is_in(other)
-    }
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
         Ok(self
