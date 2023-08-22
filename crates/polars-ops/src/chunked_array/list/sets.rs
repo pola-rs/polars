@@ -36,13 +36,6 @@ impl<'a> MaterializeValues<Option<&'a [u8]>> for MutableBinaryArray<i64> {
     }
 }
 
-trait PrepareSet<K>
-where
-    K: Eq + Hash + Copy,
-{
-    fn prepare_set(set: &mut PlIndexSet<K>);
-}
-
 fn set_operation<K, I, J, R>(
     set: &mut PlIndexSet<K>,
     set2: &mut PlIndexSet<K>,
