@@ -4228,7 +4228,6 @@ class Expr:
         ...     pl.col("x").eq(pl.col("y")).alias("x eq y"),
         ...     pl.col("x").eq_missing(pl.col("y")).alias("x eq_missing y"),
         ... )
-        Out[6]:
         shape: (6, 4)
         ┌──────┬──────┬────────┬────────────────┐
         │ x    ┆ y    ┆ x eq y ┆ x eq_missing y │
