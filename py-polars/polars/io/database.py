@@ -241,6 +241,10 @@ def read_database(  # noqa: D417
     will be used to efficiently instantiate the DataFrame; otherwise, the DataFrame
     is initialised from row-wise data.
 
+    See Also
+    --------
+    read_database_uri : Create a DataFrame from a SQL query using a URI string.
+
     Examples
     --------
     Instantiate a DataFrame from a SQL query against a user-supplied connection:
@@ -249,10 +253,6 @@ def read_database(  # noqa: D417
     ...     query="SELECT * FROM test_data",
     ...     connection=conn,
     ... )  # doctest: +SKIP
-
-    See Also
-    --------
-    read_database_uri : Create a DataFrame from a SQL query using a URI string.
 
     """
     if isinstance(connection, str):
@@ -327,6 +327,10 @@ def read_database_uri(
     For ``adbc`` you will need to have installed ``pyarrow`` and the ADBC driver associated
     with the backend you are connecting to, eg: ``adbc-driver-postgresql``.
 
+    See Also
+    --------
+    read_database : Create a DataFrame from a SQL query using a connection object.
+
     Examples
     --------
     Create a DataFrame from a SQL query using a single thread:
@@ -365,10 +369,6 @@ def read_database_uri(
     ...     "snowflake://user:pass@company-org/testdb/public?warehouse=test&role=myrole",
     ...     engine="adbc",
     ... )  # doctest: +SKIP
-
-    See Also
-    --------
-    read_database : Create a DataFrame from a SQL query using a connection object.
 
     """  # noqa: W505
     if not isinstance(uri, str):

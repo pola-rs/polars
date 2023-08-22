@@ -1924,6 +1924,10 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
 
+    See Also
+    --------
+    Series.arg_true : Return indices where Series is True
+
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
@@ -1938,10 +1942,6 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
         1
         3
     ]
-
-    See Also
-    --------
-    Series.arg_true : Return indices where Series is True
 
     """
     if eager:

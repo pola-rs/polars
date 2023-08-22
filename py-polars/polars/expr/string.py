@@ -801,6 +801,11 @@ class ExprStringNameSpace:
         <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
         additional information about the use of inline expression modifiers.
 
+        See Also
+        --------
+        starts_with : Check if string values start with a substring.
+        ends_with : Check if string values end with a substring.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": ["Crab", "cat and dog", "rab$bit", None]})
@@ -821,11 +826,6 @@ class ExprStringNameSpace:
         │ null        ┆ null  ┆ null    │
         └─────────────┴───────┴─────────┘
 
-        See Also
-        --------
-        starts_with : Check if string values start with a substring.
-        ends_with : Check if string values end with a substring.
-
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
@@ -838,6 +838,11 @@ class ExprStringNameSpace:
         ----------
         suffix
             Suffix substring.
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+        starts_with : Check if string values start with a substring.
 
         Examples
         --------
@@ -868,11 +873,6 @@ class ExprStringNameSpace:
         │ mango  │
         └────────┘
 
-        See Also
-        --------
-        contains : Check if string contains a substring that matches a regex.
-        starts_with : Check if string values start with a substring.
-
         """
         suffix = parse_as_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_ends_with(suffix))
@@ -885,6 +885,11 @@ class ExprStringNameSpace:
         ----------
         prefix
             Prefix substring.
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+        ends_with : Check if string values end with a substring.
 
         Examples
         --------
@@ -915,11 +920,6 @@ class ExprStringNameSpace:
         │ apple  │
         └────────┘
 
-        See Also
-        --------
-        contains : Check if string contains a substring that matches a regex.
-        ends_with : Check if string values end with a substring.
-
         """
         prefix = parse_as_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_starts_with(prefix))
@@ -941,6 +941,11 @@ class ExprStringNameSpace:
             How many rows to parse to determine the schema.
             If ``None`` all rows are used.
 
+        See Also
+        --------
+        json_path_match : Extract the first match of json string with provided JSONPath
+            expression.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -958,11 +963,6 @@ class ExprStringNameSpace:
         │ {null,null} │
         │ {2,false}   │
         └─────────────┘
-
-        See Also
-        --------
-        json_path_match : Extract the first match of json string with provided JSONPath
-            expression.
 
         """
         if dtype is not None:

@@ -325,6 +325,11 @@ def all() -> SelectorType:
     """
     Select all columns.
 
+    See Also
+    --------
+    first : Select the first column in the current scope.
+    last : Select the last column in the current scope.
+
     Examples
     --------
     >>> from datetime import date
@@ -363,11 +368,6 @@ def all() -> SelectorType:
     │ 2024-01-01 │
     └────────────┘
 
-    See Also
-    --------
-    first : Select the first column in the current scope.
-    last : Select the last column in the current scope.
-
     """
     return _selector_proxy_(F.all(), name="all")
 
@@ -377,6 +377,13 @@ def by_dtype(
 ) -> SelectorType:
     """
     Select all columns matching the given dtypes.
+
+    See Also
+    --------
+    integer : Select all integer columns.
+    float : Select all float columns.
+    numeric : Select all numeric columns.
+    temporal : Select all temporal columns.
 
     Examples
     --------
@@ -431,13 +438,6 @@ def by_dtype(
     │ foo   ┆ -3265500 │
     └───────┴──────────┘
 
-    See Also
-    --------
-    integer : Select all integer columns.
-    float : Select all float columns.
-    numeric : Select all numeric columns.
-    temporal : Select all temporal columns.
-
     """
     all_dtypes: list[PolarsDataType] = []
     for tp in dtypes:
@@ -464,6 +464,10 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
     ----------
     *names
         One or more names of columns to select.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtypes.
 
     Examples
     --------
@@ -503,10 +507,6 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
     │ 5.5 ┆ true  │
     └─────┴───────┘
 
-    See Also
-    --------
-    by_dtype : Select all columns matching the given dtypes.
-
     """
     all_names = []
     for nm in names:
@@ -533,6 +533,12 @@ def contains(substring: str | Collection[str]) -> SelectorType:
     ----------
     substring
         Substring(s) that matching column names should contain.
+
+    See Also
+    --------
+    matches : Select all columns that match the given regex pattern.
+    ends_with : Select columns that end with the given substring(s).
+    starts_with : Select columns that start with the given substring(s).
 
     Examples
     --------
@@ -584,12 +590,6 @@ def contains(substring: str | Collection[str]) -> SelectorType:
     │ x   ┆ false │
     │ y   ┆ true  │
     └─────┴───────┘
-
-    See Also
-    --------
-    matches : Select all columns that match the given regex pattern.
-    ends_with : Select columns that end with the given substring(s).
-    starts_with : Select columns that start with the given substring(s).
 
     """
     escaped_substring = _re_string(substring)
@@ -861,6 +861,12 @@ def ends_with(*suffix: str) -> SelectorType:
     """
     Select columns that end with the given substring(s).
 
+    See Also
+    --------
+    contains : Select columns that contain the given literal substring(s).
+    matches : Select all columns that match the given regex pattern.
+    starts_with : Select columns that start with the given substring(s).
+
     Parameters
     ----------
     suffix
@@ -917,12 +923,6 @@ def ends_with(*suffix: str) -> SelectorType:
     │ y   ┆ 456 ┆ true  │
     └─────┴─────┴───────┘
 
-    See Also
-    --------
-    contains : Select columns that contain the given literal substring(s).
-    matches : Select all columns that match the given regex pattern.
-    starts_with : Select columns that start with the given substring(s).
-
     """
     escaped_suffix = _re_string(suffix)
     raw_params = f"^.*{escaped_suffix}$"
@@ -937,6 +937,11 @@ def ends_with(*suffix: str) -> SelectorType:
 def first() -> SelectorType:
     """
     Select the first column in the current scope.
+
+    See Also
+    --------
+    all : Select all columns.
+    last : Select the last column in the current scope.
 
     Examples
     --------
@@ -976,11 +981,6 @@ def first() -> SelectorType:
     │ 456 ┆ 5.5 ┆ 1   │
     └─────┴─────┴─────┘
 
-    See Also
-    --------
-    all : Select all columns.
-    last : Select the last column in the current scope.
-
     """
     return _selector_proxy_(F.first(), name="first")
 
@@ -988,6 +988,13 @@ def first() -> SelectorType:
 def float() -> SelectorType:
     """
     Select all float columns.
+
+    See Also
+    --------
+    integer : Select all integer columns.
+    numeric : Select all numeric columns.
+    temporal : Select all temporal columns.
+    string : Select all string columns.
 
     Examples
     --------
@@ -1028,13 +1035,6 @@ def float() -> SelectorType:
     │ y   ┆ 456 │
     └─────┴─────┘
 
-    See Also
-    --------
-    integer : Select all integer columns.
-    numeric : Select all numeric columns.
-    temporal : Select all temporal columns.
-    string : Select all string columns.
-
     """
     return _selector_proxy_(
         F.col(FLOAT_DTYPES),
@@ -1045,6 +1045,14 @@ def float() -> SelectorType:
 def integer() -> SelectorType:
     """
     Select all integer columns.
+
+    See Also
+    --------
+    by_dtype : Select columns by dtype.
+    float : Select all float columns.
+    numeric : Select all numeric columns.
+    temporal : Select all temporal columns.
+    string : Select all string columns.
 
     Examples
     --------
@@ -1084,14 +1092,6 @@ def integer() -> SelectorType:
     │ y   ┆ 5.5 │
     └─────┴─────┘
 
-    See Also
-    --------
-    by_dtype : Select columns by dtype.
-    float : Select all float columns.
-    numeric : Select all numeric columns.
-    temporal : Select all temporal columns.
-    string : Select all string columns.
-
     """
     return _selector_proxy_(
         F.col(INTEGER_DTYPES),
@@ -1102,6 +1102,14 @@ def integer() -> SelectorType:
 def signed_integer() -> SelectorType:
     """
     Select all signed integer columns.
+
+    See Also
+    --------
+    by_dtype : Select columns by dtype.
+    float : Select all float columns.
+    integer: Select all integer columns.
+    numeric : Select all numeric columns.
+    unsigned_integer: Select all unsigned integer columns.
 
     Examples
     --------
@@ -1153,14 +1161,6 @@ def signed_integer() -> SelectorType:
     │ -456 ┆ 6789 ┆ 4321 │
     └──────┴──────┴──────┘
 
-    See Also
-    --------
-    by_dtype : Select columns by dtype.
-    float : Select all float columns.
-    integer: Select all integer columns.
-    numeric : Select all numeric columns.
-    unsigned_integer: Select all unsigned integer columns.
-
     """
     return _selector_proxy_(
         F.col(SIGNED_INTEGER_DTYPES),
@@ -1171,6 +1171,14 @@ def signed_integer() -> SelectorType:
 def unsigned_integer() -> SelectorType:
     """
     Select all unsigned integer columns.
+
+    See Also
+    --------
+    by_dtype : Select columns by dtype.
+    float : Select all float columns.
+    integer: Select all integer columns.
+    numeric : Select all numeric columns.
+    signed_integer: Select all signed integer columns.
 
     Examples
     --------
@@ -1224,14 +1232,6 @@ def unsigned_integer() -> SelectorType:
     │ -456 ┆ 6789 ┆ 4321 │
     └──────┴──────┴──────┘
 
-    See Also
-    --------
-    by_dtype : Select columns by dtype.
-    float : Select all float columns.
-    integer: Select all integer columns.
-    numeric : Select all numeric columns.
-    signed_integer: Select all signed integer columns.
-
     """
     return _selector_proxy_(
         F.col(UNSIGNED_INTEGER_DTYPES),
@@ -1242,6 +1242,11 @@ def unsigned_integer() -> SelectorType:
 def last() -> SelectorType:
     """
     Select the last column in the current scope.
+
+    See Also
+    --------
+    all : Select all columns.
+    first : Select the first column in the current scope.
 
     Examples
     --------
@@ -1281,11 +1286,6 @@ def last() -> SelectorType:
     │ y   ┆ 456 ┆ 5.5 │
     └─────┴─────┴─────┘
 
-    See Also
-    --------
-    all : Select all columns.
-    first : Select the first column in the current scope.
-
     """
     return _selector_proxy_(F.last(), name="last")
 
@@ -1293,6 +1293,12 @@ def last() -> SelectorType:
 def matches(pattern: str) -> SelectorType:
     """
     Select all columns that match the given regex pattern.
+
+    See Also
+    --------
+    contains : Select all columns that contain the given substring.
+    ends_with : Select all columns that end with the given substring(s).
+    starts_with : Select all columns that start with the given substring(s).
 
     Parameters
     ----------
@@ -1338,12 +1344,6 @@ def matches(pattern: str) -> SelectorType:
     │ y   ┆ 1   │
     └─────┴─────┘
 
-    See Also
-    --------
-    contains : Select all columns that contain the given substring.
-    ends_with : Select all columns that end with the given substring(s).
-    starts_with : Select all columns that start with the given substring(s).
-
     """
     if pattern == ".*":
         return all()
@@ -1367,6 +1367,14 @@ def matches(pattern: str) -> SelectorType:
 def numeric() -> SelectorType:
     """
     Select all numeric columns.
+
+    See Also
+    --------
+    by_dtype : Select columns by dtype.
+    float : Select all float columns.
+    integer : Select all integer columns.
+    temporal : Select all temporal columns.
+    string : Select all string columns.
 
     Examples
     --------
@@ -1407,14 +1415,6 @@ def numeric() -> SelectorType:
     │ y   │
     └─────┘
 
-    See Also
-    --------
-    by_dtype : Select columns by dtype.
-    float : Select all float columns.
-    integer : Select all integer columns.
-    temporal : Select all temporal columns.
-    string : Select all string columns.
-
     """
     return _selector_proxy_(
         F.col(NUMERIC_DTYPES),
@@ -1430,6 +1430,12 @@ def starts_with(*prefix: str) -> SelectorType:
     ----------
     prefix
         Substring(s) that matching column names should start with.
+
+    See Also
+    --------
+    contains : Select all columns that contain the given substring.
+    ends_with : Select all columns that end with the given substring(s).
+    matches : Select all columns that match the given regex pattern.
 
     Examples
     --------
@@ -1482,12 +1488,6 @@ def starts_with(*prefix: str) -> SelectorType:
     │ 2.0 ┆ 8   │
     └─────┴─────┘
 
-    See Also
-    --------
-    contains : Select all columns that contain the given substring.
-    ends_with : Select all columns that end with the given substring(s).
-    matches : Select all columns that match the given regex pattern.
-
     """
     escaped_prefix = _re_string(prefix)
     raw_params = f"^{escaped_prefix}.*$"
@@ -1502,6 +1502,14 @@ def starts_with(*prefix: str) -> SelectorType:
 def string(include_categorical: bool = False) -> SelectorType:
     """
     Select all Utf8 (and, optionally, Categorical) string columns.
+
+    See Also
+    --------
+    by_dtype : Select all columns of a given dtype.
+    float : Select all float columns.
+    integer : Select all integer columns.
+    numeric : Select all numeric columns.
+    temporal : Select all temporal columns.
 
     Examples
     --------
@@ -1544,14 +1552,6 @@ def string(include_categorical: bool = False) -> SelectorType:
     │ yy  ┆ b   ┆ 6   ┆ 7.0  │
     └─────┴─────┴─────┴──────┘
 
-    See Also
-    --------
-    by_dtype : Select all columns of a given dtype.
-    float : Select all float columns.
-    integer : Select all integer columns.
-    numeric : Select all numeric columns.
-    temporal : Select all temporal columns.
-
     """
     string_dtypes: list[PolarsDataType] = [Utf8]
     if include_categorical:
@@ -1567,6 +1567,14 @@ def string(include_categorical: bool = False) -> SelectorType:
 def temporal() -> SelectorType:
     """
     Select all temporal columns.
+
+    See Also
+    --------
+    by_dtype : Select all columns of a given dtype.
+    float : Select all float columns.
+    integer : Select all integer columns.
+    numeric : Select all numeric columns.
+    string : Select all string columns.
 
     Examples
     --------
@@ -1618,14 +1626,6 @@ def temporal() -> SelectorType:
     │ 1.2345 │
     │ 2.3456 │
     └────────┘
-
-    See Also
-    --------
-    by_dtype : Select all columns of a given dtype.
-    float : Select all float columns.
-    integer : Select all integer columns.
-    numeric : Select all numeric columns.
-    string : Select all string columns.
 
     """
     return _selector_proxy_(

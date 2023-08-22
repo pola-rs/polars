@@ -449,6 +449,11 @@ class StringNameSpace:
         suffix
             Suffix substring.
 
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+        starts_with : Check if string values start with a substring.
+
         Examples
         --------
         >>> s = pl.Series("fruits", ["apple", "mango", None])
@@ -461,11 +466,6 @@ class StringNameSpace:
             null
         ]
 
-        See Also
-        --------
-        contains : Check if string contains a substring that matches a regex.
-        starts_with : Check if string values start with a substring.
-
         """
 
     def starts_with(self, prefix: str | Expr) -> Series:
@@ -476,6 +476,11 @@ class StringNameSpace:
         ----------
         prefix
             Prefix substring.
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+        ends_with : Check if string values end with a substring.
 
         Examples
         --------
@@ -488,11 +493,6 @@ class StringNameSpace:
             false
             null
         ]
-
-        See Also
-        --------
-        contains : Check if string contains a substring that matches a regex.
-        ends_with : Check if string values end with a substring.
 
         """
 
@@ -555,6 +555,11 @@ class StringNameSpace:
             How many rows to parse to determine the schema.
             If ``None`` all rows are used.
 
+        See Also
+        --------
+        json_path_match : Extract the first match of json string with provided JSONPath
+            expression.
+
         Examples
         --------
         >>> s = pl.Series("json", ['{"a":1, "b": true}', None, '{"a":2, "b": false}'])
@@ -566,11 +571,6 @@ class StringNameSpace:
                 {null,null}
                 {2,false}
         ]
-
-        See Also
-        --------
-        json_path_match : Extract the first match of json string with provided JSONPath
-            expression.
 
         """
 
