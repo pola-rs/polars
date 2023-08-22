@@ -30,7 +30,7 @@ def test_lazyframe_deprecated_serde() -> None:
     lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
 
     with pytest.deprecated_call():
-        json = lf.write_json()  # type: ignore[attr-defined]
+        json = lf.write_json()
     with pytest.deprecated_call():
         result_from = pl.LazyFrame.from_json(json)
     with pytest.deprecated_call():

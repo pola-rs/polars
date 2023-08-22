@@ -85,7 +85,6 @@ from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_renamed_function,
-    deprecate_renamed_methods,
     deprecate_renamed_parameter,
 )
 from polars.utils.various import (
@@ -179,10 +178,6 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 
-@deprecate_renamed_methods(
-    mapping={"approx_unique": "approx_n_unique"},
-    versions={"approx_unique": "0.18.12"},
-)
 class DataFrame:
     """
     Two-dimensional data structure representing data as a table with rows and columns.
@@ -8560,8 +8555,46 @@ class DataFrame:
             struct_fields = F.all() if (subset is None) else subset
             expr = F.struct(struct_fields)  # type: ignore[call-overload]
 
-        df = self.lazy().select(expr.n_unique()).collect()
+        df = self.lazy().select(expr.n_unique()).collect(no_optimization=True)
         return 0 if df.is_empty() else df.row(0)[0]
+
+    def approx_n_unique(self) -> DataFrame:
+        """
+        Approximate count of unique values.
+
+        This is done using the HyperLogLog++ algorithm for cardinality estimation.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [1, 2, 1, 1],
+        ...     }
+        ... )
+        >>> df.approx_n_unique()
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ u32 ┆ u32 │
+        ╞═════╪═════╡
+        │ 4   ┆ 2   │
+        └─────┴─────┘
+
+        """
+        return self.lazy().approx_n_unique().collect(no_optimization=True)
+
+    @deprecate_renamed_function("approx_n_unique", version="0.18.12")
+    def approx_unique(self) -> DataFrame:
+        """
+        Approximate count of unique values.
+
+        .. deprecated:: 0.18.12
+            This method has been renamed to :func:`DataFrame.approx_n_unique`.
+
+        """
+        return self.approx_n_unique()
 
     def rechunk(self) -> Self:
         """

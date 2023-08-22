@@ -60,7 +60,6 @@ from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_renamed_function,
-    deprecate_renamed_methods,
     deprecate_renamed_parameter,
 )
 from polars.utils.various import (
@@ -116,16 +115,6 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 
-@deprecate_renamed_methods(
-    mapping={
-        "approx_unique": "approx_n_unique",
-        "write_json": "serialize",
-    },
-    versions={
-        "approx_unique": "0.18.12",
-        "write_json": "0.18.12",
-    },
-)
 class LazyFrame:
     """
     Representation of a Lazy computation graph/query against a DataFrame.
@@ -868,6 +857,30 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             self._ldf.serialize(file)
         return None
+
+    @overload
+    def write_json(self, file: None = ...) -> str:
+        ...
+
+    @overload
+    def write_json(self, file: IOBase | str | Path) -> None:
+        ...
+
+    @deprecate_renamed_function("serialize", version="0.18.12")
+    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
+        """
+        Serialize the logical plan of this LazyFrame to a file or string in JSON format.
+
+        .. deprecated:: 0.18.12
+            This method has been renamed to :func:`LazyFrame.serialize`.
+
+        Parameters
+        ----------
+        file
+            File path to which the result should be written. If set to ``None``
+            (default), the output is returned as a string instead.
+        """
+        return self.serialize(file)
 
     def pipe(
         self,
@@ -4149,6 +4162,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         return self.select(F.all().approx_n_unique())
+
+    @deprecate_renamed_function("approx_n_unique", version="0.18.12")
+    def approx_unique(self) -> Self:
+        """
+        Approximate count of unique values.
+
+        .. deprecated:: 0.18.12
+            This method has been renamed to :func:`LazyFrame.approx_n_unique`.
+
+        """
+        return self.approx_n_unique()
 
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """

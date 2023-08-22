@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.deprecation import deprecate_renamed_methods
+from polars.utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -16,20 +16,6 @@ if TYPE_CHECKING:
 
 
 @expr_dispatch
-@deprecate_renamed_methods(
-    {
-        "difference": "set_difference",
-        "symmetric_difference": "set_symmetric_difference",
-        "intersection": "set_intersection",
-        "union": "set_union",
-    },
-    versions={
-        "difference": "0.18.10",
-        "symmetric_difference": "0.18.10",
-        "intersection": "0.18.10",
-        "union": "0.18.10",
-    },
-)
 class ListNameSpace:
     """Namespace for list related methods."""
 
@@ -592,7 +578,7 @@ class ListNameSpace:
                 [5, 6, 7, 8]
         ]
 
-        """  # noqa: W505.
+        """  # noqa: W505
 
     def set_difference(self, other: Series) -> Series:
         """
@@ -621,7 +607,7 @@ class ListNameSpace:
                 [5, 7]
         ]
 
-        """  # noqa: W505.
+        """  # noqa: W505
 
     def set_intersection(self, other: Series) -> Series:
         """
@@ -646,7 +632,7 @@ class ListNameSpace:
                 [6]
         ]
 
-        """  # noqa: W505.
+        """  # noqa: W505
 
     def set_symmetric_difference(self, other: Series) -> Series:
         """
@@ -657,4 +643,48 @@ class ListNameSpace:
         other
             Right hand side of the set operation.
 
-        """  # noqa: W505.
+        """  # noqa: W505
+
+    @deprecate_renamed_function("set_union", version="0.18.10")
+    def union(self, other: Series) -> Series:
+        """
+        Compute the SET UNION between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Series.list.set_union``.
+
+        """  # noqa: W505
+        return self.set_union(other)
+
+    @deprecate_renamed_function("set_difference", version="0.18.10")
+    def difference(self, other: Series) -> Series:
+        """
+        Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Series.list.set_difference``.
+
+        """  # noqa: W505
+        return self.set_difference(other)
+
+    @deprecate_renamed_function("set_intersection", version="0.18.10")
+    def intersection(self, other: Series) -> Series:
+        """
+        Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Series.list.set_intersection``.
+
+        """  # noqa: W505
+        return self.set_intersection(other)
+
+    @deprecate_renamed_function("set_symmetric_difference", version="0.18.10")
+    def symmetric_difference(self, other: Series) -> Series:
+        """
+        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Series.list.set_symmetric_difference``.
+
+        """  # noqa: W505
+        return self.set_symmetric_difference(other)
