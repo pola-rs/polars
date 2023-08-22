@@ -258,7 +258,7 @@ pub(super) fn sum(s: &Series) -> PolarsResult<Series> {
 pub(super) fn set_operation(s: &[Series], set_type: SetOperation) -> PolarsResult<Series> {
     let s0 = &s[0];
     let s1 = &s[1];
-    Ok(list_set_operation(s0.list()?, s1.list()?, set_type).into_series())
+    list_set_operation(s0.list()?, s1.list()?, set_type).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "list_any_all")]
