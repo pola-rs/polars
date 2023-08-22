@@ -678,7 +678,7 @@ class DataFrame:
         sample_size: int = 1024,
         eol_char: str = "\n",
         raise_if_empty: bool = True,
-        truncate_ragged_lines: bool = False
+        truncate_ragged_lines: bool = False,
     ) -> DataFrame:
         """
         Read a CSV file into a DataFrame.
@@ -751,7 +751,7 @@ class DataFrame:
                 row_count_offset=row_count_offset,
                 eol_char=eol_char,
                 raise_if_empty=raise_if_empty,
-                truncate_ragged_lines=truncate_ragged_lines
+                truncate_ragged_lines=truncate_ragged_lines,
             )
             if columns is None:
                 return scan.collect()
@@ -793,7 +793,7 @@ class DataFrame:
             sample_size=sample_size,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
-            truncate_ragged_lines=truncate_ragged_lines
+            truncate_ragged_lines=truncate_ragged_lines,
         )
         return self
 

@@ -382,7 +382,7 @@ def read_csv(
             sample_size=sample_size,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
-            truncate_ragged_lines=truncate_ragged_lines
+            truncate_ragged_lines=truncate_ragged_lines,
         )
 
     if new_columns:
@@ -708,7 +708,7 @@ def scan_csv(
     eol_char: str = "\n",
     new_columns: Sequence[str] | None = None,
     raise_if_empty: bool = True,
-    truncate_ragged_lines: bool = False
+    truncate_ragged_lines: bool = False,
 ) -> LazyFrame:
     """
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -908,5 +908,5 @@ def scan_csv(
         try_parse_dates=try_parse_dates,
         eol_char=eol_char,
         raise_if_empty=raise_if_empty,
-        truncate_ragged_lines=truncate_ragged_lines
+        truncate_ragged_lines=truncate_ragged_lines,
     )
