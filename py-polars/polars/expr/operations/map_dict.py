@@ -19,7 +19,7 @@ def map_dict(
     *,
     default: Any = None,
     return_dtype: PolarsDataType | None = None,
-):
+) -> Expr:
     """Implementation of `Expr.map_dict`."""
 
     def _remap_key_or_value_series(

@@ -8568,7 +8568,7 @@ class Expr:
         *,
         default: Any = None,
         return_dtype: PolarsDataType | None = None,
-    ) -> Self:
+    ) -> Expr:
         """
         Replace values in column according to remapping dictionary.
 
