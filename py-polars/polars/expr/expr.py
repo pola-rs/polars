@@ -3702,15 +3702,24 @@ class Expr:
         strategy: ApplyStrategy = "thread_local",
     ) -> Self:
         """
-        Apply a custom/user-defined function (UDF) to each element of a Series.
+        Apply a custom/user-defined function (UDF) to each element of a column.
 
         .. warning::
             This method is much slower than the native expressions API.
             Only use it if you cannot implement your logic otherwise.
 
-        The UDF is applied to each element of a Series. Note that, in a GroupBy
-        context, the Series will have been pre-aggregated and so each element
-        will itself be a Series - see the "Examples" section below.
+        The UDF is applied to each element of a column. Note that, in a GroupBy
+        context, the column will have been pre-aggregated and so each element
+        will itself be a column. Therefore, depending on the context,
+        requirements for `function` differ:
+
+        * Selection
+            Expects `function` to be of type Callable[[Any], Any].
+            Applies a Python function to each individual value in the column.
+        * GroupBy
+            Expects `function` to be of type Callable[[Series], Any].
+            For each group, applies a Python function to the slice of the column
+            corresponding to that group.
 
         Parameters
         ----------
@@ -3786,8 +3795,7 @@ class Expr:
 
         In a GroupBy context, each element of the Series is itself a Series:
 
-<<<<<<< HEAD
-        >>> df.lazy().groupby("b").agg(pl.col("a")).sort("b").collect()
+        >>> (df.lazy().groupby("b", maintain_order=True).agg(pl.col("a")).collect())
         shape: (3, 2)
         ┌─────┬───────────┐
         │ b   ┆ a         │
@@ -3798,23 +3806,15 @@ class Expr:
         │ b   ┆ [2]       │
         │ c   ┆ [3, 1]    │
         └─────┴───────────┘
-        >>> df.lazy().groupby("b").agg(pl.col("a")).sort("b").collect()["a"][-1]
-        shape: (2,)
-        Series: '' [i64]
-        [
-                3
-                1
-        ]
 
         Therefore, from the user's point-of-view, the function is applied by group:
 
-        >>> df.lazy().groupby("b").agg(pl.col("a").apply(lambda x: x.sum())).sort(
-        ...     "b"
-=======
-        >>> df.lazy().group_by("b", maintain_order=True).agg(
-        ...     pl.col("a").apply(lambda x: x.sum())
->>>>>>> upstream/main
-        ... ).collect()
+        >>> (
+        ...     df.lazy()
+        ...     .groupby("b", maintain_order=True)
+        ...     .agg(pl.col("a").apply(lambda x: x.sum()))
+        ...     .collect()
+        ... )
         shape: (3, 2)
         ┌─────┬─────┐
         │ b   ┆ a   │
@@ -3828,8 +3828,13 @@ class Expr:
 
         Tip: again, it is better to implement this with an expression:
 
-        >>> df.group_by("b", maintain_order=True).agg(
-        ...     pl.col("a").sum(),
+        >>> (
+        ...     df.lazy()
+        ...     .group_by("b", maintain_order=True)
+        ...     .agg(
+        ...         pl.col("a").sum(),
+        ...     )
+        ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
 
         """
