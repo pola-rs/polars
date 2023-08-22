@@ -3737,14 +3737,14 @@ class Expr:
             This is more expensive.
         strategy : {'thread_local', 'threading'}
             This functionality is in `alpha` stage. This may be removed
-            /changed without it being considered a breaking change.
+            / changed without it being considered a breaking change.
 
             - 'thread_local': run the python function on a single thread.
             - 'threading': run the python function on separate threads. Use with
-                        care as this can slow performance. This might only speed up
-                        your code if the amount of work per element is significant
-                        and the python function releases the GIL (e.g. via calling
-                        a c function)
+              care as this can slow performance. This might only speed up
+              your code if the amount of work per element is significant
+              and the python function releases the GIL (e.g. via calling
+              a c function)
 
         Notes
         -----
