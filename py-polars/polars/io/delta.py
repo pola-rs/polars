@@ -338,8 +338,6 @@ def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:
         pa.uint16(): pa.int16(),
         pa.uint32(): pa.int32(),
         pa.uint64(): pa.int64(),
-        pa.timestamp("ns"): pa.timestamp("us"),
-        pa.timestamp("ms"): pa.timestamp("us"),
         pa.large_string(): pa.string(),
         pa.large_binary(): pa.binary(),
     }
@@ -350,7 +348,10 @@ def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:
             return list_to_delta_dtype(dtype)
         elif isinstance(dtype, pa.StructType):
             return struct_to_delta_dtype(dtype)
-
+        elif isinstance(dtype, pa.TimestampType):
+            # TODO: Support time zones when implemented by delta-rs. See:
+            # https://github.com/delta-io/delta-rs/issues/1598
+            return pa.timestamp("us")
         try:
             return dtype_map[dtype]
         except KeyError:
