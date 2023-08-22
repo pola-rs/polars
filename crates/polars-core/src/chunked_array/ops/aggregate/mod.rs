@@ -450,8 +450,20 @@ impl Utf8Chunked {
             return None;
         }
         match self.is_sorted_flag() {
-            IsSorted::Ascending => self.get(self.len() - 1),
-            IsSorted::Descending => self.get(0),
+            IsSorted::Ascending => {
+                self.last_non_null().and_then(|idx| {
+                    // Safety:
+                    // last_non_null returns in bound index
+                    unsafe { self.get_unchecked(idx) }
+                })
+            },
+            IsSorted::Descending => {
+                self.first_non_null().and_then(|idx| {
+                    // Safety:
+                    // first_non_null returns in bound index
+                    unsafe { self.get_unchecked(idx) }
+                })
+            },
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::max_string)
@@ -463,8 +475,20 @@ impl Utf8Chunked {
             return None;
         }
         match self.is_sorted_flag() {
-            IsSorted::Ascending => self.get(0),
-            IsSorted::Descending => self.get(self.len() - 1),
+            IsSorted::Ascending => {
+                self.first_non_null().and_then(|idx| {
+                    // Safety:
+                    // first_non_null returns in bound index
+                    unsafe { self.get_unchecked(idx) }
+                })
+            },
+            IsSorted::Descending => {
+                self.last_non_null().and_then(|idx| {
+                    // Safety:
+                    // last_non_null returns in bound index
+                    unsafe { self.get_unchecked(idx) }
+                })
+            },
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::min_string)
