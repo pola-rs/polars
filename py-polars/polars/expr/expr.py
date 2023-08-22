@@ -3710,14 +3710,14 @@ class Expr:
 
         The UDF is applied to each element of a column. Note that, in a GroupBy
         context, the column will have been pre-aggregated and so each element
-        will itself be a column. Therefore, depending on the context,
+        will itself be a Series. Therefore, depending on the context,
         requirements for `function` differ:
 
         * Selection
-            Expects `function` to be of type Callable[[Any], Any].
+            Expects `function` to be of type ``Callable[[Any], Any]``.
             Applies a Python function to each individual value in the column.
         * GroupBy
-            Expects `function` to be of type Callable[[Series], Any].
+            Expects `function` to be of type ``Callable[[Series], Any]``.
             For each group, applies a Python function to the slice of the column
             corresponding to that group.
 
@@ -3793,9 +3793,11 @@ class Expr:
         ...     (pl.col("a") * 2).alias("a_times_2"),
         ... )  # doctest: +IGNORE_RESULT
 
-        In a GroupBy context, each element of the Series is itself a Series:
+        In a GroupBy context, each element of the column is itself a Series:
 
-        >>> df.lazy().groupby("b").agg(pl.col("a")).collect()  # doctest: +IGNORE_RESULT
+        >>> (
+        ...     df.lazy().group_by("b").agg(pl.col("a")).collect()
+        ... )  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬───────────┐
         │ b   ┆ a         │
@@ -3807,11 +3809,11 @@ class Expr:
         │ c   ┆ [3, 1]    │
         └─────┴───────────┘
 
-        Therefore, from the user's point-of-view, the function is applied by group:
+        Therefore, from the user's point-of-view, the function is applied per-group:
 
         >>> (
         ...     df.lazy()
-        ...     .groupby("b")
+        ...     .group_by("b")
         ...     .agg(pl.col("a").apply(lambda x: x.sum()))
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
