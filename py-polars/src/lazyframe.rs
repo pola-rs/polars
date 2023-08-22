@@ -147,7 +147,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (path, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_char, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
-        encoding, row_count, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines
+        encoding, row_count, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, schema
     )
     )]
     fn new_from_csv(
@@ -174,6 +174,7 @@ impl PyLazyFrame {
         eol_char: &str,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
+        schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -197,6 +198,7 @@ impl PyLazyFrame {
             .with_n_rows(n_rows)
             .with_cache(cache)
             .with_dtype_overwrite(overwrite_dtype.as_ref())
+            .with_schema(schema.map(|schema| Arc::new(schema.0)))
             .low_memory(low_memory)
             .with_comment_char(comment_char)
             .with_quote_char(quote_char)

@@ -327,6 +327,7 @@ class LazyFrame:
         quote_char: str | None = r'"',
         skip_rows: int = 0,
         dtypes: SchemaDict | None = None,
+        schema: SchemaDict | None = None,
         null_values: str | Sequence[str] | dict[str, str] | None = None,
         missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
@@ -387,6 +388,7 @@ class LazyFrame:
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
+            schema=schema,
         )
         return self
 

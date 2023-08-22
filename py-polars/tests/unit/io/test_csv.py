@@ -1494,3 +1494,16 @@ def test_csv_ragged_lines() -> None:
             pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
         with pytest.raises(pl.ComputeError, match=r"found more fields than defined"):
             pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
+
+
+def test_provide_schema() -> None:
+    # can be used to overload schema with ragged csv files
+    assert pl.read_csv(
+        io.StringIO("A\nB,ragged\nC"),
+        has_header=False,
+        schema={"A": pl.Utf8, "B": pl.Utf8, "C": pl.Utf8},
+    ).to_dict(False) == {
+        "A": ["A", "B", "C"],
+        "B": [None, "ragged", None],
+        "C": [None, None, None],
+    }
