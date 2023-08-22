@@ -62,7 +62,7 @@ impl CsvSource {
         let reader = CsvReader::from_path(&path)
             .unwrap()
             .has_header(options.has_header)
-            .with_schema(self.schema.clone())
+            .with_schema(Some(self.schema.clone()))
             .with_delimiter(options.delimiter)
             .with_ignore_errors(options.ignore_errors)
             .with_skip_rows(options.skip_rows)

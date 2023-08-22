@@ -139,7 +139,7 @@ impl PyDataFrame {
         skip_rows, projection, separator, rechunk, columns, encoding, n_threads, path,
         overwrite_dtype, overwrite_dtype_slice, low_memory, comment_char, quote_char,
         null_values, missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header,
-        row_count, sample_size, eol_char, raise_if_empty, truncate_ragged_lines)
+        row_count, sample_size, eol_char, raise_if_empty, truncate_ragged_lines, schema)
     )]
     pub fn read_csv(
         py_f: &PyAny,
@@ -170,6 +170,7 @@ impl PyDataFrame {
         eol_char: &str,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
+        schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -219,6 +220,7 @@ impl PyDataFrame {
             .with_path(path)
             .with_dtypes(overwrite_dtype.map(Arc::new))
             .with_dtypes_slice(overwrite_dtype_slice.as_deref())
+            .with_schema(schema.map(|schema| Arc::new(schema.0)))
             .low_memory(low_memory)
             .with_null_values(null_values)
             .with_missing_is_null(!missing_utf8_is_empty_string)

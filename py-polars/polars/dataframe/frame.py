@@ -662,6 +662,7 @@ class DataFrame:
         quote_char: str | None = r'"',
         skip_rows: int = 0,
         dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
+        schema: None | SchemaDict = None,
         null_values: str | Sequence[str] | dict[str, str] | None = None,
         missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
@@ -740,6 +741,7 @@ class DataFrame:
                 quote_char=quote_char,
                 skip_rows=skip_rows,
                 dtypes=dtypes_dict,
+                schema=schema,
                 null_values=null_values,
                 missing_utf8_is_empty_string=missing_utf8_is_empty_string,
                 ignore_errors=ignore_errors,
@@ -795,6 +797,7 @@ class DataFrame:
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
+            schema=schema,
         )
         return self
 

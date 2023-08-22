@@ -181,8 +181,8 @@ where
     /// in the csv parser and expects a complete Schema.
     ///
     /// It is recommended to use [with_dtypes](Self::with_dtypes) instead.
-    pub fn with_schema(mut self, schema: SchemaRef) -> Self {
-        self.schema = Some(schema);
+    pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
+        self.schema = schema;
         self
     }
 

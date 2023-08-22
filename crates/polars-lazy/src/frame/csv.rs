@@ -106,8 +106,8 @@ impl<'a> LazyCsvReader<'a> {
 
     /// Set the CSV file's schema
     #[must_use]
-    pub fn with_schema(mut self, schema: SchemaRef) -> Self {
-        self.schema = Some(schema);
+    pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
+        self.schema = schema;
         self
     }
 
@@ -261,7 +261,7 @@ impl<'a> LazyCsvReader<'a> {
             }
         }
 
-        Ok(self.with_schema(Arc::new(schema)))
+        Ok(self.with_schema(Some(Arc::new(schema))))
     }
 }
 

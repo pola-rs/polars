@@ -28,6 +28,7 @@ def read_csv(
     quote_char: str | None = r'"',
     skip_rows: int = 0,
     dtypes: Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None = None,
+    schema: SchemaDict | None = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
@@ -83,6 +84,10 @@ def read_csv(
         Start reading after ``skip_rows`` lines.
     dtypes
         Overwrite dtypes for specific or all columns during schema inference.
+    schema
+        Provide the schema. This means that polars doesn't do schema inference.
+        This argument expects the complete schema, whereas ``dtypes`` can be used
+        to partially overwrite a schema.
     null_values
         Values to interpret as null values. You can provide a:
 
@@ -365,6 +370,7 @@ def read_csv(
             quote_char=quote_char,
             skip_rows=skip_rows,
             dtypes=dtypes,
+            schema=schema,
             null_values=null_values,
             missing_utf8_is_empty_string=missing_utf8_is_empty_string,
             ignore_errors=ignore_errors,
@@ -691,6 +697,7 @@ def scan_csv(
     quote_char: str | None = r'"',
     skip_rows: int = 0,
     dtypes: SchemaDict | Sequence[PolarsDataType] | None = None,
+    schema: SchemaDict | None = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
@@ -741,6 +748,10 @@ def scan_csv(
         Overwrite dtypes during inference; should be a {colname:dtype,} dict or,
         if providing a list of strings to ``new_columns``, a list of dtypes of
         the same length.
+    schema
+        Provide the schema. This means that polars doesn't do schema inference.
+        This argument expects the complete schema, whereas ``dtypes`` can be used
+        to partially overwrite a schema.
     null_values
         Values to interpret as null values. You can provide a:
 
@@ -892,6 +903,7 @@ def scan_csv(
         quote_char=quote_char,
         skip_rows=skip_rows,
         dtypes=dtypes,  # type: ignore[arg-type]
+        schema=schema,
         null_values=null_values,
         missing_utf8_is_empty_string=missing_utf8_is_empty_string,
         ignore_errors=ignore_errors,
