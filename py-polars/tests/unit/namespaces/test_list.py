@@ -529,7 +529,7 @@ def test_list_set_operations_broadcast() -> None:
     ).to_dict(False) == {"a": [[2, 3, 1], [3, 1, 2], [1, 2, 3]]}
     assert df.with_columns(
         pl.col("a").list.set_difference(pl.lit(pl.Series([[1, 2]])))
-    ).to_dict(False) == {"a": [[3], [3], [1]]}
+    ).to_dict(False) == {"a": [[3], [3], [3]]}
     assert df.with_columns(
         pl.lit(pl.Series("a", [[1, 2]])).list.set_difference("a")
     ).to_dict(False) == {"a": [[1], [2], []]}
