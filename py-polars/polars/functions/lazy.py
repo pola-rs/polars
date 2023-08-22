@@ -303,7 +303,7 @@ def count(column: str | Series | None = None) -> Expr | int:
     ╞═══════╡
     │ 3     │
     └───────┘
-    >>> df.groupby("c", maintain_order=True).agg(pl.count())
+    >>> df.group_by("c", maintain_order=True).agg(pl.count())
     shape: (2, 2)
     ┌─────┬───────┐
     │ c   ┆ count │
@@ -1083,7 +1083,7 @@ def apply(
     │ 2     ┆ 3   ┆ 7   │
     └───────┴─────┴─────┘
     >>> (
-    ...     df.groupby("group").agg(
+    ...     df.group_by("group").agg(
     ...         pl.apply(
     ...             exprs=["a", "b"],
     ...             function=lambda list_of_series: list_of_series[0]

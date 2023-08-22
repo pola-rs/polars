@@ -23,7 +23,7 @@ def test_apply_none() -> None:
     )
 
     out = (
-        df.groupby("g", maintain_order=True).agg(
+        df.group_by("g", maintain_order=True).agg(
             pl.apply(
                 exprs=["a", pl.col("b") ** 4, pl.col("a") / 4],
                 function=lambda x: x[0] * x[1] + x[2].sum(),
@@ -44,7 +44,7 @@ def test_apply_none() -> None:
             return s[0]
 
     out = (
-        df.groupby("g", maintain_order=True).agg(
+        df.group_by("g", maintain_order=True).agg(
             pl.apply(
                 exprs=["a", pl.col("b") ** 4, pl.col("a") / 4], function=func
             ).alias("multiple")
@@ -72,7 +72,7 @@ def test_agg_objects() -> None:
         def __init__(self, payload: Any):
             self.payload = payload
 
-    out = df.groupby("groups").agg(
+    out = df.group_by("groups").agg(
         [
             pl.apply(
                 [pl.col("dates"), pl.col("names")], lambda s: Foo(dict(zip(s[0], s[1])))
@@ -98,7 +98,7 @@ def test_apply_arithmetic_consistency() -> None:
     with pytest.warns(
         PolarsInefficientApplyWarning, match="In this case, you can replace"
     ):
-        assert df.groupby("A").agg(pl.col("B").apply(lambda x: x + 1.0))[
+        assert df.group_by("A").agg(pl.col("B").apply(lambda x: x + 1.0))[
             "B"
         ].to_list() == [[3.0, 4.0]]
 
@@ -135,7 +135,7 @@ def test_apply_numpy_out_3057() -> None:
             "y": [0.0, 1, 1.3, 2, 3, 4],
         }
     )
-    result = df.groupby("id", maintain_order=True).agg(
+    result = df.group_by("id", maintain_order=True).agg(
         pl.apply(["y", "t"], lambda lst: np.trapz(y=lst[0], x=lst[1])).alias("result")
     )
     expected = pl.DataFrame({"id": [0, 1], "result": [1.955, 13.0]})
@@ -220,7 +220,7 @@ def test_apply_type_propagation() -> None:
                 "b": [{"c": 1, "d": 2}, {"c": 2, "d": 3}, {"c": None, "d": None}],
             }
         )
-        .groupby("a", maintain_order=True)
+        .group_by("a", maintain_order=True)
         .agg(
             [
                 pl.when(pl.col("b").null_count() == 0)
@@ -322,7 +322,7 @@ def test_apply_pass_name() -> None:
     def applyer(s: pl.Series) -> pl.Series:
         return pl.Series([mapper[s.name]])
 
-    assert df.groupby("bar", maintain_order=True).agg(
+    assert df.group_by("bar", maintain_order=True).agg(
         [
             pl.col("foo").apply(applyer, pass_name=True),
         ]
@@ -395,7 +395,7 @@ def test_apply_10237() -> None:
 
 def test_apply_on_empty_col_10639() -> None:
     df = pl.DataFrame({"A": [], "B": []})
-    res = df.groupby("B").agg(
+    res = df.group_by("B").agg(
         pl.col("A")
         .apply(lambda x: x, return_dtype=pl.Int32, strategy="threading")
         .alias("Foo")
@@ -404,7 +404,7 @@ def test_apply_on_empty_col_10639() -> None:
         "B": [],
         "Foo": [],
     }
-    res = df.groupby("B").agg(
+    res = df.group_by("B").agg(
         pl.col("A")
         .apply(lambda x: x, return_dtype=pl.Int32, strategy="thread_local")
         .alias("Foo")

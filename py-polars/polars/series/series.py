@@ -2327,7 +2327,7 @@ class Series:
             Number of valid values there should be in the window before the expression
             is evaluated. valid values = `length - null_count`
         parallel
-            Run in parallel. Don't do this in a groupby or another operation that
+            Run in parallel. Don't do this in a group by or another operation that
             already has much parallelization.
 
         Warnings

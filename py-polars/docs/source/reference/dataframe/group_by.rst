@@ -2,9 +2,9 @@
 GroupBy
 =======
 
-This namespace is available after calling :code:`DataFrame.groupby(...)`.
+This namespace is available after calling :code:`DataFrame.group_by(...)`.
 
-.. currentmodule:: polars.dataframe.groupby
+.. currentmodule:: polars.dataframe.group_by
 .. autosummary::
    :toctree: api/
 

@@ -61,7 +61,7 @@ def test_categorical() -> None:
         ]
     )
     out = (
-        df.groupby(["a", "b"])
+        df.group_by(["a", "b"])
         .agg(
             [
                 pl.col("c").count().alias("num_different_c"),
@@ -90,11 +90,11 @@ def test_cast_inner() -> None:
     )
 
 
-def test_list_empty_groupby_result_3521() -> None:
+def test_list_empty_group_by_result_3521() -> None:
     # Create a left relation where the join column contains a null value
     left = pl.DataFrame().with_columns(
         [
-            pl.lit(1).alias("groupby_column"),
+            pl.lit(1).alias("group_by_column"),
             pl.lit(None).cast(pl.Int32).alias("join_column"),
         ]
     )
@@ -111,9 +111,9 @@ def test_list_empty_groupby_result_3521() -> None:
     # This will panic on polars version 0.13.38 and 0.13.39
     assert (
         left.join(right, on="join_column", how="left")
-        .groupby("groupby_column")
+        .group_by("group_by_column")
         .agg(pl.col("n_unique_column").drop_nulls())
-    ).to_dict(False) == {"groupby_column": [1], "n_unique_column": [[]]}
+    ).to_dict(False) == {"group_by_column": [1], "n_unique_column": [[]]}
 
 
 def test_list_fill_null() -> None:
@@ -177,21 +177,21 @@ def test_inner_type_categorical_on_rechunk() -> None:
     assert pl.concat([df, df], rechunk=True).dtypes == [pl.List(pl.Categorical)]
 
 
-def test_groupby_list_column() -> None:
+def test_group_by_list_column() -> None:
     df = (
         pl.DataFrame({"a": ["a", "b", "a"]})
         .with_columns(pl.col("a").cast(pl.Categorical))
-        .groupby("a", maintain_order=True)
+        .group_by("a", maintain_order=True)
         .agg(pl.col("a").alias("a_list"))
     )
 
-    assert df.groupby("a_list", maintain_order=True).first().to_dict(False) == {
+    assert df.group_by("a_list", maintain_order=True).first().to_dict(False) == {
         "a_list": [["a", "a"], ["b"]],
         "a": ["a", "b"],
     }
 
 
-def test_groupby_multiple_keys_contains_list_column() -> None:
+def test_group_by_multiple_keys_contains_list_column() -> None:
     df = (
         pl.DataFrame(
             {
@@ -200,7 +200,7 @@ def test_groupby_multiple_keys_contains_list_column() -> None:
                 "c": [3, 2, 1, 0],
             }
         )
-        .groupby(["a", "b"], maintain_order=True)
+        .group_by(["a", "b"], maintain_order=True)
         .agg(pl.all())
     )
     assert df.to_dict(False) == {
@@ -263,7 +263,7 @@ def test_fast_explode_on_list_struct_6208() -> None:
 def test_flat_aggregation_to_list_conversion_6918() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [[0, 1], [2, 3], [4, 5]]})
 
-    assert df.groupby("a", maintain_order=True).agg(
+    assert df.group_by("a", maintain_order=True).agg(
         pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
     ).to_dict(False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
 
@@ -398,7 +398,7 @@ def test_logical_type_struct_agg_list() -> None:
         {"cats": ["Value1", "Value2", "Value1"]},
         schema_overrides={"cats": pl.Categorical},
     )
-    out = df.groupby(1).agg(pl.struct("cats"))
+    out = df.group_by(1).agg(pl.struct("cats"))
     assert out.dtypes == [
         pl.Int32,
         pl.List(pl.Struct([pl.Field("cats", pl.Categorical)])),
@@ -418,7 +418,7 @@ def test_logical_parallel_list_collect() -> None:
             },
             schema_overrides={"Values": pl.Categorical},
         )
-        .groupby("Group")
+        .group_by("Group")
         .agg(pl.col("Values").value_counts(sort=True))
         .explode("Values")
         .unnest("Values")
@@ -498,7 +498,7 @@ def test_list_amortized_iter_clear_settings_10126() -> None:
     out = (
         pl.DataFrame({"a": [[1], [1], [2]], "b": [[1, 2], [1, 3], [4]]})
         .explode("a")
-        .groupby("a")
+        .group_by("a")
         .agg(pl.col("b").flatten())
         .with_columns(pl.col("b").list.unique())
         .sort("a")

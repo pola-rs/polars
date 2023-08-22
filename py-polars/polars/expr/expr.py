@@ -1205,7 +1205,7 @@ class Expr:
         ...         "value": [94, 95, 96, 97, 97, 99],
         ...     }
         ... )
-        >>> df.groupby("group", maintain_order=True).agg(pl.col("value").agg_groups())
+        >>> df.group_by("group", maintain_order=True).agg(pl.col("value").agg_groups())
         shape: (2, 2)
         ┌───────┬───────────┐
         │ group ┆ value     │
@@ -1851,7 +1851,7 @@ class Expr:
         Sort this column.
 
         When used in a projection/selection context, the whole column is sorted.
-        When used in a groupby context, the groups are sorted.
+        When used in a group by context, the groups are sorted.
 
         Parameters
         ----------
@@ -1904,7 +1904,7 @@ class Expr:
         │ null │
         └──────┘
 
-        When sorting in a groupby context, the groups are sorted.
+        When sorting in a group by context, the groups are sorted.
 
         >>> df = pl.DataFrame(
         ...     {
@@ -1912,7 +1912,7 @@ class Expr:
         ...         "value": [1, 98, 2, 3, 99, 4],
         ...     }
         ... )
-        >>> df.groupby("group").agg(pl.col("value").sort())  # doctest: +IGNORE_RESULT
+        >>> df.group_by("group").agg(pl.col("value").sort())  # doctest: +IGNORE_RESULT
         shape: (2, 2)
         ┌───────┬────────────┐
         │ group ┆ value      │
@@ -2158,7 +2158,7 @@ class Expr:
         Sort this column by the ordering of other columns.
 
         When used in a projection/selection context, the whole column is sorted.
-        When used in a groupby context, the groups are sorted.
+        When used in a group by context, the groups are sorted.
 
         Parameters
         ----------
@@ -2240,9 +2240,9 @@ class Expr:
         │ b     │
         └───────┘
 
-        When sorting in a groupby context, the groups are sorted.
+        When sorting in a group by context, the groups are sorted.
 
-        >>> df.groupby("group").agg(
+        >>> df.group_by("group").agg(
         ...     pl.col("value1").sort_by("value2")
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 2)
@@ -2258,7 +2258,7 @@ class Expr:
         Take a single row from each group where a column attains its minimal value
         within that group.
 
-        >>> df.groupby("group").agg(
+        >>> df.group_by("group").agg(
         ...     pl.all().sort_by("value2").first()
         ... )  # doctest: +IGNORE_RESULT
         shape: (2, 3)
@@ -2312,7 +2312,7 @@ class Expr:
         ...         "value": [1, 98, 2, 3, 99, 4],
         ...     }
         ... )
-        >>> df.groupby("group", maintain_order=True).agg(pl.col("value").take(1))
+        >>> df.group_by("group", maintain_order=True).agg(pl.col("value").take(1))
         shape: (2, 2)
         ┌───────┬───────┐
         │ group ┆ value │
@@ -3056,7 +3056,7 @@ class Expr:
         """
         Compute expressions over the given groups.
 
-        This expression is similar to performing a groupby aggregation and joining the
+        This expression is similar to performing a group by aggregation and joining the
         result back into the original dataframe.
 
         The outcome is similar to how `window functions
@@ -3576,7 +3576,7 @@ class Expr:
         ...         "b": [1, 2, 3],
         ...     }
         ... )
-        >>> df.groupby("group_col").agg(
+        >>> df.group_by("group_col").agg(
         ...     [
         ...         pl.col("b").filter(pl.col("b") < 2).sum().alias("lt"),
         ...         pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
@@ -3614,7 +3614,7 @@ class Expr:
         ...         "b": [1, 2, 3],
         ...     }
         ... )
-        >>> df.groupby("group_col").agg(
+        >>> df.group_by("group_col").agg(
         ...     [
         ...         pl.col("b").where(pl.col("b") < 2).sum().alias("lt"),
         ...         pl.col("b").where(pl.col("b") >= 2).sum().alias("gte"),
@@ -3791,7 +3791,7 @@ class Expr:
 
         In a GroupBy context the function is applied by group:
 
-        >>> df.lazy().groupby("b", maintain_order=True).agg(
+        >>> df.lazy().group_by("b", maintain_order=True).agg(
         ...     pl.col("a").apply(lambda x: x.sum())
         ... ).collect()
         shape: (3, 2)
@@ -3807,7 +3807,7 @@ class Expr:
 
         It is better to implement this with an expression:
 
-        >>> df.groupby("b", maintain_order=True).agg(
+        >>> df.group_by("b", maintain_order=True).agg(
         ...     pl.col("a").sum(),
         ... )  # doctest: +IGNORE_RESULT
 
@@ -3897,7 +3897,7 @@ class Expr:
         ...         "values": [[1, 2], [2, 3], [4]],
         ...     }
         ... )
-        >>> df.groupby("group").agg(pl.col("values").flatten())  # doctest: +SKIP
+        >>> df.group_by("group").agg(pl.col("values").flatten())  # doctest: +SKIP
         shape: (2, 2)
         ┌───────┬───────────┐
         │ group ┆ values    │
@@ -5234,7 +5234,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -5440,7 +5440,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -5673,7 +5673,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -5906,7 +5906,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -6138,7 +6138,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -6370,7 +6370,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -6605,7 +6605,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -6766,7 +6766,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `groupby_rolling` this method can cache the window size
+        window, consider using `group_by_rolling` this method can cache the window size
         computation.
 
         Examples
@@ -8446,7 +8446,7 @@ class Expr:
             Number of valid values there should be in the window before the expression
             is evaluated. valid values = `length - null_count`
         parallel
-            Run in parallel. Don't do this in a groupby or another operation that
+            Run in parallel. Don't do this in a group by or another operation that
             already has much parallelization.
 
         Warnings

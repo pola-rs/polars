@@ -30,7 +30,7 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.dataframe._html import NotebookFormatter
-from polars.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
+from polars.dataframe.group_by import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -84,6 +84,7 @@ from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
+    deprecate_renamed_function,
     deprecate_renamed_methods,
     deprecate_renamed_parameter,
 )
@@ -4923,14 +4924,14 @@ class DataFrame:
         """
         return self._from_pydf(self._df.with_row_count(name, offset))
 
-    def groupby(
+    def group_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
         maintain_order: bool = False,
     ) -> GroupBy:
         """
-        Start a groupby operation.
+        Start a group by operation.
 
         Parameters
         ----------
@@ -4941,7 +4942,7 @@ class DataFrame:
             Additional columns to group by, specified as positional arguments.
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
-            This is slower than a default groupby.
+            This is slower than a default group by.
             Settings this to ``True`` blocks the possibility
             to run on the streaming engine.
 
@@ -4966,7 +4967,7 @@ class DataFrame:
         ...         "c": [5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> df.groupby("a").agg(pl.col("b").sum())  # doctest: +IGNORE_RESULT
+        >>> df.group_by("a").agg(pl.col("b").sum())  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -4981,7 +4982,7 @@ class DataFrame:
         Set ``maintain_order=True`` to ensure the order of the groups is consistent with
         the input.
 
-        >>> df.groupby("a", maintain_order=True).agg(pl.col("c"))
+        >>> df.group_by("a", maintain_order=True).agg(pl.col("c"))
         shape: (3, 2)
         ┌─────┬───────────┐
         │ a   ┆ c         │
@@ -4995,7 +4996,7 @@ class DataFrame:
 
         Group by multiple columns by passing a list of column names.
 
-        >>> df.groupby(["a", "b"]).agg(pl.max("c"))  # doctest: +IGNORE_RESULT
+        >>> df.group_by(["a", "b"]).agg(pl.max("c"))  # doctest: +IGNORE_RESULT
         shape: (4, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -5011,7 +5012,7 @@ class DataFrame:
         Or use positional arguments to group by multiple columns in the same way.
         Expressions are also accepted.
 
-        >>> df.groupby("a", pl.col("b") // 2).agg(pl.col("c").mean())  # doctest: +SKIP
+        >>> df.group_by("a", pl.col("b") // 2).agg(pl.col("c").mean())  # doctest: +SKIP
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -5026,7 +5027,7 @@ class DataFrame:
         The ``GroupBy`` object returned by this method is iterable, returning the name
         and data of each group.
 
-        >>> for name, data in df.groupby("a"):  # doctest: +SKIP
+        >>> for name, data in df.group_by("a"):  # doctest: +SKIP
         ...     print(name)
         ...     print(data)
         ...
@@ -5063,7 +5064,7 @@ class DataFrame:
         """
         return GroupBy(self, by, *more_by, maintain_order=maintain_order)
 
-    def groupby_rolling(
+    def group_by_rolling(
         self,
         index_column: IntoExpr,
         *,
@@ -5076,9 +5077,9 @@ class DataFrame:
         """
         Create rolling groups based on a time, Int32, or Int64 column.
 
-        Different from a ``dynamic_groupby`` the windows are now determined by the
+        Different from a ``group_by_dynamic`` the windows are now determined by the
         individual values and are not of constant intervals. For constant intervals use
-        *groupby_dynamic*.
+        :func:`DataFrame.group_by_dynamic`.
 
         If you have a time series ``<t_0, t_1, ..., t_n>``, then by default the
         windows created will be
@@ -5115,7 +5116,7 @@ class DataFrame:
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        In case of a groupby_rolling on an integer column, the windows are defined by:
+        In case of a group_by_rolling on an integer column, the windows are defined by:
 
         - **"1i"      # length 1**
         - **"10i"     # length 10**
@@ -5128,7 +5129,7 @@ class DataFrame:
             This column must be sorted in ascending order (or, if `by` is specified,
             then it must be sorted in ascending order within each group).
 
-            In case of a rolling groupby on indices, dtype needs to be one of
+            In case of a rolling group by on indices, dtype needs to be one of
             {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
             performance matters use an Int64 column.
         period
@@ -5155,7 +5156,7 @@ class DataFrame:
 
         See Also
         --------
-        groupby_dynamic
+        group_by_dynamic
 
         Examples
         --------
@@ -5170,7 +5171,7 @@ class DataFrame:
         >>> df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_columns(
         ...     pl.col("dt").str.strptime(pl.Datetime).set_sorted()
         ... )
-        >>> out = df.groupby_rolling(index_column="dt", period="2d").agg(
+        >>> out = df.group_by_rolling(index_column="dt", period="2d").agg(
         ...     [
         ...         pl.sum("a").alias("sum_a"),
         ...         pl.min("a").alias("min_a"),
@@ -5200,7 +5201,7 @@ class DataFrame:
             self, index_column, period, offset, closed, by, check_sorted
         )
 
-    def groupby_dynamic(
+    def group_by_dynamic(
         self,
         index_column: IntoExpr,
         *,
@@ -5218,7 +5219,7 @@ class DataFrame:
         Group based on a time value (or index value of type Int32, Int64).
 
         Time windows are calculated and rows are assigned to windows. Different from a
-        normal groupby is that a row can be member of multiple groups. The time/index
+        normal group by is that a row can be member of multiple groups. The time/index
         window could be seen as a rolling window, with a window size determined by
         dates/times/values instead of slots in the DataFrame.
 
@@ -5255,7 +5256,7 @@ class DataFrame:
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        In case of a groupby_dynamic on an integer column, the windows are defined by:
+        In case of a group_by_dynamic on an integer column, the windows are defined by:
 
         - "1i"      # length 1
         - "10i"     # length 10
@@ -5272,7 +5273,7 @@ class DataFrame:
             This column must be sorted in ascending order (or, if `by` is specified,
             then it must be sorted in ascending order within each group).
 
-            In case of a dynamic groupby on indices, dtype needs to be one of
+            In case of a dynamic group by on indices, dtype needs to be one of
             {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
             performance matters use an Int64 column.
         every
@@ -5325,7 +5326,7 @@ class DataFrame:
         .. code-block:: python
 
             # polars
-            df.groupby_dynamic("ts", every="1d").agg(pl.col("value").sum())
+            df.group_by_dynamic("ts", every="1d").agg(pl.col("value").sum())
 
         is equivalent to
 
@@ -5371,7 +5372,7 @@ class DataFrame:
 
         Group by windows of 1 hour starting at 2021-12-16 00:00:00.
 
-        >>> df.groupby_dynamic("time", every="1h", closed="right").agg(
+        >>> df.group_by_dynamic("time", every="1h", closed="right").agg(
         ...     [
         ...         pl.col("time").min().alias("time_min"),
         ...         pl.col("time").max().alias("time_max"),
@@ -5391,7 +5392,7 @@ class DataFrame:
 
         The window boundaries can also be added to the aggregation result
 
-        >>> df.groupby_dynamic(
+        >>> df.group_by_dynamic(
         ...     "time", every="1h", include_boundaries=True, closed="right"
         ... ).agg([pl.col("time").count().alias("time_count")])
         shape: (4, 4)
@@ -5409,7 +5410,7 @@ class DataFrame:
         When closed="left", should not include right end of interval
         [lower_bound, upper_bound)
 
-        >>> df.groupby_dynamic("time", every="1h", closed="left").agg(
+        >>> df.group_by_dynamic("time", every="1h", closed="left").agg(
         ...     [
         ...         pl.col("time").count().alias("time_count"),
         ...         pl.col("time").alias("time_agg_list"),
@@ -5429,7 +5430,7 @@ class DataFrame:
 
         When closed="both" the time values at the window boundaries belong to 2 groups.
 
-        >>> df.groupby_dynamic("time", every="1h", closed="both").agg(
+        >>> df.group_by_dynamic("time", every="1h", closed="both").agg(
         ...     [pl.col("time").count().alias("time_count")]
         ... )
         shape: (5, 2)
@@ -5445,7 +5446,7 @@ class DataFrame:
         │ 2021-12-16 03:00:00 ┆ 1          │
         └─────────────────────┴────────────┘
 
-        Dynamic groupbys can also be combined with grouping on normal keys
+        Dynamic group bys can also be combined with grouping on normal keys
 
         >>> df = pl.DataFrame(
         ...     {
@@ -5473,7 +5474,7 @@ class DataFrame:
         │ 2021-12-16 02:30:00 ┆ a      │
         │ 2021-12-16 03:00:00 ┆ a      │
         └─────────────────────┴────────┘
-        >>> df.groupby_dynamic(
+        >>> df.group_by_dynamic(
         ...     "time",
         ...     every="1h",
         ...     closed="both",
@@ -5495,7 +5496,7 @@ class DataFrame:
         │ b      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 1          │
         └────────┴─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
 
-        Dynamic groupby on an index column
+        Dynamic group by on an index column
 
         >>> df = pl.DataFrame(
         ...     {
@@ -5504,7 +5505,7 @@ class DataFrame:
         ...     }
         ... )
         >>> (
-        ...     df.groupby_dynamic(
+        ...     df.group_by_dynamic(
         ...         "idx",
         ...         every="2i",
         ...         period="3i",
@@ -8512,7 +8513,7 @@ class DataFrame:
         In aggregate context there is also an equivalent method for returning the
         unique values per-group:
 
-        >>> df_agg_nunique = df.groupby(by=["a"]).n_unique()
+        >>> df_agg_nunique = df.group_by(by=["a"]).n_unique()
 
         Examples
         --------
@@ -9676,6 +9677,183 @@ class DataFrame:
 
         """
         return self.lazy().update(other.lazy(), on, how).collect(no_optimization=True)
+
+    @deprecate_renamed_function("group_by", version="0.19.0")
+    def groupby(
+        self,
+        by: IntoExpr | Iterable[IntoExpr],
+        *more_by: IntoExpr,
+        maintain_order: bool = False,
+    ) -> GroupBy:
+        """
+        Start a group by operation.
+
+        Alias for :func:`DataFrame.group_by`.
+
+        Parameters
+        ----------
+        by
+            Column(s) to group by. Accepts expression input. Strings are parsed as
+            column names.
+        *more_by
+            Additional columns to group by, specified as positional arguments.
+        maintain_order
+            Ensure that the order of the groups is consistent with the input data.
+            This is slower than a default group by.
+            Settings this to ``True`` blocks the possibility
+            to run on the streaming engine.
+
+            .. note::
+                Within each group, the order of rows is always preserved, regardless
+                of this argument.
+
+        Returns
+        -------
+        GroupBy
+            Object which can be used to perform aggregations.
+
+        """
+        return self.group_by(by, *more_by, maintain_order=maintain_order)
+
+    @deprecate_renamed_function("group_by_rolling", version="0.19.0")
+    def groupby_rolling(
+        self,
+        index_column: IntoExpr,
+        *,
+        period: str | timedelta,
+        offset: str | timedelta | None = None,
+        closed: ClosedInterval = "right",
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        check_sorted: bool = True,
+    ) -> RollingGroupBy:
+        """
+        Create rolling groups based on a time, Int32, or Int64 column.
+
+        Alias for :func:`DataFrame.group_by_rolling`.
+
+        Parameters
+        ----------
+        index_column
+            Column used to group based on the time window.
+            Often of type Date/Datetime.
+            This column must be sorted in ascending order (or, if `by` is specified,
+            then it must be sorted in ascending order within each group).
+
+            In case of a rolling group by on indices, dtype needs to be one of
+            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
+            performance matters use an Int64 column.
+        period
+            length of the window - must be non-negative
+        offset
+            offset of the window. Default is -period
+        closed : {'right', 'left', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive).
+        by
+            Also group by this column/these columns
+        check_sorted
+            When the ``by`` argument is given, polars can not check sortedness
+            by the metadata and has to do a full scan on the index column to
+            verify data is sorted. This is expensive. If you are sure the
+            data within the by groups is sorted, you can set this to ``False``.
+            Doing so incorrectly will lead to incorrect output
+
+        """
+        return self.group_by_rolling(
+            index_column,
+            period=period,
+            offset=offset,
+            closed=closed,
+            by=by,
+            check_sorted=check_sorted,
+        )
+
+    @deprecate_renamed_function("group_by_dynamic", version="0.19.0")
+    def groupby_dynamic(
+        self,
+        index_column: IntoExpr,
+        *,
+        every: str | timedelta,
+        period: str | timedelta | None = None,
+        offset: str | timedelta | None = None,
+        truncate: bool = True,
+        include_boundaries: bool = False,
+        closed: ClosedInterval = "left",
+        by: IntoExpr | Iterable[IntoExpr] | None = None,
+        start_by: StartBy = "window",
+        check_sorted: bool = True,
+    ) -> DynamicGroupBy:
+        """
+        Group based on a time value (or index value of type Int32, Int64).
+
+        Alias for :func:`DataFrame.group_by_rolling`.
+
+        Parameters
+        ----------
+        index_column
+            Column used to group based on the time window.
+            Often of type Date/Datetime.
+            This column must be sorted in ascending order (or, if `by` is specified,
+            then it must be sorted in ascending order within each group).
+
+            In case of a dynamic group by on indices, dtype needs to be one of
+            {Int32, Int64}. Note that Int32 gets temporarily cast to Int64, so if
+            performance matters use an Int64 column.
+        every
+            interval of the window
+        period
+            length of the window, if None it is equal to 'every'
+        offset
+            offset of the window if None and period is None it will be equal to negative
+            `every`
+        truncate
+            truncate the time value to the window lower bound
+        include_boundaries
+            Add the lower and upper bound of the window to the "_lower_bound" and
+            "_upper_bound" columns. This will impact performance because it's harder to
+            parallelize
+        closed : {'left', 'right', 'both', 'none'}
+            Define which sides of the temporal interval are closed (inclusive).
+        by
+            Also group by this column/these columns
+        start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
+            The strategy to determine the start of the first window by.
+
+            * 'window': Truncate the start of the window with the 'every' argument.
+              Note that weekly windows start on Monday.
+            * 'datapoint': Start from the first encountered data point.
+            * a day of the week (only takes effect if `every` contains ``'w'``):
+
+              * 'monday': Start the window on the Monday before the first data point.
+              * 'tuesday': Start the window on the Tuesday before the first data point.
+              * ...
+              * 'sunday': Start the window on the Sunday before the first data point.
+        check_sorted
+            When the ``by`` argument is given, polars can not check sortedness
+            by the metadata and has to do a full scan on the index column to
+            verify data is sorted. This is expensive. If you are sure the
+            data within the by groups is sorted, you can set this to ``False``.
+            Doing so incorrectly will lead to incorrect output
+
+        Returns
+        -------
+        DynamicGroupBy
+            Object you can call ``.agg`` on to aggregate by groups, the result
+            of which will be sorted by `index_column` (but note that if `by` columns are
+            passed, it will only be sorted within each `by` group).
+
+        """  # noqa: W505
+        return self.group_by_dynamic(
+            index_column,
+            every=every,
+            period=period,
+            offset=offset,
+            truncate=truncate,
+            include_boundaries=include_boundaries,
+            closed=closed,
+            by=by,
+            start_by=start_by,
+            check_sorted=check_sorted,
+        )
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

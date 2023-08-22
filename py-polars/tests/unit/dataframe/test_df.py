@@ -744,9 +744,9 @@ def test_shift() -> None:
     assert_frame_equal(a, b)
 
 
-def test_custom_groupby() -> None:
+def test_custom_group_by() -> None:
     df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
-    out = df.groupby("b", maintain_order=True).agg(
+    out = df.group_by("b", maintain_order=True).agg(
         [pl.col("a").apply(lambda x: x.sum(), return_dtype=pl.Int64)]
     )
     assert out.rows() == [("a", 1), ("b", 2), ("c", 2)]
@@ -981,7 +981,7 @@ def test_init_series_edge_cases() -> None:
     assert df3.columns == ["column_0", "column_1"]
 
 
-def test_head_groupby() -> None:
+def test_head_group_by() -> None:
     commodity_prices = {
         "commodity": [
             "Wheat",
@@ -1024,7 +1024,7 @@ def test_head_groupby() -> None:
     keys = ["commodity", "location"]
     out = (
         df.sort(by="price", descending=True)
-        .groupby(keys, maintain_order=True)
+        .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).keep_name()])
         .explode(pl.col("*").exclude(keys))
     )
@@ -1041,12 +1041,12 @@ def test_head_groupby() -> None:
     df = pl.DataFrame(
         {"letters": ["c", "c", "a", "c", "a", "b"], "nrs": [1, 2, 3, 4, 5, 6]}
     )
-    out = df.groupby("letters").tail(2).sort("letters")
+    out = df.group_by("letters").tail(2).sort("letters")
     assert_frame_equal(
         out,
         pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 2, 4]}),
     )
-    out = df.groupby("letters").head(2).sort("letters")
+    out = df.group_by("letters").head(2).sort("letters")
     assert_frame_equal(
         out,
         pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 1, 2]}),
@@ -1854,7 +1854,7 @@ def test_create_df_from_object() -> None:
 
 
 def test_hashing_on_python_objects() -> None:
-    # see if we can do a groupby, drop_duplicates on a DataFrame with objects.
+    # see if we can do a group_by, drop_duplicates on a DataFrame with objects.
     # this requires that the hashing and aggregations are done on python objects
 
     df = pl.DataFrame({"a": [1, 1, 3, 4], "b": [1, 1, 2, 2]})
@@ -1867,7 +1867,7 @@ def test_hashing_on_python_objects() -> None:
             return True
 
     df = df.with_columns(pl.col("a").apply(lambda x: Foo()).alias("foo"))
-    assert df.groupby(["foo"]).first().shape == (1, 3)
+    assert df.group_by(["foo"]).first().shape == (1, 3)
     assert df.unique().shape == (3, 3)
 
 
@@ -1943,7 +1943,7 @@ def test_apply_dataframe_return() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_groupby_cat_list() -> None:
+def test_group_by_cat_list() -> None:
     grouped = (
         pl.DataFrame(
             [
@@ -1952,7 +1952,7 @@ def test_groupby_cat_list() -> None:
             ]
         )
         .with_columns(pl.col("str_column").cast(pl.Categorical).alias("cat_column"))
-        .groupby("int_column", maintain_order=True)
+        .group_by("int_column", maintain_order=True)
         .agg([pl.col("cat_column")])["cat_column"]
     )
 
@@ -1961,12 +1961,12 @@ def test_groupby_cat_list() -> None:
     assert out[0] == "a"
 
 
-def test_groupby_agg_n_unique_floats() -> None:
+def test_group_by_agg_n_unique_floats() -> None:
     # tests proper dispatch
     df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 2.0]})
 
     for dtype in [pl.Float32, pl.Float64]:
-        out = df.groupby("a", maintain_order=True).agg(
+        out = df.group_by("a", maintain_order=True).agg(
             [pl.col("b").cast(dtype).n_unique()]
         )
         assert out["b"].to_list() == [2, 1]
@@ -2033,7 +2033,7 @@ def test_extension() -> None:
     df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
     assert sys.getrefcount(foos[0]) == base_count + 1
 
-    out = df.groupby("groups", maintain_order=True).agg(pl.col("a").alias("a"))
+    out = df.group_by("groups", maintain_order=True).agg(pl.col("a").alias("a"))
     assert sys.getrefcount(foos[0]) == base_count + 2
     s = out["a"].list.explode()
     assert sys.getrefcount(foos[0]) == base_count + 3
@@ -2048,25 +2048,25 @@ def test_extension() -> None:
     assert sys.getrefcount(foos[0]) == base_count
 
 
-def test_groupby_order_dispatch() -> None:
+def test_group_by_order_dispatch() -> None:
     df = pl.DataFrame({"x": list("bab"), "y": range(3)})
 
-    result = df.groupby("x", maintain_order=True).count()
+    result = df.group_by("x", maintain_order=True).count()
     expected = pl.DataFrame(
         {"x": ["b", "a"], "count": [2, 1]}, schema_overrides={"count": pl.UInt32}
     )
     assert_frame_equal(result, expected)
 
-    result = df.groupby("x", maintain_order=True).all()
+    result = df.group_by("x", maintain_order=True).all()
     expected = pl.DataFrame({"x": ["b", "a"], "y": [[0, 2], [1]]})
     assert_frame_equal(result, expected)
 
 
-def test_partitioned_groupby_order() -> None:
+def test_partitioned_group_by_order() -> None:
     # check if group ordering is maintained.
     # we only have 30 groups, so this triggers a partitioned group by
     df = pl.DataFrame({"x": [chr(v) for v in range(33, 63)], "y": range(30)})
-    out = df.groupby("x", maintain_order=True).agg(pl.all().implode())
+    out = df.group_by("x", maintain_order=True).agg(pl.all().implode())
     assert_series_equal(out["x"], df["x"])
 
 
@@ -2721,11 +2721,11 @@ def test_empty_is_in() -> None:
     assert df_empty_isin.schema == {"foo": pl.Utf8}
 
 
-def test_groupby_slice_expression_args() -> None:
+def test_group_by_slice_expression_args() -> None:
     df = pl.DataFrame({"groups": ["a"] * 10 + ["b"] * 20, "vals": range(30)})
 
     out = (
-        df.groupby("groups", maintain_order=True)
+        df.group_by("groups", maintain_order=True)
         .agg([pl.col("vals").slice(pl.count() * 0.1, (pl.count() // 5))])
         .explode("vals")
     )
@@ -2751,7 +2751,7 @@ def test_join_suffixes() -> None:
 def test_explode_empty() -> None:
     df = (
         pl.DataFrame({"x": ["a", "a", "b", "b"], "y": [1, 1, 2, 2]})
-        .groupby("x", maintain_order=True)
+        .group_by("x", maintain_order=True)
         .agg(pl.col("y").take([]))
     )
     assert df.explode("y").to_dict(False) == {"x": ["a", "b"], "y": [None, None]}

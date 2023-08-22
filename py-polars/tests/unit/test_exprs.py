@@ -93,7 +93,7 @@ def test_prefix(fruits_cars: pl.DataFrame) -> None:
 def test_cumcount() -> None:
     df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], schema=["A"])
 
-    out = df.groupby("A", maintain_order=True).agg(
+    out = df.group_by("A", maintain_order=True).agg(
         [pl.col("A").cumcount(reverse=False).alias("foo")]
     )
 
@@ -103,10 +103,10 @@ def test_cumcount() -> None:
 
 def test_filter_where() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 1, 2, 3], "b": [4, 5, 6, 7, 8, 9]})
-    result_where = df.groupby("a", maintain_order=True).agg(
+    result_where = df.group_by("a", maintain_order=True).agg(
         pl.col("b").where(pl.col("b") > 4).alias("c")
     )
-    result_filter = df.groupby("a", maintain_order=True).agg(
+    result_filter = df.group_by("a", maintain_order=True).agg(
         pl.col("b").filter(pl.col("b") > 4).alias("c")
     )
     expected = pl.DataFrame({"a": [1, 2, 3], "c": [[7], [5, 8], [6, 9]]})
@@ -127,7 +127,7 @@ def test_count_expr() -> None:
     assert out.shape == (1, 1)
     assert cast(int, out.item()) == 5
 
-    out = df.groupby("b", maintain_order=True).agg(pl.count())
+    out = df.group_by("b", maintain_order=True).agg(pl.count())
     assert out["b"].to_list() == ["a", "b"]
     assert out["count"].to_list() == [4, 1]
 
@@ -169,7 +169,7 @@ def test_entropy() -> None:
             "id": [1, 2, 1, 4, 5, 4, 6],
         }
     )
-    result = df.groupby("group", maintain_order=True).agg(
+    result = df.group_by("group", maintain_order=True).agg(
         pl.col("id").entropy(normalize=True)
     )
     expected = pl.DataFrame(
@@ -178,7 +178,7 @@ def test_entropy() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_dot_in_groupby() -> None:
+def test_dot_in_group_by() -> None:
     df = pl.DataFrame(
         {
             "group": ["a", "a", "a", "b", "b", "b"],
@@ -187,7 +187,7 @@ def test_dot_in_groupby() -> None:
         }
     )
 
-    result = df.groupby("group", maintain_order=True).agg(
+    result = df.group_by("group", maintain_order=True).agg(
         pl.col("x").dot("y").alias("dot")
     )
     expected = pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]})
@@ -364,7 +364,7 @@ def test_rank_so_4109() -> None:
         }
     ).sort(by=["id", "rank"])
 
-    assert df.groupby("id").agg(
+    assert df.group_by("id").agg(
         [
             pl.col("rank").alias("original"),
             pl.col("rank").rank(method="dense").alias("dense"),

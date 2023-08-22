@@ -6,15 +6,15 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
-def test_shuffle_groupby_reseed() -> None:
+def test_shuffle_group_by_reseed() -> None:
     def unique_shuffle_groups(n: int, seed: int | None) -> int:
         ls = [1, 2, 3] * n  # 1, 2, 3, 1, 2, 3...
         groups = sorted(list(range(n)) * 3)  # 0, 0, 0, 1, 1, 1, ...
         df = pl.DataFrame({"l": ls, "group": groups})
-        shuffled = df.groupby("group", maintain_order=True).agg(
+        shuffled = df.group_by("group", maintain_order=True).agg(
             pl.col("l").shuffle(seed)
         )
-        num_unique = shuffled.groupby("l").agg(pl.lit(0)).select(pl.count())
+        num_unique = shuffled.group_by("l").agg(pl.lit(0)).select(pl.count())
         return int(num_unique[0, 0])
 
     assert unique_shuffle_groups(50, None) > 1  # Astronomically unlikely.

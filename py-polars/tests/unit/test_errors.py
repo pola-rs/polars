@@ -15,11 +15,11 @@ if TYPE_CHECKING:
     from polars.type_aliases import ConcatMethod
 
 
-def test_error_on_empty_groupby() -> None:
+def test_error_on_empty_group_by() -> None:
     with pytest.raises(
         pl.ComputeError, match="at least one key is required in a group_by operation"
     ):
-        pl.DataFrame({"x": [0, 0, 1, 1]}).groupby([]).agg(pl.count())
+        pl.DataFrame({"x": [0, 0, 1, 1]}).group_by([]).agg(pl.count())
 
 
 def test_error_on_reducing_map() -> None:
@@ -33,7 +33,7 @@ def test_error_on_reducing_map() -> None:
             r"the input length \(1\); consider using `apply` instead"
         ),
     ):
-        df.groupby("id").agg(pl.map(["t", "y"], np.trapz))
+        df.group_by("id").agg(pl.map(["t", "y"], np.trapz))
 
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
     with pytest.raises(
@@ -136,7 +136,7 @@ def test_projection_update_schema_missing_column() -> None:
             pl.DataFrame({"colA": ["a", "b", "c"], "colB": [1, 2, 3]})
             .lazy()
             .filter(~pl.col("colC").is_null())
-            .groupby(["colA"])
+            .group_by(["colA"])
             .agg([pl.col("colB").sum().alias("result")])
             .collect()
         )
@@ -204,7 +204,7 @@ def test_error_on_double_agg() -> None:
                         "b": [1, 2, 3, 4, 5],
                     }
                 )
-                .groupby("a")
+                .group_by("a")
                 .agg([getattr(pl.col("b").min(), e)()])
             )
 
@@ -381,7 +381,7 @@ def test_sort_by_different_lengths() -> None:
         pl.ComputeError,
         match=r"the expression in `sort_by` argument must result in the same length",
     ):
-        df.groupby("group").agg(
+        df.group_by("group").agg(
             [
                 pl.col("col1").sort_by(pl.col("col2").unique()),
             ]
@@ -391,7 +391,7 @@ def test_sort_by_different_lengths() -> None:
         pl.ComputeError,
         match=r"the expression in `sort_by` argument must result in the same length",
     ):
-        df.groupby("group").agg(
+        df.group_by("group").agg(
             [
                 pl.col("col1").sort_by(pl.col("col2").arg_unique()),
             ]
@@ -568,7 +568,7 @@ def test_invalid_inner_type_cast_list() -> None:
         ),
     ],
 )
-def test_groupby_dynamic_validation(every: str, match: str) -> None:
+def test_group_by_dynamic_validation(every: str, match: str) -> None:
     df = pl.DataFrame(
         {
             "index": [0, 0, 1, 1],
@@ -578,7 +578,7 @@ def test_groupby_dynamic_validation(every: str, match: str) -> None:
     )
 
     with pytest.raises(pl.ComputeError, match=match):
-        df.groupby_dynamic("index", by="group", every=every, period="2i").agg(
+        df.group_by_dynamic("index", by="group", every=every, period="2i").agg(
             pl.col("weight")
         )
 
@@ -602,12 +602,12 @@ def test_invalid_getitem_key_err() -> None:
         df["x", "y"]  # type: ignore[index]
 
 
-def test_invalid_groupby_arg() -> None:
+def test_invalid_group_by_arg() -> None:
     df = pl.DataFrame({"a": [1]})
     with pytest.raises(
         TypeError, match="specifying aggregations as a dictionary is not supported"
     ):
-        df.groupby(1).agg({"a": "sum"})
+        df.group_by(1).agg({"a": "sum"})
 
 
 def test_no_sorted_err() -> None:
@@ -620,7 +620,7 @@ def test_no_sorted_err() -> None:
         pl.InvalidOperationError,
         match=r"argument in operation 'group_by_dynamic' is not explicitly sorted",
     ):
-        df.groupby_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
+        df.group_by_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
 
 
 def test_serde_validation() -> None:
@@ -678,6 +678,6 @@ def test_sort_by_err_9259() -> None:
         schema={"a": pl.Float32, "b": pl.Float32, "c": pl.Float32},
     )
     with pytest.raises(pl.ComputeError):
-        df.lazy().groupby("c").agg(
+        df.lazy().group_by("c").agg(
             [pl.col("a").sort_by(pl.col("b").filter(pl.col("b") > 100)).sum()]
         ).collect()

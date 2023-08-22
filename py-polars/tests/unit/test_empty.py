@@ -65,19 +65,19 @@ def test_empty_sort_by_args() -> None:
 def test_empty_9137() -> None:
     out = (
         pl.DataFrame({"id": [], "value": []})
-        .groupby("id")
+        .group_by("id")
         .agg(pl.col("value").pow(2).mean())
     )
     assert out.shape == (0, 2)
     assert out.dtypes == [pl.Float32, pl.Float32]
 
 
-def test_empty_groupby_apply_err() -> None:
+def test_empty_group_by_apply_err() -> None:
     df = pl.DataFrame(schema={"x": pl.Int64})
     with pytest.raises(
         pl.ComputeError, match=r"cannot group_by \+ apply on empty 'DataFrame'"
     ):
-        df.groupby("x").apply(lambda x: x)
+        df.group_by("x").apply(lambda x: x)
 
 
 def test_empty_list_namespace_output_9585() -> None:

@@ -141,7 +141,7 @@ def test_conversion_dtype() -> None:
                 pl.col("some_partition_column"),
             ]
         )
-        .groupby(["some_partition_column"], maintain_order=True)
+        .group_by(["some_partition_column"], maintain_order=True)
         .agg([pl.col(["struct"])])
     )
 

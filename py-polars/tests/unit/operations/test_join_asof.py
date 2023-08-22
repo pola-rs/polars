@@ -54,7 +54,7 @@ def test_asof_join_projection_resolution_4606() -> None:
     a = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
     b = pl.DataFrame({"a": [1], "b": [2], "d": [4]}).lazy()
     joined_tbl = a.join_asof(b, on=pl.col("a").set_sorted(), by="b")
-    assert joined_tbl.groupby("a").agg(
+    assert joined_tbl.group_by("a").agg(
         [pl.col("c").sum().alias("c")]
     ).collect().columns == ["a", "c"]
 

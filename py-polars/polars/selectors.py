@@ -420,7 +420,7 @@ def by_dtype(
 
     Group by string columns and sum the numeric columns:
 
-    >>> df.groupby(cs.string()).agg(cs.numeric().sum()).sort(by="other")
+    >>> df.group_by(cs.string()).agg(cs.numeric().sum()).sort(by="other")
     shape: (2, 2)
     ┌───────┬──────────┐
     │ other ┆ value    │
@@ -1519,7 +1519,7 @@ def string(include_categorical: bool = False) -> SelectorType:
 
     Group by all string columns, sum the numeric columns, then sort by the string cols:
 
-    >>> df.groupby(cs.string()).agg(cs.numeric().sum()).sort(by=cs.string())
+    >>> df.group_by(cs.string()).agg(cs.numeric().sum()).sort(by=cs.string())
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ w   ┆ x   ┆ y   │
@@ -1532,7 +1532,7 @@ def string(include_categorical: bool = False) -> SelectorType:
 
     Group by all string *and* categorical columns:
 
-    >>> df.groupby(cs.string(True)).agg(cs.numeric().sum()).sort(by=cs.string(True))
+    >>> df.group_by(cs.string(True)).agg(cs.numeric().sum()).sort(by=cs.string(True))
     shape: (3, 4)
     ┌─────┬─────┬─────┬──────┐
     │ w   ┆ z   ┆ x   ┆ y    │

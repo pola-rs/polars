@@ -2,9 +2,9 @@
 GroupBy
 =======
 
-This namespace comes available by calling `LazyFrame.groupby(..)`.
+This namespace comes available by calling `LazyFrame.group_by(..)`.
 
-.. currentmodule:: polars.lazyframe.groupby
+.. currentmodule:: polars.lazyframe.group_by
 
 .. autosummary::
    :toctree: api/

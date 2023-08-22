@@ -39,7 +39,7 @@ def test_lazy() -> None:
     ).collect()
 
     # test if pl.list is available, this is `to_list` re-exported as list
-    eager = ldf.groupby("a").agg(pl.implode("b")).collect()
+    eager = ldf.group_by("a").agg(pl.implode("b")).collect()
     assert sorted(eager.rows()) == [(1, [[1.0]]), (2, [[2.0]]), (3, [[3.0]])]
 
 
@@ -152,10 +152,10 @@ def test_or() -> None:
     assert out.rows() == [(1, 1.0), (3, 3.0)]
 
 
-def test_groupby_apply() -> None:
+def test_group_by_apply() -> None:
     ldf = (
         pl.LazyFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 3.0]})
-        .groupby("a")
+        .group_by("a")
         .apply(lambda df: df * 2.0, schema={"a": pl.Float64, "b": pl.Float64})
     )
     out = ldf.collect()
@@ -194,7 +194,7 @@ def test_apply_custom_function() -> None:
 
     # two ways to determine the length groups.
     df = (
-        ldf.groupby("fruits")
+        ldf.group_by("fruits")
         .agg(
             [
                 pl.col("cars")
@@ -221,16 +221,16 @@ def test_apply_custom_function() -> None:
     assert_frame_equal(df, expected)
 
 
-def test_groupby() -> None:
+def test_group_by() -> None:
     ldf = pl.LazyFrame({"a": [1.0, None, 3.0, 4.0], "groups": ["a", "a", "b", "b"]})
 
     expected = pl.DataFrame({"groups": ["a", "b"], "a": [1.0, 3.5]})
 
-    out = ldf.groupby("groups").agg(pl.mean("a")).collect()
+    out = ldf.group_by("groups").agg(pl.mean("a")).collect()
     assert_frame_equal(out.sort(by="groups"), expected)
 
     # refer to column via pl.Expr
-    out = ldf.groupby(pl.col("groups")).agg(pl.mean("a")).collect()
+    out = ldf.group_by(pl.col("groups")).agg(pl.mean("a")).collect()
     assert_frame_equal(out.sort(by="groups"), expected)
 
 
@@ -391,7 +391,7 @@ def test_fold_filter() -> None:
     assert out.rows() == [(1, 0), (2, 1), (3, 2)]
 
 
-def test_head_groupby() -> None:
+def test_head_group_by() -> None:
     commodity_prices = {
         "commodity": [
             "Wheat",
@@ -434,7 +434,7 @@ def test_head_groupby() -> None:
     keys = ["commodity", "location"]
     out = (
         ldf.sort(by="price", descending=True)
-        .groupby(keys, maintain_order=True)
+        .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).keep_name()])
         .explode(pl.col("*").exclude(keys))
     )
@@ -450,12 +450,12 @@ def test_head_groupby() -> None:
     ldf = pl.LazyFrame(
         {"letters": ["c", "c", "a", "c", "a", "b"], "nrs": [1, 2, 3, 4, 5, 6]}
     )
-    out = ldf.groupby("letters").tail(2).sort("letters")
+    out = ldf.group_by("letters").tail(2).sort("letters")
     assert_frame_equal(
         out.collect(),
         pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 2, 4]}),
     )
-    out = ldf.groupby("letters").head(2).sort("letters")
+    out = ldf.group_by("letters").head(2).sort("letters")
     assert_frame_equal(
         out.collect(),
         pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 1, 2]}),
@@ -555,10 +555,10 @@ def test_sort() -> None:
     assert_series_equal(ldf.collect()["a"], pl.Series("a", [1, 2, 2, 3]))
 
 
-def test_custom_groupby() -> None:
+def test_custom_group_by() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     out = (
-        ldf.groupby("b", maintain_order=True)
+        ldf.group_by("b", maintain_order=True)
         .agg([pl.col("a").apply(lambda x: x.sum(), return_dtype=pl.Int64)])
         .collect()
     )
@@ -894,7 +894,7 @@ def test_argminmax() -> None:
     assert out["min"][0] == 0
 
     out = (
-        ldf.groupby("b", maintain_order=True)
+        ldf.group_by("b", maintain_order=True)
         .agg([pl.col("a").arg_min().alias("min"), pl.col("a").arg_max().alias("max")])
         .collect()
     )
@@ -981,7 +981,7 @@ def test_spearman_corr() -> None:
     )
 
     out = (
-        ldf.groupby("era", maintain_order=True).agg(
+        ldf.group_by("era", maintain_order=True).agg(
             pl.corr(pl.col("prediction"), pl.col("target"), method="spearman").alias(
                 "c"
             ),
@@ -992,7 +992,7 @@ def test_spearman_corr() -> None:
 
     # we can also pass in column names directly
     out = (
-        ldf.groupby("era", maintain_order=True).agg(
+        ldf.group_by("era", maintain_order=True).agg(
             pl.corr("prediction", "target", method="spearman").alias("c"),
         )
     ).collect()["c"]
@@ -1029,7 +1029,7 @@ def test_pearson_corr() -> None:
     )
 
     out = (
-        ldf.groupby("era", maintain_order=True).agg(
+        ldf.group_by("era", maintain_order=True).agg(
             pl.corr(pl.col("prediction"), pl.col("target"), method="pearson").alias(
                 "c"
             ),
@@ -1039,7 +1039,7 @@ def test_pearson_corr() -> None:
 
     # we can also pass in column names directly
     out = (
-        ldf.groupby("era", maintain_order=True).agg(
+        ldf.group_by("era", maintain_order=True).agg(
             pl.corr("prediction", "target", method="pearson").alias("c"),
         )
     ).collect()["c"]
@@ -1178,7 +1178,7 @@ def test_group_lengths() -> None:
         }
     )
 
-    result = ldf.groupby(["group"], maintain_order=True).agg(
+    result = ldf.group_by(["group"], maintain_order=True).agg(
         [
             (pl.col("id").unique_counts() / pl.col("id").len())
             .sum()
@@ -1205,7 +1205,7 @@ def test_quantile_filtered_agg() -> None:
                 "value": [1, 2, 3, 4, 1, 2, 3, 4],
             }
         )
-        .groupby("group")
+        .group_by("group")
         .agg(pl.col("value").filter(pl.col("value") < 2).quantile(0.5))
         .collect()["value"]
         .to_list()

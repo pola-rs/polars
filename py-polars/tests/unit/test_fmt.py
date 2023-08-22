@@ -146,7 +146,7 @@ def test_date_list_fmt() -> None:
 
     df = df.with_columns(pl.col("mydate").str.strptime(pl.Date, "%Y-%m-%d"))
     assert (
-        str(df.groupby("index", maintain_order=True).agg(pl.col("mydate"))["mydate"])
+        str(df.group_by("index", maintain_order=True).agg(pl.col("mydate"))["mydate"])
         == """shape: (3,)
 Series: 'mydate' [list[date]]
 [
