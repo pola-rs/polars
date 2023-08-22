@@ -660,7 +660,7 @@ impl LazyFrame {
     /// into memory, and where you do not want to write to a local file but to a location in the cloud.
     /// This method will return an error if the query cannot be completely done in a
     /// streaming fashion.
-    #[cfg(all(feature = "cloud", feature = "parquet"))]
+    #[cfg(all(feature = "cloud_write", feature = "parquet"))]
     pub fn sink_parquet_cloud(
         mut self,
         uri: String,
