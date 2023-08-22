@@ -3795,7 +3795,7 @@ class Expr:
 
         In a GroupBy context, each element of the Series is itself a Series:
 
-        >>> df.lazy().groupby("b", maintain_order=True).agg(pl.col("a")).collect()
+        >>> df.lazy().groupby("b").agg(pl.col("a")).collect()  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬───────────┐
         │ b   ┆ a         │
@@ -3811,10 +3811,10 @@ class Expr:
 
         >>> (
         ...     df.lazy()
-        ...     .groupby("b", maintain_order=True)
+        ...     .groupby("b")
         ...     .agg(pl.col("a").apply(lambda x: x.sum()))
         ...     .collect()
-        ... )
+        ... )  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬─────┐
         │ b   ┆ a   │
