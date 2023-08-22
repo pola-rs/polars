@@ -103,8 +103,9 @@ else:
 def is_namedtuple(cls: Any, annotated: bool = False) -> bool:
     """Check whether given class derives from NamedTuple."""
     if all(hasattr(cls, attr) for attr in ("_fields", "_field_defaults", "_replace")):
-        if len(cls.__annotations__) == len(cls._fields) if annotated else True:
-            return all(isinstance(fld, str) for fld in cls._fields)
+        if not isinstance(cls._fields, property):
+            if not annotated or len(cls.__annotations__) == len(cls._fields):
+                return all(isinstance(fld, str) for fld in cls._fields)
     return False
 
 
@@ -1491,7 +1492,8 @@ def iterable_to_pydf(
             if not original_schema:
                 original_schema = list(df.schema.items())
             if chunk_size != adaptive_chunk_size:
-                chunk_size = adaptive_chunk_size = n_chunk_elems // len(df.columns)
+                if (n_columns := len(df.columns)) > 0:
+                    chunk_size = adaptive_chunk_size = n_chunk_elems // n_columns
         else:
             df.vstack(frame_chunk, in_place=True)
             n_chunks += 1

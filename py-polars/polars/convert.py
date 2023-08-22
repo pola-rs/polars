@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import re
-from itertools import zip_longest
+from itertools import chain, zip_longest
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, overload
 
 import polars._reexport as pl
@@ -516,7 +516,7 @@ def from_arrow(
         | pa.Array
         | pa.ChunkedArray
         | pa.RecordBatch
-        | Iterable[pa.RecordBatch]
+        | Iterable[pa.RecordBatch | pa.Table]
     ),
     schema: SchemaDefinition | None = None,
     *,
@@ -532,7 +532,7 @@ def from_arrow(
     Parameters
     ----------
     data : :class:`pyarrow.Table`, :class:`pyarrow.Array`, one or more :class:`pyarrow.RecordBatch`
-        Data representing an Arrow Table, Array, or sequence of RecordBatches.
+        Data representing an Arrow Table, Array, or sequence of RecordBatches or Tables.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -609,7 +609,11 @@ def from_arrow(
         data = [data]
     if isinstance(data, Iterable):
         return pl.DataFrame._from_arrow(
-            data=pa.Table.from_batches(data),
+            data=pa.Table.from_batches(
+                chain.from_iterable(
+                    (b.to_batches() if isinstance(b, pa.Table) else [b]) for b in data
+                )
+            ),
             rechunk=rechunk,
             schema=schema,
             schema_overrides=schema_overrides,
