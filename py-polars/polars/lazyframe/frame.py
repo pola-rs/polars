@@ -343,6 +343,7 @@ class LazyFrame:
         try_parse_dates: bool = False,
         eol_char: str = "\n",
         raise_if_empty: bool = True,
+        truncate_ragged_lines: bool = True,
     ) -> Self:
         """
         Lazily read from a CSV file or multiple files via glob patterns.
@@ -385,6 +386,7 @@ class LazyFrame:
             try_parse_dates,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
+            truncate_ragged_lines=truncate_ragged_lines,
         )
         return self
 

@@ -12,3 +12,6 @@ description = "Error definitions for the Polars DataFrame library"
 arrow = { workspace = true }
 regex = { workspace = true, optional = true }
 thiserror = { workspace = true }
+
+[features]
+python = []

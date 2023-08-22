@@ -53,6 +53,7 @@ class BatchedCsvReader:
         eol_char: str = "\n",
         new_columns: Sequence[str] | None = None,
         raise_if_empty: bool = True,
+        truncate_ragged_lines: bool = False,
     ):
         path: str | None
         if isinstance(source, (str, Path)):
@@ -100,6 +101,7 @@ class BatchedCsvReader:
             sample_size=sample_size,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
+            truncate_ragged_lines=truncate_ragged_lines,
         )
         self.new_columns = new_columns
 

@@ -26,6 +26,7 @@ pub struct LazyCsvReader<'a> {
     eol_char: u8,
     null_values: Option<NullValues>,
     missing_is_null: bool,
+    truncate_ragged_lines: bool,
     infer_schema_length: Option<usize>,
     rechunk: bool,
     skip_rows_after_header: usize,
@@ -61,6 +62,7 @@ impl<'a> LazyCsvReader<'a> {
             row_count: None,
             try_parse_dates: false,
             raise_if_empty: true,
+            truncate_ragged_lines: false,
         }
     }
 
@@ -208,6 +210,13 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
+    /// Truncate lines that are longer than the schema.
+    #[must_use]
+    pub fn truncate_ragged_lines(mut self, toggle: bool) -> Self {
+        self.truncate_ragged_lines = toggle;
+        self
+    }
+
     /// Modify a schema before we run the lazy scanning.
     ///
     /// Important! Run this function latest in the builder!
@@ -280,6 +289,7 @@ impl LazyFileListReader for LazyCsvReader<'_> {
             self.row_count,
             self.try_parse_dates,
             self.raise_if_empty,
+            self.truncate_ragged_lines,
         )?
         .build()
         .into();

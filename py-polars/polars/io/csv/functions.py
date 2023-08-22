@@ -47,6 +47,7 @@ def read_csv(
     sample_size: int = 1024,
     eol_char: str = "\n",
     raise_if_empty: bool = True,
+    truncate_ragged_lines: bool = False,
 ) -> DataFrame:
     """
     Read a CSV file into a DataFrame.
@@ -157,6 +158,8 @@ def read_csv(
     raise_if_empty
         When there is no data in the source,``NoDataError`` is raised. If this parameter
         is set to False, an empty DataFrame (with no columns) is returned instead.
+    truncate_ragged_lines
+        Truncate lines that are longer than the schema.
 
     Returns
     -------
@@ -379,6 +382,7 @@ def read_csv(
             sample_size=sample_size,
             eol_char=eol_char,
             raise_if_empty=raise_if_empty,
+            truncate_ragged_lines=truncate_ragged_lines,
         )
 
     if new_columns:
@@ -704,6 +708,7 @@ def scan_csv(
     eol_char: str = "\n",
     new_columns: Sequence[str] | None = None,
     raise_if_empty: bool = True,
+    truncate_ragged_lines: bool = False,
 ) -> LazyFrame:
     """
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -788,6 +793,8 @@ def scan_csv(
     raise_if_empty
         When there is no data in the source,``NoDataError`` is raised. If this parameter
         is set to False, an empty LazyFrame (with no columns) is returned instead.
+    truncate_ragged_lines
+        Truncate lines that are longer than the schema.
 
     Returns
     -------
@@ -901,4 +908,5 @@ def scan_csv(
         try_parse_dates=try_parse_dates,
         eol_char=eol_char,
         raise_if_empty=raise_if_empty,
+        truncate_ragged_lines=truncate_ragged_lines,
     )

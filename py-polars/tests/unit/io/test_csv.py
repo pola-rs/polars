@@ -445,7 +445,7 @@ def test_compressed_csv(io_files_path: Path) -> None:
         """\
         a,b,c
         1,a,1.0
-        2,b,2.0,
+        2,b,2.0
         3,c,3.0
         """
     )
@@ -462,7 +462,7 @@ def test_compressed_csv(io_files_path: Path) -> None:
 
     # now from disk
     csv_file = io_files_path / "gzipped.csv"
-    out = pl.read_csv(str(csv_file))
+    out = pl.read_csv(str(csv_file), truncate_ragged_lines=True)
     assert_frame_equal(out, expected)
 
     # now with column projection
@@ -1472,3 +1472,25 @@ def test_ignore_errors_date_parser() -> None:
             dtypes={"date": pl.Date},
             ignore_errors=False,
         )
+
+
+def test_csv_ragged_lines() -> None:
+    expected = {"column_1": ["A", "B", "C"]}
+    assert (
+        pl.read_csv(
+            io.StringIO("A\nB,ragged\nC"), has_header=False, truncate_ragged_lines=True
+        ).to_dict(False)
+        == expected
+    )
+    assert (
+        pl.read_csv(
+            io.StringIO("A\nB\nC,ragged"), has_header=False, truncate_ragged_lines=True
+        ).to_dict(False)
+        == expected
+    )
+
+    for s in ["A\nB,ragged\nC", "A\nB\nC,ragged"]:
+        with pytest.raises(pl.ComputeError, match=r"found more fields than defined"):
+            pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
+        with pytest.raises(pl.ComputeError, match=r"found more fields than defined"):
+            pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)

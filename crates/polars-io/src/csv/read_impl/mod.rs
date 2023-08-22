@@ -115,6 +115,7 @@ pub(crate) struct CoreReader<'a> {
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
     row_count: Option<RowCount>,
+    truncate_ragged_lines: bool,
 }
 
 impl<'a> fmt::Debug for CoreReader<'a> {
@@ -206,6 +207,7 @@ impl<'a> CoreReader<'a> {
         row_count: Option<RowCount>,
         try_parse_dates: bool,
         raise_if_empty: bool,
+        truncate_ragged_lines: bool,
     ) -> PolarsResult<CoreReader<'a>> {
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
@@ -303,6 +305,7 @@ impl<'a> CoreReader<'a> {
             predicate,
             to_cast,
             row_count,
+            truncate_ragged_lines,
         })
     }
 
@@ -609,11 +612,12 @@ impl<'a> CoreReader<'a> {
                                 self.comment_char,
                                 self.quote_char,
                                 self.eol_char,
-                                self.null_values.as_ref(),
                                 self.missing_is_null,
+                                self.truncate_ragged_lines,
+                                ignore_errors,
+                                self.null_values.as_ref(),
                                 projection,
                                 &mut buffers,
-                                ignore_errors,
                                 chunk_size,
                                 self.schema.len(),
                                 &self.schema,
@@ -683,6 +687,7 @@ impl<'a> CoreReader<'a> {
                             self.encoding,
                             self.null_values.as_ref(),
                             self.missing_is_null,
+                            self.truncate_ragged_lines,
                             usize::MAX,
                             stop_at_nbytes,
                             starting_point_offset,
@@ -725,11 +730,12 @@ impl<'a> CoreReader<'a> {
                                 self.comment_char,
                                 self.quote_char,
                                 self.eol_char,
-                                self.null_values.as_ref(),
                                 self.missing_is_null,
+                                self.ignore_errors,
+                                self.truncate_ragged_lines,
+                                self.null_values.as_ref(),
                                 &projection,
                                 &mut buffers,
-                                self.ignore_errors,
                                 remaining_rows - 1,
                                 self.schema.len(),
                                 self.schema.as_ref(),
@@ -811,6 +817,7 @@ fn read_chunk(
     encoding: CsvEncoding,
     null_values: Option<&NullValuesCompiled>,
     missing_is_null: bool,
+    truncate_ragged_lines: bool,
     chunk_size: usize,
     stop_at_nbytes: usize,
     starting_point_offset: Option<usize>,
@@ -842,11 +849,12 @@ fn read_chunk(
             comment_char,
             quote_char,
             eol_char,
-            null_values,
             missing_is_null,
+            ignore_errors,
+            truncate_ragged_lines,
+            null_values,
             projection,
             &mut buffers,
-            ignore_errors,
             chunk_size,
             schema.len(),
             schema,
