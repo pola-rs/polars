@@ -349,6 +349,8 @@ def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:
         elif isinstance(dtype, pa.StructType):
             return struct_to_delta_dtype(dtype)
         elif isinstance(dtype, pa.TimestampType):
+            # TODO: Support time zones when implemented by delta-rs. See:
+            # https://github.com/delta-io/delta-rs/issues/1598
             return pa.timestamp("us")
         try:
             return dtype_map[dtype]
