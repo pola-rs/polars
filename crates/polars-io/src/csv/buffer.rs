@@ -35,94 +35,96 @@ impl PrimitiveParser for Float64Type {
     }
 }
 
+fn parse_from_radix_10<I>(text: &[u8]) -> Option<I>
+where
+    I: Zero
+        + One
+        + AddAssign
+        + MulAssign
+        + SubAssign
+        + CheckedAdd
+        + CheckedSub
+        + CheckedMul
+        + MaxNumDigits,
+{
+    let mut index;
+    let mut number = I::zero();
+
+    let (sign, offset) = text
+        .first()
+        .and_then(|&byte| Sign::try_from(byte))
+        .map(|sign| (sign, 1))
+        .unwrap_or((Sign::Plus, 0));
+
+    index = offset;
+
+    // Having two dedicated loops for both the negative and the nonnegative case is rather
+    // verbose, yet performed up to 40% better then a more terse single loop with
+    // `number += digit * signum`.
+    let value = match sign {
+        Sign::Plus => {
+            let max_safe_digits = std::cmp::max(1, I::max_num_digits(nth(10))) - 1;
+            let max_safe_index = std::cmp::min(text.len(), max_safe_digits + offset);
+            while index != max_safe_index {
+                if let Some(digit) = atoi::ascii_to_digit(text[index]) {
+                    number *= nth(10);
+                    number += digit;
+                    index += 1;
+                } else {
+                    break;
+                }
+            }
+            // We parsed the digits, which do not need checking now lets see the next one:
+            let mut number = Some(number);
+            while index != text.len() {
+                if let Some(digit) = atoi::ascii_to_digit(text[index]) {
+                    number = number.and_then(|n| n.checked_mul(&nth(10)));
+                    number = number.and_then(|n| n.checked_add(&digit));
+                    index += 1;
+                } else {
+                    return None;
+                }
+            }
+            number
+        },
+        Sign::Minus => {
+            let max_safe_digits = std::cmp::max(1, I::max_num_digits_negative(nth(10))) - 1;
+            let max_safe_index = std::cmp::min(text.len(), max_safe_digits + offset);
+            while index != max_safe_index {
+                if let Some(digit) = atoi::ascii_to_digit(text[index]) {
+                    number *= nth(10);
+                    number -= digit;
+                    index += 1;
+                } else {
+                    break;
+                }
+            }
+            // We parsed the digits, which do not need checking now lets see the next one:
+            let mut number = Some(number);
+            while index != text.len() {
+                if let Some(digit) = atoi::ascii_to_digit(text[index]) {
+                    number = number.and_then(|n| n.checked_mul(&nth(10)));
+                    number = number.and_then(|n| n.checked_sub(&digit));
+                    index += 1;
+                } else {
+                    return None;
+                }
+            }
+            number
+        },
+    };
+    match (value, index) {
+        (_, 0) | (None, _) => None,
+        (Some(n), _) => Some(n),
+    }
+}
+
 macro_rules! impl_integer_parser {
     ($t:ty, $native_t: ty) => {
-        impl PrimitiveParser for $t
-        where
-            $native_t: Zero
-                + One
-                + AddAssign
-                + MulAssign
-                + SubAssign
-                + CheckedAdd
-                + CheckedSub
-                + CheckedMul
-                + MaxNumDigits,
-        {
+        impl PrimitiveParser for $t {
             #[inline]
-            fn parse(text: &[u8]) -> Option<Self::Native> {
-                let mut index;
-                let mut number = <$native_t>::zero();
-
-                let (sign, offset) = text
-                    .first()
-                    .and_then(|&byte| Sign::try_from(byte))
-                    .map(|sign| (sign, 1))
-                    .unwrap_or((Sign::Plus, 0));
-
-                index = offset;
-
-                // Having two dedicated loops for both the negative and the nonnegative case is rather
-                // verbose, yet performed up to 40% better then a more terse single loop with
-                // `number += digit * signum`.
-                let value = match sign {
-                    Sign::Plus => {
-                        let max_safe_digits =
-                            std::cmp::max(1, <$native_t>::max_num_digits(nth(10))) - 1;
-                        let max_safe_index = std::cmp::min(text.len(), max_safe_digits + offset);
-                        while index != max_safe_index {
-                            if let Some(digit) = atoi::ascii_to_digit::<$native_t>(text[index]) {
-                                number *= nth::<$native_t>(10);
-                                number += digit;
-                                index += 1;
-                            } else {
-                                break;
-                            }
-                        }
-                        // We parsed the digits, which do not need checking now lets see the next one:
-                        let mut number = Some(number);
-                        while index != text.len() {
-                            if let Some(digit) = atoi::ascii_to_digit::<$native_t>(text[index]) {
-                                number = number.and_then(|n| n.checked_mul(nth(10)));
-                                number = number.and_then(|n| n.checked_add(digit));
-                                index += 1;
-                            } else {
-                                return None;
-                            }
-                        }
-                        number
-                    },
-                    Sign::Minus => {
-                        let max_safe_digits =
-                            std::cmp::max(1, <$native_t>::max_num_digits_negative(nth(10))) - 1;
-                        let max_safe_index = std::cmp::min(text.len(), max_safe_digits + offset);
-                        while index != max_safe_index {
-                            if let Some(digit) = atoi::ascii_to_digit::<$native_t>(text[index]) {
-                                number *= nth::<$native_t>(10);
-                                number -= digit;
-                                index += 1;
-                            } else {
-                                break;
-                            }
-                        }
-                        // We parsed the digits, which do not need checking now lets see the next one:
-                        let mut number = Some(number);
-                        while index != text.len() {
-                            if let Some(digit) = atoi::ascii_to_digit::<$native_t>(text[index]) {
-                                number = number.and_then(|n| n.checked_mul(nth(10)));
-                                number = number.and_then(|n| n.checked_sub(digit));
-                                index += 1;
-                            } else {
-                                return None;
-                            }
-                        }
-                        number
-                    },
-                };
-                match (value, index) {
-                    (_, 0) | (None, _) => None,
-                    (Some(n), _) => Some(n),
-                }
+            fn parse(bytes: &[u8]) -> Option<$native_t> {
+                parse_from_radix_10::<$native_t>(bytes)
             }
         }
     };
