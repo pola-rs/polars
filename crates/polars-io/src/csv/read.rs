@@ -100,8 +100,6 @@ where
 {
     /// File or Stream object
     reader: R,
-    /// Aggregates chunk afterwards to a single chunk.
-    rechunk: bool,
     /// Stop reading from the csv after this number of rows is reached
     n_rows: Option<usize>,
     // used by error ignore logic
@@ -112,8 +110,6 @@ where
     /// Optional column names to project/ select.
     columns: Option<Vec<String>>,
     delimiter: Option<u8>,
-    has_header: bool,
-    ignore_errors: bool,
     pub(crate) schema: Option<SchemaRef>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
@@ -122,17 +118,22 @@ where
     dtype_overwrite: Option<&'a [DataType]>,
     sample_size: usize,
     chunk_size: usize,
-    low_memory: bool,
     comment_char: Option<u8>,
-    eol_char: u8,
     null_values: Option<NullValues>,
-    missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     quote_char: Option<u8>,
     skip_rows_after_header: usize,
     try_parse_dates: bool,
     row_count: Option<RowCount>,
+    /// Aggregates chunk afterwards to a single chunk.
+    rechunk: bool,
     raise_if_empty: bool,
+    truncate_ragged_lines: bool,
+    missing_is_null: bool,
+    low_memory: bool,
+    has_header: bool,
+    ignore_errors: bool,
+    eol_char: u8,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -324,6 +325,12 @@ where
         self.predicate = predicate;
         self
     }
+
+    /// Truncate lines that are longer than the schema.
+    pub fn truncate_ragged_lines(mut self, toggle: bool) -> Self {
+        self.truncate_ragged_lines = toggle;
+        self
+    }
 }
 
 impl<'a> CsvReader<'a, File> {
@@ -374,6 +381,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             std::mem::take(&mut self.row_count),
             self.try_parse_dates,
             self.raise_if_empty,
+            self.truncate_ragged_lines,
         )
     }
 
@@ -558,6 +566,7 @@ where
             try_parse_dates: false,
             row_count: None,
             raise_if_empty: true,
+            truncate_ragged_lines: false,
         }
     }
 

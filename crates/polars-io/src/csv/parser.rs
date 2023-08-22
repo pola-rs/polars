@@ -354,11 +354,12 @@ pub(super) fn parse_lines<'a>(
     comment_char: Option<u8>,
     quote_char: Option<u8>,
     eol_char: u8,
-    null_values: Option<&NullValuesCompiled>,
     missing_is_null: bool,
+    ignore_errors: bool,
+    truncate_ragged_lines: bool,
+    null_values: Option<&NullValuesCompiled>,
     projection: &[usize],
     buffers: &mut [Buffer<'a>],
-    ignore_errors: bool,
     n_lines: usize,
     // length of original schema
     schema_len: usize,
@@ -487,14 +488,19 @@ pub(super) fn parse_lines<'a>(
                                 if bytes.get(read_sol - 1) == Some(&eol_char) {
                                     bytes = &bytes[read_sol..];
                                 } else {
-                                    let bytes_rem = skip_this_line(
-                                        &bytes[read_sol - 1..],
-                                        quote_char,
-                                        eol_char,
-                                    );
-                                    bytes = bytes_rem;
+                                    if truncate_ragged_lines {
+                                        let bytes_rem = skip_this_line(
+                                            &bytes[read_sol - 1..],
+                                            quote_char,
+                                            eol_char,
+                                        );
+                                        bytes = bytes_rem;
+                                        break;
+                                    }
+                                    polars_bail!(ComputeError: r#"found more fields than defined in 'Schema'
+
+Consider setting 'truncate_ragged_lines'."#)
                                 }
-                                break;
                             },
                         }
                     }

@@ -252,6 +252,7 @@ impl LogicalPlanBuilder {
         row_count: Option<RowCount>,
         try_parse_dates: bool,
         raise_if_empty: bool,
+        truncate_ragged_lines: bool,
     ) -> PolarsResult<Self> {
         let path = path.into();
         let mut file = polars_utils::open_file(&path).map_err(|e| {
@@ -346,6 +347,7 @@ impl LogicalPlanBuilder {
                     encoding,
                     try_parse_dates,
                     raise_if_empty,
+                    truncate_ragged_lines,
                 },
             },
         }
