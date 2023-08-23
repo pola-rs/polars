@@ -980,6 +980,14 @@ def test_fill_null() -> None:
     assert out.dtypes == [pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64]
 
 
+def test_utf8_series_min_max_10674() -> None:
+    utf8_series = pl.Series("b", ["a", None, "c", None, "e"], dtype=pl.Utf8)
+    assert utf8_series.min() == "a"
+    assert utf8_series.max() == "e"
+    assert utf8_series.sort(descending=False).min() == "a"
+    assert utf8_series.sort(descending=True).max() == "e"
+
+
 def test_fill_nan() -> None:
     nan = float("nan")
     a = pl.Series("a", [1.0, nan, 2.0, nan, 3.0])
