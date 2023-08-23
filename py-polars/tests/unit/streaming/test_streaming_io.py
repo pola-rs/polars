@@ -31,11 +31,8 @@ def test_scan_slice_streaming(io_files_path: Path) -> None:
 
 @pytest.mark.parametrize("dtype", [pl.Int8, pl.UInt8, pl.Int16, pl.UInt16])
 def test_scan_csv_overwrite_small_dtypes(
-        io_files_path: Path, dtype: pl.DataType
+    io_files_path: Path, dtype: pl.DataType
 ) -> None:
     file_path = io_files_path / "foods1.csv"
-    df = pl.scan_csv(
-        file_path,
-        dtypes={"sugars_g": dtype}
-    ).collect(streaming=True)
+    df = pl.scan_csv(file_path, dtypes={"sugars_g": dtype}).collect(streaming=True)
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Float64, dtype]
