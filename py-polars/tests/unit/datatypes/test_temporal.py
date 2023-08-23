@@ -1416,7 +1416,7 @@ def test_asof_join() -> None:
         (False, datetime(2010, 9, 12)),
     ],
 )
-def test_temporal_dtypes_apply(
+def test_temporal_dtypes_map_elements(
     skip_nulls: bool, expected_value: datetime | None
 ) -> None:
     df = pl.DataFrame(
@@ -1430,13 +1430,13 @@ def test_temporal_dtypes_apply(
             [
                 # don't actually do any of this; native expressions are MUCH faster ;)
                 pl.col("timestamp")
-                .apply(lambda x: const_dtm, skip_nulls=skip_nulls)
+                .map_elements(lambda x: const_dtm, skip_nulls=skip_nulls)
                 .alias("const_dtm"),
                 pl.col("timestamp")
-                .apply(lambda x: x and x.date(), skip_nulls=skip_nulls)
+                .map_elements(lambda x: x and x.date(), skip_nulls=skip_nulls)
                 .alias("date"),
                 pl.col("timestamp")
-                .apply(lambda x: x and x.time(), skip_nulls=skip_nulls)
+                .map_elements(lambda x: x and x.time(), skip_nulls=skip_nulls)
                 .alias("time"),
             ]
         ),

@@ -49,7 +49,7 @@ def test_empty_sort() -> None:
         orient="row",
     )
     df_filtered = df.filter(
-        pl.col("blob").apply(
+        pl.col("blob").map_elements(
             lambda blob: blob["name"] == "baz", return_dtype=pl.Boolean
         )
     )

@@ -109,10 +109,10 @@ def test_apply_struct() -> None:
     )
     out = df.with_columns(pl.struct(df.columns).alias("struct")).select(
         [
-            pl.col("struct").apply(lambda x: x["A"]).alias("A_field"),
-            pl.col("struct").apply(lambda x: x["B"]).alias("B_field"),
-            pl.col("struct").apply(lambda x: x["C"]).alias("C_field"),
-            pl.col("struct").apply(lambda x: x["D"]).alias("D_field"),
+            pl.col("struct").map_elements(lambda x: x["A"]).alias("A_field"),
+            pl.col("struct").map_elements(lambda x: x["B"]).alias("B_field"),
+            pl.col("struct").map_elements(lambda x: x["C"]).alias("C_field"),
+            pl.col("struct").map_elements(lambda x: x["D"]).alias("D_field"),
         ]
     )
     expected = pl.DataFrame(
@@ -145,7 +145,7 @@ def test_apply_numpy_out_3057() -> None:
 def test_apply_numpy_int_out() -> None:
     df = pl.DataFrame({"col1": [2, 4, 8, 16]})
     result = df.with_columns(
-        pl.col("col1").apply(lambda x: np.left_shift(x, 8)).alias("result")
+        pl.col("col1").map_elements(lambda x: np.left_shift(x, 8)).alias("result")
     )
     expected = pl.DataFrame({"col1": [2, 4, 8, 16], "result": [512, 1024, 2048, 4096]})
     assert_frame_equal(result, expected)
@@ -177,7 +177,7 @@ def test_apply_list_anyvalue_fallback() -> None:
         match=r'(?s)replace your `apply` with.*pl.col\("text"\).str.json_extract()',
     ):
         df = pl.DataFrame({"text": ['[{"x": 1, "y": 2}, {"x": 3, "y": 4}]']})
-        assert df.select(pl.col("text").apply(json.loads)).to_dict(False) == {
+        assert df.select(pl.col("text").map_elements(json.loads)).to_dict(False) == {
             "text": [[{"x": 1, "y": 2}, {"x": 3, "y": 4}]]
         }
 
@@ -191,7 +191,7 @@ def test_apply_list_anyvalue_fallback() -> None:
                 ]
             }
         )
-        assert df.select(pl.col("text").apply(json.loads)).to_dict(False) == {
+        assert df.select(pl.col("text").map_elements(json.loads)).to_dict(False) == {
             "text": [[], [{"x": 1, "y": 2}, {"x": 3, "y": 4}], [{"x": 1, "y": 2}]]
         }
 
@@ -209,7 +209,7 @@ def test_apply_all_types() -> None:
     ]
     # test we don't panic
     for dtype in dtypes:
-        pl.Series([1, 2, 3, 4, 5], dtype=dtype).apply(lambda x: x)
+        pl.Series([1, 2, 3, 4, 5], dtype=dtype).map_elements(lambda x: x)
 
 
 def test_apply_type_propagation() -> None:
@@ -225,7 +225,7 @@ def test_apply_type_propagation() -> None:
             [
                 pl.when(pl.col("b").null_count() == 0)
                 .then(
-                    pl.col("b").apply(
+                    pl.col("b").map_elements(
                         lambda s: s[0]["c"],
                         return_dtype=pl.Float64,
                     )
@@ -250,8 +250,8 @@ def test_apply_skip_nulls() -> None:
     some_map = {None: "a", 1: "b"}
     s = pl.Series([None, 1])
 
-    assert s.apply(lambda x: some_map[x]).to_list() == [None, "b"]
-    assert s.apply(lambda x: some_map[x], skip_nulls=False).to_list() == ["a", "b"]
+    assert s.map_elements(lambda x: some_map[x]).to_list() == [None, "b"]
+    assert s.map_elements(lambda x: some_map[x], skip_nulls=False).to_list() == ["a", "b"]
 
 
 def test_apply_object_dtypes() -> None:
@@ -263,12 +263,12 @@ def test_apply_object_dtypes() -> None:
             {"a": pl.Series([1, 2, "a", 4, 5], dtype=pl.Object)}
         ).with_columns(
             [
-                pl.col("a").apply(lambda x: x * 2, return_dtype=pl.Object),
+                pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Object),
                 pl.col("a")
-                .apply(lambda x: isinstance(x, (int, float)), return_dtype=pl.Boolean)
+                .map_elements(lambda x: isinstance(x, (int, float)), return_dtype=pl.Boolean)
                 .alias("is_numeric1"),
                 pl.col("a")
-                .apply(lambda x: isinstance(x, (int, float)))
+                .map_elements(lambda x: isinstance(x, (int, float)))
                 .alias("is_numeric_infer"),
             ]
         ).to_dict(
@@ -283,7 +283,7 @@ def test_apply_object_dtypes() -> None:
 def test_apply_explicit_list_output_type() -> None:
     out = pl.DataFrame({"str": ["a", "b"]}).with_columns(
         [
-            pl.col("str").apply(
+            pl.col("str").map_elements(
                 lambda _: pl.Series([1, 2, 3]), return_dtype=pl.List(pl.Int64)
             )
         ]
@@ -299,12 +299,12 @@ def test_apply_dict() -> None:
         match=r'(?s)replace your `apply` with.*pl.col\("abc"\).str.json_extract()',
     ):
         df = pl.DataFrame({"abc": ['{"A":"Value1"}', '{"B":"Value2"}']})
-        assert df.select(pl.col("abc").apply(json.loads)).to_dict(False) == {
+        assert df.select(pl.col("abc").map_elements(json.loads)).to_dict(False) == {
             "abc": [{"A": "Value1", "B": None}, {"A": None, "B": "Value2"}]
         }
         assert pl.DataFrame(
             {"abc": ['{"A":"Value1", "B":"Value2"}', '{"B":"Value3"}']}
-        ).select(pl.col("abc").apply(json.loads)).to_dict(False) == {
+        ).select(pl.col("abc").map_elements(json.loads)).to_dict(False) == {
             "abc": [{"A": "Value1", "B": "Value2"}, {"A": None, "B": "Value3"}]
         }
 
@@ -324,14 +324,14 @@ def test_apply_pass_name() -> None:
 
     assert df.group_by("bar", maintain_order=True).agg(
         [
-            pl.col("foo").apply(applyer, pass_name=True),
+            pl.col("foo").map_elements(map_elementser, pass_name=True),
         ]
     ).to_dict(False) == {"bar": [1, 2], "foo": [["foo1"], ["foo1"]]}
 
 
 def test_apply_binary() -> None:
     assert pl.DataFrame({"bin": [b"\x11" * 12, b"\x22" * 12, b"\xaa" * 12]}).select(
-        pl.col("bin").apply(bytes.hex)
+        pl.col("bin").map_elements(bytes.hex)
     ).to_dict(False) == {
         "bin": [
             "111111111111111111111111",
