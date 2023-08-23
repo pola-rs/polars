@@ -138,14 +138,14 @@ where
             IsSorted::Ascending => {
                 self.last_non_null().and_then(|idx| {
                     // Safety:
-                    // first_non_null returns in bound index
+                    // last_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Descending => {
                 self.first_non_null().and_then(|idx| {
                     // Safety:
-                    // last returns in bound index
+                    // first_non_null returns in bound index
                     unsafe { self.get_unchecked(idx) }
                 })
             },
@@ -509,27 +509,69 @@ impl ChunkAggSeries for Utf8Chunked {
     }
 }
 
+impl BinaryChunked {
+    pub(crate) fn max_binary(&self) -> Option<&[u8]> {
+        if self.is_empty() {
+            return None;
+        }
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => {
+                self.last_non_null().and_then(|idx| {
+                    // Safety:
+                    // last_non_null returns in bound index
+                    unsafe { self.get_unchecked(idx) }
+                })
+            },
+            IsSorted::Descending => {
+                self.first_non_null().and_then(|idx| {
+                    // Safety:
+                    // first_non_null returns in bound index
+                    unsafe { self.get_unchecked(idx) }
+                })
+            },
+            IsSorted::Not => self
+                .downcast_iter()
+                .filter_map(compute::aggregate::max_binary)
+                .fold_first_(|acc, v| if acc > v { acc } else { v }),
+        }
+    }
+
+    pub(crate) fn min_binary(&self) -> Option<&[u8]> {
+        if self.is_empty() {
+            return None;
+        }
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => {
+                self.first_non_null().and_then(|idx| {
+                    // Safety:
+                    // first_non_null returns in bound index
+                    unsafe { self.get_unchecked(idx) }
+                })
+            },
+            IsSorted::Descending => {
+                self.last_non_null().and_then(|idx| {
+                    // Safety:
+                    // last_non_null returns in bound index
+                    unsafe { self.get_unchecked(idx) }
+                })
+            },
+            IsSorted::Not => self
+                .downcast_iter()
+                .filter_map(compute::aggregate::min_binary)
+                .fold_first_(|acc, v| if acc < v { acc } else { v }),
+        }
+    }
+}
+
 impl ChunkAggSeries for BinaryChunked {
     fn sum_as_series(&self) -> Series {
         BinaryChunked::full_null(self.name(), 1).into_series()
     }
     fn max_as_series(&self) -> Series {
-        Series::new(
-            self.name(),
-            &[self
-                .downcast_iter()
-                .filter_map(compute::aggregate::max_binary)
-                .fold_first_(|acc, v| if acc > v { acc } else { v })],
-        )
+        Series::new(self.name(), [self.max_binary()])
     }
     fn min_as_series(&self) -> Series {
-        Series::new(
-            self.name(),
-            &[self
-                .downcast_iter()
-                .filter_map(compute::aggregate::min_binary)
-                .fold_first_(|acc, v| if acc < v { acc } else { v })],
-        )
+        Series::new(self.name(), [self.min_binary()])
     }
 }
 

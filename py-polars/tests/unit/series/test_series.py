@@ -927,6 +927,14 @@ def test_fill_null() -> None:
     assert a.fill_null(strategy="backward").to_list() == [0.0, 1.0, 2.0, 2.0, 3.0, 3.0]
     assert a.fill_null(strategy="mean").to_list() == [0.0, 1.0, 1.5, 2.0, 1.5, 3.0]
 
+    b = pl.Series("b", ["a", None, "c", None, "e"])
+    assert b.fill_null(strategy="min").to_list() == ["a", "a", "c", "a", "e"]
+    assert b.fill_null(strategy="max").to_list() == ["a", "e", "c", "e", "e"]
+
+    c = pl.Series("c", [b"a", None, b"c", None, b"e"])
+    assert c.fill_null(strategy="min").to_list() == [b"a", b"a", b"c", b"a", b"e"]
+    assert c.fill_null(strategy="max").to_list() == [b"a", b"e", b"c", b"e", b"e"]
+
     df = pl.DataFrame(
         [
             pl.Series("i32", [1, 2, None], dtype=pl.Int32),
