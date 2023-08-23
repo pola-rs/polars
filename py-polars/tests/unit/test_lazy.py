@@ -622,7 +622,9 @@ def test_cast_frame() -> None:
     # test 'strict' mode
     lf = pl.LazyFrame({"a": [1000, 2000, 3000]})
 
-    with pytest.raises(ComputeError, match="conversion from `i64` to `u8` in column `a`"):
+    with pytest.raises(
+        ComputeError, match="conversion from `i64` to `u8` in column `a`"
+    ):
         lf.cast(pl.UInt8).collect()
 
     assert lf.cast(pl.UInt8, strict=False).collect().rows() == [

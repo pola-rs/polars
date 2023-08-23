@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import re
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
@@ -518,7 +517,9 @@ def test_skip_nulls_err() -> None:
 
 def test_cast_err_column_value_highlighting() -> None:
     df = pl.DataFrame({"A": [1, 2, 3], "B": ["1", "2", "help"]})
-    with pytest.raises(pl.ComputeError, match="strict conversion from `str` to `u32` in column `B`"):
+    with pytest.raises(
+        pl.ComputeError, match="strict conversion from `str` to `u32` in column `B`"
+    ):
         df.with_columns(pl.all().cast(pl.UInt32))
 
 
