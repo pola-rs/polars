@@ -9276,14 +9276,12 @@ class DataFrame:
 
         >>> for frame in df.iter_slices(n_rows=15_000):
         ...     record_batch = frame.to_arrow().to_batches()[0]
-        ...     print(record_batch, "\n<< ", len(record_batch))
+        ...     print(f"{record_batch.schema}\n<< {len(record_batch)}")
         ...
-        pyarrow.RecordBatch
         a: int32
         b: date32[day]
         c: large_string
         << 15000
-        pyarrow.RecordBatch
         a: int32
         b: date32[day]
         c: large_string

@@ -569,13 +569,13 @@ def test_to_pandas() -> None:
     )
     pd_out = df.to_pandas()
     pd_out_dtypes_expected = [
-        np.uint8,
-        np.float64,
-        np.float64,
-        np.dtype("datetime64[ns]"),
-        np.object_,
-        np.object_,
-        np.dtype("datetime64[ns]"),
+        np.dtype(np.uint8),
+        np.dtype(np.float64),
+        np.dtype(np.float64),
+        np.dtype("datetime64[ms]"),
+        np.dtype(np.object_),
+        np.dtype(np.object_),
+        np.dtype("datetime64[us]"),
         pd.CategoricalDtype(categories=["a", "b", "c"], ordered=False),
         pd.CategoricalDtype(categories=["e", "f"], ordered=False),
     ]
