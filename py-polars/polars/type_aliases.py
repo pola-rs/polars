@@ -122,7 +122,7 @@ StartBy: TypeAlias = Literal[
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last", "any", "none"]
 UnstackDirection: TypeAlias = Literal["vertical", "horizontal"]
-ApplyStrategy: TypeAlias = Literal["thread_local", "threading"]
+MapElementsStrategy: TypeAlias = Literal["thread_local", "threading"]
 
 # The following have a Rust enum equivalent with a different name
 AsofJoinStrategy: TypeAlias = Literal["backward", "forward", "nearest"]  # AsofStrategy

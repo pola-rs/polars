@@ -471,7 +471,7 @@ class BytecodeParser:
                 )
             )
             warnings.warn(
-                f"\n{clsname}.apply is significantly slower than the native {apitype} API.\n"
+                f"\n{clsname}.map_elements is significantly slower than the native {apitype} API.\n"
                 "Only use if you absolutely CANNOT implement your logic otherwise.\n"
                 "In this case, you can replace your `apply` with the following:\n"
                 f"{before_after_suggestion}",
@@ -829,25 +829,25 @@ def _is_raw_function(function: Callable[[Any], Any]) -> tuple[str, str]:
     return "", ""
 
 
-def warn_on_inefficient_apply(
-    function: Callable[[Any], Any], columns: list[str], apply_target: ApplyTarget
+def warn_on_inefficient_map_elements(
+    function: Callable[[Any], Any], columns: list[str], map_target: ApplyTarget
 ) -> None:
     """
-    Generate ``PolarsInefficientApplyWarning`` on poor usage of ``apply`` func.
+    Generate ``PolarsInefficientMapWarning`` on poor usage of ``map_elements`` func.
 
     Parameters
     ----------
     function
-        The function passed to ``apply``.
+        The function passed to ``map_elements``.
     columns
         The column names of the original object; in the case of an ``Expr`` this
         will be a list of length 1 containing the expression's root name.
-    apply_target
-        The target of the ``apply`` call. One of ``"expr"``, ``"frame"``,
+    map_target
+        The target of the ``map_elements`` call. One of ``"expr"``, ``"frame"``,
         or ``"series"``.
     """
-    if apply_target == "frame":
-        raise NotImplementedError("TODO: 'frame' and 'series' apply-function parsing")
+    if map_target == "frame":
+        raise NotImplementedError("TODO: 'frame' and 'series' map_elements-function parsing")
 
     # note: we only consider simple functions with a single col/param
     if not (col := columns and columns[0]):
@@ -855,7 +855,7 @@ def warn_on_inefficient_apply(
 
     # the parser introspects function bytecode to determine if we can
     # rewrite as a much more optimal native polars expression instead
-    parser = BytecodeParser(function, apply_target)
+    parser = BytecodeParser(function, map_target)
     if parser.can_attempt_rewrite():
         parser.warn(col)
     else:
@@ -872,5 +872,5 @@ def warn_on_inefficient_apply(
 
 __all__ = [
     "BytecodeParser",
-    "warn_on_inefficient_apply",
+    "warn_on_inefficient_map_elements",
 ]
