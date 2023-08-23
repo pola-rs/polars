@@ -1838,15 +1838,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - "gzip" : min-level: 0, max-level: 10.
             - "brotli" : min-level: 0, max-level: 11.
             - "zstd" : min-level: 1, max-level: 22.
-
         statistics
             Write statistics to the parquet headers. This requires extra compute.
         row_group_size
             Size of the row groups in number of rows.
             If None (default), the chunks of the `DataFrame` are
             used. Writing in smaller chunks may reduce memory pressure and improve
-            writing speeds. If None and ``use_pyarrow=True``, the row group size
-            will be the minimum of the DataFrame size and 64 * 1024 * 1024.
+            writing speeds.
         data_pagesize_limit
             Size limit of individual data pages.
             If not set defaults to 1024 * 1024 bytes
