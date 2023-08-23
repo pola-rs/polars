@@ -86,6 +86,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         ColumnNameOrSelector,
         CsvEncoding,
+        CsvQuoteStyle,
         FillNullStrategy,
         FrameInitTypes,
         IntoExpr,
@@ -1987,7 +1988,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             float_precision: int | None = None,
             null_value: str | None = None,
             quote_style: CsvQuoteStyle | None = None,
-
+            maintain_order: bool = True,
             type_coercion: bool = True,
             predicate_pushdown: bool = True,
             projection_pushdown: bool = True,
@@ -2046,6 +2047,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Namely, when writing a field that does not parse as a valid float
             or integer, then quotes will be used even if they aren`t strictly
             necessary.
+        maintain_order
+            Maintain the order in which data is processed.
+            Setting this to `False` will  be slightly faster.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -2097,6 +2101,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             float_precision=float_precision,
             null_value=null_value,
             quote_style=quote_style,
+            maintain_order=maintain_order,
         )
 
     @deprecate_renamed_parameter(

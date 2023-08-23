@@ -6,6 +6,8 @@ pub use polars_plan::logical_plan::{
 pub use polars_plan::prelude::IpcWriterOptions;
 #[cfg(feature = "parquet")]
 pub use polars_plan::prelude::ParquetWriteOptions;
+#[cfg(feature = "csv")]
+pub use polars_plan::prelude::CsvWriterOptions;
 pub(crate) use polars_plan::prelude::*;
 #[cfg(feature = "rolling_window")]
 pub use polars_time::{prelude::RollingOptions, Duration};
