@@ -1,6 +1,9 @@
 use super::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Default, Eq, Hash, PartialEq, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum QuoteStyle {
     /// This puts quotes around every field. Always.
     Always,

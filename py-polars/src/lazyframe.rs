@@ -554,15 +554,16 @@ impl PyLazyFrame {
         maintain_order: bool,
     ) -> PyResult<()> {
         let quote_style = quote_style.map_or(QuoteStyle::default(), |wrap| wrap.0);
+        let null_value = null_value.unwrap_or(SerializeOptions::default().null);
 
         let serialize_options = SerializeOptions {
             date_format,
             time_format,
             datetime_format,
             float_precision,
-            separator,
+            delimiter: separator,
             quote,
-            null_value,
+            null: null_value,
             line_terminator,
             quote_style,
         };
