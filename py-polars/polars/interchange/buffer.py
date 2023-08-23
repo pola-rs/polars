@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.interchange.protocol import DlpackDeviceType, DtypeKind
+from polars.interchange.protocol import Buffer, DlpackDeviceType, DtypeKind
 from polars.interchange.utils import polars_dtype_to_dtype
 
 if TYPE_CHECKING:
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from polars import Series
 
 
-class PolarsBuffer:
+class PolarsBuffer(Buffer):
     """
     A buffer object backed by a Polars Series consisting of a single chunk.
 

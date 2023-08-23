@@ -1,7 +1,16 @@
 from __future__ import annotations
 
 from enum import IntEnum
-from typing import TYPE_CHECKING, Literal, Tuple, TypedDict
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Iterable,
+    Literal,
+    Protocol,
+    Sequence,
+    Tuple,
+    TypedDict,
+)
 
 if TYPE_CHECKING:
     import sys
@@ -13,6 +22,19 @@ if TYPE_CHECKING:
         from typing import TypeAlias
     else:
         from typing_extensions import TypeAlias
+
+
+class DlpackDeviceType(IntEnum):
+    """Integer enum for device type codes matching DLPack."""
+
+    CPU = 1
+    CUDA = 2
+    CPU_PINNED = 3
+    OPENCL = 4
+    VULKAN = 7
+    METAL = 8
+    VPI = 9
+    ROCM = 10
 
 
 class DtypeKind(IntEnum):
@@ -105,19 +127,6 @@ class CategoricalDescription(TypedDict):
     categories: PolarsColumn
 
 
-class DlpackDeviceType(IntEnum):
-    """Integer enum for device type codes matching DLPack."""
-
-    CPU = 1
-    CUDA = 2
-    CPU_PINNED = 3
-    OPENCL = 4
-    VULKAN = 7
-    METAL = 8
-    VPI = 9
-    ROCM = 10
-
-
 class Endianness:
     """Enum indicating the byte-order of a data type."""
 
@@ -125,3 +134,108 @@ class Endianness:
     BIG = ">"
     NATIVE = "="
     NA = "|"
+
+
+class Buffer(Protocol):
+    """Interchange buffer object."""
+
+    @property
+    def bufsize(self) -> int:
+        """Buffer size in bytes."""
+
+    @property
+    def ptr(self) -> int:
+        """Pointer to start of the buffer as an integer."""
+
+    def __dlpack__(self) -> Any:
+        """Represent this structure as DLPack interface."""
+
+    def __dlpack_device__(self) -> tuple[DlpackDeviceType, int | None]:
+        """Device type and device ID for where the data in the buffer resides."""
+
+
+class Column(Protocol):
+    """Interchange column object."""
+
+    def size(self) -> int:
+        """Size of the column in elements."""
+
+    @property
+    def offset(self) -> int:
+        """Offset of the first element with respect to the start of the underlying buffer."""  # noqa: W505
+
+    @property
+    def dtype(self) -> Dtype:
+        """Data type of the column."""
+
+    @property
+    def describe_categorical(self) -> CategoricalDescription:
+        """Description of the categorical data type of the column."""
+
+    @property
+    def describe_null(self) -> tuple[ColumnNullType, Any]:
+        """Description of the null representation the column uses."""
+
+    @property
+    def null_count(self) -> int | None:
+        """Number of null elements, if known."""
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """The metadata for the column."""
+
+    def num_chunks(self) -> int:
+        """Return the number of chunks the column consists of."""
+
+    def get_chunks(self, n_chunks: int | None = None) -> Iterable[Column]:
+        """Return an iterator yielding the column chunks."""
+
+    def get_buffers(self) -> ColumnBuffers:
+        """Return a dictionary containing the underlying buffers."""
+
+
+class DataFrame(Protocol):
+    """Interchange dataframe object."""
+
+    @property
+    def version(self) -> int:
+        """Version of the protocol."""
+
+    def __dataframe__(
+        self, nan_as_null: bool = False, allow_copy: bool = True
+    ) -> DataFrame:
+        """Construct a new dataframe object, potentially changing the parameters."""
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """The metadata for the dataframe."""
+
+    def num_columns(self) -> int:
+        """Return the number of columns in the dataframe."""
+
+    def num_rows(self) -> int | None:
+        """Return the number of rows in the dataframe, if available."""
+
+    def num_chunks(self) -> int:
+        """Return the number of chunks the dataframe consists of.."""
+
+    def column_names(self) -> Iterable[str]:
+        """Return the column names."""
+
+    def get_column(self, i: int) -> Column:
+        """Return the column at the indicated position."""
+
+    def get_column_by_name(self, name: str) -> Column:
+        """Return the column with the given name."""
+
+    def get_columns(self) -> Iterable[Column]:
+        """Return an iterator yielding the columns."""
+
+    def select_columns(self, indices: Sequence[int]) -> DataFrame:
+        """Create a new dataframe by selecting a subset of columns by index."""
+
+    def select_columns_by_name(self, names: Sequence[str]) -> DataFrame:
+        """Create a new dataframe by selecting a subset of columns by name."""
+
+    def get_chunks(self, n_chunks: int | None = None) -> Iterable[DataFrame]:
+        """Return an iterator yielding the chunks of the dataframe."""
