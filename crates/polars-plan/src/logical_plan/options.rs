@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
-use polars_io::csv::{CsvEncoding, NullValues};
-#[cfg(feature = "csv")]
 use polars_io::csv::SerializeOptions;
+#[cfg(feature = "csv")]
+use polars_io::csv::{CsvEncoding, NullValues};
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcCompression;
 #[cfg(feature = "parquet")]

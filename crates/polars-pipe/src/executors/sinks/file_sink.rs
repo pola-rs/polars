@@ -4,6 +4,7 @@ use std::thread::JoinHandle;
 
 use crossbeam_channel::{bounded, Receiver, Sender};
 use polars_core::prelude::*;
+use polars_io::csv::CsvWriter;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetWriter;
 #[cfg(feature = "ipc")]
@@ -14,7 +15,6 @@ use polars_plan::prelude::*;
 
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 use crate::pipeline::morsels_per_sink;
-use polars_io::csv::CsvWriter;
 
 #[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 trait SinkWriter {
@@ -219,13 +219,13 @@ fn init_writer_thread(
 
 // Ensure the data is return in the order it was streamed
 #[derive(Clone)]
-#[cfg(any(feature = "parquet", feature = "ipc", feature="csv"))]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 pub struct FilesSink {
     sender: Sender<Option<DataChunk>>,
     io_thread_handle: Arc<Option<JoinHandle<()>>>,
 }
 
-#[cfg(any(feature = "parquet", feature = "ipc", feature="csv"))]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 impl Sink for FilesSink {
     fn sink(&mut self, _context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         // don't add empty dataframes

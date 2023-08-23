@@ -1,6 +1,7 @@
-use super::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use super::*;
 
 #[derive(Copy, Clone, Default, Eq, Hash, PartialEq, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -56,7 +57,7 @@ where
     }
 }
 
-impl<W: Write> CsvWriter<W>  {
+impl<W: Write> CsvWriter<W> {
     /// Set whether to write headers.
     pub fn has_header(mut self, has_header: bool) -> Self {
         self.header = has_header;
@@ -134,11 +135,12 @@ impl<W: Write> CsvWriter<W>  {
 
     pub fn batched(self, _schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
         let expects_header = self.header;
-        Ok(BatchedWriter { writer: self, has_written_header: !expects_header})
+        Ok(BatchedWriter {
+            writer: self,
+            has_written_header: !expects_header,
+        })
     }
-
 }
-
 
 pub struct BatchedWriter<W: Write> {
     writer: CsvWriter<W>,
@@ -157,8 +159,12 @@ impl<W: Write> BatchedWriter<W> {
             write_impl::write_header(&mut self.writer.buffer, &names, &self.writer.options)?;
         }
 
-                write_impl::write(&mut self.writer.buffer, df, self.writer.batch_size, &self.writer.options)?;
+        write_impl::write(
+            &mut self.writer.buffer,
+            df,
+            self.writer.batch_size,
+            &self.writer.options,
+        )?;
         Ok(())
     }
 }
-
