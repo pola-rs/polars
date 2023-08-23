@@ -637,6 +637,37 @@ def test_explode_date() -> None:
         ]
 
 
+def test_groupy_by_dynamic_median_10695() -> None:
+    df = pl.DataFrame(
+        {
+            "timestamp": pl.date_range(
+                datetime(2023, 8, 22, 15, 44, 30),
+                datetime(2023, 8, 22, 15, 48, 50),
+                "20s",
+                eager=True,
+            ),
+            "foo": [2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        }
+    )
+
+    assert df.group_by_dynamic(
+        index_column="timestamp",
+        every="60s",
+        period="3m",
+    ).agg(
+        pl.col("foo").median()
+    ).to_dict(False) == {
+        "timestamp": [
+            datetime(2023, 8, 22, 15, 44),
+            datetime(2023, 8, 22, 15, 45),
+            datetime(2023, 8, 22, 15, 46),
+            datetime(2023, 8, 22, 15, 47),
+            datetime(2023, 8, 22, 15, 48),
+        ],
+        "foo": [1.0, 1.0, 1.0, 1.0, 1.0],
+    }
+
+
 def test_group_by_dynamic_when_conversion_crosses_dates_7274() -> None:
     df = (
         pl.DataFrame(
