@@ -11,6 +11,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
@@ -61,44 +62,50 @@ def test_sink_csv_with_options() -> None:
      the `test_sink_csv` method above, we only need to verify that all the options are
      passed into the rust-polars correctly.
     """
-    options_to_test = {
-        "has_header": False,
-        "separator": ";",
-        "line_terminator": "|",
-        "quote": "$",
-        "batch_size": 42,
-        "datetime_format": "%Y",
-        "date_format": "%d",
-        "time_format": "%H",
-        "float_precision": 42,
-        "null_value": "BOOM",
-        "quote_style": "always",
-        "maintain_order": False,
-    }
-
     df = pl.LazyFrame({"dummy": ["abc"]})
     with unittest.mock.patch.object(df, "_ldf") as ldf:
-        df.sink_csv("path", **options_to_test)
-
-        # These options should be converted into their byte values
-        options_to_test["separator"] = ord(options_to_test["separator"])
-        options_to_test["quote"] = ord(options_to_test["quote"])
+        df.sink_csv(
+            "path",
+            has_header=False,
+            separator=";",
+            line_terminator="|",
+            quote="$",
+            batch_size=42,
+            datetime_format="%Y",
+            date_format="%d",
+            time_format="%H",
+            float_precision=42,
+            null_value="BOOM",
+            quote_style="always",
+            maintain_order=False,
+        )
 
         ldf.optimization_toggle().sink_csv.assert_called_with(
-            path="path", **options_to_test
+            path="path",
+            has_header=False,
+            separator=ord(";"),
+            line_terminator="|",
+            quote=ord("$"),
+            batch_size=42,
+            datetime_format="%Y",
+            date_format="%d",
+            time_format="%H",
+            float_precision=42,
+            null_value="BOOM",
+            quote_style="always",
+            maintain_order=False,
         )
 
 
-@pytest.mark.parametrize(
-    ("test_kwarg", "message"),
-    [
-        ({"separator": "abc"}, "only single byte separator is allowed"),
-        ({"separator": ""}, "only single byte separator is allowed"),
-        ({"quote": "abc"}, "only single byte quote char is allowed"),
-        ({"quote": ""}, "only single byte quote char is allowed"),
-    ],
-)
-def test_sink_csv_exceptions(test_kwarg: dict, message: str) -> None:
+@pytest.mark.parametrize(("value"), ["abc", ""])
+def test_sink_csv_exception_for_separator(value: str) -> None:
     df = pl.LazyFrame({"dummy": ["abc"]})
-    with pytest.raises(ValueError, match=message):
-        df.sink_csv("path", **test_kwarg)
+    with pytest.raises(ValueError, match="only single byte separator is allowed"):
+        df.sink_csv("path", separator=value)
+
+
+@pytest.mark.parametrize(("value"), ["abc", ""])
+def test_sink_csv_exception_for_quote(value: str) -> None:
+    df = pl.LazyFrame({"dummy": ["abc"]})
+    with pytest.raises(ValueError, match="only single byte quote char is allowed"):
+        df.sink_csv("path", quote=value)
