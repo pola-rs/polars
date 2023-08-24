@@ -792,6 +792,20 @@ def test_rolling_window_size_9160() -> None:
     ).to_list() == [1]
 
 
+def test_rolling_apply_clear_reuse_series_state_10681() -> None:
+    df = pl.DataFrame({"a": [1, 1, 1, 1, 2, 2, 2, 2], "b": [0, 1, 11.0, 7, 4, 2, 3, 8]})
+    assert df.with_columns(
+        pl.col("b")
+        .rolling_apply(lambda s: s.min(), window_size=3, min_periods=2)
+        .over("a")
+        .alias("min")
+    ).to_dict(False) == {
+        "a": [1, 1, 1, 1, 2, 2, 2, 2],
+        "b": [0.0, 1.0, 11.0, 7.0, 4.0, 2.0, 3.0, 8.0],
+        "min": [None, 0.0, 0.0, 1.0, None, 2.0, 2.0, 2.0],
+    }
+
+
 def test_rolling_empty_window_9406() -> None:
     datecol = pl.Series(
         "d",

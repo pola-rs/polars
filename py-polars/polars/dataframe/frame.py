@@ -5792,6 +5792,21 @@ class DataFrame:
                 f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
             )
 
+        if on is not None:
+            if not isinstance(on, (str, pl.Expr)):
+                raise TypeError(
+                    f"expected `on` to be str or Expr, got {type(on).__name__!r}"
+                )
+        else:
+            if not isinstance(left_on, (str, pl.Expr)):
+                raise TypeError(
+                    f"expected `left_on` to be str or Expr, got {type(left_on).__name__!r}"
+                )
+            elif not isinstance(right_on, (str, pl.Expr)):
+                raise TypeError(
+                    f"expected `right_on` to be str or Expr, got {type(right_on).__name__!r}"
+                )
+
         return (
             self.lazy()
             .join_asof(
