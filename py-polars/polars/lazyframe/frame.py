@@ -2072,6 +2072,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_csv("out.csv")  # doctest: +SKIP
 
         """
+        if len(separator) > 1:
+            raise ValueError("only single byte separator is allowed")
+        elif len(quote) > 1:
+            raise ValueError("only single byte quote char is allowed")
+        elif null_value == "":
+            null_value = None
+
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
@@ -2087,12 +2094,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=False,
             streaming=True,
         )
+
         return lf.sink_csv(
             path=path,
             has_header=has_header,
-            separator=separator,
+            separator=ord(separator),
             line_terminator=line_terminator,
-            quote=quote,
+            quote=ord(quote),
             batch_size=batch_size,
             datetime_format=datetime_format,
             date_format=date_format,
