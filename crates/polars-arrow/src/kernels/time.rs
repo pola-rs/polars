@@ -7,7 +7,6 @@ use arrow::temporal_conversions::{
 };
 use chrono::{LocalResult, NaiveDateTime, TimeZone};
 use chrono_tz::Tz;
-use polars_error::polars_bail;
 
 use crate::error::PolarsResult;
 
@@ -37,11 +36,11 @@ fn convert_to_naive_local(
     }
 }
 
-fn convert_to_timestamp(
-    from_tz: Tz,
-    to_tz: Tz,
+pub fn replace_time_zone(
     arr: &PrimitiveArray<i64>,
     tu: TimeUnit,
+    from_tz: &Tz,
+    to_tz: &Tz,
     use_earliest: Option<bool>,
 ) -> PolarsResult<PrimitiveArray<i64>> {
     let res = match tu {
@@ -49,7 +48,7 @@ fn convert_to_timestamp(
             arr,
             |value| {
                 let ndt = timestamp_ms_to_datetime(value);
-                Ok(convert_to_naive_local(&from_tz, &to_tz, ndt, use_earliest)?.timestamp_millis())
+                Ok(convert_to_naive_local(from_tz, to_tz, ndt, use_earliest)?.timestamp_millis())
             },
             ArrowDataType::Int64,
         ),
@@ -57,7 +56,7 @@ fn convert_to_timestamp(
             arr,
             |value| {
                 let ndt = timestamp_us_to_datetime(value);
-                Ok(convert_to_naive_local(&from_tz, &to_tz, ndt, use_earliest)?.timestamp_micros())
+                Ok(convert_to_naive_local(from_tz, to_tz, ndt, use_earliest)?.timestamp_micros())
             },
             ArrowDataType::Int64,
         ),
@@ -65,27 +64,11 @@ fn convert_to_timestamp(
             arr,
             |value| {
                 let ndt = timestamp_ns_to_datetime(value);
-                Ok(convert_to_naive_local(&from_tz, &to_tz, ndt, use_earliest)?.timestamp_nanos())
+                Ok(convert_to_naive_local(from_tz, to_tz, ndt, use_earliest)?.timestamp_nanos())
             },
             ArrowDataType::Int64,
         ),
         _ => unreachable!(),
     };
     Ok(res?)
-}
-
-pub fn replace_time_zone(
-    arr: &PrimitiveArray<i64>,
-    tu: TimeUnit,
-    from: &str,
-    to: &str,
-    use_earliest: Option<bool>,
-) -> PolarsResult<PrimitiveArray<i64>> {
-    match from.parse::<chrono_tz::Tz>() {
-        Ok(from_tz) => match to.parse::<chrono_tz::Tz>() {
-            Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu, use_earliest),
-            Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", to),
-        },
-        Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", from),
-    }
 }
