@@ -36,3 +36,16 @@ def test_scan_csv_overwrite_small_dtypes(
     file_path = io_files_path / "foods1.csv"
     df = pl.scan_csv(file_path, dtypes={"sugars_g": dtype}).collect(streaming=True)
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Float64, dtype]
+
+
+@pytest.mark.write_disk()
+def test_sink_csv(io_files_path: Path, tmp_path: Path) -> None:
+    source_file = io_files_path / "small.parquet"
+    target_file = tmp_path / "sink.csv"
+
+    pl.scan_parquet(source_file).sink_csv(target_file)
+
+    with pl.StringCache():
+        source_data = pl.read_parquet(source_file)
+        target_data = pl.read_csv(target_file)
+        assert_frame_equal(target_data, source_data)
