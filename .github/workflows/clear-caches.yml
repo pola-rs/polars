@@ -1,3 +1,5 @@
+# Clearing caches regularly takes care of Rust caches growing to problematic size over time
+
 name: Clear caches
 
 on:
