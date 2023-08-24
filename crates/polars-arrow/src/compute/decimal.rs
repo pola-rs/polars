@@ -9,7 +9,7 @@ fn leading_zeros(bytes: &[u8]) -> u8 {
 }
 
 fn split_decimal_bytes(bytes: &[u8]) -> (Option<&[u8]>, Option<&[u8]>) {
-    let mut a = bytes.split(|x| *x == b'.');
+    let mut a = bytes.splitn(2,|x| *x == b'.');
     let lhs = a.next();
     let rhs = a.next();
     (lhs, rhs)
@@ -142,5 +142,18 @@ mod test {
 
         let val = "12.3ABC4";
         assert_eq!(deserialize_decimal(val.as_bytes(), precision, scale), None);
+
+        let val = "12.3.ABC4";
+        assert_eq!(deserialize_decimal(val.as_bytes(), precision, scale), None);
+
+        let val = "";
+        assert_eq!(deserialize_decimal(val.as_bytes(), precision, scale), None);
+
+        let val = "5.";
+        assert_eq!(deserialize_decimal(val.as_bytes(), precision, scale), Some(500000i128));
+
+        let val = ".5";
+        assert_eq!(deserialize_decimal(val.as_bytes(), precision, scale), Some(50000i128));
+
     }
 }
