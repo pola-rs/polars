@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::io::BufWriter;
 use std::path::PathBuf;
 
-use polars::io::RowCount;
 #[cfg(feature = "csv")]
 use polars::io::csv::SerializeOptions;
+use polars::io::RowCount;
 #[cfg(feature = "csv")]
 use polars::lazy::frame::LazyCsvReader;
 #[cfg(feature = "json")]
