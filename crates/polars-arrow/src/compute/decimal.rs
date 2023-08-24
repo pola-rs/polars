@@ -1,4 +1,4 @@
-use atoi::atoi;
+use atoi::FromRadix10SignedChecked;
 
 fn significant_digits(bytes: &[u8]) -> u8 {
     (bytes.len() as u8) - leading_zeros(bytes)
@@ -15,10 +15,12 @@ fn split_decimal_bytes(bytes: &[u8]) -> (Option<&[u8]>, Option<&[u8]>) {
     (lhs, rhs)
 }
 
-fn is_numeric(bytes: &[u8]) -> bool {
-    bytes
-        .iter()
-        .all(|b| matches!(*b, b'0'..=b'9' | b'.' | b'+' | b'-'))
+fn parse_integer_checked(bytes: &[u8]) -> Option<i128>{
+    let (n,len) = i128::from_radix_10_signed_checked(bytes);
+    match n {
+        Some(i) if len == bytes.len() => Some(i),
+        _ => None
+    }
 }
 
 pub fn infer_scale(bytes: &[u8]) -> Option<u8> {
@@ -32,12 +34,10 @@ pub fn infer_scale(bytes: &[u8]) -> Option<u8> {
 pub(super) fn deserialize_decimal(bytes: &[u8], precision: Option<u8>, scale: u8) -> Option<i128> {
     let (lhs, rhs) = split_decimal_bytes(bytes);
     let precision = precision.unwrap_or(u8::MAX);
-    if !is_numeric(bytes) {
-        return None;
-    }
+
     match (lhs, rhs) {
-        (Some(lhs), Some(rhs)) => atoi::<i128>(lhs).and_then(|x| {
-            atoi::<i128>(rhs)
+        (Some(lhs), Some(rhs)) => parse_integer_checked(lhs).and_then(|x| {
+            parse_integer_checked(rhs)
                 .map(|y| (x, lhs, y, rhs))
                 .and_then(|(lhs, lhs_b, rhs, rhs_b)| {
                     let lhs_s = significant_digits(lhs_b);
@@ -86,13 +86,13 @@ pub(super) fn deserialize_decimal(bytes: &[u8], precision: Option<u8>, scale: u8
             if rhs.len() > precision as usize || rhs.len() != scale as usize {
                 return None;
             }
-            atoi::<i128>(rhs)
+            parse_integer_checked(rhs)
         },
         (Some(lhs), None) => {
             if lhs.len() > precision as usize || scale != 0 {
                 return None;
             }
-            atoi::<i128>(lhs)
+            parse_integer_checked(lhs)
         },
         (None, None) => None,
     }
