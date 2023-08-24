@@ -119,9 +119,10 @@ mod inner_mod {
                         unsafe {
                             *ptr = arr_window;
                         }
+                        // reset flags as we reuse this container
+                        series_container.clear_settings();
                         // ensure the length is correct
                         series_container._get_inner_mut().compute_len();
-
                         let s = if size == options.window_size {
                             f(&series_container.multiply(&weights_series).unwrap())
                         } else {
@@ -166,9 +167,10 @@ mod inner_mod {
                         unsafe {
                             *ptr = arr_window;
                         }
+                        // reset flags as we reuse this container
+                        series_container.clear_settings();
                         // ensure the length is correct
                         series_container._get_inner_mut().compute_len();
-
                         let s = f(&series_container);
                         let out = self.unpack_series_matching_type(&s)?;
                         builder.append_option(out.get(0));
