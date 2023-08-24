@@ -42,7 +42,7 @@ impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
             .downcast_ref::<PrimitiveArray<T>>()
             .ok_or_else(|| polars_err!(ComputeError : "failed to downcast array"))?;
 
-        Ok(inner.try_push(Some(arr.iter().map(|x| x.copied())))?)
+        Ok(inner.try_push(Some(arr.iter().copied()))?)
     }
 
     #[inline]
