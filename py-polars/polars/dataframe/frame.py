@@ -2551,18 +2551,18 @@ class DataFrame:
         >>> df.write_csv(path, separator=",")
 
         """
-        if len(separator) > 1:
+        if len(separator) != 1:
             raise ValueError("only single byte separator is allowed")
-        elif len(quote) > 1:
+        if len(quote) != 1:
             raise ValueError("only single byte quote char is allowed")
-        elif null_value == "":
+        if not null_value:
             null_value = None
 
         should_return_buffer = False
         if file is None:
             buffer = file = BytesIO()
             should_return_buffer = True
-        elif isinstance(file, (str, Path)):
+        elif isinstance(file, (str, os.PathLike)):
             file = normalise_filepath(file)
         elif isinstance(file, TextIOWrapper):
             file = cast(TextIOWrapper, file.buffer)

@@ -2072,11 +2072,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_csv("out.csv")  # doctest: +SKIP
 
         """
-        if len(separator) > 1:
+        if len(separator) != 1:
             raise ValueError("only single byte separator is allowed")
-        elif len(quote) > 1:
+        if len(quote) != 1:
             raise ValueError("only single byte quote char is allowed")
-        elif null_value == "":
+        if not null_value:
             null_value = None
 
         if no_optimization:
