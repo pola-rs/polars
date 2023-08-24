@@ -1901,17 +1901,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
     def sink_ipc(
-            self,
-            path: str | Path,
-            *,
-            compression: str | None = "zstd",
-            maintain_order: bool = True,
-            type_coercion: bool = True,
-            predicate_pushdown: bool = True,
-            projection_pushdown: bool = True,
-            simplify_expression: bool = True,
-            no_optimization: bool = False,
-            slice_pushdown: bool = True,
+        self,
+        path: str | Path,
+        *,
+        compression: str | None = "zstd",
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
     ) -> DataFrame:
         """
         Persists a LazyFrame at the provided path.
@@ -1973,28 +1973,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
     def sink_csv(
-            self,
-            path: str | Path,
-            *,
-
-            has_header: bool = True,
-            separator: str = ",",
-            line_terminator: str = "\n",
-            quote: str = '"',
-            batch_size: int = 1024,
-            datetime_format: str | None = None,
-            date_format: str | None = None,
-            time_format: str | None = None,
-            float_precision: int | None = None,
-            null_value: str | None = None,
-            quote_style: CsvQuoteStyle | None = None,
-            maintain_order: bool = True,
-            type_coercion: bool = True,
-            predicate_pushdown: bool = True,
-            projection_pushdown: bool = True,
-            simplify_expression: bool = True,
-            no_optimization: bool = False,
-            slice_pushdown: bool = True,
+        self,
+        path: str | Path,
+        *,
+        has_header: bool = True,
+        separator: str = ",",
+        line_terminator: str = "\n",
+        quote: str = '"',
+        batch_size: int = 1024,
+        datetime_format: str | None = None,
+        date_format: str | None = None,
+        time_format: str | None = None,
+        float_precision: int | None = None,
+        null_value: str | None = None,
+        quote_style: CsvQuoteStyle | None = None,
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
     ) -> DataFrame:
         """
         Persists a LazyFrame at the provided path.
