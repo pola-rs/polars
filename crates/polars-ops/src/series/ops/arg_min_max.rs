@@ -91,7 +91,9 @@ pub(crate) fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
 }
 
 fn arg_min_bool(ca: &BooleanChunked) -> Option<usize> {
-    if ca.is_empty() || ca.null_count() == ca.len() || ca.all() {
+    if ca.is_empty() {
+        None
+    } else if ca.null_count() == ca.len() || ca.all() {
         Some(0)
     } else if ca.null_count() == 0 && ca.chunks().len() == 1 {
         let arr = ca.downcast_iter().next().unwrap();
@@ -195,6 +197,9 @@ fn first_unset_bit(mask: &Bitmap) -> usize {
 }
 
 fn arg_min_str(ca: &Utf8Chunked) -> Option<usize> {
+    if ca.is_empty() {
+        return None;
+    }
     match ca.is_sorted_flag() {
         IsSorted::Ascending => Some(0),
         IsSorted::Descending => Some(ca.len() - 1),
@@ -207,6 +212,9 @@ fn arg_min_str(ca: &Utf8Chunked) -> Option<usize> {
 }
 
 fn arg_max_str(ca: &Utf8Chunked) -> Option<usize> {
+    if ca.is_empty() {
+        return None;
+    }
     match ca.is_sorted_flag() {
         IsSorted::Ascending => Some(ca.len() - 1),
         IsSorted::Descending => Some(0),
