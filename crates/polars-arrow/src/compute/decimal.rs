@@ -15,12 +15,9 @@ fn split_decimal_bytes(bytes: &[u8]) -> (Option<&[u8]>, Option<&[u8]>) {
     (lhs, rhs)
 }
 
-fn parse_integer_checked(bytes: &[u8]) -> Option<i128>{
-    let (n,len) = i128::from_radix_10_signed_checked(bytes);
-    match n {
-        Some(i) if len == bytes.len() => Some(i),
-        _ => None
-    }
+fn parse_integer_checked(bytes: &[u8]) -> Option<i128> {
+    let (n, len) = i128::from_radix_10_signed_checked(bytes);
+    n.filter(|_| len == bytes.len())
 }
 
 pub fn infer_scale(bytes: &[u8]) -> Option<u8> {
