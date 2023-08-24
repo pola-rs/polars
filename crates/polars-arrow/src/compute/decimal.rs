@@ -15,6 +15,12 @@ fn split_decimal_bytes(bytes: &[u8]) -> (Option<&[u8]>, Option<&[u8]>) {
     (lhs, rhs)
 }
 
+fn is_numeric(bytes: &[u8]) -> bool {
+    bytes
+        .iter()
+        .all(|b| matches!(*b, b'0'..=b'9' | b'.' | b'+' | b'-'))
+}
+
 pub fn infer_scale(bytes: &[u8]) -> Option<u8> {
     let (_lhs, rhs) = split_decimal_bytes(bytes);
     rhs.map(significant_digits)
@@ -26,6 +32,9 @@ pub fn infer_scale(bytes: &[u8]) -> Option<u8> {
 pub(super) fn deserialize_decimal(bytes: &[u8], precision: Option<u8>, scale: u8) -> Option<i128> {
     let (lhs, rhs) = split_decimal_bytes(bytes);
     let precision = precision.unwrap_or(u8::MAX);
+    if !is_numeric(bytes) {
+        return None;
+    }
     match (lhs, rhs) {
         (Some(lhs), Some(rhs)) => atoi::<i128>(lhs).and_then(|x| {
             atoi::<i128>(rhs)
@@ -127,5 +136,14 @@ mod test {
             deserialize_decimal(val.as_bytes(), precision, scale),
             Some(1000000000000000000)
         );
+        let scale = 5;
+        let val = "12ABC.34";
+        assert_eq!(deserialize_decimal(val.as_bytes(), precision, scale), None);
+
+        let val = "1ABC2.34";
+        assert_eq!(deserialize_decimal(val.as_bytes(), precision, scale), None);
+
+        let val = "12.3ABC4";
+        assert_eq!(deserialize_decimal(val.as_bytes(), precision, scale), None);
     }
 }
