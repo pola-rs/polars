@@ -1,5 +1,11 @@
+use chrono_tz::Tz;
 use polars_arrow::kernels::replace_time_zone as replace_time_zone_kernel;
 use polars_core::prelude::*;
+
+fn parse_time_zone(s: &str) -> PolarsResult<Tz> {
+    s.parse()
+        .map_err(|e| polars_err!(ComputeError: format!("unable to parse time zone: '{s}': {e}")))
+}
 
 pub fn replace_time_zone(
     ca: &DatetimeChunked,
@@ -7,15 +13,8 @@ pub fn replace_time_zone(
     use_earliest: Option<bool>,
 ) -> PolarsResult<DatetimeChunked> {
     let out: PolarsResult<_> = {
-        let from = ca.time_zone().as_deref().unwrap_or("UTC");
-        let to = time_zone.unwrap_or("UTC");
-        let (from_tz, to_tz) = match from.parse::<chrono_tz::Tz>() {
-            Ok(from_tz) => match to.parse::<chrono_tz::Tz>() {
-                Ok(to_tz) => (from_tz, to_tz),
-                Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", to),
-            },
-            Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", from),
-        };
+        let from_tz = parse_time_zone(ca.time_zone().as_deref().unwrap_or("UTC"))?;
+        let to_tz = parse_time_zone(time_zone.unwrap_or("UTC"))?;
         let chunks = ca.downcast_iter().map(|arr| {
             replace_time_zone_kernel(
                 arr,
