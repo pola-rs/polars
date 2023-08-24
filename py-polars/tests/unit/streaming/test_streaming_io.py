@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import unittest
 from typing import TYPE_CHECKING
 
 import pytest
@@ -52,16 +53,46 @@ def test_sink_csv(io_files_path: Path, tmp_path: Path) -> None:
         assert_frame_equal(target_data, source_data)
 
 
-@pytest.mark.write_disk()
-def test_sink_csv_with_options(io_files_path: Path, tmp_path: Path) -> None:
-    source_file = io_files_path / "small.parquet"
-    target_file = tmp_path / "sink.csv"
+def test_sink_csv_with_options() -> None:
+    """
+    Test with all possible options.
 
-    pl.scan_parquet(source_file).sink_csv(
-        target_file,
-    )
+    As we already tested the main read/write functionality of the `sink_csv` method in
+     the `test_sink_csv` method above, we only need to verify that all the options are
+     passed into the rust-polars correctly.
+    """
+    options_to_test = {
+        "has_header": "has_header",
+        "separator": "s",
+        "line_terminator": "line_terminator",
+        "quote": "q",
+        "batch_size": "batch_size",
+        "datetime_format": "datetime_format",
+        "date_format": "date_format",
+        "time_format": "time_format",
+        "float_precision": "float_precision",
+        "null_value": "null_value",
+        "quote_style": "quote_style",
+    }
 
-    with pl.StringCache():
-        source_data = pl.read_parquet(source_file)
-        target_data = pl.read_csv(target_file)
-        assert_frame_equal(target_data, source_data)
+    df = pl.LazyFrame({"dummy": ["abc"]})
+    with unittest.mock.patch.object(df, "_ldf") as ldf:
+        df.sink_csv("path", **options_to_test)
+        ldf.optimization_toggle().sink_csv.assert_called_with(
+            path="path", **options_to_test
+        )
+
+
+@pytest.mark.parametrize(
+    ("test_kwarg", "message"),
+    [
+        ({"separator": "abc"}, "only single byte separator is allowed"),
+        ({"separator": ""}, "only single byte separator is allowed"),
+        ({"quote": "abc"}, "only single byte quote char is allowed"),
+        ({"quote": ""}, "only single byte quote char is allowed"),
+    ],
+)
+def test_sink_csv_exceptions(test_kwarg: dict, message: str) -> None:
+    df = pl.LazyFrame({"dummy": ["abc"]})
+    with pytest.raises(ValueError, match=message):
+        df.sink_csv("path", **test_kwarg)
