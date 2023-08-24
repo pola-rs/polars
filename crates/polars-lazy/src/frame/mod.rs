@@ -17,7 +17,7 @@ mod file_list_reader;
 pub mod pivot;
 
 use std::borrow::Cow;
-#[cfg(any(feature = "parquet", feature = "ipc"))]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 use std::path::PathBuf;
 use std::sync::Arc;
 
