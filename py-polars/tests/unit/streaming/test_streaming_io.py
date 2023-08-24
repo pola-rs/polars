@@ -62,22 +62,28 @@ def test_sink_csv_with_options() -> None:
      passed into the rust-polars correctly.
     """
     options_to_test = {
-        "has_header": "has_header",
-        "separator": "s",
-        "line_terminator": "line_terminator",
-        "quote": "q",
-        "batch_size": "batch_size",
-        "datetime_format": "datetime_format",
-        "date_format": "date_format",
-        "time_format": "time_format",
-        "float_precision": "float_precision",
-        "null_value": "null_value",
-        "quote_style": "quote_style",
+        "has_header": False,
+        "separator": ";",
+        "line_terminator": "|",
+        "quote": "$",
+        "batch_size": 42,
+        "datetime_format": "%Y",
+        "date_format": "%d",
+        "time_format": "%H",
+        "float_precision": 42,
+        "null_value": "BOOM",
+        "quote_style": "always",
+        "maintain_order": False,
     }
 
     df = pl.LazyFrame({"dummy": ["abc"]})
     with unittest.mock.patch.object(df, "_ldf") as ldf:
         df.sink_csv("path", **options_to_test)
+
+        # These options should be converted into their byte values
+        options_to_test["separator"] = ord(options_to_test["separator"])
+        options_to_test["quote"] = ord(options_to_test["quote"])
+
         ldf.optimization_toggle().sink_csv.assert_called_with(
             path="path", **options_to_test
         )
