@@ -201,8 +201,8 @@ where
     /// incompatible types in the input. In the event that a column contains mixed dtypes, is it unspecified whether an
     /// error is returned or whether elements of incompatible dtypes are replaced with `null`.
     fn finish(self) -> PolarsResult<DataFrame> {
-        polars_ensure!(self.infer_schema_len != Some(0), InvalidOperation: "`infer_schema_len(Some(0))` is not allowed; see docs for more info");
-        
+        polars_ensure!(self.infer_schema_len != Some(0), InvalidOperation: "`infer_schema_len(Some(0))` is not allowed when using JsonReader; see docs for more info");
+
         let rb: ReaderBytes = (&self.reader).into();
 
         let out = match self.json_format {
