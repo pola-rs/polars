@@ -25,7 +25,7 @@ fn iss_7437() -> PolarsResult<()> {
 
     let expected = LazyCsvReader::new("../../examples/datasets/foods1.csv")
         .finish()?
-        .groupby(vec![col("category").alias("category")])
+        .group_by(vec![col("category").alias("category")])
         .agg(vec![])
         .collect()?
         .sort(["category"], vec![false], false)?;

@@ -19,9 +19,11 @@ Feather/ IPC
    :toctree: api/
 
    read_ipc
+   read_ipc_stream
    scan_ipc
    read_ipc_schema
    DataFrame.write_ipc
+   DataFrame.write_ipc_stream
    LazyFrame.sink_ipc
 
 Parquet
@@ -41,6 +43,7 @@ Database
    :toctree: api/
 
    read_database
+   read_database_uri
    DataFrame.write_database
 
 JSON

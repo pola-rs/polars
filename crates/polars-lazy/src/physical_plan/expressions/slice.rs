@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_core::frame::groupby::{GroupsProxy, IdxItem};
+use polars_core::frame::group_by::{GroupsProxy, IdxItem};
 use polars_core::prelude::*;
 use polars_core::utils::{slice_offsets, CustomIterTools};
 use polars_core::POOL;

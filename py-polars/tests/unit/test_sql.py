@@ -412,7 +412,7 @@ def test_sql_trig() -> None:
     assert_frame_equal(left=df_result, right=res, atol=1e-5)
 
 
-def test_sql_groupby(foods_ipc_path: Path) -> None:
+def test_sql_group_by(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
     c = pl.SQLContext(eager_execution=True)

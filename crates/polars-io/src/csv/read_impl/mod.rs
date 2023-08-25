@@ -11,7 +11,7 @@ pub use batched_read::*;
 use polars_arrow::array::*;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
-use polars_core::utils::accumulate_dataframes_vertical;
+use polars_core::utils::{accumulate_dataframes_vertical, get_casting_failures};
 use polars_core::POOL;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
@@ -32,21 +32,33 @@ pub(crate) fn cast_columns(
     df: &mut DataFrame,
     to_cast: &[Field],
     parallel: bool,
+    ignore_errors: bool,
 ) -> PolarsResult<()> {
-    let cast_fn = |s: &Series, fld: &Field| match (s.dtype(), fld.data_type()) {
-        #[cfg(feature = "temporal")]
-        (DataType::Utf8, DataType::Date) => s
-            .utf8()
-            .unwrap()
-            .as_date(None, false)
-            .map(|ca| ca.into_series()),
-        #[cfg(feature = "temporal")]
-        (DataType::Utf8, DataType::Datetime(tu, _)) => s
-            .utf8()
-            .unwrap()
-            .as_datetime(None, *tu, false, false, None, None)
-            .map(|ca| ca.into_series()),
-        (_, dt) => s.cast(dt),
+    let cast_fn = |s: &Series, fld: &Field| {
+        let out = match (s.dtype(), fld.data_type()) {
+            #[cfg(feature = "temporal")]
+            (DataType::Utf8, DataType::Date) => s
+                .utf8()
+                .unwrap()
+                .as_date(None, false)
+                .map(|ca| ca.into_series()),
+            #[cfg(feature = "temporal")]
+            (DataType::Utf8, DataType::Datetime(tu, _)) => s
+                .utf8()
+                .unwrap()
+                .as_datetime(None, *tu, false, false, None, None)
+                .map(|ca| ca.into_series()),
+            (_, dt) => s.cast(dt),
+        }?;
+        if !ignore_errors && s.null_count() != out.null_count() {
+            let failures = get_casting_failures(s, &out)?;
+            polars_bail!(
+                ComputeError:
+                "parsing to `{}` failed for column: {}, value(s) {};",
+                fld.data_type(), s.name(), failures.fmt_list(),
+            )
+        }
+        Ok(out)
     };
 
     if parallel {
@@ -103,6 +115,7 @@ pub(crate) struct CoreReader<'a> {
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     to_cast: Vec<Field>,
     row_count: Option<RowCount>,
+    truncate_ragged_lines: bool,
 }
 
 impl<'a> fmt::Debug for CoreReader<'a> {
@@ -194,6 +207,7 @@ impl<'a> CoreReader<'a> {
         row_count: Option<RowCount>,
         try_parse_dates: bool,
         raise_if_empty: bool,
+        truncate_ragged_lines: bool,
     ) -> PolarsResult<CoreReader<'a>> {
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
@@ -291,6 +305,7 @@ impl<'a> CoreReader<'a> {
             predicate,
             to_cast,
             row_count,
+            truncate_ragged_lines,
         })
     }
 
@@ -597,11 +612,12 @@ impl<'a> CoreReader<'a> {
                                 self.comment_char,
                                 self.quote_char,
                                 self.eol_char,
-                                self.null_values.as_ref(),
                                 self.missing_is_null,
+                                self.truncate_ragged_lines,
+                                ignore_errors,
+                                self.null_values.as_ref(),
                                 projection,
                                 &mut buffers,
-                                ignore_errors,
                                 chunk_size,
                                 self.schema.len(),
                                 &self.schema,
@@ -618,7 +634,7 @@ impl<'a> CoreReader<'a> {
                                 local_df.with_row_count_mut(&rc.name, Some(rc.offset));
                             };
 
-                            cast_columns(&mut local_df, &self.to_cast, false)?;
+                            cast_columns(&mut local_df, &self.to_cast, false, self.ignore_errors)?;
                             let s = predicate.evaluate(&local_df)?;
                             let mask = s.bool()?;
                             local_df = local_df.filter(mask)?;
@@ -671,6 +687,7 @@ impl<'a> CoreReader<'a> {
                             self.encoding,
                             self.null_values.as_ref(),
                             self.missing_is_null,
+                            self.truncate_ragged_lines,
                             usize::MAX,
                             stop_at_nbytes,
                             starting_point_offset,
@@ -681,7 +698,7 @@ impl<'a> CoreReader<'a> {
                             update_string_stats(&str_capacities, &str_columns, &df)?;
                         }
 
-                        cast_columns(&mut df, &self.to_cast, false)?;
+                        cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
                         if let Some(rc) = &self.row_count {
                             df.with_row_count_mut(&rc.name, Some(rc.offset));
                         }
@@ -713,11 +730,12 @@ impl<'a> CoreReader<'a> {
                                 self.comment_char,
                                 self.quote_char,
                                 self.eol_char,
-                                self.null_values.as_ref(),
                                 self.missing_is_null,
+                                self.ignore_errors,
+                                self.truncate_ragged_lines,
+                                self.null_values.as_ref(),
                                 &projection,
                                 &mut buffers,
-                                self.ignore_errors,
                                 remaining_rows - 1,
                                 self.schema.len(),
                                 self.schema.as_ref(),
@@ -731,7 +749,7 @@ impl<'a> CoreReader<'a> {
                             )
                         };
 
-                        cast_columns(&mut df, &self.to_cast, false)?;
+                        cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
                         if let Some(rc) = &self.row_count {
                             df.with_row_count_mut(&rc.name, Some(rc.offset));
                         }
@@ -799,6 +817,7 @@ fn read_chunk(
     encoding: CsvEncoding,
     null_values: Option<&NullValuesCompiled>,
     missing_is_null: bool,
+    truncate_ragged_lines: bool,
     chunk_size: usize,
     stop_at_nbytes: usize,
     starting_point_offset: Option<usize>,
@@ -830,11 +849,12 @@ fn read_chunk(
             comment_char,
             quote_char,
             eol_char,
-            null_values,
             missing_is_null,
+            ignore_errors,
+            truncate_ragged_lines,
+            null_values,
             projection,
             &mut buffers,
-            ignore_errors,
             chunk_size,
             schema.len(),
             schema,

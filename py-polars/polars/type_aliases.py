@@ -10,6 +10,7 @@ from typing import (
     List,
     Literal,
     Mapping,
+    Protocol,
     Sequence,
     Tuple,
     Type,
@@ -161,9 +162,14 @@ FrameInitTypes: TypeAlias = Union[
 ]
 
 # Excel IO
+ColumnFormatDict: TypeAlias = Mapping[
+    # dict of colname(s) or selector(s) to format string or dict
+    Union[ColumnNameOrSelector, Tuple[ColumnNameOrSelector, ...]],
+    Union[str, Mapping[str, str]],
+]
 ConditionalFormatDict: TypeAlias = Mapping[
     # dict of colname(s) to str, dict, or sequence of str/dict
-    Union[str, Collection[str]],
+    Union[ColumnNameOrSelector, Collection[str]],
     Union[str, Union[Mapping[str, Any], Sequence[Union[str, Mapping[str, Any]]]]],
 ]
 ColumnTotalsDefinition: TypeAlias = Union[
@@ -171,6 +177,9 @@ ColumnTotalsDefinition: TypeAlias = Union[
     Mapping[Union[str, Collection[str]], str],
     Sequence[str],
     bool,
+]
+ColumnWidthsDefinition: TypeAlias = Union[
+    Mapping[ColumnNameOrSelector, Union[Tuple[str, ...], int]], int
 ]
 RowTotalsDefinition: TypeAlias = Union[
     # dict of colname to str(s), a collection of str, or a boolean
@@ -185,3 +194,32 @@ ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
 # typevars for core polars types
 PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
 FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
+
+
+# minimal protocol definitions that can reasonably represent
+# an executable connection, cursor, or equivalent object
+class BasicConnection(Protocol):  # noqa: D101
+    def close(self) -> None:
+        """Close the connection."""
+
+    def cursor(self, *args: Any, **kwargs: Any) -> Any:
+        """Return a cursor object."""
+
+
+class BasicCursor(Protocol):  # noqa: D101
+    def close(self) -> None:
+        """Close the cursor."""
+
+    def execute(self, *args: Any, **kwargs: Any) -> Any:
+        """Execute a query."""
+
+
+class Cursor(BasicCursor):  # noqa: D101
+    def fetchall(self, *args: Any, **kwargs: Any) -> Any:
+        """Fetch all results."""
+
+    def fetchmany(self, *args: Any, **kwargs: Any) -> Any:
+        """Fetch results in batches."""
+
+
+ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor]

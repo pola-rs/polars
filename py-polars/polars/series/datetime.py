@@ -186,6 +186,10 @@ class DateTimeNameSpace:
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
 
+        See Also
+        --------
+        to_string : The identical Series method for which ``strftime`` is an alias.
+
         Examples
         --------
         >>> from datetime import datetime
@@ -201,10 +205,6 @@ class DateTimeNameSpace:
                 "2020/04/01"
                 "2020/05/01"
         ]
-
-        See Also
-        --------
-        to_string : The identical Series method for which ``strftime`` is an alias.
 
         """
         return self.to_string(format)

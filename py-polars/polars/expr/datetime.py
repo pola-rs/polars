@@ -395,7 +395,7 @@ class ExprDateTimeNameSpace:
         """
         if not isinstance(time, (dt.time, pl.Expr)):
             raise TypeError(
-                f"expected 'time' to be a python time or polars expression, found {time!r}"
+                f"expected 'time' to be a Python time or Polars expression, found {type(time).__name__!r}"
             )
         time = parse_as_expression(time)
         return wrap_expr(self._pyexpr.dt_combine(time, time_unit))
@@ -461,6 +461,10 @@ class ExprDateTimeNameSpace:
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
 
+        See Also
+        --------
+        to_string : The identical expression for which ``strftime`` is an alias.
+
         Examples
         --------
         >>> from datetime import datetime
@@ -488,10 +492,6 @@ class ExprDateTimeNameSpace:
         │ 2020-04-01 00:00:00 ┆ 2020/04/01 00:00:00 │
         │ 2020-05-01 00:00:00 ┆ 2020/05/01 00:00:00 │
         └─────────────────────┴─────────────────────┘
-
-        See Also
-        --------
-        to_string : The identical expression for which ``strftime`` is an alias.
 
         """
         return self.to_string(format)

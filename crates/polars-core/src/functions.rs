@@ -49,8 +49,8 @@ where
     } else {
         let a_mean = a.mean()?;
         let b_mean = b.mean()?;
-        let a = a.apply_cast_numeric::<_, Float64Type>(|a| a.to_f64().unwrap() - a_mean);
-        let b = b.apply_cast_numeric(|b| b.to_f64().unwrap() - b_mean);
+        let a: Float64Chunked = a.apply_values_generic(|a| a.to_f64().unwrap() - a_mean);
+        let b: Float64Chunked = b.apply_values_generic(|b| b.to_f64().unwrap() - b_mean);
 
         let tmp = a * b;
         let n = tmp.len() - tmp.null_count();

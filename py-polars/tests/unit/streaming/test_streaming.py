@@ -25,7 +25,7 @@ def test_streaming_categoricals_5921() -> None:
             pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
             .lazy()
             .with_columns(pl.col("X").cast(pl.Categorical))
-            .groupby("X")
+            .group_by("X")
             .agg(pl.col("Y").min())
             .sort("Y", descending=True)
             .collect(streaming=True)
@@ -34,7 +34,7 @@ def test_streaming_categoricals_5921() -> None:
         out_eager = (
             pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
             .with_columns(pl.col("X").cast(pl.Categorical))
-            .groupby("X")
+            .group_by("X")
             .agg(pl.col("Y").min())
             .sort("Y", descending=True)
         )
@@ -48,7 +48,7 @@ def test_streaming_block_on_literals_6054() -> None:
     df = pl.DataFrame({"col_1": [0] * 5 + [1] * 5})
     s = pl.Series("col_2", list(range(10)))
 
-    assert df.lazy().with_columns(s).groupby("col_1").agg(pl.all().first()).collect(
+    assert df.lazy().with_columns(s).group_by("col_1").agg(pl.all().first()).collect(
         streaming=True
     ).sort("col_1").to_dict(False) == {"col_1": [0, 1], "col_2": [0, 5]}
 
@@ -99,14 +99,14 @@ def test_streaming_literal_expansion() -> None:
         "y": ["a", "b"],
         "z": [1, 2],
     }
-    assert q.groupby(["x", "y"]).agg(pl.mean("z")).sort("y").collect(
+    assert q.group_by(["x", "y"]).agg(pl.mean("z")).sort("y").collect(
         streaming=True
     ).to_dict(False) == {
         "x": ["constant", "constant"],
         "y": ["a", "b"],
         "z": [1.0, 2.0],
     }
-    assert q.groupby(["x"]).agg(pl.mean("z")).collect().to_dict(False) == {
+    assert q.group_by(["x"]).agg(pl.mean("z")).collect().to_dict(False) == {
         "x": ["constant"],
         "z": [1.5],
     }
@@ -187,7 +187,7 @@ def test_streaming_sortedness_propagation_9494() -> None:
         )
         .lazy()
         .sort("when")
-        .groupby_dynamic("when", every="1mo")
+        .group_by_dynamic("when", every="1mo")
         .agg(pl.col("what").sum())
         .collect(streaming=True)
     ).to_dict(False) == {"when": [date(2023, 5, 1), date(2023, 6, 1)], "what": [3, 3]}
@@ -226,12 +226,12 @@ def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None
 def test_streaming_9776() -> None:
     df = pl.DataFrame({"col_1": ["a"] * 1000, "ID": [None] + ["a"] * 999})
     ordered = (
-        df.groupby("col_1", "ID", maintain_order=True)
+        df.group_by("col_1", "ID", maintain_order=True)
         .count()
         .filter(pl.col("col_1") == "a")
     )
     unordered = (
-        df.groupby("col_1", "ID", maintain_order=False)
+        df.group_by("col_1", "ID", maintain_order=False)
         .count()
         .filter(pl.col("col_1") == "a")
     )
@@ -317,7 +317,7 @@ def test_null_sum_streaming_10455() -> None:
             "y": [None] * 10,
         }
     )
-    assert df.lazy().groupby("x").sum().collect(streaming=True).to_dict(False) == {
+    assert df.lazy().group_by("x").sum().collect(streaming=True).to_dict(False) == {
         "x": [1],
         "y": [0.0],
     }
@@ -331,7 +331,7 @@ def test_boolean_agg_schema() -> None:
         }
     ).lazy()
 
-    agg_df = df.groupby("x").agg(pl.col("y").max().alias("max_y"))
+    agg_df = df.group_by("x").agg(pl.col("y").max().alias("max_y"))
 
     for streaming in [True, False]:
         assert (

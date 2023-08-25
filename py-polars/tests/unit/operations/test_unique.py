@@ -26,3 +26,12 @@ def test_unique_predicate_pd() -> None:
     )
     expected = pl.DataFrame({"x": ["abc"], "y": ["xxx"], "z": [True]})
     assert_frame_equal(result, expected)
+
+
+def test_unique_on_list_df() -> None:
+    assert pl.DataFrame(
+        {"a": [1, 2, 3, 4, 4], "b": [[1, 1], [2], [3], [4, 4], [4, 4]]}
+    ).unique(maintain_order=True).to_dict(False) == {
+        "a": [1, 2, 3, 4],
+        "b": [[1, 1], [2], [3], [4, 4]],
+    }

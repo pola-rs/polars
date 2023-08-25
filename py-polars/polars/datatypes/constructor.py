@@ -122,7 +122,7 @@ def numpy_type_to_constructor(dtype: type[np.dtype[Any]]) -> Callable[..., PySer
     except KeyError:
         return PySeries.new_object
     except NameError:  # pragma: no cover
-        raise ImportError(
+        raise ModuleNotFoundError(
             f"'numpy' is required to convert numpy dtype {dtype!r}"
         ) from None
 

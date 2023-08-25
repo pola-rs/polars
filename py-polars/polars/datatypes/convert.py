@@ -158,7 +158,7 @@ def is_polars_dtype(dtype: Any, include_unknown: bool = False) -> bool:
             return include_unknown
         else:
             return isinstance(dtype, (DataType, DataTypeClass))
-    except ValueError:
+    except TypeError:
         return False
 
 
@@ -517,7 +517,7 @@ def maybe_cast(el: Any, dtype: PolarsDataType) -> Any:
         try:
             el = py_type(el)  # type: ignore[call-arg, misc]
         except Exception:
-            raise ValueError(
+            raise TypeError(
                 f"cannot convert Python type {type(el).__name__!r} to {dtype!r}"
             ) from None
     return el

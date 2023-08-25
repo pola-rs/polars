@@ -68,30 +68,8 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 ///
 /// ```rust
 /// # use polars_core::prelude::*;
-/// fn apply_cosine(ca: &Float32Chunked) -> Float32Chunked {
-///     ca.apply(|v| v.cos())
-/// }
-/// ```
-///
-/// If we would like to cast the result we could use a Rust Iterator instead of an `apply` method.
-/// Note that Iterators are slightly slower as the null values aren't ignored implicitly.
-///
-/// ```rust
-/// # use polars_core::prelude::*;
 /// fn apply_cosine_and_cast(ca: &Float32Chunked) -> Float64Chunked {
-///     ca.into_iter()
-///         .map(|opt_v| {
-///         opt_v.map(|v| v.cos() as f64)
-///     }).collect()
-/// }
-/// ```
-///
-/// Another option is to first cast and then use an apply.
-///
-/// ```rust
-/// # use polars_core::prelude::*;
-/// fn apply_cosine_and_cast(ca: &Float32Chunked) -> Float64Chunked {
-///     ca.apply_cast_numeric(|v| v.cos() as f64)
+///     ca.apply_values_generic(|v| v.cos() as f64)
 /// }
 /// ```
 ///

@@ -139,7 +139,7 @@ impl PyDataFrame {
         skip_rows, projection, separator, rechunk, columns, encoding, n_threads, path,
         overwrite_dtype, overwrite_dtype_slice, low_memory, comment_char, quote_char,
         null_values, missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header,
-        row_count, sample_size, eol_char, raise_if_empty)
+        row_count, sample_size, eol_char, raise_if_empty, truncate_ragged_lines, schema)
     )]
     pub fn read_csv(
         py_f: &PyAny,
@@ -169,6 +169,8 @@ impl PyDataFrame {
         sample_size: usize,
         eol_char: &str,
         raise_if_empty: bool,
+        truncate_ragged_lines: bool,
+        schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -218,6 +220,7 @@ impl PyDataFrame {
             .with_path(path)
             .with_dtypes(overwrite_dtype.map(Arc::new))
             .with_dtypes_slice(overwrite_dtype_slice.as_deref())
+            .with_schema(schema.map(|schema| Arc::new(schema.0)))
             .low_memory(low_memory)
             .with_null_values(null_values)
             .with_missing_is_null(!missing_utf8_is_empty_string)
@@ -229,6 +232,7 @@ impl PyDataFrame {
             .with_row_count(row_count)
             .sample_size(sample_size)
             .raise_if_empty(raise_if_empty)
+            .truncate_ragged_lines(truncate_ragged_lines)
             .finish()
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
@@ -299,6 +303,30 @@ impl PyDataFrame {
             .with_n_rows(n_rows)
             .with_row_count(row_count)
             .memory_mapped(memory_map)
+            .finish()
+            .map_err(PyPolarsErr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
+    #[staticmethod]
+    #[cfg(feature = "ipc_streaming")]
+    #[pyo3(signature = (py_f, columns, projection, n_rows, row_count, rechunk))]
+    pub fn read_ipc_stream(
+        py_f: &PyAny,
+        columns: Option<Vec<String>>,
+        projection: Option<Vec<usize>>,
+        n_rows: Option<usize>,
+        row_count: Option<(String, IdxSize)>,
+        rechunk: bool,
+    ) -> PyResult<Self> {
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
+        let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
+        let df = IpcStreamReader::new(mmap_bytes_r)
+            .with_projection(projection)
+            .with_columns(columns)
+            .with_n_rows(n_rows)
+            .with_row_count(row_count)
+            .set_rechunk(rechunk)
             .finish()
             .map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
@@ -619,6 +647,32 @@ impl PyDataFrame {
             let mut buf = get_file_like(py_f, true)?;
 
             IpcWriter::new(&mut buf)
+                .with_compression(compression.0)
+                .finish(&mut self.df)
+                .map_err(PyPolarsErr::from)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "ipc_streaming")]
+    pub fn write_ipc_stream(
+        &mut self,
+        py: Python,
+        py_f: PyObject,
+        compression: Wrap<Option<IpcCompression>>,
+    ) -> PyResult<()> {
+        if let Ok(s) = py_f.extract::<&str>(py) {
+            py.allow_threads(|| {
+                let f = std::fs::File::create(s).unwrap();
+                IpcStreamWriter::new(f)
+                    .with_compression(compression.0)
+                    .finish(&mut self.df)
+                    .map_err(PyPolarsErr::from)
+            })?;
+        } else {
+            let mut buf = get_file_like(py_f, true)?;
+
+            IpcStreamWriter::new(&mut buf)
                 .with_compression(compression.0)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
@@ -1080,16 +1134,16 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn groupby_apply(
+    pub fn group_by_apply(
         &self,
         by: Vec<&str>,
         lambda: PyObject,
         maintain_order: bool,
     ) -> PyResult<Self> {
         let gb = if maintain_order {
-            self.df.groupby_stable(&by)
+            self.df.group_by_stable(&by)
         } else {
-            self.df.groupby(&by)
+            self.df.group_by(&by)
         }
         .map_err(PyPolarsErr::from)?;
 

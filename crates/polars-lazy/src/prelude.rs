@@ -9,7 +9,7 @@ pub use polars_plan::prelude::ParquetWriteOptions;
 pub(crate) use polars_plan::prelude::*;
 #[cfg(feature = "rolling_window")]
 pub use polars_time::{prelude::RollingOptions, Duration};
-#[cfg(feature = "dynamic_groupby")]
+#[cfg(feature = "dynamic_group_by")]
 pub use polars_time::{DynamicGroupOptions, PolarsTemporalGroupby, RollingGroupOptions};
 pub(crate) use polars_utils::arena::{Arena, Node};
 

@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import pytest
 
 import polars as pl
+from polars import StringCache
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -29,7 +30,7 @@ def test_lazyframe_deprecated_serde() -> None:
     lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
 
     with pytest.deprecated_call():
-        json = lf.write_json()  # type: ignore[attr-defined]
+        json = lf.write_json()
     with pytest.deprecated_call():
         result_from = pl.LazyFrame.from_json(json)
     with pytest.deprecated_call():
@@ -182,3 +183,10 @@ def test_pickle_lazyframe_nested_function_udf() -> None:
 
     q = pickle.loads(b)
     assert q.collect()["a"].to_list() == [2, 4, 6]
+
+
+@StringCache()
+def test_serde_categorical_series_10586() -> None:
+    s = pl.Series(["a", "b", "b", "a", "c"], dtype=pl.Categorical)
+    loaded_s = pickle.loads(pickle.dumps(s))
+    assert_series_equal(loaded_s, s)

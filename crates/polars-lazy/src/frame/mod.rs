@@ -602,7 +602,7 @@ impl LazyFrame {
     ///
     /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.lazy()
-    ///       .groupby([col("foo")])
+    ///       .group_by([col("foo")])
     ///       .agg([col("bar").sum(), col("ham").mean().alias("avg_ham")])
     ///       .collect()
     /// }
@@ -764,7 +764,7 @@ impl LazyFrame {
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///        .groupby([col("date")])
+    ///        .group_by([col("date")])
     ///        .agg([
     ///            col("rain").min().alias("min_rain"),
     ///            col("rain").sum().alias("sum_rain"),
@@ -772,7 +772,7 @@ impl LazyFrame {
     ///        ])
     /// }
     /// ```
-    pub fn groupby<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
+    pub fn group_by<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
         let keys = by
             .as_ref()
             .iter()
@@ -780,7 +780,7 @@ impl LazyFrame {
             .collect::<Vec<_>>();
         let opt_state = self.get_opt_state();
 
-        #[cfg(feature = "dynamic_groupby")]
+        #[cfg(feature = "dynamic_group_by")]
         {
             LazyGroupBy {
                 logical_plan: self.logical_plan,
@@ -792,7 +792,7 @@ impl LazyFrame {
             }
         }
 
-        #[cfg(not(feature = "dynamic_groupby"))]
+        #[cfg(not(feature = "dynamic_group_by"))]
         {
             LazyGroupBy {
                 logical_plan: self.logical_plan,
@@ -807,11 +807,11 @@ impl LazyFrame {
     ///
     /// Also works for index values of type Int32 or Int64.
     ///
-    /// Different from a [`groupby_dynamic`][`Self::groupby_dynamic`], the windows are now determined by the
+    /// Different from a [`group_by_dynamic`][`Self::group_by_dynamic`], the windows are now determined by the
     /// individual values and are not of constant intervals. For constant intervals use
-    /// *groupby_dynamic*
-    #[cfg(feature = "dynamic_groupby")]
-    pub fn groupby_rolling<E: AsRef<[Expr]>>(
+    /// *group_by_dynamic*
+    #[cfg(feature = "dynamic_group_by")]
+    pub fn group_by_rolling<E: AsRef<[Expr]>>(
         self,
         index_column: Expr,
         by: E,
@@ -821,9 +821,11 @@ impl LazyFrame {
             options.index_column = name.as_ref().into();
         } else {
             let name = expr_output_name(&index_column).unwrap();
-            return self
-                .with_column(index_column)
-                .groupby_rolling(Expr::Column(name), by, options);
+            return self.with_column(index_column).group_by_rolling(
+                Expr::Column(name),
+                by,
+                options,
+            );
         }
         let opt_state = self.get_opt_state();
         LazyGroupBy {
@@ -839,7 +841,7 @@ impl LazyFrame {
     /// Group based on a time value (or index value of type Int32, Int64).
     ///
     /// Time windows are calculated and rows are assigned to windows. Different from a
-    /// normal groupby is that a row can be member of multiple groups. The time/index
+    /// normal group_by is that a row can be member of multiple groups. The time/index
     /// window could be seen as a rolling window, with a window size determined by
     /// dates/times/values instead of slots in the DataFrame.
     ///
@@ -850,9 +852,9 @@ impl LazyFrame {
     /// - offset: offset of the window
     ///
     /// The `by` argument should be empty `[]` if you don't want to combine this
-    /// with a ordinary groupby on these keys.
-    #[cfg(feature = "dynamic_groupby")]
-    pub fn groupby_dynamic<E: AsRef<[Expr]>>(
+    /// with a ordinary group_by on these keys.
+    #[cfg(feature = "dynamic_group_by")]
+    pub fn group_by_dynamic<E: AsRef<[Expr]>>(
         self,
         index_column: Expr,
         by: E,
@@ -862,9 +864,11 @@ impl LazyFrame {
             options.index_column = name.as_ref().into();
         } else {
             let name = expr_output_name(&index_column).unwrap();
-            return self
-                .with_column(index_column)
-                .groupby_dynamic(Expr::Column(name), by, options);
+            return self.with_column(index_column).group_by_dynamic(
+                Expr::Column(name),
+                by,
+                options,
+            );
         }
         let opt_state = self.get_opt_state();
         LazyGroupBy {
@@ -877,8 +881,8 @@ impl LazyFrame {
         }
     }
 
-    /// Similar to [`groupby`][`Self::groupby`], but order of the DataFrame is maintained.
-    pub fn groupby_stable<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
+    /// Similar to [`group_by`][`Self::group_by`], but order of the DataFrame is maintained.
+    pub fn group_by_stable<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
         let keys = by
             .as_ref()
             .iter()
@@ -886,7 +890,7 @@ impl LazyFrame {
             .collect::<Vec<_>>();
         let opt_state = self.get_opt_state();
 
-        #[cfg(feature = "dynamic_groupby")]
+        #[cfg(feature = "dynamic_group_by")]
         {
             LazyGroupBy {
                 logical_plan: self.logical_plan,
@@ -898,7 +902,7 @@ impl LazyFrame {
             }
         }
 
-        #[cfg(not(feature = "dynamic_groupby"))]
+        #[cfg(not(feature = "dynamic_group_by"))]
         {
             LazyGroupBy {
                 logical_plan: self.logical_plan,
@@ -1364,16 +1368,16 @@ impl LazyFrame {
     }
 }
 
-/// Utility struct for lazy groupby operation.
+/// Utility struct for lazy group_by operation.
 #[derive(Clone)]
 pub struct LazyGroupBy {
     pub logical_plan: LogicalPlan,
     opt_state: OptState,
     keys: Vec<Expr>,
     maintain_order: bool,
-    #[cfg(feature = "dynamic_groupby")]
+    #[cfg(feature = "dynamic_group_by")]
     dynamic_options: Option<DynamicGroupOptions>,
-    #[cfg(feature = "dynamic_groupby")]
+    #[cfg(feature = "dynamic_group_by")]
     rolling_options: Option<RollingGroupOptions>,
 }
 
@@ -1392,7 +1396,7 @@ impl LazyGroupBy {
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///        .groupby_stable([col("date")])
+    ///        .group_by_stable([col("date")])
     ///        .agg([
     ///            col("rain").min().alias("min_rain"),
     ///            col("rain").sum().alias("sum_rain"),
@@ -1401,9 +1405,9 @@ impl LazyGroupBy {
     /// }
     /// ```
     pub fn agg<E: AsRef<[Expr]>>(self, aggs: E) -> LazyFrame {
-        #[cfg(feature = "dynamic_groupby")]
+        #[cfg(feature = "dynamic_group_by")]
         let lp = LogicalPlanBuilder::from(self.logical_plan)
-            .groupby(
+            .group_by(
                 self.keys,
                 aggs,
                 None,
@@ -1413,9 +1417,9 @@ impl LazyGroupBy {
             )
             .build();
 
-        #[cfg(not(feature = "dynamic_groupby"))]
+        #[cfg(not(feature = "dynamic_group_by"))]
         let lp = LogicalPlanBuilder::from(self.logical_plan)
-            .groupby(self.keys, aggs, None, self.maintain_order)
+            .group_by(self.keys, aggs, None, self.maintain_order)
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
@@ -1450,14 +1454,14 @@ impl LazyGroupBy {
     where
         F: 'static + Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
-        #[cfg(feature = "dynamic_groupby")]
+        #[cfg(feature = "dynamic_group_by")]
         let options = GroupbyOptions {
             dynamic: self.dynamic_options,
             rolling: self.rolling_options,
             slice: None,
         };
 
-        #[cfg(not(feature = "dynamic_groupby"))]
+        #[cfg(not(feature = "dynamic_group_by"))]
         let options = GroupbyOptions { slice: None };
 
         let lp = LogicalPlan::Aggregate {

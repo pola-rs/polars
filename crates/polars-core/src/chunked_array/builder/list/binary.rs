@@ -48,6 +48,9 @@ impl ListUtf8ChunkedBuilder {
 
     #[inline]
     pub(crate) fn append(&mut self, ca: &Utf8Chunked) {
+        if ca.is_empty() {
+            self.fast_explode = false;
+        }
         let value_builder = self.builder.mut_values();
         value_builder.try_extend(ca).unwrap();
         self.builder.try_push_valid().unwrap();

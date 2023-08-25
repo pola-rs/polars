@@ -15,7 +15,7 @@ use polars_arrow::utils::combine_validities_and;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::utils::{align_chunks_binary, align_chunks_binary_owned};
+use crate::utils::align_chunks_binary_owned;
 
 pub trait ArrayArithmetics
 where
@@ -148,12 +148,7 @@ impl Add for &BinaryChunked {
             };
         }
 
-        let (lhs, rhs) = align_chunks_binary(self, rhs);
-        let chunks = lhs
-            .downcast_iter()
-            .zip(rhs.downcast_iter())
-            .map(|(a, b)| concat_binary(a, b));
-        ChunkedArray::from_chunk_iter(self.name(), chunks)
+        arity::binary(self, rhs, concat_binary)
     }
 }
 
@@ -194,7 +189,7 @@ impl Add for &BooleanChunked {
         if rhs.len() == 1 {
             let rhs = rhs.get(0);
             return match rhs {
-                Some(rhs) => self.apply_cast_numeric(|v| v as IdxSize + rhs as IdxSize),
+                Some(rhs) => self.apply_values_generic(|v| v as IdxSize + rhs as IdxSize),
                 None => IdxCa::full_null(self.name(), self.len()),
             };
         }
@@ -202,12 +197,7 @@ impl Add for &BooleanChunked {
         if self.len() == 1 {
             return rhs.add(self);
         }
-        let (lhs, rhs) = align_chunks_binary(self, rhs);
-        let chunks = lhs
-            .downcast_iter()
-            .zip(rhs.downcast_iter())
-            .map(|(a, b)| add_boolean(a, b));
-        ChunkedArray::from_chunk_iter(self.name(), chunks)
+        arity::binary(self, rhs, add_boolean)
     }
 }
 

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import inspect
 import warnings
-from functools import partial, wraps
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from functools import wraps
+from typing import TYPE_CHECKING, Callable, TypeVar
 
 from polars.utils.various import find_stacklevel
 
@@ -58,15 +58,7 @@ def deprecate_function(
 def deprecate_renamed_function(
     new_name: str, *, version: str
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
-    """
-    Decorator to mark a function as deprecated due to being renamed.
-
-    Notes
-    -----
-    For deprecating renamed class methods, use the ``deprecate_renamed_methods``
-    class decorator instead.
-
-    """
+    """Decorator to mark a function as deprecated due to being renamed."""
     return deprecate_function(f"It has been renamed to `{new_name}`.", version=version)
 
 
@@ -117,65 +109,6 @@ def _rename_keyword_argument(
             version=version,
         )
         kwargs[new_name] = kwargs.pop(old_name)
-
-
-def deprecate_renamed_methods(
-    mapping: dict[str, str | tuple[str, dict[str, Any]]], *, versions: dict[str, str]
-) -> Callable[[type[T]], type[T]]:
-    """
-    Class decorator to mark methods as deprecated due to being renamed.
-
-    This allows for the deprecated method to be deleted. It will remain available
-    to users, but will no longer show up in auto-complete suggestions.
-
-    If the arguments of the method are being renamed as well, use in conjunction with
-    `deprecate_renamed_parameter`.
-
-    If the new method has different default values for some keyword arguments, supply
-    the old default values as a dictionary in the mapping like so::
-
-        @deprecate_renamed_methods(
-            {"old_method": ("new_method", {"flag": False})},
-            versions={"old_method": "1.0.0"},
-        )
-        class Foo:
-            def new_method(flag=True):
-                ...
-
-    Parameters
-    ----------
-    mapping
-        Mapping of deprecated method names to new method names.
-    versions
-        For each deprecated method name, the Polars version number in which it was
-        deprecated. This argument is used to help developers determine when to remove
-        the deprecated functionality.
-
-    """
-
-    def _redirecting_getattr_(obj: T, item: Any) -> Any:
-        if isinstance(item, str) and item in mapping:
-            new_item = mapping[item]
-            new_item_name = new_item if isinstance(new_item, str) else new_item[0]
-            class_name = type(obj).__name__
-            issue_deprecation_warning(
-                f"`{class_name}.{item}` is deprecated."
-                f" It has been renamed to `{class_name}.{new_item_name}`.",
-                version=versions[item],
-            )
-            item = new_item_name
-
-        attr = obj.__getattribute__(item)
-        if isinstance(new_item, tuple):
-            attr = partial(attr, **new_item[1])
-        return attr
-
-    def decorate(cls: type[T]) -> type[T]:
-        # note: __getattr__ is only invoked if item isn't found on the class
-        cls.__getattr__ = _redirecting_getattr_  # type: ignore[attr-defined]
-        return cls
-
-    return decorate
 
 
 def deprecate_nonkeyword_arguments(

@@ -129,7 +129,7 @@ shape: (5, 8)
 >>> # and continue in python
 >>> lf = context.execute(query)
 >>> (lf.join(other_table)
-...      .groupby("foo")
+...      .group_by("foo")
 ...      .agg(
 ...     pl.col("sum_v1").count()
 ... ).collect())
@@ -220,7 +220,7 @@ point to the `main` branch of this repo.
 polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>" }
 ```
 
-Required Rust version `>=1.62`
+Required Rust version `>=1.65`.
 
 ## Contributing
 

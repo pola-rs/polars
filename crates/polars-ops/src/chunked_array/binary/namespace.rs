@@ -60,7 +60,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 Ok(bytes.into())
             })
         } else {
-            Ok(ca.apply_on_opt(|opt_s| opt_s.and_then(|s| hex::decode(s).ok().map(Cow::Owned))))
+            Ok(ca.apply(|opt_s| opt_s.and_then(|s| hex::decode(s).ok().map(Cow::Owned))))
         }
     }
 
@@ -68,7 +68,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     fn hex_encode(&self) -> Series {
         let ca = self.as_binary();
         unsafe {
-            ca.apply(|s| hex::encode(s).into_bytes().into())
+            ca.apply_values(|s| hex::encode(s).into_bytes().into())
                 .cast_unchecked(&DataType::Utf8)
                 .unwrap()
         }
@@ -88,7 +88,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 Ok(bytes.into())
             })
         } else {
-            Ok(ca.apply_on_opt(|opt_s| {
+            Ok(ca.apply(|opt_s| {
                 opt_s.and_then(|s| general_purpose::STANDARD.decode(s).ok().map(Cow::Owned))
             }))
         }
@@ -98,7 +98,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     fn base64_encode(&self) -> Series {
         let ca = self.as_binary();
         unsafe {
-            ca.apply(|s| general_purpose::STANDARD.encode(s).into_bytes().into())
+            ca.apply_values(|s| general_purpose::STANDARD.encode(s).into_bytes().into())
                 .cast_unchecked(&DataType::Utf8)
                 .unwrap()
         }

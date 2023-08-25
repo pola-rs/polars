@@ -18,7 +18,7 @@
 //! * [Filter](#filter)
 //! * [Sort](#sort)
 //! * [Joins](#joins)
-//! * [GroupBy](#groupby)
+//! * [GroupBy](#group_by)
 //!     - [pivot](#pivot)
 //! * [Melt](#melt)
 //! * [Explode](#explode)
@@ -148,7 +148,7 @@
 //! let ca = UInt32Chunked::new("foo", &[1, 2, 3]);
 //!
 //! // 1 / ca
-//! let divide_one_by_ca = ca.apply(|rhs| 1 / rhs);
+//! let divide_one_by_ca = ca.apply_values(|rhs| 1 / rhs);
 //! ```
 //!
 //! ## Comparisons
@@ -245,11 +245,11 @@
 //!
 //! // apply a closure over all values
 //! let s = Series::new("foo", &[Some(1), Some(2), None]);
-//! s.i32()?.apply(|value| value * 20);
+//! s.i32()?.apply_values(|value| value * 20);
 //!
 //! // count string lengths
 //! let s = Series::new("foo", &["foo", "bar", "foobar"]);
-//! s.utf8()?.apply_cast_numeric::<_, UInt64Type>(|str_val| str_val.len() as u64);
+//! s.utf8()?.apply_values_generic(|str_val| str_val.len() as u64);
 //!
 //! # Ok(())
 //! # }
@@ -400,20 +400,20 @@
 //!
 //! ## Groupby
 //!
-//! Note that Polars lazy is a lot more powerful in and more performant in groupby operations.
+//! Note that Polars lazy is a lot more powerful in and more performant in group_by operations.
 //! In lazy a myriad of aggregations can be combined from expressions.
 //!
 //! See more in:
 //!
-//! * [Groupby](crate::frame::groupby::GroupBy)
+//! * [Groupby](crate::frame::group_by::GroupBy)
 //!
 //! ### GroupBy
 //! ```
 //! use polars::prelude::*;
 //!
 //! # fn example(df: &DataFrame) -> PolarsResult<()> {
-//!  // groupby "groups" | sum "foo"
-//!  let out = df.groupby(["groups"])?
+//!  // group_by "groups" | sum "foo"
+//!  let out = df.group_by(["groups"])?
 //!     .select(["foo"])
 //!     .sum();
 //!
@@ -434,7 +434,7 @@
 //!      "bar" => ["k", "l", "m", "n", "0"]
 //!      )?;
 //!
-//! // groupby "foo" | pivot "bar" column | aggregate "N"
+//! // group_by "foo" | pivot "bar" column | aggregate "N"
 //!  let pivoted = pivot::pivot(&df, ["foo"], ["bar"], ["N"], false, Some(first()), None);
 //!
 //! // pivoted:

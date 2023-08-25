@@ -29,7 +29,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     #[cfg(feature = "string_encoding")]
     fn hex_encode(&self) -> Utf8Chunked {
         let ca = self.as_utf8();
-        ca.apply(|s| hex::encode(s).into())
+        ca.apply_values(|s| hex::encode(s).into())
     }
 
     #[cfg(not(feature = "binary_encoding"))]
@@ -47,7 +47,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     #[cfg(feature = "string_encoding")]
     fn base64_encode(&self) -> Utf8Chunked {
         let ca = self.as_utf8();
-        ca.apply(|s| general_purpose::STANDARD.encode(s).into())
+        ca.apply_values(|s| general_purpose::STANDARD.encode(s).into())
     }
 
     #[cfg(feature = "string_from_radix")]
@@ -178,7 +178,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         let reg = Regex::new(pat)?;
         let f = |s: &'a str| reg.replace(s, val);
         let ca = self.as_utf8();
-        Ok(ca.apply(f))
+        Ok(ca.apply_values(f))
     }
 
     /// Replace the leftmost literal (sub)string with another string
@@ -235,7 +235,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     fn replace_all(&self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
-        Ok(ca.apply(|s| reg.replace_all(s, val)))
+        Ok(ca.apply_values(|s| reg.replace_all(s, val)))
     }
 
     /// Replace all matching literal (sub)strings with another string

@@ -49,7 +49,7 @@ def test_cse_schema_6081() -> None:
         orient="row",
     ).lazy()
 
-    min_value_by_group = df.groupby(["date", "id"]).agg(
+    min_value_by_group = df.group_by(["date", "id"]).agg(
         pl.col("value").min().alias("min_value")
     )
 
@@ -88,7 +88,7 @@ def test_cse_9630() -> None:
                 joined_df2.select("key", pl.col("y").alias("value")),
             ]
         )
-        .groupby("key")
+        .group_by("key")
         .agg(
             [
                 pl.col("value"),
@@ -123,7 +123,7 @@ def test_schema_row_count_cse() -> None:
     csv_a.seek(0)
 
     df_a = pl.scan_csv(csv_a.name).with_row_count("Idx")
-    assert df_a.join(df_a, on="B").groupby(
+    assert df_a.join(df_a, on="B").group_by(
         "A", maintain_order=True
     ).all().collect().to_dict(False) == {
         "A": ["Gr1"],
@@ -199,7 +199,7 @@ def test_windows_cse_excluded() -> None:
 
 
 @pytest.mark.skip()
-def test_cse_groupby_10215() -> None:
+def test_cse_group_by_10215() -> None:
     q = (
         pl.DataFrame(
             {
@@ -208,7 +208,7 @@ def test_cse_groupby_10215() -> None:
             }
         )
         .lazy()
-        .groupby(
+        .group_by(
             "b",
         )
         .agg(
@@ -295,7 +295,7 @@ def test_cse_10452() -> None:
     assert q.collect(comm_subexpr_elim=True).to_dict(False) == {"b": [13, 14, 15]}
 
 
-def test_cse_groupby_ternary_10490() -> None:
+def test_cse_group_by_ternary_10490() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 1, 2, 2],
@@ -306,7 +306,7 @@ def test_cse_groupby_ternary_10490() -> None:
 
     assert (
         df.lazy()
-        .groupby("a")
+        .group_by("a")
         .agg(
             [
                 pl.when(pl.col(col).is_null().all()).then(None).otherwise(1).alias(col)

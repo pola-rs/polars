@@ -20,6 +20,9 @@ Manipulation/selection
     DataFrame.find_idx_by_name
     DataFrame.get_column
     DataFrame.get_columns
+    DataFrame.group_by
+    DataFrame.group_by_dynamic
+    DataFrame.group_by_rolling
     DataFrame.groupby
     DataFrame.groupby_dynamic
     DataFrame.groupby_rolling

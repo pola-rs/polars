@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import io
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pytest
@@ -17,83 +17,108 @@ if TYPE_CHECKING:
 COMPRESSIONS = ["uncompressed", "lz4", "zstd"]
 
 
+def read_ipc(is_stream: bool, *args: Any, **kwargs: Any) -> pl.DataFrame:
+    if is_stream:
+        return pl.read_ipc_stream(*args, **kwargs)
+    else:
+        return pl.read_ipc(*args, **kwargs)
+
+
+def write_ipc(df: pl.DataFrame, is_stream: bool, *args: Any, **kwargs: Any) -> Any:
+    if is_stream:
+        return df.write_ipc_stream(*args, **kwargs)
+    else:
+        return df.write_ipc(*args, **kwargs)
+
+
 @pytest.mark.parametrize("compression", COMPRESSIONS)
-def test_from_to_buffer(df: pl.DataFrame, compression: IpcCompression) -> None:
+@pytest.mark.parametrize("stream", [True, False])
+def test_from_to_buffer(
+    df: pl.DataFrame, compression: IpcCompression, stream: bool
+) -> None:
     # use an ad-hoc buffer (file=None)
-    buf1 = df.write_ipc(None, compression=compression)
-    read_df = pl.read_ipc(buf1, use_pyarrow=False)
+    buf1 = write_ipc(df, stream, None, compression=compression)
+    read_df = read_ipc(stream, buf1, use_pyarrow=False)
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
     # explicitly supply an existing buffer
     buf2 = io.BytesIO()
-    df.write_ipc(buf2, compression=compression)
+    write_ipc(df, stream, buf2, compression=compression)
     buf2.seek(0)
-    read_df = pl.read_ipc(buf2, use_pyarrow=False)
+    read_df = read_ipc(stream, buf2, use_pyarrow=False)
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 @pytest.mark.parametrize("path_as_string", [True, False])
+@pytest.mark.parametrize("stream", [True, False])
 @pytest.mark.write_disk()
 def test_from_to_file(
     df: pl.DataFrame,
     compression: IpcCompression,
     path_as_string: bool,
     tmp_path: Path,
+    stream: bool,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.ipc"
     if path_as_string:
         file_path = str(file_path)  # type: ignore[assignment]
-    df.write_ipc(file_path, compression=compression)
-    df_read = pl.read_ipc(file_path, use_pyarrow=False)
+    write_ipc(df, stream, file_path, compression=compression)
+    df_read = read_ipc(stream, file_path, use_pyarrow=False)
 
     assert_frame_equal(df, df_read, categorical_as_str=True)
 
 
+@pytest.mark.parametrize("stream", [True, False])
 @pytest.mark.write_disk()
-def test_select_columns_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
+def test_select_columns_from_file(
+    df: pl.DataFrame, tmp_path: Path, stream: bool
+) -> None:
     tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.ipc"
-    df.write_ipc(file_path)
-    df_read = pl.read_ipc(file_path, columns=["bools"])
+    write_ipc(df, stream, file_path)
+    df_read = read_ipc(stream, file_path, columns=["bools"])
 
     assert df_read.columns == ["bools"]
 
 
-def test_select_columns_from_buffer() -> None:
+@pytest.mark.parametrize("stream", [True, False])
+def test_select_columns_from_buffer(stream: bool) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
     expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
 
     f = io.BytesIO()
-    df.write_ipc(f)
+    write_ipc(df, stream, f)
     f.seek(0)
 
-    read_df = pl.read_ipc(f, columns=["b", "c"], use_pyarrow=False)
+    read_df = read_ipc(stream, f, columns=["b", "c"], use_pyarrow=False)
     assert_frame_equal(expected, read_df)
 
 
-def test_select_columns_projection() -> None:
+@pytest.mark.parametrize("stream", [True, False])
+def test_select_columns_projection(stream: bool) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
     expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
 
     f = io.BytesIO()
-    df.write_ipc(f)
+    write_ipc(df, stream, f)
     f.seek(0)
 
-    read_df = pl.read_ipc(f, columns=[1, 2], use_pyarrow=False)
+    read_df = read_ipc(stream, f, columns=[1, 2], use_pyarrow=False)
     assert_frame_equal(expected, read_df)
 
 
 @pytest.mark.parametrize("compression", COMPRESSIONS)
-def test_compressed_simple(compression: IpcCompression) -> None:
+@pytest.mark.parametrize("stream", [True, False])
+def test_compressed_simple(compression: IpcCompression, stream: bool) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
 
     f = io.BytesIO()
-    df.write_ipc(f, compression)
+    write_ipc(df, stream, f, compression)
     f.seek(0)
 
-    df_read = pl.read_ipc(f, use_pyarrow=False)
+    df_read = read_ipc(stream, f, use_pyarrow=False)
     assert_frame_equal(df_read, df)
 
 
@@ -143,7 +168,8 @@ def test_ipc_schema_from_file(
     assert schema == expected
 
 
-def test_ipc_column_order() -> None:
+@pytest.mark.parametrize("stream", [True, False])
+def test_ipc_column_order(stream: bool) -> None:
     df = pl.DataFrame(
         {
             "cola": ["x", "y", "z"],
@@ -152,12 +178,12 @@ def test_ipc_column_order() -> None:
         }
     )
     f = io.BytesIO()
-    df.write_ipc(f)
+    write_ipc(df, stream, f)
     f.seek(0)
 
     columns = ["colc", "colb", "cola"]
     # read file into polars; the specified column order is no longer respected
-    assert pl.read_ipc(f, columns=columns).columns == columns
+    assert read_ipc(stream, f, columns=columns).columns == columns
 
 
 @pytest.mark.write_disk()

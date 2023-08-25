@@ -211,7 +211,7 @@ def test_arr_contains_categorical() -> None:
         {"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]}
     ).lazy()
     df = df.with_columns(pl.col("str").cast(pl.Categorical))
-    df_groups = df.groupby("group").agg([pl.col("str").alias("str_list")])
+    df_groups = df.group_by("group").agg([pl.col("str").alias("str_list")])
     assert df_groups.filter(pl.col("str_list").list.contains("C")).collect().to_dict(
         False
     ) == {"group": [2], "str_list": [["A", "C"]]}
@@ -364,7 +364,7 @@ def test_list_function_group_awareness() -> None:
         }
     )
 
-    assert df.groupby("group").agg(
+    assert df.group_by("group").agg(
         [
             pl.col("a").implode().list.get(0).alias("get"),
             pl.col("a").implode().list.take([0]).alias("take"),
@@ -512,6 +512,27 @@ def test_list_set_operations() -> None:
     exp = [[2, 3], [3, 1], [3]]
     assert r1 == exp
     assert r2 == exp
+
+
+def test_list_set_operations_broadcast() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[2, 3, 3], [3, 1], [1, 2, 3]],
+        }
+    )
+
+    assert df.with_columns(
+        pl.col("a").list.set_intersection(pl.lit(pl.Series([[1, 2]])))
+    ).to_dict(False) == {"a": [[2], [1], [1, 2]]}
+    assert df.with_columns(
+        pl.col("a").list.set_union(pl.lit(pl.Series([[1, 2]])))
+    ).to_dict(False) == {"a": [[2, 3, 1], [3, 1, 2], [1, 2, 3]]}
+    assert df.with_columns(
+        pl.col("a").list.set_difference(pl.lit(pl.Series([[1, 2]])))
+    ).to_dict(False) == {"a": [[3], [3], [3]]}
+    assert df.with_columns(
+        pl.lit(pl.Series("a", [[1, 2]])).list.set_difference("a")
+    ).to_dict(False) == {"a": [[1], [2], []]}
 
 
 def test_list_take_oob_10079() -> None:
