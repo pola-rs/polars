@@ -10,6 +10,7 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_expr
+from polars.utils.deprecation import rename_use_earliest_to_ambiguous
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -34,6 +35,7 @@ def datetime_(
     time_unit: TimeUnit = "us",
     time_zone: str | None = None,
     use_earliest: bool | None = None,
+    ambiguous: str | Expr = "raise",
 ) -> Expr:
     """
     Create a Polars literal expression of type Datetime.
@@ -65,6 +67,15 @@ def datetime_(
         - ``True``: use the earliest datetime
         - ``False``: use the latest datetime
 
+        .. deprecated:: 0.19.0
+            Use `ambiguous` instead
+    ambiguous
+        Determine how to deal with ambiguous datetimes:
+
+        - ``'raise'`` (default): raise
+        - ``'earliest'``: use the earliest datetime
+        - ``'latest'``: use the latest datetime
+
 
     Returns
     -------
@@ -72,6 +83,9 @@ def datetime_(
         Expression of data type :class:`Datetime`.
 
     """
+    ambiguous = parse_as_expression(
+        rename_use_earliest_to_ambiguous(use_earliest, ambiguous), str_as_lit=True
+    )
     year_expr = parse_as_expression(year)
     month_expr = parse_as_expression(month)
     day_expr = parse_as_expression(day)
@@ -96,7 +110,7 @@ def datetime_(
             microsecond,
             time_unit,
             time_zone,
-            use_earliest,
+            ambiguous,
         )
     )
 

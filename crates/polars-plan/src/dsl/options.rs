@@ -23,11 +23,6 @@ pub struct StrptimeOptions {
     pub exact: bool,
     /// use a cache of unique, converted dates to apply the datetime conversion.
     pub cache: bool,
-    /// use earliest datetime when localizing ambiguous datetimes
-    /// - True: use earliest datetime
-    /// - False: use latest datetime
-    /// - None: raise
-    pub use_earliest: Option<bool>,
 }
 
 impl Default for StrptimeOptions {
@@ -37,7 +32,6 @@ impl Default for StrptimeOptions {
             strict: true,
             exact: true,
             cache: true,
-            use_earliest: None,
         }
     }
 }

@@ -677,7 +677,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             #[cfg(feature = "temporal")]
             Strptime(dtype, options) => {
-                map!(strings::strptime, dtype.clone(), &options)
+                map_as_slice!(strings::strptime, dtype.clone(), &options)
             },
             #[cfg(feature = "concat_str")]
             ConcatVertical(delimiter) => map!(strings::concat, &delimiter),
@@ -749,7 +749,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Nanosecond => map!(datetime::nanosecond),
             TimeStamp(tu) => map!(datetime::timestamp, tu),
             Truncate(truncate_options) => {
-                map!(datetime::truncate, &truncate_options)
+                map_as_slice!(datetime::truncate, &truncate_options)
             },
             #[cfg(feature = "date_offset")]
             MonthStart => map!(datetime::month_start),
@@ -761,8 +761,8 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             DSTOffset => map!(datetime::dst_offset),
             Round(every, offset) => map!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]
-            ReplaceTimeZone(tz, use_earliest) => {
-                map!(dispatch::replace_time_zone, tz.as_deref(), use_earliest)
+            ReplaceTimeZone(tz) => {
+                map_as_slice!(dispatch::replace_time_zone, tz.as_deref())
             },
             Combine(tu) => map_as_slice!(temporal::combine, tu),
             DateRange {
@@ -818,14 +818,8 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             DatetimeFunction {
                 time_unit,
                 time_zone,
-                use_earliest,
             } => {
-                map_as_slice!(
-                    temporal::datetime,
-                    &time_unit,
-                    time_zone.as_deref(),
-                    use_earliest
-                )
+                map_as_slice!(temporal::datetime, &time_unit, time_zone.as_deref())
             },
         }
     }

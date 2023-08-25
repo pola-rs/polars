@@ -3,10 +3,13 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
+import polars._reexport as pl
+from polars import functions as F
 from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.exceptions import ChronoFormatWarning
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
+from polars.utils.deprecation import rename_use_earliest_to_ambiguous
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
@@ -83,6 +86,7 @@ class ExprStringNameSpace:
         exact: bool = True,
         cache: bool = True,
         use_earliest: bool | None = None,
+        ambiguous: str | Expr = "raise",
     ) -> Expr:
         """
         Convert a Utf8 column into a Datetime column.
@@ -119,6 +123,15 @@ class ExprStringNameSpace:
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
 
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
+
         Examples
         --------
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
@@ -131,6 +144,9 @@ class ExprStringNameSpace:
         ]
         """
         _validate_format_argument(format)
+        ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
+        if not isinstance(ambiguous, pl.Expr):
+            ambiguous = F.lit(ambiguous)
         return wrap_expr(
             self._pyexpr.str_to_datetime(
                 format,
@@ -139,7 +155,7 @@ class ExprStringNameSpace:
                 strict,
                 exact,
                 cache,
-                use_earliest,
+                ambiguous._pyexpr,
             )
         )
 
@@ -190,6 +206,7 @@ class ExprStringNameSpace:
         exact: bool = True,
         cache: bool = True,
         use_earliest: bool | None = None,
+        ambiguous: str | Expr = "raise",
     ) -> Expr:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -220,6 +237,15 @@ class ExprStringNameSpace:
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Notes
         -----
@@ -281,6 +307,7 @@ class ExprStringNameSpace:
                 exact=exact,
                 cache=cache,
                 use_earliest=use_earliest,
+                ambiguous=ambiguous,
             )
         elif dtype == Time:
             return self.to_time(format, strict=strict, cache=cache)
