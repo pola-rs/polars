@@ -48,6 +48,7 @@ home = "0.5.4"
 tempdir = "0.3.7"
 
 [features]
+default = ["decompress"]
 # support for arrows json parsing
 json = [
   "arrow/io_json_write",
