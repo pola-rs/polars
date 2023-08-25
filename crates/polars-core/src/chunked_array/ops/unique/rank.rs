@@ -51,7 +51,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
         },
         0 => {
             return match method {
-                Average => Float32Chunked::from_slice(s.name(), &[]).into_series(),
+                Average => Float64Chunked::from_slice(s.name(), &[]).into_series(),
                 _ => IdxCa::from_slice(s.name(), &[]).into_series(),
             };
         },
