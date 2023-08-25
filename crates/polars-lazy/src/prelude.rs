@@ -11,6 +11,8 @@ pub use polars_plan::prelude::IpcWriterOptions;
 #[cfg(feature = "parquet")]
 pub use polars_plan::prelude::ParquetWriteOptions;
 pub(crate) use polars_plan::prelude::*;
+#[cfg(feature = "json")]
+pub use polars_plan::prelude::JsonWriterOptions;
 #[cfg(feature = "rolling_window")]
 pub use polars_time::{prelude::RollingOptions, Duration};
 #[cfg(feature = "dynamic_group_by")]

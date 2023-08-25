@@ -763,6 +763,29 @@ impl LazyFrame {
         Ok(())
     }
 
+    /// Stream a query result into a json file. This is useful if the final result doesn't fit
+    /// into memory. This methods will return an error if the query cannot be completely done in a
+    /// streaming fashion.
+    #[cfg(feature = "json")]
+    pub fn sink_json(mut self, path: PathBuf, options: JsonWriterOptions) -> PolarsResult<()> {
+        self.opt_state.streaming = true;
+        self.logical_plan = LogicalPlan::FileSink {
+            input: Box::new(self.logical_plan),
+            payload: FileSinkOptions {
+                path: Arc::new(path),
+                file_type: FileType::Json(options),
+            },
+        };
+        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
+        polars_ensure!(
+            is_streaming,
+            ComputeError: "cannot run the whole query in a streaming order; \
+            use `collect().write_ndjson()` instead"
+        );
+        let _ = physical_plan.execute(&mut state)?;
+        Ok(())
+    }
+
     /// Filter by some predicate expression.
     ///
     /// The expression must yield boolean values.
