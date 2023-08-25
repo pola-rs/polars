@@ -52,7 +52,7 @@ pub(crate) fn cast_columns(
                     false,
                     false,
                     None,
-                    &Utf8Chunked::from_iter(std::iter::repeat("raise").take(1)),
+                    &Utf8Chunked::from_iter(std::iter::once("raise")),
                 )
                 .map(|ca| ca.into_series()),
             (_, dt) => s.cast(dt),

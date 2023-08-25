@@ -149,7 +149,7 @@ pub(super) fn time(s: &Series) -> PolarsResult<Series> {
         DataType::Datetime(_, Some(_)) => polars_ops::prelude::replace_time_zone(
             s.datetime().unwrap(),
             None,
-            &Utf8Chunked::from_iter(std::iter::repeat("raise").take(1)),
+            &Utf8Chunked::from_iter(std::iter::once("raise")),
         )?
         .cast(&DataType::Time),
         DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Time),
@@ -166,7 +166,7 @@ pub(super) fn date(s: &Series) -> PolarsResult<Series> {
                 polars_ops::chunked_array::replace_time_zone(
                     s.datetime().unwrap(),
                     None,
-                    &Utf8Chunked::from_iter(std::iter::repeat("raise").take(1)),
+                    &Utf8Chunked::from_iter(std::iter::once("raise")),
                 )?
                 .cast(&DataType::Date)?
             };
@@ -189,7 +189,7 @@ pub(super) fn datetime(s: &Series) -> PolarsResult<Series> {
                 polars_ops::chunked_array::replace_time_zone(
                     s.datetime().unwrap(),
                     None,
-                    &Utf8Chunked::from_iter(std::iter::repeat("raise").take(1)),
+                    &Utf8Chunked::from_iter(std::iter::once("raise")),
                 )?
                 .cast(&DataType::Datetime(*tu, None))?
             };

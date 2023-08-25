@@ -688,7 +688,7 @@ mod test {
                 false,
                 false,
                 None,
-                &Utf8Chunked::from_iter(std::iter::repeat("raise").take(1)),
+                &Utf8Chunked::from_iter(std::iter::once("raise")),
             )?
             .into_series();
             date.set_sorted_flag(IsSorted::Ascending);
@@ -735,7 +735,7 @@ mod test {
             false,
             false,
             None,
-            &Utf8Chunked::from_iter(std::iter::repeat("raise").take(1)),
+            &Utf8Chunked::from_iter(std::iter::once("raise")),
         )?
         .into_series();
         date.set_sorted_flag(IsSorted::Ascending);

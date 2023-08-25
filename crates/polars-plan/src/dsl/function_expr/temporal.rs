@@ -194,7 +194,7 @@ pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
         Some(tz) => Ok(polars_ops::prelude::replace_time_zone(
             result_naive.datetime().unwrap(),
             Some(tz),
-            &Utf8Chunked::from_iter(std::iter::repeat("raise").take(1)),
+            &Utf8Chunked::from_iter(std::iter::once("raise")),
         )?
         .into()),
         _ => Ok(result_naive),
@@ -248,7 +248,7 @@ pub(super) fn temporal_range_dispatch(
             polars_ops::prelude::replace_time_zone(
                 start.cast(&dtype)?.datetime().unwrap(),
                 None,
-                &Utf8Chunked::from_iter(std::iter::repeat("raise").take(1)),
+                &Utf8Chunked::from_iter(std::iter::once("raise")),
             )?
             .into_series()
             .to_physical_repr()
@@ -256,7 +256,7 @@ pub(super) fn temporal_range_dispatch(
             polars_ops::prelude::replace_time_zone(
                 stop.cast(&dtype)?.datetime().unwrap(),
                 None,
-                &Utf8Chunked::from_iter(std::iter::repeat("raise").take(1)),
+                &Utf8Chunked::from_iter(std::iter::once("raise")),
             )?
             .into_series()
             .to_physical_repr()
@@ -364,7 +364,7 @@ pub(super) fn temporal_ranges_dispatch(
             polars_ops::prelude::replace_time_zone(
                 start.cast(&dtype)?.datetime().unwrap(),
                 None,
-                &Utf8Chunked::from_iter(std::iter::repeat("raise").take(1)),
+                &Utf8Chunked::from_iter(std::iter::once("raise")),
             )?
             .into_series()
             .to_physical_repr()
@@ -372,7 +372,7 @@ pub(super) fn temporal_ranges_dispatch(
             polars_ops::prelude::replace_time_zone(
                 stop.cast(&dtype)?.datetime().unwrap(),
                 None,
-                &Utf8Chunked::from_iter(std::iter::repeat("raise").take(1)),
+                &Utf8Chunked::from_iter(std::iter::once("raise")),
             )?
             .into_series()
             .to_physical_repr()
