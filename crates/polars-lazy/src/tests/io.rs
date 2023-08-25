@@ -168,7 +168,7 @@ fn test_parquet_globbing() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_scan_parquet_limit_() {
+fn test_scan_parquet_limit_9001() {
     init_files();
     let path = GLOB_PARQUET;
     let args = ScanArgsParquet {
