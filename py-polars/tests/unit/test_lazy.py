@@ -296,6 +296,11 @@ def test_is_first() -> None:
         "a": [True, True, True, False, True, False, False]
     }
 
+    ldf = pl.LazyFrame({"a": [[1, 2], [3], [1, 2], [4, 5], [4, 5]]})
+    assert ldf.select(pl.col("a").is_first()).collect().to_dict(False) == {
+        "a": [True, True, False, True, False]
+    }
+
 
 def test_is_duplicated() -> None:
     ldf = pl.LazyFrame({"a": [4, 1, 4]}).select(pl.col("a").is_duplicated())
