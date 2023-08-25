@@ -368,7 +368,7 @@ def test_rank() -> None:
 
     s = df.select(pl.col("a").rank(method="max").alias("b")).to_series()
     assert s.to_list() == [2, 2, 4, 4, 5]
-    assert s.dtype == pl.Float64
+    assert s.dtype == pl.get_index_type()
 
 
 def test_rank_so_4109() -> None:

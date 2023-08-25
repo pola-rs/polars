@@ -289,10 +289,10 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
                 Average => {
                     // SAFETY: in bounds.
                     let a = unsafe { count.take_unchecked((&dense).into()) }
-                        .cast(&DataType::Float32)
+                        .cast(&DataType::Float64)
                         .unwrap();
                     let b = unsafe { count.take_unchecked((&(dense - 1)).into()) }
-                        .cast(&DataType::Float32)
+                        .cast(&DataType::Float64)
                         .unwrap()
                         + 1.0;
                     (&a + &b) * 0.5
