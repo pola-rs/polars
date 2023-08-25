@@ -139,6 +139,7 @@ ToStructStrategy: TypeAlias = Literal[
 ]  # ListToStructWidthStrategy
 
 # The following have no equivalent on the Rust side
+Ambiguous: TypeAlias = Literal["earliest", "latest", "raise"]
 ConcatMethod = Literal[
     "vertical", "vertical_relaxed", "diagonal", "horizontal", "align"
 ]

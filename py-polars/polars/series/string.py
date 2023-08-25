@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from polars import Expr, Series
     from polars.polars import PySeries
     from polars.type_aliases import (
+        Ambiguous,
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
@@ -79,7 +80,7 @@ class StringNameSpace:
         cache: bool = True,
         utc: bool | None = None,
         use_earliest: bool | None = None,
-        ambiguous: str = "raise",
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Convert a Utf8 column into a Datetime column.
@@ -191,7 +192,7 @@ class StringNameSpace:
         exact: bool = True,
         cache: bool = True,
         use_earliest: bool | None = None,
-        ambiguous: str = "raise",
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.

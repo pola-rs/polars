@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import IntoExpr, SchemaDict, TimeUnit
+    from polars.type_aliases import Ambiguous, IntoExpr, SchemaDict, TimeUnit
 
 
 def datetime_(
@@ -35,7 +35,7 @@ def datetime_(
     time_unit: TimeUnit = "us",
     time_zone: str | None = None,
     use_earliest: bool | None = None,
-    ambiguous: str | Expr = "raise",
+    ambiguous: Ambiguous | Expr = "raise",
 ) -> Expr:
     """
     Create a Polars literal expression of type Datetime.

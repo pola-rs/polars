@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from datetime import timedelta
 
     from polars import Expr
-    from polars.type_aliases import EpochTimeUnit, TimeUnit
+    from polars.type_aliases import Ambiguous, EpochTimeUnit, TimeUnit
 
 
 class ExprDateTimeNameSpace:
@@ -32,7 +32,7 @@ class ExprDateTimeNameSpace:
         offset: str | timedelta | None = None,
         *,
         use_earliest: bool | None = None,
-        ambiguous: str | Expr = "raise",
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Divide the date/datetime range into buckets.
@@ -188,12 +188,16 @@ class ExprDateTimeNameSpace:
         │ 2020-10-25 02:15:00 GMT     │
         └─────────────────────────────┘
 
+        >>> ambiguous_mapping = {
+        ...     timedelta(hours=1): "earliest",
+        ...     timedelta(hours=0): "latest",
+        ... }
         >>> df.select(
         ...     pl.col("date").dt.truncate(
         ...         "30m",
         ...         ambiguous=(
-        ...             pl.col("date").dt.dst_offset() == timedelta(hours=1)
-        ...         ).map_dict({True: "earliest", False: "latest"}),
+        ...             pl.col("date").dt.dst_offset().map_dict(ambiguous_mapping)
+        ...         ),
         ...     )
         ... )
         shape: (7, 1)
@@ -1512,7 +1516,7 @@ class ExprDateTimeNameSpace:
         time_zone: str | None,
         *,
         use_earliest: bool | None = None,
-        ambiguous: str | Expr = "raise",
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Replace time zone for an expression of type Datetime.

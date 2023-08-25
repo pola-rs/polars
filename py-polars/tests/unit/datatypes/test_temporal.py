@@ -22,7 +22,7 @@ from polars.testing import (
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import PolarsTemporalType, StartBy, TimeUnit
+    from polars.type_aliases import Ambiguous, PolarsTemporalType, StartBy, TimeUnit
 else:
     from polars.utils.convert import get_zoneinfo as ZoneInfo
 
@@ -2125,7 +2125,7 @@ def test_replace_time_zone_from_naive() -> None:
     ],
 )
 def test_replace_time_zone_ambiguous_with_use_earliest(
-    ambiguous: str, expected: datetime
+    ambiguous: Ambiguous, expected: datetime
 ) -> None:
     ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
     result = ts.dt.replace_time_zone("Europe/Brussels", ambiguous=ambiguous).item()

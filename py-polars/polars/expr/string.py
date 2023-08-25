@@ -15,6 +15,7 @@ from polars.utils.various import find_stacklevel
 if TYPE_CHECKING:
     from polars import Expr
     from polars.type_aliases import (
+        Ambiguous,
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
@@ -86,7 +87,7 @@ class ExprStringNameSpace:
         exact: bool = True,
         cache: bool = True,
         use_earliest: bool | None = None,
-        ambiguous: str | Expr = "raise",
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Convert a Utf8 column into a Datetime column.
@@ -206,7 +207,7 @@ class ExprStringNameSpace:
         exact: bool = True,
         cache: bool = True,
         use_earliest: bool | None = None,
-        ambiguous: str | Expr = "raise",
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.

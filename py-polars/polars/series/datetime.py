@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
     from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.type_aliases import EpochTimeUnit, TimeUnit
+    from polars.type_aliases import Ambiguous, EpochTimeUnit, TimeUnit
 
 
 @expr_dispatch
@@ -1146,7 +1146,7 @@ class DateTimeNameSpace:
         time_zone: str | None,
         *,
         use_earliest: bool | None = None,
-        ambiguous: str = "raise",
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Replace time zone for a Series of type Datetime.
@@ -1598,7 +1598,7 @@ class DateTimeNameSpace:
         offset: str | dt.timedelta | None = None,
         *,
         use_earliest: bool | None = None,
-        ambiguous: str = "raise",
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Divide the date/ datetime range into buckets.
