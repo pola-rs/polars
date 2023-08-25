@@ -14,6 +14,7 @@ use polars_io::RowCount;
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use polars_io::json::JsonFormat;
 
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
@@ -82,7 +83,14 @@ pub struct CsvWriterOptions {
     pub include_header: bool,
     pub batch_size: usize,
     pub maintain_order: bool,
-    pub serialize_options: SerializeOptions,
+    pub serialize_options: SerializeOptions
+}
+
+#[cfg(feature = "json")]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct JsonWriterOptions {
+    json_format: JsonFormat
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -329,6 +337,8 @@ pub enum FileType {
     Ipc(IpcWriterOptions),
     #[cfg(feature = "csv")]
     Csv(CsvWriterOptions),
+    #[cfg(feature = "json")]
+    Json(JsonWriterOptions),
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
