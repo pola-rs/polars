@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 import sys
 import textwrap
 import typing
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from operator import floordiv, truediv
@@ -17,6 +18,7 @@ from numpy.testing import assert_array_equal, assert_equal
 import polars as pl
 import polars.selectors as cs
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, FLOAT_DTYPES, INTEGER_DTYPES
+from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -3137,7 +3139,7 @@ def test_init_datetimes_with_timezone() -> None:
     tz_us = "America/New_York"
     tz_europe = "Europe/Amsterdam"
 
-    dtm = datetime(2022, 10, 12, 12, 30, tzinfo=ZoneInfo("UTC"))
+    dtm = datetime(2022, 10, 12, 12, 30)
     for time_unit in DTYPE_TEMPORAL_UNITS | frozenset([None]):
         for type_overrides in (
             {
@@ -3153,14 +3155,86 @@ def test_init_datetimes_with_timezone() -> None:
                 }
             },
         ):
-            with pytest.raises(
-                ValueError,
-                match="given time_zone is different from that of timezone aware datetimes",
-            ):
-                pl.DataFrame(  # type: ignore[arg-type]
-                    data={"d1": [dtm], "d2": [dtm]},
-                    **type_overrides,
-                )
+            result = pl.DataFrame(  # type: ignore[arg-type]
+                data={"d1": [dtm], "d2": [dtm]},
+                **type_overrides,
+            )
+            expected = pl.DataFrame(
+                {"d1": ["2022-10-12 12:30"], "d2": ["2022-10-12 12:30"]}
+            ).with_columns(
+                pl.col("d1").str.to_datetime(time_unit=time_unit, time_zone=tz_us),
+                pl.col("d2").str.to_datetime(time_unit=time_unit, time_zone=tz_europe),
+            )
+            assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    (
+        "tzinfo",
+        "offset",
+        "dtype_time_zone",
+        "expected_time_zone",
+        "expected_item",
+        "warn",
+    ),
+    [
+        (None, "", None, None, datetime(2020, 1, 1), False),
+        (
+            timezone(timedelta(hours=-8)),
+            "-08:00",
+            "UTC",
+            "UTC",
+            datetime(2020, 1, 1, 8, tzinfo=timezone.utc),
+            False,
+        ),
+        (
+            timezone(timedelta(hours=-8)),
+            "-08:00",
+            None,
+            "UTC",
+            datetime(2020, 1, 1, 8, tzinfo=timezone.utc),
+            True,
+        ),
+    ],
+)
+def test_init_vs_strptime_consistency(
+    tzinfo: timezone | None,
+    offset: str,
+    dtype_time_zone: str | None,
+    expected_time_zone: str,
+    expected_item: datetime,
+    warn: bool,
+) -> None:
+    msg = r"UTC time zone"
+    context_manager: contextlib.AbstractContextManager[pytest.WarningsRecorder | None]
+    if warn:
+        context_manager = pytest.warns(TimeZoneAwareConstructorWarning, match=msg)
+    else:
+        context_manager = contextlib.nullcontext()
+    with context_manager:
+        result_init = pl.Series(
+            [datetime(2020, 1, 1, tzinfo=tzinfo)],
+            dtype=pl.Datetime("us", dtype_time_zone),
+        )
+    result_strptime = pl.Series([f"2020-01-01 00:00{offset}"]).str.strptime(
+        pl.Datetime("us", dtype_time_zone)
+    )
+    assert result_init.dtype == pl.Datetime("us", expected_time_zone)
+    assert result_init.item() == expected_item
+    assert_series_equal(result_init, result_strptime)
+
+
+def test_init_vs_strptime_consistency_raises() -> None:
+    msg = "-aware datetimes are converted to UTC"
+    with pytest.raises(ValueError, match=msg):
+        pl.Series(
+            [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=-8)))],
+            dtype=pl.Datetime("us", "US/Pacific"),
+        )
+    with pytest.raises(ComputeError, match=msg):
+        pl.Series(["2020-01-01 00:00-08:00"]).str.strptime(
+            pl.Datetime("us", "US/Pacific")
+        )
 
 
 def test_init_physical_with_timezone() -> None:
