@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from polars.datatypes import Categorical
 from polars.interchange.buffer import PolarsBuffer
-from polars.interchange.protocol import ColumnNullType, DtypeKind, Endianness
+from polars.interchange.protocol import Column, ColumnNullType, DtypeKind, Endianness
 from polars.interchange.utils import polars_dtype_to_dtype
 from polars.utils._wrap import wrap_s
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from polars.interchange.protocol import CategoricalDescription, ColumnBuffers, Dtype
 
 
-class PolarsColumn:
+class PolarsColumn(Column):
     """
     A column object backed by a Polars Series.
 
