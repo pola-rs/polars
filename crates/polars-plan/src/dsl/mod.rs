@@ -1447,7 +1447,7 @@ impl Expr {
         self.apply(
             move |s| Ok(Some(s.rank(options, seed))),
             GetOutput::map_field(move |fld| match options.method {
-                RankMethod::Average => Field::new(fld.name(), DataType::Float32),
+                RankMethod::Average => Field::new(fld.name(), DataType::Float64),
                 _ => Field::new(fld.name(), IDX_DTYPE),
             }),
         )
