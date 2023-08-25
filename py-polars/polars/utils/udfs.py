@@ -473,7 +473,7 @@ class BytecodeParser:
             warnings.warn(
                 f"\n{clsname}.map_elements is significantly slower than the native {apitype} API.\n"
                 "Only use if you absolutely CANNOT implement your logic otherwise.\n"
-                "In this case, you can replace your `apply` with the following:\n"
+                "In this case, you can replace your `map` with the following:\n"
                 f"{before_after_suggestion}",
                 PolarsInefficientApplyWarning,
                 stacklevel=find_stacklevel(),
@@ -847,7 +847,7 @@ def warn_on_inefficient_map_elements(
         or ``"series"``.
     """
     if map_target == "frame":
-        raise NotImplementedError("TODO: 'frame' and 'series' map_elements-function parsing")
+        raise NotImplementedError("TODO: 'frame' and 'series' map-function parsing")
 
     # note: we only consider simple functions with a single col/param
     if not (col := columns and columns[0]):

@@ -157,9 +157,9 @@ def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
         PolarsInefficientApplyWarning, match="In this case, you can replace"
     ):
         (
-            q.select(pl.col("a").apply(lambda x: x * 2, return_dtype=pl.Int64)).collect(
-                streaming=True
-            )
+            q.select(
+                pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Int64)
+            ).collect(streaming=True)
         )
         (_, err) = capfd.readouterr()
         assert "df -> projection -> ordered_sink" in err

@@ -52,8 +52,9 @@ from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_nonkeyword_arguments,
+    deprecate_renamed_function,
     deprecate_renamed_parameter,
-    warn_closed_future_change, deprecate_renamed_function,
+    warn_closed_future_change,
 )
 from polars.utils.meta import threadpool_size
 from polars.utils.various import sphinx_accessor
@@ -70,11 +71,11 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, LazyFrame, Series
     from polars.type_aliases import (
-        MapElementsStrategy,
         ClosedInterval,
         FillNullStrategy,
         InterpolationMethod,
         IntoExpr,
+        MapElementsStrategy,
         NullBehavior,
         PolarsDataType,
         PythonLiteral,
@@ -3692,14 +3693,15 @@ class Expr:
             return_dtype = py_type_to_dtype(return_dtype)
         return self._from_pyexpr(self._pyexpr.map(function, return_dtype, agg_list))
 
-    def map_elements(self,
-                     function: Callable[[Series], Series] | Callable[[Any], Any],
-                     return_dtype: PolarsDataType | None = None,
-                     *,
-                     skip_nulls: bool = True,
-                     pass_name: bool = False,
-                     strategy: MapElementsStrategy = "thread_local",
-                     ):
+    def map_elements(
+        self,
+        function: Callable[[Series], Series] | Callable[[Any], Any],
+        return_dtype: PolarsDataType | None = None,
+        *,
+        skip_nulls: bool = True,
+        pass_name: bool = False,
+        strategy: MapElementsStrategy = "thread_local",
+    ) -> Self:
         """
         Map a custom/user-defined function (UDF) in a GroupBy or Projection context.
 
@@ -3816,7 +3818,9 @@ class Expr:
 
         root_names = self.meta.root_names()
         if len(root_names) > 0:
-            warn_on_inefficient_map_elements(function, columns=root_names, map_target="expr")
+            warn_on_inefficient_map_elements(
+                function, columns=root_names, map_target="expr"
+            )
 
         if pass_name:
 
@@ -3881,129 +3885,6 @@ class Expr:
             return self.map(wrap_threading, agg_list=True, return_dtype=return_dtype)
         else:
             ValueError(f"Strategy {strategy} is not supported.")
-
-    @deprecate_renamed_function("map_elements", version="0.19.0")
-    def apply(
-        self,
-        function: Callable[[Series], Series] | Callable[[Any], Any],
-        return_dtype: PolarsDataType | None = None,
-        *,
-        skip_nulls: bool = True,
-        pass_name: bool = False,
-        strategy: MapElementsStrategy = "thread_local",
-    ) -> Self:
-        """
-        Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.
-
-        .. warning::
-            This method is much slower than the native expressions API.
-            Only use it if you cannot implement your logic otherwise.
-
-        Depending on the context it has the following behavior:
-
-        * Selection
-            Expects `f` to be of type Callable[[Any], Any].
-            Applies a python function over each individual value in the column.
-        * GroupBy
-            Expects `f` to be of type Callable[[Series], Series].
-            Applies a python function over each group.
-
-        Parameters
-        ----------
-        function
-            Lambda/ function to apply.
-        return_dtype
-            Dtype of the output Series.
-            If not set, the dtype will be
-            ``polars.Unknown``.
-        skip_nulls
-            Don't apply the function over values
-            that contain nulls. This is faster.
-        pass_name
-            Pass the Series name to the custom function
-            This is more expensive.
-        strategy : {'thread_local', 'threading'}
-            This functionality is in `alpha` stage. This may be removed
-            /changed without it being considered a breaking change.
-
-            - 'thread_local': run the python function on a single thread.
-            - 'threading': run the python function on separate threads. Use with
-                        care as this can slow performance. This might only speed up
-                        your code if the amount of work per element is significant
-                        and the python function releases the GIL (e.g. via calling
-                        a c function)
-
-        Notes
-        -----
-        * Using ``apply`` is strongly discouraged as you will be effectively running
-          python "for" loops. This will be very slow. Wherever possible you should
-          strongly prefer the native expression API to achieve the best performance.
-
-        * If your function is expensive and you don't want it to be called more than
-          once for a given input, consider applying an ``@lru_cache`` decorator to it.
-          With suitable data you may achieve order-of-magnitude speedups (or more).
-
-        Warnings
-        --------
-        If ``return_dtype`` is not provided, this may lead to unexpected results.
-        We allow this, but it is considered a bug in the user's query.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3, 1],
-        ...         "b": ["a", "b", "c", "c"],
-        ...     }
-        ... )
-
-        In a selection context, the function is applied by row.
-
-        >>> df.with_columns(  # doctest: +SKIP
-        ...     pl.col("a").apply(lambda x: x * 2).alias("a_times_2"),
-        ... )
-        shape: (4, 3)
-        ┌─────┬─────┬───────────┐
-        │ a   ┆ b   ┆ a_times_2 │
-        │ --- ┆ --- ┆ ---       │
-        │ i64 ┆ str ┆ i64       │
-        ╞═════╪═════╪═══════════╡
-        │ 1   ┆ a   ┆ 2         │
-        │ 2   ┆ b   ┆ 4         │
-        │ 3   ┆ c   ┆ 6         │
-        │ 1   ┆ c   ┆ 2         │
-        └─────┴─────┴───────────┘
-
-        It is better to implement this with an expression:
-
-        >>> df.with_columns(
-        ...     (pl.col("a") * 2).alias("a_times_2"),
-        ... )  # doctest: +IGNORE_RESULT
-
-        In a GroupBy context the function is applied by group:
-
-        >>> df.lazy().group_by("b", maintain_order=True).agg(
-        ...     pl.col("a").apply(lambda x: x.sum())
-        ... ).collect()
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ b   ┆ a   │
-        │ --- ┆ --- │
-        │ str ┆ i64 │
-        ╞═════╪═════╡
-        │ a   ┆ 1   │
-        │ b   ┆ 2   │
-        │ c   ┆ 4   │
-        └─────┴─────┘
-
-        It is better to implement this with an expression:
-
-        >>> df.group_by("b", maintain_order=True).agg(
-        ...     pl.col("a").sum(),
-        ... )  # doctest: +IGNORE_RESULT
-
-        """
-        return self.map_elements(function, return_dtype=return_dtype, skip_nulls=skip_nulls, pass_name=pass_name, strategy=strategy)
 
     def flatten(self) -> Self:
         """
@@ -4870,8 +4751,8 @@ class Expr:
         ...     schema={"x": pl.UInt8, "y": pl.UInt8},
         ... )
         >>> df.with_columns(
-        ...     pl.col("x").apply(binary_string).alias("bin_x"),
-        ...     pl.col("y").apply(binary_string).alias("bin_y"),
+        ...     pl.col("x").map_elements(binary_string).alias("bin_x"),
+        ...     pl.col("y").map_elements(binary_string).alias("bin_y"),
         ...     pl.col("x").xor(pl.col("y")).alias("xor_xy"),
         ...     pl.col("x").xor(pl.col("y")).apply(binary_string).alias("bin_xor_xy"),
         ... )
@@ -9130,6 +9011,56 @@ class Expr:
 
         func = inner_with_default if default is not None else inner
         return self.map(func)
+
+    @deprecate_renamed_function("map_elements", version="0.19.0")
+    def apply(
+        self,
+        function: Callable[[Series], Series] | Callable[[Any], Any],
+        return_dtype: PolarsDataType | None = None,
+        *,
+        skip_nulls: bool = True,
+        pass_name: bool = False,
+        strategy: MapElementsStrategy = "thread_local",
+    ) -> Self:
+        """
+        Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`Expr.map_elements`.
+
+        Parameters
+        ----------
+        function
+            Lambda/ function to apply.
+        return_dtype
+            Dtype of the output Series.
+            If not set, the dtype will be
+            ``polars.Unknown``.
+        skip_nulls
+            Don't apply the function over values
+            that contain nulls. This is faster.
+        pass_name
+            Pass the Series name to the custom function
+            This is more expensive.
+        strategy : {'thread_local', 'threading'}
+            This functionality is in `alpha` stage. This may be removed
+            /changed without it being considered a breaking change.
+
+            - 'thread_local': run the python function on a single thread.
+            - 'threading': run the python function on separate threads. Use with
+                        care as this can slow performance. This might only speed up
+                        your code if the amount of work per element is significant
+                        and the python function releases the GIL (e.g. via calling
+                        a c function)
+
+        """
+        return self.map_elements(
+            function,
+            return_dtype=return_dtype,
+            skip_nulls=skip_nulls,
+            pass_name=pass_name,
+            strategy=strategy,
+        )
 
     @property
     def bin(self) -> ExprBinaryNameSpace:

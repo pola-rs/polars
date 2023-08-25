@@ -1739,7 +1739,7 @@ def test_join_dates() -> None:
     )
     dts = (
         dts_in.cast(int)
-        .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))
+        .map_elements(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))
         .cast(pl.Datetime)
     )
 
@@ -3493,11 +3493,9 @@ def test_deadlocks_3409() -> None:
     assert (
         pl.DataFrame({"col1": [[1, 2, 3]]})
         .with_columns(
-            [
-                pl.col("col1").list.eval(
-                    pl.element().apply(lambda x: x, return_dtype=pl.Int64)
-                )
-            ]
+            pl.col("col1").list.eval(
+                pl.element().map_elements(lambda x: x, return_dtype=pl.Int64)
+            )
         )
         .to_dict(False)
     ) == {"col1": [[1, 2, 3]]}

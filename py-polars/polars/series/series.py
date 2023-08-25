@@ -92,8 +92,9 @@ from polars.utils.convert import (
 )
 from polars.utils.deprecation import (
     deprecate_nonkeyword_arguments,
+    deprecate_renamed_function,
     deprecate_renamed_parameter,
-    issue_deprecation_warning, deprecate_renamed_function,
+    issue_deprecation_warning,
 )
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
@@ -4796,11 +4797,11 @@ class Series:
         """
 
     def map_elements(
-            self,
-            function: Callable[[Any], Any],
-            return_dtype: PolarsDataType | None = None,
-            *,
-            skip_nulls: bool = True,
+        self,
+        function: Callable[[Any], Any],
+        return_dtype: PolarsDataType | None = None,
+        *,
+        skip_nulls: bool = True,
     ) -> Self:
         """
         Map a custom/user-defined function (UDF) over elements in this Series.
@@ -4871,82 +4872,12 @@ class Series:
         else:
             pl_return_dtype = py_type_to_dtype(return_dtype)
 
-        warn_on_inefficient_map_elements(function, columns=[self.name], map_target="series")
+        warn_on_inefficient_map_elements(
+            function, columns=[self.name], map_target="series"
+        )
         return self._from_pyseries(
             self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
         )
-
-    @deprecate_renamed_function("map_elements", version="0.19.0")
-    def apply(
-        self,
-        function: Callable[[Any], Any],
-        return_dtype: PolarsDataType | None = None,
-        *,
-        skip_nulls: bool = True,
-    ) -> Self:
-        """
-        Apply a custom/user-defined function (UDF) over elements in this Series.
-
-        .. warning::
-            This method is much slower than the native expressions API.
-            Only use it if you cannot implement your logic otherwise.
-
-        If the function returns a different datatype, the return_dtype arg should
-        be set, otherwise the method will fail.
-
-        Implementing logic using a Python function is almost always _significantly_
-        slower and more memory intensive than implementing the same logic using
-        the native expression API because:
-
-        - The native expression engine runs in Rust; UDFs run in Python.
-        - Use of Python UDFs forces the DataFrame to be materialized in memory.
-        - Polars-native expressions can be parallelised (UDFs typically cannot).
-        - Polars-native expressions can be logically optimised (UDFs cannot).
-
-        Wherever possible you should strongly prefer the native expression API
-        to achieve the best performance.
-
-        Parameters
-        ----------
-        function
-            Custom function or lambda.
-        return_dtype
-            Output datatype. If none is given, the same datatype as this Series will be
-            used.
-        skip_nulls
-            Nulls will be skipped and not passed to the python function.
-            This is faster because python can be skipped and because we call
-            more specialized functions.
-
-        Warnings
-        --------
-        If ``return_dtype`` is not provided, this may lead to unexpected results.
-        We allow this, but it is considered a bug in the user's query.
-
-        Notes
-        -----
-        If your function is expensive and you don't want it to be called more than
-        once for a given input, consider applying an ``@lru_cache`` decorator to it.
-        With suitable data you may achieve order-of-magnitude speedups (or more).
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.apply(lambda x: x + 10)  # doctest: +SKIP
-        shape: (3,)
-        Series: 'a' [i64]
-        [
-                11
-                12
-                13
-        ]
-
-        Returns
-        -------
-        Series
-
-        """
-        return self.map_elements(function, return_dtype, skip_nulls=skip_nulls)
 
     def shift(self, periods: int = 1) -> Series:
         """
@@ -6599,6 +6530,35 @@ class Series:
 
     def implode(self) -> Self:
         """Aggregate values into a list."""
+
+    @deprecate_renamed_function("map_elements", version="0.19.0")
+    def apply(
+        self,
+        function: Callable[[Any], Any],
+        return_dtype: PolarsDataType | None = None,
+        *,
+        skip_nulls: bool = True,
+    ) -> Self:
+        """
+        Apply a custom/user-defined function (UDF) over elements in this Series.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`Series.map_elements`.
+
+        Parameters
+        ----------
+        function
+            Custom function or lambda.
+        return_dtype
+            Output datatype. If none is given, the same datatype as this Series will be
+            used.
+        skip_nulls
+            Nulls will be skipped and not passed to the python function.
+            This is faster because python can be skipped and because we call
+            more specialized functions.
+
+        """
+        return self.map_elements(function, return_dtype, skip_nulls=skip_nulls)
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

@@ -54,7 +54,9 @@ def test_empty_sort() -> None:
         )
     )
     df_filtered.sort(
-        pl.col("blob").apply(lambda blob: blob["sort_key"], return_dtype=pl.Int64)
+        pl.col("blob").map_elements(
+            lambda blob: blob["sort_key"], return_dtype=pl.Int64
+        )
     )
 
 
@@ -96,5 +98,5 @@ def test_object_row_construction() -> None:
 
 def test_object_apply_to_struct() -> None:
     s = pl.Series([0, 1, 2], dtype=pl.Object)
-    out = s.apply(lambda x: {"a": str(x), "b": x})
+    out = s.map_elements(lambda x: {"a": str(x), "b": x})
     assert out.dtype == pl.Struct([pl.Field("a", pl.Utf8), pl.Field("b", pl.Int64)])

@@ -11,8 +11,8 @@ use polars_core::frame::DataFrame;
 use pyo3::intern;
 use pyo3::prelude::*;
 
-use crate::apply::lazy::{call_lambda_with_series, ToSeries};
 use crate::dataframe::PyDataFrame;
+use crate::map::lazy::{call_lambda_with_series, ToSeries};
 use crate::prelude::{python_udf, ObjectValue};
 use crate::py_modules::{POLARS, UTILS};
 use crate::Wrap;

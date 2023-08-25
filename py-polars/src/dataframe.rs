@@ -22,15 +22,15 @@ use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
 
-use crate::apply::dataframe::{
-    apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
-    apply_lambda_with_utf8_out_type,
-};
 #[cfg(feature = "parquet")]
 use crate::conversion::parse_parquet_compression;
 use crate::conversion::{ObjectValue, Wrap};
 use crate::error::PyPolarsErr;
 use crate::file::{get_either_file, get_file_like, get_mmap_bytes_reader, EitherRustPythonFile};
+use crate::map::dataframe::{
+    apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
+    apply_lambda_with_utf8_out_type,
+};
 use crate::prelude::{dicts_to_rows, strings_to_smartstrings};
 use crate::series::{PySeries, ToPySeries, ToSeries};
 use crate::{arrow_interop, py_modules, PyExpr, PyLazyFrame};
