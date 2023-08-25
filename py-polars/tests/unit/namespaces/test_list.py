@@ -544,3 +544,16 @@ def test_list_take_oob_10079() -> None:
     )
     with pytest.raises(pl.ComputeError, match="take indices are out of bounds"):
         df.select(pl.col("a").take(999))
+
+
+def test_utf8_empty_series_arg_min_max_10703() -> None:
+    res = pl.select(pl.lit(pl.Series("list", [["a"], []]))).with_columns(
+        pl.all(),
+        pl.all().list.arg_min().alias("arg_min"),
+        pl.all().list.arg_max().alias("arg_max"),
+    )
+    assert res.to_dict(False) == {
+        "list": [["a"], []],
+        "arg_min": [0, None],
+        "arg_max": [0, None],
+    }
