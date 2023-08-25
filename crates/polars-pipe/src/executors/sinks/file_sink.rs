@@ -12,12 +12,14 @@ use polars_io::parquet::ParquetWriter;
 use polars_io::prelude::IpcWriter;
 #[cfg(any(feature = "ipc", feature = "csv"))]
 use polars_io::SerWriter;
+#[cfg(feature = "json")]
+use polars_io::json::JsonWriter;
 use polars_plan::prelude::*;
 
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 use crate::pipeline::morsels_per_sink;
 
-#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv", feature = "json"))]
 trait SinkWriter {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()>;
     fn _finish(&mut self) -> PolarsResult<()>;
@@ -54,6 +56,18 @@ impl SinkWriter for polars_io::csv::BatchedWriter<std::fs::File> {
     }
 
     fn _finish(&mut self) -> PolarsResult<()> {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "json")]
+impl SinkWriter for polars_io::json::BatchedWriter<std::fs::File> {
+    fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        self.write_batch(df)
+    }
+
+    fn _finish(&mut self) -> PolarsResult<()> {
+        self.finish()?;
         Ok(())
     }
 }
@@ -215,7 +229,42 @@ impl CsvSink {
     }
 }
 
-#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
+#[cfg(feature = "json")]
+pub struct JsonSink {}
+#[cfg(feature = "json")]
+impl JsonSink {
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(
+        path: &Path,
+        options: JsonWriterOptions,
+        schema: &Schema,
+    ) -> PolarsResult<FilesSink> {
+        let file = std::fs::File::create(path)?;
+        let writer = JsonWriter::new(file)
+            .with_json_format(options.json_format)
+            .batched(schema)?;
+
+        let writer = Box::new(writer) as Box<dyn SinkWriter + Send + Sync>;
+
+        let morsels_per_sink = morsels_per_sink();
+        let backpressure = morsels_per_sink * 2;
+        let (sender, receiver) = bounded(backpressure);
+
+        let io_thread_handle = Arc::new(Some(init_writer_thread(
+            receiver,
+            writer,
+            false,
+            morsels_per_sink,
+        )));
+
+        Ok(FilesSink {
+            sender,
+            io_thread_handle,
+        })
+    }
+}
+
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv", feature = "json"))]
 fn init_writer_thread(
     receiver: Receiver<Option<DataChunk>>,
     mut writer: Box<dyn SinkWriter + Send>,
@@ -262,13 +311,13 @@ fn init_writer_thread(
 
 // Ensure the data is return in the order it was streamed
 #[derive(Clone)]
-#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv", feature = "json"))]
 pub struct FilesSink {
     sender: Sender<Option<DataChunk>>,
     io_thread_handle: Arc<Option<JoinHandle<()>>>,
 }
 
-#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv", feature = "json"))]
 impl Sink for FilesSink {
     fn sink(&mut self, _context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         // don't add empty dataframes

@@ -19,7 +19,7 @@ requirements: .venv  ## Install/refresh all project requirements
 	@$(MAKE) -s -C .. $@
 
 .PHONY: build
-build: .venv  ## Compile and install Polars for development
+build:  ## Compile and install Polars for development
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop
 
 .PHONY: build-debug-opt

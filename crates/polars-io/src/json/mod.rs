@@ -73,12 +73,18 @@ use polars_core::utils::try_get_supertype;
 use polars_json::json::infer;
 use simd_json::BorrowedValue;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
+
 
 /// The format to use to write the DataFrame to JSON: `Json` (a JSON array) or `JsonLines` (each row output on a
 /// separate line). In either case, each row is serialized as a JSON object whose keys are the column names and whose
 /// values are the row's corresponding values.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JsonFormat {
     /// A single JSON array containing each DataFrame row as an object. The length of the array is the number of rows in
     /// the DataFrame.
@@ -92,6 +98,7 @@ pub enum JsonFormat {
     /// at a time. But the output in its entirety is not valid JSON; only the individual lines are.
     ///
     /// It is recommended to use the file extension `.jsonl` when saving as JSON Lines.
+    #[default]
     JsonLines,
 }
 
@@ -114,6 +121,14 @@ impl<W: Write> JsonWriter<W> {
         self.json_format = format;
         self
     }
+
+    pub fn batched(self, _schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
+        Ok(
+            BatchedWriter {
+                writer: self
+            }
+        )
+    }
 }
 
 impl<W> SerWriter<W> for JsonWriter<W>
@@ -131,6 +146,12 @@ where
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         df.align_chunks();
+        self.write(df)
+    }
+}
+
+impl<W> JsonWriter<W> where W: Write {
+    fn write(&mut self, df: &DataFrame) -> PolarsResult<()> {
         let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
         let batches = df
             .iter_chunks()
@@ -153,6 +174,24 @@ where
     }
 }
 
+pub struct BatchedWriter<W: Write> {
+    writer: JsonWriter<W>
+}
+
+impl<W: Write> BatchedWriter<W> {
+    /// Write a batch to the json writer.
+    ///
+    /// # Panics
+    /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
+    pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        self.writer.write(df)
+    }
+
+    /// Writes the footer of the IPC file.
+    pub fn finish(&mut self) -> PolarsResult<()> {
+        Ok(())
+    }
+}
 /// Reads JSON in one of the formats in [`JsonFormat`] into a DataFrame.
 #[must_use]
 pub struct JsonReader<'a, R>

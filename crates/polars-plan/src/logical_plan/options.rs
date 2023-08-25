@@ -9,12 +9,13 @@ use polars_io::csv::{CsvEncoding, NullValues};
 use polars_io::ipc::IpcCompression;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetCompression;
+#[cfg(feature = "json")]
+use polars_io::json::JsonFormat;
 use polars_io::RowCount;
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use polars_io::json::JsonFormat;
 
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
@@ -90,6 +91,7 @@ pub struct CsvWriterOptions {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JsonWriterOptions {
+    /// format to use to write the DataFrame to JSON
     json_format: JsonFormat
 }
 
