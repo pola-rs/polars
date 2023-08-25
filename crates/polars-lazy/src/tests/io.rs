@@ -168,6 +168,28 @@ fn test_parquet_globbing() -> PolarsResult<()> {
 }
 
 #[test]
+fn test_scan_parquet_limit_() {
+    init_files();
+    let path = GLOB_PARQUET;
+    let args = ScanArgsParquet {
+        n_rows: Some(10000),
+        cache: false,
+        rechunk: true,
+        ..Default::default()
+    };
+    let q = LazyFrame::scan_parquet(path, args).unwrap().limit(3);
+    let (node, lp_arena, _) = q.to_alp_optimized().unwrap();
+    (&lp_arena).iter(node).all(|(_, lp)| match lp {
+        ALogicalPlan::Union { options, .. } => {
+            let sliced = options.slice.unwrap();
+            sliced.1 == 3
+        },
+        ALogicalPlan::Scan { file_options, .. } => file_options.n_rows == Some(3),
+        _ => true,
+    });
+}
+
+#[test]
 #[cfg(not(target_os = "windows"))]
 fn test_ipc_globbing() -> PolarsResult<()> {
     // for side effects
