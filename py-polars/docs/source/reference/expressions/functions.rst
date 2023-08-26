@@ -97,6 +97,7 @@ These functions are available from the polars module root and can be used as exp
    Expr.head
    Expr.implode
    Expr.map
+   Expr.map_elements
    Expr.max
    Expr.mean
    Expr.median
