@@ -11,7 +11,7 @@ import numpy as np  # noqa: F401
 import pytest
 
 import polars as pl
-from polars.exceptions import PolarsInefficientApplyWarning
+from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils.udfs import _NUMPY_FUNCTIONS, BytecodeParser
 from polars.utils.various import in_terminal_that_supports_colour
@@ -44,7 +44,7 @@ def test_parse_invalid_function(func: str) -> None:
 )
 def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
     with pytest.warns(
-        PolarsInefficientApplyWarning,
+        PolarsInefficientMapWarning,
         match=r"(?s)Expr\.map_elements.*In this case, you can replace",
     ):
         parser = BytecodeParser(eval(func), apply_target="expr")
@@ -83,7 +83,7 @@ def test_parse_apply_raw_functions() -> None:
 
         # ...but we ARE still able to warn
         with pytest.warns(
-            PolarsInefficientApplyWarning,
+            PolarsInefficientMapWarning,
             match=rf"(?s)Expr\.map_elements.*In this case, you can replace.*np\.{func_name}",
         ):
             df1 = lf.select(pl.col("a").map_elements(func)).collect()
@@ -93,7 +93,7 @@ def test_parse_apply_raw_functions() -> None:
     # test bare 'json.loads'
     result_frames = []
     with pytest.warns(
-        PolarsInefficientApplyWarning,
+        PolarsInefficientMapWarning,
         match=r"(?s)Expr\.map_elements.*In this case, you can replace.*\.str\.json_extract",
     ):
         for expr in (
@@ -112,7 +112,7 @@ def test_parse_apply_raw_functions() -> None:
     # test primitive python casts
     for py_cast, pl_dtype in ((str, pl.Utf8), (int, pl.Int64), (float, pl.Float64)):
         with pytest.warns(
-            PolarsInefficientApplyWarning,
+            PolarsInefficientMapWarning,
             match=rf'(?s)replace.*pl\.col\("a"\)\.cast\(pl\.{pl_dtype.__name__}\)',
         ):
             assert_frame_equal(
@@ -139,7 +139,7 @@ def test_parse_apply_miscellaneous() -> None:
 
     # literals as method parameters
     with pytest.warns(
-        PolarsInefficientApplyWarning,
+        PolarsInefficientMapWarning,
         match=r"(?s)Series\.map_elements.*replace.*\(np\.cos\(3\) \+ s\) - abs\(-1\)",
     ):
         pl_series = pl.Series("srs", [0, 1, 2, 3, 4])
@@ -181,7 +181,7 @@ def test_parse_apply_series(
 ) -> None:
     # expression/series generate same warning, with 's' as the series placeholder
     with pytest.warns(
-        PolarsInefficientApplyWarning, match=r"(?s)Series\.map_elements.*s\.\w+\("
+        PolarsInefficientMapWarning, match=r"(?s)Series\.map_elements.*s\.\w+\("
     ):
         s = pl.Series("srs", data)
 
@@ -211,7 +211,7 @@ def test_expr_exact_warning_message() -> None:
     # Check the EXACT warning message. If modifying the message in the future,
     # please make sure to keep the `^` and `$`,
     # and to keep the assertion on `len(warnings)`.
-    with pytest.warns(PolarsInefficientApplyWarning, match=rf"^{msg}$") as warnings:
+    with pytest.warns(PolarsInefficientMapWarning, match=rf"^{msg}$") as warnings:
         df = pl.DataFrame({"a": [1, 2, 3]})
         df.select(pl.col("a").map_elements(lambda x: x + 1))
 

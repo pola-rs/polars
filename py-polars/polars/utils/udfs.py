@@ -433,7 +433,7 @@ class BytecodeParser:
         """Generate warning that suggests an equivalent native polars expression."""
         # Import these here so that udfs can be imported without polars installed.
 
-        from polars.exceptions import PolarsInefficientApplyWarning
+        from polars.exceptions import PolarsInefficientMapWarning
         from polars.utils.various import (
             find_stacklevel,
             in_terminal_that_supports_colour,
@@ -475,7 +475,7 @@ class BytecodeParser:
                 "Only use if you absolutely CANNOT implement your logic otherwise.\n"
                 "In this case, you can replace your `map` with the following:\n"
                 f"{before_after_suggestion}",
-                PolarsInefficientApplyWarning,
+                PolarsInefficientMapWarning,
                 stacklevel=find_stacklevel(),
             )
 

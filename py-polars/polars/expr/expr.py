@@ -35,7 +35,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.exceptions import PolarsInefficientApplyWarning
+from polars.exceptions import PolarsInefficientMapWarning
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
@@ -3829,7 +3829,7 @@ class Expr:
                     return function(s.alias(x.name))
 
                 with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", PolarsInefficientApplyWarning)
+                    warnings.simplefilter("ignore", PolarsInefficientMapWarning)
                     return x.map_elements(
                         inner, return_dtype=return_dtype, skip_nulls=skip_nulls
                     )
@@ -3838,7 +3838,7 @@ class Expr:
 
             def wrap_f(x: Series) -> Series:  # pragma: no cover
                 with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", PolarsInefficientApplyWarning)
+                    warnings.simplefilter("ignore", PolarsInefficientMapWarning)
                     return x.map_elements(
                         function, return_dtype=return_dtype, skip_nulls=skip_nulls
                     )

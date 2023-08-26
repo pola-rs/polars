@@ -24,7 +24,7 @@ from polars.datatypes import (
     UInt64,
     Unknown,
 )
-from polars.exceptions import PolarsInefficientApplyWarning, ShapeError
+from polars.exceptions import PolarsInefficientMapWarning, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import iterable_to_pyseries
 from polars.utils._wrap import wrap_s
@@ -1004,12 +1004,12 @@ def test_fill_nan() -> None:
 
 
 def test_map_elements() -> None:
-    with pytest.warns(PolarsInefficientApplyWarning):
+    with pytest.warns(PolarsInefficientMapWarning):
         a = pl.Series("a", [1, 2, None])
         b = a.map_elements(lambda x: x**2)
         assert list(b) == [1, 4, None]
 
-    with pytest.warns(PolarsInefficientApplyWarning):
+    with pytest.warns(PolarsInefficientMapWarning):
         a = pl.Series("a", ["foo", "bar", None])
         b = a.map_elements(lambda x: x + "py")
         assert list(b) == ["foopy", "barpy", None]

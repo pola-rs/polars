@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import PolarsInefficientApplyWarning
+from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal
 
 
@@ -96,7 +96,7 @@ def test_map_elements_infer_list() -> None:
 def test_map_elements_arithmetic_consistency() -> None:
     df = pl.DataFrame({"A": ["a", "a"], "B": [2, 3]})
     with pytest.warns(
-        PolarsInefficientApplyWarning, match="In this case, you can replace"
+        PolarsInefficientMapWarning, match="In this case, you can replace"
     ):
         assert df.group_by("A").agg(pl.col("B").map_elements(lambda x: x + 1.0))[
             "B"
@@ -169,7 +169,7 @@ def test_datelike_identity() -> None:
 
 def test_map_elements_list_anyvalue_fallback() -> None:
     with pytest.warns(
-        PolarsInefficientApplyWarning,
+        PolarsInefficientMapWarning,
         match=r'(?s)replace your `map_elements` with.*pl.col\("text"\).str.json_extract()',
     ):
         df = pl.DataFrame({"text": ['[{"x": 1, "y": 2}, {"x": 3, "y": 4}]']})
@@ -257,7 +257,7 @@ def test_map_elements_skip_nulls() -> None:
 
 def test_map_elements_object_dtypes() -> None:
     with pytest.warns(
-        PolarsInefficientApplyWarning,
+        PolarsInefficientMapWarning,
         match=r"(?s)replace your `map_elements` with.*lambda x:",
     ):
         assert pl.DataFrame(
@@ -298,7 +298,7 @@ def test_map_elements_explicit_list_output_type() -> None:
 
 def test_map_elements_dict() -> None:
     with pytest.warns(
-        PolarsInefficientApplyWarning,
+        PolarsInefficientMapWarning,
         match=r'(?s)replace your `map` with.*pl.col\("abc"\).str.json_extract()',
     ):
         df = pl.DataFrame({"abc": ['{"A":"Value1"}', '{"B":"Value2"}']})
