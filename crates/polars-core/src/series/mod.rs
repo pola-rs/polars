@@ -197,7 +197,21 @@ impl Series {
         let cap = chunks.capacity();
 
         let mut chunks = Vec::from_raw_parts(ptr, len, cap);
-        op(&mut chunks)
+        let out = op(&mut chunks);
+        std::mem::forget(chunks);
+        out
+    }
+
+    /// # Safety
+    /// The caller must ensure the length and the data types of `ArrayRef` does not change.
+    #[cfg_attr(feature = "nightly", allow(invalid_reference_casting))]
+    pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        #[allow(unused_mut)]
+        let mut ca = self._get_inner_mut();
+        let chunks = ca.chunks() as *const Vec<ArrayRef> as *mut Vec<ArrayRef>;
+        // Safety
+        // ca is the owner of `chunks` and this we do not break aliasing rules
+        &mut *chunks
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
