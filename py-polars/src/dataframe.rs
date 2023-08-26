@@ -603,7 +603,7 @@ impl PyDataFrame {
                     .with_time_format(time_format)
                     .with_float_precision(float_precision)
                     .with_null_value(null)
-                    .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or(Default::default()))
+                    .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
                     .finish(&mut self.df)
                     .map_err(PyPolarsErr::from)
             })?;
@@ -620,7 +620,7 @@ impl PyDataFrame {
                 .with_time_format(time_format)
                 .with_float_precision(float_precision)
                 .with_null_value(null)
-                .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or(Default::default()))
+                .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }
