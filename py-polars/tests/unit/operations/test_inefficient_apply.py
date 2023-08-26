@@ -204,7 +204,7 @@ def test_expr_exact_warning_message() -> None:
         "\n"
         "Expr.map_elements is significantly slower than the native expressions API.\n"
         "Only use if you absolutely CANNOT implement your logic otherwise.\n"
-        "In this case, you can replace your `map` with the following:\n"
+        "In this case, you can replace your `map_elements` with the following:\n"
         f'  {red}- pl.col("a").map_elements(lambda x: ...){end_escape}\n'
         f'  {green}+ pl.col("a") + 1{end_escape}\n'
     )

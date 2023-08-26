@@ -4865,16 +4865,14 @@ class Series:
         Series
 
         """
-        from polars.utils.udfs import warn_on_inefficient_map_elements
+        from polars.utils.udfs import warn_on_inefficient_map
 
         if return_dtype is None:
             pl_return_dtype = None
         else:
             pl_return_dtype = py_type_to_dtype(return_dtype)
 
-        warn_on_inefficient_map_elements(
-            function, columns=[self.name], map_target="series"
-        )
+        warn_on_inefficient_map(function, columns=[self.name], map_target="series")
         return self._from_pyseries(
             self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
         )

@@ -3814,13 +3814,11 @@ class Expr:
 
         """
         # input x: Series of type list containing the group values
-        from polars.utils.udfs import warn_on_inefficient_map_elements
+        from polars.utils.udfs import warn_on_inefficient_map
 
         root_names = self.meta.root_names()
         if len(root_names) > 0:
-            warn_on_inefficient_map_elements(
-                function, columns=root_names, map_target="expr"
-            )
+            warn_on_inefficient_map(function, columns=root_names, map_target="expr")
 
         if pass_name:
 

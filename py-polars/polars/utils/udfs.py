@@ -461,19 +461,19 @@ class BytecodeParser:
 
             before_after_suggestion = (
                 (
-                    f"  \033[31m- {target_name}.apply({func_name})\033[0m\n"
+                    f"  \033[31m- {target_name}.map_elements({func_name})\033[0m\n"
                     f"  \033[32m+ {suggested_expression}\033[0m\n{addendum}"
                 )
                 if in_terminal_that_supports_colour()
                 else (
-                    f"  - {target_name}.apply({func_name})\n"
+                    f"  - {target_name}.map_elements({func_name})\n"
                     f"  + {suggested_expression}\n{addendum}"
                 )
             )
             warnings.warn(
                 f"\n{clsname}.map_elements is significantly slower than the native {apitype} API.\n"
                 "Only use if you absolutely CANNOT implement your logic otherwise.\n"
-                "In this case, you can replace your `map` with the following:\n"
+                "In this case, you can replace your `map_elements` with the following:\n"
                 f"{before_after_suggestion}",
                 PolarsInefficientMapWarning,
                 stacklevel=find_stacklevel(),
@@ -829,21 +829,21 @@ def _is_raw_function(function: Callable[[Any], Any]) -> tuple[str, str]:
     return "", ""
 
 
-def warn_on_inefficient_map_elements(
+def warn_on_inefficient_map(
     function: Callable[[Any], Any], columns: list[str], map_target: ApplyTarget
 ) -> None:
     """
-    Generate ``PolarsInefficientMapWarning`` on poor usage of ``map_elements`` func.
+    Generate ``PolarsInefficientMapWarning`` on poor usage of a ``map`` function.
 
     Parameters
     ----------
     function
-        The function passed to ``map_elements``.
+        The function passed to ``map``.
     columns
         The column names of the original object; in the case of an ``Expr`` this
         will be a list of length 1 containing the expression's root name.
     map_target
-        The target of the ``map_elements`` call. One of ``"expr"``, ``"frame"``,
+        The target of the ``map`` call. One of ``"expr"``, ``"frame"``,
         or ``"series"``.
     """
     if map_target == "frame":
@@ -872,5 +872,5 @@ def warn_on_inefficient_map_elements(
 
 __all__ = [
     "BytecodeParser",
-    "warn_on_inefficient_map_elements",
+    "warn_on_inefficient_map",
 ]
