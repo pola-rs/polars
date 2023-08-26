@@ -3,6 +3,18 @@ Testing
 =======
 .. currentmodule:: polars
 
+The ``testing`` module provides a number of functions and helpers for use with unit tests.
+
+.. note::
+
+    The ``testing`` module is not imported by default in order to optimise import speed of
+    the primary ``polars`` module. Either import ``polars.testing`` and *then* use that
+    namespace, or import the specific functions you need from the full module path, e.g.:
+
+    .. code-block:: python
+
+        from polars.testing import assert_frame_equal, assert_series_equal
+
 
 Asserts
 -------
