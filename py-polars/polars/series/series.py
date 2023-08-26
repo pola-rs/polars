@@ -5773,7 +5773,7 @@ class Series:
         >>> s = pl.Series("a", [3, 6, 1, 1, 6])
         >>> s.rank()
         shape: (5,)
-        Series: 'a' [f32]
+        Series: 'a' [f64]
         [
             3.0
             4.5

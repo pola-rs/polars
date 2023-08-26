@@ -1306,6 +1306,9 @@ def test_rank() -> None:
         pl.Series("a", [3, 2, 1, 2, 2, 1, 4], dtype=UInt32),
     )
 
+    assert s.rank(method="average").dtype == pl.Float64
+    assert s.rank(method="max").dtype == pl.get_index_type()
+
 
 def test_diff() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])

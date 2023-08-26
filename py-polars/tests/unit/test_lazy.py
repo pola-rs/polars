@@ -1016,9 +1016,9 @@ def test_spearman_corr_ties() -> None:
     )
     expected = pl.DataFrame(
         [
-            pl.Series("a1", [-0.19048483669757843], dtype=pl.Float32),
+            pl.Series("a1", [-0.19048482943986483], dtype=pl.Float64),
             pl.Series("a2", [-0.17223653586587362], dtype=pl.Float64),
-            pl.Series("a3", [-0.19048483669757843], dtype=pl.Float32),
+            pl.Series("a3", [-0.19048482943986483], dtype=pl.Float64),
         ]
     )
     assert_frame_equal(result, expected)
