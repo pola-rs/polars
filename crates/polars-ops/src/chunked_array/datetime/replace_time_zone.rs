@@ -17,7 +17,8 @@ pub fn replace_time_zone(
     time_zone: Option<&str>,
     ambiguous: &Utf8Chunked,
 ) -> PolarsResult<DatetimeChunked> {
-    let from_tz = parse_time_zone(datetime.time_zone().as_deref().unwrap_or("UTC"))?;
+    let from_time_zone = datetime.time_zone().as_deref().unwrap_or("UTC");
+    let from_tz = parse_time_zone(from_time_zone)?;
     let to_tz = parse_time_zone(time_zone.unwrap_or("UTC"))?;
     let timestamp_to_datetime: fn(i64) -> NaiveDateTime = match datetime.time_unit() {
         TimeUnit::Milliseconds => timestamp_ms_to_datetime,
@@ -49,6 +50,13 @@ pub fn replace_time_zone(
         },
     };
     let mut out = out?.into_datetime(datetime.time_unit(), time_zone.map(|x| x.to_string()));
-    out.set_sorted_flag(datetime.is_sorted_flag());
+    if from_time_zone == "UTC" && ambiguous.len() == 1 && ambiguous.get(0).unwrap() == "raise" {
+        // In general, the sortedness flag can't be preserved.
+        // To be safe, we only do so in the simplest case when we know for sure that there is no "daylight savings weirdness" going on, i.e.:
+        // - `from_tz` is guaranteed to not observe daylight savings time;
+        // - user is just passing 'raise' to 'ambiguous'.
+        // Both conditions above need to be satisfied.
+        out.set_sorted_flag(datetime.is_sorted_flag());
+    }
     Ok(out)
 }
