@@ -4752,7 +4752,10 @@ class Expr:
         ...     pl.col("x").map_elements(binary_string).alias("bin_x"),
         ...     pl.col("y").map_elements(binary_string).alias("bin_y"),
         ...     pl.col("x").xor(pl.col("y")).alias("xor_xy"),
-        ...     pl.col("x").xor(pl.col("y")).apply(binary_string).alias("bin_xor_xy"),
+        ...     pl.col("x")
+        ...     .xor(pl.col("y"))
+        ...     .map_elements(binary_string)
+        ...     .alias("bin_xor_xy"),
         ... )
         shape: (4, 6)
         ┌─────┬─────┬──────────┬──────────┬────────┬────────────┐
