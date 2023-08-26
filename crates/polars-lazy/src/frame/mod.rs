@@ -90,7 +90,7 @@ impl From<LogicalPlan> for LazyFrame {
 }
 
 impl LazyFrame {
-    /// Get a handle to the schema — a map from colum names to data types — of the current
+    /// Get a handle to the schema — a map from column names to data types — of the current
     /// `LazyFrame` computation.
     ///
     /// Returns an `Err` if the logical plan has already encountered an error (i.e., if
@@ -114,7 +114,7 @@ impl LazyFrame {
         }
     }
 
-    /// Get current optimizations
+    /// Get current optimizations.
     pub fn get_current_optimizations(&self) -> OptState {
         self.opt_state
     }
@@ -397,8 +397,8 @@ impl LazyFrame {
         let mut existing_vec: Vec<SmartString> = Vec::with_capacity(cap);
         let mut new_vec: Vec<SmartString> = Vec::with_capacity(cap);
 
-        // todo! should this error if `existing` and `new` have different lenths? Currently the longer of the two is
-        // truncated.
+        // todo! should this error if `existing` and `new` have different lengths?
+        // Currently, the longer of the two is truncated.
         for (existing, new) in iter.zip(new) {
             let existing = existing.as_ref();
             let new = new.as_ref();
