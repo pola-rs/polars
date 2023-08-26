@@ -184,14 +184,20 @@ impl Series {
 
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
-    #[cfg_attr(feature = "nightly", allow(invalid_reference_casting))]
-    pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+    pub unsafe fn with_chunks_mut<T, F: FnOnce(&mut Vec<ArrayRef>) -> T>(&mut self, op: F) -> T {
+        // We use a context because creating a &mut from & is UB.
+        // Now we create a new vec to the underlying data and share that vec for the lifetime of this
+        // context.
+        // Because we hold a &mut Self, the alias rules guarantee we have single access.
         #[allow(unused_mut)]
         let mut ca = self._get_inner_mut();
-        let chunks = ca.chunks() as *const Vec<ArrayRef> as *mut Vec<ArrayRef>;
-        // Safety
-        // ca is the owner of `chunks` and this we do not break aliasing rules
-        &mut *chunks
+        let chunks = ca.chunks();
+        let ptr = chunks.as_ptr() as *mut ArrayRef;
+        let len = chunks.len();
+        let cap = chunks.capacity();
+
+        let mut chunks = Vec::from_raw_parts(ptr, len, cap);
+        op(&mut chunks)
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {

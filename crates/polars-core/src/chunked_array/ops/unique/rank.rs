@@ -75,8 +75,10 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
 
         let mut out = rank(&s, method, descending, seed);
         unsafe {
-            let arr = &mut out.chunks_mut()[0];
-            *arr = arr.with_validity(Some(validity.clone()))
+            out.with_chunks_mut(|chunks| {
+                let arr = &mut chunks[0];
+                *arr = arr.with_validity(Some(validity.clone()))
+            })
         }
         return out;
     }

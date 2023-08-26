@@ -205,7 +205,7 @@ impl DataFrame {
         for s in &mut self.columns {
             // Safety
             // do not modify the data, simply resize.
-            unsafe { s.chunks_mut().reserve(additional) }
+            unsafe { s.with_chunks_mut(|chunks| chunks.reserve(additional)) }
         }
     }
 

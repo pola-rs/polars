@@ -905,16 +905,24 @@ pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
     if a.null_count() > 0 || b.null_count() > 0 {
         let mut a = a.rechunk();
         let mut b = b.rechunk();
-        for (arr_a, arr_b) in unsafe { a.chunks_mut().iter_mut().zip(b.chunks_mut()) } {
-            let validity = match (arr_a.validity(), arr_b.validity()) {
-                (None, Some(b)) => Some(b.clone()),
-                (Some(a), Some(b)) => Some(a & b),
-                (Some(a), None) => Some(a.clone()),
-                (None, None) => None,
-            };
-            *arr_a = arr_a.with_validity(validity.clone());
-            *arr_b = arr_b.with_validity(validity);
+
+        unsafe {
+            a.with_chunks_mut(|chunks_a| {
+                b.with_chunks_mut(|b_chunks| {
+                    for (arr_a, arr_b) in chunks_a.iter_mut().zip(b_chunks) {
+                        let validity = match (arr_a.validity(), arr_b.validity()) {
+                            (None, Some(b)) => Some(b.clone()),
+                            (Some(a), Some(b)) => Some(a & b),
+                            (Some(a), None) => Some(a.clone()),
+                            (None, None) => None,
+                        };
+                        *arr_a = arr_a.with_validity(validity.clone());
+                        *arr_b = arr_b.with_validity(validity);
+                    }
+                })
+            })
         }
+
         (a, b)
     } else {
         (a.clone(), b.clone())
