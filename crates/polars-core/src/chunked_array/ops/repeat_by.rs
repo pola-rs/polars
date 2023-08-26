@@ -9,7 +9,7 @@ type LargeListArray = ListArray<i64>;
 fn check_lengths(length_srs: usize, length_by: usize) -> PolarsResult<()> {
     polars_ensure!(
        (length_srs == length_by) | (length_by == 1) | (length_srs == 1),
-       ComputeError: "repeaty_by argument and the Series should have equal length, or at least one of them should have length 1. Series length {}, by length {}",
+       ComputeError: "repeat_by argument and the Series should have equal length, or at least one of them should have length 1. Series length {}, by length {}",
        length_srs, length_by
     );
     Ok(())
