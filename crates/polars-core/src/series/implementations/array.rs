@@ -5,7 +5,7 @@ use super::{private, IntoSeries, SeriesTrait};
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::{AsSinglePtr, Settings};
-use crate::frame::groupby::*;
+use crate::frame::group_by::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 #[cfg(feature = "chunked_ids")]
@@ -66,6 +66,9 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
 
     fn chunks(&self) -> &Vec<ArrayRef> {
         self.0.chunks()
+    }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.chunks_mut()
     }
     fn shrink_to_fit(&mut self) {
         self.0.shrink_to_fit()

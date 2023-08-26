@@ -54,7 +54,7 @@ def test_asof_join_projection_resolution_4606() -> None:
     a = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
     b = pl.DataFrame({"a": [1], "b": [2], "d": [4]}).lazy()
     joined_tbl = a.join_asof(b, on=pl.col("a").set_sorted(), by="b")
-    assert joined_tbl.groupby("a").agg(
+    assert joined_tbl.group_by("a").agg(
         [pl.col("c").sum().alias("c")]
     ).collect().columns == ["a", "c"]
 
@@ -1024,3 +1024,29 @@ def test_join_asof_by_argument_parsing() -> None:
     )
     assert_frame_equal(by_list2, by_list)
     assert_frame_equal(by_tuple2, by_list)
+
+
+def test_join_asof_invalid_args() -> None:
+    df1 = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [1, 2, 3],
+        }
+    ).set_sorted("a")
+    df2 = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "c": [1, 2, 3],
+        }
+    ).set_sorted("a")
+
+    with pytest.raises(TypeError, match="expected `on` to be str or Expr, got 'list'"):
+        df1.join_asof(df2, on=["a"])  # type: ignore[arg-type]
+    with pytest.raises(
+        TypeError, match="expected `left_on` to be str or Expr, got 'list'"
+    ):
+        df1.join_asof(df2, left_on=["a"], right_on="a")  # type: ignore[arg-type]
+    with pytest.raises(
+        TypeError, match="expected `right_on` to be str or Expr, got 'list'"
+    ):
+        df1.join_asof(df2, left_on="a", right_on=["a"])  # type: ignore[arg-type]

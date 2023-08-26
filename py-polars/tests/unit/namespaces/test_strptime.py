@@ -631,14 +631,14 @@ def test_to_time_format_warning() -> None:
 def test_to_datetime_use_earliest(exact: bool) -> None:
     result = (
         pl.Series(["2020-10-25 01:00"])
-        .str.to_datetime(time_zone="Europe/London", use_earliest=True, exact=exact)
+        .str.to_datetime(time_zone="Europe/London", ambiguous="earliest", exact=exact)
         .item()
     )
     expected = datetime(2020, 10, 25, 1, fold=0, tzinfo=ZoneInfo("Europe/London"))
     assert result == expected
     result = (
         pl.Series(["2020-10-25 01:00"])
-        .str.to_datetime(time_zone="Europe/London", use_earliest=False, exact=exact)
+        .str.to_datetime(time_zone="Europe/London", ambiguous="latest", exact=exact)
         .item()
     )
     expected = datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London"))
@@ -655,7 +655,7 @@ def test_strptime_use_earliest(exact: bool) -> None:
     result = (
         pl.Series(["2020-10-25 01:00"])
         .str.strptime(
-            pl.Datetime("us", "Europe/London"), use_earliest=True, exact=exact
+            pl.Datetime("us", "Europe/London"), ambiguous="earliest", exact=exact
         )
         .item()
     )
@@ -664,7 +664,7 @@ def test_strptime_use_earliest(exact: bool) -> None:
     result = (
         pl.Series(["2020-10-25 01:00"])
         .str.strptime(
-            pl.Datetime("us", "Europe/London"), use_earliest=False, exact=exact
+            pl.Datetime("us", "Europe/London"), ambiguous="latest", exact=exact
         )
         .item()
     )

@@ -4,6 +4,7 @@ mod boolean;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
 mod dtypes;
+mod null;
 mod primitive;
 
 pub use anonymous::*;
@@ -12,6 +13,7 @@ pub use boolean::*;
 #[cfg(feature = "dtype-categorical")]
 use categorical::*;
 use dtypes::*;
+use null::*;
 use polars_arrow::array::list::AnonymousBuilder;
 use polars_arrow::array::null::MutableNullArray;
 use polars_arrow::prelude::*;
@@ -116,7 +118,7 @@ pub fn get_list_builder(
             list_capacity,
             Some(inner_type_logical.clone()),
         ))),
-        DataType::Null => Ok(Box::new(LargeListNullBuilder::with_capacity(list_capacity))),
+        DataType::Null => Ok(Box::new(ListNullChunkedBuilder::new(name, list_capacity))),
         DataType::List(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,

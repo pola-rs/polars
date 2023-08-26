@@ -39,3 +39,8 @@ pub fn ensure_sorted_arg(s: &Series, operation: &str) -> PolarsResult<()> {
     ", operation);
     Ok(())
 }
+
+pub fn get_casting_failures(input: &Series, output: &Series) -> PolarsResult<Series> {
+    let failure_mask = !input.is_null() & output.is_null();
+    input.filter_threaded(&failure_mask, false)?.unique()
+}

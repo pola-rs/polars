@@ -3,15 +3,19 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
+import polars._reexport as pl
+from polars import functions as F
 from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.exceptions import ChronoFormatWarning
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
+from polars.utils.deprecation import rename_use_earliest_to_ambiguous
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from polars import Expr
     from polars.type_aliases import (
+        Ambiguous,
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
@@ -83,6 +87,7 @@ class ExprStringNameSpace:
         exact: bool = True,
         cache: bool = True,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Convert a Utf8 column into a Datetime column.
@@ -119,6 +124,15 @@ class ExprStringNameSpace:
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
 
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
+
         Examples
         --------
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
@@ -131,6 +145,9 @@ class ExprStringNameSpace:
         ]
         """
         _validate_format_argument(format)
+        ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
+        if not isinstance(ambiguous, pl.Expr):
+            ambiguous = F.lit(ambiguous)
         return wrap_expr(
             self._pyexpr.str_to_datetime(
                 format,
@@ -139,7 +156,7 @@ class ExprStringNameSpace:
                 strict,
                 exact,
                 cache,
-                use_earliest,
+                ambiguous._pyexpr,
             )
         )
 
@@ -190,6 +207,7 @@ class ExprStringNameSpace:
         exact: bool = True,
         cache: bool = True,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -220,6 +238,15 @@ class ExprStringNameSpace:
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Notes
         -----
@@ -281,11 +308,12 @@ class ExprStringNameSpace:
                 exact=exact,
                 cache=cache,
                 use_earliest=use_earliest,
+                ambiguous=ambiguous,
             )
         elif dtype == Time:
             return self.to_time(format, strict=strict, cache=cache)
         else:
-            raise ValueError("dtype should be of type {Date, Datetime, Time}")
+            raise ValueError("`dtype` must be of type {Date, Datetime, Time}")
 
     def to_decimal(
         self,
@@ -801,6 +829,11 @@ class ExprStringNameSpace:
         <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
         additional information about the use of inline expression modifiers.
 
+        See Also
+        --------
+        starts_with : Check if string values start with a substring.
+        ends_with : Check if string values end with a substring.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": ["Crab", "cat and dog", "rab$bit", None]})
@@ -821,11 +854,6 @@ class ExprStringNameSpace:
         │ null        ┆ null  ┆ null    │
         └─────────────┴───────┴─────────┘
 
-        See Also
-        --------
-        starts_with : Check if string values start with a substring.
-        ends_with : Check if string values end with a substring.
-
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
@@ -838,6 +866,11 @@ class ExprStringNameSpace:
         ----------
         suffix
             Suffix substring.
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+        starts_with : Check if string values start with a substring.
 
         Examples
         --------
@@ -868,11 +901,6 @@ class ExprStringNameSpace:
         │ mango  │
         └────────┘
 
-        See Also
-        --------
-        contains : Check if string contains a substring that matches a regex.
-        starts_with : Check if string values start with a substring.
-
         """
         suffix = parse_as_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_ends_with(suffix))
@@ -885,6 +913,11 @@ class ExprStringNameSpace:
         ----------
         prefix
             Prefix substring.
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+        ends_with : Check if string values end with a substring.
 
         Examples
         --------
@@ -915,11 +948,6 @@ class ExprStringNameSpace:
         │ apple  │
         └────────┘
 
-        See Also
-        --------
-        contains : Check if string contains a substring that matches a regex.
-        ends_with : Check if string values end with a substring.
-
         """
         prefix = parse_as_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_starts_with(prefix))
@@ -941,6 +969,11 @@ class ExprStringNameSpace:
             How many rows to parse to determine the schema.
             If ``None`` all rows are used.
 
+        See Also
+        --------
+        json_path_match : Extract the first match of json string with provided JSONPath
+            expression.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -958,11 +991,6 @@ class ExprStringNameSpace:
         │ {null,null} │
         │ {2,false}   │
         └─────────────┘
-
-        See Also
-        --------
-        json_path_match : Extract the first match of json string with provided JSONPath
-            expression.
 
         """
         if dtype is not None:

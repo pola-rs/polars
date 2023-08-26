@@ -32,19 +32,19 @@ def test_melt_values_predicate_pushdown() -> None:
 def test_filter_is_in_4572() -> None:
     df = pl.DataFrame({"id": [1, 2, 1, 2], "k": ["a"] * 2 + ["b"] * 2})
     expected = (
-        df.groupby("id")
+        df.group_by("id")
         .agg(pl.col("k").filter(pl.col("k") == "a").implode())
         .sort("id")
     )
     result = (
-        df.groupby("id")
+        df.group_by("id")
         .agg(pl.col("k").filter(pl.col("k").is_in(["a"])).implode())
         .sort("id")
     )
     assert_frame_equal(result, expected)
     result = (
         df.sort("id")
-        .groupby("id")
+        .group_by("id")
         .agg(pl.col("k").filter(pl.col("k").is_in(["a"])).implode())
     )
     assert_frame_equal(result, expected)
@@ -61,7 +61,7 @@ def test_filter_aggregation_any() -> None:
     )
 
     result = (
-        df.groupby("group")
+        df.group_by("group")
         .agg(
             pl.any_horizontal("pred_a", "pred_b"),
             pl.col("id")

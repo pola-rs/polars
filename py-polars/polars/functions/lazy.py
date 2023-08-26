@@ -11,6 +11,7 @@ from polars.datatypes import (
     Int64,
     is_polars_dtype,
 )
+from polars.utils._async import _AsyncDataFrameResult
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -27,6 +28,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
+    from queue import Queue
     from typing import Collection, Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -183,7 +185,8 @@ def col(
             return wrap_expr(plr.dtype_cols(dtypes))
         else:
             raise TypeError(
-                f"invalid input for `col`. Expected `str` or `DataType`, got {type(name).__name__!r}"
+                "invalid input for `col`"
+                f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}."
             )
 
     if isinstance(name, str):
@@ -202,12 +205,14 @@ def col(
             return wrap_expr(plr.dtype_cols(names))
         else:
             raise TypeError(
-                "invalid input for `col`. Expected iterable of type `str` or `DataType`,"
+                "invalid input for `col`"
+                "\n\nExpected iterable of type `str` or `DataType`,"
                 f" got iterable of type {type(item).__name__!r}"
             )
     else:
         raise TypeError(
-            f"invalid input for `col`. Expected `str` or `DataType`, got {type(name).__name__!r}"
+            "invalid input for `col`"
+            f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}"
         )
 
 
@@ -227,7 +232,7 @@ def element() -> Expr:
     ┌─────┬─────┬────────────┐
     │ a   ┆ b   ┆ rank       │
     │ --- ┆ --- ┆ ---        │
-    │ i64 ┆ i64 ┆ list[f32]  │
+    │ i64 ┆ i64 ┆ list[f64]  │
     ╞═════╪═════╪════════════╡
     │ 1   ┆ 4   ┆ [1.0, 2.0] │
     │ 8   ┆ 5   ┆ [2.0, 1.0] │
@@ -298,7 +303,7 @@ def count(column: str | Series | None = None) -> Expr | int:
     ╞═══════╡
     │ 3     │
     └───────┘
-    >>> df.groupby("c", maintain_order=True).agg(pl.count())
+    >>> df.group_by("c", maintain_order=True).agg(pl.count())
     shape: (2, 2)
     ┌─────┬───────┐
     │ c   ┆ count │
@@ -902,7 +907,7 @@ def corr(
     ┌─────┐
     │ a   │
     │ --- │
-    │ f32 │
+    │ f64 │
     ╞═════╡
     │ 0.5 │
     └─────┘
@@ -1061,39 +1066,47 @@ def apply(
     --------
     >>> df = pl.DataFrame(
     ...     {
-    ...         "a": [7, 2, 3, 4],
-    ...         "b": [2, 5, 6, 7],
+    ...         "group": [1, 1, 2],
+    ...         "a": [1, 3, 3],
+    ...         "b": [5, 6, 7],
     ...     }
     ... )
     >>> df
-    shape: (4, 2)
-    ┌─────┬─────┐
-    │ a   ┆ b   │
-    │ --- ┆ --- │
-    │ i64 ┆ i64 │
-    ╞═════╪═════╡
-    │ 7   ┆ 2   │
-    │ 2   ┆ 5   │
-    │ 3   ┆ 6   │
-    │ 4   ┆ 7   │
-    └─────┴─────┘
+    shape: (3, 3)
+    ┌───────┬─────┬─────┐
+    │ group ┆ a   ┆ b   │
+    │ ---   ┆ --- ┆ --- │
+    │ i64   ┆ i64 ┆ i64 │
+    ╞═══════╪═════╪═════╡
+    │ 1     ┆ 1   ┆ 5   │
+    │ 1     ┆ 3   ┆ 6   │
+    │ 2     ┆ 3   ┆ 7   │
+    └───────┴─────┴─────┘
+    >>> (
+    ...     df.group_by("group").agg(
+    ...         pl.apply(
+    ...             exprs=["a", "b"],
+    ...             function=lambda list_of_series: list_of_series[0]
+    ...             / list_of_series[0].sum()
+    ...             + list_of_series[1],
+    ...         ).alias("my_custom_aggregation")
+    ...     )
+    ... ).sort("group")
+    shape: (2, 2)
+    ┌───────┬───────────────────────┐
+    │ group ┆ my_custom_aggregation │
+    │ ---   ┆ ---                   │
+    │ i64   ┆ list[f64]             │
+    ╞═══════╪═══════════════════════╡
+    │ 1     ┆ [5.25, 6.75]          │
+    │ 2     ┆ [8.0]                 │
+    └───────┴───────────────────────┘
 
-    Calculate product of ``a``.
+    The output for group `1` can be understood as follows:
 
-    >>> df.with_columns(  # doctest: +SKIP
-    ...     pl.col("a").apply(lambda x: x * x).alias("product_a")
-    ... )
-    shape: (4, 3)
-    ┌─────┬─────┬───────────┐
-    │ a   ┆ b   ┆ product_a │
-    │ --- ┆ --- ┆ ---       │
-    │ i64 ┆ i64 ┆ i64       │
-    ╞═════╪═════╪═══════════╡
-    │ 7   ┆ 2   ┆ 49        │
-    │ 2   ┆ 5   ┆ 4         │
-    │ 3   ┆ 6   ┆ 9         │
-    │ 4   ┆ 7   ┆ 16        │
-    └─────┴─────┴───────────┘
+    - group `1` contains series `'a': [1, 3]` and `'b': [4, 5]`
+    - applying the function to those lists of Series, one gets the output
+      `[1 / 4 + 5, 3 / 4 + 6]`, i.e. `[5.25, 6.75]`
     """
     exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(
@@ -1761,6 +1774,89 @@ def collect_all(
     return result
 
 
+def collect_all_async(
+    lazy_frames: Sequence[LazyFrame],
+    queue: Queue[list[DataFrame] | Exception],
+    *,
+    type_coercion: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    no_optimization: bool = False,
+    slice_pushdown: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
+    streaming: bool = False,
+) -> _AsyncDataFrameResult[list[DataFrame]]:
+    """
+    Collect multiple LazyFrames at the same time asynchronously in thread pool.
+
+    Collects into a list of DataFrame, like :func:`polars.collect_all`
+    but instead of returning them directly its collected inside thread pool
+    and gets put into `queue` with `put_nowait` method,
+    while this method returns almost instantly.
+
+    May be useful if you use gevent or asyncio and want to release control to other
+    greenlets/tasks while LazyFrames are being collected.
+    You must use correct queue in that case.
+    Given `queue` must be thread safe!
+
+    For gevent use
+    [`gevent.queue.Queue`](https://www.gevent.org/api/gevent.queue.html#gevent.queue.Queue).
+
+    For asyncio
+    [`asyncio.queues.Queue`](https://docs.python.org/3/library/asyncio-queue.html#queue)
+    can not be used, since it's not thread safe!
+    For that purpose use [janus](https://github.com/aio-libs/janus) library.
+
+    Notes
+    -----
+    Results are put in queue exactly once using `put_nowait`.
+    If error occurred then Exception will be put in the queue instead of result
+    which is then raised by returned wrapper `get` method.
+
+    Warnings
+    --------
+    This functionality is experimental and may change without it being considered a
+    breaking change.
+
+    See Also
+    --------
+    polars.collect_all : Collect multiple LazyFrames at the same time.
+    LazyFrame.collect_async: To collect single frame.
+
+    Returns
+    -------
+    Wrapper that has `get` method and `queue` attribute with given queue.
+    `get` accepts kwargs that are passed down to `queue.get`.
+    """
+    if no_optimization:
+        predicate_pushdown = False
+        projection_pushdown = False
+        slice_pushdown = False
+        comm_subplan_elim = False
+        comm_subexpr_elim = False
+
+    prepared = []
+
+    for lf in lazy_frames:
+        ldf = lf._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            comm_subplan_elim,
+            comm_subexpr_elim,
+            streaming,
+        )
+        prepared.append(ldf)
+
+    result = _AsyncDataFrameResult(queue)
+    plr.collect_all_with_callback(prepared, result._callback_all)
+    return result
+
+
 def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> DataFrame:
     """
     Run polars expressions without a context.
@@ -1828,6 +1924,10 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
 
+    See Also
+    --------
+    Series.arg_true : Return indices where Series is True
+
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
@@ -1842,10 +1942,6 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
         1
         3
     ]
-
-    See Also
-    --------
-    Series.arg_true : Return indices where Series is True
 
     """
     if eager:

@@ -28,7 +28,7 @@ pub(crate) use count::*;
 pub(crate) use filter::*;
 pub(crate) use literal::*;
 use polars_arrow::utils::CustomIterTools;
-use polars_core::frame::groupby::GroupsProxy;
+use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
 pub(crate) use slice::*;
@@ -400,7 +400,7 @@ impl<'a> AggregationContext<'a> {
                 #[cfg(debug_assertions)]
                 {
                     if self.groups.len() > s.len() {
-                        polars_warn!("groups may be out of bounds; more groups than elements in a series is only possible in dynamic groupby")
+                        polars_warn!("groups may be out of bounds; more groups than elements in a series is only possible in dynamic group_by")
                     }
                 }
 

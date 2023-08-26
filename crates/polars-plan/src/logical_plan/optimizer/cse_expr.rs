@@ -136,7 +136,7 @@ enum VisitRecord {
     // The `bool` indicates if this expression is valid.
     // This can be `AND` accumulated by the lineage of the expression to determine
     // of the whole expression can be added.
-    // For instance a in a groupby we only want to use elementwise operation in cse:
+    // For instance a in a group_by we only want to use elementwise operation in cse:
     // - `(col("a") * 2).sum(), (col("a") * 2)` -> we want to do `col("a") * 2` on a `with_columns`
     // - `col("a").sum() * col("a").sum()` -> we don't want `sum` to run on `with_columns`
     // as that doesn't have groups context. If we encounter a `sum` it should be flagged as `false`
@@ -210,7 +210,7 @@ struct ExprIdentifierVisitor<'a> {
     // whether the expression replaced a subexpression
     has_sub_expr: bool,
     // During aggregation we only identify element-wise operations
-    is_groupby: bool,
+    is_group_by: bool,
 }
 
 impl ExprIdentifierVisitor<'_> {
@@ -218,7 +218,7 @@ impl ExprIdentifierVisitor<'_> {
         se_count: &'a mut SubExprCount,
         identifier_array: &'a mut IdentifierArray,
         visit_stack: &'a mut Vec<VisitRecord>,
-        is_groupby: bool,
+        is_group_by: bool,
     ) -> ExprIdentifierVisitor<'a> {
         let id_array_offset = identifier_array.len();
         ExprIdentifierVisitor {
@@ -229,7 +229,7 @@ impl ExprIdentifierVisitor<'_> {
             visit_stack,
             id_array_offset,
             has_sub_expr: false,
-            is_groupby,
+            is_group_by,
         }
     }
 
@@ -274,7 +274,7 @@ impl ExprIdentifierVisitor<'_> {
                 // during aggregation we only store elementwise operation in the state
                 // other operations we cannot add to the state as they have the output size of the
                 // groups, not the original dataframe
-                if self.is_groupby {
+                if self.is_group_by {
                     match ae {
                         AExpr::Agg(_) | AExpr::AnonymousFunction { .. } => {
                             Some((VisitRecursion::Continue, false))
@@ -528,13 +528,13 @@ impl<'a> CommonSubExprOptimizer<'a> {
     fn visit_expression(
         &mut self,
         ae_node: AexprNode,
-        is_groupby: bool,
+        is_group_by: bool,
     ) -> PolarsResult<(usize, bool)> {
         let mut visitor = ExprIdentifierVisitor::new(
             &mut self.se_count,
             &mut self.id_array,
             &mut self.visit_stack,
-            is_groupby,
+            is_group_by,
         );
         ae_node.visit(&mut visitor).map(|_| ())?;
         Ok((visitor.id_array_offset, visitor.has_sub_expr))
@@ -563,7 +563,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
         expr: &[Node],
         expr_arena: &mut Arena<AExpr>,
         id_array_offsets: &mut Vec<u32>,
-        is_groupby: bool,
+        is_group_by: bool,
         schema: &Schema,
     ) -> PolarsResult<Option<ProjectionExprs>> {
         let mut has_sub_expr = false;
@@ -577,7 +577,7 @@ impl<'a> CommonSubExprOptimizer<'a> {
             // visit expressions and collect sub-expression counts
             let (id_array_offset, this_expr_has_se) =
                 AexprNode::with_context(*node, expr_arena, |ae_node| {
-                    self.visit_expression(ae_node, is_groupby)
+                    self.visit_expression(ae_node, is_group_by)
                 })?;
             id_array_offsets.push(id_array_offset as u32);
             has_sub_expr |= this_expr_has_se;

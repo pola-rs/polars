@@ -6,15 +6,15 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
-def test_shuffle_groupby_reseed() -> None:
+def test_shuffle_group_by_reseed() -> None:
     def unique_shuffle_groups(n: int, seed: int | None) -> int:
         ls = [1, 2, 3] * n  # 1, 2, 3, 1, 2, 3...
         groups = sorted(list(range(n)) * 3)  # 0, 0, 0, 1, 1, 1, ...
         df = pl.DataFrame({"l": ls, "group": groups})
-        shuffled = df.groupby("group", maintain_order=True).agg(
+        shuffled = df.group_by("group", maintain_order=True).agg(
             pl.col("l").shuffle(seed)
         )
-        num_unique = shuffled.groupby("l").agg(pl.lit(0)).select(pl.count())
+        num_unique = shuffled.group_by("l").agg(pl.lit(0)).select(pl.count())
         return int(num_unique[0, 0])
 
     assert unique_shuffle_groups(50, None) > 1  # Astronomically unlikely.
@@ -52,6 +52,19 @@ def test_sample_df() -> None:
 
     assert df.sample(n=2, seed=0).shape == (2, 3)
     assert df.sample(fraction=0.4, seed=0).shape == (1, 3)
+
+
+def test_sample_empty_df() -> None:
+    df = pl.DataFrame({"foo": []})
+
+    # // If with replacement, then expect empty df
+    assert df.sample(n=3, with_replacement=True).shape == (0, 1)
+    assert df.sample(fraction=0.4, with_replacement=True).shape == (0, 1)
+
+    # // If without replacement, then expect shape mismatch on sample_n not sample_frac
+    with pytest.raises(pl.ShapeError):
+        df.sample(n=3, with_replacement=False)
+    assert df.sample(fraction=0.4, with_replacement=False).shape == (0, 1)
 
 
 def test_sample_series() -> None:

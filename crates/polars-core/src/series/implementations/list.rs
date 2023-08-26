@@ -1,15 +1,15 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-#[cfg(feature = "groupby_list")]
+#[cfg(feature = "group_by_list")]
 use ahash::RandomState;
 
-use super::{private, IntoSeries, SeriesTrait};
+use super::*;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{IntoPartialEqInner, PartialEqInner};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::{AsSinglePtr, Settings};
-use crate::frame::groupby::*;
+use crate::frame::group_by::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 #[cfg(feature = "chunked_ids")]
@@ -53,13 +53,13 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 
-    #[cfg(feature = "groupby_list")]
+    #[cfg(feature = "group_by_list")]
     fn vec_hash(&self, _build_hasher: RandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.vec_hash(_build_hasher, _buf)?;
         Ok(())
     }
 
-    #[cfg(feature = "groupby_list")]
+    #[cfg(feature = "group_by_list")]
     fn vec_hash_combine(
         &self,
         _build_hasher: RandomState,
@@ -88,6 +88,9 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     fn chunks(&self) -> &Vec<ArrayRef> {
         self.0.chunks()
+    }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.chunks_mut()
     }
     fn shrink_to_fit(&mut self) {
         self.0.shrink_to_fit()
@@ -187,6 +190,55 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     fn has_validity(&self) -> bool {
         self.0.has_validity()
+    }
+
+    #[cfg(feature = "group_by_list")]
+    fn unique(&self) -> PolarsResult<Series> {
+        if !self.inner_dtype().is_numeric() {
+            polars_bail!(opq = unique, self.inner_dtype());
+        }
+        // this can be called in aggregation, so this fast path can be worth a lot
+        if self.len() < 2 {
+            return Ok(self.0.clone().into_series());
+        }
+        let main_thread = POOL.current_thread_index().is_none();
+        let groups = self.group_tuples(main_thread, false);
+        // safety:
+        // groups are in bounds
+        Ok(unsafe { self.0.clone().into_series().agg_first(&groups?) })
+    }
+
+    #[cfg(feature = "group_by_list")]
+    fn n_unique(&self) -> PolarsResult<usize> {
+        if !self.inner_dtype().is_numeric() {
+            polars_bail!(opq = n_unique, self.inner_dtype());
+        }
+        // this can be called in aggregation, so this fast path can be worth a lot
+        match self.len() {
+            0 => Ok(0),
+            1 => Ok(1),
+            _ => {
+                let main_thread = POOL.current_thread_index().is_none();
+                let groups = self.group_tuples(main_thread, false)?;
+                Ok(groups.len())
+            },
+        }
+    }
+
+    #[cfg(feature = "group_by_list")]
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        if !self.inner_dtype().is_numeric() {
+            polars_bail!(opq = arg_unique, self.inner_dtype());
+        }
+        // this can be called in aggregation, so this fast path can be worth a lot
+        if self.len() == 1 {
+            return Ok(IdxCa::new_vec(self.name(), vec![0 as IdxSize]));
+        }
+        let main_thread = POOL.current_thread_index().is_none();
+        // arg_unique requires a stable order
+        let groups = self.group_tuples(main_thread, true)?;
+        let first = groups.take_group_firsts();
+        Ok(IdxCa::from_vec(self.name(), first))
     }
 
     fn is_null(&self) -> BooleanChunked {

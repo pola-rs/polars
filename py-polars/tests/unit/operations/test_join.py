@@ -65,7 +65,7 @@ def test_join_same_cat_src() -> None:
         data={"column": ["a", "a", "b"], "more": [1, 2, 3]},
         schema=[("column", pl.Categorical), ("more", pl.Int32)],
     )
-    df_agg = df.groupby("column").agg(pl.col("more").mean())
+    df_agg = df.group_by("column").agg(pl.col("more").mean())
     assert df.join(df_agg, on="column").to_dict(False) == {
         "column": ["a", "a", "b"],
         "more": [1, 2, 3],
@@ -434,7 +434,7 @@ def test_semi_join_projection_pushdown_6455() -> None:
         }
     ).lazy()
 
-    latest = df.groupby("id").agg(pl.col("timestamp").max())
+    latest = df.group_by("id").agg(pl.col("timestamp").max())
     df = df.join(latest, on=["id", "timestamp"], how="semi")
     assert df.select(["id", "value"]).collect().to_dict(False) == {
         "id": [1, 2],
@@ -467,13 +467,13 @@ def test_join_frame_consistency() -> None:
     df = pl.DataFrame({"A": [1, 2, 3]})
     ldf = pl.DataFrame({"A": [1, 2, 5]}).lazy()
 
-    with pytest.raises(TypeError, match="expected 'other'.* LazyFrame"):
+    with pytest.raises(TypeError, match="expected `other`.* LazyFrame"):
         _ = ldf.join(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="expected 'other'.* DataFrame"):
+    with pytest.raises(TypeError, match="expected `other`.* DataFrame"):
         _ = df.join(ldf, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="expected 'other'.* LazyFrame"):
+    with pytest.raises(TypeError, match="expected `other`.* LazyFrame"):
         _ = ldf.join_asof(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="expected 'other'.* DataFrame"):
+    with pytest.raises(TypeError, match="expected `other`.* DataFrame"):
         _ = df.join_asof(ldf, on="A")  # type: ignore[arg-type]
 
 

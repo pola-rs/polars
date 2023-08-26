@@ -67,7 +67,7 @@ impl Display for BooleanFunction {
             #[cfg(feature = "is_in")]
             IsIn => "is_in",
             AnyHorizontal => "any_horizontal",
-            AllHorizontal => "any_horizontal",
+            AllHorizontal => "all_horizontal",
         };
         write!(f, "{s}")
     }
@@ -171,7 +171,7 @@ fn is_duplicated(s: &Series) -> PolarsResult<Series> {
 fn is_in(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let left = &s[0];
     let other = &s[1];
-    left.is_in(other).map(|ca| Some(ca.into_series()))
+    polars_ops::prelude::is_in(left, other).map(|ca| Some(ca.into_series()))
 }
 
 fn any_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {

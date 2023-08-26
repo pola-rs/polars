@@ -92,6 +92,7 @@ from polars.utils.convert import (
 )
 from polars.utils.deprecation import (
     deprecate_nonkeyword_arguments,
+    deprecate_renamed_function,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -320,8 +321,9 @@ class Series:
                 dtype_if_empty=dtype_if_empty,
             )
         else:
-            raise ValueError(
-                f"Series constructor called with unsupported type; got {type(values).__name__!r}"
+            raise TypeError(
+                f"Series constructor called with unsupported type {type(values).__name__!r}"
+                " for the `values` parameter"
             )
 
     @classmethod
@@ -352,8 +354,7 @@ class Series:
         """
         Get a pointer to the start of the values buffer of a numeric Series.
 
-        This will raise an error if the
-        ``Series`` contains multiple chunks
+        This will raise an error if the ``Series`` contains multiple chunks.
 
         This will return the offset, length and the pointer itself.
 
@@ -416,7 +417,7 @@ class Series:
         return (self._s.len(),)
 
     def __bool__(self) -> NoReturn:
-        raise ValueError(
+        raise TypeError(
             "the truth value of a Series is ambiguous"
             "\n\nHint: use '&' or '|' to chain Series boolean results together, not and/or."
             " To check if a Series contains any values, use `is_empty()`."
@@ -608,16 +609,42 @@ class Series:
 
     def eq_missing(self, other: Any) -> Self | Expr:
         """
-        Method equivalent of equality operator ``expr == other`` where `None` == None`.
+        Method equivalent of equality operator ``series == other`` where `None` == None`.
 
-        This differs from default ``ne`` where null values are propagated.
+        This differs from the standard ``ne`` where null values are propagated.
 
         Parameters
         ----------
         other
             A literal or expression value to compare with.
 
-        """
+        See Also
+        --------
+        ne_missing
+        eq
+
+        Examples
+        --------
+        >>> s1 = pl.Series("a", [333, 200, None])
+        >>> s2 = pl.Series("a", [100, 200, None])
+        >>> s1.eq(s2)
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+            false
+            true
+            null
+        ]
+        >>> s1.eq_missing(s2)
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+            false
+            true
+            true
+        ]
+
+        """  # noqa: W505
 
     def ne(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series != other``."""
@@ -633,16 +660,42 @@ class Series:
 
     def ne_missing(self, other: Any) -> Self | Expr:
         """
-        Method equivalent of equality operator ``expr != other`` where `None` == None`.
+        Method equivalent of equality operator ``series != other`` where `None` == None`.
 
-        This differs from default ``ne`` where null values are propagated.
+        This differs from the standard ``ne`` where null values are propagated.
 
         Parameters
         ----------
         other
             A literal or expression value to compare with.
 
-        """
+        See Also
+        --------
+        eq_missing
+        ne
+
+        Examples
+        --------
+        >>> s1 = pl.Series("a", [333, 200, None])
+        >>> s2 = pl.Series("a", [100, 200, None])
+        >>> s1.ne(s2)
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+            true
+            false
+            null
+        ]
+        >>> s1.ne_missing(s2)
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+            true
+            false
+            false
+        ]
+
+        """  # noqa: W505
 
     def ge(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series >= other``."""
@@ -673,7 +726,7 @@ class Series:
             other = maybe_cast(other, self.dtype)
             f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
-            raise ValueError(
+            raise TypeError(
                 f"cannot do arithmetic with series of dtype: {self.dtype} and argument"
                 f" of type: {type(other).__name__!r}"
             )
@@ -725,7 +778,7 @@ class Series:
         if isinstance(other, pl.Expr):
             return F.lit(self) / other
         if self.is_temporal():
-            raise ValueError("first cast to integer before dividing datelike dtypes")
+            raise TypeError("first cast to integer before dividing datelike dtypes")
 
         # this branch is exactly the floordiv function without rounding the floats
         if self.is_float() or self.dtype == Decimal:
@@ -745,7 +798,7 @@ class Series:
         if isinstance(other, pl.Expr):
             return F.lit(self) // other
         if self.is_temporal():
-            raise ValueError("first cast to integer before dividing datelike dtypes")
+            raise TypeError("first cast to integer before dividing datelike dtypes")
 
         if not isinstance(other, pl.Expr):
             other = F.lit(other)
@@ -772,7 +825,7 @@ class Series:
         if isinstance(other, pl.Expr):
             return F.lit(self) * other
         if self.is_temporal():
-            raise ValueError("first cast to integer before multiplying datelike dtypes")
+            raise TypeError("first cast to integer before multiplying datelike dtypes")
         elif isinstance(other, pl.DataFrame):
             return other * self
         else:
@@ -790,14 +843,14 @@ class Series:
         if isinstance(other, pl.Expr):
             return F.lit(self).__mod__(other)
         if self.is_temporal():
-            raise ValueError(
+            raise TypeError(
                 "first cast to integer before applying modulo on datelike dtypes"
             )
         return self._arithmetic(other, "rem", "rem_<>")
 
     def __rmod__(self, other: Any) -> Series:
         if self.is_temporal():
-            raise ValueError(
+            raise TypeError(
                 "first cast to integer before applying modulo on datelike dtypes"
             )
         return self._arithmetic(other, "rem", "rem_<>_rhs")
@@ -812,7 +865,7 @@ class Series:
 
     def __rtruediv__(self, other: Any) -> Series:
         if self.is_temporal():
-            raise ValueError("first cast to integer before dividing datelike dtypes")
+            raise TypeError("first cast to integer before dividing datelike dtypes")
         if self.is_float():
             self.__rfloordiv__(other)
 
@@ -822,12 +875,12 @@ class Series:
 
     def __rfloordiv__(self, other: Any) -> Series:
         if self.is_temporal():
-            raise ValueError("first cast to integer before dividing datelike dtypes")
+            raise TypeError("first cast to integer before dividing datelike dtypes")
         return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rmul__(self, other: Any) -> Series:
         if self.is_temporal():
-            raise ValueError("first cast to integer before multiplying datelike dtypes")
+            raise TypeError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
     def __pow__(self, exponent: int | float | None | Series) -> Series:
@@ -835,7 +888,7 @@ class Series:
 
     def __rpow__(self, other: Any) -> Series:
         if self.is_temporal():
-            raise ValueError(
+            raise TypeError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
         return self.to_frame().select(other ** F.col(self.name)).to_series()
@@ -1010,7 +1063,7 @@ class Series:
             if self.is_numeric() or self.is_temporal():
                 self.set_at_idx(key, value)  # type: ignore[arg-type]
                 return None
-            raise ValueError(
+            raise TypeError(
                 f"cannot set Series of dtype: {self.dtype!r} with list/tuple as value;"
                 " use a scalar value"
             )
@@ -1036,7 +1089,7 @@ class Series:
             s = self._from_pyseries(sequence_to_pyseries("", key, dtype=UInt32))
             self.__setitem__(s, value)
         else:
-            raise ValueError(f'cannot use "{key!r}" for indexing')
+            raise TypeError(f'cannot use "{key!r}" for indexing')
 
     def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
         """
@@ -1075,7 +1128,7 @@ class Series:
                 elif isinstance(arg, Series):
                     args.append(arg.view(ignore_nulls=True))
                 else:
-                    raise ValueError(
+                    raise TypeError(
                         f"unsupported type {type(arg).__name__!r} for {arg!r}"
                     )
 
@@ -1551,7 +1604,7 @@ class Series:
 
         """
         if self.is_temporal():
-            raise ValueError(
+            raise TypeError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
         if _check_for_numpy(exponent) and isinstance(exponent, np.ndarray):
@@ -2238,32 +2291,61 @@ class Series:
             bins = Series(bins, dtype=Float64)._s
         return wrap_df(self._s.hist(bins, bin_count))
 
-    def value_counts(self, *, sort: bool = False) -> DataFrame:
+    def value_counts(self, *, sort: bool = False, parallel: bool = False) -> DataFrame:
         """
-        Count the unique values in a Series.
+        Count the occurrences of unique values.
 
         Parameters
         ----------
         sort
-            Ensure the output is sorted from most values to least.
+            Sort the output by count in descending order.
+            If set to ``False`` (default), the order of the output is random.
+        parallel
+            Execute the computation in parallel.
+
+            .. note::
+                This option should likely not be enabled in a group by context,
+                as the computation is already parallelized per group.
+
+        Returns
+        -------
+        DataFrame
+            Mapping of unique values to their count.
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 2, 3])
-        >>> s.value_counts().sort(by="a")
+        >>> s = pl.Series("color", ["red", "blue", "red", "green", "blue", "blue"])
+        >>> s.value_counts()  # doctest: +IGNORE_RESULT
         shape: (3, 2)
-        ┌─────┬────────┐
-        │ a   ┆ counts │
-        │ --- ┆ ---    │
-        │ i64 ┆ u32    │
-        ╞═════╪════════╡
-        │ 1   ┆ 1      │
-        │ 2   ┆ 2      │
-        │ 3   ┆ 1      │
-        └─────┴────────┘
+        ┌───────┬────────┐
+        │ color ┆ counts │
+        │ ---   ┆ ---    │
+        │ str   ┆ u32    │
+        ╞═══════╪════════╡
+        │ red   ┆ 2      │
+        │ green ┆ 1      │
+        │ blue  ┆ 3      │
+        └───────┴────────┘
+
+        Sort the output by count.
+
+        shape: (3, 2)
+        ┌───────┬────────┐
+        │ color ┆ counts │
+        │ ---   ┆ ---    │
+        │ str   ┆ u32    │
+        ╞═══════╪════════╡
+        │ blue  ┆ 3      │
+        │ red   ┆ 2      │
+        │ green ┆ 1      │
+        └───────┴────────┘
 
         """
-        return wrap_df(self._s.value_counts(sort))
+        return (
+            self.to_frame()
+            .select(F.col(self.name).value_counts(sort=sort, parallel=parallel))
+            .unnest(self.name)
+        )
 
     def unique_counts(self) -> Series:
         """
@@ -2327,7 +2409,7 @@ class Series:
             Number of valid values there should be in the window before the expression
             is evaluated. valid values = `length - null_count`
         parallel
-            Run in parallel. Don't do this in a groupby or another operation that
+            Run in parallel. Don't do this in a group by or another operation that
             already has much parallelization.
 
         Warnings
@@ -3764,7 +3846,7 @@ class Series:
         elif signed is False:
             return self.dtype in UNSIGNED_INTEGER_DTYPES
 
-        raise ValueError(f"'signed' must be None, True or False; given {signed!r}")
+        raise ValueError(f"`signed` must be None, True or False; got {signed!r}")
 
     def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
         """
@@ -4743,7 +4825,7 @@ class Series:
 
         """
 
-    def apply(
+    def map_elements(
         self,
         function: Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
@@ -4751,7 +4833,7 @@ class Series:
         skip_nulls: bool = True,
     ) -> Self:
         """
-        Apply a custom/user-defined function (UDF) over elements in this Series.
+        Map a custom/user-defined function (UDF) over elements in this Series.
 
         .. warning::
             This method is much slower than the native expressions API.
@@ -4798,7 +4880,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.apply(lambda x: x + 10)  # doctest: +SKIP
+        >>> s.map_elements(lambda x: x + 10)  # doctest: +SKIP
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -4812,14 +4894,14 @@ class Series:
         Series
 
         """
-        from polars.utils.udfs import warn_on_inefficient_apply
+        from polars.utils.udfs import warn_on_inefficient_map
 
         if return_dtype is None:
             pl_return_dtype = None
         else:
             pl_return_dtype = py_type_to_dtype(return_dtype)
 
-        warn_on_inefficient_apply(function, columns=[self.name], apply_target="series")
+        warn_on_inefficient_map(function, columns=[self.name], map_target="series")
         return self._from_pyseries(
             self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
         )
@@ -5721,7 +5803,7 @@ class Series:
         >>> s = pl.Series("a", [3, 6, 1, 1, 6])
         >>> s.rank()
         shape: (5,)
-        Series: 'a' [f32]
+        Series: 'a' [f64]
         [
             3.0
             4.5
@@ -6475,6 +6557,35 @@ class Series:
 
     def implode(self) -> Self:
         """Aggregate values into a list."""
+
+    @deprecate_renamed_function("map_elements", version="0.19.0")
+    def apply(
+        self,
+        function: Callable[[Any], Any],
+        return_dtype: PolarsDataType | None = None,
+        *,
+        skip_nulls: bool = True,
+    ) -> Self:
+        """
+        Apply a custom/user-defined function (UDF) over elements in this Series.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`Series.map_elements`.
+
+        Parameters
+        ----------
+        function
+            Custom function or lambda.
+        return_dtype
+            Output datatype. If none is given, the same datatype as this Series will be
+            used.
+        skip_nulls
+            Nulls will be skipped and not passed to the python function.
+            This is faster because python can be skipped and because we call
+            more specialized functions.
+
+        """
+        return self.map_elements(function, return_dtype, skip_nulls=skip_nulls)
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

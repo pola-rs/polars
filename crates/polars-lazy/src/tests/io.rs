@@ -168,6 +168,28 @@ fn test_parquet_globbing() -> PolarsResult<()> {
 }
 
 #[test]
+fn test_scan_parquet_limit_9001() {
+    init_files();
+    let path = GLOB_PARQUET;
+    let args = ScanArgsParquet {
+        n_rows: Some(10000),
+        cache: false,
+        rechunk: true,
+        ..Default::default()
+    };
+    let q = LazyFrame::scan_parquet(path, args).unwrap().limit(3);
+    let (node, lp_arena, _) = q.to_alp_optimized().unwrap();
+    (&lp_arena).iter(node).all(|(_, lp)| match lp {
+        ALogicalPlan::Union { options, .. } => {
+            let sliced = options.slice.unwrap();
+            sliced.1 == 3
+        },
+        ALogicalPlan::Scan { file_options, .. } => file_options.n_rows == Some(3),
+        _ => true,
+    });
+}
+
+#[test]
 #[cfg(not(target_os = "windows"))]
 fn test_ipc_globbing() -> PolarsResult<()> {
     // for side effects
@@ -220,6 +242,7 @@ fn test_csv_globbing() -> PolarsResult<()> {
     let df = lf.clone().collect()?;
     assert_eq!(df.shape(), (100, 4));
     let df = LazyCsvReader::new(glob).finish()?.slice(20, 60).collect()?;
+    dbg!(&full_df, &df);
     assert!(full_df.slice(20, 60).frame_equal(&df));
 
     let mut expr_arena = Arena::with_capacity(16);

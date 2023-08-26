@@ -7,7 +7,7 @@ use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::frame::groupby::*;
+use crate::frame::group_by::*;
 use crate::frame::hash_join::*;
 use crate::prelude::*;
 
@@ -220,6 +220,9 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
 
     fn chunks(&self) -> &Vec<ArrayRef> {
         self.0.chunks()
+    }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.chunks_mut()
     }
 
     fn shrink_to_fit(&mut self) {
@@ -443,10 +446,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
 
     fn peak_min(&self) -> BooleanChunked {
         self.0.peak_min()
-    }
-    #[cfg(feature = "is_in")]
-    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
-        self.0.is_in(other)
     }
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {

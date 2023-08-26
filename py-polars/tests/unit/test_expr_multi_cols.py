@@ -81,7 +81,7 @@ def test_multiple_columns_length_9137() -> None:
     # list is larger than groups
     cmp_list = ["a", "b", "c"]
 
-    assert df.groupby("a").agg(pl.col("b").is_in(cmp_list)).to_dict(False) == {
+    assert df.group_by("a").agg(pl.col("b").is_in(cmp_list)).to_dict(False) == {
         "a": [1],
         "b": [[True, False]],
     }

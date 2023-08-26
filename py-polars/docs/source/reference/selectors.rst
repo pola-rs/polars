@@ -28,7 +28,7 @@ Importing
               "z": ["a", "b", "a", "b", "b"],
           },
       )
-      df.groupby(by=cs.string()).agg(cs.numeric().sum())
+      df.group_by(by=cs.string()).agg(cs.numeric().sum())
 
 Set operations
 --------------

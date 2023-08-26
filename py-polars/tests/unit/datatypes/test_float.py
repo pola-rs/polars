@@ -1,7 +1,7 @@
 import polars as pl
 
 
-def test_nan_in_groupby_agg() -> None:
+def test_nan_in_group_by_agg() -> None:
     df = pl.DataFrame(
         {
             "key": ["a", "a", "a", "a"],
@@ -10,8 +10,8 @@ def test_nan_in_groupby_agg() -> None:
         }
     )
 
-    assert df.groupby("bar", "key").agg(pl.col("value").max())["value"].item() == 18.78
-    assert df.groupby("bar", "key").agg(pl.col("value").min())["value"].item() == 18.58
+    assert df.group_by("bar", "key").agg(pl.col("value").max())["value"].item() == 18.78
+    assert df.group_by("bar", "key").agg(pl.col("value").min())["value"].item() == 18.58
 
 
 def test_nan_aggregations() -> None:
@@ -29,6 +29,6 @@ def test_nan_aggregations() -> None:
         == "{'max': [3.0], 'min': [1.0], 'nan_max': [nan], 'nan_min': [nan]}"
     )
     assert (
-        str(df.groupby("b").agg(aggs).to_dict(False))
+        str(df.group_by("b").agg(aggs).to_dict(False))
         == "{'b': [1], 'max': [3.0], 'min': [1.0], 'nan_max': [nan], 'nan_min': [nan]}"
     )

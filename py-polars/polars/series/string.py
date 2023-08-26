@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from polars import Expr, Series
     from polars.polars import PySeries
     from polars.type_aliases import (
+        Ambiguous,
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
@@ -79,6 +80,7 @@ class StringNameSpace:
         cache: bool = True,
         utc: bool | None = None,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Convert a Utf8 column into a Datetime column.
@@ -123,6 +125,15 @@ class StringNameSpace:
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Examples
         --------
@@ -181,6 +192,7 @@ class StringNameSpace:
         exact: bool = True,
         cache: bool = True,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -211,6 +223,15 @@ class StringNameSpace:
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Notes
         -----
@@ -449,6 +470,11 @@ class StringNameSpace:
         suffix
             Suffix substring.
 
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+        starts_with : Check if string values start with a substring.
+
         Examples
         --------
         >>> s = pl.Series("fruits", ["apple", "mango", None])
@@ -461,11 +487,6 @@ class StringNameSpace:
             null
         ]
 
-        See Also
-        --------
-        contains : Check if string contains a substring that matches a regex.
-        starts_with : Check if string values start with a substring.
-
         """
 
     def starts_with(self, prefix: str | Expr) -> Series:
@@ -476,6 +497,11 @@ class StringNameSpace:
         ----------
         prefix
             Prefix substring.
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+        ends_with : Check if string values end with a substring.
 
         Examples
         --------
@@ -488,11 +514,6 @@ class StringNameSpace:
             false
             null
         ]
-
-        See Also
-        --------
-        contains : Check if string contains a substring that matches a regex.
-        ends_with : Check if string values end with a substring.
 
         """
 
@@ -555,6 +576,11 @@ class StringNameSpace:
             How many rows to parse to determine the schema.
             If ``None`` all rows are used.
 
+        See Also
+        --------
+        json_path_match : Extract the first match of json string with provided JSONPath
+            expression.
+
         Examples
         --------
         >>> s = pl.Series("json", ['{"a":1, "b": true}', None, '{"a":2, "b": false}'])
@@ -566,11 +592,6 @@ class StringNameSpace:
                 {null,null}
                 {2,false}
         ]
-
-        See Also
-        --------
-        json_path_match : Extract the first match of json string with provided JSONPath
-            expression.
 
         """
 

@@ -14,7 +14,7 @@ def test_schema_on_agg() -> None:
 
     assert (
         df.lazy()
-        .groupby("a")
+        .group_by("a")
         .agg(
             [
                 pl.col("b").min().alias("min"),
@@ -97,7 +97,7 @@ def test_from_dicts_nested_nulls() -> None:
 def test_group_schema_err() -> None:
     df = pl.DataFrame({"foo": [None, 1, 2], "bar": [1, 2, 3]}).lazy()
     with pytest.raises(pl.ColumnNotFoundError):
-        df.groupby("not-existent").agg(pl.col("bar").max().alias("max_bar")).schema
+        df.group_by("not-existent").agg(pl.col("bar").max().alias("max_bar")).schema
 
 
 def test_schema_inference_from_rows() -> None:
@@ -151,7 +151,7 @@ def test_join_as_of_by_schema() -> None:
     assert q.collect().columns == q.columns
 
 
-def test_unknown_apply() -> None:
+def test_unknown_map_elements() -> None:
     df = pl.DataFrame(
         {"Amount": [10, 1, 1, 5], "Flour": ["1000g", "100g", "50g", "75g"]}
     )
@@ -159,7 +159,7 @@ def test_unknown_apply() -> None:
     q = df.lazy().select(
         [
             pl.col("Amount"),
-            pl.col("Flour").apply(lambda x: 100.0) / pl.col("Amount"),
+            pl.col("Flour").map_elements(lambda x: 100.0) / pl.col("Amount"),
         ]
     )
 
@@ -391,7 +391,7 @@ def test_absence_off_null_prop_8224() -> None:
 
     q = (
         df.lazy()
-        .groupby("group")
+        .group_by("group")
         .agg(
             [
                 sub_col_min("vals_num", "vals_num").alias("sub_num"),
@@ -439,8 +439,8 @@ def test_schemas(
     for key, dtype in expected_select.items():
         assert schema[key] == dtype
 
-    # test groupby schema
-    schema = df.groupby(pl.lit(1)).agg(expr).schema
+    # test group_by schema
+    schema = df.group_by(pl.lit(1)).agg(expr).schema
     for key, dtype in expected_gb.items():
         assert schema[key] == dtype
 
@@ -511,7 +511,7 @@ def test_lit_iter_schema() -> None:
         }
     )
 
-    assert df.groupby("key").agg(pl.col("dates").unique() + timedelta(days=1)).to_dict(
+    assert df.group_by("key").agg(pl.col("dates").unique() + timedelta(days=1)).to_dict(
         False
     ) == {
         "key": ["A"],

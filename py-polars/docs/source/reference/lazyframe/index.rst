@@ -11,7 +11,7 @@ This page gives an overview of all public LazyFrame methods.
    aggregation
    attributes
    descriptive
-   groupby
+   group_by
    modify_select
    miscellaneous
 

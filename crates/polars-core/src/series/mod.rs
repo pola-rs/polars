@@ -32,7 +32,7 @@ use crate::chunked_array::Settings;
 use crate::prelude::unique::rank::rank;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::{_split_offsets, split_ca, split_series, Wrap};
+use crate::utils::{_split_offsets, get_casting_failures, split_ca, split_series, Wrap};
 use crate::POOL;
 
 /// # Series
@@ -41,7 +41,7 @@ use crate::POOL;
 /// Most of the available functions are defined in the [SeriesTrait trait](crate::series::SeriesTrait).
 ///
 /// The `Series` struct consists
-/// of typed [ChunkedArray](crate::chunked_array::ChunkedArray)'s. To quickly cast
+/// of typed [ChunkedArray]'s. To quickly cast
 /// a `Series` to a `ChunkedArray` you can call the method with the name of the type:
 ///
 /// ```
@@ -187,10 +187,7 @@ impl Series {
     pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         #[allow(unused_mut)]
         let mut ca = self._get_inner_mut();
-        let chunks = ca.chunks() as *const Vec<ArrayRef> as *mut Vec<ArrayRef>;
-        // Safety
-        // ca is the owner of `chunks` and this we do not break aliasing rules
-        &mut *chunks
+        ca.chunks_mut()
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
@@ -790,14 +787,12 @@ impl Series {
         }
         let s = self.0.cast(dtype)?;
         if null_count != s.null_count() {
-            let failure_mask = !self.is_null() & s.is_null();
-            let failures = self.filter_threaded(&failure_mask, false)?.unique()?;
+            let failures = get_casting_failures(self, &s)?;
             polars_bail!(
                 ComputeError:
                 "strict conversion from `{}` to `{}` failed for column: {}, value(s) {}; \
                 if you were trying to cast Utf8 to temporal dtypes, consider using `strptime`",
                 self.dtype(), dtype, s.name(), failures.fmt_list(),
-
             );
         } else {
             Ok(s)

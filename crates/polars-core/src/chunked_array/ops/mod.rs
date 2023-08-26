@@ -32,8 +32,6 @@ mod filter;
 pub mod full;
 #[cfg(feature = "interpolate")]
 mod interpolate;
-#[cfg(feature = "is_in")]
-mod is_in;
 mod len;
 #[cfg(feature = "zip_with")]
 pub(crate) mod min_max_binary;
@@ -710,15 +708,6 @@ pub trait ChunkPeaks {
 
     /// Get a boolean mask of the local minimum peaks.
     fn peak_min(&self) -> BooleanChunked {
-        unimplemented!()
-    }
-}
-
-/// Check if element is member of list array
-#[cfg(feature = "is_in")]
-pub trait IsIn {
-    /// Check if elements of this array are in the right Series, or List values of the right Series.
-    fn is_in(&self, _other: &Series) -> PolarsResult<BooleanChunked> {
         unimplemented!()
     }
 }

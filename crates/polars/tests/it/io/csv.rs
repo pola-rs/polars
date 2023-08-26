@@ -387,7 +387,7 @@ fn test_empty_bytes_to_dataframe() {
     let result = CsvReader::new(file)
         .has_header(false)
         .with_columns(Some(schema.iter_names().map(|s| s.to_string()).collect()))
-        .with_schema(Arc::new(schema))
+        .with_schema(Some(Arc::new(schema)))
         .finish();
     assert!(result.is_ok())
 }
@@ -416,11 +416,11 @@ fn test_missing_value() {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(true)
-        .with_schema(Arc::new(Schema::from_iter([
+        .with_schema(Some(Arc::new(Schema::from_iter([
             Field::new("foo", DataType::UInt32),
             Field::new("bar", DataType::UInt32),
             Field::new("ham", DataType::UInt32),
-        ])))
+        ]))))
         .finish()
         .unwrap();
     assert_eq!(df.column("ham").unwrap().len(), 3)
@@ -442,6 +442,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
             "b",
             DataType::Datetime(TimeUnit::Nanoseconds, None),
         )]))))
+        .with_ignore_errors(true)
         .finish()?;
 
     assert_eq!(
@@ -567,7 +568,7 @@ fn test_comment_lines() -> PolarsResult<()> {
 #[test]
 fn test_null_values_argument() -> PolarsResult<()> {
     let csv = r"1,a,foo
-null-value,b,bar,
+null-value,b,bar
 3,null-value,ham
 ";
 
@@ -825,7 +826,10 @@ fn test_scientific_floats() -> PolarsResult<()> {
 fn test_tsv_header_offset() -> PolarsResult<()> {
     let csv = "foo\tbar\n\t1000011\t1\n\t1000026\t2\n\t1000949\t2";
     let file = Cursor::new(csv);
-    let df = CsvReader::new(file).with_delimiter(b'\t').finish()?;
+    let df = CsvReader::new(file)
+        .truncate_ragged_lines(true)
+        .with_delimiter(b'\t')
+        .finish()?;
 
     assert_eq!(df.shape(), (3, 2));
     assert_eq!(df.dtypes(), &[DataType::Utf8, DataType::Int64]);
@@ -924,7 +928,7 @@ foo,bar
         .finish()?;
     assert_eq!(df.get_column_names(), &["foo", "bar"]);
     assert_eq!(df.shape(), (1, 2));
-    let df = CsvReader::new(file).finish()?;
+    let df = CsvReader::new(file).truncate_ragged_lines(true).finish()?;
     assert_eq!(df.shape(), (5, 1));
 
     Ok(())

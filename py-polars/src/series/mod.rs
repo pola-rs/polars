@@ -16,9 +16,9 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::Python;
 
-use crate::apply::series::{call_lambda_and_extract, ApplyLambda};
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
+use crate::map::series::{call_lambda_and_extract, ApplyLambda};
 use crate::prelude::*;
 use crate::py_modules::POLARS;
 use crate::{apply_method_all_arrow_series2, raise_err};
@@ -264,14 +264,6 @@ impl PySeries {
 
     fn sort(&mut self, descending: bool) -> Self {
         self.series.sort(descending).into()
-    }
-
-    fn value_counts(&self, sorted: bool) -> PyResult<PyDataFrame> {
-        let df = self
-            .series
-            .value_counts(true, sorted)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
     }
 
     fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {

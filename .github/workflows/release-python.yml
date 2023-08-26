@@ -6,7 +6,7 @@ on:
       - py-*
 
 env:
-  RUST_TOOLCHAIN: nightly-2023-07-27
+  RUST_TOOLCHAIN: nightly-2023-08-26
   PYTHON_VERSION: '3.8'
   MATURIN_VERSION: '1.2.1'
   MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
@@ -87,7 +87,7 @@ jobs:
         run: |
           sed -i 's/name = "polars"/name = "polars-u64-idx"/' py-polars/pyproject.toml
           # A brittle hack to insert the 'bigidx' feature
-          sed -i 's/"dynamic_groupby",/"dynamic_groupby",\n"bigidx",/' py-polars/Cargo.toml
+          sed -i 's/"dynamic_group_by",/"dynamic_group_by",\n"bigidx",/' py-polars/Cargo.toml
 
       - name: Publish wheel
         uses: PyO3/maturin-action@v1

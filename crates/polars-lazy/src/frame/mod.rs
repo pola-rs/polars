@@ -57,7 +57,7 @@ pub trait IntoLazy {
 }
 
 impl IntoLazy for DataFrame {
-    /// Convert the `DataFrame` into a lazy `DataFrame`
+    /// Convert the `DataFrame` into a `LazyFrame`
     fn lazy(self) -> LazyFrame {
         let lp = LogicalPlanBuilder::from_existing_df(self).build();
         LazyFrame {
@@ -69,7 +69,7 @@ impl IntoLazy for DataFrame {
 
 /// Lazy abstraction over an eager `DataFrame`.
 /// It really is an abstraction over a logical plan. The methods of this struct will incrementally
-/// modify a logical plan until output is requested (via [collect](crate::frame::LazyFrame::collect))
+/// modify a logical plan until output is requested (via [`collect`](crate::frame::LazyFrame::collect)).
 #[derive(Clone, Default)]
 #[must_use]
 pub struct LazyFrame {
@@ -90,7 +90,11 @@ impl From<LogicalPlan> for LazyFrame {
 }
 
 impl LazyFrame {
-    /// Get a hold on the schema of the current LazyFrame computation.
+    /// Get a handle to the schema — a map from column names to data types — of the current
+    /// `LazyFrame` computation.
+    ///
+    /// Returns an `Err` if the logical plan has already encountered an error (i.e., if
+    /// `self.collect()` would fail), `Ok` otherwise.
     pub fn schema(&self) -> PolarsResult<SchemaRef> {
         self.logical_plan.schema().map(|schema| schema.into_owned())
     }
@@ -110,18 +114,18 @@ impl LazyFrame {
         }
     }
 
-    /// Get current optimizations
+    /// Get current optimizations.
     pub fn get_current_optimizations(&self) -> OptState {
         self.opt_state
     }
 
-    /// Set allowed optimizations
+    /// Set allowed optimizations.
     pub fn with_optimizations(mut self, opt_state: OptState) -> Self {
         self.opt_state = opt_state;
         self
     }
 
-    /// Turn off all optimizations
+    /// Turn off all optimizations.
     pub fn without_optimizations(self) -> Self {
         self.with_optimizations(OptState {
             projection_pushdown: false,
@@ -157,7 +161,7 @@ impl LazyFrame {
         self
     }
 
-    /// Toggle expression simplification optimization on or off
+    /// Toggle expression simplification optimization on or off.
     pub fn with_simplify_expr(mut self, toggle: bool) -> Self {
         self.opt_state.simplify_expr = toggle;
         self
@@ -177,24 +181,26 @@ impl LazyFrame {
         self
     }
 
-    /// Toggle slice pushdown optimization
+    /// Toggle slice pushdown optimization.
     pub fn with_slice_pushdown(mut self, toggle: bool) -> Self {
         self.opt_state.slice_pushdown = toggle;
         self
     }
 
-    /// Allow (partial) streaming engine
+    /// Allow (partial) streaming engine.
     pub fn with_streaming(mut self, toggle: bool) -> Self {
         self.opt_state.streaming = toggle;
         self
     }
 
-    /// Explain the naive logical plan.
+    /// Return a String describing the naive (un-optimized) logical plan.
     pub fn describe_plan(&self) -> String {
         self.logical_plan.describe()
     }
 
-    /// Explain the optimized logical plan.
+    /// Return a String describing the optimized logical plan.
+    ///
+    /// Returns `Err` if optimizing the logical plan fails.
     pub fn describe_optimized_plan(&self) -> PolarsResult<String> {
         let mut expr_arena = Arena::with_capacity(64);
         let mut lp_arena = Arena::with_capacity(64);
@@ -208,7 +214,10 @@ impl LazyFrame {
         Ok(logical_plan.describe())
     }
 
-    /// Explain the logical plan.
+    /// Return a String describing the logical plan.
+    ///
+    /// If `optimized` is `true`, explains the optimized plan. If `optimized` is `false,
+    /// explains the naive, un-optimized plan.
     pub fn explain(&self, optimized: bool) -> PolarsResult<String> {
         if optimized {
             self.describe_optimized_plan()
@@ -218,6 +227,8 @@ impl LazyFrame {
     }
 
     /// Add a sort operation to the logical plan.
+    ///
+    /// Sorts the LazyFrame by the column name specified using the provided options.
     ///
     /// # Example
     ///
@@ -250,6 +261,11 @@ impl LazyFrame {
     }
 
     /// Add a sort operation to the logical plan.
+    ///
+    /// Sorts the LazyFrame by the provided list of expressions, which will be turned into
+    /// concrete columns before sorting. `reverse` is a list of `bool`, the same length as
+    /// `by_exprs`, that specifies whether each corresponding expression will be sorted
+    /// ascending (`false`) or descending (`true`).
     ///
     /// # Example
     ///
@@ -316,7 +332,9 @@ impl LazyFrame {
             .slice(0, k)
     }
 
-    /// Reverse the DataFrame
+    /// Reverse the `DataFrame` from top to bottom.
+    ///
+    /// Row `i` becomes row `number_of_rows - i - 1`.
     ///
     /// # Example
     ///
@@ -362,6 +380,11 @@ impl LazyFrame {
     }
 
     /// Rename columns in the DataFrame.
+    ///
+    /// `existing` and `new` are iterables of the same length containing the old and
+    /// corresponding new column names. Renaming happens to all `existing` columns
+    /// simultaneously, not iteratively. (In particular, all columns in `existing` must
+    /// already exist in the `LazyFrame` when `rename` is called.)
     pub fn rename<I, J, T, S>(self, existing: I, new: J) -> Self
     where
         I: IntoIterator<Item = T>,
@@ -374,10 +397,11 @@ impl LazyFrame {
         let mut existing_vec: Vec<SmartString> = Vec::with_capacity(cap);
         let mut new_vec: Vec<SmartString> = Vec::with_capacity(cap);
 
+        // todo! should this error if `existing` and `new` have different lengths?
+        // Currently, the longer of the two is truncated.
         for (existing, new) in iter.zip(new) {
             let existing = existing.as_ref();
             let new = new.as_ref();
-
             if new != existing {
                 existing_vec.push(existing.into());
                 new_vec.push(new.into());
@@ -400,7 +424,7 @@ impl LazyFrame {
     }
 
     /// Removes columns from the DataFrame.
-    /// Note that its better to only select the columns you need
+    /// Note that it's better to only select the columns you need
     /// and let the projection pushdown optimize away the unneeded columns.
     pub fn drop_columns<I, T>(self, columns: I) -> Self
     where
@@ -441,22 +465,23 @@ impl LazyFrame {
         self.select_local(vec![col("*").shift_and_fill(periods, fill_value.into())])
     }
 
-    /// Fill none values in the DataFrame
+    /// Fill None values in the DataFrame with an expression.
     pub fn fill_null<E: Into<Expr>>(self, fill_value: E) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().fill_null(fill_value.into()).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Fill NaN values in the DataFrame
+    /// Fill NaN values in the DataFrame with an expression.
     pub fn fill_nan<E: Into<Expr>>(self, fill_value: E) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().fill_nan(fill_value.into()).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Caches the result into a new LazyFrame. This should be used to prevent computations
-    /// running multiple times
+    /// Caches the result into a new LazyFrame.
+    ///
+    /// This should be used to prevent computations running multiple times.
     pub fn cache(self) -> Self {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().cache().build();
@@ -592,7 +617,8 @@ impl LazyFrame {
     }
 
     /// Execute all the lazy operations and collect them into a [`DataFrame`].
-    /// Before execution the query is being optimized.
+    ///
+    /// The query is optimized prior to execution.
     ///
     /// # Example
     ///
@@ -602,7 +628,7 @@ impl LazyFrame {
     ///
     /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.lazy()
-    ///       .groupby([col("foo")])
+    ///       .group_by([col("foo")])
     ///       .agg([col("bar").sum(), col("ham").mean().alias("avg_ham")])
     ///       .collect()
     /// }
@@ -681,6 +707,8 @@ impl LazyFrame {
 
     /// Filter by some predicate expression.
     ///
+    /// The expression must yield boolean values.
+    ///
     /// # Example
     ///
     /// ```rust
@@ -699,9 +727,9 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Select (and rename) columns from the query.
+    /// Select (and optionally rename, with [`alias`](crate::dsl::Expr::alias)) columns from the query.
     ///
-    /// Columns can be selected with [col](crate::dsl::col);
+    /// Columns can be selected with [`col`](crate::dsl::col);
     /// If you want to select all columns use `col("*")`.
     ///
     /// # Example
@@ -753,7 +781,9 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Group by and aggregate.
+    /// Performs a "group-by" on a `LazyFrame`, producing a [`LazyGroupBy`], which can subsequently be aggregated.
+    ///
+    /// Takes a list of expressions to group on.
     ///
     /// # Example
     ///
@@ -764,7 +794,7 @@ impl LazyFrame {
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///        .groupby([col("date")])
+    ///        .group_by([col("date")])
     ///        .agg([
     ///            col("rain").min().alias("min_rain"),
     ///            col("rain").sum().alias("sum_rain"),
@@ -772,7 +802,7 @@ impl LazyFrame {
     ///        ])
     /// }
     /// ```
-    pub fn groupby<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
+    pub fn group_by<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
         let keys = by
             .as_ref()
             .iter()
@@ -780,7 +810,7 @@ impl LazyFrame {
             .collect::<Vec<_>>();
         let opt_state = self.get_opt_state();
 
-        #[cfg(feature = "dynamic_groupby")]
+        #[cfg(feature = "dynamic_group_by")]
         {
             LazyGroupBy {
                 logical_plan: self.logical_plan,
@@ -792,7 +822,7 @@ impl LazyFrame {
             }
         }
 
-        #[cfg(not(feature = "dynamic_groupby"))]
+        #[cfg(not(feature = "dynamic_group_by"))]
         {
             LazyGroupBy {
                 logical_plan: self.logical_plan,
@@ -807,11 +837,11 @@ impl LazyFrame {
     ///
     /// Also works for index values of type Int32 or Int64.
     ///
-    /// Different from a [`groupby_dynamic`][`Self::groupby_dynamic`], the windows are now determined by the
+    /// Different from a [`group_by_dynamic`][`Self::group_by_dynamic`], the windows are now determined by the
     /// individual values and are not of constant intervals. For constant intervals use
-    /// *groupby_dynamic*
-    #[cfg(feature = "dynamic_groupby")]
-    pub fn groupby_rolling<E: AsRef<[Expr]>>(
+    /// *group_by_dynamic*
+    #[cfg(feature = "dynamic_group_by")]
+    pub fn group_by_rolling<E: AsRef<[Expr]>>(
         self,
         index_column: Expr,
         by: E,
@@ -821,9 +851,11 @@ impl LazyFrame {
             options.index_column = name.as_ref().into();
         } else {
             let name = expr_output_name(&index_column).unwrap();
-            return self
-                .with_column(index_column)
-                .groupby_rolling(Expr::Column(name), by, options);
+            return self.with_column(index_column).group_by_rolling(
+                Expr::Column(name),
+                by,
+                options,
+            );
         }
         let opt_state = self.get_opt_state();
         LazyGroupBy {
@@ -839,7 +871,7 @@ impl LazyFrame {
     /// Group based on a time value (or index value of type Int32, Int64).
     ///
     /// Time windows are calculated and rows are assigned to windows. Different from a
-    /// normal groupby is that a row can be member of multiple groups. The time/index
+    /// normal group_by is that a row can be member of multiple groups. The time/index
     /// window could be seen as a rolling window, with a window size determined by
     /// dates/times/values instead of slots in the DataFrame.
     ///
@@ -850,9 +882,9 @@ impl LazyFrame {
     /// - offset: offset of the window
     ///
     /// The `by` argument should be empty `[]` if you don't want to combine this
-    /// with a ordinary groupby on these keys.
-    #[cfg(feature = "dynamic_groupby")]
-    pub fn groupby_dynamic<E: AsRef<[Expr]>>(
+    /// with a ordinary group_by on these keys.
+    #[cfg(feature = "dynamic_group_by")]
+    pub fn group_by_dynamic<E: AsRef<[Expr]>>(
         self,
         index_column: Expr,
         by: E,
@@ -862,9 +894,11 @@ impl LazyFrame {
             options.index_column = name.as_ref().into();
         } else {
             let name = expr_output_name(&index_column).unwrap();
-            return self
-                .with_column(index_column)
-                .groupby_dynamic(Expr::Column(name), by, options);
+            return self.with_column(index_column).group_by_dynamic(
+                Expr::Column(name),
+                by,
+                options,
+            );
         }
         let opt_state = self.get_opt_state();
         LazyGroupBy {
@@ -877,8 +911,8 @@ impl LazyFrame {
         }
     }
 
-    /// Similar to [`groupby`][`Self::groupby`], but order of the DataFrame is maintained.
-    pub fn groupby_stable<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
+    /// Similar to [`group_by`][`Self::group_by`], but order of the DataFrame is maintained.
+    pub fn group_by_stable<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
         let keys = by
             .as_ref()
             .iter()
@@ -886,7 +920,7 @@ impl LazyFrame {
             .collect::<Vec<_>>();
         let opt_state = self.get_opt_state();
 
-        #[cfg(feature = "dynamic_groupby")]
+        #[cfg(feature = "dynamic_group_by")]
         {
             LazyGroupBy {
                 logical_plan: self.logical_plan,
@@ -898,7 +932,7 @@ impl LazyFrame {
             }
         }
 
-        #[cfg(not(feature = "dynamic_groupby"))]
+        #[cfg(not(feature = "dynamic_group_by"))]
         {
             LazyGroupBy {
                 logical_plan: self.logical_plan,
@@ -909,7 +943,11 @@ impl LazyFrame {
         }
     }
 
-    /// Join query with other lazy query.
+    /// Left join this query with another lazy query.
+    ///
+    /// Matches on the values of the expressions `left_on` and `right_on`. For more
+    /// flexible join logic, see [`join`](LazyFrame::join) or
+    /// [`join_builder`](LazyFrame::join_builder).
     ///
     /// # Example
     ///
@@ -930,7 +968,11 @@ impl LazyFrame {
         )
     }
 
-    /// Join query with other lazy query.
+    /// Outer join this query with another lazy query.
+    ///
+    /// Matches on the values of the expressions `left_on` and `right_on`. For more
+    /// flexible join logic, see [`join`](LazyFrame::join) or
+    /// [`join_builder`](LazyFrame::join_builder).
     ///
     /// # Example
     ///
@@ -951,7 +993,11 @@ impl LazyFrame {
         )
     }
 
-    /// Join query with other lazy query.
+    /// Inner join this query with another lazy query.
+    ///
+    /// Matches on the values of the expressions `left_on` and `right_on`. For more
+    /// flexible join logic, see [`join`](LazyFrame::join) or
+    /// [`join_builder`](LazyFrame::join_builder).
     ///
     /// # Example
     ///
@@ -972,13 +1018,19 @@ impl LazyFrame {
         )
     }
 
-    /// Creates the cartesian product from both frames, preserves the order of the left keys.
+    /// Creates the cartesian product from both frames, preserving the order of the left keys.
     #[cfg(feature = "cross_join")]
     pub fn cross_join(self, other: LazyFrame) -> LazyFrame {
         self.join(other, vec![], vec![], JoinArgs::new(JoinType::Cross))
     }
 
-    /// Generic join function that can join on multiple columns.
+    /// Generic function to join two LazyFrames.
+    ///
+    /// `join` can join on multiple columns, given as two list of expressions, and with a
+    /// [`JoinType`] specified by `how`. Non-joined column names in the right DataFrame
+    /// that already exist in this DataFrame are suffixed with `"_right"`. For control
+    /// over how columns are renamed and parallelization options, use
+    /// [`join_builder`](LazyFrame::join_builder).
     ///
     /// # Example
     ///
@@ -1011,12 +1063,16 @@ impl LazyFrame {
             .finish()
     }
 
-    /// Control more join options with the join builder.
+    /// Consume `self` and return a [`JoinBuilder`] to customize a join on this LazyFrame.
+    ///
+    /// After the `JoinBuilder` has been created and set up, calling
+    /// [`finish()`](JoinBuilder::finish) on it will give back the `LazyFrame`
+    /// representing the `join` operation.
     pub fn join_builder(self) -> JoinBuilder {
         JoinBuilder::new(self)
     }
 
-    /// Add a column to a DataFrame
+    /// Add a column, given as an expression, to a DataFrame.
     ///
     /// # Example
     ///
@@ -1030,7 +1086,7 @@ impl LazyFrame {
     ///             .then(lit(10))
     ///             .otherwise(lit(1))
     ///             .alias("new_column_name"),
-    ///             )
+    ///         )
     /// }
     /// ```
     pub fn with_column(self, expr: Expr) -> LazyFrame {
@@ -1047,7 +1103,7 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Add multiple columns to a DataFrame.
+    /// Add multiple columns, given as expressions, to a DataFrame.
     ///
     /// # Example
     ///
@@ -1095,26 +1151,45 @@ impl LazyFrame {
     }
 
     /// Aggregate all the columns as their maximum values.
+    ///
+    /// Aggregated columns will have the same names as the original columns.
     pub fn max(self) -> LazyFrame {
         self.select_local(vec![col("*").max()])
     }
 
     /// Aggregate all the columns as their minimum values.
+    ///
+    /// Aggregated columns will have the same names as the original columns.
     pub fn min(self) -> LazyFrame {
         self.select_local(vec![col("*").min()])
     }
 
     /// Aggregate all the columns as their sum values.
+    ///
+    /// Aggregated columns will have the same names as the original columns.
+    ///
+    /// - Boolean columns will sum to a `u32` containing the number of `true`s.
+    /// - For integer columns, the ordinary checks for overflow are performed: if running
+    /// in `debug` mode, overflows will panic, whereas in `release` mode overflows will
+    /// silently wrap.
+    /// - String columns will sum to None.
     pub fn sum(self) -> LazyFrame {
         self.select_local(vec![col("*").sum()])
     }
 
     /// Aggregate all the columns as their mean values.
+    ///
+    /// - Boolean and integer columns are converted to `f64` before computing the mean.
+    /// - String columns will have a mean of None.
     pub fn mean(self) -> LazyFrame {
         self.select_local(vec![col("*").mean()])
     }
 
     /// Aggregate all the columns as their median values.
+    ///
+    /// - Boolean and integer results are converted to `f64`. However, they are still
+    ///   susceptible to overflow before this conversion occurs.
+    /// - String columns will sum to None.
     pub fn median(self) -> LazyFrame {
         self.select_local(vec![col("*").median()])
     }
@@ -1125,11 +1200,30 @@ impl LazyFrame {
     }
 
     /// Aggregate all the columns as their standard deviation values.
+    ///
+    /// `ddof` is the "Delta Degrees of Freedom"; `N - ddof` will be the denominator when
+    /// computing the variance, where `N` is the number of rows.
+    /// > In standard statistical practice, `ddof=1` provides an unbiased estimator of the
+    /// > variance of a hypothetical infinite population. `ddof=0` provides a maximum
+    /// > likelihood estimate of the variance for normally distributed variables. The
+    /// > standard deviation computed in this function is the square root of the estimated
+    /// > variance, so even with `ddof=1`, it will not be an unbiased estimate of the
+    /// > standard deviation per se.
+    ///
+    /// Source: [Numpy](https://numpy.org/doc/stable/reference/generated/numpy.std.html#)
     pub fn std(self, ddof: u8) -> LazyFrame {
         self.select_local(vec![col("*").std(ddof)])
     }
 
     /// Aggregate all the columns as their variance values.
+    ///
+    /// `ddof` is the "Delta Degrees of Freedom"; `N - ddof` will be the denominator when
+    /// computing the variance, where `N` is the number of rows.
+    /// > In standard statistical practice, `ddof=1` provides an unbiased estimator of the
+    /// > variance of a hypothetical infinite population. `ddof=0` provides a maximum
+    /// > likelihood estimate of the variance for normally distributed variables.
+    ///
+    /// Source: [Numpy](https://numpy.org/doc/stable/reference/generated/numpy.var.html#)
     pub fn var(self, ddof: u8) -> LazyFrame {
         self.select_local(vec![col("*").var(ddof)])
     }
@@ -1151,7 +1245,10 @@ impl LazyFrame {
         self.select_local(vec![col("*").null_count()])
     }
 
-    /// Keep unique rows and maintain order
+    /// Drop non-unique rows and maintain the order of kept rows.
+    ///
+    /// `subset` is an optional `Vec` of column names to consider for uniqueness; if
+    /// `None`, all columns are considered.
     pub fn unique_stable(
         self,
         subset: Option<Vec<String>>,
@@ -1168,7 +1265,13 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Keep unique rows, do not maintain order
+    /// Drop non-unique rows without maintaining the order of kept rows.
+    ///
+    /// The order of the kept rows may change; to maintain the original row order, use
+    /// [`unique_stable`](LazyFrame::unique_stable).
+    ///
+    /// `subset` is an optional `Vec` of column names to consider for uniqueness; if None,
+    /// all columns are considered.
     pub fn unique(
         self,
         subset: Option<Vec<String>>,
@@ -1185,9 +1288,10 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Drop null rows.
+    /// Drop rows containing None.
     ///
-    /// Equal to `LazyFrame::filter(col("*").is_not_null())`
+    /// `subset` is an optional `Vec` of column names to consider for nulls; if None, all
+    /// columns are considered.
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> LazyFrame {
         match subset {
             None => self.filter(all_horizontal([col("*").is_not_null()])),
@@ -1203,7 +1307,15 @@ impl LazyFrame {
         }
     }
 
-    /// Slice the DataFrame.
+    /// Slice the DataFrame using an offset (starting row) and a length.
+    ///
+    /// If `offset` is negative, it is counted from the end of the DataFrame. For
+    /// instance, `lf.slice(-5, 3)` gets three rows, starting at the row fifth from the
+    /// end.
+    ///
+    /// If `offset` and `len` are such that the slice extends beyond the end of the
+    /// DataFrame, the portion between `offset` and the end will be returned. In this
+    /// case, the number of rows in the returned DataFrame will be less than `len`.
     pub fn slice(self, offset: i64, len: IdxSize) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().slice(offset, len).build();
@@ -1211,39 +1323,54 @@ impl LazyFrame {
     }
 
     /// Get the first row.
+    ///
+    /// Equivalent to `self.slice(0, 1)`.
     pub fn first(self) -> LazyFrame {
         self.slice(0, 1)
     }
 
-    /// Get the last row
+    /// Get the last row.
+    ///
+    /// Equivalent to `self.slice(-1, 1)`.
     pub fn last(self) -> LazyFrame {
         self.slice(-1, 1)
     }
 
-    /// Get the last `n` rows
+    /// Get the last `n` rows.
+    ///
+    /// Equivalent to `self.slice(-(n as i64), n)`.
     pub fn tail(self, n: IdxSize) -> LazyFrame {
         let neg_tail = -(n as i64);
         self.slice(neg_tail, n)
     }
 
-    /// Melt the DataFrame from wide to long format
+    /// Melt the DataFrame from wide to long format.
+    ///
+    /// See [`MeltArgs`] for information on how to melt a DataFrame.
     pub fn melt(self, args: MeltArgs) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().melt(Arc::new(args)).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Limit the DataFrame to the first `n` rows. Note if you don't want the rows to be scanned,
-    /// use [fetch](LazyFrame::fetch).
+    /// Limit the DataFrame to the first `n` rows.
+    ///
+    /// Note if you don't want the rows to be scanned, use [`fetch`](LazyFrame::fetch).
     pub fn limit(self, n: IdxSize) -> LazyFrame {
         self.slice(0, n)
     }
 
     /// Apply a function/closure once the logical plan get executed.
     ///
+    /// The function has access to the whole materialized DataFrame at the time it is
+    /// called.
+    ///
+    /// To apply specific functions to specific columns, use [`Expr::map`] in conjunction
+    /// with `LazyFrame::with_column` or `with_columns`.
+    ///
     /// ## Warning
-    /// This can blow up in your face if the schema is changed due to the operation. The optimizer
-    /// relies on a correct schema.
+    /// This can blow up in your face if the schema is changed due to the operation. The
+    /// optimizer relies on a correct schema.
     ///
     /// You can toggle certain optimizations off.
     pub fn map<F>(
@@ -1293,9 +1420,12 @@ impl LazyFrame {
 
     /// Add a new column at index 0 that counts the rows.
     ///
+    /// `name` is the name of the new column. `offset` is where to start counting from; if
+    /// `None`, it is set to `0`.
+    ///
     /// # Warning
-    /// This can have a negative effect on query performance.
-    /// This may for instance block predicate pushdown optimization.
+    /// This can have a negative effect on query performance. This may for instance block
+    /// predicate pushdown optimization.
     pub fn with_row_count(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
         let add_row_count_in_map = match &mut self.logical_plan {
             LogicalPlan::Scan {
@@ -1334,7 +1464,7 @@ impl LazyFrame {
         }
     }
 
-    /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
+    /// Unnest the given `Struct` columns: the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]
     pub fn unnest<I: IntoIterator<Item = S>, S: AsRef<str>>(self, cols: I) -> Self {
@@ -1364,16 +1494,16 @@ impl LazyFrame {
     }
 }
 
-/// Utility struct for lazy groupby operation.
+/// Utility struct for lazy group_by operation.
 #[derive(Clone)]
 pub struct LazyGroupBy {
     pub logical_plan: LogicalPlan,
     opt_state: OptState,
     keys: Vec<Expr>,
     maintain_order: bool,
-    #[cfg(feature = "dynamic_groupby")]
+    #[cfg(feature = "dynamic_group_by")]
     dynamic_options: Option<DynamicGroupOptions>,
-    #[cfg(feature = "dynamic_groupby")]
+    #[cfg(feature = "dynamic_group_by")]
     rolling_options: Option<RollingGroupOptions>,
 }
 
@@ -1392,7 +1522,7 @@ impl LazyGroupBy {
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///        .groupby_stable([col("date")])
+    ///        .group_by_stable([col("date")])
     ///        .agg([
     ///            col("rain").min().alias("min_rain"),
     ///            col("rain").sum().alias("sum_rain"),
@@ -1401,9 +1531,9 @@ impl LazyGroupBy {
     /// }
     /// ```
     pub fn agg<E: AsRef<[Expr]>>(self, aggs: E) -> LazyFrame {
-        #[cfg(feature = "dynamic_groupby")]
+        #[cfg(feature = "dynamic_group_by")]
         let lp = LogicalPlanBuilder::from(self.logical_plan)
-            .groupby(
+            .group_by(
                 self.keys,
                 aggs,
                 None,
@@ -1413,9 +1543,9 @@ impl LazyGroupBy {
             )
             .build();
 
-        #[cfg(not(feature = "dynamic_groupby"))]
+        #[cfg(not(feature = "dynamic_group_by"))]
         let lp = LogicalPlanBuilder::from(self.logical_plan)
-            .groupby(self.keys, aggs, None, self.maintain_order)
+            .group_by(self.keys, aggs, None, self.maintain_order)
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
@@ -1444,20 +1574,22 @@ impl LazyGroupBy {
             .explode([col("*").exclude(&keys)])
     }
 
-    /// Apply a function over the groups as a new `DataFrame`. It is not recommended that you use
-    /// this as materializing the `DataFrame` is very expensive.
+    /// Apply a function over the groups as a new DataFrame.
+    ///
+    /// **It is not recommended that you use this as materializing the DataFrame is very
+    /// expensive.**
     pub fn apply<F>(self, f: F, schema: SchemaRef) -> LazyFrame
     where
         F: 'static + Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
     {
-        #[cfg(feature = "dynamic_groupby")]
+        #[cfg(feature = "dynamic_group_by")]
         let options = GroupbyOptions {
             dynamic: self.dynamic_options,
             rolling: self.rolling_options,
             slice: None,
         };
 
-        #[cfg(not(feature = "dynamic_groupby"))]
+        #[cfg(not(feature = "dynamic_group_by"))]
         let options = GroupbyOptions { slice: None };
 
         let lp = LogicalPlan::Aggregate {
@@ -1486,6 +1618,7 @@ pub struct JoinBuilder {
     validation: JoinValidation,
 }
 impl JoinBuilder {
+    /// Create the `JoinBuilder` with the provided `LazyFrame` as the left table.
     pub fn new(lf: LazyFrame) -> Self {
         Self {
             lf,
@@ -1500,7 +1633,7 @@ impl JoinBuilder {
         }
     }
 
-    /// The table to join with.
+    /// The right table in the join.
     pub fn with(mut self, other: LazyFrame) -> Self {
         self.other = Some(other);
         self
@@ -1517,7 +1650,9 @@ impl JoinBuilder {
         self
     }
 
-    /// The columns you want to join both tables on.
+    /// The expressions you want to join both tables on.
+    ///
+    /// The passed expressions must be valid in both `LazyFrame`s in the join.
     pub fn on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         let on = on.as_ref().to_vec();
         self.left_on = on.clone();
@@ -1525,17 +1660,22 @@ impl JoinBuilder {
         self
     }
 
-    /// The columns you want to join the left table on.
+    /// The expressions you want to join the left table on.
+    ///
+    /// The passed expressions must be valid in the left table.
     pub fn left_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         self.left_on = on.as_ref().to_vec();
         self
     }
 
-    /// The columns you want to join the right table on.
+    /// The expressions you want to join the right table on.
+    ///
+    /// The passed expressions must be valid in the right table.
     pub fn right_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
         self.right_on = on.as_ref().to_vec();
         self
     }
+
     /// Allow parallel table evaluation.
     pub fn allow_parallel(mut self, allow: bool) -> Self {
         self.allow_parallel = allow;
@@ -1549,7 +1689,7 @@ impl JoinBuilder {
     }
 
     /// Suffix to add duplicate column names in join.
-    /// Defaults to `"_right"`.
+    /// Defaults to `"_right"` if this method is never called.
     pub fn suffix<S: AsRef<str>>(mut self, suffix: S) -> Self {
         self.suffix = Some(suffix.as_ref().to_string());
         self

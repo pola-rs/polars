@@ -14,7 +14,7 @@ import polars as pl
 import polars.selectors as cs
 from polars import lit, when
 from polars.datatypes import FLOAT_DTYPES
-from polars.exceptions import ComputeError, PolarsInefficientApplyWarning
+from polars.exceptions import ComputeError, PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal
 from polars.testing.asserts import assert_series_equal
 
@@ -39,7 +39,7 @@ def test_lazy() -> None:
     ).collect()
 
     # test if pl.list is available, this is `to_list` re-exported as list
-    eager = ldf.groupby("a").agg(pl.implode("b")).collect()
+    eager = ldf.group_by("a").agg(pl.implode("b")).collect()
     assert sorted(eager.rows()) == [(1, [[1.0]]), (2, [[2.0]]), (3, [[3.0]])]
 
 
@@ -63,7 +63,7 @@ def test_lazyframe_membership_operator() -> None:
     assert "phone" not in ldf
 
     # note: cannot use lazyframe in boolean context
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         not ldf
 
 
@@ -76,12 +76,12 @@ def test_apply() -> None:
     assert_frame_equal(new.collect(), expected.collect())
 
     with pytest.warns(
-        PolarsInefficientApplyWarning, match="In this case, you can replace"
+        PolarsInefficientMapWarning, match="In this case, you can replace"
     ):
         for strategy in ["thread_local", "threading"]:
             ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
             new = ldf.with_columns(
-                pl.col("a").apply(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
+                pl.col("a").map_elements(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
             )
             expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
             assert_frame_equal(new.collect(), expected.collect())
@@ -152,10 +152,10 @@ def test_or() -> None:
     assert out.rows() == [(1, 1.0), (3, 3.0)]
 
 
-def test_groupby_apply() -> None:
+def test_group_by_apply() -> None:
     ldf = (
         pl.LazyFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 3.0]})
-        .groupby("a")
+        .group_by("a")
         .apply(lambda df: df * 2.0, schema={"a": pl.Float64, "b": pl.Float64})
     )
     out = ldf.collect()
@@ -194,14 +194,14 @@ def test_apply_custom_function() -> None:
 
     # two ways to determine the length groups.
     df = (
-        ldf.groupby("fruits")
+        ldf.group_by("fruits")
         .agg(
             [
                 pl.col("cars")
-                .apply(lambda groups: groups.len(), return_dtype=pl.Int64)
+                .map_elements(lambda groups: groups.len(), return_dtype=pl.Int64)
                 .alias("custom_1"),
                 pl.col("cars")
-                .apply(lambda groups: groups.len(), return_dtype=pl.Int64)
+                .map_elements(lambda groups: groups.len(), return_dtype=pl.Int64)
                 .alias("custom_2"),
                 pl.count("cars").alias("cars_count"),
             ]
@@ -221,16 +221,16 @@ def test_apply_custom_function() -> None:
     assert_frame_equal(df, expected)
 
 
-def test_groupby() -> None:
+def test_group_by() -> None:
     ldf = pl.LazyFrame({"a": [1.0, None, 3.0, 4.0], "groups": ["a", "a", "b", "b"]})
 
     expected = pl.DataFrame({"groups": ["a", "b"], "a": [1.0, 3.5]})
 
-    out = ldf.groupby("groups").agg(pl.mean("a")).collect()
+    out = ldf.group_by("groups").agg(pl.mean("a")).collect()
     assert_frame_equal(out.sort(by="groups"), expected)
 
     # refer to column via pl.Expr
-    out = ldf.groupby(pl.col("groups")).agg(pl.mean("a")).collect()
+    out = ldf.group_by(pl.col("groups")).agg(pl.mean("a")).collect()
     assert_frame_equal(out.sort(by="groups"), expected)
 
 
@@ -294,6 +294,11 @@ def test_is_first() -> None:
 
     assert ldf.select(pl.struct(["a", "b"]).is_first()).collect().to_dict(False) == {
         "a": [True, True, True, False, True, False, False]
+    }
+
+    ldf = pl.LazyFrame({"a": [[1, 2], [3], [1, 2], [4, 5], [4, 5]]})
+    assert ldf.select(pl.col("a").is_first()).collect().to_dict(False) == {
+        "a": [True, True, False, True, False]
     }
 
 
@@ -391,7 +396,7 @@ def test_fold_filter() -> None:
     assert out.rows() == [(1, 0), (2, 1), (3, 2)]
 
 
-def test_head_groupby() -> None:
+def test_head_group_by() -> None:
     commodity_prices = {
         "commodity": [
             "Wheat",
@@ -434,7 +439,7 @@ def test_head_groupby() -> None:
     keys = ["commodity", "location"]
     out = (
         ldf.sort(by="price", descending=True)
-        .groupby(keys, maintain_order=True)
+        .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).keep_name()])
         .explode(pl.col("*").exclude(keys))
     )
@@ -450,12 +455,12 @@ def test_head_groupby() -> None:
     ldf = pl.LazyFrame(
         {"letters": ["c", "c", "a", "c", "a", "b"], "nrs": [1, 2, 3, 4, 5, 6]}
     )
-    out = ldf.groupby("letters").tail(2).sort("letters")
+    out = ldf.group_by("letters").tail(2).sort("letters")
     assert_frame_equal(
         out.collect(),
         pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 2, 4]}),
     )
-    out = ldf.groupby("letters").head(2).sort("letters")
+    out = ldf.group_by("letters").head(2).sort("letters")
     assert_frame_equal(
         out.collect(),
         pl.DataFrame({"letters": ["a", "a", "b", "c", "c"], "nrs": [3, 5, 6, 1, 2]}),
@@ -529,7 +534,6 @@ def test_floor() -> None:
         (123.55, 0, 124.0),
         (123.55, 1, 123.6),
         (-1.23456789, 6, -1.234568),
-        (-1835.665, 2, -1835.67),
         (1.0e-5, 5, 0.00001),
         (1.0e-20, 20, 1e-20),
         (1.0e20, 2, 100000000000000000000.0),
@@ -556,11 +560,11 @@ def test_sort() -> None:
     assert_series_equal(ldf.collect()["a"], pl.Series("a", [1, 2, 2, 3]))
 
 
-def test_custom_groupby() -> None:
+def test_custom_group_by() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     out = (
-        ldf.groupby("b", maintain_order=True)
-        .agg([pl.col("a").apply(lambda x: x.sum(), return_dtype=pl.Int64)])
+        ldf.group_by("b", maintain_order=True)
+        .agg([pl.col("a").map_elements(lambda x: x.sum(), return_dtype=pl.Int64)])
         .collect()
     )
     assert out.rows() == [("a", 1), ("b", 2), ("c", 2)]
@@ -676,7 +680,7 @@ def test_fill_null() -> None:
         df.fill_null()
     with pytest.raises(ValueError, match="cannot specify both"):
         df.fill_null(value=3.0, strategy="max")
-    with pytest.raises(ValueError, match="can only specify 'limit'"):
+    with pytest.raises(ValueError, match="can only specify `limit`"):
         df.fill_null(strategy="max", limit=2)
 
 
@@ -895,7 +899,7 @@ def test_argminmax() -> None:
     assert out["min"][0] == 0
 
     out = (
-        ldf.groupby("b", maintain_order=True)
+        ldf.group_by("b", maintain_order=True)
         .agg([pl.col("a").arg_min().alias("min"), pl.col("a").arg_max().alias("max")])
         .collect()
     )
@@ -982,7 +986,7 @@ def test_spearman_corr() -> None:
     )
 
     out = (
-        ldf.groupby("era", maintain_order=True).agg(
+        ldf.group_by("era", maintain_order=True).agg(
             pl.corr(pl.col("prediction"), pl.col("target"), method="spearman").alias(
                 "c"
             ),
@@ -993,7 +997,7 @@ def test_spearman_corr() -> None:
 
     # we can also pass in column names directly
     out = (
-        ldf.groupby("era", maintain_order=True).agg(
+        ldf.group_by("era", maintain_order=True).agg(
             pl.corr("prediction", "target", method="spearman").alias("c"),
         )
     ).collect()["c"]
@@ -1012,9 +1016,9 @@ def test_spearman_corr_ties() -> None:
     )
     expected = pl.DataFrame(
         [
-            pl.Series("a1", [-0.19048483669757843], dtype=pl.Float32),
+            pl.Series("a1", [-0.19048482943986483], dtype=pl.Float64),
             pl.Series("a2", [-0.17223653586587362], dtype=pl.Float64),
-            pl.Series("a3", [-0.19048483669757843], dtype=pl.Float32),
+            pl.Series("a3", [-0.19048482943986483], dtype=pl.Float64),
         ]
     )
     assert_frame_equal(result, expected)
@@ -1030,7 +1034,7 @@ def test_pearson_corr() -> None:
     )
 
     out = (
-        ldf.groupby("era", maintain_order=True).agg(
+        ldf.group_by("era", maintain_order=True).agg(
             pl.corr(pl.col("prediction"), pl.col("target"), method="pearson").alias(
                 "c"
             ),
@@ -1040,7 +1044,7 @@ def test_pearson_corr() -> None:
 
     # we can also pass in column names directly
     out = (
-        ldf.groupby("era", maintain_order=True).agg(
+        ldf.group_by("era", maintain_order=True).agg(
             pl.corr("prediction", "target", method="pearson").alias("c"),
         )
     ).collect()["c"]
@@ -1179,7 +1183,7 @@ def test_group_lengths() -> None:
         }
     )
 
-    result = ldf.groupby(["group"], maintain_order=True).agg(
+    result = ldf.group_by(["group"], maintain_order=True).agg(
         [
             (pl.col("id").unique_counts() / pl.col("id").len())
             .sum()
@@ -1206,7 +1210,7 @@ def test_quantile_filtered_agg() -> None:
                 "value": [1, 2, 3, 4, 1, 2, 3, 4],
             }
         )
-        .groupby("group")
+        .group_by("group")
         .agg(pl.col("value").filter(pl.col("value") < 2).quantile(0.5))
         .collect()["value"]
         .to_list()

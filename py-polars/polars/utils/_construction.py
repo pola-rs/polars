@@ -103,8 +103,9 @@ else:
 def is_namedtuple(cls: Any, annotated: bool = False) -> bool:
     """Check whether given class derives from NamedTuple."""
     if all(hasattr(cls, attr) for attr in ("_fields", "_field_defaults", "_replace")):
-        if len(cls.__annotations__) == len(cls._fields) if annotated else True:
-            return all(isinstance(fld, str) for fld in cls._fields)
+        if not isinstance(cls._fields, property):
+            if not annotated or len(cls.__annotations__) == len(cls._fields):
+                return all(isinstance(fld, str) for fld in cls._fields)
     return False
 
 
@@ -459,24 +460,32 @@ def sequence_to_pyseries(
                 s = wrap_s(py_series)
             else:
                 s = wrap_s(py_series).dt.cast_time_unit(time_unit)
-            if dtype == Datetime and value.tzinfo is not None:
-                tz = str(value.tzinfo)
+            time_zone = getattr(dtype, "time_zone", None)
+            if dtype == Datetime and (
+                value.tzinfo is not None or time_zone is not None
+            ):
+                values_tz = str(value.tzinfo) if value.tzinfo is not None else None
                 dtype_tz = dtype.time_zone  # type: ignore[union-attr]
-                if dtype_tz is not None and tz != dtype_tz:
+                if values_tz is not None and (
+                    dtype_tz is not None and dtype_tz != "UTC"
+                ):
                     raise ValueError(
-                        "given time_zone is different from that of timezone aware datetimes."
-                        f" Given: '{dtype_tz!r}', got: '{tz!r}'"
+                        "time-zone-aware datetimes are converted to UTC. "
+                        "Please either drop the time zone from the dtype, "
+                        "or set it to 'UTC'. To convert to a different time zone, "
+                        "please use `.dt.convert_time_zone`"
                     )
-                if tz != "UTC":
+                if values_tz != "UTC" and dtype_tz is None:
                     warnings.warn(
                         "Constructing a Series with time-zone-aware "
                         "datetimes results in a Series with UTC time zone. "
                         "To silence this warning, you can filter "
-                        "warnings of class TimeZoneAwareConstructorWarning.",
+                        "warnings of class TimeZoneAwareConstructorWarning, or "
+                        "set 'UTC' as the time zone of your datatype.",
                         TimeZoneAwareConstructorWarning,
                         stacklevel=find_stacklevel(),
                     )
-                return s.dt.replace_time_zone("UTC")._s
+                return s.dt.replace_time_zone(dtype_tz or "UTC")._s
             return s._s
 
         elif (
@@ -1491,7 +1500,8 @@ def iterable_to_pydf(
             if not original_schema:
                 original_schema = list(df.schema.items())
             if chunk_size != adaptive_chunk_size:
-                chunk_size = adaptive_chunk_size = n_chunk_elems // len(df.columns)
+                if (n_columns := len(df.columns)) > 0:
+                    chunk_size = adaptive_chunk_size = n_chunk_elems // n_columns
         else:
             df.vstack(frame_chunk, in_place=True)
             n_chunks += 1

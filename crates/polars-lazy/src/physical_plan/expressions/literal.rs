@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::ops::Deref;
 
-use polars_core::frame::groupby::GroupsProxy;
+use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 

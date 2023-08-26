@@ -86,7 +86,7 @@ class ChronoFormatWarning(Warning):
     """
 
 
-class PolarsInefficientApplyWarning(Warning):
+class PolarsInefficientMapWarning(Warning):
     """
     Warning raised when a potentially slow `apply` operation is performed.
 
@@ -103,7 +103,7 @@ __all__ = [
     "InvalidOperationError",
     "NoDataError",
     "NoRowsReturnedError",
-    "PolarsInefficientApplyWarning",
+    "PolarsInefficientMapWarning",
     "PolarsPanicError",
     "RowsError",
     "SchemaError",

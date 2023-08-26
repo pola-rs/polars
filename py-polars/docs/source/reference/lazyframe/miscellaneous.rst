@@ -24,3 +24,4 @@ Read/write logical plan
     LazyFrame.from_json
     LazyFrame.read_json
     LazyFrame.serialize
+    LazyFrame.write_json
