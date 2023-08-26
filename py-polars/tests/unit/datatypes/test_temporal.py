@@ -2140,6 +2140,58 @@ def test_replace_time_zone_ambiguous_raises() -> None:
         ts.dt.replace_time_zone("Europe/Brussels")
 
 
+@pytest.mark.parametrize(
+    ("from_tz", "expected_sortedness", "ambiguous"),
+    [
+        ("Europe/London", False, "earliest"),
+        ("Europe/London", False, "raise"),
+        ("UTC", False, "earliest"),
+        ("UTC", True, "raise"),
+        (None, False, "earliest"),
+        (None, True, "raise"),
+    ],
+)
+def test_replace_time_zone_sortedness_series(
+    from_tz: str | None, expected_sortedness: bool, ambiguous: Ambiguous
+) -> None:
+    ser = (
+        pl.Series("ts", [1603584000000000, 1603587600000000])
+        .cast(pl.Datetime("us", from_tz))
+        .sort()
+    )
+    assert ser.flags["SORTED_ASC"]
+    result = ser.dt.replace_time_zone("UTC", ambiguous=ambiguous)
+    assert result.flags["SORTED_ASC"] == expected_sortedness
+
+
+@pytest.mark.parametrize(
+    ("from_tz", "ambiguous"),
+    [
+        ("Europe/London", "earliest"),
+        ("Europe/London", "raise"),
+        ("UTC", "earliest"),
+        ("UTC", "raise"),
+        (None, "earliest"),
+        (None, "raise"),
+    ],
+)
+def test_replace_time_zone_sortedness_expressions(
+    from_tz: str | None, ambiguous: str
+) -> None:
+    df = (
+        pl.Series("ts", [1603584000000000, 1603587600000000])
+        .cast(pl.Datetime("us", from_tz))
+        .sort()
+        .to_frame()
+    )
+    df = df.with_columns(ambiguous=pl.Series([ambiguous] * 2))
+    assert df["ts"].flags["SORTED_ASC"]
+    result = df.select(
+        pl.col("ts").dt.replace_time_zone("UTC", ambiguous=pl.col("ambiguous"))
+    )
+    assert not result["ts"].flags["SORTED_ASC"]
+
+
 def test_use_earliest_deprecation() -> None:
     # strptime
     with pytest.warns(
