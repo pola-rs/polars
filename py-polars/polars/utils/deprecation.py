@@ -9,6 +9,9 @@ from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     import sys
+    from typing import Mapping
+
+    from polars.type_aliases import Ambiguous
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec
@@ -17,6 +20,13 @@ if TYPE_CHECKING:
 
     P = ParamSpec("P")
     T = TypeVar("T")
+if TYPE_CHECKING:
+    from polars import Expr
+
+USE_EARLIEST_TO_AMBIGUOUS: Mapping[bool, Ambiguous] = {
+    True: "earliest",
+    False: "latest",
+}
 
 
 def issue_deprecation_warning(message: str, *, version: str) -> None:
@@ -225,3 +235,21 @@ def warn_closed_future_change() -> Callable[[Callable[P, T]], Callable[P, T]]:
         return wrapper
 
     return decorate
+
+
+def rename_use_earliest_to_ambiguous(
+    use_earliest: bool | None, ambiguous: Ambiguous | Expr
+) -> Ambiguous | Expr:
+    """Issue deprecation warning if deprecated `use_earliest` argument is used."""
+    if isinstance(use_earliest, bool):
+        ambiguous = USE_EARLIEST_TO_AMBIGUOUS[use_earliest]
+        warnings.warn(
+            "The argument 'use_earliest' in 'replace_time_zone' is deprecated. "
+            f"Please replace `use_earliest={use_earliest}` with "
+            f"`ambiguous='{ambiguous}'`. Note that this new argument can also "
+            "accept expressions.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
+        return ambiguous
+    return ambiguous

@@ -43,7 +43,7 @@ pub(crate) fn roll_backward(
     let ndt = NaiveDateTime::new(date, time);
     let t = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => datetime_to_timestamp(localize_datetime(ndt, tz, None)?),
+        Some(tz) => datetime_to_timestamp(localize_datetime(ndt, tz, "raise")?),
         _ => datetime_to_timestamp(ndt),
     };
     Ok(t)

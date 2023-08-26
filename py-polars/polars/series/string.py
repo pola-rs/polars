@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from polars import Expr, Series
     from polars.polars import PySeries
     from polars.type_aliases import (
+        Ambiguous,
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
@@ -79,6 +80,7 @@ class StringNameSpace:
         cache: bool = True,
         utc: bool | None = None,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Convert a Utf8 column into a Datetime column.
@@ -123,6 +125,15 @@ class StringNameSpace:
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Examples
         --------
@@ -181,6 +192,7 @@ class StringNameSpace:
         exact: bool = True,
         cache: bool = True,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -211,6 +223,15 @@ class StringNameSpace:
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Notes
         -----

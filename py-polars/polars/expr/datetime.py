@@ -9,12 +9,13 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.deprecation import rename_use_earliest_to_ambiguous
 
 if TYPE_CHECKING:
     from datetime import timedelta
 
     from polars import Expr
-    from polars.type_aliases import EpochTimeUnit, TimeUnit
+    from polars.type_aliases import Ambiguous, EpochTimeUnit, TimeUnit
 
 
 class ExprDateTimeNameSpace:
@@ -31,6 +32,7 @@ class ExprDateTimeNameSpace:
         offset: str | timedelta | None = None,
         *,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Divide the date/datetime range into buckets.
@@ -50,6 +52,15 @@ class ExprDateTimeNameSpace:
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Notes
         -----
@@ -148,8 +159,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────────┘
 
         If crossing daylight savings time boundaries, you may want to use
-        `use_earliest` and combine with :func:`~polars.Series.dt.dst_offset`
-        and :func:`~polars.when`:
+        `use_earliest` and combine with :func:`~polars.Series.dt.dst_offset`:
 
         >>> df = (
         ...     pl.date_range(
@@ -178,10 +188,17 @@ class ExprDateTimeNameSpace:
         │ 2020-10-25 02:15:00 GMT     │
         └─────────────────────────────┘
 
+        >>> ambiguous_mapping = {
+        ...     timedelta(hours=1): "earliest",
+        ...     timedelta(hours=0): "latest",
+        ... }
         >>> df.select(
-        ...     pl.when(pl.col("date").dt.dst_offset() == pl.duration(hours=1))
-        ...     .then(pl.col("date").dt.truncate("30m", use_earliest=True))
-        ...     .otherwise(pl.col("date").dt.truncate("30m", use_earliest=False))
+        ...     pl.col("date").dt.truncate(
+        ...         "30m",
+        ...         ambiguous=(
+        ...             pl.col("date").dt.dst_offset().map_dict(ambiguous_mapping)
+        ...         ),
+        ...     )
         ... )
         shape: (7, 1)
         ┌─────────────────────────────┐
@@ -198,6 +215,9 @@ class ExprDateTimeNameSpace:
         │ 2020-10-25 02:00:00 GMT     │
         └─────────────────────────────┘
         """
+        ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
+        if not isinstance(ambiguous, pl.Expr):
+            ambiguous = F.lit(ambiguous)
         if offset is None:
             offset = "0ns"
 
@@ -205,7 +225,7 @@ class ExprDateTimeNameSpace:
             self._pyexpr.dt_truncate(
                 _timedelta_to_pl_duration(every),
                 _timedelta_to_pl_duration(offset),
-                use_earliest,
+                ambiguous._pyexpr,
             )
         )
 
@@ -1492,7 +1512,11 @@ class ExprDateTimeNameSpace:
         return wrap_expr(self._pyexpr.dt_convert_time_zone(time_zone))
 
     def replace_time_zone(
-        self, time_zone: str | None, *, use_earliest: bool | None = None
+        self,
+        time_zone: str | None,
+        *,
+        use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Replace time zone for an expression of type Datetime.
@@ -1510,6 +1534,15 @@ class ExprDateTimeNameSpace:
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Examples
         --------
@@ -1553,42 +1586,37 @@ class ExprDateTimeNameSpace:
         ...     "2018-10-28 02:00",
         ...     "2018-10-28 02:30",
         ...     "2018-10-28 02:00",
-        ...     "2018-10-28 02:30",
         ... ]
         >>> df = pl.DataFrame(
         ...     {
         ...         "ts": pl.Series(dates).str.strptime(pl.Datetime),
-        ...         "DST": [True, True, True, False, False],
+        ...         "ambiguous": ["earliest", "earliest", "latest", "latest"],
         ...     }
         ... )
         >>> df.with_columns(
-        ...     ts_localized=pl.when(pl.col("DST"))
-        ...     .then(
-        ...         pl.col("ts").dt.replace_time_zone(
-        ...             "Europe/Brussels", use_earliest=True
-        ...         )
-        ...     )
-        ...     .otherwise(
-        ...         pl.col("ts").dt.replace_time_zone(
-        ...             "Europe/Brussels", use_earliest=False
-        ...         )
+        ...     ts_localized=pl.col("ts").dt.replace_time_zone(
+        ...         "Europe/Brussels", ambiguous=pl.col("ambiguous")
         ...     )
         ... )
-        shape: (5, 3)
-        ┌─────────────────────┬───────┬───────────────────────────────┐
-        │ ts                  ┆ DST   ┆ ts_localized                  │
-        │ ---                 ┆ ---   ┆ ---                           │
-        │ datetime[μs]        ┆ bool  ┆ datetime[μs, Europe/Brussels] │
-        ╞═════════════════════╪═══════╪═══════════════════════════════╡
-        │ 2018-10-28 01:30:00 ┆ true  ┆ 2018-10-28 01:30:00 CEST      │
-        │ 2018-10-28 02:00:00 ┆ true  ┆ 2018-10-28 02:00:00 CEST      │
-        │ 2018-10-28 02:30:00 ┆ true  ┆ 2018-10-28 02:30:00 CEST      │
-        │ 2018-10-28 02:00:00 ┆ false ┆ 2018-10-28 02:00:00 CET       │
-        │ 2018-10-28 02:30:00 ┆ false ┆ 2018-10-28 02:30:00 CET       │
-        └─────────────────────┴───────┴───────────────────────────────┘
+        shape: (4, 3)
+        ┌─────────────────────┬───────────┬───────────────────────────────┐
+        │ ts                  ┆ ambiguous ┆ ts_localized                  │
+        │ ---                 ┆ ---       ┆ ---                           │
+        │ datetime[μs]        ┆ str       ┆ datetime[μs, Europe/Brussels] │
+        ╞═════════════════════╪═══════════╪═══════════════════════════════╡
+        │ 2018-10-28 01:30:00 ┆ earliest  ┆ 2018-10-28 01:30:00 CEST      │
+        │ 2018-10-28 02:00:00 ┆ earliest  ┆ 2018-10-28 02:00:00 CEST      │
+        │ 2018-10-28 02:30:00 ┆ latest    ┆ 2018-10-28 02:30:00 CET       │
+        │ 2018-10-28 02:00:00 ┆ latest    ┆ 2018-10-28 02:00:00 CET       │
+        └─────────────────────┴───────────┴───────────────────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.dt_replace_time_zone(time_zone, use_earliest))
+        ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
+        if not isinstance(ambiguous, pl.Expr):
+            ambiguous = F.lit(ambiguous)
+        return wrap_expr(
+            self._pyexpr.dt_replace_time_zone(time_zone, ambiguous._pyexpr)
+        )
 
     def days(self) -> Expr:
         """
