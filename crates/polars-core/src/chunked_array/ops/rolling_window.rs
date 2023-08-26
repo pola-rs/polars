@@ -90,11 +90,10 @@ mod inner_mod {
 
             let len = self.len();
             let arr = ca.downcast_iter().next().unwrap();
-            let mut series_container =
-                ChunkedArray::<T>::from_slice("", &[T::Native::zero()]).into_series();
-            let array_ptr = series_container.array_ref(0);
-            let ptr = array_ptr.as_ref() as *const dyn Array as *mut dyn Array
-                as *mut PrimitiveArray<T::Native>;
+            let mut ca = ChunkedArray::<T>::from_slice("", &[T::Native::zero()]);
+            let ptr = ca.chunks[0].as_mut() as *mut dyn Array as *mut PrimitiveArray<T::Native>;
+            let mut series_container = ca.into_series();
+
             let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
 
             if let Some(weights) = options.weights {
@@ -203,8 +202,7 @@ mod inner_mod {
             // container where we swap the window contents every iteration doing
             // so will save a lot of heap allocations.
             let mut heap_container = ChunkedArray::<T>::from_slice("", &[T::Native::zero()]);
-            let array_ptr = &heap_container.chunks()[0];
-            let ptr = array_ptr.as_ref() as *const dyn Array as *mut dyn Array
+            let ptr = heap_container.chunks[0].as_mut() as *mut dyn Array
                 as *mut PrimitiveArray<T::Native>;
 
             let mut validity = MutableBitmap::with_capacity(ca.len());
