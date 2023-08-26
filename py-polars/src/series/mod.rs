@@ -266,14 +266,6 @@ impl PySeries {
         self.series.sort(descending).into()
     }
 
-    fn value_counts(&self, sorted: bool) -> PyResult<PyDataFrame> {
-        let df = self
-            .series
-            .value_counts(true, sorted)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
-    }
-
     fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.idx().map_err(PyPolarsErr::from)?;
         let take = self.series.take(idx).map_err(PyPolarsErr::from)?;

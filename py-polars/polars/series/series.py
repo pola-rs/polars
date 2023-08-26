@@ -2290,32 +2290,61 @@ class Series:
             bins = Series(bins, dtype=Float64)._s
         return wrap_df(self._s.hist(bins, bin_count))
 
-    def value_counts(self, *, sort: bool = False) -> DataFrame:
+    def value_counts(self, *, sort: bool = False, parallel: bool = False) -> DataFrame:
         """
-        Count the unique values in a Series.
+        Count the occurrences of unique values.
 
         Parameters
         ----------
         sort
-            Ensure the output is sorted from most values to least.
+            Sort the output by count in descending order.
+            If set to ``False`` (default), the order of the output is random.
+        parallel
+            Execute the computation in parallel.
+
+            .. note::
+                This option should likely not be enabled in a group by context,
+                as the computation is already parallelized per group.
+
+        Returns
+        -------
+        DataFrame
+            Mapping of unique values to their count.
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 2, 3])
-        >>> s.value_counts().sort(by="a")
+        >>> s = pl.Series("color", ["red", "blue", "red", "green", "blue", "blue"])
+        >>> s.value_counts()  # doctest: +IGNORE_RESULT
         shape: (3, 2)
-        ┌─────┬────────┐
-        │ a   ┆ counts │
-        │ --- ┆ ---    │
-        │ i64 ┆ u32    │
-        ╞═════╪════════╡
-        │ 1   ┆ 1      │
-        │ 2   ┆ 2      │
-        │ 3   ┆ 1      │
-        └─────┴────────┘
+        ┌───────┬────────┐
+        │ color ┆ counts │
+        │ ---   ┆ ---    │
+        │ str   ┆ u32    │
+        ╞═══════╪════════╡
+        │ red   ┆ 2      │
+        │ green ┆ 1      │
+        │ blue  ┆ 3      │
+        └───────┴────────┘
+
+        Sort the output by count.
+
+        shape: (3, 2)
+        ┌───────┬────────┐
+        │ color ┆ counts │
+        │ ---   ┆ ---    │
+        │ str   ┆ u32    │
+        ╞═══════╪════════╡
+        │ blue  ┆ 3      │
+        │ red   ┆ 2      │
+        │ green ┆ 1      │
+        └───────┴────────┘
 
         """
-        return wrap_df(self._s.value_counts(sort))
+        return (
+            self.to_frame()
+            .select(F.col(self.name).value_counts(sort=sort, parallel=parallel))
+            .unnest(self.name)
+        )
 
     def unique_counts(self) -> Series:
         """
