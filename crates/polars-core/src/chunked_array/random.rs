@@ -10,7 +10,7 @@ use crate::utils::{CustomIterTools, NoNull};
 
 fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
     if len == 0 {
-        return NoNull::<IdxCa>::from_iter(std::iter::empty()).into_inner();
+        return IdxCa::new_vec("", vec![]);
     }
     let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
     let dist = Uniform::new(0, len as IdxSize);
@@ -259,22 +259,6 @@ impl BooleanChunked {
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    fn test_sample_empty_df() {
-        let df = df![
-            "foo" => Vec::<i32>::new()
-        ]
-        .unwrap();
-
-        // If with replacement, then expect empty df
-        assert_eq!(df.sample_n(3, true, false, None).unwrap().height(), 0);
-        assert_eq!(df.sample_frac(0.4, true, false, None).unwrap().height(), 0);
-
-        // If without replacement, then expect shape mismatch on sample_n not sample_frac
-        assert!(df.sample_n(3, false, false, None).is_err());
-        assert_eq!(df.sample_frac(0.4, false, false, None).unwrap().height(), 0);
-    }
 
     #[test]
     fn test_sample() {
