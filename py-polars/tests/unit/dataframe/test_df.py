@@ -1692,9 +1692,32 @@ def test_repeat_by_unequal_lengths_panic() -> None:
     )
     with pytest.raises(
         pl.ComputeError,
-        match="""Length of repeat_by argument needs to be 1 or equal to the length of the Series.""",
+        match="repeat_by argument and the Series should have equal length, "
+        "or at least one of them should have length 1",
     ):
         df.select(pl.col("a").repeat_by(pl.Series([2, 2])))
+
+
+@pytest.mark.parametrize(
+    ("value", "values_expect"),
+    [
+        (1.2, [[1.2], [1.2, 1.2], [1.2, 1.2, 1.2]]),
+        (True, [[True], [True, True], [True, True, True]]),
+        ("x", [["x"], ["x", "x"], ["x", "x", "x"]]),
+        (b"a", [[b"a"], [b"a", b"a"], [b"a", b"a", b"a"]]),
+    ],
+)
+def test_repeat_by_broadcast_left(
+    value: float | bool | str, values_expect: list[list[float | bool | str]]
+) -> None:
+    df = pl.DataFrame(
+        {
+            "n": [1, 2, 3],
+        }
+    )
+    expected = pl.DataFrame({"values": values_expect})
+    result = df.select(pl.lit(value).repeat_by(pl.col("n")).alias("values"))
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize(
@@ -1703,9 +1726,13 @@ def test_repeat_by_unequal_lengths_panic() -> None:
         ([1.2, 2.2, 3.3], [[1.2, 1.2, 1.2], [2.2, 2.2, 2.2], [3.3, 3.3, 3.3]]),
         ([True, False], [[True, True, True], [False, False, False]]),
         (["x", "y", "z"], [["x", "x", "x"], ["y", "y", "y"], ["z", "z", "z"]]),
+        (
+            [b"a", b"b", b"c"],
+            [[b"a", b"a", b"a"], [b"b", b"b", b"b"], [b"c", b"c", b"c"]],
+        ),
     ],
 )
-def test_repeat_by_parameterized(
+def test_repeat_by_broadcast_right(
     a: list[float | bool | str], a_expected: list[list[float | bool | str]]
 ) -> None:
     df = pl.DataFrame(
@@ -1720,13 +1747,25 @@ def test_repeat_by_parameterized(
     assert_frame_equal(result, expected)
 
 
-def test_repeat_by() -> None:
-    df = pl.DataFrame({"name": ["foo", "bar"], "n": [2, 3]})
-    out = df.select(pl.col("n").repeat_by("n"))
-    s = out["n"]
-
-    assert s[0].to_list() == [2, 2]
-    assert s[1].to_list() == [3, 3, 3]
+@pytest.mark.parametrize(
+    ("a", "a_expected"),
+    [
+        (["foo", "bar"], [["foo", "foo"], ["bar", "bar", "bar"]]),
+        ([1, 2], [[1, 1], [2, 2, 2]]),
+        ([True, False], [[True, True], [False, False, False]]),
+        (
+            [b"a", b"b"],
+            [[b"a", b"a"], [b"b", b"b", b"b"]],
+        ),
+    ],
+)
+def test_repeat_by(
+    a: list[float | bool | str], a_expected: list[list[float | bool | str]]
+) -> None:
+    df = pl.DataFrame({"a": a, "n": [2, 3]})
+    expected = pl.DataFrame({"a": a_expected})
+    result = df.select(pl.col("a").repeat_by("n"))
+    assert_frame_equal(result, expected)
 
 
 def test_join_dates() -> None:
