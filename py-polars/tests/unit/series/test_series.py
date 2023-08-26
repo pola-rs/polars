@@ -1695,16 +1695,6 @@ def test_to_dummies() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_value_counts() -> None:
-    s = pl.Series("a", [1, 2, 2, 3])
-    result = s.value_counts()
-    expected = pl.DataFrame(
-        {"a": [1, 2, 3], "counts": [1, 2, 1]}, schema_overrides={"counts": pl.UInt32}
-    )
-    result_sorted = result.sort("a")
-    assert_frame_equal(result_sorted, expected)
-
-
 def test_chunk_lengths() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
     # this is a Series with one chunk, of length 4

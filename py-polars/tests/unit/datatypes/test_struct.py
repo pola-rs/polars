@@ -161,48 +161,6 @@ def test_struct_function_expansion() -> None:
     assert pl.Struct(struct_schema) == s.to_frame().schema["a"]
 
 
-def test_value_counts_expr() -> None:
-    df = pl.DataFrame(
-        {
-            "id": ["a", "b", "b", "c", "c", "c", "d", "d"],
-        }
-    )
-    out = (
-        df.select(
-            [
-                pl.col("id").value_counts(sort=True),
-            ]
-        )
-        .to_series()
-        .to_list()
-    )
-    assert out == [
-        {"id": "c", "counts": 3},
-        {"id": "b", "counts": 2},
-        {"id": "d", "counts": 2},
-        {"id": "a", "counts": 1},
-    ]
-
-    # nested value counts. Then the series needs the name
-    # 6200
-
-    df = pl.DataFrame({"session": [1, 1, 1], "id": [2, 2, 3]})
-
-    assert df.group_by("session").agg(
-        [pl.col("id").value_counts(sort=True).first()]
-    ).to_dict(False) == {"session": [1], "id": [{"id": 2, "counts": 2}]}
-
-
-def test_value_counts_logical_type() -> None:
-    # test logical type
-    df = pl.DataFrame({"a": ["b", "c"]}).with_columns(
-        pl.col("a").cast(pl.Categorical).alias("ac")
-    )
-    out = df.select([pl.all().value_counts()])
-    assert out["ac"].struct.field("ac").dtype == pl.Categorical
-    assert out["a"].struct.field("a").dtype == pl.Utf8
-
-
 def test_nested_struct() -> None:
     df = pl.DataFrame({"d": [1, 2, 3], "e": ["foo", "bar", "biz"]})
     # Nest the dataframe
