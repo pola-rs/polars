@@ -25,7 +25,7 @@ use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "dtype-struct")]
 use polars_core::utils::get_supertype;
-pub use range::*;
+pub use range::{date_range, time_range, *};
 pub use selectors::*;
 pub use syntactic_sugar::*;
 pub use temporal::*;
