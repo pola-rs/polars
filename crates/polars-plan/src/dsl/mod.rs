@@ -1691,11 +1691,11 @@ impl Expr {
 
     #[cfg(feature = "dtype-struct")]
     /// Count all unique values and create a struct mapping value to count
-    /// Note that it is better to turn multithreaded off in the aggregation context
-    pub fn value_counts(self, multithreaded: bool, sorted: bool) -> Self {
+    /// Note that it is better to turn parallel off in the aggregation context
+    pub fn value_counts(self, sort: bool, parallel: bool) -> Self {
         self.apply(
             move |s| {
-                s.value_counts(multithreaded, sorted)
+                s.value_counts(sort, parallel)
                     .map(|df| Some(df.into_struct(s.name()).into_series()))
             },
             GetOutput::map_field(|fld| {
