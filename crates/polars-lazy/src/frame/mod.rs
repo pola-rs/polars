@@ -1066,7 +1066,7 @@ impl LazyFrame {
     /// Consume `self` and return a [`JoinBuilder`] to customize a join on this LazyFrame.
     ///
     /// After the `JoinBuilder` has been created and set up, calling
-    /// [`finish()`](LazyGroupby::finish) on it will give back the `LazyFrame`
+    /// [`finish()`](JoinBuilder::finish) on it will give back the `LazyFrame`
     /// representing the `join` operation.
     pub fn join_builder(self) -> JoinBuilder {
         JoinBuilder::new(self)
