@@ -34,7 +34,7 @@ EVAL_ENVIRONMENT = {
 )
 def test_parse_invalid_function(func: str) -> None:
     # functions we don't (yet?) offer suggestions for
-    parser = BytecodeParser(eval(func), apply_target="expr")
+    parser = BytecodeParser(eval(func), map_target="expr")
     assert not parser.can_attempt_rewrite() or not parser.to_expression("x")
 
 
@@ -47,7 +47,7 @@ def test_parse_apply_functions(col: str, func: str, expr_repr: str) -> None:
         PolarsInefficientMapWarning,
         match=r"(?s)Expr\.map_elements.*In this case, you can replace",
     ):
-        parser = BytecodeParser(eval(func), apply_target="expr")
+        parser = BytecodeParser(eval(func), map_target="expr")
         suggested_expression = parser.to_expression(col)
         assert suggested_expression == expr_repr
 
@@ -78,7 +78,7 @@ def test_parse_apply_raw_functions() -> None:
         func = getattr(numpy, func_name)
 
         # note: we can't parse/rewrite raw numpy functions...
-        parser = BytecodeParser(func, apply_target="expr")
+        parser = BytecodeParser(func, map_target="expr")
         assert not parser.can_attempt_rewrite()
 
         # ...but we ARE still able to warn
@@ -127,13 +127,13 @@ def test_parse_apply_miscellaneous() -> None:
         def x10(self, x: pl.Expr) -> pl.Expr:
             return x * 10
 
-    parser = BytecodeParser(Test().x10, apply_target="expr")
+    parser = BytecodeParser(Test().x10, map_target="expr")
     suggested_expression = parser.to_expression(col="colx")
     assert suggested_expression == 'pl.col("colx") * 10'
 
     # note: all constants - should not create a warning/suggestion
     suggested_expression = BytecodeParser(
-        lambda x: MY_CONSTANT + 42, apply_target="expr"
+        lambda x: MY_CONSTANT + 42, map_target="expr"
     ).to_expression(col="colx")
     assert suggested_expression is None
 
@@ -152,9 +152,9 @@ def test_parse_apply_miscellaneous() -> None:
     # used in the user warning will fall back (in priority order) through
     # various aliases until it finds one that is available.
     s, srs, series = -1, 0, 1
-    expr1 = BytecodeParser(lambda x: x + s, apply_target="series")
-    expr2 = BytecodeParser(lambda x: srs + x + s, apply_target="series")
-    expr3 = BytecodeParser(lambda x: srs + x + s - x + series, apply_target="series")
+    expr1 = BytecodeParser(lambda x: x + s, map_target="series")
+    expr2 = BytecodeParser(lambda x: srs + x + s, map_target="series")
+    expr3 = BytecodeParser(lambda x: srs + x + s - x + series, map_target="series")
 
     assert expr1.to_expression(col="srs") == "srs + s"
     assert expr2.to_expression(col="srs") == "(srs + series) + s"
@@ -185,7 +185,7 @@ def test_parse_apply_series(
     ):
         s = pl.Series("srs", data)
 
-        parser = BytecodeParser(func, apply_target="series")
+        parser = BytecodeParser(func, map_target="series")
         suggested_expression = parser.to_expression(s.name)
         assert suggested_expression == expr_repr
 
