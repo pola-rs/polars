@@ -194,7 +194,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         if !self.inner_dtype().is_numeric() {
             polars_bail!(opq = unique, self.inner_dtype());
         }
-        // this can called in aggregation, so this fast path can be worth a lot
+        // this can be called in aggregation, so this fast path can be worth a lot
         if self.len() < 2 {
             return Ok(self.0.clone().into_series());
         }
@@ -210,7 +210,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         if !self.inner_dtype().is_numeric() {
             polars_bail!(opq = n_unique, self.inner_dtype());
         }
-        // this can called in aggregation, so this fast path can be worth a lot
+        // this can be called in aggregation, so this fast path can be worth a lot
         match self.len() {
             0 => Ok(0),
             1 => Ok(1),
@@ -227,7 +227,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         if !self.inner_dtype().is_numeric() {
             polars_bail!(opq = arg_unique, self.inner_dtype());
         }
-        // this can called in aggregation, so this fast path can be worth a lot
+        // this can be called in aggregation, so this fast path can be worth a lot
         if self.len() == 1 {
             return Ok(IdxCa::new_vec(self.name(), vec![0 as IdxSize]));
         }
