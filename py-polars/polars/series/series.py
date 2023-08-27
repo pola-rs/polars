@@ -5356,26 +5356,21 @@ class Series:
         center: bool = False,
     ) -> Series:
         """
-        Apply a custom rolling window function.
+        Compute a custom rolling window function.
 
-        Prefer the specific rolling window functions over this one, as they are faster:
-
-            * rolling_min
-            * rolling_max
-            * rolling_mean
-            * rolling_sum
-
-        The window at a given row will include the row itself and the `window_size - 1`
-        elements before it.
+        .. warning::
+            Computing custom functions is extremely slow. Use specialized rolling
+            functions such as :func:`Series.rolling_sum` if at all possible.
 
         Parameters
         ----------
         function
-            Aggregation function.
+            Custom aggregation function.
         window_size
-            The length of the window.
+            Size of the window. The window at a given row will include the row
+            itself and the ``window_size - 1`` elements before it.
         weights
-            An optional slice with the same length as the window that will be multiplied
+            A list of weights with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
@@ -5383,19 +5378,23 @@ class Series:
         center
             Set the labels at the center of the window.
 
+        Warnings
+        --------
+
+
         Examples
         --------
-        >>> import numpy as np
-        >>> s = pl.Series("A", [11.0, 2.0, 9.0, float("nan"), 8.0])
-        >>> s.rolling_map(function=np.nanstd, window_size=3)
+        >>> from numpy import nansum
+        >>> s = pl.Series([11.0, 2.0, 9.0, float("nan"), 8.0])
+        >>> s.rolling_map(nansum, window_size=3)
         shape: (5,)
-        Series: 'A' [f64]
+        Series: '' [f64]
         [
-            null
-            null
-            3.858612
-            3.5
-            0.5
+                null
+                null
+                22.0
+                11.0
+                17.0
         ]
 
         """
