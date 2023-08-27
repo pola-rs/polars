@@ -119,3 +119,10 @@ def test_rolling_map_rolling_std() -> None:
 
     expected = s.rolling_std(window_size=4, min_periods=3, center=False)
     assert_series_equal(result, expected)
+
+
+def test_rolling_apply_deprecated() -> None:
+    with pytest.deprecated_call():
+        pl.col("a").rolling_apply(lambda x: x + 1, window_size=2)
+    with pytest.deprecated_call():
+        pl.Series([1, 2, 3]).rolling_apply(lambda x: x + 1, window_size=2)
