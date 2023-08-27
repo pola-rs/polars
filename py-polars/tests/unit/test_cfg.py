@@ -546,8 +546,7 @@ def test_numeric_right_alignment() -> None:
             "└───────┴─────┴─────┘"
         )
 
-    with pl.Config():
-        pl.Config.set_fmt_float("mixed")
+    with pl.Config(fmt_float="mixed"):
         assert (
             str(df) == "shape: (3, 3)\n"
             "┌───────┬─────┬─────┐\n"
@@ -561,12 +560,23 @@ def test_numeric_right_alignment() -> None:
             "└───────┴─────┴─────┘"
         )
 
+    with pl.Config(float_precision=6):
+        assert str(df) == (
+            "shape: (3, 3)\n"
+            "┌──────────┬──────────┬──────────┐\n"
+            "│        a ┆        b ┆        c │\n"
+            "│      --- ┆      --- ┆      --- │\n"
+            "│      f64 ┆      f64 ┆      f64 │\n"
+            "╞══════════╪══════════╪══════════╡\n"
+            "│ 1.100000 ┆ 4.000000 ┆ 7.000000 │\n"
+            "│ 2.220000 ┆ 5.000000 ┆ 8.000000 │\n"
+            "│ 3.333000 ┆ 6.000000 ┆ 9.000000 │\n"
+            "└──────────┴──────────┴──────────┘"
+        )
     df = pl.DataFrame(
         {"a": [1.1, 22.2, 3.33], "b": [444, 55.5, 6.6], "c": [77.7, 8888, 9.9999]}
     )
-    with pl.Config():
-        pl.Config.set_fmt_float("full")
-        pl.Config.set_float_precision(1)
+    with pl.Config(fmt_float="full", float_precision=1):
         assert (
             str(df) == "shape: (3, 3)\n"
             "┌──────┬───────┬────────┐\n"
@@ -587,8 +597,7 @@ def test_numeric_right_alignment() -> None:
             "c": [700000.0, 80000000000000000.0, 900],
         }
     )
-    with pl.Config():
-        pl.Config.set_float_precision(2)
+    with pl.Config(float_precision=2):
         assert (
             str(df) == "shape: (3, 3)\n"
             "┌─────────┬─────────┬───────────┐\n"
@@ -601,6 +610,7 @@ def test_numeric_right_alignment() -> None:
             "│ 3.33e16 ┆ 6.00e17 ┆    900.00 │\n"
             "└─────────┴─────────┴───────────┘"
         )
+
     # test nonsensical float precision raises an error
     with pytest.raises(ValueError):
         pl.Config.set_float_precision(50)
