@@ -109,6 +109,9 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
     fn chunks(&self) -> &Vec<ArrayRef> {
         self.0.chunks()
     }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.chunks_mut()
+    }
     fn shrink_to_fit(&mut self) {
         self.0.shrink_to_fit()
     }

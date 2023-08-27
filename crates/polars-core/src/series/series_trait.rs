@@ -225,6 +225,11 @@ pub trait SeriesTrait:
     /// Underlying chunks.
     fn chunks(&self) -> &Vec<ArrayRef>;
 
+    /// Underlying chunks.
+    /// # Safety
+    /// The caller must ensure the length and the data types of `ArrayRef` does not change.
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef>;
+
     /// Number of chunks in this Series
     fn n_chunks(&self) -> usize {
         self.chunks().len()

@@ -81,6 +81,9 @@ impl SeriesTrait for NullChunked {
     fn chunks(&self) -> &Vec<ArrayRef> {
         &self.chunks
     }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        &mut self.chunks
+    }
 
     fn chunk_lengths(&self) -> ChunkIdIter {
         self.chunks.iter().map(|chunk| chunk.len())
