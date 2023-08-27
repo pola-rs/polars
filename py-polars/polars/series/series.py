@@ -6586,6 +6586,7 @@ class Series:
         """
         return self.map_elements(function, return_dtype, skip_nulls=skip_nulls)
 
+    @deprecate_renamed_function("rolling_map", version="0.19.0")
     def rolling_apply(
         self,
         function: Callable[[Series], Any],
