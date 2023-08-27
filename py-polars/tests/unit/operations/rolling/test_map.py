@@ -68,7 +68,7 @@ def test_rolling_map_std_weights(dtype: pl.PolarsDataType) -> None:
     assert_series_equal(result, expected)
 
 
-def test_rolling_apply_sum_int() -> None:
+def test_rolling_map_sum_int() -> None:
     s = pl.Series("A", [1, 2, 9, 2, 13], dtype=pl.Int32)
 
     result = s.rolling_map(function=lambda s: s.sum(), window_size=3)

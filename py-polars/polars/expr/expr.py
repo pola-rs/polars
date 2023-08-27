@@ -6944,7 +6944,7 @@ class Expr:
         if min_periods is None:
             min_periods = window_size
         return self._from_pyexpr(
-            self._pyexpr.rolling_apply(
+            self._pyexpr.rolling_map(
                 function, window_size, weights, min_periods, center
             )
         )
