@@ -5346,7 +5346,7 @@ class Series:
             .to_series()
         )
 
-    def rolling_apply(
+    def rolling_map(
         self,
         function: Callable[[Series], Any],
         window_size: int,
@@ -5371,7 +5371,7 @@ class Series:
         Parameters
         ----------
         function
-            Aggregation function
+            Aggregation function.
         window_size
             The length of the window.
         weights
@@ -5381,13 +5381,13 @@ class Series:
             The number of values in the window that should be non-null before computing
             a result. If None, it will be set equal to window size.
         center
-            Set the labels at the center of the window
+            Set the labels at the center of the window.
 
         Examples
         --------
         >>> import numpy as np
         >>> s = pl.Series("A", [11.0, 2.0, 9.0, float("nan"), 8.0])
-        >>> print(s.rolling_apply(function=np.nanstd, window_size=3))
+        >>> s.rolling_map(function=np.nanstd, window_size=3)
         shape: (5,)
         Series: 'A' [f64]
         [
@@ -6586,6 +6586,38 @@ class Series:
 
         """
         return self.map_elements(function, return_dtype, skip_nulls=skip_nulls)
+
+    def rolling_apply(
+        self,
+        function: Callable[[Series], Any],
+        window_size: int,
+        weights: list[float] | None = None,
+        min_periods: int | None = None,
+        *,
+        center: bool = False,
+    ) -> Series:
+        """
+        Apply a custom rolling window function.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`Series.rolling_map`.
+
+        Parameters
+        ----------
+        function
+            Aggregation function
+        window_size
+            The length of the window.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+
+        """
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

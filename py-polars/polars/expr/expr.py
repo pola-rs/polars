@@ -6880,7 +6880,7 @@ class Expr:
             )
         )
 
-    def rolling_apply(
+    def rolling_map(
         self,
         function: Callable[[Series], Any],
         window_size: int,
@@ -6907,7 +6907,7 @@ class Expr:
         Parameters
         ----------
         function
-            Aggregation function
+            Aggregation function.
         window_size
             The length of the window.
         weights
@@ -6917,7 +6917,7 @@ class Expr:
             The number of values in the window that should be non-null before computing
             a result. If None, it will be set equal to window size.
         center
-            Set the labels at the center of the window
+            Set the labels at the center of the window.
 
         Examples
         --------
@@ -6926,11 +6926,7 @@ class Expr:
         ...         "A": [1.0, 2.0, 9.0, 2.0, 13.0],
         ...     }
         ... )
-        >>> df.select(
-        ...     [
-        ...         pl.col("A").rolling_apply(lambda s: s.std(), window_size=3),
-        ...     ]
-        ... )
+        >>> df.select(pl.col("A").rolling_map(lambda s: s.std(), window_size=3))
          shape: (5, 1)
         ┌──────────┐
         │ A        │
@@ -9075,6 +9071,42 @@ class Expr:
             skip_nulls=skip_nulls,
             pass_name=pass_name,
             strategy=strategy,
+        )
+
+    @deprecate_renamed_function("rolling_map", version="0.19.0")
+    def rolling_apply(
+        self,
+        function: Callable[[Series], Any],
+        window_size: int,
+        weights: list[float] | None = None,
+        min_periods: int | None = None,
+        *,
+        center: bool = False,
+    ) -> Self:
+        """
+        Apply a custom rolling window function.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`Expr.rolling_map`.
+
+        Parameters
+        ----------
+        function
+            Aggregation function
+        window_size
+            The length of the window.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+
+        """
+        return self.rolling_map(
+            function, window_size, weights, min_periods, center=center
         )
 
     @property
