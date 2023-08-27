@@ -64,6 +64,22 @@ fn is_first_struct(s: &Series) -> PolarsResult<BooleanChunked> {
     Ok(BooleanChunked::with_chunk(s.name(), arr))
 }
 
+#[cfg(feature = "group_by_list")]
+fn is_first_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
+    let groups = ca.group_tuples(true, false)?;
+    let first = groups.take_group_firsts();
+    let mut out = MutableBitmap::with_capacity(ca.len());
+    out.extend_constant(ca.len(), false);
+
+    for idx in first {
+        // Group tuples are always in bounds
+        unsafe { out.set_unchecked(idx as usize, true) }
+    }
+
+    let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
+    Ok(BooleanChunked::with_chunk(ca.name(), arr))
+}
+
 pub fn is_first(s: &Series) -> PolarsResult<BooleanChunked> {
     let s = s.to_physical_repr();
 
@@ -97,6 +113,11 @@ pub fn is_first(s: &Series) -> PolarsResult<BooleanChunked> {
         },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_first_struct(&s),
+        #[cfg(feature = "group_by_list")]
+        List(inner) if inner.is_numeric() => {
+            let ca = s.list().unwrap();
+            return is_first_list(ca);
+        },
         dt => polars_bail!(opq = is_first, dt),
     };
     Ok(out)

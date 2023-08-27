@@ -130,7 +130,7 @@ extract_jsonpath = [
 ]
 string_encoding = ["polars-ops/string_encoding", "polars-core/strings"]
 binary_encoding = ["polars-ops/binary_encoding"]
-group_by_list = ["polars-core/group_by_list"]
+group_by_list = ["polars-core/group_by_list", "polars-ops/group_by_list"]
 lazy_regex = ["polars-lazy/regex"]
 cum_agg = ["polars-core/cum_agg", "polars-core/cum_agg"]
 rolling_window = ["polars-core/rolling_window", "polars-lazy/rolling_window", "polars-time/rolling_window"]

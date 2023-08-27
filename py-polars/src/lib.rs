@@ -12,7 +12,6 @@ extern crate pyo3_built;
 mod build {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
-pub mod apply;
 pub mod arrow_interop;
 #[cfg(feature = "csv")]
 mod batched_csv;
@@ -26,6 +25,7 @@ pub mod functions;
 pub(crate) mod gil_once_cell;
 pub mod lazyframe;
 pub mod lazygroupby;
+pub mod map;
 #[cfg(feature = "object")]
 mod object;
 #[cfg(feature = "object")]

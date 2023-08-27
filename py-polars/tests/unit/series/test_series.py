@@ -24,7 +24,7 @@ from polars.datatypes import (
     UInt64,
     Unknown,
 )
-from polars.exceptions import PolarsInefficientApplyWarning, ShapeError
+from polars.exceptions import PolarsInefficientMapWarning, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import iterable_to_pyseries
 from polars.utils._wrap import wrap_s
@@ -1003,28 +1003,28 @@ def test_fill_nan() -> None:
     assert_series_equal(a.fill_nan(0), pl.Series("a", [1.0, 0.0, 2.0, 0.0, 3.0]))
 
 
-def test_apply() -> None:
-    with pytest.warns(PolarsInefficientApplyWarning):
+def test_map_elements() -> None:
+    with pytest.warns(PolarsInefficientMapWarning):
         a = pl.Series("a", [1, 2, None])
-        b = a.apply(lambda x: x**2)
+        b = a.map_elements(lambda x: x**2)
         assert list(b) == [1, 4, None]
 
-    with pytest.warns(PolarsInefficientApplyWarning):
+    with pytest.warns(PolarsInefficientMapWarning):
         a = pl.Series("a", ["foo", "bar", None])
-        b = a.apply(lambda x: x + "py")
+        b = a.map_elements(lambda x: x + "py")
         assert list(b) == ["foopy", "barpy", None]
 
-    b = a.apply(lambda x: len(x), return_dtype=pl.Int32)
+    b = a.map_elements(lambda x: len(x), return_dtype=pl.Int32)
     assert list(b) == [3, 3, None]
 
-    b = a.apply(lambda x: len(x))
+    b = a.map_elements(lambda x: len(x))
     assert list(b) == [3, 3, None]
 
     # just check that it runs (somehow problem with conditional compilation)
     a = pl.Series("a", [2, 2, 3]).cast(pl.Datetime)
-    a.apply(lambda x: x)
+    a.map_elements(lambda x: x)
     a = pl.Series("a", [2, 2, 3]).cast(pl.Date)
-    a.apply(lambda x: x)
+    a.map_elements(lambda x: x)
 
 
 def test_shift() -> None:
@@ -1257,7 +1257,7 @@ def test_round() -> None:
 
 def test_apply_list_out() -> None:
     s = pl.Series("count", [3, 2, 2])
-    out = s.apply(lambda val: pl.repeat(val, val, eager=True))
+    out = s.map_elements(lambda val: pl.repeat(val, val, eager=True))
     assert out[0].to_list() == [3, 3, 3]
     assert out[1].to_list() == [2, 2]
     assert out[2].to_list() == [2, 2]
@@ -1305,6 +1305,9 @@ def test_rank() -> None:
         s.rank("dense", descending=True),
         pl.Series("a", [3, 2, 1, 2, 2, 1, 4], dtype=UInt32),
     )
+
+    assert s.rank(method="average").dtype == pl.Float64
+    assert s.rank(method="max").dtype == pl.get_index_type()
 
 
 def test_diff() -> None:
@@ -1692,16 +1695,6 @@ def test_to_dummies() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_value_counts() -> None:
-    s = pl.Series("a", [1, 2, 2, 3])
-    result = s.value_counts()
-    expected = pl.DataFrame(
-        {"a": [1, 2, 3], "counts": [1, 2, 1]}, schema_overrides={"counts": pl.UInt32}
-    )
-    result_sorted = result.sort("a")
-    assert_frame_equal(result_sorted, expected)
-
-
 def test_chunk_lengths() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
     # this is a Series with one chunk, of length 4
@@ -1738,15 +1731,24 @@ def test_arg_sort() -> None:
 
 
 def test_arg_min_and_arg_max() -> None:
-    s = pl.Series("a", [5, 3, 4, 1, 2])
+    # numerical no null.
+    s = pl.Series([5, 3, 4, 1, 2])
     assert s.arg_min() == 3
     assert s.arg_max() == 0
 
-    s = pl.Series([None, True, False, True])
-    assert s.arg_min() == 0
+    # numerical has null.
+    s = pl.Series([None, 5, 1])
+    assert s.arg_min() == 2
     assert s.arg_max() == 1
-    s = pl.Series([None, None], dtype=pl.Boolean)
-    assert s.arg_min() == 0
+
+    # numerical all null.
+    s = pl.Series([None, None], dtype=Int32)
+    assert s.arg_min() is None
+    assert s.arg_max() is None
+
+    # boolean no null.
+    s = pl.Series([True, False])
+    assert s.arg_min() == 1
     assert s.arg_max() == 0
     s = pl.Series([True, True])
     assert s.arg_min() == 0
@@ -1754,24 +1756,86 @@ def test_arg_min_and_arg_max() -> None:
     s = pl.Series([False, False])
     assert s.arg_min() == 0
     assert s.arg_max() == 0
+
+    # boolean has null.
+    s = pl.Series([None, True, False, True])
+    assert s.arg_min() == 2
+    assert s.arg_max() == 1
+    s = pl.Series([None, True, True])
+    assert s.arg_min() == 1
+    assert s.arg_max() == 1
+    s = pl.Series([None, False, False])
+    assert s.arg_min() == 1
+    assert s.arg_max() == 1
+
+    # boolean all null.
+    s = pl.Series([None, None], dtype=pl.Boolean)
+    assert s.arg_min() is None
+    assert s.arg_max() is None
+
+    # utf8 no null
     s = pl.Series(["a", "c", "b"])
     assert s.arg_min() == 0
     assert s.arg_max() == 1
 
+    # utf8 has null
+    s = pl.Series([None, "a", None, "b"])
+    assert s.arg_min() == 1
+    assert s.arg_max() == 3
+
+    # utf8 all null
+    s = pl.Series([None, None], dtype=pl.Utf8)
+    assert s.arg_min() is None
+    assert s.arg_max() is None
+
     # test ascending and descending series
-    s = pl.Series("a", [1, 2, 3, 4, 5])
+    s = pl.Series([None, 1, 2, 3, 4, 5])
     s.sort(in_place=True)  # set ascending sorted flag
     assert s.flags == {"SORTED_ASC": True, "SORTED_DESC": False}
-    assert s.arg_min() == 0
-    assert s.arg_max() == 4
-    s = pl.Series("a", [5, 4, 3, 2, 1])
+    assert s.arg_min() == 1
+    assert s.arg_max() == 5
+    s = pl.Series([None, 5, 4, 3, 2, 1])
     s.sort(descending=True, in_place=True)  # set descing sorted flag
     assert s.flags == {"SORTED_ASC": False, "SORTED_DESC": True}
-    assert s.arg_min() == 4
-    assert s.arg_max() == 0
+    assert s.arg_min() == 5
+    assert s.arg_max() == 1
 
-    # test empty series
-    s = pl.Series("a", [])
+    # test ascending and descending numerical series
+    s = pl.Series([None, 1, 2, 3, 4, 5])
+    s.sort(in_place=True)  # set ascending sorted flag
+    assert s.flags == {"SORTED_ASC": True, "SORTED_DESC": False}
+    assert s.arg_min() == 1
+    assert s.arg_max() == 5
+    s = pl.Series([None, 5, 4, 3, 2, 1])
+    s.sort(descending=True, in_place=True)  # set descing sorted flag
+    assert s.flags == {"SORTED_ASC": False, "SORTED_DESC": True}
+    assert s.arg_min() == 5
+    assert s.arg_max() == 1
+
+    # test ascending and descending utf8 series
+    s = pl.Series([None, "a", "b", "c", "d", "e"])
+    s.sort(in_place=True)  # set ascending sorted flag
+    assert s.flags == {"SORTED_ASC": True, "SORTED_DESC": False}
+    assert s.arg_min() == 1
+    assert s.arg_max() == 5
+    s = pl.Series([None, "e", "d", "c", "b", "a"])
+    s.sort(descending=True, in_place=True)  # set descing sorted flag
+    assert s.flags == {"SORTED_ASC": False, "SORTED_DESC": True}
+    assert s.arg_min() == 5
+    assert s.arg_max() == 1
+
+    # test numerical empty series
+    s = pl.Series([], dtype=pl.Int32)
+    assert s.arg_min() is None
+    assert s.arg_max() is None
+
+    # test boolean empty series
+    s = pl.Series([], dtype=pl.Boolean)
+    assert s.arg_min() is None
+    assert s.arg_max() is None
+
+    # test utf8 empty series
+    s = pl.Series([], dtype=pl.Utf8)
     assert s.arg_min() is None
     assert s.arg_max() is None
 

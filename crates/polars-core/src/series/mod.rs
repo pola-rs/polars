@@ -41,7 +41,7 @@ use crate::POOL;
 /// Most of the available functions are defined in the [SeriesTrait trait](crate::series::SeriesTrait).
 ///
 /// The `Series` struct consists
-/// of typed [ChunkedArray](crate::chunked_array::ChunkedArray)'s. To quickly cast
+/// of typed [ChunkedArray]'s. To quickly cast
 /// a `Series` to a `ChunkedArray` you can call the method with the name of the type:
 ///
 /// ```
@@ -187,10 +187,7 @@ impl Series {
     pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         #[allow(unused_mut)]
         let mut ca = self._get_inner_mut();
-        let chunks = ca.chunks() as *const Vec<ArrayRef> as *mut Vec<ArrayRef>;
-        // Safety
-        // ca is the owner of `chunks` and this we do not break aliasing rules
-        &mut *chunks
+        ca.chunks_mut()
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {

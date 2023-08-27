@@ -31,7 +31,7 @@ jobs:
 
       - name: Build Rust documentation
         env:
-          RUSTDOCFLAGS: --cfg docsrs -D warnings
+          RUSTDOCFLAGS: --cfg docsrs -D warnings --allow=rustdoc::redundant-explicit-links
         working-directory: crates
         run: make doctest
 

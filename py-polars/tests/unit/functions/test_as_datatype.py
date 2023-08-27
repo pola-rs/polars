@@ -62,7 +62,7 @@ def test_datetime_ambiguous_time_zone() -> None:
 
 def test_datetime_ambiguous_time_zone_use_earliest() -> None:
     expr = pl.datetime(
-        2018, 10, 28, 2, 30, time_zone="Europe/Brussels", use_earliest=True
+        2018, 10, 28, 2, 30, time_zone="Europe/Brussels", ambiguous="earliest"
     )
 
     result = pl.select(expr).item()

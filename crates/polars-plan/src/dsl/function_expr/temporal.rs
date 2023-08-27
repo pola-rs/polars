@@ -10,7 +10,6 @@ pub(super) fn datetime(
     s: &[Series],
     time_unit: &TimeUnit,
     time_zone: Option<&str>,
-    use_earliest: Option<bool>,
 ) -> PolarsResult<Series> {
     use polars_core::export::chrono::NaiveDate;
     use polars_core::utils::CustomIterTools;
@@ -22,6 +21,7 @@ pub(super) fn datetime(
     let minute = &s[4];
     let second = &s[5];
     let microsecond = &s[6];
+    let ambiguous = &s[7];
 
     let max_len = s.iter().map(|s| s.len()).max().unwrap();
 
@@ -66,6 +66,11 @@ pub(super) fn datetime(
         microsecond = microsecond.new_from_index(0, max_len);
     }
     let microsecond = microsecond.u32()?;
+    let mut _ambiguous = ambiguous.cast(&DataType::Utf8)?;
+    if _ambiguous.len() < max_len {
+        _ambiguous = _ambiguous.new_from_index(0, max_len);
+    }
+    let _ambiguous = _ambiguous.utf8()?;
 
     let ca: Int64Chunked = year
         .into_iter()
@@ -96,13 +101,13 @@ pub(super) fn datetime(
         #[cfg(feature = "timezones")]
         Some(_) => {
             let mut ca = ca.into_datetime(*time_unit, None);
-            ca = replace_time_zone(&ca, time_zone, use_earliest)?;
+            ca = replace_time_zone(&ca, time_zone, _ambiguous)?;
             ca
         },
         _ => {
             polars_ensure!(
-                time_zone.is_none() && use_earliest.is_none(),
-                ComputeError: "cannot make use of the `time_zone` and `use_earliest` arguments without the 'timezones' feature enabled."
+                time_zone.is_none(),
+                ComputeError: "cannot make use of the `time_zone` argument without the 'timezones' feature enabled."
             );
             ca.into_datetime(*time_unit, None)
         },
@@ -189,7 +194,7 @@ pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
         Some(tz) => Ok(polars_ops::prelude::replace_time_zone(
             result_naive.datetime().unwrap(),
             Some(tz),
-            None,
+            &Utf8Chunked::from_iter(std::iter::once("raise")),
         )?
         .into()),
         _ => Ok(result_naive),
@@ -243,7 +248,7 @@ pub(super) fn temporal_range_dispatch(
             polars_ops::prelude::replace_time_zone(
                 start.cast(&dtype)?.datetime().unwrap(),
                 None,
-                None,
+                &Utf8Chunked::from_iter(std::iter::once("raise")),
             )?
             .into_series()
             .to_physical_repr()
@@ -251,7 +256,7 @@ pub(super) fn temporal_range_dispatch(
             polars_ops::prelude::replace_time_zone(
                 stop.cast(&dtype)?.datetime().unwrap(),
                 None,
-                None,
+                &Utf8Chunked::from_iter(std::iter::once("raise")),
             )?
             .into_series()
             .to_physical_repr()
@@ -359,7 +364,7 @@ pub(super) fn temporal_ranges_dispatch(
             polars_ops::prelude::replace_time_zone(
                 start.cast(&dtype)?.datetime().unwrap(),
                 None,
-                None,
+                &Utf8Chunked::from_iter(std::iter::once("raise")),
             )?
             .into_series()
             .to_physical_repr()
@@ -367,7 +372,7 @@ pub(super) fn temporal_ranges_dispatch(
             polars_ops::prelude::replace_time_zone(
                 stop.cast(&dtype)?.datetime().unwrap(),
                 None,
-                None,
+                &Utf8Chunked::from_iter(std::iter::once("raise")),
             )?
             .into_series()
             .to_physical_repr()

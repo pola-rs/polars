@@ -41,7 +41,7 @@ class StackValue(NamedTuple):
     right_operand: str
 
 
-ApplyTarget: TypeAlias = Literal["expr", "frame", "series"]
+MapTarget: TypeAlias = Literal["expr", "frame", "series"]
 StackEntry: TypeAlias = Union[str, StackValue]
 
 _MIN_PY311 = sys.version_info >= (3, 11)
@@ -204,9 +204,9 @@ class BytecodeParser:
     """Introspect UDF bytecode and determine if we can rewrite as native expression."""
 
     _can_attempt_rewrite: dict[str, bool]
-    _apply_target_name: str | None = None
+    _map_target_name: str | None = None
 
-    def __init__(self, function: Callable[[Any], Any], apply_target: ApplyTarget):
+    def __init__(self, function: Callable[[Any], Any], map_target: MapTarget):
         try:
             original_instructions = get_instructions(function)
         except TypeError:
@@ -216,7 +216,7 @@ class BytecodeParser:
 
         self._can_attempt_rewrite = {}
         self._function = function
-        self._apply_target = apply_target
+        self._map_target = map_target
         self._param_name = self._get_param_name(function)
         self._rewritten_instructions = RewrittenInstructions(
             instructions=original_instructions,
@@ -284,34 +284,34 @@ class BytecodeParser:
         return sorted(expression_blocks.items())
 
     def _get_target_name(self, col: str, expression: str) -> str:
-        """The name of the object against which the 'apply' is being invoked."""
-        if self._apply_target_name is not None:
-            return self._apply_target_name
+        """The name of the object against which the 'map' is being invoked."""
+        if self._map_target_name is not None:
+            return self._map_target_name
         else:
             col_expr = f'pl.col("{col}")'
-            if self._apply_target == "expr":
+            if self._map_target == "expr":
                 return col_expr
-            elif self._apply_target == "series":
+            elif self._map_target == "series":
                 # note: handle overlapping name from global variables; fallback
                 # through "s", "srs", "series" and (finally) srs0 -> srsN...
                 search_expr = expression.replace(col_expr, "")
                 for name in ("s", "srs", "series"):
                     if not re.search(rf"\b{name}\b", search_expr):
-                        self._apply_target_name = name
+                        self._map_target_name = name
                         return name
                 n = count()
                 while True:
                     name = f"srs{next(n)}"
                     if not re.search(rf"\b{name}\b", search_expr):
-                        self._apply_target_name = name
+                        self._map_target_name = name
                         return name
 
-        raise NotImplementedError(f"TODO: apply_target = {self._apply_target!r}")
+        raise NotImplementedError(f"TODO: map_target = {self._map_target!r}")
 
     @property
-    def apply_target(self) -> ApplyTarget:
-        """The apply target, eg: one of 'expr', 'frame', or 'series'."""
-        return self._apply_target
+    def map_target(self) -> MapTarget:
+        """The map target, eg: one of 'expr', 'frame', or 'series'."""
+        return self._map_target
 
     def can_attempt_rewrite(self) -> bool:
         """
@@ -322,15 +322,13 @@ class BytecodeParser:
         same output. (Hopefully nobody is writing lambdas like that anyway...)
         """
         if (
-            can_attempt_rewrite := self._can_attempt_rewrite.get(
-                self._apply_target, None
-            )
+            can_attempt_rewrite := self._can_attempt_rewrite.get(self._map_target, None)
         ) is not None:
             return can_attempt_rewrite
         else:
-            self._can_attempt_rewrite[self._apply_target] = False
+            self._can_attempt_rewrite[self._map_target] = False
             if self._rewritten_instructions and self._param_name is not None:
-                self._can_attempt_rewrite[self._apply_target] = (
+                self._can_attempt_rewrite[self._map_target] = (
                     # check minimum number of ops, ensuring all are parseable
                     len(self._rewritten_instructions) >= 2
                     and all(
@@ -346,7 +344,7 @@ class BytecodeParser:
                     == 1
                 )
 
-        return self._can_attempt_rewrite[self._apply_target]
+        return self._can_attempt_rewrite[self._map_target]
 
     def dis(self) -> None:
         """Print disassembled function bytecode."""
@@ -374,7 +372,7 @@ class BytecodeParser:
 
     def to_expression(self, col: str) -> str | None:
         """Translate postfix bytecode instructions to polars expression/string."""
-        self._apply_target_name = None
+        self._map_target_name = None
         if not self.can_attempt_rewrite() or self._param_name is None:
             return None
 
@@ -397,7 +395,7 @@ class BytecodeParser:
                     offset: InstructionTranslator(
                         instructions=ops,
                         caller_variables=caller_variables,
-                        apply_target=self._apply_target,
+                        map_target=self._map_target,
                     ).to_expression(
                         col=col,
                         param_name=self._param_name,
@@ -409,14 +407,14 @@ class BytecodeParser:
             )
             polars_expr = " ".join(expr for _offset, expr in expression_strings)
         except NotImplementedError:
-            self._can_attempt_rewrite[self._apply_target] = False
+            self._can_attempt_rewrite[self._map_target] = False
             return None
 
         # note: if no 'pl.col' in the expression, it likely represents a compound
         # constant value (e.g. `lambda x: CONST + 123`), so we don't want to warn
         if "pl.col(" not in polars_expr:
             return None
-        elif self._apply_target == "series":
+        elif self._map_target == "series":
             return polars_expr.replace(
                 f'pl.col("{col}")',
                 self._get_target_name(col, polars_expr),
@@ -433,7 +431,7 @@ class BytecodeParser:
         """Generate warning that suggests an equivalent native polars expression."""
         # Import these here so that udfs can be imported without polars installed.
 
-        from polars.exceptions import PolarsInefficientApplyWarning
+        from polars.exceptions import PolarsInefficientMapWarning
         from polars.utils.various import (
             find_stacklevel,
             in_terminal_that_supports_colour,
@@ -452,7 +450,7 @@ class BytecodeParser:
                 if 'pl.col("")' in suggested_expression
                 else ""
             )
-            if self._apply_target == "expr":
+            if self._map_target == "expr":
                 apitype = "expressions"
                 clsname = "Expr"
             else:
@@ -461,21 +459,21 @@ class BytecodeParser:
 
             before_after_suggestion = (
                 (
-                    f"  \033[31m- {target_name}.apply({func_name})\033[0m\n"
+                    f"  \033[31m- {target_name}.map_elements({func_name})\033[0m\n"
                     f"  \033[32m+ {suggested_expression}\033[0m\n{addendum}"
                 )
                 if in_terminal_that_supports_colour()
                 else (
-                    f"  - {target_name}.apply({func_name})\n"
+                    f"  - {target_name}.map_elements({func_name})\n"
                     f"  + {suggested_expression}\n{addendum}"
                 )
             )
             warnings.warn(
-                f"\n{clsname}.apply is significantly slower than the native {apitype} API.\n"
+                f"\n{clsname}.map_elements is significantly slower than the native {apitype} API.\n"
                 "Only use if you absolutely CANNOT implement your logic otherwise.\n"
-                "In this case, you can replace your `apply` with the following:\n"
+                "In this case, you can replace your `map_elements` with the following:\n"
                 f"{before_after_suggestion}",
-                PolarsInefficientApplyWarning,
+                PolarsInefficientMapWarning,
                 stacklevel=find_stacklevel(),
             )
 
@@ -487,10 +485,10 @@ class InstructionTranslator:
         self,
         instructions: list[Instruction],
         caller_variables: dict[str, Any],
-        apply_target: ApplyTarget,
+        map_target: MapTarget,
     ) -> None:
         self._caller_variables: dict[str, Any] = caller_variables
-        self._stack = self._to_intermediate_stack(instructions, apply_target)
+        self._stack = self._to_intermediate_stack(instructions, map_target)
 
     def to_expression(self, col: str, param_name: str, depth: int) -> str:
         """Convert intermediate stack to polars expression string."""
@@ -562,10 +560,10 @@ class InstructionTranslator:
         return value
 
     def _to_intermediate_stack(
-        self, instructions: list[Instruction], apply_target: ApplyTarget
+        self, instructions: list[Instruction], map_target: MapTarget
     ) -> StackEntry:
         """Take postfix bytecode and convert to an intermediate natural-order stack."""
-        if apply_target in ("expr", "series"):
+        if map_target in ("expr", "series"):
             stack: list[StackEntry] = []
             for inst in instructions:
                 stack.append(
@@ -593,7 +591,7 @@ class InstructionTranslator:
             return stack[0]
 
         # TODO: dataframe.apply(...)
-        raise NotImplementedError(f"TODO: {apply_target!r} apply")
+        raise NotImplementedError(f"TODO: {map_target!r} apply")
 
 
 class RewrittenInstructions:
@@ -673,8 +671,8 @@ class RewrittenInstructions:
         while idx < len(self._instructions):
             inst, increment = self._instructions[idx], 1
             if inst.opname not in OpNames.LOAD or not any(
-                (increment := apply_rewrite(idx, updated_instructions))
-                for apply_rewrite in (
+                (increment := map_rewrite(idx, updated_instructions))
+                for map_rewrite in (
                     # add any other rewrite methods here
                     self._rewrite_functions,
                     self._rewrite_methods,
@@ -829,25 +827,25 @@ def _is_raw_function(function: Callable[[Any], Any]) -> tuple[str, str]:
     return "", ""
 
 
-def warn_on_inefficient_apply(
-    function: Callable[[Any], Any], columns: list[str], apply_target: ApplyTarget
+def warn_on_inefficient_map(
+    function: Callable[[Any], Any], columns: list[str], map_target: MapTarget
 ) -> None:
     """
-    Generate ``PolarsInefficientApplyWarning`` on poor usage of ``apply`` func.
+    Generate ``PolarsInefficientMapWarning`` on poor usage of a ``map`` function.
 
     Parameters
     ----------
     function
-        The function passed to ``apply``.
+        The function passed to ``map``.
     columns
         The column names of the original object; in the case of an ``Expr`` this
         will be a list of length 1 containing the expression's root name.
-    apply_target
-        The target of the ``apply`` call. One of ``"expr"``, ``"frame"``,
+    map_target
+        The target of the ``map`` call. One of ``"expr"``, ``"frame"``,
         or ``"series"``.
     """
-    if apply_target == "frame":
-        raise NotImplementedError("TODO: 'frame' and 'series' apply-function parsing")
+    if map_target == "frame":
+        raise NotImplementedError("TODO: 'frame' and 'series' map-function parsing")
 
     # note: we only consider simple functions with a single col/param
     if not (col := columns and columns[0]):
@@ -855,7 +853,7 @@ def warn_on_inefficient_apply(
 
     # the parser introspects function bytecode to determine if we can
     # rewrite as a much more optimal native polars expression instead
-    parser = BytecodeParser(function, apply_target)
+    parser = BytecodeParser(function, map_target)
     if parser.can_attempt_rewrite():
         parser.warn(col)
     else:
@@ -872,5 +870,5 @@ def warn_on_inefficient_apply(
 
 __all__ = [
     "BytecodeParser",
-    "warn_on_inefficient_apply",
+    "warn_on_inefficient_map",
 ]

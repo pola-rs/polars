@@ -160,30 +160,30 @@ impl DataFrame {
         self.columns.iter().map(|s| s.estimated_size()).sum()
     }
 
-    // reduce monomorphization
+    // Reduce monomorphization.
     fn apply_columns(&self, func: &(dyn Fn(&Series) -> Series)) -> Vec<Series> {
-        self.columns.iter().map(|s| func(s)).collect()
+        self.columns.iter().map(func).collect()
     }
 
-    // reduce monomorphization
+    // Reduce monomorphization.
     fn apply_columns_par(&self, func: &(dyn Fn(&Series) -> Series + Send + Sync)) -> Vec<Series> {
-        POOL.install(|| self.columns.par_iter().map(|s| func(s)).collect())
+        POOL.install(|| self.columns.par_iter().map(func).collect())
     }
 
-    // reduce monomorphization
+    // Reduce monomorphization.
     fn try_apply_columns_par(
         &self,
         func: &(dyn Fn(&Series) -> PolarsResult<Series> + Send + Sync),
     ) -> PolarsResult<Vec<Series>> {
-        POOL.install(|| self.columns.par_iter().map(|s| func(s)).collect())
+        POOL.install(|| self.columns.par_iter().map(func).collect())
     }
 
-    // reduce monomorphization
+    // Reduce monomorphization.
     fn try_apply_columns(
         &self,
         func: &(dyn Fn(&Series) -> PolarsResult<Series> + Send + Sync),
     ) -> PolarsResult<Vec<Series>> {
-        self.columns.iter().map(|s| func(s)).collect()
+        self.columns.iter().map(func).collect()
     }
 
     /// Get the index of the column.

@@ -355,6 +355,22 @@ def test_arr_contains() -> None:
     }
 
 
+def test_rank() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 2, 2, 3],
+        }
+    )
+
+    s = df.select(pl.col("a").rank(method="average").alias("b")).to_series()
+    assert s.to_list() == [1.5, 1.5, 3.5, 3.5, 5.0]
+    assert s.dtype == pl.Float64
+
+    s = df.select(pl.col("a").rank(method="max").alias("b")).to_series()
+    assert s.to_list() == [2, 2, 4, 4, 5]
+    assert s.dtype == pl.get_index_type()
+
+
 def test_rank_so_4109() -> None:
     # also tests ranks null behavior
     df = pl.from_dict(

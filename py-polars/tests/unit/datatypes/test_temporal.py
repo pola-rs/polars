@@ -22,7 +22,7 @@ from polars.testing import (
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import PolarsTemporalType, StartBy, TimeUnit
+    from polars.type_aliases import Ambiguous, PolarsTemporalType, StartBy, TimeUnit
 else:
     from polars.utils.convert import get_zoneinfo as ZoneInfo
 
@@ -1416,7 +1416,7 @@ def test_asof_join() -> None:
         (False, datetime(2010, 9, 12)),
     ],
 )
-def test_temporal_dtypes_apply(
+def test_temporal_dtypes_map_elements(
     skip_nulls: bool, expected_value: datetime | None
 ) -> None:
     df = pl.DataFrame(
@@ -1430,13 +1430,13 @@ def test_temporal_dtypes_apply(
             [
                 # don't actually do any of this; native expressions are MUCH faster ;)
                 pl.col("timestamp")
-                .apply(lambda x: const_dtm, skip_nulls=skip_nulls)
+                .map_elements(lambda x: const_dtm, skip_nulls=skip_nulls)
                 .alias("const_dtm"),
                 pl.col("timestamp")
-                .apply(lambda x: x and x.date(), skip_nulls=skip_nulls)
+                .map_elements(lambda x: x and x.date(), skip_nulls=skip_nulls)
                 .alias("date"),
                 pl.col("timestamp")
-                .apply(lambda x: x and x.time(), skip_nulls=skip_nulls)
+                .map_elements(lambda x: x and x.time(), skip_nulls=skip_nulls)
                 .alias("time"),
             ]
         ),
@@ -2112,34 +2112,246 @@ def test_replace_time_zone_from_naive() -> None:
 
 
 @pytest.mark.parametrize(
-    ("use_earliest", "expected"),
+    ("ambiguous", "expected"),
     [
         (
-            False,
+            "latest",
             datetime(2018, 10, 28, 2, 30, fold=0, tzinfo=ZoneInfo("Europe/Brussels")),
         ),
         (
-            True,
+            "earliest",
             datetime(2018, 10, 28, 2, 30, fold=1, tzinfo=ZoneInfo("Europe/Brussels")),
         ),
     ],
 )
 def test_replace_time_zone_ambiguous_with_use_earliest(
-    use_earliest: bool, expected: datetime
+    ambiguous: Ambiguous, expected: datetime
 ) -> None:
     ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
-    result = ts.dt.replace_time_zone(
-        "Europe/Brussels", use_earliest=use_earliest
-    ).item()
+    result = ts.dt.replace_time_zone("Europe/Brussels", ambiguous=ambiguous).item()
     assert result == expected
 
 
 def test_replace_time_zone_ambiguous_raises() -> None:
     ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
     with pytest.raises(
-        ArrowError, match="Please use `use_earliest` to tell how it should be localized"
+        ArrowError, match="Please use `ambiguous` to tell how it should be localized"
     ):
         ts.dt.replace_time_zone("Europe/Brussels")
+
+
+@pytest.mark.parametrize(
+    ("from_tz", "expected_sortedness", "ambiguous"),
+    [
+        ("Europe/London", False, "earliest"),
+        ("Europe/London", False, "raise"),
+        ("UTC", False, "earliest"),
+        ("UTC", True, "raise"),
+        (None, False, "earliest"),
+        (None, True, "raise"),
+    ],
+)
+def test_replace_time_zone_sortedness_series(
+    from_tz: str | None, expected_sortedness: bool, ambiguous: Ambiguous
+) -> None:
+    ser = (
+        pl.Series("ts", [1603584000000000, 1603587600000000])
+        .cast(pl.Datetime("us", from_tz))
+        .sort()
+    )
+    assert ser.flags["SORTED_ASC"]
+    result = ser.dt.replace_time_zone("UTC", ambiguous=ambiguous)
+    assert result.flags["SORTED_ASC"] == expected_sortedness
+
+
+@pytest.mark.parametrize(
+    ("from_tz", "ambiguous"),
+    [
+        ("Europe/London", "earliest"),
+        ("Europe/London", "raise"),
+        ("UTC", "earliest"),
+        ("UTC", "raise"),
+        (None, "earliest"),
+        (None, "raise"),
+    ],
+)
+def test_replace_time_zone_sortedness_expressions(
+    from_tz: str | None, ambiguous: str
+) -> None:
+    df = (
+        pl.Series("ts", [1603584000000000, 1603587600000000])
+        .cast(pl.Datetime("us", from_tz))
+        .sort()
+        .to_frame()
+    )
+    df = df.with_columns(ambiguous=pl.Series([ambiguous] * 2))
+    assert df["ts"].flags["SORTED_ASC"]
+    result = df.select(
+        pl.col("ts").dt.replace_time_zone("UTC", ambiguous=pl.col("ambiguous"))
+    )
+    assert not result["ts"].flags["SORTED_ASC"]
+
+
+def test_use_earliest_deprecation() -> None:
+    # strptime
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=True` with `ambiguous='earliest'`",
+    ):
+        result = pl.Series(["2020-10-25 01:00"]).str.strptime(
+            pl.Datetime("us", "Europe/London"), use_earliest=True
+        )
+    expected = pl.Series(["2020-10-25 01:00"]).str.strptime(
+        pl.Datetime("us", "Europe/London"), ambiguous="earliest"
+    )
+    assert_series_equal(result, expected)
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=False` with `ambiguous='latest'`",
+    ):
+        result = pl.Series(["2020-10-25 01:00"]).str.strptime(
+            pl.Datetime("us", "Europe/London"), use_earliest=False
+        )
+    expected = pl.Series(["2020-10-25 01:00"]).str.strptime(
+        pl.Datetime("us", "Europe/London"), ambiguous="latest"
+    )
+    assert_series_equal(result, expected)
+
+    # truncate
+    ser = pl.Series(["2020-10-25 01:00"]).str.to_datetime(
+        time_zone="Europe/London", ambiguous="latest"
+    )
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=True` with `ambiguous='earliest'`",
+    ):
+        result = ser.dt.truncate("1h", use_earliest=True)
+    expected = ser.dt.truncate("1h", ambiguous="earliest")
+    assert_series_equal(result, expected)
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=True` with `ambiguous='earliest'`",
+    ):
+        result = ser.dt.truncate("1h", use_earliest=True)
+    expected = ser.dt.truncate("1h", ambiguous="earliest")
+    assert_series_equal(result, expected)
+
+    # replace_time_zone
+    ser = pl.Series([datetime(2020, 10, 25, 1)])
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=True` with `ambiguous='earliest'`",
+    ):
+        result = ser.dt.replace_time_zone("Europe/London", use_earliest=True)
+    expected = ser.dt.replace_time_zone("Europe/London", ambiguous="earliest")
+    assert_series_equal(result, expected)
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=False` with `ambiguous='latest'`",
+    ):
+        result = ser.dt.replace_time_zone("Europe/London", use_earliest=False)
+    expected = ser.dt.replace_time_zone("Europe/London", ambiguous="latest")
+    assert_series_equal(result, expected)
+
+    # pl.datetime
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=True` with `ambiguous='earliest'`",
+    ):
+        result = pl.select(pl.datetime(2020, 10, 25, 1, use_earliest=True))["datetime"]
+    expected = pl.select(pl.datetime(2020, 10, 25, 1, ambiguous="earliest"))["datetime"]
+    assert_series_equal(result, expected)
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=False` with `ambiguous='latest'`",
+    ):
+        result = pl.select(pl.datetime(2020, 10, 25, 1, use_earliest=False))["datetime"]
+    expected = pl.select(pl.datetime(2020, 10, 25, 1, ambiguous="latest"))["datetime"]
+    assert_series_equal(result, expected)
+
+
+def test_ambiguous_expressions() -> None:
+    # strptime
+    df = pl.DataFrame(
+        {
+            "ts": ["2020-10-25 01:00"] * 2,
+            "ambiguous": ["earliest", "latest"],
+        }
+    )
+    result = df.select(
+        pl.col("ts").str.strptime(
+            pl.Datetime("us", "Europe/London"), ambiguous=pl.col("ambiguous")
+        )
+    )["ts"]
+    expected = pl.Series("ts", [1603584000000000, 1603587600000000]).cast(
+        pl.Datetime("us", "Europe/London")
+    )
+    assert_series_equal(result, expected)
+
+    # truncate
+    df = pl.DataFrame(
+        {
+            "ts": [datetime(2020, 10, 25, 1), datetime(2020, 10, 25, 1)],
+            "ambiguous": ["earliest", "latest"],
+        }
+    )
+    df = df.with_columns(
+        pl.col("ts").dt.replace_time_zone(
+            "Europe/London", ambiguous=pl.col("ambiguous")
+        )
+    )
+    result = df.select(pl.col("ts").dt.truncate("1h", ambiguous=pl.col("ambiguous")))[
+        "ts"
+    ]
+    expected = pl.Series("ts", [1603584000000000, 1603587600000000]).cast(
+        pl.Datetime("us", "Europe/London")
+    )
+    assert_series_equal(result, expected)
+
+    # replace_time_zone
+    df = pl.DataFrame(
+        {
+            "ts": [datetime(2020, 10, 25, 1), datetime(2020, 10, 25, 1)],
+            "ambiguous": ["earliest", "latest"],
+        }
+    )
+    result = df.select(
+        pl.col("ts").dt.replace_time_zone(
+            "Europe/London", ambiguous=pl.col("ambiguous")
+        )
+    )["ts"]
+    expected = pl.Series("ts", [1603584000000000, 1603587600000000]).cast(
+        pl.Datetime("us", "Europe/London")
+    )
+    assert_series_equal(result, expected)
+
+    # pl.datetime
+    df = pl.DataFrame(
+        {
+            "year": [2020] * 2,
+            "month": [10] * 2,
+            "day": [25] * 2,
+            "hour": [1] * 2,
+            "minute": [0] * 2,
+            "ambiguous": ["earliest", "latest"],
+        }
+    )
+    result = df.select(
+        pl.datetime(
+            "year",
+            "month",
+            "day",
+            "hour",
+            "minute",
+            time_zone="Europe/London",
+            ambiguous=pl.col("ambiguous"),
+        )
+    )["datetime"]
+    expected = pl.DataFrame(
+        {"datetime": [1603584000000000, 1603587600000000]},
+        schema={"datetime": pl.Datetime("us", "Europe/London")},
+    )["datetime"]
+    assert_series_equal(result, expected)
 
 
 def test_unlocalize() -> None:
@@ -2442,8 +2654,8 @@ def test_truncate_use_earliest() -> None:
     )
     result = df.select(
         pl.when(pl.col("use_earliest"))
-        .then(pl.col("date").dt.truncate("30m", use_earliest=True))
-        .otherwise(pl.col("date").dt.truncate("30m", use_earliest=False))
+        .then(pl.col("date").dt.truncate("30m", ambiguous="earliest"))
+        .otherwise(pl.col("date").dt.truncate("30m", ambiguous="latest"))
     )
     expected = pl.date_range(
         date(2020, 10, 25),

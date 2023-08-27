@@ -46,7 +46,14 @@ pub(crate) fn cast_columns(
             (DataType::Utf8, DataType::Datetime(tu, _)) => s
                 .utf8()
                 .unwrap()
-                .as_datetime(None, *tu, false, false, None, None)
+                .as_datetime(
+                    None,
+                    *tu,
+                    false,
+                    false,
+                    None,
+                    &Utf8Chunked::from_iter(std::iter::once("raise")),
+                )
                 .map(|ca| ca.into_series()),
             (_, dt) => s.cast(dt),
         }?;

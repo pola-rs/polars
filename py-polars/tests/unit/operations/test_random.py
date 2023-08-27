@@ -54,6 +54,19 @@ def test_sample_df() -> None:
     assert df.sample(fraction=0.4, seed=0).shape == (1, 3)
 
 
+def test_sample_empty_df() -> None:
+    df = pl.DataFrame({"foo": []})
+
+    # // If with replacement, then expect empty df
+    assert df.sample(n=3, with_replacement=True).shape == (0, 1)
+    assert df.sample(fraction=0.4, with_replacement=True).shape == (0, 1)
+
+    # // If without replacement, then expect shape mismatch on sample_n not sample_frac
+    with pytest.raises(pl.ShapeError):
+        df.sample(n=3, with_replacement=False)
+    assert df.sample(fraction=0.4, with_replacement=False).shape == (0, 1)
+
+
 def test_sample_series() -> None:
     s = pl.Series("a", [1, 2, 3, 4, 5])
 

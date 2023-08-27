@@ -385,7 +385,7 @@ def test_streaming_restart_non_streamable_group_by() -> None:
         )
         .group_by(["id2", "id3", "id3_right"])
         .agg(
-            pl.col("value").apply(lambda x: x).sum() * pl.col("value").sum()
+            pl.col("value").map_elements(lambda x: x).sum() * pl.col("value").sum()
         )  # non-streamable UDF + nested_agg
     )
 

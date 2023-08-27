@@ -9,6 +9,9 @@ use crate::random::get_global_random_u64;
 use crate::utils::{CustomIterTools, NoNull};
 
 fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
+    if len == 0 {
+        return IdxCa::new_vec("", vec![]);
+    }
     let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
     let dist = Uniform::new(0, len as IdxSize);
     (0..n as IdxSize)

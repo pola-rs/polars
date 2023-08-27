@@ -97,6 +97,9 @@ where
     fn chunks(&self) -> &Vec<ArrayRef> {
         ObjectChunked::chunks(&self.0)
     }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.chunks_mut()
+    }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
         ObjectChunked::slice(&self.0, offset, length).into_series()

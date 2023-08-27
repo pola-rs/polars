@@ -856,7 +856,7 @@ class ExprListNameSpace:
             Run all expression parallel. Don't activate this blindly.
             Parallelism is worth it if there is enough work to do per thread.
 
-            This likely should not be use in the group by context, because we already
+            This likely should not be used in the group by context, because we already
             parallel execution per group
 
         Examples
@@ -869,7 +869,7 @@ class ExprListNameSpace:
         ┌─────┬─────┬────────────┐
         │ a   ┆ b   ┆ rank       │
         │ --- ┆ --- ┆ ---        │
-        │ i64 ┆ i64 ┆ list[f32]  │
+        │ i64 ┆ i64 ┆ list[f64]  │
         ╞═════╪═════╪════════════╡
         │ 1   ┆ 4   ┆ [1.0, 2.0] │
         │ 8   ┆ 5   ┆ [2.0, 1.0] │

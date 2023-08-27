@@ -19,7 +19,7 @@ pub trait PolarsUpsample {
     /// * `every` - interval will start 'every' duration
     /// * `offset` - change the start of the date_range by this offset.
     ///
-    /// The `period` and `offset` arguments are created with
+    /// The `every` and `offset` arguments are created with
     /// the following string language:
     /// - 1ns   (1 nanosecond)
     /// - 1us   (1 microsecond)
@@ -33,11 +33,14 @@ pub trait PolarsUpsample {
     /// - 1q    (1 calendar quarter)
     /// - 1y    (1 calendar year)
     /// - 1i    (1 index count)
+    ///
     /// Or combine them:
     /// "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+    ///
     /// Suffix with `"_saturating"` to saturate dates with days too
     /// large for their month to the last day of the month (e.g.
     /// 2022-02-29 to 2022-02-28).
+    ///
     /// By "calendar day", we mean the corresponding time on the next
     /// day (which may not be 24 hours, depending on daylight savings).
     /// Similarly for "calendar week", "calendar month", "calendar quarter",
@@ -59,7 +62,7 @@ pub trait PolarsUpsample {
     /// * `every` - interval will start 'every' duration
     /// * `offset` - change the start of the date_range by this offset.
     ///
-    /// The `period` and `offset` arguments are created with
+    /// The `every` and `offset` arguments are created with
     /// the following string language:
     /// - 1ns   (1 nanosecond)
     /// - 1us   (1 microsecond)
@@ -73,11 +76,14 @@ pub trait PolarsUpsample {
     /// - 1q    (1 calendar quarter)
     /// - 1y    (1 calendar year)
     /// - 1i    (1 index count)
+    ///
     /// Or combine them:
     /// "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+    ///
     /// Suffix with `"_saturating"` to saturate dates with days too
     /// large for their month to the last day of the month (e.g.
     /// 2022-02-29 to 2022-02-28).
+    ///
     /// By "calendar day", we mean the corresponding time on the next
     /// day (which may not be 24 hours, depending on daylight savings).
     /// Similarly for "calendar week", "calendar month", "calendar quarter",
