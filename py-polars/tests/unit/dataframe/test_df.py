@@ -3594,7 +3594,6 @@ def test_dot() -> None:
     assert df.select(pl.col("a").dot(pl.col("b"))).item() == 12.96
 
 
-
 def test_ufunc() -> None:
     df = pl.DataFrame([pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt8)])
     out = df.select(
