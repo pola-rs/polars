@@ -64,7 +64,7 @@ def test_rolling_group_by_overlapping_groups() -> None:
             .agg(
                 # trigger the apply on the expression engine
                 pl.col("a")
-                .apply(lambda x: x)
+                .map_elements(lambda x: x)
                 .sum()
             )
         )["a"],

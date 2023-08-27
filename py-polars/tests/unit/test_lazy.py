@@ -14,7 +14,7 @@ import polars as pl
 import polars.selectors as cs
 from polars import lit, when
 from polars.datatypes import FLOAT_DTYPES
-from polars.exceptions import ComputeError, PolarsInefficientApplyWarning
+from polars.exceptions import ComputeError, PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal
 from polars.testing.asserts import assert_series_equal
 
@@ -76,12 +76,12 @@ def test_apply() -> None:
     assert_frame_equal(new.collect(), expected.collect())
 
     with pytest.warns(
-        PolarsInefficientApplyWarning, match="In this case, you can replace"
+        PolarsInefficientMapWarning, match="In this case, you can replace"
     ):
         for strategy in ["thread_local", "threading"]:
             ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
             new = ldf.with_columns(
-                pl.col("a").apply(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
+                pl.col("a").map_elements(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
             )
             expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
             assert_frame_equal(new.collect(), expected.collect())
@@ -198,10 +198,10 @@ def test_apply_custom_function() -> None:
         .agg(
             [
                 pl.col("cars")
-                .apply(lambda groups: groups.len(), return_dtype=pl.Int64)
+                .map_elements(lambda groups: groups.len(), return_dtype=pl.Int64)
                 .alias("custom_1"),
                 pl.col("cars")
-                .apply(lambda groups: groups.len(), return_dtype=pl.Int64)
+                .map_elements(lambda groups: groups.len(), return_dtype=pl.Int64)
                 .alias("custom_2"),
                 pl.count("cars").alias("cars_count"),
             ]
@@ -564,7 +564,7 @@ def test_custom_group_by() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     out = (
         ldf.group_by("b", maintain_order=True)
-        .agg([pl.col("a").apply(lambda x: x.sum(), return_dtype=pl.Int64)])
+        .agg([pl.col("a").map_elements(lambda x: x.sum(), return_dtype=pl.Int64)])
         .collect()
     )
     assert out.rows() == [("a", 1), ("b", 2), ("c", 2)]

@@ -259,7 +259,7 @@ def test_is_nan_on_non_boolean() -> None:
 def test_window_expression_different_group_length() -> None:
     try:
         pl.DataFrame({"groups": ["a", "a", "b", "a", "b"]}).select(
-            [pl.col("groups").apply(lambda _: pl.Series([1, 2])).over("groups")]
+            [pl.col("groups").map_elements(lambda _: pl.Series([1, 2])).over("groups")]
         )
     except pl.ComputeError as exc:
         msg = str(exc)
@@ -513,7 +513,7 @@ def test_skip_nulls_err() -> None:
     with pytest.raises(
         pl.ComputeError, match=r"The output type of 'apply' function cannot determined"
     ):
-        df.with_columns(pl.col("foo").apply(lambda x: x, skip_nulls=True))
+        df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
 
 
 @pytest.mark.parametrize(

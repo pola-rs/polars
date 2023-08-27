@@ -749,7 +749,7 @@ def test_shift() -> None:
 def test_custom_group_by() -> None:
     df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     out = df.group_by("b", maintain_order=True).agg(
-        [pl.col("a").apply(lambda x: x.sum(), return_dtype=pl.Int64)]
+        [pl.col("a").map_elements(lambda x: x.sum(), return_dtype=pl.Int64)]
     )
     assert out.rows() == [("a", 1), ("b", 2), ("c", 2)]
 
@@ -1778,7 +1778,7 @@ def test_join_dates() -> None:
     )
     dts = (
         dts_in.cast(int)
-        .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))
+        .map_elements(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))
         .cast(pl.Datetime)
     )
 
@@ -1907,7 +1907,7 @@ def test_hashing_on_python_objects() -> None:
         def __eq__(self, other: Any) -> bool:
             return True
 
-    df = df.with_columns(pl.col("a").apply(lambda x: Foo()).alias("foo"))
+    df = df.with_columns(pl.col("a").map_elements(lambda x: Foo()).alias("foo"))
     assert df.group_by(["foo"]).first().shape == (1, 3)
     assert df.unique().shape == (3, 3)
 
@@ -3532,11 +3532,9 @@ def test_deadlocks_3409() -> None:
     assert (
         pl.DataFrame({"col1": [[1, 2, 3]]})
         .with_columns(
-            [
-                pl.col("col1").list.eval(
-                    pl.element().apply(lambda x: x, return_dtype=pl.Int64)
-                )
-            ]
+            pl.col("col1").list.eval(
+                pl.element().map_elements(lambda x: x, return_dtype=pl.Int64)
+            )
         )
         .to_dict(False)
     ) == {"col1": [[1, 2, 3]]}

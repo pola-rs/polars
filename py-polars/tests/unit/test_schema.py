@@ -151,7 +151,7 @@ def test_join_as_of_by_schema() -> None:
     assert q.collect().columns == q.columns
 
 
-def test_unknown_apply() -> None:
+def test_unknown_map_elements() -> None:
     df = pl.DataFrame(
         {"Amount": [10, 1, 1, 5], "Flour": ["1000g", "100g", "50g", "75g"]}
     )
@@ -159,7 +159,7 @@ def test_unknown_apply() -> None:
     q = df.lazy().select(
         [
             pl.col("Amount"),
-            pl.col("Flour").apply(lambda x: 100.0) / pl.col("Amount"),
+            pl.col("Flour").map_elements(lambda x: 100.0) / pl.col("Amount"),
         ]
     )
 

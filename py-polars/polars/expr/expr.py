@@ -35,7 +35,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.exceptions import PolarsInefficientApplyWarning
+from polars.exceptions import PolarsInefficientMapWarning
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
@@ -52,6 +52,7 @@ from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_nonkeyword_arguments,
+    deprecate_renamed_function,
     deprecate_renamed_parameter,
     warn_closed_future_change,
 )
@@ -70,11 +71,11 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, LazyFrame, Series
     from polars.type_aliases import (
-        ApplyStrategy,
         ClosedInterval,
         FillNullStrategy,
         InterpolationMethod,
         IntoExpr,
+        MapElementsStrategy,
         NullBehavior,
         PolarsDataType,
         PythonLiteral,
@@ -3692,17 +3693,17 @@ class Expr:
             return_dtype = py_type_to_dtype(return_dtype)
         return self._from_pyexpr(self._pyexpr.map(function, return_dtype, agg_list))
 
-    def apply(
+    def map_elements(
         self,
         function: Callable[[Series], Series] | Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
         *,
         skip_nulls: bool = True,
         pass_name: bool = False,
-        strategy: ApplyStrategy = "thread_local",
+        strategy: MapElementsStrategy = "thread_local",
     ) -> Self:
         """
-        Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.
+        Map a custom/user-defined function (UDF) in a GroupBy or Projection context.
 
         .. warning::
             This method is much slower than the native expressions API.
@@ -3720,13 +3721,13 @@ class Expr:
         Parameters
         ----------
         function
-            Lambda/ function to apply.
+            Lambda/ function to map.
         return_dtype
             Dtype of the output Series.
             If not set, the dtype will be
             ``polars.Unknown``.
         skip_nulls
-            Don't apply the function over values
+            Don't map the function over values
             that contain nulls. This is faster.
         pass_name
             Pass the Series name to the custom function
@@ -3744,7 +3745,7 @@ class Expr:
 
         Notes
         -----
-        * Using ``apply`` is strongly discouraged as you will be effectively running
+        * Using ``map`` is strongly discouraged as you will be effectively running
           python "for" loops. This will be very slow. Wherever possible you should
           strongly prefer the native expression API to achieve the best performance.
 
@@ -3769,7 +3770,7 @@ class Expr:
         In a selection context, the function is applied by row.
 
         >>> df.with_columns(  # doctest: +SKIP
-        ...     pl.col("a").apply(lambda x: x * 2).alias("a_times_2"),
+        ...     pl.col("a").map_elements(lambda x: x * 2).alias("a_times_2"),
         ... )
         shape: (4, 3)
         ┌─────┬─────┬───────────┐
@@ -3792,7 +3793,7 @@ class Expr:
         In a GroupBy context the function is applied by group:
 
         >>> df.lazy().group_by("b", maintain_order=True).agg(
-        ...     pl.col("a").apply(lambda x: x.sum())
+        ...     pl.col("a").map_elements(lambda x: x.sum())
         ... ).collect()
         shape: (3, 2)
         ┌─────┬─────┐
@@ -3813,11 +3814,11 @@ class Expr:
 
         """
         # input x: Series of type list containing the group values
-        from polars.utils.udfs import warn_on_inefficient_apply
+        from polars.utils.udfs import warn_on_inefficient_map
 
         root_names = self.meta.root_names()
         if len(root_names) > 0:
-            warn_on_inefficient_apply(function, columns=root_names, apply_target="expr")
+            warn_on_inefficient_map(function, columns=root_names, map_target="expr")
 
         if pass_name:
 
@@ -3826,8 +3827,8 @@ class Expr:
                     return function(s.alias(x.name))
 
                 with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", PolarsInefficientApplyWarning)
-                    return x.apply(
+                    warnings.simplefilter("ignore", PolarsInefficientMapWarning)
+                    return x.map_elements(
                         inner, return_dtype=return_dtype, skip_nulls=skip_nulls
                     )
 
@@ -3835,8 +3836,8 @@ class Expr:
 
             def wrap_f(x: Series) -> Series:  # pragma: no cover
                 with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", PolarsInefficientApplyWarning)
-                    return x.apply(
+                    warnings.simplefilter("ignore", PolarsInefficientMapWarning)
+                    return x.map_elements(
                         function, return_dtype=return_dtype, skip_nulls=skip_nulls
                     )
 
@@ -4748,10 +4749,13 @@ class Expr:
         ...     schema={"x": pl.UInt8, "y": pl.UInt8},
         ... )
         >>> df.with_columns(
-        ...     pl.col("x").apply(binary_string).alias("bin_x"),
-        ...     pl.col("y").apply(binary_string).alias("bin_y"),
+        ...     pl.col("x").map_elements(binary_string).alias("bin_x"),
+        ...     pl.col("y").map_elements(binary_string).alias("bin_y"),
         ...     pl.col("x").xor(pl.col("y")).alias("xor_xy"),
-        ...     pl.col("x").xor(pl.col("y")).apply(binary_string).alias("bin_xor_xy"),
+        ...     pl.col("x")
+        ...     .xor(pl.col("y"))
+        ...     .map_elements(binary_string)
+        ...     .alias("bin_xor_xy"),
         ... )
         shape: (4, 6)
         ┌─────┬─────┬──────────┬──────────┬────────┬────────────┐
@@ -9022,6 +9026,56 @@ class Expr:
 
         func = inner_with_default if default is not None else inner
         return self.map(func)
+
+    @deprecate_renamed_function("map_elements", version="0.19.0")
+    def apply(
+        self,
+        function: Callable[[Series], Series] | Callable[[Any], Any],
+        return_dtype: PolarsDataType | None = None,
+        *,
+        skip_nulls: bool = True,
+        pass_name: bool = False,
+        strategy: MapElementsStrategy = "thread_local",
+    ) -> Self:
+        """
+        Apply a custom/user-defined function (UDF) in a GroupBy or Projection context.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`Expr.map_elements`.
+
+        Parameters
+        ----------
+        function
+            Lambda/ function to apply.
+        return_dtype
+            Dtype of the output Series.
+            If not set, the dtype will be
+            ``polars.Unknown``.
+        skip_nulls
+            Don't apply the function over values
+            that contain nulls. This is faster.
+        pass_name
+            Pass the Series name to the custom function
+            This is more expensive.
+        strategy : {'thread_local', 'threading'}
+            This functionality is in `alpha` stage. This may be removed
+            /changed without it being considered a breaking change.
+
+            - 'thread_local': run the python function on a single thread.
+            - 'threading': run the python function on separate threads. Use with
+                        care as this can slow performance. This might only speed up
+                        your code if the amount of work per element is significant
+                        and the python function releases the GIL (e.g. via calling
+                        a c function)
+
+        """
+        return self.map_elements(
+            function,
+            return_dtype=return_dtype,
+            skip_nulls=skip_nulls,
+            pass_name=pass_name,
+            strategy=strategy,
+        )
 
     @property
     def bin(self) -> ExprBinaryNameSpace:

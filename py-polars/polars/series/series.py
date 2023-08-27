@@ -92,6 +92,7 @@ from polars.utils.convert import (
 )
 from polars.utils.deprecation import (
     deprecate_nonkeyword_arguments,
+    deprecate_renamed_function,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -4824,7 +4825,7 @@ class Series:
 
         """
 
-    def apply(
+    def map_elements(
         self,
         function: Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
@@ -4832,7 +4833,7 @@ class Series:
         skip_nulls: bool = True,
     ) -> Self:
         """
-        Apply a custom/user-defined function (UDF) over elements in this Series.
+        Map a custom/user-defined function (UDF) over elements in this Series.
 
         .. warning::
             This method is much slower than the native expressions API.
@@ -4879,7 +4880,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.apply(lambda x: x + 10)  # doctest: +SKIP
+        >>> s.map_elements(lambda x: x + 10)  # doctest: +SKIP
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -4893,14 +4894,14 @@ class Series:
         Series
 
         """
-        from polars.utils.udfs import warn_on_inefficient_apply
+        from polars.utils.udfs import warn_on_inefficient_map
 
         if return_dtype is None:
             pl_return_dtype = None
         else:
             pl_return_dtype = py_type_to_dtype(return_dtype)
 
-        warn_on_inefficient_apply(function, columns=[self.name], apply_target="series")
+        warn_on_inefficient_map(function, columns=[self.name], map_target="series")
         return self._from_pyseries(
             self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
         )
@@ -6556,6 +6557,35 @@ class Series:
 
     def implode(self) -> Self:
         """Aggregate values into a list."""
+
+    @deprecate_renamed_function("map_elements", version="0.19.0")
+    def apply(
+        self,
+        function: Callable[[Any], Any],
+        return_dtype: PolarsDataType | None = None,
+        *,
+        skip_nulls: bool = True,
+    ) -> Self:
+        """
+        Apply a custom/user-defined function (UDF) over elements in this Series.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`Series.map_elements`.
+
+        Parameters
+        ----------
+        function
+            Custom function or lambda.
+        return_dtype
+            Output datatype. If none is given, the same datatype as this Series will be
+            used.
+        skip_nulls
+            Nulls will be skipped and not passed to the python function.
+            This is faster because python can be skipped and because we call
+            more specialized functions.
+
+        """
+        return self.map_elements(function, return_dtype, skip_nulls=skip_nulls)
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

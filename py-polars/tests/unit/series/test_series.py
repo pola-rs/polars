@@ -24,7 +24,7 @@ from polars.datatypes import (
     UInt64,
     Unknown,
 )
-from polars.exceptions import PolarsInefficientApplyWarning, ShapeError
+from polars.exceptions import PolarsInefficientMapWarning, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import iterable_to_pyseries
 from polars.utils._wrap import wrap_s
@@ -1003,28 +1003,28 @@ def test_fill_nan() -> None:
     assert_series_equal(a.fill_nan(0), pl.Series("a", [1.0, 0.0, 2.0, 0.0, 3.0]))
 
 
-def test_apply() -> None:
-    with pytest.warns(PolarsInefficientApplyWarning):
+def test_map_elements() -> None:
+    with pytest.warns(PolarsInefficientMapWarning):
         a = pl.Series("a", [1, 2, None])
-        b = a.apply(lambda x: x**2)
+        b = a.map_elements(lambda x: x**2)
         assert list(b) == [1, 4, None]
 
-    with pytest.warns(PolarsInefficientApplyWarning):
+    with pytest.warns(PolarsInefficientMapWarning):
         a = pl.Series("a", ["foo", "bar", None])
-        b = a.apply(lambda x: x + "py")
+        b = a.map_elements(lambda x: x + "py")
         assert list(b) == ["foopy", "barpy", None]
 
-    b = a.apply(lambda x: len(x), return_dtype=pl.Int32)
+    b = a.map_elements(lambda x: len(x), return_dtype=pl.Int32)
     assert list(b) == [3, 3, None]
 
-    b = a.apply(lambda x: len(x))
+    b = a.map_elements(lambda x: len(x))
     assert list(b) == [3, 3, None]
 
     # just check that it runs (somehow problem with conditional compilation)
     a = pl.Series("a", [2, 2, 3]).cast(pl.Datetime)
-    a.apply(lambda x: x)
+    a.map_elements(lambda x: x)
     a = pl.Series("a", [2, 2, 3]).cast(pl.Date)
-    a.apply(lambda x: x)
+    a.map_elements(lambda x: x)
 
 
 def test_shift() -> None:
@@ -1257,7 +1257,7 @@ def test_round() -> None:
 
 def test_apply_list_out() -> None:
     s = pl.Series("count", [3, 2, 2])
-    out = s.apply(lambda val: pl.repeat(val, val, eager=True))
+    out = s.map_elements(lambda val: pl.repeat(val, val, eager=True))
     assert out[0].to_list() == [3, 3, 3]
     assert out[1].to_list() == [2, 2]
     assert out[2].to_list() == [2, 2]

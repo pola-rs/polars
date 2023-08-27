@@ -23,7 +23,9 @@ def test_struct_to_list() -> None:
 def test_apply_unnest() -> None:
     df = (
         pl.Series([None, 2, 3, 4])
-        .apply(lambda x: {"a": x, "b": x * 2, "c": True, "d": [1, 2], "e": "foo"})
+        .map_elements(
+            lambda x: {"a": x, "b": x * 2, "c": True, "d": [1, 2], "e": "foo"}
+        )
         .struct.unnest()
     )
 
@@ -101,7 +103,7 @@ def test_struct_unnesting() -> None:
         [
             pl.all().alias("a_original"),
             pl.col("a")
-            .apply(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
+            .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
             .struct.rename_fields(["a", "a_squared", "mod2eq0"])
             .alias("foo"),
         ]
@@ -124,7 +126,7 @@ def test_struct_unnesting() -> None:
             [
                 pl.all().alias("a_original"),
                 pl.col("a")
-                .apply(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
+                .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
                 .struct.rename_fields(["a", "a_squared", "mod2eq0"])
                 .alias("foo"),
             ]

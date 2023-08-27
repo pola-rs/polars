@@ -5,11 +5,11 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
-use crate::apply::lazy::binary_lambda;
 use crate::conversion::{get_lf, Wrap};
 use crate::expr::ToExprs;
+use crate::map::lazy::binary_lambda;
 use crate::prelude::{vec_extract_wrapped, DataType, DatetimeArgs, DurationArgs, ObjectValue};
-use crate::{apply, PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr, PySeries};
+use crate::{map, PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr, PySeries};
 
 macro_rules! set_unwrapped_or_0 {
     ($($var:ident),+ $(,)?) => {
@@ -397,7 +397,7 @@ pub fn map_mul(
     apply_groups: bool,
     returns_scalar: bool,
 ) -> PyExpr {
-    apply::lazy::map_mul(
+    map::lazy::map_mul(
         &pyexpr,
         py,
         lambda,
