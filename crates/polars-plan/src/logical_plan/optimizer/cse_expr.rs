@@ -256,40 +256,42 @@ impl ExprIdentifierVisitor<'_> {
 
     /// return `None` -> node is accepted
     /// return `Some(_)` node is not accepted and apply the given recursion operation
+    /// `Some(_, true)` don't accept this node, but can be a member of a cse.
+    /// `Some(_,  false)` don't accept this node, and don't allow as a member of a cse.
     fn accept_node(&self, ae: &AExpr) -> Option<(VisitRecursion, bool)> {
+        const REFUSE_NO_MEMBER: Option<(VisitRecursion, bool)> =
+            Some((VisitRecursion::Continue, false));
+        const REFUSE_ALLOW_MEMBER: Option<(VisitRecursion, bool)> =
+            Some((VisitRecursion::Continue, true));
+        const ACCEPT: Option<(VisitRecursion, bool)> = None;
+
         match ae {
             // window expressions should `evaluate_on_groups`, not `evaluate`
             // so we shouldn't cache the children as they are evaluated incorrectly
-            AExpr::Window { .. } => Some((VisitRecursion::Skip, false)),
-            // skip window functions for now until we properly implemented the physical side
-            AExpr::Column(_) | AExpr::Count | AExpr::Literal(_) | AExpr::Alias(_, _) => {
-                Some((VisitRecursion::Continue, true))
+            AExpr::Window { .. } => REFUSE_NO_MEMBER,
+            AExpr::Column(_) | AExpr::Literal(_) | AExpr::Count | AExpr::Alias(_, _) => {
+                REFUSE_ALLOW_MEMBER
             },
             #[cfg(feature = "random")]
             AExpr::Function {
                 function: FunctionExpr::Random { .. },
                 ..
-            } => Some((VisitRecursion::Continue, false)),
+            } => REFUSE_NO_MEMBER,
             _ => {
-                // during aggregation we only store elementwise operation in the state
+                // During aggregation we only store elementwise operation in the state
                 // other operations we cannot add to the state as they have the output size of the
                 // groups, not the original dataframe
                 if self.is_group_by {
+                    if ae.groups_sensitive() {
+                        return REFUSE_NO_MEMBER;
+                    }
                     match ae {
-                        AExpr::Agg(_) | AExpr::AnonymousFunction { .. } => {
-                            Some((VisitRecursion::Continue, false))
-                        },
-                        AExpr::Function { options, .. } => {
-                            if options.is_groups_sensitive() {
-                                Some((VisitRecursion::Continue, false))
-                            } else {
-                                None
-                            }
-                        },
-                        _ => None,
+                        AExpr::AnonymousFunction { .. } => REFUSE_NO_MEMBER,
+                        AExpr::Cast { .. } => REFUSE_ALLOW_MEMBER,
+                        _ => ACCEPT,
                     }
                 } else {
-                    None
+                    ACCEPT
                 }
             },
         }
@@ -701,47 +703,47 @@ impl<'a> RewritingVisitor for CommonSubExprOptimizer<'a> {
                         lp_arena.replace(arena_idx, lp);
                     }
                 },
-                // ALogicalPlan::Aggregate {
-                //     input,
-                //     keys,
-                //     aggs,
-                //     options,
-                //     maintain_order,
-                //     apply,
-                //     schema,
-                // } => {
-                //     let input_schema = lp_arena.get(*input).schema(lp_arena);
-                //     if let Some(aggs) = self.find_cse(
-                //         aggs,
-                //         &mut expr_arena,
-                //         &mut id_array_offsets,
-                //         true,
-                //         input_schema.as_ref().as_ref(),
-                //     )? {
-                //         let keys = keys.clone();
-                //         let options = options.clone();
-                //         let schema = schema.clone();
-                //         let apply = apply.clone();
-                //         let maintain_order = *maintain_order;
-                //         let input = *input;
-                //
-                //         let lp = ALogicalPlanBuilder::new(input, &mut expr_arena, lp_arena)
-                //             .with_columns(aggs.cse_exprs().to_vec(), Default::default())
-                //             .build();
-                //         let input = lp_arena.add(lp);
-                //
-                //         let lp = ALogicalPlan::Aggregate {
-                //             input,
-                //             keys,
-                //             aggs: aggs.default_exprs().to_vec(),
-                //             options,
-                //             schema,
-                //             maintain_order,
-                //             apply,
-                //         };
-                //         lp_arena.replace(arena_idx, lp);
-                //     }
-                // },
+                ALogicalPlan::Aggregate {
+                    input,
+                    keys,
+                    aggs,
+                    options,
+                    maintain_order,
+                    apply,
+                    schema,
+                } => {
+                    let input_schema = lp_arena.get(*input).schema(lp_arena);
+                    if let Some(aggs) = self.find_cse(
+                        aggs,
+                        &mut expr_arena,
+                        &mut id_array_offsets,
+                        true,
+                        input_schema.as_ref().as_ref(),
+                    )? {
+                        let keys = keys.clone();
+                        let options = options.clone();
+                        let schema = schema.clone();
+                        let apply = apply.clone();
+                        let maintain_order = *maintain_order;
+                        let input = *input;
+
+                        let lp = ALogicalPlanBuilder::new(input, &mut expr_arena, lp_arena)
+                            .with_columns(aggs.cse_exprs().to_vec(), Default::default())
+                            .build();
+                        let input = lp_arena.add(lp);
+
+                        let lp = ALogicalPlan::Aggregate {
+                            input,
+                            keys,
+                            aggs: aggs.default_exprs().to_vec(),
+                            options,
+                            schema,
+                            maintain_order,
+                            apply,
+                        };
+                        lp_arena.replace(arena_idx, lp);
+                    }
+                },
                 _ => {},
             }
             PolarsResult::Ok(())

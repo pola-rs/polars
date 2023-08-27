@@ -198,7 +198,6 @@ def test_windows_cse_excluded() -> None:
     }
 
 
-@pytest.mark.skip()
 def test_cse_group_by_10215() -> None:
     q = (
         pl.DataFrame(
