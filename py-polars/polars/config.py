@@ -11,13 +11,13 @@ from polars.utils.deprecation import deprecate_nonkeyword_arguments
 from polars.utils.various import normalize_filepath
 
 
-# dummy func required (so docs build)
+# dummy funcs required here (so that docs build)
 def _get_float_fmt() -> str:  # pragma: no cover
     return "n/a"
 
 
-def _get_float_precision() -> str:
-    return "n/a"
+def _get_float_precision() -> int:
+    return 0
 
 
 # note: module not available when building docs
@@ -361,7 +361,7 @@ class Config(contextlib.ContextDecorator):
         }
         if not env_only:
             for cfg_methodname, get_value in _POLARS_CFG_DIRECT_VARS.items():
-                config_state[cfg_methodname] = get_value()
+                config_state[cfg_methodname] = get_value()  # type: ignore[assignment]
 
         return config_state
 

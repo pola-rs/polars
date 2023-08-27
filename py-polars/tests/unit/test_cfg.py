@@ -659,7 +659,7 @@ def test_config_load_save(tmp_path: Path) -> None:
         pl.Config.set_tbl_cols(10)
         pl.Config.set_verbose(False)
         pl.Config.set_fmt_float("mixed")
-        pl.Config.set_float_precision("2")
+        pl.Config.set_float_precision(2)
         assert os.environ.get("POLARS_VERBOSE") == "0"
 
         # ...load back from config file/string...
