@@ -117,6 +117,9 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     fn chunks(&self) -> &Vec<ArrayRef> {
         self.0.chunks()
     }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.chunks_mut()
+    }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
         self.apply_physical(|ca| ca.slice(offset, length))

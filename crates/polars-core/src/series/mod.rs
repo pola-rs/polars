@@ -184,14 +184,10 @@ impl Series {
 
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
-    #[cfg_attr(feature = "nightly", allow(invalid_reference_casting))]
     pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         #[allow(unused_mut)]
         let mut ca = self._get_inner_mut();
-        let chunks = ca.chunks() as *const Vec<ArrayRef> as *mut Vec<ArrayRef>;
-        // Safety
-        // ca is the owner of `chunks` and this we do not break aliasing rules
-        &mut *chunks
+        ca.chunks_mut()
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {

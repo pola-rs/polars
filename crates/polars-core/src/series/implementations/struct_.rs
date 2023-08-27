@@ -106,6 +106,9 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     fn chunks(&self) -> &Vec<ArrayRef> {
         self.0.chunks()
     }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.chunks_mut()
+    }
 
     /// Number of chunks in this Series
     fn n_chunks(&self) -> usize {
