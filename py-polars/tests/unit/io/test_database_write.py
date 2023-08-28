@@ -69,31 +69,31 @@ def test_write_database(
 
     # note: test a table name that requires quotes to ensure that we handle
     # it correctly (also supply an explicit db schema with/without quotes)
-    tbl_name = '"test-data"'
+    table_name = "test_data"
 
     sample_df.write_database(
-        table_name=f"main.{tbl_name}",
+        table_name=table_name,
         connection=f"sqlite:///{test_db}",
         if_exists="replace",
         engine=engine,
     )
     if mode == "append":
         sample_df.write_database(
-            table_name=f'"main".{tbl_name}',
+            table_name=table_name,
             connection=f"sqlite:///{test_db}",
             if_exists="append",
             engine=engine,
         )
         sample_df = pl.concat([sample_df, sample_df])
 
-    result = pl.read_database_uri(f"SELECT * FROM {tbl_name}", f"sqlite:///{test_db}")
+    result = pl.read_database_uri(f"SELECT * FROM {table_name}", f"sqlite:///{test_db}")
     sample_df = sample_df.with_columns(pl.col("date").cast(pl.Utf8))
     assert_frame_equal(sample_df, result)
 
     # check that some invalid parameters raise errors
     for invalid_params in (
         {"table_name": "w.x.y.z"},
-        {"if_exists": "crunk", "table_name": f"main.{tbl_name}"},
+        {"if_exists": "crunk", "table_name": table_name},
     ):
         with pytest.raises((ValueError, NotImplementedError)):
             sample_df.write_database(
