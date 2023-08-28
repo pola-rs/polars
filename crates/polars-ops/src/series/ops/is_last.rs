@@ -4,6 +4,7 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
+use polars_core::utils::NoNull;
 use polars_core::with_match_physical_integer_polars_type;
 
 pub fn is_last(s: &Series) -> PolarsResult<BooleanChunked> {
@@ -113,14 +114,14 @@ fn is_last_boolean(ca: &BooleanChunked) -> BooleanChunked {
 
 fn is_last_bin(ca: &BinaryChunked) -> BooleanChunked {
     let mut unique = PlHashSet::new();
-    let chunks = ca.downcast_iter().rev().map(|arr| -> BooleanArray {
-        arr.into_iter()
-            .rev()
-            .map(|opt_v| unique.insert(opt_v))
-            .collect_reversed()
-    });
-
-    BooleanChunked::from_chunk_iter(ca.name(), chunks)
+    let mut new_ca: BooleanChunked = ca
+        .into_iter()
+        .rev()
+        .map(|opt_v| unique.insert(opt_v))
+        .collect_reversed::<NoNull<BooleanChunked>>()
+        .into_inner();
+    new_ca.rename(ca.name());
+    new_ca
 }
 
 fn is_last_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
@@ -129,13 +130,14 @@ where
     T::Native: Hash + Eq,
 {
     let mut unique = PlHashSet::new();
-    let chunks = ca.downcast_iter().rev().map(|arr| -> BooleanArray {
-        arr.into_iter()
-            .rev()
-            .map(|opt_v| unique.insert(opt_v))
-            .collect_reversed()
-    });
-    BooleanChunked::from_chunk_iter(ca.name(), chunks)
+    let mut new_ca: BooleanChunked = ca
+        .into_iter()
+        .rev()
+        .map(|opt_v| unique.insert(opt_v))
+        .collect_reversed::<NoNull<BooleanChunked>>()
+        .into_inner();
+    new_ca.rename(ca.name());
+    new_ca
 }
 
 #[cfg(feature = "dtype-struct")]
