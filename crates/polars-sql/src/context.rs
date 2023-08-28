@@ -282,6 +282,7 @@ impl SQLContext {
 
         let mut lf = self.execute_from_statement(sql_tbl)?;
         let mut contains_wildcard = false;
+        let mut contains_wildcard_exclude = false;
 
         // Filter Expression
         lf = match select_stmt.selection.as_ref() {
@@ -304,12 +305,12 @@ impl SQLContext {
                         expr.alias(&alias.value)
                     },
                     SelectItem::QualifiedWildcard(oname, wildcard_options) => {
-                        self.process_qualified_wildcard(oname, wildcard_options)?
+                        self.process_qualified_wildcard(oname, wildcard_options, &mut contains_wildcard_exclude)?
                     },
                     SelectItem::Wildcard(wildcard_options) => {
                         contains_wildcard = true;
                         let e = col("*");
-                        self.process_wildcard_additional_options(e, wildcard_options)?
+                        self.process_wildcard_additional_options(e, wildcard_options, &mut contains_wildcard_exclude)?
                     },
                 })
             })
@@ -359,6 +360,20 @@ impl SQLContext {
                         Expr::Columns(names) => names.iter().for_each(|name| {
                             retained_names.insert((name).to_string());
                         }),
+                        Expr::Exclude(inner_expr, excludes) =>
+                        {
+                            if let Expr::Columns(names) = (*inner_expr).as_ref() {
+                                names.iter().for_each(
+                                    |name| {
+                                        retained_names.insert((name).to_string());
+                                })
+                            }
+                            
+                            excludes.iter().for_each(
+                                |excluded| if let Excluded::Name(name) = excluded {
+                                      retained_names.remove(&(name.to_string()));
+                                });
+                        },
                         _ => {},
                     });
 
@@ -367,6 +382,28 @@ impl SQLContext {
 
                     column_names.retain(|&name| !retained_names.contains(name));
                     lf.drop_columns(column_names)
+                } else if contains_wildcard_exclude {
+                    let mut dropped_names = Vec::with_capacity(projections.len());
+
+                    let exclude_expr = projections.iter().find(
+                        |expr| if let Expr::Exclude(_, excludes) = expr {
+                            excludes.iter().for_each(
+                                |excluded| if let Excluded::Name(name) = excluded {
+                                    dropped_names.push((*name).to_string());
+                                });
+                            true
+                        } else {false}
+                    );
+
+                    if let Some(_) = exclude_expr {
+                        lf = lf.with_columns(projections);
+                        lf = self.process_order_by(lf, &query.order_by)?;
+
+                        lf.drop_columns(dropped_names)
+                    } else {
+                        lf = lf.select(projections);
+                        self.process_order_by(lf, &query.order_by)?
+                    }  
                 } else {
                     lf = lf.select(projections);
                     self.process_order_by(lf, &query.order_by)?
@@ -386,7 +423,7 @@ impl SQLContext {
 
         // Apply optional 'distinct' clause
         lf = match &select_stmt.distinct {
-            Some(Distinct::Distinct) => lf.unique(None, UniqueKeepStrategy::Any),
+            Some(Distinct::Distinct) => lf.unique_stable(None, UniqueKeepStrategy::Any),
             Some(Distinct::On(exprs)) => {
                 // TODO: support exprs in `unique` see https://github.com/pola-rs/polars/issues/5760
                 let cols = exprs
@@ -506,7 +543,6 @@ impl SQLContext {
             );
         }
 
-        // Ok(by)
         Ok(lf.sort_by_exprs(&by, descending, false, false))
     }
 
@@ -616,6 +652,7 @@ impl SQLContext {
         &mut self,
         ObjectName(idents): &ObjectName,
         options: &WildcardAdditionalOptions,
+        contains_wildcard_exclude: &mut bool,
     ) -> PolarsResult<Expr> {
         let idents = idents.as_slice();
         let e = match idents {
@@ -634,20 +671,25 @@ impl SQLContext {
                 e
             ),
         };
-        self.process_wildcard_additional_options(e, options)
+        self.process_wildcard_additional_options(e, options, contains_wildcard_exclude)
     }
 
     fn process_wildcard_additional_options(
         &mut self,
         expr: Expr,
         options: &WildcardAdditionalOptions,
+        contains_wildcard_exclude: &mut bool,
     ) -> PolarsResult<Expr> {
         if options.opt_except.is_some() {
             polars_bail!(InvalidOperation: "EXCEPT not supported. Use EXCLUDE instead")
         }
         Ok(match &options.opt_exclude {
-            Some(ExcludeSelectItem::Single(ident)) => expr.exclude(vec![&ident.value]),
+            Some(ExcludeSelectItem::Single(ident)) => {
+                *contains_wildcard_exclude = true;
+                expr.exclude(vec![&ident.value])
+            },
             Some(ExcludeSelectItem::Multiple(idents)) => {
+                *contains_wildcard_exclude = true;
                 expr.exclude(idents.iter().map(|i| &i.value))
             },
             _ => expr,
