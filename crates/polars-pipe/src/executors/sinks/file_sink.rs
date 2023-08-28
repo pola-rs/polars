@@ -134,10 +134,8 @@ pub struct CsvSink {}
 #[cfg(feature = "csv")]
 impl CsvSink {
     #[allow(clippy::new_ret_no_self)]
-    // TODO!!
     pub fn new(path: &Path, options: CsvWriterOptions, schema: &Schema) -> PolarsResult<FilesSink> {
         let file = std::fs::File::create(path)?;
-        //////// TODO
         let writer = CsvWriter::new(file)
             .has_header(options.has_header)
             .with_delimiter(options.serialize_options.delimiter)
