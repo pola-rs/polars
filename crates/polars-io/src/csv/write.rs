@@ -57,7 +57,10 @@ where
     }
 }
 
-impl<W: Write> CsvWriter<W> {
+impl<W> CsvWriter<W>
+where
+    W: Write,
+{
     /// Set whether to write headers.
     pub fn has_header(mut self, has_header: bool) -> Self {
         self.header = has_header;
