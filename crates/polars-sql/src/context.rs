@@ -340,24 +340,27 @@ impl SQLContext {
             })
             .collect::<PolarsResult<_>>()?;
 
-        lf = if groupby_keys.is_empty() {
-            if  query.order_by.is_empty() {
+        lf = if group_by_keys.is_empty() {
+            if query.order_by.is_empty() {
                 lf.select(projections)
             } else {
                 if !contains_wildcard {
                     let schema = lf.schema()?;
                     let mut column_names = schema.get_names();
-                    let mut retained_names: BTreeSet<String> = BTreeSet::new(); 
+                    let mut retained_names: BTreeSet<String> = BTreeSet::new();
 
-                    projections
-                        .iter()
-                        .for_each(|expr| match expr {
-                                Expr::Alias(_, name) => {retained_names.insert((name).to_string());},
-                                Expr::Column(name) => {retained_names.insert((name).to_string());},
-                                Expr::Columns(names) => 
-                                    names.iter().for_each(|name| {retained_names.insert((name).to_string());}),
-                                _ => {}
-                            });
+                    projections.iter().for_each(|expr| match expr {
+                        Expr::Alias(_, name) => {
+                            retained_names.insert((name).to_string());
+                        },
+                        Expr::Column(name) => {
+                            retained_names.insert((name).to_string());
+                        },
+                        Expr::Columns(names) => names.iter().for_each(|name| {
+                            retained_names.insert((name).to_string());
+                        }),
+                        _ => {},
+                    });
 
                     lf = lf.with_columns(projections);
                     lf = self.process_order_by(lf, &query.order_by)?;
@@ -375,10 +378,10 @@ impl SQLContext {
             lf = self.process_order_by(lf, &query.order_by)?;
 
             // Apply optional 'having' clause, post-aggregation
-            lf = match select_stmt.having.as_ref() {
+            match select_stmt.having.as_ref() {
                 Some(expr) => lf.filter(parse_sql_expr(expr, self)?),
                 None => lf,
-            };
+            }
         };
 
         // Apply optional 'distinct' clause

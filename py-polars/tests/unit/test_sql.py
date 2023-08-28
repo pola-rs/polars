@@ -768,7 +768,9 @@ def test_sql_trim(foods_ipc_path: Path) -> None:
         """,
         eager=True,
     )
-    assert out.to_dict(False) == {"new_category": ["seafood", "ruit", "egetables", "eat"]}
+    assert out.to_dict(False) == {
+        "new_category": ["seafood", "ruit", "egetables", "eat"]
+    }
 
 
 def test_register_context() -> None:
