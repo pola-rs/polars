@@ -212,8 +212,5 @@ lto = "fat"
 # Should not be used when packaging
 # target-cpu = "native"
 
-[patch.crates-io]
-simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "initialize" }
-
 # Prevent package from thinking it's in the workspace
 [workspace]
