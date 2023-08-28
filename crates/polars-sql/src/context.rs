@@ -344,23 +344,35 @@ impl SQLContext {
             if  query.order_by.is_empty() {
                 lf.select(projections)
             } else {
-                let schema = lf.schema()?;
-                let column_names = schema.get_names();
-                lf = lf.with_columns(projections);
-                lf = self.process_order_by(lf, &query.order_by)?;
+                if !contains_wildcard {
+                    let schema = lf.schema()?;
+                    let mut column_names = schema.get_names();
+                    let mut retained_names: BTreeSet<String> = BTreeSet::new(); 
 
-                let value = projections
-                .iter()
-                .find(|expr| match expr {
-                            Expr::Alias(expr, name) => true,  
-                            Expr::Column(name) => false,  
-                            _ => false,
-                        });
+                    projections
+                        .iter()
+                        .for_each(|expr| match expr {
+                                Expr::Alias(_, name) => {retained_names.insert((name).to_string());},
+                                Expr::Column(name) => {retained_names.insert((name).to_string());},
+                                Expr::Columns(names) => 
+                                    names.iter().for_each(|name| {retained_names.insert((name).to_string());}),
+                                _ => {}
+                            });
 
-                lf.drop_columns(column_names)
+                    lf = lf.with_columns(projections);
+                    lf = self.process_order_by(lf, &query.order_by)?;
+
+                    column_names.retain(|&name| !retained_names.contains(name));
+                    lf.drop_columns(column_names)
+                } else {
+                    lf = lf.select(projections);
+                    self.process_order_by(lf, &query.order_by)?
+                }
             }
         } else {
             lf = self.process_group_by(lf, contains_wildcard, &group_by_keys, &projections)?;
+
+            lf = self.process_order_by(lf, &query.order_by)?;
 
             // Apply optional 'having' clause, post-aggregation
             lf = match select_stmt.having.as_ref() {
@@ -491,6 +503,7 @@ impl SQLContext {
             );
         }
 
+        // Ok(by)
         Ok(lf.sort_by_exprs(&by, descending, false, false))
     }
 

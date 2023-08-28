@@ -762,13 +762,13 @@ def test_sql_substr() -> None:
 def test_sql_trim(foods_ipc_path: Path) -> None:
     out = pl.SQLContext(foods1=pl.scan_ipc(foods_ipc_path)).execute(
         """
-        SELECT DISTINCT TRIM(LEADING 'vmf' FROM category)
+        SELECT DISTINCT TRIM(LEADING 'vmf' FROM category) as new_category
         FROM foods1
         ORDER BY category DESC
         """,
         eager=True,
     )
-    assert out.to_dict(False) == {"category": ["seafood", "ruit", "egetables", "eat"]}
+    assert out.to_dict(False) == {"new_category": ["seafood", "ruit", "egetables", "eat"]}
 
 
 def test_register_context() -> None:
