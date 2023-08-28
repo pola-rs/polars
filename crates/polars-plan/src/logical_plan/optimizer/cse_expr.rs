@@ -9,7 +9,7 @@ use crate::prelude::visitor::{ALogicalPlanNode, AexprNode, RewritingVisitor, Tre
 // We use hashes to get an Identifier
 // but this is very hard to debug, so we also have a version that
 // uses a string trail.
-#[cfg(test)]
+// #[cfg(test)]
 mod identifier_impl {
     use std::hash::{Hash, Hasher};
 
@@ -71,6 +71,7 @@ mod identifier_impl {
 }
 
 #[cfg(not(test))]
+#[cfg(foo)]
 mod identifier_impl {
     use std::hash::{Hash, Hasher};
 
@@ -296,6 +297,9 @@ impl ExprIdentifierVisitor<'_> {
             // window expressions should `evaluate_on_groups`, not `evaluate`
             // so we shouldn't cache the children as they are evaluated incorrectly
             AExpr::Window { .. } => REFUSE_NO_MEMBER,
+            // Don't allow this for now, as we can get `null().cast()` in ternary expressions.
+            // TODO! Add a typed null
+            AExpr::Literal(LiteralValue::Null) => REFUSE_NO_MEMBER,
             AExpr::Column(_) | AExpr::Literal(_) | AExpr::Count | AExpr::Alias(_, _) => {
                 REFUSE_ALLOW_MEMBER
             },
