@@ -283,10 +283,10 @@ impl ExprIdentifierVisitor<'_> {
     /// `Some(_, true)` don't accept this node, but can be a member of a cse.
     /// `Some(_,  false)` don't accept this node, and don't allow as a member of a cse.
     fn accept_node(&self, ae: &AExpr) -> Option<(VisitRecursion, bool)> {
-        // Don't allow this node, but allow as a member of a cse.
+        // Don't allow this node in a cse.
         const REFUSE_NO_MEMBER: Option<(VisitRecursion, bool)> =
             Some((VisitRecursion::Continue, false));
-        // Don't allow this node in a cse.
+        // Don't allow this node, but allow as a member of a cse.
         const REFUSE_ALLOW_MEMBER: Option<(VisitRecursion, bool)> =
             Some((VisitRecursion::Continue, true));
         // Accept this node.
