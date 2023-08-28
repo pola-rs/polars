@@ -351,72 +351,70 @@ impl SQLContext {
         lf = if group_by_keys.is_empty() {
             if query.order_by.is_empty() {
                 lf.select(projections)
-            } else {
-                if !contains_wildcard {
-                    let schema = lf.schema()?;
-                    let mut column_names = schema.get_names();
-                    let mut retained_names: BTreeSet<String> = BTreeSet::new();
+            } else if !contains_wildcard {
+                let schema = lf.schema()?;
+                let mut column_names = schema.get_names();
+                let mut retained_names: BTreeSet<String> = BTreeSet::new();
 
-                    projections.iter().for_each(|expr| match expr {
-                        Expr::Alias(_, name) => {
-                            retained_names.insert((name).to_string());
-                        },
-                        Expr::Column(name) => {
-                            retained_names.insert((name).to_string());
-                        },
-                        Expr::Columns(names) => names.iter().for_each(|name| {
-                            retained_names.insert((name).to_string());
-                        }),
-                        Expr::Exclude(inner_expr, excludes) => {
-                            if let Expr::Columns(names) = (*inner_expr).as_ref() {
-                                names.iter().for_each(|name| {
-                                    retained_names.insert((name).to_string());
-                                })
+                projections.iter().for_each(|expr| match expr {
+                    Expr::Alias(_, name) => {
+                        retained_names.insert((name).to_string());
+                    },
+                    Expr::Column(name) => {
+                        retained_names.insert((name).to_string());
+                    },
+                    Expr::Columns(names) => names.iter().for_each(|name| {
+                        retained_names.insert((name).to_string());
+                    }),
+                    Expr::Exclude(inner_expr, excludes) => {
+                        if let Expr::Columns(names) = (*inner_expr).as_ref() {
+                            names.iter().for_each(|name| {
+                                retained_names.insert((name).to_string());
+                            })
+                        }
+
+                        excludes.iter().for_each(|excluded| {
+                            if let Excluded::Name(name) = excluded {
+                                retained_names.remove(&(name.to_string()));
                             }
+                        });
+                    },
+                    _ => {},
+                });
 
-                            excludes.iter().for_each(|excluded| {
-                                if let Excluded::Name(name) = excluded {
-                                    retained_names.remove(&(name.to_string()));
-                                }
-                            });
-                        },
-                        _ => {},
-                    });
+                lf = lf.with_columns(projections);
+                lf = self.process_order_by(lf, &query.order_by)?;
 
+                column_names.retain(|&name| !retained_names.contains(name));
+                lf.drop_columns(column_names)
+            } else if contains_wildcard_exclude {
+                let mut dropped_names = Vec::with_capacity(projections.len());
+
+                let exclude_expr = projections.iter().find(|expr| {
+                    if let Expr::Exclude(_, excludes) = expr {
+                        excludes.iter().for_each(|excluded| {
+                            if let Excluded::Name(name) = excluded {
+                                dropped_names.push((*name).to_string());
+                            }
+                        });
+                        true
+                    } else {
+                        false
+                    }
+                });
+
+                if exclude_expr.is_some() {
                     lf = lf.with_columns(projections);
                     lf = self.process_order_by(lf, &query.order_by)?;
 
-                    column_names.retain(|&name| !retained_names.contains(name));
-                    lf.drop_columns(column_names)
-                } else if contains_wildcard_exclude {
-                    let mut dropped_names = Vec::with_capacity(projections.len());
-
-                    let exclude_expr = projections.iter().find(|expr| {
-                        if let Expr::Exclude(_, excludes) = expr {
-                            excludes.iter().for_each(|excluded| {
-                                if let Excluded::Name(name) = excluded {
-                                    dropped_names.push((*name).to_string());
-                                }
-                            });
-                            true
-                        } else {
-                            false
-                        }
-                    });
-
-                    if let Some(_) = exclude_expr {
-                        lf = lf.with_columns(projections);
-                        lf = self.process_order_by(lf, &query.order_by)?;
-
-                        lf.drop_columns(dropped_names)
-                    } else {
-                        lf = lf.select(projections);
-                        self.process_order_by(lf, &query.order_by)?
-                    }
+                    lf.drop_columns(dropped_names)
                 } else {
                     lf = lf.select(projections);
                     self.process_order_by(lf, &query.order_by)?
                 }
+            } else {
+                lf = lf.select(projections);
+                self.process_order_by(lf, &query.order_by)?
             }
         } else {
             lf = self.process_group_by(lf, contains_wildcard, &group_by_keys, &projections)?;
@@ -459,7 +457,7 @@ impl SQLContext {
             None => lf,
         };
 
-        return Ok(lf);
+        Ok(lf)
     }
 
     fn execute_create_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
