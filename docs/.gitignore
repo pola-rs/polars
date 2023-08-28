@@ -1,0 +1,25 @@
+astdocs.py
+./data
+outputs
+reference_guide_python/src
+__pycache__
+.devcontainer
+.idea
+.venv
+*.csv
+*.png
+*.swp
+*.txt
+output.json
+path.json
+*.parquet
+docs/people.md
+user_guide/src/examples/target
+.vscode
+cargo.lock
+.DS_Store
+
+node_modules
+# Added by cargo
+
+/target

@@ -1,0 +1,73 @@
+name: ci
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+  push:
+    branches:
+      - master
+      - main
+permissions:
+  contents: write
+jobs:
+
+  test-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.x
+      - uses: actions/cache@v2
+        with:
+          key: ${{ github.ref }}
+          path: .cache
+      - run: pip install -r requirements.txt
+      - name: Install graphviz
+        run: sudo apt-get install -y graphviz
+      - run: find docs/src/ -name "*.py" | xargs -n 1 sh -c 'python $0 || exit 255'
+
+  black:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.x
+      - uses: actions/cache@v2
+        with:
+          key: ${{ github.ref }}
+          path: .cache
+      - run: pip install black==23.3.0
+      - run: black --check .
+  rome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18.x
+      - run: npm install --save-dev --save-exact rome
+      - run: npx rome format docs/src/node/
+
+
+  test-node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18.x
+      - name: Install Polars
+        run: npm i -s nodejs-polars
+      - name: Install rng
+        run: npm i -s chance
+      - name: Run code snippets
+        run: find docs/src/ -name "*.js" | xargs -n 1 sh -c 'node $0 || exit 255'
+
+  markdown-link-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    - uses: gaurav-nelson/github-action-markdown-link-check@v1
