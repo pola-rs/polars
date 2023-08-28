@@ -118,7 +118,6 @@ check-wasm:  ## Check wasm build without supported features
 		--exclude-features async              \
 		--exclude-features aws                \
 		--exclude-features azure              \
-		--exclude-features decompress         \
 		--exclude-features decompress-fast    \
 		--exclude-features default            \
 		--exclude-features docs-selection     \
