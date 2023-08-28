@@ -71,7 +71,7 @@ mod inner_mod {
         Self: IntoSeries,
     {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
-        fn rolling_apply(
+        fn rolling_map(
             &self,
             f: &dyn Fn(&Series) -> Series,
             mut options: RollingOptionsFixedWindow,
@@ -83,7 +83,7 @@ mod inner_mod {
                 && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
             {
                 let s = self.cast(&DataType::Float64)?;
-                return s.rolling_apply(f, options);
+                return s.rolling_map(f, options);
             }
 
             options.window_size = std::cmp::min(self.len(), options.window_size);
@@ -188,7 +188,7 @@ mod inner_mod {
         T::Native: Float + IsFloat + SubAssign + Pow<T::Native, Output = T::Native>,
     {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
-        pub fn rolling_apply_float<F>(&self, window_size: usize, mut f: F) -> PolarsResult<Self>
+        pub fn rolling_map_float<F>(&self, window_size: usize, mut f: F) -> PolarsResult<Self>
         where
             F: FnMut(&mut ChunkedArray<T>) -> Option<T::Native>,
         {

@@ -4,6 +4,7 @@ import sys
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pytest
 from numpy import nan
 
@@ -783,29 +784,6 @@ def test_rolling_cov_corr() -> None:
     assert res["corr"][:2] == [None] * 2
 
 
-def test_rolling_window_size_9160() -> None:
-    assert pl.Series([1, 5]).rolling_apply(
-        lambda x: sum(x), window_size=2, min_periods=1
-    ).to_list() == [1, 6]
-    assert pl.Series([1]).rolling_apply(
-        lambda x: sum(x), window_size=2, min_periods=1
-    ).to_list() == [1]
-
-
-def test_rolling_apply_clear_reuse_series_state_10681() -> None:
-    df = pl.DataFrame({"a": [1, 1, 1, 1, 2, 2, 2, 2], "b": [0, 1, 11.0, 7, 4, 2, 3, 8]})
-    assert df.with_columns(
-        pl.col("b")
-        .rolling_apply(lambda s: s.min(), window_size=3, min_periods=2)
-        .over("a")
-        .alias("min")
-    ).to_dict(False) == {
-        "a": [1, 1, 1, 1, 2, 2, 2, 2],
-        "b": [0.0, 1.0, 11.0, 7.0, 4.0, 2.0, 3.0, 8.0],
-        "min": [None, 0.0, 0.0, 1.0, None, 2.0, 2.0, 2.0],
-    }
-
-
 def test_rolling_empty_window_9406() -> None:
     datecol = pl.Series(
         "d",
@@ -853,4 +831,72 @@ def test_rolling_weighted_quantile_10031() -> None:
             0.7, "linear", 4, [0.1, 0.2, 0, 0.3]
         ),
         pl.Series([None, None, None, 3.5, 5.5]),
+    )
+
+
+def test_rolling() -> None:
+    a = pl.Series("a", [1, 2, 3, 2, 1])
+    assert_series_equal(a.rolling_min(2), pl.Series("a", [None, 1, 2, 2, 1]))
+    assert_series_equal(a.rolling_max(2), pl.Series("a", [None, 2, 3, 3, 2]))
+    assert_series_equal(a.rolling_sum(2), pl.Series("a", [None, 3, 5, 5, 3]))
+    assert_series_equal(a.rolling_mean(2), pl.Series("a", [None, 1.5, 2.5, 2.5, 1.5]))
+
+    assert a.rolling_std(2).to_list()[1] == pytest.approx(0.7071067811865476)
+    assert a.rolling_var(2).to_list()[1] == pytest.approx(0.5)
+    assert a.rolling_std(2, ddof=0).to_list()[1] == pytest.approx(0.5)
+    assert a.rolling_var(2, ddof=0).to_list()[1] == pytest.approx(0.25)
+
+    assert_series_equal(
+        a.rolling_median(4), pl.Series("a", [None, None, None, 2, 2], dtype=pl.Float64)
+    )
+    assert_series_equal(
+        a.rolling_quantile(0, "nearest", 3),
+        pl.Series("a", [None, None, 1, 2, 1], dtype=pl.Float64),
+    )
+    assert_series_equal(
+        a.rolling_quantile(0, "lower", 3),
+        pl.Series("a", [None, None, 1, 2, 1], dtype=pl.Float64),
+    )
+    assert_series_equal(
+        a.rolling_quantile(0, "higher", 3),
+        pl.Series("a", [None, None, 1, 2, 1], dtype=pl.Float64),
+    )
+    assert a.rolling_skew(4).null_count() == 3
+
+    # 3099
+    # test if we maintain proper dtype
+    for dt in [pl.Float32, pl.Float64]:
+        result = pl.Series([1, 2, 3], dtype=dt).rolling_min(2, weights=[0.1, 0.2])
+        expected = pl.Series([None, 0.1, 0.2], dtype=dt)
+        assert_series_equal(result, expected)
+
+    df = pl.DataFrame({"val": [1.0, 2.0, 3.0, np.NaN, 5.0, 6.0, 7.0]})
+
+    for e in [
+        pl.col("val").rolling_min(window_size=3),
+        pl.col("val").rolling_max(window_size=3),
+    ]:
+        out = df.with_columns(e).to_series()
+        assert out.null_count() == 2
+        assert np.isnan(out.to_numpy()).sum() == 5
+
+    expected_values = [None, None, 2.0, 3.0, 5.0, 6.0, 6.0]
+    assert (
+        df.with_columns(pl.col("val").rolling_median(window_size=3))
+        .to_series()
+        .to_list()
+        == expected_values
+    )
+    assert (
+        df.with_columns(pl.col("val").rolling_quantile(0.5, window_size=3))
+        .to_series()
+        .to_list()
+        == expected_values
+    )
+
+    nan = float("nan")
+    a = pl.Series("a", [11.0, 2.0, 9.0, nan, 8.0])
+    assert_series_equal(
+        a.rolling_sum(3),
+        pl.Series("a", [None, None, 22.0, nan, nan]),
     )

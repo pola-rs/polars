@@ -132,7 +132,7 @@ pub trait ChunkBytes {
 /// This likely is a bit slower than ChunkWindow
 #[cfg(feature = "rolling_window")]
 pub trait ChunkRollApply: AsRefDataType {
-    fn rolling_apply(
+    fn rolling_map(
         &self,
         _f: &dyn Fn(&Series) -> Series,
         _options: RollingOptionsFixedWindow,
@@ -140,7 +140,7 @@ pub trait ChunkRollApply: AsRefDataType {
     where
         Self: Sized,
     {
-        polars_bail!(opq = rolling_apply, self.as_ref_dtype());
+        polars_bail!(opq = rolling_map, self.as_ref_dtype());
     }
 }
 
