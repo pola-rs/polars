@@ -149,8 +149,8 @@ where
 {
     let mut vsum = [T::default(); STRIPE];
     for chunk in f.chunks_exact(STRIPE) {
-        for i in 0..STRIPE {
-            vsum[i] = vsum[i] + chunk[i];
+        for j in 0..STRIPE {
+            vsum[j] = vsum[j] + chunk[j];
         }
     }
     vector_horizontal_sum(vsum)
@@ -184,11 +184,11 @@ where
         for j in 0..STRIPE {
             // Unconditional add with select for better branch-free opts.
             let addend = if mask.get(i * STRIPE + j) {
-                chunk[i]
+                chunk[j]
             } else {
                 T::default()
             };
-            vsum[i] = vsum[i] + addend;
+            vsum[j] = vsum[j] + addend;
         }
     }
     vector_horizontal_sum(vsum)
