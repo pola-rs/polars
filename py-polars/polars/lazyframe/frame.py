@@ -78,9 +78,10 @@ if TYPE_CHECKING:
     from queue import Queue
     from typing import Literal
 
+    import numpy as np
     import pyarrow as pa
 
-    from polars import DataFrame, Expr
+    from polars import DataFrame, Expr, Series
     from polars.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
@@ -4350,6 +4351,29 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         return self._from_pyldf(self._ldf.with_row_count(name, offset))
+
+    def take(
+        self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
+    ) -> LazyFrame:
+        """
+        Take given rows in the DataFrame and return as a new DataFrame.
+
+        Examples
+        --------
+        >>> s = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+        >>> s.take([0, 2, 3])
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 5   │
+        │ 3   ┆ 7   │
+        │ 4   ┆ 8   │
+        └─────┴─────┘
+        """
+        return self.select(F.col("*").take(indices))
 
     def take_every(self, n: int) -> Self:
         """

@@ -9326,6 +9326,29 @@ class DataFrame:
             df._df.shrink_to_fit()
             return df
 
+    def take(
+        self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
+    ) -> DataFrame:
+        """
+        Take given rows in the DataFrame and return as a new DataFrame.
+
+        Examples
+        --------
+        >>> s = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
+        >>> s.take([0, 2, 3])
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 5   │
+        │ 3   ┆ 7   │
+        │ 4   ┆ 8   │
+        └─────┴─────┘
+        """
+        return self.select(F.col("*").take(indices))
+
     def take_every(self, n: int) -> DataFrame:
         """
         Take every nth row in the DataFrame and return as a new DataFrame.

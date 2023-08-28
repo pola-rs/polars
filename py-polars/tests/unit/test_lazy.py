@@ -107,6 +107,12 @@ def test_set_null() -> None:
     assert s[2] is None
 
 
+def test_take() -> None:
+    ldf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": ["w", "x", "y", "z"]})
+    expected_df = pl.DataFrame({"a": [1, 3, 4], "b": ["w", "y", "z"]})
+    assert_frame_equal(expected_df, ldf.take([0, 2, 3]).collect())
+
+
 def test_take_every() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": ["w", "x", "y", "z"]})
     expected_df = pl.DataFrame({"a": [1, 3], "b": ["w", "y"]})
