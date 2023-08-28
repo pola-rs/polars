@@ -24,7 +24,7 @@ def good_agg_parameters() -> list[pl.Expr | list[pl.Expr]]:
     ]
 
 
-def test_group_by_rolling_apply() -> None:
+def test_group_by_rolling_map() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3, 4, 5],

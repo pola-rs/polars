@@ -195,7 +195,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     #[cfg(feature = "group_by_list")]
     fn unique(&self) -> PolarsResult<Series> {
         if !self.inner_dtype().is_numeric() {
-            polars_bail!(opq = unique, self.inner_dtype());
+            polars_bail!(opq = unique, self.dtype());
         }
         // this can be called in aggregation, so this fast path can be worth a lot
         if self.len() < 2 {
@@ -211,7 +211,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     #[cfg(feature = "group_by_list")]
     fn n_unique(&self) -> PolarsResult<usize> {
         if !self.inner_dtype().is_numeric() {
-            polars_bail!(opq = n_unique, self.inner_dtype());
+            polars_bail!(opq = n_unique, self.dtype());
         }
         // this can be called in aggregation, so this fast path can be worth a lot
         match self.len() {
@@ -228,7 +228,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     #[cfg(feature = "group_by_list")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         if !self.inner_dtype().is_numeric() {
-            polars_bail!(opq = arg_unique, self.inner_dtype());
+            polars_bail!(opq = arg_unique, self.dtype());
         }
         // this can be called in aggregation, so this fast path can be worth a lot
         if self.len() == 1 {

@@ -213,12 +213,12 @@ macro_rules! impl_dyn_series {
 
         impl SeriesTrait for SeriesWrap<$ca> {
             #[cfg(feature = "rolling_window")]
-            fn rolling_apply(
+            fn rolling_map(
                 &self,
                 _f: &dyn Fn(&Series) -> Series,
                 _options: RollingOptionsFixedWindow,
             ) -> PolarsResult<Series> {
-                ChunkRollApply::rolling_apply(&self.0, _f, _options).map(|ca| ca.into_series())
+                ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())
             }
 
             fn bitand(&self, other: &Series) -> PolarsResult<Series> {

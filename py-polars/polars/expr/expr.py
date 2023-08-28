@@ -6880,79 +6880,6 @@ class Expr:
             )
         )
 
-    def rolling_apply(
-        self,
-        function: Callable[[Series], Any],
-        window_size: int,
-        weights: list[float] | None = None,
-        min_periods: int | None = None,
-        *,
-        center: bool = False,
-    ) -> Self:
-        """
-        Apply a custom rolling window function.
-
-        Prefer the specific rolling window functions over this one, as they are faster.
-
-        Prefer:
-
-            * rolling_min
-            * rolling_max
-            * rolling_mean
-            * rolling_sum
-
-        The window at a given row will include the row itself and the `window_size - 1`
-        elements before it.
-
-        Parameters
-        ----------
-        function
-            Aggregation function
-        window_size
-            The length of the window.
-        weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
-        min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
-        center
-            Set the labels at the center of the window
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A": [1.0, 2.0, 9.0, 2.0, 13.0],
-        ...     }
-        ... )
-        >>> df.select(
-        ...     [
-        ...         pl.col("A").rolling_apply(lambda s: s.std(), window_size=3),
-        ...     ]
-        ... )
-         shape: (5, 1)
-        ┌──────────┐
-        │ A        │
-        │ ---      │
-        │ f64      │
-        ╞══════════╡
-        │ null     │
-        │ null     │
-        │ 4.358899 │
-        │ 4.041452 │
-        │ 5.567764 │
-        └──────────┘
-
-        """
-        if min_periods is None:
-            min_periods = window_size
-        return self._from_pyexpr(
-            self._pyexpr.rolling_apply(
-                function, window_size, weights, min_periods, center
-            )
-        )
-
     def rolling_skew(self, window_size: int, *, bias: bool = True) -> Self:
         """
         Compute a rolling skew.
@@ -6990,6 +6917,65 @@ class Expr:
 
         """
         return self._from_pyexpr(self._pyexpr.rolling_skew(window_size, bias))
+
+    def rolling_map(
+        self,
+        function: Callable[[Series], Any],
+        window_size: int,
+        weights: list[float] | None = None,
+        min_periods: int | None = None,
+        *,
+        center: bool = False,
+    ) -> Self:
+        """
+        Compute a custom rolling window function.
+
+        .. warning::
+            Computing custom functions is extremely slow. Use specialized rolling
+            functions such as :func:`Expr.rolling_sum` if at all possible.
+
+        Parameters
+        ----------
+        function
+            Custom aggregation function.
+        window_size
+            Size of the window. The window at a given row will include the row
+            itself and the ``window_size - 1`` elements before it.
+        weights
+            A list of weights with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window.
+
+        Examples
+        --------
+        >>> from numpy import nansum
+        >>> df = pl.DataFrame({"a": [11.0, 2.0, 9.0, float("nan"), 8.0]})
+        >>> df.select(pl.col("a").rolling_map(nansum, window_size=3))
+        shape: (5, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        │ null │
+        │ 22.0 │
+        │ 11.0 │
+        │ 17.0 │
+        └──────┘
+
+        """
+        if min_periods is None:
+            min_periods = window_size
+        return self._from_pyexpr(
+            self._pyexpr.rolling_map(
+                function, window_size, weights, min_periods, center
+            )
+        )
 
     def abs(self) -> Self:
         """
@@ -9075,6 +9061,42 @@ class Expr:
             skip_nulls=skip_nulls,
             pass_name=pass_name,
             strategy=strategy,
+        )
+
+    @deprecate_renamed_function("rolling_map", version="0.19.0")
+    def rolling_apply(
+        self,
+        function: Callable[[Series], Any],
+        window_size: int,
+        weights: list[float] | None = None,
+        min_periods: int | None = None,
+        *,
+        center: bool = False,
+    ) -> Self:
+        """
+        Apply a custom rolling window function.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`Expr.rolling_map`.
+
+        Parameters
+        ----------
+        function
+            Aggregation function
+        window_size
+            The length of the window.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+
+        """
+        return self.rolling_map(
+            function, window_size, weights, min_periods, center=center
         )
 
     @property

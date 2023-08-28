@@ -1391,24 +1391,24 @@ impl Expr {
     #[cfg(feature = "rolling_window")]
     /// Apply a custom function over a rolling/ moving window of the array.
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
-    pub fn rolling_apply(
+    pub fn rolling_map(
         self,
         f: Arc<dyn Fn(&Series) -> Series + Send + Sync>,
         output_type: GetOutput,
         options: RollingOptionsFixedWindow,
     ) -> Expr {
         self.apply(
-            move |s| s.rolling_apply(f.as_ref(), options.clone()).map(Some),
+            move |s| s.rolling_map(f.as_ref(), options.clone()).map(Some),
             output_type,
         )
-        .with_fmt("rolling_apply")
+        .with_fmt("rolling_map")
     }
 
     #[cfg(feature = "rolling_window")]
     /// Apply a custom function over a rolling/ moving window of the array.
     /// Prefer this over rolling_apply in case of floating point numbers as this is faster.
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
-    pub fn rolling_apply_float<F>(self, window_size: usize, f: F) -> Expr
+    pub fn rolling_map_float<F>(self, window_size: usize, f: F) -> Expr
     where
         F: 'static + FnMut(&mut Float64Chunked) -> Option<f64> + Send + Sync + Copy,
     {
@@ -1418,13 +1418,13 @@ impl Expr {
                     DataType::Float64 => s
                         .f64()
                         .unwrap()
-                        .rolling_apply_float(window_size, f)
+                        .rolling_map_float(window_size, f)
                         .map(|ca| ca.into_series()),
                     _ => s
                         .cast(&DataType::Float64)?
                         .f64()
                         .unwrap()
-                        .rolling_apply_float(window_size, f)
+                        .rolling_map_float(window_size, f)
                         .map(|ca| ca.into_series()),
                 }?;
                 if let DataType::Float32 = s.dtype() {
@@ -1439,7 +1439,7 @@ impl Expr {
                 _ => Field::new(field.name(), DataType::Float64),
             }),
         )
-        .with_fmt("rolling_apply_float")
+        .with_fmt("rolling_map_float")
     }
 
     #[cfg(feature = "rank")]

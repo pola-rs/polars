@@ -44,6 +44,7 @@ Computation
     Expr.radians
     Expr.rank
     Expr.rolling_apply
+    Expr.rolling_map
     Expr.rolling_max
     Expr.rolling_mean
     Expr.rolling_median
