@@ -3233,17 +3233,17 @@ class Expr:
         ... )
         >>> df.with_columns(pl.col("num").is_last().alias("is_last"))
         shape: (5, 2)
-        ┌─────┬──────────┐
-        │ num ┆ is_last  │
-        │ --- ┆ ---      │
-        │ i64 ┆ bool     │
-        ╞═════╪══════════╡
-        │ 1   ┆ false    │
-        │ 2   ┆ true     │
-        │ 3   ┆ true     │
-        │ 1   ┆ true     │
-        │ 5   ┆ true     │
-        └─────┴──────────┘
+        ┌─────┬─────────┐
+        │ num ┆ is_last │
+        │ --- ┆ ---     │
+        │ i64 ┆ bool    │
+        ╞═════╪═════════╡
+        │ 1   ┆ false   │
+        │ 2   ┆ true    │
+        │ 3   ┆ true    │
+        │ 1   ┆ true    │
+        │ 5   ┆ true    │
+        └─────┴─────────┘
 
         """
         return self._from_pyexpr(self._pyexpr.is_last())
