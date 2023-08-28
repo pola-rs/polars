@@ -304,13 +304,20 @@ impl SQLContext {
                         let expr = parse_sql_expr(expr, self)?;
                         expr.alias(&alias.value)
                     },
-                    SelectItem::QualifiedWildcard(oname, wildcard_options) => {
-                        self.process_qualified_wildcard(oname, wildcard_options, &mut contains_wildcard_exclude)?
-                    },
+                    SelectItem::QualifiedWildcard(oname, wildcard_options) => self
+                        .process_qualified_wildcard(
+                            oname,
+                            wildcard_options,
+                            &mut contains_wildcard_exclude,
+                        )?,
                     SelectItem::Wildcard(wildcard_options) => {
                         contains_wildcard = true;
                         let e = col("*");
-                        self.process_wildcard_additional_options(e, wildcard_options, &mut contains_wildcard_exclude)?
+                        self.process_wildcard_additional_options(
+                            e,
+                            wildcard_options,
+                            &mut contains_wildcard_exclude,
+                        )?
                     },
                 })
             })
@@ -360,19 +367,18 @@ impl SQLContext {
                         Expr::Columns(names) => names.iter().for_each(|name| {
                             retained_names.insert((name).to_string());
                         }),
-                        Expr::Exclude(inner_expr, excludes) =>
-                        {
+                        Expr::Exclude(inner_expr, excludes) => {
                             if let Expr::Columns(names) = (*inner_expr).as_ref() {
-                                names.iter().for_each(
-                                    |name| {
-                                        retained_names.insert((name).to_string());
+                                names.iter().for_each(|name| {
+                                    retained_names.insert((name).to_string());
                                 })
                             }
-                            
-                            excludes.iter().for_each(
-                                |excluded| if let Excluded::Name(name) = excluded {
-                                      retained_names.remove(&(name.to_string()));
-                                });
+
+                            excludes.iter().for_each(|excluded| {
+                                if let Excluded::Name(name) = excluded {
+                                    retained_names.remove(&(name.to_string()));
+                                }
+                            });
                         },
                         _ => {},
                     });
@@ -385,15 +391,18 @@ impl SQLContext {
                 } else if contains_wildcard_exclude {
                     let mut dropped_names = Vec::with_capacity(projections.len());
 
-                    let exclude_expr = projections.iter().find(
-                        |expr| if let Expr::Exclude(_, excludes) = expr {
-                            excludes.iter().for_each(
-                                |excluded| if let Excluded::Name(name) = excluded {
+                    let exclude_expr = projections.iter().find(|expr| {
+                        if let Expr::Exclude(_, excludes) = expr {
+                            excludes.iter().for_each(|excluded| {
+                                if let Excluded::Name(name) = excluded {
                                     dropped_names.push((*name).to_string());
-                                });
+                                }
+                            });
                             true
-                        } else {false}
-                    );
+                        } else {
+                            false
+                        }
+                    });
 
                     if let Some(_) = exclude_expr {
                         lf = lf.with_columns(projections);
@@ -403,7 +412,7 @@ impl SQLContext {
                     } else {
                         lf = lf.select(projections);
                         self.process_order_by(lf, &query.order_by)?
-                    }  
+                    }
                 } else {
                     lf = lf.select(projections);
                     self.process_order_by(lf, &query.order_by)?

@@ -756,7 +756,7 @@ def test_sql_substr() -> None:
         "s1_5": ["bcdef", "bcde", "bc", None],
         "s2_2": ["cd", "cd", "c", None],
         "s3_1": ["d", "d", "", None],
-    }   
+    }
 
 
 def test_sql_trim(foods_ipc_path: Path) -> None:
@@ -794,7 +794,6 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         "category": ["vegetables", "seafood", "meat", "fruit"]
     }
 
-
     order_by_group_by_res = pl.SQLContext(foods1=foods).execute(
         """
         SELECT category
@@ -807,7 +806,6 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
     assert order_by_group_by_res.to_dict(False) == {
         "category": ["vegetables", "seafood", "meat", "fruit"]
     }
-
 
     order_by_constructed_group_by_res = pl.SQLContext(foods1=foods).execute(
         """
@@ -823,7 +821,6 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         "summed_calories": [1250, 540, 410, 192],
     }
 
-
     order_by_unselected_res = pl.SQLContext(foods1=foods).execute(
         """
         SELECT SUM(calories) as summed_calories
@@ -834,10 +831,8 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         eager=True,
     )
     assert order_by_unselected_res.to_dict(False) == {
-        "category": ["vegetables", "seafood", "meat", "fruit"],
-        "summed_calories": [192, 1250, 540, 410],
+        "summed_calories": [1250, 540, 410, 192],
     }
-
 
     order_by_unselected_nums_res = pl.SQLContext(df=nums).execute(
         """
@@ -846,14 +841,13 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         df.y as y_alias
         FROM df
         ORDER BY y
-        """
-        , eager = True
-        )
+        """,
+        eager=True,
+    )
     assert order_by_unselected_nums_res.to_dict(False) == {
-        "x": ["3", "2", "1"],
-        "y_alias": ["2", "3", "4"],
+        "x": [3, 2, 1],
+        "y_alias": [2, 3, 4],
     }
-
 
     order_by_wildcard_res = pl.SQLContext(df=nums).execute(
         """
@@ -862,15 +856,14 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         df.y as y_alias
         FROM df
         ORDER BY y
-        """
-        , eager = True
-        )
+        """,
+        eager=True,
+    )
     assert order_by_wildcard_res.to_dict(False) == {
-        "x": ["3", "2", "1"],
-        "y": ["2", "3", "4"],
-        "y_alias": ["2", "3", "4"],
+        "x": [3, 2, 1],
+        "y": [2, 3, 4],
+        "y_alias": [2, 3, 4],
     }
-
 
     order_by_qualified_wildcard_res = pl.SQLContext(df=nums).execute(
         """
@@ -878,14 +871,13 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         df.*
         FROM df
         ORDER BY y
-        """
-        , eager = True
-        )
-    assert order_by_wildcard_res.to_dict(False) == {
-        "x": ["3", "2", "1"],
-        "y": ["2", "3", "4"],
+        """,
+        eager=True,
+    )
+    assert order_by_qualified_wildcard_res.to_dict(False) == {
+        "x": [3, 2, 1],
+        "y": [2, 3, 4],
     }
-
 
     order_by_exclude_res = pl.SQLContext(df=nums).execute(
         """
@@ -893,13 +885,12 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         * EXCLUDE y
         FROM df
         ORDER BY y
-        """
-        , eager = True
-        )
-    assert order_by_wildcard_res.to_dict(False) == {
-        "x": ["3", "2", "1"],
+        """,
+        eager=True,
+    )
+    assert order_by_exclude_res.to_dict(False) == {
+        "x": [3, 2, 1],
     }
-
 
     order_by_qualified_exclude_res = pl.SQLContext(df=nums).execute(
         """
@@ -907,13 +898,25 @@ def test_sql_order_by(foods_ipc_path: Path) -> None:
         df.* EXCLUDE y
         FROM df
         ORDER BY y
-        """
-        , eager = True
-        )
-    assert order_by_wildcard_res.to_dict(False) == {
-        "x": ["3", "2", "1"],
+        """,
+        eager=True,
+    )
+    assert order_by_qualified_exclude_res.to_dict(False) == {
+        "x": [3, 2, 1],
     }
 
+    order_by_expression_res = pl.SQLContext(df=nums).execute(
+        """
+        SELECT
+        x % y as modded
+        FROM df
+        ORDER BY x % y
+        """,
+        eager=True,
+    )
+    assert order_by_expression_res.to_dict(False) == {
+        "modded": [1, 1, 2],
+    }
 
 
 def test_register_context() -> None:
