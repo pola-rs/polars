@@ -367,6 +367,26 @@ impl GroupsProxy {
         }
     }
 
+    pub fn take_group_lasts(self) -> Vec<IdxSize> {
+        match self {
+            GroupsProxy::Idx(groups) => {
+                groups
+                    .all
+                    .iter()
+                    .map(|idx| {
+                        // safety:
+                        // idx has at least one eletment, so -1 is always in bounds
+                        unsafe { *idx.get_unchecked(idx.len() - 1) }
+                    })
+                    .collect()
+            },
+            GroupsProxy::Slice { groups, .. } => groups
+                .into_iter()
+                .map(|[first, len]| first + len - 1)
+                .collect(),
+        }
+    }
+
     pub fn par_iter(&self) -> GroupsProxyParIter {
         GroupsProxyParIter::new(self)
     }

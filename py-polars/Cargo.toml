@@ -51,6 +51,7 @@ features = [
   "horizontal_concat",
   "interpolate",
   "is_first",
+  "is_last",
   "is_unique",
   "lazy",
   "list_eval",
