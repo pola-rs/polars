@@ -1,0 +1,63 @@
+name: Build Polars documentation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+    working-directory: docs
+
+jobs:
+  test-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - run: pip install -r requirements.txt
+
+      - name: Install graphviz
+        # uses: ts-graphviz/setup-graphviz@v1
+        run: sudo apt-get install -y graphviz
+
+      - run: find docs/src/ -name "*.py" | xargs -n 1 sh -c 'python $0 || exit 255'
+
+  black:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - run: pip install black==23.3.0
+      - run: black --check .
+
+  markdown-link-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: gaurav-nelson/github-action-markdown-link-check@v1
+
+  deploy:
+    needs: [test-python, black, rome, test-node, markdown-link-check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - run: pip install -r requirements.txt
+
+      - run: sudo apt-get install -y graphviz
+
+      - run: mkdocs gh-deploy --force

@@ -1,6 +1,6 @@
 # Contributing
 
-See the [`CONTRIBUTING.md`](https://github.com/pola-rs/polars/blob/master/CONTRIBUTING.md) if you would like to contribute to the `Polars` project.
+See the [`CONTRIBUTING.md`](https://github.com/pola-rs/polars/blob/main/CONTRIBUTING.md) if you would like to contribute to the `Polars` project.
 
 If you're new to this we recommend starting out with contributing examples to the Python API documentation. The Python API docs are generated from the docstrings of the Python wrapper located in `polars/py-polars`.
 
