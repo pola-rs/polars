@@ -11,21 +11,39 @@ use crate::prelude::visitor::{ALogicalPlanNode, AexprNode, RewritingVisitor, Tre
 // uses a string trail.
 #[cfg(test)]
 mod identifier_impl {
+    use std::hash::{Hash, Hasher};
+
     use super::*;
     /// Identifier that shows the sub-expression path.
     /// Must implement hash and equality and ideally
     /// have little collisions
     /// We will do a full expression comparison to check if the
     /// expressions with equal identifiers are truly equal
-    #[derive(Clone, Hash, Eq, PartialEq, Debug)]
+    #[derive(Clone, Debug)]
     pub struct Identifier {
         inner: String,
+        last_node: Option<AexprNode>,
+    }
+
+    impl PartialEq for Identifier {
+        fn eq(&self, other: &Self) -> bool {
+            self.inner == other.inner && self.last_node == other.last_node
+        }
+    }
+
+    impl Eq for Identifier {}
+
+    impl Hash for Identifier {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            self.inner.hash(state)
+        }
     }
 
     impl Identifier {
         pub fn new() -> Self {
             Self {
                 inner: String::new(),
+                last_node: None,
             }
         }
 
@@ -42,9 +60,12 @@ mod identifier_impl {
             self.inner.push_str(&other.inner);
         }
 
-        pub fn add_ae_node(&self, ae: &AExpr) -> Self {
-            let inner = format!("{:E}{}", ae, self.inner);
-            Self { inner }
+        pub fn add_ae_node(&self, ae: &AexprNode) -> Self {
+            let inner = format!("{:E}{}", ae.to_aexpr(), self.inner);
+            Self {
+                inner,
+                last_node: Some(*ae),
+            }
         }
     }
 }
@@ -65,12 +86,13 @@ mod identifier_impl {
     #[derive(Clone, Debug)]
     pub struct Identifier {
         inner: Option<u64>,
+        last_node: Option<AexprNode>,
         hb: RandomState,
     }
 
     impl PartialEq<Self> for Identifier {
         fn eq(&self, other: &Self) -> bool {
-            self.inner == other.inner
+            self.inner == other.inner && self.last_node == other.last_node
         }
     }
 
@@ -86,6 +108,7 @@ mod identifier_impl {
         pub fn new() -> Self {
             Self {
                 inner: None,
+                last_node: None,
                 hb: RandomState::with_seed(0),
             }
         }
@@ -108,14 +131,15 @@ mod identifier_impl {
             self.inner = Some(inner);
         }
 
-        pub fn add_ae_node(&self, ae: &AExpr) -> Self {
-            let hashed = self.hb.hash_one(ae);
+        pub fn add_ae_node(&self, ae: &AexprNode) -> Self {
+            let hashed = self.hb.hash_one(ae.to_aexpr());
             let inner = Some(
                 self.inner
                     .map_or(hashed, |l| _boost_hash_combine(l, hashed)),
             );
             Self {
                 inner,
+                last_node: Some(*ae),
                 hb: self.hb.clone(),
             }
         }
@@ -289,7 +313,7 @@ impl ExprIdentifierVisitor<'_> {
                         return REFUSE_NO_MEMBER;
                     }
                     match ae {
-                        AExpr::AnonymousFunction { .. } => REFUSE_NO_MEMBER,
+                        AExpr::AnonymousFunction { .. } | AExpr::Filter { .. } => REFUSE_NO_MEMBER,
                         AExpr::Cast { .. } => REFUSE_ALLOW_MEMBER,
                         _ => ACCEPT,
                     }
@@ -322,7 +346,7 @@ impl Visitor for ExprIdentifierVisitor<'_> {
 
         let (pre_visit_idx, sub_expr_id, is_valid_accumulated) = self.pop_until_entered();
         // create the id of this node
-        let id: Identifier = sub_expr_id.add_ae_node(ae);
+        let id: Identifier = sub_expr_id.add_ae_node(node);
 
         if !is_valid_accumulated {
             self.identifier_array[pre_visit_idx + self.id_array_offset].0 = self.post_visit_idx;
@@ -459,12 +483,8 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             return Ok(recurse);
         }
 
-        let (node, count) = self.sub_expr_map.get(id).unwrap();
-        if *count > 1
-            // this does a full expression traversal to check if the expression is truly
-            // the same
-            && ae_node.binary(*node, |l, r| l == r)
-        {
+        let (_, count) = self.sub_expr_map.get(id).unwrap();
+        if *count > 1 {
             self.replaced_identifiers.insert(id.clone());
             // rewrite this sub-expression, don't visit its children
             Ok(RewriteRecursion::MutateAndStop)

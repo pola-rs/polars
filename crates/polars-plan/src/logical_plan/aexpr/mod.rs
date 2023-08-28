@@ -1,6 +1,7 @@
 mod hash;
 mod schema;
 
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use polars_arrow::prelude::QuantileInterpolOptions;
@@ -44,6 +45,20 @@ pub enum AAggExpr {
     Std(Node, u8),
     Var(Node, u8),
     AggGroups(Node),
+}
+
+impl Hash for AAggExpr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::Min { propagate_nans, .. } | Self::Max { propagate_nans, .. } => {
+                propagate_nans.hash(state)
+            },
+            Self::Quantile { interpol, .. } => interpol.hash(state),
+            Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
+            _ => {},
+        }
+    }
 }
 
 impl AAggExpr {

@@ -60,7 +60,7 @@ impl Default for JoinOptions {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct WindowOptions {
     /// Explode the aggregated list and just do a hstack instead of a join
@@ -68,7 +68,7 @@ pub struct WindowOptions {
     pub mapping: WindowMapping,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum WindowMapping {
     /// Map the group values to the position
