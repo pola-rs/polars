@@ -1,41 +1,42 @@
-use std::ops::{IndexMut, Add};
-use std::simd::{ToBitMask, Mask, Simd, SimdElement};
-use std::iter::Sum;
+use std::ops::{Add, IndexMut};
+#[cfg(feature = "simd")]
+use std::simd::{Mask, Simd, SimdElement, ToBitMask};
 
 use arrow::bitmap::Bitmap;
+#[cfg(feature = "simd")]
 use num_traits::AsPrimitive;
 
 const STRIPE: usize = 16;
 const PAIRWISE_RECURSION_LIMIT: usize = 128;
 
 // Load 8 bytes as little-endian into a u64, padding with zeros if it's too short.
+#[cfg(feature = "simd")]
 pub fn load_padded_le_u64(bytes: &[u8]) -> u64 {
     let len = bytes.len();
     if len >= 8 {
         return u64::from_le_bytes(bytes[0..8].try_into().unwrap());
     }
-    
+
     if len >= 4 {
         let lo = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
-        let hi = u32::from_le_bytes(bytes[len-4..len].try_into().unwrap());
-        return (lo as u64) | ((hi as u64) << 8*(len - 4));
+        let hi = u32::from_le_bytes(bytes[len - 4..len].try_into().unwrap());
+        return (lo as u64) | ((hi as u64) << (8 * (len - 4)));
     }
-    
+
     if len == 0 {
         return 0;
     }
-    
+
     let lo = bytes[0] as u64;
-    let mid = (bytes[len/2] as u64) << 8 * (len / 2);
-    let hi = (bytes[len - 1] as u64) << 8 * (len - 1);
+    let mid = (bytes[len / 2] as u64) << (8 * (len / 2));
+    let hi = (bytes[len - 1] as u64) << (8 * (len - 1));
     lo | mid | hi
 }
-
 
 struct BitMask<'a> {
     bytes: &'a [u8],
     offset: usize,
-    len: usize
+    len: usize,
 }
 
 impl<'a> BitMask<'a> {
@@ -45,7 +46,7 @@ impl<'a> BitMask<'a> {
         assert!(bytes.len() * 8 >= len + offset);
         Self { bytes, offset, len }
     }
-    
+
     fn split_at(&self, idx: usize) -> (Self, Self) {
         assert!(idx <= self.len);
         unsafe { self.split_at_unchecked(idx) }
@@ -54,11 +55,15 @@ impl<'a> BitMask<'a> {
     unsafe fn split_at_unchecked(&self, idx: usize) -> (Self, Self) {
         debug_assert!(idx <= self.len);
         let left = Self { len: idx, ..*self };
-        let right =  Self { len: self.len - idx, offset: self.offset + idx, ..*self };
+        let right = Self {
+            len: self.len - idx,
+            offset: self.offset + idx,
+            ..*self
+        };
         (left, right)
     }
 
-    #[cfg(feature="simd")]
+    #[cfg(feature = "simd")]
     pub fn get_simd<T>(&self, idx: usize) -> T
     where
         T: ToBitMask,
@@ -67,7 +72,8 @@ impl<'a> BitMask<'a> {
     {
         // We don't support 64-lane masks because then we couldn't load our
         // bitwise mask as a u64 and then do the byteshift on it.
-        let lanes = std::mem::size_of::<T::BitMask>()*8;
+
+        let lanes = std::mem::size_of::<T::BitMask>() * 8;
         assert!(lanes < 64);
 
         let start_byte_idx = (self.offset + idx) / 8;
@@ -87,11 +93,11 @@ impl<'a> BitMask<'a> {
             T::from_bitmask((0u64).as_())
         }
     }
-    
+
     pub fn get(&self, idx: usize) -> bool {
         let byte_idx = (self.offset + idx) / 8;
         let byte_shift = (self.offset + idx) % 8;
-        
+
         if idx < self.len {
             // SAFETY: we know this is in-bounds.
             let byte = unsafe { *self.bytes.get_unchecked(byte_idx) };
@@ -104,8 +110,8 @@ impl<'a> BitMask<'a> {
 
 fn vector_horizontal_sum<V, T>(mut v: V) -> T
 where
-    V: IndexMut<usize, Output=T>,
-    T: Add<T, Output=T> + Sized + Copy,
+    V: IndexMut<usize, Output = T>,
+    T: Add<T, Output = T> + Sized + Copy,
 {
     // We have to be careful about this reduction, floating
     // point math is NOT associative so we have to write this
@@ -115,19 +121,19 @@ where
     let mut width = STRIPE;
     while width > 4 {
         for j in 0..width / 2 {
-            v[j] = v[j] + v[width/2 + j];
+            v[j] = v[j] + v[width / 2 + j];
         }
         width /= 2;
     }
-    
+
     (v[0] + v[2]) + (v[1] + v[3])
 }
 
-#[cfg(feature="simd")]
+#[cfg(feature = "simd")]
 fn sum_block_vectorized<T>(f: &[T; PAIRWISE_RECURSION_LIMIT]) -> T
 where
-    T: SimdElement + Add<Output=T> + Default,
-    Simd<T, STRIPE>: Sum,
+    T: SimdElement + Add<Output = T> + Default,
+    Simd<T, STRIPE>: std::iter::Sum,
 {
     let vsum = f
         .chunks_exact(STRIPE)
@@ -136,10 +142,10 @@ where
     vector_horizontal_sum(vsum)
 }
 
-#[cfg(not(feature="simd"))]
+#[cfg(not(feature = "simd"))]
 fn sum_block_vectorized<T>(f: &[T; PAIRWISE_RECURSION_LIMIT]) -> T
 where
-    T: Default + Add<Output=T> + Copy
+    T: Default + Add<Output = T> + Copy,
 {
     let mut vsum = [T::default(); STRIPE];
     for chunk in f.chunks_exact(STRIPE) {
@@ -150,11 +156,11 @@ where
     vector_horizontal_sum(vsum)
 }
 
-#[cfg(feature="simd")]
+#[cfg(feature = "simd")]
 fn sum_block_vectorized_with_mask<T>(f: &[T; PAIRWISE_RECURSION_LIMIT], mask: BitMask<'_>) -> T
 where
-    T: SimdElement + Add<Output=T> + Default,
-    Simd<T, STRIPE>: Sum,
+    T: SimdElement + Add<Output = T> + Default,
+    Simd<T, STRIPE>: std::iter::Sum,
 {
     let zero = Simd::default();
     let vsum = f
@@ -168,16 +174,20 @@ where
     vector_horizontal_sum(vsum)
 }
 
-#[cfg(not(feature="simd"))]
+#[cfg(not(feature = "simd"))]
 fn sum_block_vectorized_with_mask<T>(f: &[T; PAIRWISE_RECURSION_LIMIT], mask: BitMask<'_>) -> T
 where
-    T: Default + Add<Output=T> + Copy
+    T: Default + Add<Output = T> + Copy,
 {
     let mut vsum = [T::default(); STRIPE];
     for (i, chunk) in f.chunks_exact(STRIPE).enumerate() {
         for j in 0..STRIPE {
             // Unconditional add with select for better branch-free opts.
-            let addend = if mask.get(i*STRIPE + j) { chunk[i] } else { T::default() };
+            let addend = if mask.get(i * STRIPE + j) {
+                chunk[i]
+            } else {
+                T::default()
+            };
             vsum[i] = vsum[i] + addend;
         }
     }
@@ -224,7 +234,8 @@ macro_rules! def_sum {
                     let left_len = (blocks / 2) * PAIRWISE_RECURSION_LIMIT;
                     let (left, right) = (f.get_unchecked(..left_len), f.get_unchecked(left_len..));
                     let (left_mask, right_mask) = mask.split_at_unchecked(left_len);
-                    pairwise_sum_with_mask(left, left_mask) + pairwise_sum_with_mask(right, right_mask)
+                    pairwise_sum_with_mask(left, left_mask)
+                        + pairwise_sum_with_mask(right, right_mask)
                 }
             }
 
@@ -254,14 +265,22 @@ macro_rules! def_sum {
                     0.0
                 };
                 // TODO: faster remainder.
-                let restsum: f64 = rest.iter().enumerate().map(|(i, x)| {
-                    // No filter but rather select of 0.0 for cmov opt.
-                    if rest_mask.get(i) { *x as f64 } else { 0.0 }
-                }).sum();
+                let restsum: f64 = rest
+                    .iter()
+                    .enumerate()
+                    .map(|(i, x)| {
+                        // No filter but rather select of 0.0 for cmov opt.
+                        if rest_mask.get(i) {
+                            *x as f64
+                        } else {
+                            0.0
+                        }
+                    })
+                    .sum();
                 mainsum + restsum
             }
         }
-    }
+    };
 }
 
 def_sum!(f32, f32);

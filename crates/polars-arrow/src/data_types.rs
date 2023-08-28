@@ -10,7 +10,7 @@ pub unsafe trait IsFloat: private::Sealed {
     fn is_f32() -> bool {
         false
     }
-    
+
     fn is_f64() -> bool {
         false
     }
@@ -64,11 +64,11 @@ macro_rules! impl_is_float {
             fn is_float() -> bool {
                 true
             }
-            
+
             fn is_f32() -> bool {
                 $is_f32
             }
-            
+
             fn is_f64() -> bool {
                 $is_f64
             }
