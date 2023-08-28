@@ -141,6 +141,11 @@ where
                 FileType::Ipc(options) => {
                     Box::new(IpcSink::new(path, *options, input_schema.as_ref())?) as Box<dyn Sink>
                 },
+                #[cfg(feature = "csv")]
+                FileType::Csv(options) => {
+                    Box::new(CsvSink::new(path, options.clone(), input_schema.as_ref())?)
+                        as Box<dyn Sink>
+                },
                 FileType::Memory => Box::new(OrderedSink::new()) as Box<dyn Sink>,
             }
         },

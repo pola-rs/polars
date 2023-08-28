@@ -225,7 +225,6 @@ fn slice_at_union(lp_arena: &Arena<ALogicalPlan>, lp: Node) -> bool {
 }
 
 #[test]
-#[cfg(not(target_os = "windows"))]
 fn test_csv_globbing() -> PolarsResult<()> {
     let glob = "../../examples/datasets/*.csv";
     let full_df = LazyCsvReader::new(glob).finish()?.collect()?;
@@ -261,7 +260,6 @@ fn test_csv_globbing() -> PolarsResult<()> {
 }
 
 #[test]
-#[cfg(not(target_os = "windows"))]
 #[cfg(feature = "json")]
 fn test_ndjson_globbing() -> PolarsResult<()> {
     // for side effects
