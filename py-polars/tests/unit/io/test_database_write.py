@@ -19,7 +19,7 @@ def adbc_sqlite_driver_version(*args: Any, **kwargs: Any) -> str:
     with suppress(ModuleNotFoundError):  # not available on 3.8/windows
         import adbc_driver_sqlite
 
-        return adbc_driver_sqlite.__version__  # type: ignore[attr-defined]
+        return getattr(adbc_driver_sqlite, "__version__", "n/a")
     return "n/a"
 
 
