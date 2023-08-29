@@ -6,7 +6,6 @@ use polars_arrow::bit_util::*;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
-
 fn is_first_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
     T: PolarsNumericType,
@@ -39,52 +38,24 @@ fn is_first_boolean(ca: &BooleanChunked) -> BooleanChunked {
 
     if ca.null_count() == ca.len() {
         out.set(0, true);
-    } else if ca.null_count() == 0 && ca.chunks().len() == 1 {
-        // fast path
-        let arr = ca.downcast_iter().next().unwrap();
-        let mask = arr.values();
-        out.set(first_set_bit(mask), true);
-        out.set(first_unset_bit(mask), true);
     } else {
-        let mut first_true_found = false;
-        let mut first_false_found = false;
-        let mut first_null_found = false;
-        let mut all_found = false;
-        ca.into_iter().enumerate().find_map(|(idx, val)| match val {
-            Some(true) if !first_true_found => {
-                first_true_found = true;
-                all_found &= first_true_found;
-                out.set(idx, true);
-                if all_found {
-                    Some(())
-                } else {
-                    None
-                }
-            },
-            Some(false) if !first_false_found => {
-                first_false_found = true;
-                all_found &= first_false_found;
-                out.set(idx, true);
-                if all_found {
-                    Some(())
-                } else {
-                    None
-                }
-            },
-            None if !first_null_found => {
-                first_null_found = true;
-                all_found &= first_null_found;
-                out.set(idx, true);
-                if all_found {
-                    Some(())
-                } else {
-                    None
-                }
-            },
-            _ => None,
-        });
+        let ca = ca.rechunk();
+        let arr = ca.downcast_iter().next().unwrap();
+        if ca.null_count() == 0 {
+            let (true_index, false_index) =
+                find_first_true_false_no_null(arr.values().chunks::<u64>());
+            true_index.map(|idx| out.set(idx, true));
+            false_index.map(|idx| out.set(idx, true));
+        } else {
+            let (true_index, false_index, null_index) = find_first_true_false_null(
+                arr.values().chunks::<u64>(),
+                arr.validity().unwrap().chunks::<u64>(),
+            );
+            true_index.map(|idx| out.set(idx, true));
+            false_index.map(|idx| out.set(idx, true));
+            null_index.map(|idx| out.set(idx, true));
+        }
     }
-
     let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
     BooleanChunked::with_chunk(ca.name(), arr)
 }
