@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING
+from contextlib import suppress
+from typing import TYPE_CHECKING, Any
 
-import adbc_driver_sqlite
 import pytest
 
 import polars as pl
@@ -13,6 +13,14 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars.type_aliases import DbWriteEngine
+
+
+def adbc_sqlite_driver_version(*args: Any, **kwargs: Any) -> str:
+    with suppress(ModuleNotFoundError):  # not available on 3.8/windows
+        import adbc_driver_sqlite
+
+        return adbc_driver_sqlite.__version__  # type: ignore[attr-defined]
+    return "n/a"
 
 
 @pytest.mark.write_disk()
@@ -89,7 +97,20 @@ def test_write_database_append(engine: DbWriteEngine, tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.parametrize("engine", ["adbc", "sqlalchemy"])
+@pytest.mark.parametrize(
+    "engine",
+    [
+        pytest.param(
+            "adbc",
+            marks=pytest.mark.skipif(
+                # see: https://github.com/apache/arrow-adbc/issues/1000
+                adbc_sqlite_driver_version() == "0.6.0",
+                reason="ADBC SQLite driver v0.6.0 has a bug with quoted/qualified table names",
+            ),
+        ),
+        "sqlalchemy",
+    ],
+)
 @pytest.mark.skipif(
     sys.version_info < (3, 9) or sys.platform == "win32",
     reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
@@ -97,12 +118,6 @@ def test_write_database_append(engine: DbWriteEngine, tmp_path: Path) -> None:
 def test_write_database_create_quoted_tablename(
     engine: DbWriteEngine, tmp_path: Path
 ) -> None:
-    if engine == "adbc" and adbc_driver_sqlite.__version__ == "0.6.0":  # type: ignore[attr-defined]
-        # see: https://github.com/apache/arrow-adbc/issues/1000
-        pytest.skip(
-            reason="ADBC SQLite driver v0.6.0 has a bug with quoted/qualified table names"
-        )
-
     df = pl.DataFrame({"col x": [100, 200, 300], "col y": ["a", "b", "c"]})
 
     tmp_path.mkdir(exist_ok=True)
