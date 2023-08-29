@@ -9,7 +9,7 @@ use crate::prelude::visitor::{ALogicalPlanNode, AexprNode, RewritingVisitor, Tre
 // We use hashes to get an Identifier
 // but this is very hard to debug, so we also have a version that
 // uses a string trail.
-// #[cfg(test)]
+#[cfg(test)]
 mod identifier_impl {
     use std::hash::{Hash, Hasher};
 
@@ -47,6 +47,10 @@ mod identifier_impl {
             }
         }
 
+        pub fn ae_node(&self) -> AexprNode {
+            self.last_node.unwrap()
+        }
+
         pub fn is_valid(&self) -> bool {
             !self.inner.is_empty()
         }
@@ -71,7 +75,6 @@ mod identifier_impl {
 }
 
 #[cfg(not(test))]
-#[cfg(foo)]
 mod identifier_impl {
     use std::hash::{Hash, Hasher};
 
@@ -112,6 +115,10 @@ mod identifier_impl {
                 last_node: None,
                 hb: RandomState::with_seed(0),
             }
+        }
+
+        pub fn ae_node(&self) -> AexprNode {
+            self.last_node.unwrap()
         }
 
         pub fn is_valid(&self) -> bool {
@@ -178,6 +185,14 @@ enum VisitRecord {
     SubExprId(Identifier, bool),
 }
 
+fn traverse_pre_vist(ae: &AExpr, is_groupby: bool) -> bool {
+    match ae {
+        AExpr::Window { .. } => false,
+        AExpr::Ternary { .. } => is_groupby,
+        _ => true,
+    }
+}
+
 /// Goes through an expression and generates a identifier
 ///
 /// The visitor uses a `visit_stack` to track traversal order.
@@ -238,6 +253,8 @@ struct ExprIdentifierVisitor<'a> {
     is_group_by: bool,
 }
 
+type Accepted = Option<(VisitRecursion, bool)>;
+
 impl ExprIdentifierVisitor<'_> {
     fn new<'a>(
         se_count: &'a mut SubExprCount,
@@ -283,20 +300,19 @@ impl ExprIdentifierVisitor<'_> {
     /// return `Some(_)` node is not accepted and apply the given recursion operation
     /// `Some(_, true)` don't accept this node, but can be a member of a cse.
     /// `Some(_,  false)` don't accept this node, and don't allow as a member of a cse.
-    fn accept_node(&self, ae: &AExpr) -> Option<(VisitRecursion, bool)> {
+    fn accept_node_post_visit(&self, ae: &AExpr) -> Accepted {
         // Don't allow this node in a cse.
-        const REFUSE_NO_MEMBER: Option<(VisitRecursion, bool)> =
-            Some((VisitRecursion::Continue, false));
+        const REFUSE_NO_MEMBER: Accepted = Some((VisitRecursion::Continue, false));
         // Don't allow this node, but allow as a member of a cse.
-        const REFUSE_ALLOW_MEMBER: Option<(VisitRecursion, bool)> =
-            Some((VisitRecursion::Continue, true));
+        const REFUSE_ALLOW_MEMBER: Accepted = Some((VisitRecursion::Continue, true));
+        const REFUSE_SKIP: Accepted = Some((VisitRecursion::Skip, false));
         // Accept this node.
-        const ACCEPT: Option<(VisitRecursion, bool)> = None;
+        const ACCEPT: Accepted = None;
 
         match ae {
             // window expressions should `evaluate_on_groups`, not `evaluate`
             // so we shouldn't cache the children as they are evaluated incorrectly
-            AExpr::Window { .. } => REFUSE_NO_MEMBER,
+            AExpr::Window { .. } => REFUSE_SKIP,
             // Don't allow this for now, as we can get `null().cast()` in ternary expressions.
             // TODO! Add a typed null
             AExpr::Literal(LiteralValue::Null) => REFUSE_NO_MEMBER,
@@ -332,7 +348,11 @@ impl ExprIdentifierVisitor<'_> {
 impl Visitor for ExprIdentifierVisitor<'_> {
     type Node = AexprNode;
 
-    fn pre_visit(&mut self, _node: &Self::Node) -> PolarsResult<VisitRecursion> {
+    fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
+        if traverse_pre_vist(node.to_aexpr(), self.is_group_by) {
+            return Ok(VisitRecursion::Skip);
+        }
+
         self.visit_stack
             .push(VisitRecord::Entered(self.pre_visit_idx));
         self.pre_visit_idx += 1;
@@ -360,7 +380,7 @@ impl Visitor for ExprIdentifierVisitor<'_> {
 
         // if we don't store this node
         // we only push the visit_stack, so the parents know the trail
-        if let Some((recurse, local_is_valid)) = self.accept_node(ae) {
+        if let Some((recurse, local_is_valid)) = self.accept_node_post_visit(ae) {
             self.identifier_array[pre_visit_idx + self.id_array_offset].0 = self.post_visit_idx;
 
             self.visit_stack
@@ -401,6 +421,7 @@ struct CommonSubExprRewriter<'a> {
     id_array_offset: usize,
     /// Indicates if this expression is rewritten.
     rewritten: bool,
+    is_group_by: bool,
 }
 
 impl<'a> CommonSubExprRewriter<'a> {
@@ -409,6 +430,7 @@ impl<'a> CommonSubExprRewriter<'a> {
         identifier_array: &'a IdentifierArray,
         replaced_identifiers: &'a mut PlHashSet<Identifier>,
         id_array_offset: usize,
+        is_group_by: bool,
     ) -> Self {
         Self {
             sub_expr_map,
@@ -418,6 +440,7 @@ impl<'a> CommonSubExprRewriter<'a> {
             visited_idx: 0,
             id_array_offset,
             rewritten: false,
+            is_group_by,
         }
     }
 }
@@ -459,16 +482,12 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
     type Node = AexprNode;
 
     fn pre_visit(&mut self, ae_node: &Self::Node) -> PolarsResult<RewriteRecursion> {
+        let ae = ae_node.to_aexpr();
         if self.visited_idx + self.id_array_offset >= self.identifier_array.len()
             || self.max_post_visit_idx
                 > self.identifier_array[self.visited_idx + self.id_array_offset].0
+            || !traverse_pre_vist(ae, self.is_group_by)
         {
-            return Ok(RewriteRecursion::Stop);
-        }
-
-        // check if we can accept node
-        // we don't traverse those children
-        if matches!(ae_node.to_aexpr(), AExpr::Window { .. }) {
             return Ok(RewriteRecursion::Stop);
         }
 
@@ -521,6 +540,8 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         {
             self.visited_idx += 1;
         }
+        // If this is not true, the traversal order in the visitor was different from the rewriter.
+        debug_assert!(node.binary(id.ae_node().node(), |l, r| l == r));
 
         let name = id.materialize();
         node.assign(AExpr::col(name.as_ref()));
@@ -575,12 +596,14 @@ impl<'a> CommonSubExprOptimizer<'a> {
         &mut self,
         ae_node: AexprNode,
         id_array_offset: usize,
+        is_group_by: bool,
     ) -> PolarsResult<(AexprNode, bool)> {
         let mut rewriter = CommonSubExprRewriter::new(
             &self.se_count,
             &self.id_array,
             &mut self.replaced_identifiers,
             id_array_offset,
+            is_group_by,
         );
         ae_node
             .rewrite(&mut rewriter)
@@ -619,7 +642,8 @@ impl<'a> CommonSubExprOptimizer<'a> {
             for (node, offset) in expr.iter().zip(id_array_offsets.iter()) {
                 let new_node =
                     AexprNode::with_context_and_arena(*node, expr_arena, |ae_node, expr_arena| {
-                        let (out, rewritten) = self.mutate_expression(ae_node, *offset as usize)?;
+                        let (out, rewritten) =
+                            self.mutate_expression(ae_node, *offset as usize, is_group_by)?;
 
                         let mut out_node = out.node();
                         if !rewritten {
@@ -805,8 +829,13 @@ mod test {
         AexprNode::with_context(node, &mut arena, |ae_node| ae_node.visit(&mut visitor)).unwrap();
 
         let mut replaced_ids = Default::default();
-        let mut rewriter =
-            CommonSubExprRewriter::new(&se_count, &id_array, &mut replaced_ids, id_array_offset);
+        let mut rewriter = CommonSubExprRewriter::new(
+            &se_count,
+            &id_array,
+            &mut replaced_ids,
+            id_array_offset,
+            false,
+        );
         let ae_node =
             AexprNode::with_context(node, &mut arena, |ae_node| ae_node.rewrite(&mut rewriter))
                 .unwrap();
