@@ -115,9 +115,9 @@ fn is_last_boolean(ca: &BooleanChunked) -> BooleanChunked {
 }
 
 fn is_last_bin(ca: &BinaryChunked) -> BooleanChunked {
-    let mut unique = PlHashSet::new();
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
+    let mut unique = PlHashSet::new();
     let mut new_ca: BooleanChunked = arr
         .into_iter()
         .rev()
@@ -133,9 +133,9 @@ where
     T: PolarsNumericType,
     T::Native: Hash + Eq,
 {
-    let mut unique = PlHashSet::new();
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
+    let mut unique = PlHashSet::new();
     let mut new_ca: BooleanChunked = arr
         .into_iter()
         .rev()
