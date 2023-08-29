@@ -37,12 +37,12 @@ impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
     #[inline]
     fn push(&mut self, arr: ArrayRef) -> PolarsResult<()> {
         let inner = self.inner.as_mut().unwrap();
-        let arr = arr.as_any()
+        let arr = arr
+            .as_any()
             .downcast_ref::<PrimitiveArray<T>>()
             .ok_or_else(|| polars_err!(ComputeError : "failed to downcast array"))?;
 
-        let z = inner.try_push(Some(arr.clone()))?;
-        Ok(z)
+        Ok(inner.try_push(Some(arr.clone()))?)
     }
 
     #[inline]
