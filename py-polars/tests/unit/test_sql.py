@@ -762,13 +762,161 @@ def test_sql_substr() -> None:
 def test_sql_trim(foods_ipc_path: Path) -> None:
     out = pl.SQLContext(foods1=pl.scan_ipc(foods_ipc_path)).execute(
         """
-        SELECT DISTINCT TRIM(LEADING 'vmf' FROM category)
+        SELECT DISTINCT TRIM(LEADING 'vmf' FROM category) as new_category
+        FROM foods1
+        ORDER BY new_category DESC
+        """,
+        eager=True,
+    )
+    assert out.to_dict(False) == {
+        "new_category": ["seafood", "ruit", "egetables", "eat"]
+    }
+
+
+def test_sql_order_by(foods_ipc_path: Path) -> None:
+    foods = pl.scan_ipc(foods_ipc_path)
+    nums = pl.LazyFrame(
+        {
+            "x": [1, 2, 3],
+            "y": [4, 3, 2],
+        }
+    )
+
+    order_by_distinct_res = pl.SQLContext(foods1=foods).execute(
+        """
+        SELECT DISTINCT category
         FROM foods1
         ORDER BY category DESC
         """,
         eager=True,
     )
-    assert out.to_dict(False) == {"category": ["seafood", "ruit", "egetables", "eat"]}
+    assert order_by_distinct_res.to_dict(False) == {
+        "category": ["vegetables", "seafood", "meat", "fruit"]
+    }
+
+    order_by_group_by_res = pl.SQLContext(foods1=foods).execute(
+        """
+        SELECT category
+        FROM foods1
+        GROUP BY category
+        ORDER BY category DESC
+        """,
+        eager=True,
+    )
+    assert order_by_group_by_res.to_dict(False) == {
+        "category": ["vegetables", "seafood", "meat", "fruit"]
+    }
+
+    order_by_constructed_group_by_res = pl.SQLContext(foods1=foods).execute(
+        """
+        SELECT category, SUM(calories) as summed_calories
+        FROM foods1
+        GROUP BY category
+        ORDER BY summed_calories DESC
+        """,
+        eager=True,
+    )
+    assert order_by_constructed_group_by_res.to_dict(False) == {
+        "category": ["seafood", "meat", "fruit", "vegetables"],
+        "summed_calories": [1250, 540, 410, 192],
+    }
+
+    order_by_unselected_res = pl.SQLContext(foods1=foods).execute(
+        """
+        SELECT SUM(calories) as summed_calories
+        FROM foods1
+        GROUP BY category
+        ORDER BY summed_calories DESC
+        """,
+        eager=True,
+    )
+    assert order_by_unselected_res.to_dict(False) == {
+        "summed_calories": [1250, 540, 410, 192],
+    }
+
+    order_by_unselected_nums_res = pl.SQLContext(df=nums).execute(
+        """
+        SELECT
+        df.x,
+        df.y as y_alias
+        FROM df
+        ORDER BY y
+        """,
+        eager=True,
+    )
+    assert order_by_unselected_nums_res.to_dict(False) == {
+        "x": [3, 2, 1],
+        "y_alias": [2, 3, 4],
+    }
+
+    order_by_wildcard_res = pl.SQLContext(df=nums).execute(
+        """
+        SELECT
+        *,
+        df.y as y_alias
+        FROM df
+        ORDER BY y
+        """,
+        eager=True,
+    )
+    assert order_by_wildcard_res.to_dict(False) == {
+        "x": [3, 2, 1],
+        "y": [2, 3, 4],
+        "y_alias": [2, 3, 4],
+    }
+
+    order_by_qualified_wildcard_res = pl.SQLContext(df=nums).execute(
+        """
+        SELECT
+        df.*
+        FROM df
+        ORDER BY y
+        """,
+        eager=True,
+    )
+    assert order_by_qualified_wildcard_res.to_dict(False) == {
+        "x": [3, 2, 1],
+        "y": [2, 3, 4],
+    }
+
+    order_by_exclude_res = pl.SQLContext(df=nums).execute(
+        """
+        SELECT
+        * EXCLUDE y
+        FROM df
+        ORDER BY y
+        """,
+        eager=True,
+    )
+    assert order_by_exclude_res.to_dict(False) == {
+        "x": [3, 2, 1],
+    }
+
+    order_by_qualified_exclude_res = pl.SQLContext(df=nums).execute(
+        """
+        SELECT
+        df.* EXCLUDE y
+        FROM df
+        ORDER BY y
+        """,
+        eager=True,
+    )
+    assert order_by_qualified_exclude_res.to_dict(False) == {
+        "x": [3, 2, 1],
+    }
+
+    order_by_expression_res = pl.SQLContext(df=nums).execute(
+        """
+        SELECT
+        x % y as modded
+        FROM df
+        ORDER BY x % y
+        """,
+        eager=True,
+    )
+    assert order_by_expression_res.to_dict(False) == {
+        "modded": [1, 1, 2],
+    }
 
 
 def test_register_context() -> None:
