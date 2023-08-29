@@ -2009,8 +2009,9 @@ dependencies = [
 
 [[package]]
 name = "simd-json"
-version = "0.10.0"
-source = "git+https://github.com/ritchie46/simd-json?branch=initialize#946b316f686c6ad3050f694ea434248c38aa321d"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de7f1293f0e4e11d52e588766fe9de8caa2857ff63809d40de83245452ca7c5c"
 dependencies = [
  "ahash",
  "halfbrown",
