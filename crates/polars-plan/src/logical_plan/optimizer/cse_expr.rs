@@ -185,7 +185,7 @@ enum VisitRecord {
     SubExprId(Identifier, bool),
 }
 
-fn traverse_pre_vist(ae: &AExpr, is_groupby: bool) -> bool {
+fn traverse_pre_visit(ae: &AExpr, is_groupby: bool) -> bool {
     match ae {
         AExpr::Window { .. } => false,
         AExpr::Ternary { .. } => is_groupby,
@@ -349,7 +349,7 @@ impl Visitor for ExprIdentifierVisitor<'_> {
     type Node = AexprNode;
 
     fn pre_visit(&mut self, node: &Self::Node) -> PolarsResult<VisitRecursion> {
-        if traverse_pre_vist(node.to_aexpr(), self.is_group_by) {
+        if traverse_pre_visit(node.to_aexpr(), self.is_group_by) {
             return Ok(VisitRecursion::Skip);
         }
 
@@ -486,7 +486,7 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
         if self.visited_idx + self.id_array_offset >= self.identifier_array.len()
             || self.max_post_visit_idx
                 > self.identifier_array[self.visited_idx + self.id_array_offset].0
-            || !traverse_pre_vist(ae, self.is_group_by)
+            || !traverse_pre_visit(ae, self.is_group_by)
         {
             return Ok(RewriteRecursion::Stop);
         }
