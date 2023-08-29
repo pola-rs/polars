@@ -12,8 +12,9 @@ use polars::lazy::frame::LazyJsonLineReader;
 use polars::lazy::frame::{AllowedOptimizations, LazyFrame};
 use polars::lazy::prelude::col;
 #[cfg(feature = "csv")]
-use polars::prelude::CsvEncoding;
-use polars::prelude::{ClosedWindow, Field, JoinType, Schema};
+use polars::prelude::{cloud, ClosedWindow, CsvEncoding, Field, JoinType, Schema};
+#[cfg(feature = "json")]
+use polars::prelude::JsonFormat;
 use polars::time::*;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::UniqueKeepStrategy;
@@ -635,11 +636,11 @@ impl PyLazyFrame {
         &self,
         py: Python,
         path: PathBuf,
-        json_format: Option<String>,
+        json_format: Option<Wrap<JsonFormat>>,
         maintain_order: bool
     ) -> PyResult<()> {
         let options = JsonWriterOptions {
-            json_format,
+            json_format: json_format.map(|c| c.0).unwrap_or(JsonFormat::default()),
             maintain_order,
         };
 

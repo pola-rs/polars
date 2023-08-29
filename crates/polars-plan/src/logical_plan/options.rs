@@ -92,7 +92,9 @@ pub struct CsvWriterOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JsonWriterOptions {
     /// format to use to write the DataFrame to JSON
-    json_format: JsonFormat
+    pub json_format: JsonFormat,
+    /// maintain the order the data was processed
+    pub maintain_order: bool
 }
 
 #[derive(Clone, Debug, PartialEq)]

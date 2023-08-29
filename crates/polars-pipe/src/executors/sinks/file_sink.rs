@@ -253,7 +253,7 @@ impl JsonSink {
         let io_thread_handle = Arc::new(Some(init_writer_thread(
             receiver,
             writer,
-            false,
+            options.maintain_order,
             morsels_per_sink,
         )));
 
