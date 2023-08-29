@@ -36,16 +36,16 @@ impl FromIteratorReversed<bool> for BooleanArray {
     fn from_trusted_len_iter_rev<I: TrustedLen<Item = bool>>(iter: I) -> Self {
         let size = iter.size_hint().1.unwrap();
 
-        let mut vals: Vec<bool> = Vec::with_capacity(size);
+        let vals = MutableBitmap::from_len_zeroed(size);
+        let vals_ptr = vals.as_slice().as_ptr() as *mut u8;
         unsafe {
-            // Set to end of buffer.
-            let mut ptr = vals.as_mut_ptr().add(size);
-
+            let mut offset = size;
             iter.for_each(|item| {
-                ptr = ptr.sub(1);
-                std::ptr::write(ptr, item);
+                offset -= 1;
+                if item {
+                    set_bit_raw(vals_ptr, offset);
+                }
             });
-            vals.set_len(size)
         }
         BooleanArray::new(DataType::Boolean, vals.into(), None)
     }

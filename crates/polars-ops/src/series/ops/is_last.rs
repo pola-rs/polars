@@ -70,7 +70,9 @@ fn is_last_boolean(ca: &BooleanChunked) -> BooleanChunked {
         let mut first_false_found = false;
         let mut first_null_found = false;
         let mut all_found = false;
-        ca.into_iter()
+        let ca = ca.rechunk();
+        let arr = ca.downcast_iter().next().unwrap();
+        arr.into_iter()
             .enumerate()
             .rev()
             .find_map(|(idx, val)| match val {
@@ -114,7 +116,9 @@ fn is_last_boolean(ca: &BooleanChunked) -> BooleanChunked {
 
 fn is_last_bin(ca: &BinaryChunked) -> BooleanChunked {
     let mut unique = PlHashSet::new();
-    let mut new_ca: BooleanChunked = ca
+    let ca = ca.rechunk();
+    let arr = ca.downcast_iter().next().unwrap();
+    let mut new_ca: BooleanChunked = arr
         .into_iter()
         .rev()
         .map(|opt_v| unique.insert(opt_v))
@@ -130,7 +134,9 @@ where
     T::Native: Hash + Eq,
 {
     let mut unique = PlHashSet::new();
-    let mut new_ca: BooleanChunked = ca
+    let ca = ca.rechunk();
+    let arr = ca.downcast_iter().next().unwrap();
+    let mut new_ca: BooleanChunked = arr
         .into_iter()
         .rev()
         .map(|opt_v| unique.insert(opt_v))

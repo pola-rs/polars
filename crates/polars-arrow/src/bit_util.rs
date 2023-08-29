@@ -83,7 +83,7 @@ pub fn ceil(value: usize, divisor: usize) -> usize {
 }
 
 #[inline]
-fn get_zeroes(chunk: u64) -> u32 {
+const fn get_leading_zeroes(chunk: u64) -> u32 {
     if cfg!(target_endian = "little") {
         chunk.trailing_zeros()
     } else {
@@ -92,7 +92,7 @@ fn get_zeroes(chunk: u64) -> u32 {
 }
 
 #[inline]
-fn get_ones(chunk: u64) -> u32 {
+const fn get_leading_ones(chunk: u64) -> u32 {
     if cfg!(target_endian = "little") {
         chunk.trailing_ones()
     } else {
@@ -107,7 +107,7 @@ where
     let mut total = 0usize;
     let size = 64;
     for chunk in &mut mask_chunks {
-        let pos = get_zeroes(chunk);
+        let pos = get_leading_zeroes(chunk);
         if pos != size {
             return total + pos as usize;
         } else {
@@ -143,7 +143,7 @@ where
     let mut total = 0usize;
     let size = 64;
     for chunk in &mut mask_chunks {
-        let pos = get_ones(chunk);
+        let pos = get_leading_ones(chunk);
         if pos != size {
             return total + pos as usize;
         } else {
