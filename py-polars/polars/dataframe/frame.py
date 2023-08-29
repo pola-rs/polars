@@ -3408,7 +3408,7 @@ class DataFrame:
         if engine == "adbc":
             if if_exists == "fail":
                 raise NotImplementedError(
-                    "`if_exists` not yet supported with engine ADBC"
+                    "`if_exists = 'fail'` not supported for ADBC engine"
                 )
             elif if_exists == "replace":
                 mode = "create"
