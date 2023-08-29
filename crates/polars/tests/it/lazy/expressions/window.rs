@@ -340,10 +340,7 @@ fn test_window_exprs_in_binary_exprs() -> PolarsResult<()> {
     ])
     .sum();
 
-    println!("{}", q.describe_optimized_plan().unwrap());
-
     let df = q.collect()?;
-    dbg!(&df);
 
     let expected = df![
         "value" => [28],
