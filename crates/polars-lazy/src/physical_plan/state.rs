@@ -147,7 +147,7 @@ impl ExecutionState {
         Self {
             df_cache: Arc::new(Mutex::new(PlHashMap::default())),
             schema_cache: Default::default(),
-            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "json"))]
             file_cache: FileCache::new(finger_prints),
             group_tuples: Arc::new(RwLock::new(PlHashMap::default())),
             join_tuples: Arc::new(Mutex::new(PlHashMap::default())),

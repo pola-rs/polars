@@ -128,7 +128,6 @@ TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last", "any", "none"]
 UnstackDirection: TypeAlias = Literal["vertical", "horizontal"]
 MapElementsStrategy: TypeAlias = Literal["thread_local", "threading"]
-ApplyStrategy: TypeAlias = Literal["thread_local", "threading"]
 JsonFormat: TypeAlias = Literal["json", "json_lines"]
 
 # The following have a Rust enum equivalent with a different name

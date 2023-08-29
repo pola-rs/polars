@@ -95,7 +95,7 @@ if TYPE_CHECKING:
         ColumnNameOrSelector,
         CsvEncoding,
         CsvQuoteStyle,
-	JsonFormat,
+	    JsonFormat,
         FillNullStrategy,
         FrameInitTypes,
         IntoExpr,

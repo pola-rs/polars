@@ -84,7 +84,7 @@ pub struct CsvWriterOptions {
     pub include_header: bool,
     pub batch_size: usize,
     pub maintain_order: bool,
-    pub serialize_options: SerializeOptions
+    pub serialize_options: SerializeOptions,
 }
 
 #[cfg(feature = "json")]
