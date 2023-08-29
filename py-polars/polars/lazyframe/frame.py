@@ -5172,20 +5172,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "a": [1, 2],
-        ...         "b": [3, 4],
+        ...         "a": range(-100_000, 0),
+        ...         "b": range(0, 100_000),
         ...     }
         ... )
-        >>> lf.map_batches(lambda x: 2 * x).collect()
-        shape: (2, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 2   ┆ 6   │
-        │ 4   ┆ 8   │
-        └─────┴─────┘
+        >>> lf.map_batches(lambda x: 2 * x, streamable=True).collect(streaming=True)
+        shape: (100_000, 2)
+        ┌─────────┬────────┐
+        │ a       ┆ b      │
+        │ ---     ┆ ---    │
+        │ i64     ┆ i64    │
+        ╞═════════╪════════╡
+        │ -200000 ┆ 0      │
+        │ -199998 ┆ 2      │
+        │ -199996 ┆ 4      │
+        │ -199994 ┆ 6      │
+        │ …       ┆ …      │
+        │ -8      ┆ 199992 │
+        │ -6      ┆ 199994 │
+        │ -4      ┆ 199996 │
+        │ -2      ┆ 199998 │
+        └─────────┴────────┘
 
         """
         if no_optimizations:

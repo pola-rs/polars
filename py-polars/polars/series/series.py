@@ -4875,7 +4875,7 @@ class Series:
         -----
         If your function is expensive and you don't want it to be called more than
         once for a given input, consider applying an ``@lru_cache`` decorator to it.
-        With suitable data you may achieve order-of-magnitude speedups (or more).
+        If your data is suitable you may achieve *significant* speedups.
 
         Examples
         --------

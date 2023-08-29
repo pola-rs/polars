@@ -6014,7 +6014,7 @@ class DataFrame:
             Output type of the operation. If none given, Polars tries to infer the type.
         inference_size
             Only used in the case when the custom function returns rows.
-            This uses the first `n` rows to determine the output schema
+            This uses the first `n` rows to determine the output schema.
 
         Notes
         -----
@@ -6025,7 +6025,7 @@ class DataFrame:
 
         * If your function is expensive and you don't want it to be called more than
           once for a given input, consider applying an ``@lru_cache`` decorator to it.
-          With suitable data you may achieve order-of-magnitude speedups (or more).
+          If your data is suitable you may achieve *significant* speedups.
 
         Examples
         --------
