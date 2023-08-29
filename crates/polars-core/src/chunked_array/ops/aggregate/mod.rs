@@ -19,6 +19,8 @@ use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::CustomIterTools;
 
+mod float_sum;
+
 /// Aggregations that return Series of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
     /// Get the sum of the ChunkedArray as a new Series of length 1.
@@ -39,44 +41,38 @@ pub trait ChunkAggSeries {
     }
 }
 
-fn sum_float_unaligned_slice<T: NumericNative>(values: &[T]) -> T {
-    values.iter().copied().sum()
-}
-
-fn sum_float_unaligned<T: NumericNative>(array: &PrimitiveArray<T>) -> T {
-    if array.len() == 0 || array.null_count() == array.len() {
-        return T::zero();
-    }
-    array.into_iter().flatten().copied().sum()
-}
-
-/// Floating point arithmetic is non-associative.
-/// The simd chunks are determined by memory location
-/// e.g.
-///
-/// |HEAD|  - | SIMD | - |TAIL|
-///
-/// The SIMD chunks have a certain alignment and depending of the start of the buffer
-/// head and tail may have different sizes, making a sum non-deterministic for the same
-/// values but different memory locations
-fn stable_sum<T: NumericNative + NativeType>(array: &PrimitiveArray<T>) -> T
+fn sum<T: NumericNative + NativeType>(array: &PrimitiveArray<T>) -> T
 where
     T: NumericNative + NativeType,
     <T as Simd>::Simd: Add<Output = <T as Simd>::Simd>
         + compute::aggregate::Sum<T>
         + compute::aggregate::SimdOrd<T>,
 {
+    if array.null_count() == array.len() {
+        return T::default();
+    }
+
     if T::is_float() {
-        use arrow::types::simd::NativeSimd;
         let values = array.values().as_slice();
-        let (a, _, _) = <T as Simd>::Simd::align(values);
-        // we only choose SIMD path if buffer is aligned to SIMD
-        if a.is_empty() {
-            compute::aggregate::sum_primitive(array).unwrap_or(T::zero())
-        } else if array.null_count() == 0 {
-            sum_float_unaligned_slice(values)
+        let validity = array.validity().filter(|_| array.null_count() > 0);
+        if T::is_f32() {
+            let f32_values = unsafe { std::mem::transmute::<&[T], &[f32]>(values) };
+            let sum: f32 = if let Some(bitmap) = validity {
+                float_sum::f32::sum_with_validity(f32_values, bitmap) as f32 // TODO: f64?
+            } else {
+                float_sum::f32::sum(f32_values) as f32 // TODO: f64?
+            };
+            unsafe { std::mem::transmute_copy::<f32, T>(&sum) }
+        } else if T::is_f64() {
+            let f64_values = unsafe { std::mem::transmute::<&[T], &[f64]>(values) };
+            let sum: f64 = if let Some(bitmap) = validity {
+                float_sum::f64::sum_with_validity(f64_values, bitmap)
+            } else {
+                float_sum::f64::sum(f64_values)
+            };
+            unsafe { std::mem::transmute_copy::<f64, T>(&sum) }
         } else {
-            sum_float_unaligned(array)
+            unreachable!("only supported float types are f32 and f64");
         }
     } else {
         compute::aggregate::sum_primitive(array).unwrap_or(T::zero())
@@ -93,7 +89,7 @@ where
     fn sum(&self) -> Option<T::Native> {
         Some(
             self.downcast_iter()
-                .map(stable_sum)
+                .map(sum)
                 .fold(T::Native::zero(), |acc, v| acc + v),
         )
     }
