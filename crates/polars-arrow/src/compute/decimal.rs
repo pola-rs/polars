@@ -32,67 +32,63 @@ pub(super) fn deserialize_decimal(bytes: &[u8], precision: Option<u8>, scale: u8
     let (lhs, rhs) = split_decimal_bytes(bytes);
     let precision = precision.unwrap_or(u8::MAX);
 
-    match (lhs, rhs) {
-        (Some(lhs), Some(rhs)) => parse_integer_checked(lhs).and_then(|x| {
-            parse_integer_checked(rhs)
-                .map(|y| (x, lhs, y, rhs))
-                .and_then(|(lhs, lhs_b, rhs, rhs_b)| {
-                    let lhs_s = significant_digits(lhs_b);
-                    let leading_zeros_rhs = leading_zeros(rhs_b);
-                    let rhs_s = rhs_b.len() as u8 - leading_zeros_rhs;
+    let lhs_b = lhs?;
+    parse_integer_checked(lhs_b).and_then(|x| {
+        match rhs {
+            Some(rhs) => {
+                parse_integer_checked(rhs)
+                    .map(|y| (x, lhs_b, y, rhs))
+                    .and_then(|(lhs, lhs_b, rhs, rhs_b)| {
+                        let lhs_s = significant_digits(lhs_b);
+                        let leading_zeros_rhs = leading_zeros(rhs_b);
+                        let rhs_s = rhs_b.len() as u8 - leading_zeros_rhs;
 
-                    // parameters don't match bytes
-                    if lhs_s + rhs_s > precision || rhs_s > scale {
-                        None
-                    }
-                    // significant digits don't fit scale
-                    else if rhs_s < scale {
+                        // parameters don't match bytes
+                        if lhs_s + rhs_s > precision || rhs_s > scale {
+                            None
+                        }
+                        // significant digits don't fit scale
+                        else if rhs_s < scale {
+                            // scale: 2
+                            // number: x.09
+                            // significant digits: 1
+                            // leading_zeros: 1
+                            // parsed: 9
+                            // so this is correct
+                            if leading_zeros_rhs + rhs_s == scale {
+                                Some((lhs, rhs))
+                            }
+                            // scale: 2
+                            // number: x.9
+                            // significant digits: 1
+                            // parsed: 9
+                            // so we must multiply by 10 to get 90
+                            else {
+                                let diff = scale as u32 - (rhs_s + leading_zeros_rhs) as u32;
+                                Some((lhs, rhs * 10i128.pow(diff)))
+                            }
+                        }
                         // scale: 2
-                        // number: x.09
-                        // significant digits: 1
-                        // leading_zeros: 1
-                        // parsed: 9
+                        // number: x.90
+                        // significant digits: 2
+                        // parsed: 90
                         // so this is correct
-                        if leading_zeros_rhs + rhs_s == scale {
+                        else {
                             Some((lhs, rhs))
                         }
-                        // scale: 2
-                        // number: x.9
-                        // significant digits: 1
-                        // parsed: 9
-                        // so we must multiply by 10 to get 90
-                        else {
-                            let diff = scale as u32 - (rhs_s + leading_zeros_rhs) as u32;
-                            Some((lhs, rhs * 10i128.pow(diff)))
-                        }
-                    }
-                    // scale: 2
-                    // number: x.90
-                    // significant digits: 2
-                    // parsed: 90
-                    // so this is correct
-                    else {
-                        Some((lhs, rhs))
-                    }
-                })
-                .map(|(lhs, rhs)| {
-                    lhs * 10i128.pow(scale as u32) + (if lhs < 0 { -rhs } else { rhs })
-                })
-        }),
-        (None, Some(rhs)) => {
-            if rhs.len() > precision as usize || rhs.len() != scale as usize {
-                return None;
-            }
-            parse_integer_checked(rhs)
-        },
-        (Some(lhs), None) => {
-            if lhs.len() > precision as usize || scale != 0 {
-                return None;
-            }
-            parse_integer_checked(lhs)
-        },
-        (None, None) => None,
-    }
+                    })
+                    .map(|(lhs, rhs)| {
+                        lhs * 10i128.pow(scale as u32) + (if lhs < 0 { -rhs } else { rhs })
+                    })
+            },
+            None => {
+                if lhs_b.len() > precision as usize || scale != 0 {
+                    return None;
+                }
+                parse_integer_checked(lhs_b)
+            },
+        }
+    })
 }
 
 #[cfg(test)]
