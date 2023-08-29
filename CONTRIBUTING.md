@@ -157,7 +157,7 @@ For contributing to the user guide, please refer to the [contributing guide](htt
 
 ### API reference
 
-Polars has separate API references for [Rust](https://pola-rs.github.io/polars/polars/index.html) and [Python](https://pola-rs.github.io/polars/py-polars/html/reference/index.html).
+Polars has separate API references for [Rust](https://pola-rs.github.io/polars/docs/rust/dev/polars/) and [Python](https://pola-rs.github.io/polars/docs/python/dev/reference/index.html).
 These are generated directly from the codebase, so in order to contribute, you will have to follow the steps outlined in [this section](#contributing-to-the-codebase) above.
 
 #### Rust
