@@ -139,12 +139,28 @@ def test_write_database_create_quoted_tablename(
 def test_write_database_errors() -> None:
     # confirm that invalid parameter values raise errors
     df = pl.DataFrame({"colx": [1, 2, 3]})
-    for params in (
-        {"table_name": "w.x.y.z", "engine": "sqlalchemy"},
-        {"if_exists": "crunk", "engine": "sqlalchemy", "table_name": "main.test_errs"},
+
+    with pytest.raises(
+        ValueError, match="`table_name` appears to be invalid: 'w.x.y.z'"
     ):
-        with pytest.raises((ValueError, NotImplementedError)):
-            df.write_database(
-                connection="sqlite:///:memory:",
-                **params,  # type: ignore[arg-type]
-            )
+        df.write_database(
+            connection="sqlite:///:memory:", table_name="w.x.y.z", engine="sqlalchemy"
+        )
+
+    with pytest.raises(
+        NotImplementedError, match="`if_exists = 'fail'` not supported for ADBC engine"
+    ):
+        df.write_database(
+            connection="sqlite:///:memory:",
+            table_name="test_errs",
+            if_exists="fail",
+            engine="adbc",
+        )
+
+    with pytest.raises(ValueError, match="'do_something' is not valid for if_exists"):
+        df.write_database(
+            connection="sqlite:///:memory:",
+            table_name="main.test_errs",
+            if_exists="do_something",  # type: ignore[arg-type]
+            engine="sqlalchemy",
+        )
