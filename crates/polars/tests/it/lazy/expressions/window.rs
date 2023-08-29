@@ -314,7 +314,7 @@ fn test_window_mapping() -> PolarsResult<()> {
 
 #[test]
 fn test_window_exprs_in_binary_exprs() -> PolarsResult<()> {
-    let df = df![
+    let q = df![
         "value" => 0..8,
         "cat" => [0, 0, 0, 0, 1, 1, 1, 1]
     ]?
@@ -338,8 +338,9 @@ fn test_window_exprs_in_binary_exprs() -> PolarsResult<()> {
             .cast(DataType::Int32)
             .alias("stdized3"),
     ])
-    .sum()
-    .collect()?;
+    .sum();
+
+    let df = q.collect()?;
 
     let expected = df![
         "value" => [28],

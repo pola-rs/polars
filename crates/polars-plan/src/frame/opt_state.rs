@@ -27,7 +27,7 @@ impl Default for OptState {
             #[cfg(feature = "cse")]
             comm_subplan_elim: true,
             #[cfg(feature = "cse")]
-            comm_subexpr_elim: false,
+            comm_subexpr_elim: true,
             streaming: false,
         }
     }
