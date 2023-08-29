@@ -407,3 +407,19 @@ def test_group_by_min_max_string_type() -> None:
             .to_dict(False)
             == expected
         )
+
+
+@pytest.mark.parametrize("literal", [True, "foo", 1])
+def test_streaming_group_by_literal(literal: Any) -> None:
+    df = pl.LazyFrame({"a": range(20)})
+
+    assert df.group_by(pl.lit(literal)).agg(
+        [
+            pl.col("a").count().alias("a_count"),
+            pl.col("a").sum().alias("a_sum"),
+        ]
+    ).collect(streaming=True).to_dict(False) == {
+        "literal": [literal],
+        "a_count": [20],
+        "a_sum": [190],
+    }
