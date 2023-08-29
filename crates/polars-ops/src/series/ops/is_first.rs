@@ -44,16 +44,16 @@ fn is_first_boolean(ca: &BooleanChunked) -> BooleanChunked {
         if ca.null_count() == 0 {
             let (true_index, false_index) =
                 find_first_true_false_no_null(arr.values().chunks::<u64>());
-            true_index.map(|idx| out.set(idx, true));
-            false_index.map(|idx| out.set(idx, true));
+            if let Some(idx) = true_index { out.set(idx, true) }
+            if let Some(idx) = false_index { out.set(idx, true) }
         } else {
             let (true_index, false_index, null_index) = find_first_true_false_null(
                 arr.values().chunks::<u64>(),
                 arr.validity().unwrap().chunks::<u64>(),
             );
-            true_index.map(|idx| out.set(idx, true));
-            false_index.map(|idx| out.set(idx, true));
-            null_index.map(|idx| out.set(idx, true));
+            if let Some(idx) = true_index { out.set(idx, true) }
+            if let Some(idx) = false_index { out.set(idx, true) }
+            if let Some(idx) = null_index { out.set(idx, true) }
         }
     }
     let arr = BooleanArray::new(ArrowDataType::Boolean, out.into(), None);
