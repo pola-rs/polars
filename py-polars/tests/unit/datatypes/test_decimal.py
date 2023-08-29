@@ -84,6 +84,15 @@ def test_init_decimal_dtype() -> None:
     assert df["a"].is_numeric()
 
 
+def test_init_decimal_dtype_with_schema(float_tolerance=0.01) -> None:
+    df = pl.DataFrame(
+        {"a": [D("1"), D("2.55"), D("45.000"), D("10.0")]}, schema={"a": pl.Float64}
+    )
+    assert (
+        abs(df["a"].sum() - 58.55) < float_tolerance
+    ), "Something went wrong converting decimals to floats"
+
+
 def test_decimal_cast() -> None:
     df = pl.DataFrame(
         {

@@ -76,12 +76,9 @@ fn any_values_to_decimal(
             ComputeError:
             "unable to losslessly convert any-value of scale {s_max} to scale {}", scale,
         );
-    } else if s_min == s_max && s_max == scale {
-        // no conversions needed; will potentially check values for precision though
-        any_values_to_primitive::<Int128Type>(avs).into_decimal(precision, scale)
     } else {
-        // rescaling is needed
         let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", avs.len());
+        let conversion_needed = s_min == s_max && s_max == scale;
         for av in avs {
             let (v, s_av) = if av.is_signed() || av.is_unsigned() {
                 (
@@ -95,10 +92,15 @@ fn any_values_to_decimal(
                 builder.append_null();
                 continue;
             };
-            let factor = 10_i128.pow((scale - s_av) as _); // this cast is safe
-            builder.append_value(v.checked_mul(factor).ok_or_else(|| {
-                polars_err!(ComputeError: "overflow while converting to decimal scale {}", scale)
-            })?);
+
+            if !conversion_needed {
+                builder.append(v);
+            } else {
+                let factor = 10_i128.pow((scale - s_av) as _); // this cast is safe
+                builder.append_value(v.checked_mul(factor).ok_or_else(|| {
+                    polars_err!(ComputeError: "overflow while converting to decimal scale {}", scale)
+                })?);
+            }
         }
         // build the array and do a precision check if needed
         builder.finish().into_decimal(precision, scale)
