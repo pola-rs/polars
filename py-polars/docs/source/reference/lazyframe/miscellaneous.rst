@@ -11,6 +11,7 @@ Miscellaneous
     LazyFrame.fetch
     LazyFrame.lazy
     LazyFrame.map
+    LazyFrame.map_batches
     LazyFrame.pipe
     LazyFrame.profile
 

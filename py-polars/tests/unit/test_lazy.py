@@ -69,7 +69,7 @@ def test_lazyframe_membership_operator() -> None:
 
 def test_apply() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    new = ldf.with_columns_seq(pl.col("a").map(lambda s: s * 2).alias("foo"))
+    new = ldf.with_columns_seq(pl.col("a").map_batches(lambda s: s * 2).alias("foo"))
 
     expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
     assert_frame_equal(new, expected)
@@ -1321,7 +1321,7 @@ def test_lazy_cache_parallel() -> None:
         df_evaluated += 1
         return df
 
-    df = pl.LazyFrame({"a": [1]}).map(map_df).cache()
+    df = pl.LazyFrame({"a": [1]}).map_batches(map_df).cache()
 
     df = pl.concat(
         [
@@ -1352,8 +1352,8 @@ def test_lazy_cache_nested_parallel() -> None:
         df_outer_evaluated += 1
         return df
 
-    df_inner = pl.LazyFrame({"a": [1]}).map(map_df_inner).cache()
-    df_outer = df_inner.select(pl.col("a") + 1).map(map_df_outer).cache()
+    df_inner = pl.LazyFrame({"a": [1]}).map_batches(map_df_inner).cache()
+    df_outer = df_inner.select(pl.col("a") + 1).map_batches(map_df_outer).cache()
 
     df = pl.concat(
         [

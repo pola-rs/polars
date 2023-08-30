@@ -961,7 +961,7 @@ def cov(a: str | Expr, b: str | Expr) -> Expr:
     return wrap_expr(plr.cov(a._pyexpr, b._pyexpr))
 
 
-def map(
+def map_batches(
     exprs: Sequence[str] | Sequence[Expr],
     function: Callable[[Sequence[Series]], Series],
     return_dtype: PolarsDataType | None = None,
@@ -999,7 +999,7 @@ def map(
     >>>
     >>> df.with_columns(
     ...     (
-    ...         pl.struct(["a", "b"]).map(
+    ...         pl.struct(["a", "b"]).map_batches(
     ...             lambda x: test_func(x.struct.field("a"), x.struct.field("b"), 1)
     ...         )
     ...     ).alias("a+b+c")
@@ -1015,6 +1015,7 @@ def map(
     │ 3   ┆ 6   ┆ 10    │
     │ 4   ┆ 7   ┆ 12    │
     └─────┴─────┴───────┘
+
     """
     exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(
@@ -1022,6 +1023,36 @@ def map(
             exprs, function, return_dtype, map_groups=False, returns_scalar=False
         )
     )
+
+
+@deprecate_renamed_function("map_batches", version="0.19.0")
+def map(
+    exprs: Sequence[str] | Sequence[Expr],
+    function: Callable[[Sequence[Series]], Series],
+    return_dtype: PolarsDataType | None = None,
+) -> Expr:
+    """
+    Map a custom function over multiple columns/expressions.
+
+    .. deprecated:: 0.19.0
+        This function has been renamed to :func:`map_batches`.
+
+    Parameters
+    ----------
+    exprs
+        Input Series to f
+    function
+        Function to apply over the input
+    return_dtype
+        dtype of the output Series
+
+    Returns
+    -------
+    Expr
+        Expression with the data type given by ``return_dtype``.
+
+    """
+    return map_batches(exprs, function, return_dtype)
 
 
 def map_groups(

@@ -1167,7 +1167,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             print(fmt.format(s))
             return s
 
-        return self.map(inspect, predicate_pushdown=True, projection_pushdown=True)
+        return self.map_batches(
+            inspect, predicate_pushdown=True, projection_pushdown=True
+        )
 
     def sort(
         self,
@@ -5114,7 +5116,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             self._ldf.melt(id_vars, value_vars, value_name, variable_name, streamable)
         )
 
-    def map(
+    def map_batches(
         self,
         function: Callable[[DataFrame], DataFrame],
         *,
@@ -5174,7 +5176,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "b": [3, 4],
         ...     }
         ... )
-        >>> lf.map(lambda x: 2 * x).collect()
+        >>> lf.map_batches(lambda x: 2 * x).collect()
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -5192,7 +5194,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown = False
 
         return self._from_pyldf(
-            self._ldf.map(
+            self._ldf.map_batches(
                 function,
                 predicate_pushdown,
                 projection_pushdown,
@@ -5510,7 +5512,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Start a group by operation.
 
-        Alias for :func:`LazyFrame.group_by`.
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`LazyFrame.group_by`.
 
         Parameters
         ----------
@@ -5542,7 +5545,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Create rolling groups based on a time, Int32, or Int64 column.
 
-        Alias for :func:`LazyFrame.group_by_rolling`.
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`LazyFrame.group_by_rolling`.
 
         Parameters
         ----------
@@ -5605,7 +5609,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Group based on a time value (or index value of type Int32, Int64).
 
-        Alias for :func:`LazyFrame.group_by_rolling`.
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`LazyFrame.group_by_dynamic`.
 
         Parameters
         ----------
@@ -5673,4 +5678,61 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             by=by,
             start_by=start_by,
             check_sorted=check_sorted,
+        )
+
+    @deprecate_renamed_function("map_batches", version="0.19.0")
+    def map(
+        self,
+        function: Callable[[DataFrame], DataFrame],
+        *,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        slice_pushdown: bool = True,
+        no_optimizations: bool = False,
+        schema: None | SchemaDict = None,
+        validate_output_schema: bool = True,
+        streamable: bool = False,
+    ) -> Self:
+        """
+        Apply a custom function.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`LazyFrame.map_batches`.
+
+        Parameters
+        ----------
+        function
+            Lambda/ function to apply.
+        predicate_pushdown
+            Allow predicate pushdown optimization to pass this node.
+        projection_pushdown
+            Allow projection pushdown optimization to pass this node.
+        slice_pushdown
+            Allow slice pushdown optimization to pass this node.
+        no_optimizations
+            Turn off all optimizations past this point.
+        schema
+            Output schema of the function, if set to ``None`` we assume that the schema
+            will remain unchanged by the applied function.
+        validate_output_schema
+            It is paramount that polars' schema is correct. This flag will ensure that
+            the output schema of this function will be checked with the expected schema.
+            Setting this to ``False`` will not do this check, but may lead to hard to
+            debug bugs.
+        streamable
+            Whether the function that is given is eligible to be running with the
+            streaming engine. That means that the function must produce the same result
+            when it is executed in batches or when it is be executed on the full
+            dataset.
+
+        """
+        return self.map_batches(
+            function,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            slice_pushdown=slice_pushdown,
+            no_optimizations=no_optimizations,
+            schema=schema,
+            validate_output_schema=validate_output_schema,
+            streamable=streamable,
         )
