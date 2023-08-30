@@ -81,36 +81,18 @@ pub fn ceil(value: usize, divisor: usize) -> usize {
     }
 }
 
-#[inline]
-const fn get_leading_zeroes(chunk: u64) -> u32 {
-    if cfg!(target_endian = "little") {
-        chunk.trailing_zeros()
-    } else {
-        chunk.leading_zeros()
-    }
-}
-
-#[inline]
-const fn get_leading_ones(chunk: u64) -> u32 {
-    if cfg!(target_endian = "little") {
-        chunk.trailing_ones()
-    } else {
-        chunk.leading_ones()
-    }
-}
-
 fn first_set_bit_impl<I>(mut mask_chunks: I) -> usize
 where
     I: BitChunkIterExact<u64>,
 {
     let mut total = 0usize;
-    let size = 64;
+    const SIZE: u32 = 64;
     for chunk in &mut mask_chunks {
-        let pos = get_leading_zeroes(chunk);
-        if pos != size {
+        let pos = chunk.trailing_zeros();
+        if pos != SIZE {
             return total + pos as usize;
         } else {
-            total += size as usize
+            total += SIZE as usize
         }
     }
     if let Some(pos) = mask_chunks.remainder_iter().position(|v| v) {
@@ -140,13 +122,13 @@ where
     I: BitChunkIterExact<u64>,
 {
     let mut total = 0usize;
-    let size = 64;
+    const SIZE: u32 = 64;
     for chunk in &mut mask_chunks {
-        let pos = get_leading_ones(chunk);
-        if pos != size {
+        let pos = chunk.trailing_ones();
+        if pos != SIZE {
             return total + pos as usize;
         } else {
-            total += size as usize
+            total += SIZE as usize
         }
     }
     if let Some(pos) = mask_chunks.remainder_iter().position(|v| !v) {
