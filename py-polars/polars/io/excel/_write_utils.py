@@ -324,7 +324,7 @@ def _xl_setup_table_columns(
         return s.__class__(s.name, [str(v) for v in s.to_list()])
 
     cast_cols = [
-        F.col(col).map(_map_str).alias(col)
+        F.col(col).map_batches(_map_str).alias(col)
         for col, tp in df.schema.items()
         if tp in (List, Struct, Object)
     ]

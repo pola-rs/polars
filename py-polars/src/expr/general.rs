@@ -614,7 +614,12 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (lambda, output_type, agg_list))]
-    fn map(&self, lambda: PyObject, output_type: Option<Wrap<DataType>>, agg_list: bool) -> Self {
+    fn map_batches(
+        &self,
+        lambda: PyObject,
+        output_type: Option<Wrap<DataType>>,
+        agg_list: bool,
+    ) -> Self {
         map_single(self, lambda, output_type, agg_list)
     }
 

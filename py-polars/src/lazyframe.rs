@@ -920,7 +920,7 @@ impl PyLazyFrame {
 
     #[pyo3(signature = (lambda, predicate_pushdown, projection_pushdown, slice_pushdown, streamable, schema, validate_output))]
     #[allow(clippy::too_many_arguments)]
-    fn map(
+    fn map_batches(
         &self,
         lambda: PyObject,
         predicate_pushdown: bool,

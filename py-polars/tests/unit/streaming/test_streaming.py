@@ -58,7 +58,7 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
     assert (
         pl.DataFrame({"a": [1, 2, 3]})
         .lazy()
-        .map(
+        .map_batches(
             function=lambda df: df.with_columns(pl.col("a").alias("b")),
             schema={"a": pl.Int64, "b": pl.Int64},
             streamable=True,

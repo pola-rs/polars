@@ -258,7 +258,7 @@ class Expr:
             args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
             return ufunc(*args, **kwargs)
 
-        return self.map(function)
+        return self.map_batches(function)
 
     @classmethod
     def from_json(cls, value: str) -> Self:
@@ -3634,7 +3634,7 @@ class Expr:
         """
         return self.filter(predicate)
 
-    def map(
+    def map_batches(
         self,
         function: Callable[[Series], Series | Any],
         return_dtype: PolarsDataType | None = None,
@@ -3678,7 +3678,7 @@ class Expr:
         ...         "cosine": [1.0, 0.0, -1.0, 0.0],
         ...     }
         ... )
-        >>> df.select(pl.all().map(lambda x: x.to_numpy().argmax()))
+        >>> df.select(pl.all().map_batches(lambda x: x.to_numpy().argmax()))
         shape: (1, 2)
         ┌──────┬────────┐
         │ sine ┆ cosine │
@@ -3691,7 +3691,9 @@ class Expr:
         """
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
-        return self._from_pyexpr(self._pyexpr.map(function, return_dtype, agg_list))
+        return self._from_pyexpr(
+            self._pyexpr.map_batches(function, return_dtype, agg_list)
+        )
 
     def map_elements(
         self,
@@ -3842,13 +3844,15 @@ class Expr:
                     )
 
         if strategy == "thread_local":
-            return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
+            return self.map_batches(wrap_f, agg_list=True, return_dtype=return_dtype)
         elif strategy == "threading":
 
             def wrap_threading(x: Series) -> Series:
                 def get_lazy_promise(df: DataFrame) -> LazyFrame:
                     return df.lazy().select(
-                        F.col("x").map(wrap_f, agg_list=True, return_dtype=return_dtype)
+                        F.col("x").map_batches(
+                            wrap_f, agg_list=True, return_dtype=return_dtype
+                        )
                     )
 
                 df = x.to_frame("x")
@@ -3880,7 +3884,9 @@ class Expr:
                 out = [df.to_series() for df in F.collect_all(partitions)]
                 return F.concat(out, rechunk=False)
 
-            return self.map(wrap_threading, agg_list=True, return_dtype=return_dtype)
+            return self.map_batches(
+                wrap_threading, agg_list=True, return_dtype=return_dtype
+            )
         else:
             ValueError(f"Strategy {strategy} is not supported.")
 
@@ -5075,7 +5081,7 @@ class Expr:
             print(fmt.format(s))
             return s
 
-        return self.map(inspect, return_dtype=None, agg_list=True)
+        return self.map_batches(inspect, return_dtype=None, agg_list=True)
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Self:
         """
@@ -9011,7 +9017,33 @@ class Expr:
             )
 
         func = inner_with_default if default is not None else inner
-        return self.map(func)
+        return self.map_batches(func)
+
+    @deprecate_renamed_function("map_batches", version="0.19.0")
+    def map(
+        self,
+        function: Callable[[Series], Series | Any],
+        return_dtype: PolarsDataType | None = None,
+        *,
+        agg_list: bool = False,
+    ) -> Self:
+        """
+        Apply a custom python function to a Series or sequence of Series.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`Expr.map_batches`.
+
+        Parameters
+        ----------
+        function
+            Lambda/ function to apply.
+        return_dtype
+            Dtype of the output Series.
+        agg_list
+            Aggregate list
+
+        """
+        return self.map_batches(function, return_dtype, agg_list=agg_list)
 
     @deprecate_renamed_function("map_elements", version="0.19.0")
     def apply(
