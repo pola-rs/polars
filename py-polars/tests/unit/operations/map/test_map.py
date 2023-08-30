@@ -361,27 +361,6 @@ def test_map_elements_set_datetime_output_8984() -> None:
     )["a"].to_list() == [payload]
 
 
-def test_err_df_apply_return_type() -> None:
-    df = pl.DataFrame({"a": [[1, 2], [2, 3]], "b": [[4, 5], [6, 7]]})
-
-    def cmb(row: tuple[Any, ...]) -> list[Any]:
-        res = [x + y for x, y in zip(row[0], row[1])]
-        return [res]
-
-    with pytest.raises(pl.ComputeError, match="expected tuple, got list"):
-        df.apply(cmb)
-
-
-def test_apply_shifted_chunks() -> None:
-    df = pl.DataFrame(pl.Series("texts", ["test", "test123", "tests"]))
-    assert df.select(
-        pl.col("texts"), pl.col("texts").shift(1).alias("texts_shifted")
-    ).apply(lambda x: x).to_dict(False) == {
-        "column_0": ["test", "test123", "tests"],
-        "column_1": [None, "test", "test123"],
-    }
-
-
 def test_map_elements_dict_order_10128() -> None:
     df = pl.select(pl.lit("").map_elements(lambda x: {"c": 1, "b": 2, "a": 3}))
     assert df.to_dict(False) == {"literal": [{"c": 1, "b": 2, "a": 3}]}
