@@ -5975,7 +5975,7 @@ class DataFrame:
             .collect(no_optimization=True)
         )
 
-    def apply(
+    def map_rows(
         self,
         function: Callable[[tuple[Any, ...]], Any],
         return_dtype: PolarsDataType | None = None,
@@ -6030,7 +6030,7 @@ class DataFrame:
 
         Return a DataFrame by mapping each row to a tuple:
 
-        >>> df.apply(lambda t: (t[0] * 2, t[1] * 3))
+        >>> df.map_rows(lambda t: (t[0] * 2, t[1] * 3))
         shape: (3, 2)
         ┌──────────┬──────────┐
         │ column_0 ┆ column_1 │
@@ -6051,7 +6051,7 @@ class DataFrame:
 
         Return a DataFrame with a single column by mapping each row to a scalar:
 
-        >>> df.apply(lambda t: (t[0] * 2 + t[1]))  # doctest: +SKIP
+        >>> df.map_rows(lambda t: (t[0] * 2 + t[1]))  # doctest: +SKIP
         shape: (3, 1)
         ┌───────┐
         │ apply │
@@ -6069,10 +6069,10 @@ class DataFrame:
 
         """
         # TODO:
-        # from polars.utils.udfs import warn_on_inefficient_apply
-        # warn_on_inefficient_apply(function, columns=self.columns, apply_target="frame)
+        # from polars.utils.udfs import warn_on_inefficient_map
+        # warn_on_inefficient_map(function, columns=self.columns, map_target="frame)
 
-        out, is_df = self._df.apply(function, return_dtype, inference_size)
+        out, is_df = self._df.map_rows(function, return_dtype, inference_size)
         if is_df:
             return self._from_pydf(out)
         else:
@@ -9907,6 +9907,33 @@ class DataFrame:
             start_by=start_by,
             check_sorted=check_sorted,
         )
+
+    @deprecate_renamed_function("map_rows", version="0.19.0")
+    def apply(
+        self,
+        function: Callable[[tuple[Any, ...]], Any],
+        return_dtype: PolarsDataType | None = None,
+        *,
+        inference_size: int = 256,
+    ) -> DataFrame:
+        """
+        Apply a custom/user-defined function (UDF) over the rows of the DataFrame.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`DataFrame.map_rows`.
+
+        Parameters
+        ----------
+        function
+            Custom function or lambda.
+        return_dtype
+            Output type of the operation. If none given, Polars tries to infer the type.
+        inference_size
+            Only used in the case when the custom function returns rows.
+            This uses the first `n` rows to determine the output schema
+
+        """
+        return self.map_rows(function, return_dtype, inference_size=inference_size)
 
 
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:

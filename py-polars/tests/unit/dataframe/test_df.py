@@ -942,12 +942,6 @@ def test_fold_filter() -> None:
     assert out.rows() == [(1, 0), (2, 1), (3, 2)]
 
 
-def test_df_apply() -> None:
-    df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    out = df.apply(lambda x: len(x), None).to_series()
-    assert out.sum() == 9
-
-
 def test_column_names() -> None:
     tbl = pa.table(
         {
@@ -1961,27 +1955,6 @@ def test_slicing() -> None:
         2,
         1,
     )
-
-
-def test_apply_list_return() -> None:
-    df = pl.DataFrame({"start": [1, 2], "end": [3, 5]})
-    out = df.apply(lambda r: pl.Series(range(r[0], r[1] + 1))).to_series()
-    assert out.to_list() == [[1, 2, 3], [2, 3, 4, 5]]
-
-
-def test_apply_dataframe_return() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": ["c", "d", None]})
-
-    out = df.apply(lambda row: (row[0] * 10, "foo", True, row[-1]))
-    expected = pl.DataFrame(
-        {
-            "column_0": [10, 20, 30],
-            "column_1": ["foo", "foo", "foo"],
-            "column_2": [True, True, True],
-            "column_3": ["c", "d", None],
-        }
-    )
-    assert_frame_equal(out, expected)
 
 
 def test_group_by_cat_list() -> None:
