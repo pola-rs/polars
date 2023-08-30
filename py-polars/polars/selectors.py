@@ -13,8 +13,10 @@ from polars.datatypes import (
     TEMPORAL_DTYPES,
     UNSIGNED_INTEGER_DTYPES,
     Categorical,
+    Date,
     Datetime,
     Duration,
+    Time,
     Utf8,
     is_polars_dtype,
 )
@@ -525,6 +527,57 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
     )
 
 
+def categorical() -> SelectorType:
+    """
+    Select all categorical columns.
+
+    See Also
+    --------
+    by_dtype : Select all columns of a given dtype.
+    string : Select all string columns (optionally including categoricals).
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": ["xx", "yy"],
+    ...         "bar": [123, 456],
+    ...         "baz": [2.0, 5.5],
+    ...     },
+    ...     schema_overrides={"foo": pl.Categorical},
+    ... )
+
+    Select all categorical columns:
+
+    >>> df.select(cs.categorical())
+    shape: (2, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ cat │
+    ╞═════╡
+    │ xx  │
+    │ yy  │
+    └─────┘
+
+    Select all columns *except* for those that are categorical:
+
+    >>> df.select(~cs.categorical())
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ bar ┆ baz │
+    │ --- ┆ --- │
+    │ i64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 123 ┆ 2.0 │
+    │ 456 ┆ 5.5 │
+    └─────┴─────┘
+
+    """
+    return _selector_proxy_(F.col(Categorical), name="categorical")
+
+
 def contains(substring: str | Collection[str]) -> SelectorType:
     """
     Select columns that contain the given literal substring(s).
@@ -602,6 +655,59 @@ def contains(substring: str | Collection[str]) -> SelectorType:
     )
 
 
+def date() -> SelectorType:
+    """
+    Select all date columns.
+
+    See Also
+    --------
+    datetime : Select all datetime columns, optionally filtering by time unit/zone.
+    duration : Select all duration columns, optionally filtering by time unit.
+    temporal : Select all temporal columns.
+    time : Select all time columns.
+
+    Examples
+    --------
+    >>> from datetime import date, datetime, time
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "dtm": [datetime(2001, 5, 7, 10, 25), datetime(2031, 12, 31, 0, 30)],
+    ...         "dt": [date(1999, 12, 31), date(2024, 8, 9)],
+    ...         "tm": [time(0, 0, 0), time(23, 59, 59)],
+    ...     },
+    ... )
+
+    Select all date columns:
+
+    >>> df.select(cs.date())
+    shape: (2, 1)
+    ┌────────────┐
+    │ dt         │
+    │ ---        │
+    │ date       │
+    ╞════════════╡
+    │ 1999-12-31 │
+    │ 2024-08-09 │
+    └────────────┘
+
+    Select all columns *except* for those that are dates:
+
+    >>> df.select(~cs.date())
+    shape: (2, 2)
+    ┌─────────────────────┬──────────┐
+    │ dtm                 ┆ tm       │
+    │ ---                 ┆ ---      │
+    │ datetime[μs]        ┆ time     │
+    ╞═════════════════════╪══════════╡
+    │ 2001-05-07 10:25:00 ┆ 00:00:00 │
+    │ 2031-12-31 00:30:00 ┆ 23:59:59 │
+    └─────────────────────┴──────────┘
+
+    """
+    return _selector_proxy_(F.col(Date), name="date")
+
+
 def datetime(
     time_unit: TimeUnit | Collection[TimeUnit] | None = None,
     time_zone: (str | timezone | Collection[str | timezone | None] | None) = (
@@ -622,6 +728,13 @@ def datetime(
           run ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
         * Set ``None`` to select Datetime columns that do not have a timezone.
         * Set "*" to select Datetime columns that have *any* timezone.
+
+    See Also
+    --------
+    date : Select all date columns.
+    duration : Select all duration columns, optionally filtering by time unit.
+    temporal : Select all temporal columns.
+    time : Select all time columns.
 
     Examples
     --------
@@ -1036,10 +1149,7 @@ def float() -> SelectorType:
     └─────┴─────┘
 
     """
-    return _selector_proxy_(
-        F.col(FLOAT_DTYPES),
-        name="float",
-    )
+    return _selector_proxy_(F.col(FLOAT_DTYPES), name="float")
 
 
 def integer() -> SelectorType:
@@ -1093,10 +1203,7 @@ def integer() -> SelectorType:
     └─────┴─────┘
 
     """
-    return _selector_proxy_(
-        F.col(INTEGER_DTYPES),
-        name="integer",
-    )
+    return _selector_proxy_(F.col(INTEGER_DTYPES), name="integer")
 
 
 def signed_integer() -> SelectorType:
@@ -1162,10 +1269,7 @@ def signed_integer() -> SelectorType:
     └──────┴──────┴──────┘
 
     """
-    return _selector_proxy_(
-        F.col(SIGNED_INTEGER_DTYPES),
-        name="signed_integer",
-    )
+    return _selector_proxy_(F.col(SIGNED_INTEGER_DTYPES), name="signed_integer")
 
 
 def unsigned_integer() -> SelectorType:
@@ -1233,10 +1337,7 @@ def unsigned_integer() -> SelectorType:
     └──────┴──────┴──────┘
 
     """
-    return _selector_proxy_(
-        F.col(UNSIGNED_INTEGER_DTYPES),
-        name="unsigned_integer",
-    )
+    return _selector_proxy_(F.col(UNSIGNED_INTEGER_DTYPES), name="unsigned_integer")
 
 
 def last() -> SelectorType:
@@ -1416,10 +1517,7 @@ def numeric() -> SelectorType:
     └─────┘
 
     """
-    return _selector_proxy_(
-        F.col(NUMERIC_DTYPES),
-        name="numeric",
-    )
+    return _selector_proxy_(F.col(NUMERIC_DTYPES), name="numeric")
 
 
 def starts_with(*prefix: str) -> SelectorType:
@@ -1501,11 +1599,12 @@ def starts_with(*prefix: str) -> SelectorType:
 
 def string(include_categorical: bool = False) -> SelectorType:
     """
-    Select all Utf8 (and, optionally, Categorical) string columns.
+    Select all Utf8 (and, optionally, Categorical) string columns .
 
     See Also
     --------
     by_dtype : Select all columns of a given dtype.
+    categorical: Select all categorical columns.
     float : Select all float columns.
     integer : Select all integer columns.
     numeric : Select all numeric columns.
@@ -1601,9 +1700,9 @@ def temporal() -> SelectorType:
     │ 2021-01-02 ┆ 20:30:45 │
     └────────────┴──────────┘
 
-    Match all temporal columns *except* for `Time` columns:
+    Match all temporal columns *except* for time columns:
 
-    >>> df.select(cs.temporal() - cs.by_dtype(pl.Time))
+    >>> df.select(cs.temporal() - cs.time())
     shape: (2, 1)
     ┌────────────┐
     │ dt         │
@@ -1628,17 +1727,69 @@ def temporal() -> SelectorType:
     └────────┘
 
     """
-    return _selector_proxy_(
-        F.col(TEMPORAL_DTYPES),
-        name="temporal",
-    )
+    return _selector_proxy_(F.col(TEMPORAL_DTYPES), name="temporal")
+
+
+def time() -> SelectorType:
+    """
+    Select all time columns.
+
+    See Also
+    --------
+    date : Select all date columns.
+    datetime : Select all datetime columns, optionally filtering by time unit/zone.
+    duration : Select all duration columns, optionally filtering by time unit.
+    temporal : Select all temporal columns.
+
+    Examples
+    --------
+    >>> from datetime import date, datetime, time
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "dtm": [datetime(2001, 5, 7, 10, 25), datetime(2031, 12, 31, 0, 30)],
+    ...         "dt": [date(1999, 12, 31), date(2024, 8, 9)],
+    ...         "tm": [time(0, 0, 0), time(23, 59, 59)],
+    ...     },
+    ... )
+
+    Select all time columns:
+
+    >>> df.select(cs.time())
+    shape: (2, 1)
+    ┌──────────┐
+    │ tm       │
+    │ ---      │
+    │ time     │
+    ╞══════════╡
+    │ 00:00:00 │
+    │ 23:59:59 │
+    └──────────┘
+
+    Select all columns *except* for those that are times:
+
+    >>> df.select(~cs.time())
+    shape: (2, 2)
+    ┌─────────────────────┬────────────┐
+    │ dtm                 ┆ dt         │
+    │ ---                 ┆ ---        │
+    │ datetime[μs]        ┆ date       │
+    ╞═════════════════════╪════════════╡
+    │ 2001-05-07 10:25:00 ┆ 1999-12-31 │
+    │ 2031-12-31 00:30:00 ┆ 2024-08-09 │
+    └─────────────────────┴────────────┘
+
+    """
+    return _selector_proxy_(F.col(Time), name="time")
 
 
 __all__ = [
     "all",
     "by_dtype",
     "by_name",
+    "categorical",
     "contains",
+    "date",
     "datetime",
     "duration",
     "ends_with",
@@ -1650,6 +1801,7 @@ __all__ = [
     "numeric",
     "starts_with",
     "temporal",
+    "time",
     "string",
     "is_selector",
     "expand_selector",

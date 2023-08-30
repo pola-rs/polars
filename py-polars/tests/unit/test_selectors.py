@@ -299,6 +299,17 @@ def test_selector_startswith(df: pl.DataFrame) -> None:
     ]
 
 
+def test_selector_strings_categorical(df: pl.DataFrame) -> None:
+    assert df.select(cs.string()).columns == ["qqR"]
+    assert df.select(cs.categorical()).columns == []
+    assert expand_selector(
+        {"abc": pl.Utf8, "xyz": pl.Categorical}, cs.categorical()
+    ) == ("xyz",)
+    assert expand_selector(
+        {"abc": pl.Utf8, "xyz": pl.Categorical}, ~cs.categorical()
+    ) == ("abc",)
+
+
 def test_selector_temporal(df: pl.DataFrame) -> None:
     assert df.select(cs.temporal()).schema == {
         "ghi": pl.Time,
@@ -310,6 +321,8 @@ def test_selector_temporal(df: pl.DataFrame) -> None:
     assert set(df.select(~cs.temporal()).columns) == (
         all_columns - {"ghi", "JJK", "Lmn", "opp"}
     )
+    assert df.select(cs.time()).schema == {"ghi": pl.Time}
+    assert df.select(cs.date() | cs.time()).schema == {"ghi": pl.Time, "JJK": pl.Date}
 
 
 def test_selector_expansion() -> None:
