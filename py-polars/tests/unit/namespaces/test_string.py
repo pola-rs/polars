@@ -184,16 +184,16 @@ def test_str_parse_int_df() -> None:
         )
 
 
-def test_str_strip() -> None:
+def test_str_strip_chars() -> None:
     s = pl.Series([" hello ", "world\t "])
     expected = pl.Series(["hello", "world"])
-    assert_series_equal(s.str.strip(), expected)
+    assert_series_equal(s.str.strip_chars(), expected)
 
     expected = pl.Series(["hell", "world"])
-    assert_series_equal(s.str.strip().str.strip("o"), expected)
+    assert_series_equal(s.str.strip_chars().str.strip_chars("o"), expected)
 
     expected = pl.Series(["ell", "rld\t"])
-    assert_series_equal(s.str.strip(" hwo"), expected)
+    assert_series_equal(s.str.strip_chars(" hwo"), expected)
 
 
 def test_str_strip_prefix() -> None:
@@ -242,7 +242,7 @@ def test_str_strip_whitespace() -> None:
     assert_series_equal(s.str.lstrip(), expected)
 
     expected = pl.Series("a", ["trailing", "leading", "both"])
-    assert_series_equal(s.str.strip(), expected)
+    assert_series_equal(s.str.strip_chars(), expected)
 
 
 def test_str_split() -> None:
@@ -871,3 +871,10 @@ def test_string_extract_groups_lazy_schema_10305() -> None:
     )
 
     assert df.schema == {"candidate": pl.Utf8, "ref": pl.Utf8}
+
+
+def test_strip_deprecated() -> None:
+    with pytest.deprecated_call():
+        pl.col("a").strip()
+    with pytest.deprecated_call():
+        pl.Series(["a", "b", "c"]).strip()

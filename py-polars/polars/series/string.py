@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.series.utils import expr_dispatch
+from polars.utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     from polars import Expr, Series
@@ -1087,7 +1088,7 @@ class StringNameSpace:
 
         """
 
-    def strip(self, characters: str | None = None) -> Series:
+    def strip_chars(self, characters: str | None = None) -> Series:
         r"""
         Remove leading and trailing characters.
 
@@ -1101,7 +1102,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series([" hello ", "\tworld"])
-        >>> s.str.strip()
+        >>> s.str.strip_chars()
         shape: (2,)
         Series: '' [str]
         [
@@ -1113,7 +1114,7 @@ class StringNameSpace:
         will not be stripped automatically when doing so, unless that whitespace is
         also included in the string.
 
-        >>> s.str.strip("o ")
+        >>> s.str.strip_chars("o ")
         shape: (2,)
         Series: '' [str]
         [
@@ -1172,6 +1173,22 @@ class StringNameSpace:
                 "foo"
                 ""
         ]
+        """
+
+    @deprecate_renamed_function("strip_chars", version="0.20.0")
+    def strip(self, characters: str | None = None) -> Series:
+        r"""
+        Remove leading and trailing characters.
+
+        .. deprecated:: 0.20.0
+            This method has been renamed to :func:`Series.strip_chars`.
+
+        Parameters
+        ----------
+        characters
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
 
         """
 
