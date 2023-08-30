@@ -70,7 +70,7 @@ pub enum StringFunction {
     RStrip(Option<String>),
     Slice(i64, Option<u64>),
     StartsWith,
-    Strip(Option<String>),
+    StripChars(Option<String>),
     StripPrefix(String),
     StripSuffix(String),
     #[cfg(feature = "temporal")]
@@ -115,7 +115,7 @@ impl StringFunction {
             ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
             Uppercase
             | Lowercase
-            | Strip(_)
+            | StripChars(_)
             | StripPrefix(_)
             | StripSuffix(_)
             | LStrip(_)
@@ -160,7 +160,7 @@ impl Display for StringFunction {
             StringFunction::Replace { .. } => "replace",
             StringFunction::Slice(_, _) => "str_slice",
             StringFunction::StartsWith { .. } => "starts_with",
-            StringFunction::Strip(_) => "strip",
+            StringFunction::StripChars(_) => "strip_chars",
             StringFunction::StripPrefix(_) => "strip_prefix",
             StringFunction::StripSuffix(_) => "strip_suffix",
             #[cfg(feature = "temporal")]
@@ -334,7 +334,7 @@ pub(super) fn rjust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Se
     Ok(ca.rjust(width, fillchar).into_series())
 }
 
-pub(super) fn strip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
+pub(super) fn strip_chars(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     if let Some(matches) = matches {
         if matches.chars().count() == 1 {

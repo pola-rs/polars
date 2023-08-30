@@ -455,9 +455,11 @@ impl StringNameSpace {
     }
 
     /// Remove leading and trailing characters, or whitespace if matches is None.
-    pub fn strip(self, matches: Option<String>) -> Expr {
+    pub fn strip_chars(self, matches: Option<String>) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::Strip(matches)))
+            .map_private(FunctionExpr::StringExpr(StringFunction::StripChars(
+                matches,
+            )))
     }
 
     /// Remove prefix.

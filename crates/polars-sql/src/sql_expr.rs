@@ -322,8 +322,8 @@ impl SqlExprVisitor<'_> {
         };
 
         Ok(match (trim_where, trim_what) {
-            (None | Some(TrimWhereField::Both), None) => expr.str().strip(None),
-            (None | Some(TrimWhereField::Both), Some(val)) => expr.str().strip(Some(val)),
+            (None | Some(TrimWhereField::Both), None) => expr.str().strip_chars(None),
+            (None | Some(TrimWhereField::Both), Some(val)) => expr.str().strip_chars(Some(val)),
             (Some(TrimWhereField::Leading), None) => expr.str().lstrip(None),
             (Some(TrimWhereField::Leading), Some(val)) => expr.str().lstrip(Some(val)),
             (Some(TrimWhereField::Trailing), None) => expr.str().rstrip(None),
