@@ -1134,7 +1134,7 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn group_by_apply(
+    pub fn group_by_map_groups(
         &self,
         by: Vec<&str>,
         lambda: PyObject,
