@@ -457,7 +457,6 @@ impl<'a> AnyValue<'a> {
                     DataType::Duration(tu) => AnyValue::Duration($av as i64, *tu),
                     #[cfg(feature="dtype-time")]
                     DataType::Time => AnyValue::Time($av as i64),
-                    DataType::Utf8 => AnyValue::Utf8Owned(format_smartstring!("{}", $av)),
                     _ => polars_bail!(
                         ComputeError: "cannot cast any-value {:?} to dtype '{}'", self, dtype,
                     ),
@@ -467,6 +466,7 @@ impl<'a> AnyValue<'a> {
         );
 
         let new_av = match self {
+            AnyValue::Utf8(v) => AnyValue::Utf8Owned(format_smartstring!("{}", v)),
             AnyValue::Boolean(v) => cast_to!(*v as u8),
             AnyValue::Float32(_) | AnyValue::Float64(_) => cast_to!(self.extract::<f64>().unwrap()),
             av if av.is_signed() => cast_to!(av.extract::<i64>().unwrap()),

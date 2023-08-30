@@ -505,6 +505,23 @@ fn test_group_by_2() -> PolarsResult<()> {
 }
 
 #[test]
+fn test_cast_and_str_concat_expr(){
+    let a = Series::new("a", vec!["hello"]);
+    let df  = DataFrame::new(vec![a]).unwrap();
+    let mut context = SQLContext::new();
+    context.register("df", df.clone().lazy()); 
+    let sql = r#"
+    SELECT
+        a || ' world' as a_v2,
+        'hello' || ' world' as a_v3
+    FROM df"#;
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+
+    assert_eq!(Series::new("a_v2", vec!["hello world"]),*df_sql.column("a_v2").unwrap());
+    assert_eq!(Series::new("a_v3", vec!["hello world"]),*df_sql.column("a_v3").unwrap());
+}
+
+#[test]
 fn test_case_expr() {
     let df = create_sample_df().unwrap().head(Some(10));
     let mut context = SQLContext::new();
