@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 import polars._reexport as pl
 from polars import functions as F
 from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     import sys
@@ -242,7 +243,7 @@ class GroupBy:
             .collect(no_optimization=True)
         )
 
-    def apply(self, function: Callable[[DataFrame], DataFrame]) -> DataFrame:
+    def map_groups(self, function: Callable[[DataFrame], DataFrame]) -> DataFrame:
         """
         Apply a custom/user-defined function (UDF) over the groups as a sub-DataFrame.
 
@@ -273,6 +274,8 @@ class GroupBy:
 
         Examples
         --------
+        For each color group sample two rows:
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "id": [0, 1, 2, 3, 4],
@@ -280,23 +283,7 @@ class GroupBy:
         ...         "shape": ["square", "triangle", "square", "triangle", "square"],
         ...     }
         ... )
-        >>> df
-        shape: (5, 3)
-        ┌─────┬───────┬──────────┐
-        │ id  ┆ color ┆ shape    │
-        │ --- ┆ ---   ┆ ---      │
-        │ i64 ┆ str   ┆ str      │
-        ╞═════╪═══════╪══════════╡
-        │ 0   ┆ red   ┆ square   │
-        │ 1   ┆ green ┆ triangle │
-        │ 2   ┆ green ┆ square   │
-        │ 3   ┆ red   ┆ triangle │
-        │ 4   ┆ red   ┆ square   │
-        └─────┴───────┴──────────┘
-
-        For each color group sample two rows:
-
-        >>> df.group_by("color").apply(
+        >>> df.group_by("color").map_groups(
         ...     lambda group_df: group_df.sample(2)
         ... )  # doctest: +IGNORE_RESULT
         shape: (4, 3)
@@ -325,15 +312,15 @@ class GroupBy:
         elif isinstance(self.by, Iterable) and all(isinstance(c, str) for c in self.by):
             by = list(self.by)  # type: ignore[arg-type]
         else:
-            raise TypeError("cannot call `apply` when grouping by an expression")
+            raise TypeError("cannot call `map_groups` when grouping by an expression")
 
         if all(isinstance(c, str) for c in self.more_by):
             by.extend(self.more_by)  # type: ignore[arg-type]
         else:
-            raise TypeError("cannot call `apply` when grouping by an expression")
+            raise TypeError("cannot call `map_groups` when grouping by an expression")
 
         return self.df.__class__._from_pydf(
-            self.df._df.group_by_apply(by, function, self.maintain_order)
+            self.df._df.group_by_map_groups(by, function, self.maintain_order)
         )
 
     def head(self, n: int = 5) -> DataFrame:
@@ -760,6 +747,22 @@ class GroupBy:
         """
         return self.agg(F.all().sum())
 
+    @deprecate_renamed_function("map_groups", version="0.19.0")
+    def apply(self, function: Callable[[DataFrame], DataFrame]) -> DataFrame:
+        """
+        Apply a custom/user-defined function (UDF) over the groups as a sub-DataFrame.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`GroupBy.map_groups`.
+
+        Parameters
+        ----------
+        function
+            Custom function.
+
+        """
+        return self.map_groups(function)
+
 
 class RollingGroupBy:
     """
@@ -866,7 +869,7 @@ class RollingGroupBy:
             .collect(no_optimization=True)
         )
 
-    def apply(
+    def map_groups(
         self,
         function: Callable[[DataFrame], DataFrame],
         schema: SchemaDict | None,
@@ -883,7 +886,7 @@ class RollingGroupBy:
 
         The idiomatic way to apply custom functions over multiple columns is using:
 
-        `pl.struct([my_columns]).apply(lambda struct_series: ..)`
+        `pl.struct([my_columns]).map_elements(lambda struct_series: ..)`
 
         Parameters
         ----------
@@ -893,58 +896,6 @@ class RollingGroupBy:
             Schema of the output function. This has to be known statically. If the
             given schema is incorrect, this is a bug in the caller's query and may
             lead to errors. If set to None, polars assumes the schema is unchanged.
-
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "id": [0, 1, 2, 3, 4],
-        ...         "color": ["red", "green", "green", "red", "red"],
-        ...         "shape": ["square", "triangle", "square", "triangle", "square"],
-        ...     }
-        ... )
-        >>> df
-        shape: (5, 3)
-        ┌─────┬───────┬──────────┐
-        │ id  ┆ color ┆ shape    │
-        │ --- ┆ ---   ┆ ---      │
-        │ i64 ┆ str   ┆ str      │
-        ╞═════╪═══════╪══════════╡
-        │ 0   ┆ red   ┆ square   │
-        │ 1   ┆ green ┆ triangle │
-        │ 2   ┆ green ┆ square   │
-        │ 3   ┆ red   ┆ triangle │
-        │ 4   ┆ red   ┆ square   │
-        └─────┴───────┴──────────┘
-
-        For each color group sample two rows:
-
-        >>> (
-        ...     df.lazy()
-        ...     .group_by("color")
-        ...     .apply(lambda group_df: group_df.sample(2), schema=None)
-        ...     .collect()
-        ... )  # doctest: +IGNORE_RESULT
-        shape: (4, 3)
-        ┌─────┬───────┬──────────┐
-        │ id  ┆ color ┆ shape    │
-        │ --- ┆ ---   ┆ ---      │
-        │ i64 ┆ str   ┆ str      │
-        ╞═════╪═══════╪══════════╡
-        │ 1   ┆ green ┆ triangle │
-        │ 2   ┆ green ┆ square   │
-        │ 4   ┆ red   ┆ square   │
-        │ 3   ┆ red   ┆ triangle │
-        └─────┴───────┴──────────┘
-
-        It is better to implement this with an expression:
-
-        >>> (
-        ...     df.lazy()
-        ...     .filter(pl.int_range(0, pl.count()).shuffle().over("color") < 2)
-        ...     .collect()
-        ... )  # doctest: +IGNORE_RESULT
 
         """
         return (
@@ -957,9 +908,33 @@ class RollingGroupBy:
                 by=self.by,
                 check_sorted=self.check_sorted,
             )
-            .apply(function, schema)
+            .map_groups(function, schema)
             .collect(no_optimization=True)
         )
+
+    @deprecate_renamed_function("map_groups", version="0.19.0")
+    def apply(
+        self,
+        function: Callable[[DataFrame], DataFrame],
+        schema: SchemaDict | None,
+    ) -> DataFrame:
+        """
+        Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`RollingGroupBy.map_groups`.
+
+        Parameters
+        ----------
+        function
+            Function to apply over each group of the `LazyFrame`.
+        schema
+            Schema of the output function. This has to be known statically. If the
+            given schema is incorrect, this is a bug in the caller's query and may
+            lead to errors. If set to None, polars assumes the schema is unchanged.
+
+        """
+        return self.map_groups(function, schema)
 
 
 class DynamicGroupBy:
@@ -1084,7 +1059,7 @@ class DynamicGroupBy:
             .collect(no_optimization=True)
         )
 
-    def apply(
+    def map_groups(
         self,
         function: Callable[[DataFrame], DataFrame],
         schema: SchemaDict | None,
@@ -1101,7 +1076,7 @@ class DynamicGroupBy:
 
         The idiomatic way to apply custom functions over multiple columns is using:
 
-        `pl.struct([my_columns]).apply(lambda struct_series: ..)`
+        `pl.struct([my_columns]).map_elements(lambda struct_series: ..)`
 
         Parameters
         ----------
@@ -1111,58 +1086,6 @@ class DynamicGroupBy:
             Schema of the output function. This has to be known statically. If the
             given schema is incorrect, this is a bug in the caller's query and may
             lead to errors. If set to None, polars assumes the schema is unchanged.
-
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "id": [0, 1, 2, 3, 4],
-        ...         "color": ["red", "green", "green", "red", "red"],
-        ...         "shape": ["square", "triangle", "square", "triangle", "square"],
-        ...     }
-        ... )
-        >>> df
-        shape: (5, 3)
-        ┌─────┬───────┬──────────┐
-        │ id  ┆ color ┆ shape    │
-        │ --- ┆ ---   ┆ ---      │
-        │ i64 ┆ str   ┆ str      │
-        ╞═════╪═══════╪══════════╡
-        │ 0   ┆ red   ┆ square   │
-        │ 1   ┆ green ┆ triangle │
-        │ 2   ┆ green ┆ square   │
-        │ 3   ┆ red   ┆ triangle │
-        │ 4   ┆ red   ┆ square   │
-        └─────┴───────┴──────────┘
-
-        For each color group sample two rows:
-
-        >>> (
-        ...     df.lazy()
-        ...     .group_by("color")
-        ...     .apply(lambda group_df: group_df.sample(2), schema=None)
-        ...     .collect()
-        ... )  # doctest: +IGNORE_RESULT
-        shape: (4, 3)
-        ┌─────┬───────┬──────────┐
-        │ id  ┆ color ┆ shape    │
-        │ --- ┆ ---   ┆ ---      │
-        │ i64 ┆ str   ┆ str      │
-        ╞═════╪═══════╪══════════╡
-        │ 1   ┆ green ┆ triangle │
-        │ 2   ┆ green ┆ square   │
-        │ 4   ┆ red   ┆ square   │
-        │ 3   ┆ red   ┆ triangle │
-        └─────┴───────┴──────────┘
-
-        It is better to implement this with an expression:
-
-        >>> (
-        ...     df.lazy()
-        ...     .filter(pl.int_range(0, pl.count()).shuffle().over("color") < 2)
-        ...     .collect()
-        ... )  # doctest: +IGNORE_RESULT
 
         """
         return (
@@ -1179,6 +1102,30 @@ class DynamicGroupBy:
                 start_by=self.start_by,
                 check_sorted=self.check_sorted,
             )
-            .apply(function, schema)
+            .map_groups(function, schema)
             .collect(no_optimization=True)
         )
+
+    @deprecate_renamed_function("map_groups", version="0.19.0")
+    def apply(
+        self,
+        function: Callable[[DataFrame], DataFrame],
+        schema: SchemaDict | None,
+    ) -> DataFrame:
+        """
+        Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`DynamicGroupBy.map_groups`.
+
+        Parameters
+        ----------
+        function
+            Function to apply over each group of the `LazyFrame`.
+        schema
+            Schema of the output function. This has to be known statically. If the
+            given schema is incorrect, this is a bug in the caller's query and may
+            lead to errors. If set to None, polars assumes the schema is unchanged.
+
+        """
+        return self.map_groups(function, schema)

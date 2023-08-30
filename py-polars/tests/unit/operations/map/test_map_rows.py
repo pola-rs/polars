@@ -13,7 +13,7 @@ def test_map_rows() -> None:
 
     result = df.map_rows(lambda x: len(x), None)
 
-    expected = pl.DataFrame({"apply": [3, 3]})
+    expected = pl.DataFrame({"map": [3, 3]})
     assert_frame_equal(result, expected)
 
 
@@ -22,7 +22,7 @@ def test_map_rows_list_return() -> None:
 
     result = df.map_rows(lambda r: pl.Series(range(r[0], r[1] + 1)))
 
-    expected = pl.DataFrame({"apply": [[1, 2, 3], [2, 3, 4, 5]]})
+    expected = pl.DataFrame({"map": [[1, 2, 3], [2, 3, 4, 5]]})
     assert_frame_equal(result, expected)
 
 
@@ -74,5 +74,5 @@ def test_apply_deprecated() -> None:
     with pytest.deprecated_call():
         result = df.apply(lambda x: len(x), None)
 
-    expected = pl.DataFrame({"apply": [3, 3]})
+    expected = pl.DataFrame({"map": [3, 3]})
     assert_frame_equal(result, expected)
