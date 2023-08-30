@@ -166,7 +166,7 @@ pub fn map_mul(
     py: Python,
     lambda: PyObject,
     output_type: Option<Wrap<DataType>>,
-    apply_groups: bool,
+    map_groups: bool,
     returns_scalar: bool,
 ) -> PyExpr {
     // get the pypolars module
@@ -179,7 +179,7 @@ pub fn map_mul(
             let out = call_lambda_with_series_slice(py, s, &lambda, &pypolars);
 
             // we return an error, because that will become a null value polars lazy apply list
-            if apply_groups && out.is_none(py) {
+            if map_groups && out.is_none(py) {
                 return Ok(None);
             }
 
@@ -193,7 +193,7 @@ pub fn map_mul(
         Some(ref dt) => Field::new(fld.name(), dt.0.clone()),
         None => fld.clone(),
     });
-    if apply_groups {
+    if map_groups {
         polars::lazy::dsl::apply_multiple(function, exprs, output_map, returns_scalar).into()
     } else {
         polars::lazy::dsl::map_multiple(function, exprs, output_map).into()

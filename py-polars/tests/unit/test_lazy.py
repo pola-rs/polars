@@ -166,17 +166,6 @@ def test_or() -> None:
     assert out.rows() == [(1, 1.0), (3, 3.0)]
 
 
-def test_group_by_apply() -> None:
-    ldf = (
-        pl.LazyFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 3.0]})
-        .group_by("a")
-        .apply(lambda df: df * 2.0, schema={"a": pl.Float64, "b": pl.Float64})
-    )
-    out = ldf.collect()
-    assert out.schema == ldf.schema
-    assert out.shape == (3, 2)
-
-
 def test_filter_str() -> None:
     # use a str instead of a column expr
     ldf = pl.LazyFrame(

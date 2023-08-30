@@ -1019,12 +1019,12 @@ def map(
     exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(
         plr.map_mul(
-            exprs, function, return_dtype, apply_groups=False, returns_scalar=False
+            exprs, function, return_dtype, map_groups=False, returns_scalar=False
         )
     )
 
 
-def apply(
+def map_groups(
     exprs: Sequence[str | Expr],
     function: Callable[[Sequence[Series]], Series | Any],
     return_dtype: PolarsDataType | None = None,
@@ -1084,7 +1084,7 @@ def apply(
     └───────┴─────┴─────┘
     >>> (
     ...     df.group_by("group").agg(
-    ...         pl.apply(
+    ...         pl.map_groups(
     ...             exprs=["a", "b"],
     ...             function=lambda list_of_series: list_of_series[0]
     ...             / list_of_series[0].sum()
@@ -1114,10 +1114,44 @@ def apply(
             exprs,
             function,
             return_dtype,
-            apply_groups=True,
+            map_groups=True,
             returns_scalar=returns_scalar,
         )
     )
+
+
+@deprecate_renamed_function("map_groups", version="0.19.0")
+def apply(
+    exprs: Sequence[str | Expr],
+    function: Callable[[Sequence[Series]], Series | Any],
+    return_dtype: PolarsDataType | None = None,
+    *,
+    returns_scalar: bool = True,
+) -> Expr:
+    """
+    Apply a custom/user-defined function (UDF) in a GroupBy context.
+
+    .. deprecated:: 0.19.0
+        This function has been renamed to :func:`map_groups`.
+
+    Parameters
+    ----------
+    exprs
+        Input Series to f
+    function
+        Function to apply over the input
+    return_dtype
+        dtype of the output Series
+    returns_scalar
+        If the function returns a single scalar as output.
+
+    Returns
+    -------
+    Expr
+        Expression with the data type given by ``return_dtype``.
+
+    """
+    return map_groups(exprs, function, return_dtype, returns_scalar=returns_scalar)
 
 
 def fold(
