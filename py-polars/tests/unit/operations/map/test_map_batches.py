@@ -62,7 +62,7 @@ def test_error_on_reducing_map() -> None:
 
 def test_map_deprecated() -> None:
     with pytest.deprecated_call():
-        pl.map("a", lambda x: x)
+        pl.map(["a", "b"], lambda x: x[0])
     with pytest.deprecated_call():
         pl.col("a").map(lambda x: x)
     with pytest.deprecated_call():
