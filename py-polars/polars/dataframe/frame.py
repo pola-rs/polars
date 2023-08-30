@@ -6069,10 +6069,10 @@ class DataFrame:
 
         """
         # TODO:
-        # from polars.utils.udfs import warn_on_inefficient_apply
-        # warn_on_inefficient_apply(function, columns=self.columns, apply_target="frame)
+        # from polars.utils.udfs import warn_on_inefficient_map
+        # warn_on_inefficient_map(function, columns=self.columns, map_target="frame)
 
-        out, is_df = self._df.apply(function, return_dtype, inference_size)
+        out, is_df = self._df.map_rows(function, return_dtype, inference_size)
         if is_df:
             return self._from_pydf(out)
         else:

@@ -1349,7 +1349,7 @@ impl PyDataFrame {
     }
 
     #[pyo3(signature = (lambda, output_type, inference_size))]
-    pub fn apply(
+    pub fn map_rows(
         &mut self,
         lambda: &PyAny,
         output_type: Option<Wrap<DataType>>,
