@@ -12,6 +12,8 @@ from polars.datatypes import (
     SIGNED_INTEGER_DTYPES,
     TEMPORAL_DTYPES,
     UNSIGNED_INTEGER_DTYPES,
+    Binary,
+    Boolean,
     Categorical,
     Date,
     Datetime,
@@ -374,6 +376,102 @@ def all() -> SelectorType:
     return _selector_proxy_(F.all(), name="all")
 
 
+def binary() -> SelectorType:
+    """
+    Select all binary columns.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    string : Select all string columns (optionally including categoricals).
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame({"a": [b"hello"], "b": ["world"], "c": [b"!"], "d": [":)"]})
+    >>> df
+    shape: (1, 4)
+    ┌───────────────┬───────┬───────────────┬─────┐
+    │ a             ┆ b     ┆ c             ┆ d   │
+    │ ---           ┆ ---   ┆ ---           ┆ --- │
+    │ binary        ┆ str   ┆ binary        ┆ str │
+    ╞═══════════════╪═══════╪═══════════════╪═════╡
+    │ [binary data] ┆ world ┆ [binary data] ┆ :)  │
+    └───────────────┴───────┴───────────────┴─────┘
+
+    Select binary columns and export as a dict:
+
+    >>> df.select(cs.binary()).to_dict(False)
+    {'a': [b'hello'], 'c': [b'!']}
+
+    Select all columns *except* for those that are binary:
+
+    >>> df.select(~cs.binary()).to_dict(False)
+    {'b': ['world'], 'd': [':)']}
+
+    """
+    return _selector_proxy_(F.col(Binary), name="binary")
+
+
+def boolean() -> SelectorType:
+    """
+    Select all boolean columns.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame({"n": range(1, 5)}).with_columns(n_even=pl.col("n") % 2 == 0)
+    >>> df
+    shape: (4, 2)
+    ┌─────┬────────┐
+    │ n   ┆ n_even │
+    │ --- ┆ ---    │
+    │ i64 ┆ bool   │
+    ╞═════╪════════╡
+    │ 1   ┆ false  │
+    │ 2   ┆ true   │
+    │ 3   ┆ false  │
+    │ 4   ┆ true   │
+    └─────┴────────┘
+
+    Select and invert boolean columns:
+
+    >>> df.with_columns(is_odd=cs.boolean().is_not())
+    shape: (4, 3)
+    ┌─────┬────────┬────────┐
+    │ n   ┆ n_even ┆ is_odd │
+    │ --- ┆ ---    ┆ ---    │
+    │ i64 ┆ bool   ┆ bool   │
+    ╞═════╪════════╪════════╡
+    │ 1   ┆ false  ┆ true   │
+    │ 2   ┆ true   ┆ false  │
+    │ 3   ┆ false  ┆ true   │
+    │ 4   ┆ true   ┆ false  │
+    └─────┴────────┴────────┘
+
+    Select all columns *except* for those that are boolean:
+
+    >>> df.select(~cs.boolean())
+    shape: (4, 1)
+    ┌─────┐
+    │ n   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 2   │
+    │ 3   │
+    │ 4   │
+    └─────┘
+
+    """
+    return _selector_proxy_(F.col(Boolean), name="boolean")
+
+
 def by_dtype(
     *dtypes: PolarsDataType | Collection[PolarsDataType],
 ) -> SelectorType:
@@ -382,10 +480,7 @@ def by_dtype(
 
     See Also
     --------
-    integer : Select all integer columns.
-    float : Select all float columns.
-    numeric : Select all numeric columns.
-    temporal : Select all temporal columns.
+    by_name : Select all columns matching the given names.
 
     Examples
     --------
@@ -533,7 +628,7 @@ def categorical() -> SelectorType:
 
     See Also
     --------
-    by_dtype : Select all columns of a given dtype.
+    by_dtype : Select all columns matching the given dtype(s).
     string : Select all string columns (optionally including categoricals).
 
     Examples
@@ -877,6 +972,13 @@ def duration(
         One (or more) of the allowed timeunit precision strings, "ms", "us", and "ns".
         Omit to select columns with any valid timeunit.
 
+    See Also
+    --------
+    date : Select all date columns.
+    datetime : Select all datetime columns, optionally filtering by time unit/zone.
+    temporal : Select all temporal columns.
+    time : Select all time columns.
+
     Examples
     --------
     >>> from datetime import date, timedelta
@@ -1106,8 +1208,8 @@ def float() -> SelectorType:
     --------
     integer : Select all integer columns.
     numeric : Select all numeric columns.
-    temporal : Select all temporal columns.
-    string : Select all string columns.
+    signed_integer : Select all signed integer columns.
+    unsigned_integer : Select all unsigned integer columns.
 
     Examples
     --------
@@ -1161,8 +1263,8 @@ def integer() -> SelectorType:
     by_dtype : Select columns by dtype.
     float : Select all float columns.
     numeric : Select all numeric columns.
-    temporal : Select all temporal columns.
-    string : Select all string columns.
+    signed_integer : Select all signed integer columns.
+    unsigned_integer : Select all unsigned integer columns.
 
     Examples
     --------
@@ -1189,7 +1291,7 @@ def integer() -> SelectorType:
     │ 456 ┆ 1   │
     └─────┴─────┘
 
-    Select all columns *except* for those that are integer:
+    Select all columns *except* for those that are integer :
 
     >>> df.select(~cs.integer())
     shape: (2, 2)
@@ -1214,9 +1316,9 @@ def signed_integer() -> SelectorType:
     --------
     by_dtype : Select columns by dtype.
     float : Select all float columns.
-    integer: Select all integer columns.
+    integer : Select all integer columns.
     numeric : Select all numeric columns.
-    unsigned_integer: Select all unsigned integer columns.
+    unsigned_integer : Select all unsigned integer columns.
 
     Examples
     --------
@@ -1280,9 +1382,9 @@ def unsigned_integer() -> SelectorType:
     --------
     by_dtype : Select columns by dtype.
     float : Select all float columns.
-    integer: Select all integer columns.
+    integer : Select all integer columns.
     numeric : Select all numeric columns.
-    signed_integer: Select all signed integer columns.
+    signed_integer : Select all signed integer columns.
 
     Examples
     --------
@@ -1474,8 +1576,8 @@ def numeric() -> SelectorType:
     by_dtype : Select columns by dtype.
     float : Select all float columns.
     integer : Select all integer columns.
-    temporal : Select all temporal columns.
-    string : Select all string columns.
+    signed_integer : Select all signed integer columns.
+    unsigned_integer : Select all unsigned integer columns.
 
     Examples
     --------
@@ -1603,12 +1705,9 @@ def string(include_categorical: bool = False) -> SelectorType:
 
     See Also
     --------
-    by_dtype : Select all columns of a given dtype.
+    binary : Select all binary columns.
+    by_dtype : Select all columns matching the given dtype(s).
     categorical: Select all categorical columns.
-    float : Select all float columns.
-    integer : Select all integer columns.
-    numeric : Select all numeric columns.
-    temporal : Select all temporal columns.
 
     Examples
     --------
@@ -1669,11 +1768,11 @@ def temporal() -> SelectorType:
 
     See Also
     --------
-    by_dtype : Select all columns of a given dtype.
-    float : Select all float columns.
-    integer : Select all integer columns.
-    numeric : Select all numeric columns.
-    string : Select all string columns.
+    by_dtype : Select all columns matching the given dtype(s).
+    date : Select all date columns.
+    datetime : Select all datetime columns, optionally filtering by time unit/zone.
+    duration : Select all duration columns, optionally filtering by time unit.
+    time : Select all time columns.
 
     Examples
     --------

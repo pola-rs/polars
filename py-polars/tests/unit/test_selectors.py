@@ -43,7 +43,7 @@ def test_selector_all(df: pl.DataFrame) -> None:
 
 
 def test_selector_by_dtype(df: pl.DataFrame) -> None:
-    assert df.select(cs.by_dtype(pl.UInt16, pl.Boolean)).schema == {
+    assert df.select(cs.by_dtype(pl.UInt16) | cs.boolean()).schema == {
         "abc": pl.UInt16,
         "eee": pl.Boolean,
         "fgg": pl.Boolean,
@@ -303,11 +303,14 @@ def test_selector_strings_categorical(df: pl.DataFrame) -> None:
     assert df.select(cs.string()).columns == ["qqR"]
     assert df.select(cs.categorical()).columns == []
     assert expand_selector(
-        {"abc": pl.Utf8, "xyz": pl.Categorical}, cs.categorical()
+        {"abc": pl.Utf8, "mno": pl.Binary, "xyz": pl.Categorical}, cs.categorical()
     ) == ("xyz",)
     assert expand_selector(
-        {"abc": pl.Utf8, "xyz": pl.Categorical}, ~cs.categorical()
-    ) == ("abc",)
+        {"abc": pl.Utf8, "mno": pl.Binary, "xyz": pl.Categorical}, cs.binary()
+    ) == ("mno",)
+    assert expand_selector(
+        {"abc": pl.Utf8, "mno": pl.Binary, "xyz": pl.Categorical}, ~cs.categorical()
+    ) == ("abc", "mno")
 
 
 def test_selector_temporal(df: pl.DataFrame) -> None:
