@@ -179,6 +179,8 @@ class LazyGroupBy:
 
         Examples
         --------
+        For each color group sample two rows:
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "id": [0, 1, 2, 3, 4],
@@ -186,26 +188,10 @@ class LazyGroupBy:
         ...         "shape": ["square", "triangle", "square", "triangle", "square"],
         ...     }
         ... )
-        >>> df
-        shape: (5, 3)
-        ┌─────┬───────┬──────────┐
-        │ id  ┆ color ┆ shape    │
-        │ --- ┆ ---   ┆ ---      │
-        │ i64 ┆ str   ┆ str      │
-        ╞═════╪═══════╪══════════╡
-        │ 0   ┆ red   ┆ square   │
-        │ 1   ┆ green ┆ triangle │
-        │ 2   ┆ green ┆ square   │
-        │ 3   ┆ red   ┆ triangle │
-        │ 4   ┆ red   ┆ square   │
-        └─────┴───────┴──────────┘
-
-        For each color group sample two rows:
-
         >>> (
         ...     df.lazy()
         ...     .group_by("color")
-        ...     .apply(lambda group_df: group_df.sample(2), schema=None)
+        ...     .map_groups(lambda group_df: group_df.sample(2), schema=None)
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
         shape: (4, 3)
