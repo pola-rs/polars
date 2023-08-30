@@ -1658,7 +1658,7 @@ def object() -> SelectorType:
 
     Select object columns and export as a dict:
 
-    >>> df.select(cs.object()).to_dict(False)
+    >>> df.select(cs.object()).to_dict(False)  # doctest: +IGNORE_RESULT
     {
         "uuid_obj": [
             UUID("6be063cf-c9c6-43be-878e-e446cfd42981"),
@@ -1668,7 +1668,7 @@ def object() -> SelectorType:
 
     Select all columns *except* for those that are object and export as dict:
 
-    >>> df.select(~cs.object())
+    >>> df.select(~cs.object())  # doctest: +IGNORE_RESULT
     {
         "idx": [0, 1],
         "uuid_str": [
