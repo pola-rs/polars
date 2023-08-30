@@ -146,6 +146,20 @@ def test_agg() -> None:
     assert res.row(0) == (1, 1.0)
 
 
+def test_count_suffix_10783() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [["a", "c", "b"], ["a", "b", "c"], ["a", "d", "c"], ["c", "a", "b"]],
+            "b": [["a", "c", "b"], ["a", "b", "c"], ["a", "d", "c"], ["c", "a", "b"]],
+        }
+    )
+    df_with_cnt = df.with_columns(
+        pl.count().over(pl.col("a").list.sort().list.join("").hash()).suffix("_suffix")
+    )
+    df_expect = df.with_columns(pl.Series("count_suffix", [3, 3, 1, 3]))
+    assert_frame_equal(df_with_cnt, df_expect, check_dtype=False)
+
+
 def test_or() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = ldf.filter((pl.col("a") == 1) | (pl.col("b") > 2)).collect()

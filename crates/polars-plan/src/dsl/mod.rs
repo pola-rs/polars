@@ -20,7 +20,7 @@ pub mod functions;
 mod list;
 #[cfg(feature = "meta")]
 mod meta;
-pub(crate) mod names;
+pub mod names;
 mod options;
 #[cfg(feature = "python")]
 pub mod python_udf;
