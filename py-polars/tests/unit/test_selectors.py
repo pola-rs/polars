@@ -261,6 +261,24 @@ def test_selector_matches(df: pl.DataFrame) -> None:
     ]
 
 
+def test_selector_miscellaneous(df: pl.DataFrame) -> None:
+    assert df.select(cs.string()).columns == ["qqR"]
+    assert df.select(cs.categorical()).columns == []
+
+    test_schema = {
+        "abc": pl.Utf8,
+        "mno": pl.Binary,
+        "tuv": pl.Object,
+        "xyz": pl.Categorical,
+    }
+    assert expand_selector(test_schema, cs.binary()) == ("mno",)
+    assert expand_selector(test_schema, ~cs.binary()) == ("abc", "tuv", "xyz")
+    assert expand_selector(test_schema, cs.object()) == ("tuv",)
+    assert expand_selector(test_schema, ~cs.object()) == ("abc", "mno", "xyz")
+    assert expand_selector(test_schema, cs.categorical()) == ("xyz",)
+    assert expand_selector(test_schema, ~cs.categorical()) == ("abc", "mno", "tuv")
+
+
 def test_selector_numeric(df: pl.DataFrame) -> None:
     assert df.select(cs.numeric()).schema == {
         "abc": pl.UInt16,
@@ -297,20 +315,6 @@ def test_selector_startswith(df: pl.DataFrame) -> None:
         "opp",
         "qqR",
     ]
-
-
-def test_selector_strings_categorical(df: pl.DataFrame) -> None:
-    assert df.select(cs.string()).columns == ["qqR"]
-    assert df.select(cs.categorical()).columns == []
-    assert expand_selector(
-        {"abc": pl.Utf8, "mno": pl.Binary, "xyz": pl.Categorical}, cs.categorical()
-    ) == ("xyz",)
-    assert expand_selector(
-        {"abc": pl.Utf8, "mno": pl.Binary, "xyz": pl.Categorical}, cs.binary()
-    ) == ("mno",)
-    assert expand_selector(
-        {"abc": pl.Utf8, "mno": pl.Binary, "xyz": pl.Categorical}, ~cs.categorical()
-    ) == ("abc", "mno")
 
 
 def test_selector_temporal(df: pl.DataFrame) -> None:
