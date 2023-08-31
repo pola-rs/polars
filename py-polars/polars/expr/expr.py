@@ -3642,12 +3642,12 @@ class Expr:
         agg_list: bool = False,
     ) -> Self:
         """
-        Apply a custom python function to a Series or sequence of Series.
+        Apply a custom python function to a whole Series or sequence of Series.
 
-        The output of this custom function must be a Series.
-        If you want to apply a custom function elementwise over single values, see
-        :func:`apply`. A use case for ``map`` is when you want to transform an
-        expression with a third-party library.
+        The output of this custom function must be a Series. If you want to apply a
+        custom function elementwise over single values, see :func:`map_elements`.
+        A reasonable use case for ``map`` functions is transforming the values
+        represented by an expression using a third-party library.
 
         Read more in `the book
         <https://pola-rs.github.io/polars-book/user-guide/expressions/user-defined-functions>`_.
@@ -3655,11 +3655,16 @@ class Expr:
         Parameters
         ----------
         function
-            Lambda/ function to apply.
+            Lambda/function to apply.
         return_dtype
             Dtype of the output Series.
         agg_list
-            Aggregate list
+            Aggregate list.
+
+        Notes
+        -----
+        If you are looking to map a function over a window function or groupby context,
+        refer to func:`map_elements` instead.
 
         Warnings
         --------
@@ -3669,6 +3674,7 @@ class Expr:
         See Also
         --------
         map_dict
+        map_elements
 
         Examples
         --------
@@ -3714,29 +3720,25 @@ class Expr:
         Depending on the context it has the following behavior:
 
         * Selection
-            Expects `f` to be of type Callable[[Any], Any].
+            Expects `function` to be of type Callable[[Any], Any].
             Applies a python function over each individual value in the column.
         * GroupBy
-            Expects `f` to be of type Callable[[Series], Series].
+            Expects `function` to be of type Callable[[Series], Series].
             Applies a python function over each group.
 
         Parameters
         ----------
         function
-            Lambda/ function to map.
+            Lambda/function to map.
         return_dtype
             Dtype of the output Series.
-            If not set, the dtype will be
-            ``polars.Unknown``.
+            If not set, the dtype will be ``pl.Unknown``.
         skip_nulls
-            Don't map the function over values
-            that contain nulls. This is faster.
+            Don't map the function over values that contain nulls (this is faster).
         pass_name
-            Pass the Series name to the custom function
-            This is more expensive.
+            Pass the Series name to the custom function (this is more expensive).
         strategy : {'thread_local', 'threading'}
-            This functionality is in `alpha` stage. This may be removed
-            /changed without it being considered a breaking change.
+            This functionality is considered experimental and may be removed/changed.
 
             - 'thread_local': run the python function on a single thread.
             - 'threading': run the python function on separate threads. Use with
@@ -3747,13 +3749,16 @@ class Expr:
 
         Notes
         -----
-        * Using ``map`` is strongly discouraged as you will be effectively running
-          python "for" loops. This will be very slow. Wherever possible you should
-          strongly prefer the native expression API to achieve the best performance.
+        * Using ``map_elements`` is strongly discouraged as you will be effectively
+          running python "for" loops, which will be very slow. Wherever possible you
+          should prefer the native expression API to achieve the best performance.
 
         * If your function is expensive and you don't want it to be called more than
           once for a given input, consider applying an ``@lru_cache`` decorator to it.
-          With suitable data you may achieve order-of-magnitude speedups (or more).
+          If your data is suitable you may achieve *significant* speedups.
+
+        * Window function application using ``over`` is considered a GroupBy context
+          here, so ``map_elements`` can be used to map functions over window groups.
 
         Warnings
         --------
@@ -3812,6 +3817,40 @@ class Expr:
 
         >>> df.group_by("b", maintain_order=True).agg(
         ...     pl.col("a").sum(),
+        ... )  # doctest: +IGNORE_RESULT
+
+        Window function application using ``over`` will behave as a GroupBy
+        context, with your function receiving individual window groups:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "key": ["x", "x", "y", "x", "y", "z"],
+        ...         "val": [1, 1, 1, 1, 1, 1],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     scaled=pl.col("val").map_elements(lambda s: s * len(s)).over("key"),
+        ... ).sort("key")
+        shape: (6, 3)
+        ┌─────┬─────┬────────┐
+        │ key ┆ val ┆ scaled │
+        │ --- ┆ --- ┆ ---    │
+        │ str ┆ i64 ┆ i64    │
+        ╞═════╪═════╪════════╡
+        │ x   ┆ 1   ┆ 3      │
+        │ x   ┆ 1   ┆ 3      │
+        │ x   ┆ 1   ┆ 3      │
+        │ y   ┆ 1   ┆ 2      │
+        │ y   ┆ 1   ┆ 2      │
+        │ z   ┆ 1   ┆ 1      │
+        └─────┴─────┴────────┘
+
+        Note that this function would *also* be better-implemented natively:
+
+        >>> df.with_columns(
+        ...     scaled=(pl.col("val") * pl.col("val").count()).over("key"),
+        ... ).sort(
+        ...     "key"
         ... )  # doctest: +IGNORE_RESULT
 
         """
