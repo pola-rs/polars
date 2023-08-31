@@ -16,6 +16,7 @@ pub use var::*;
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
+use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
 use crate::utils::CustomIterTools;
 
@@ -291,13 +292,13 @@ where
         ca.into_series()
     }
     fn max_as_series(&self) -> Series {
-        let v = self.max();
+        let v = ChunkAgg::max(self);
         let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
         ca.rename(self.name());
         ca.into_series()
     }
     fn min_as_series(&self) -> Series {
-        let v = self.min();
+        let v = ChunkAgg::min(self);
         let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
         ca.rename(self.name());
         ca.into_series()
@@ -316,19 +317,14 @@ where
     }
 }
 
-macro_rules! impl_as_series {
-    ($self:expr, $agg:ident, $ty: ty) => {{
-        let v = $self.$agg();
-        let mut ca: $ty = [v].iter().copied().collect();
-        ca.rename($self.name());
-        ca.into_series()
-    }};
-    ($self:expr, $agg:ident, $arg:expr, $ty: ty) => {{
-        let v = $self.$agg($arg);
-        let mut ca: $ty = [v].iter().copied().collect();
-        ca.rename($self.name());
-        ca.into_series()
-    }};
+fn as_series<T>(name: &str, v: Option<T::Native>) -> Series
+where
+    T: PolarsNumericType,
+    SeriesWrap<ChunkedArray<T>>: SeriesTrait,
+{
+    let mut ca: ChunkedArray<T> = [v].into_iter().collect();
+    ca.rename(name);
+    ca.into_series()
 }
 
 impl<T> VarAggSeries for ChunkedArray<T>
@@ -339,41 +335,32 @@ where
         + compute::aggregate::SimdOrd<T::Native>,
 {
     fn var_as_series(&self, ddof: u8) -> Series {
-        impl_as_series!(self, var, ddof, Float64Chunked)
+        as_series::<Float64Type>(self.name(), self.var(ddof))
     }
 
     fn std_as_series(&self, ddof: u8) -> Series {
-        impl_as_series!(self, std, ddof, Float64Chunked)
+        as_series::<Float64Type>(self.name(), self.std(ddof))
     }
 }
 
 impl VarAggSeries for Float32Chunked {
     fn var_as_series(&self, ddof: u8) -> Series {
-        impl_as_series!(self, var, ddof, Float32Chunked)
+        as_series::<Float32Type>(self.name(), self.var(ddof).map(|x| x as f32))
     }
 
     fn std_as_series(&self, ddof: u8) -> Series {
-        impl_as_series!(self, std, ddof, Float32Chunked)
+        as_series::<Float32Type>(self.name(), self.std(ddof).map(|x| x as f32))
     }
 }
 
 impl VarAggSeries for Float64Chunked {
     fn var_as_series(&self, ddof: u8) -> Series {
-        impl_as_series!(self, var, ddof, Float64Chunked)
+        as_series::<Float64Type>(self.name(), self.var(ddof))
     }
 
     fn std_as_series(&self, ddof: u8) -> Series {
-        impl_as_series!(self, std, ddof, Float64Chunked)
+        as_series::<Float64Type>(self.name(), self.std(ddof))
     }
-}
-
-macro_rules! impl_quantile_as_series {
-    ($self:expr, $agg:ident, $ty: ty, $qtl:expr, $opt:expr) => {{
-        let v = $self.$agg($qtl, $opt)?;
-        let mut ca: $ty = [v].iter().copied().collect();
-        ca.rename($self.name());
-        Ok(ca.into_series())
-    }};
 }
 
 impl<T> QuantileAggSeries for ChunkedArray<T>
@@ -389,11 +376,14 @@ where
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Series> {
-        impl_quantile_as_series!(self, quantile, Float64Chunked, quantile, interpol)
+        Ok(as_series::<Float64Type>(
+            self.name(),
+            self.quantile(quantile, interpol)?,
+        ))
     }
 
     fn median_as_series(&self) -> Series {
-        impl_as_series!(self, median, Float64Chunked)
+        as_series::<Float64Type>(self.name(), self.median())
     }
 }
 
@@ -403,11 +393,14 @@ impl QuantileAggSeries for Float32Chunked {
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Series> {
-        impl_quantile_as_series!(self, quantile, Float32Chunked, quantile, interpol)
+        Ok(as_series::<Float32Type>(
+            self.name(),
+            self.quantile(quantile, interpol)?,
+        ))
     }
 
     fn median_as_series(&self) -> Series {
-        impl_as_series!(self, median, Float32Chunked)
+        as_series::<Float32Type>(self.name(), self.median())
     }
 }
 
@@ -417,11 +410,14 @@ impl QuantileAggSeries for Float64Chunked {
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Series> {
-        impl_quantile_as_series!(self, quantile, Float64Chunked, quantile, interpol)
+        Ok(as_series::<Float64Type>(
+            self.name(),
+            self.quantile(quantile, interpol)?,
+        ))
     }
 
     fn median_as_series(&self) -> Series {
-        impl_as_series!(self, median, Float64Chunked)
+        as_series::<Float64Type>(self.name(), self.median())
     }
 }
 
