@@ -48,7 +48,7 @@ fn test_string_functions() {
             col("a").str().to_uppercase().alias("upper_a_df"),
             col("a").str().to_uppercase().alias("upper_a_df2"),
             col("a").str().to_uppercase().alias("upper_a_df3"),
-            col("a").str().strip(Some("x".into())).alias("trim_a"),
+            col("a").str().strip_chars(Some("x".into())).alias("trim_a"),
             col("a")
                 .str()
                 .lstrip(Some("x".into()))

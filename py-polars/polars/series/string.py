@@ -1175,7 +1175,7 @@ class StringNameSpace:
         ]
         """
 
-    @deprecate_renamed_function("strip_chars", version="0.20.0")
+    @deprecate_renamed_function("strip_chars", version="0.19.2")
     def strip(self, characters: str | None = None) -> Series:
         r"""
         Remove leading and trailing characters.
