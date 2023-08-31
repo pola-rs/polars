@@ -146,7 +146,9 @@ where
                     Box::new(CsvSink::new(path, options.clone(), input_schema.as_ref())?)
                         as Box<dyn Sink>
                 },
-                FileType::Memory => Box::new(OrderedSink::new()) as Box<dyn Sink>,
+                FileType::Memory => {
+                    Box::new(OrderedSink::new(input_schema.into_owned())) as Box<dyn Sink>
+                },
             }
         },
         Join {

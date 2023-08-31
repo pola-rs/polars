@@ -109,3 +109,9 @@ def test_sink_csv_exception_for_quote(value: str) -> None:
     df = pl.LazyFrame({"dummy": ["abc"]})
     with pytest.raises(ValueError, match="only single byte quote char is allowed"):
         df.sink_csv("path", quote=value)
+
+
+def test_scan_csv_only_header_10792(io_files_path: Path) -> None:
+    foods_file_path = io_files_path / "only_header.csv"
+    df = pl.scan_csv(foods_file_path).collect(streaming=True)
+    assert df.to_dict(False) == {"Name": [], "Address": []}
