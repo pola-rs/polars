@@ -772,7 +772,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 time_zone,
             } => {
                 map_as_slice!(
-                    temporal::temporal_range_dispatch,
+                    temporal::temporal_range,
                     every,
                     closed,
                     time_unit,
@@ -786,7 +786,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 time_zone,
             } => {
                 map_as_slice!(
-                    temporal::temporal_ranges_dispatch,
+                    temporal::temporal_ranges,
                     every,
                     closed,
                     time_unit,
