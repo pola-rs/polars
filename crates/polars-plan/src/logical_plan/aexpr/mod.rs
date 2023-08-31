@@ -15,7 +15,6 @@ use crate::dsl::function_expr::FunctionExpr;
 #[cfg(feature = "cse")]
 use crate::logical_plan::visitor::AexprNode;
 use crate::logical_plan::Context;
-use crate::prelude::aexpr::NodeInputs::Single;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
 
@@ -286,9 +285,10 @@ impl AExpr {
                 // latest, so that it is popped first
                 container.push(*input);
             },
-            Agg(agg_e) => {
-                let node = agg_e.get_input().first();
-                container.push(node);
+            Agg(agg_e) => match agg_e.get_input() {
+                NodeInputs::Single(node) => container.push(node),
+                NodeInputs::Many(nodes) => container.extend_from_slice(&nodes),
+                NodeInputs::Leaf => {},
             },
             Ternary {
                 truthy,
@@ -369,7 +369,15 @@ impl AExpr {
                 return self;
             },
             Agg(a) => {
-                a.set_input(inputs[0]);
+                match a {
+                    AAggExpr::Quantile { expr, quantile, .. } => {
+                        *expr = inputs[0];
+                        *quantile = inputs[1];
+                    },
+                    _ => {
+                        a.set_input(inputs[0]);
+                    },
+                }
                 return self;
             },
             Ternary {
@@ -416,6 +424,7 @@ impl AExpr {
 impl AAggExpr {
     pub fn get_input(&self) -> NodeInputs {
         use AAggExpr::*;
+        use NodeInputs::*;
         match self {
             Min { input, .. } => Single(*input),
             Max { input, .. } => Single(*input),
@@ -425,7 +434,7 @@ impl AAggExpr {
             Last(input) => Single(*input),
             Mean(input) => Single(*input),
             Implode(input) => Single(*input),
-            Quantile { expr, .. } => Single(*expr),
+            Quantile { expr, quantile, .. } => Many(vec![*expr, *quantile]),
             Sum(input) => Single(*input),
             Count(input) => Single(*input),
             Std(input, _) => Single(*input),
@@ -464,7 +473,7 @@ pub enum NodeInputs {
 impl NodeInputs {
     pub fn first(&self) -> Node {
         match self {
-            Single(node) => *node,
+            NodeInputs::Single(node) => *node,
             NodeInputs::Many(nodes) => nodes[0],
             NodeInputs::Leaf => panic!(),
         }
