@@ -395,12 +395,13 @@ pub(super) fn temporal_ranges_dispatch(
     let start = start.i64().unwrap();
     let stop = stop.i64().unwrap();
 
+    const CAPACITY_FACTOR: usize = 5;
     let list = match dtype {
         DataType::Date => {
             let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
                 name,
                 start.len(),
-                start.len() * 5,
+                start.len() * CAPACITY_FACTOR,
                 DataType::Int32,
             );
             for (start, stop) in start.into_iter().zip(stop) {
@@ -429,7 +430,7 @@ pub(super) fn temporal_ranges_dispatch(
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
                 name,
                 start.len(),
-                start.len() * 5,
+                start.len() * CAPACITY_FACTOR,
                 DataType::Int64,
             );
             for (start, stop) in start.into_iter().zip(stop) {
