@@ -3520,6 +3520,16 @@ class Series:
 
         """
 
+    def is_last(self) -> Series:
+        """
+        Get a mask of the last unique value.
+
+        Returns
+        -------
+        Boolean Series
+
+        """
+
     def is_duplicated(self) -> Series:
         """
         Get mask of all duplicated values.

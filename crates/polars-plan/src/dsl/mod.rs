@@ -1103,6 +1103,13 @@ impl Expr {
         self.apply_private(BooleanFunction::IsFirst.into())
     }
 
+    #[cfg(feature = "is_last")]
+    #[allow(clippy::wrong_self_convention)]
+    /// Get a mask of the last unique value.
+    pub fn is_last(self) -> Expr {
+        self.apply_private(BooleanFunction::IsLast.into())
+    }
+
     fn dot_impl(self, other: Expr) -> Expr {
         (self * other).sum()
     }

@@ -24,6 +24,8 @@ pub enum BooleanFunction {
     IsNotNan,
     #[cfg(feature = "is_first")]
     IsFirst,
+    #[cfg(feature = "is_last")]
+    IsLast,
     #[cfg(feature = "is_unique")]
     IsUnique,
     #[cfg(feature = "is_unique")]
@@ -60,6 +62,8 @@ impl Display for BooleanFunction {
             IsNotNan => "is_not_nan",
             #[cfg(feature = "is_first")]
             IsFirst => "is_first",
+            #[cfg(feature = "is_last")]
+            IsLast => "is_last",
             #[cfg(feature = "is_unique")]
             IsUnique => "is_unique",
             #[cfg(feature = "is_unique")]
@@ -88,6 +92,8 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsNotNan => map!(is_not_nan),
             #[cfg(feature = "is_first")]
             IsFirst => map!(is_first),
+            #[cfg(feature = "is_last")]
+            IsLast => map!(is_last),
             #[cfg(feature = "is_unique")]
             IsUnique => map!(is_unique),
             #[cfg(feature = "is_unique")]
@@ -155,6 +161,11 @@ pub(super) fn is_not_nan(s: &Series) -> PolarsResult<Series> {
 #[cfg(feature = "is_first")]
 fn is_first(s: &Series) -> PolarsResult<Series> {
     polars_ops::prelude::is_first(s).map(|ca| ca.into_series())
+}
+
+#[cfg(feature = "is_last")]
+fn is_last(s: &Series) -> PolarsResult<Series> {
+    polars_ops::prelude::is_last(s).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "is_unique")]

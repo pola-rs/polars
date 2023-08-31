@@ -391,6 +391,10 @@ impl PyExpr {
         self.clone().inner.is_first().into()
     }
 
+    fn is_last(&self) -> Self {
+        self.clone().inner.is_last().into()
+    }
+
     fn explode(&self) -> Self {
         self.clone().inner.explode().into()
     }
