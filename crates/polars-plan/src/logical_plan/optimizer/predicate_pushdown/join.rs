@@ -157,13 +157,6 @@ pub(super) fn process_join(
             // business as usual
             _ => {}
         }
-
-        /*
-         * getLeftKeys
-         * if filter_left && allColumnsAreKeys
-         * replace predicate columns with right keys
-         * pushdown right
-         */
     }
 
     opt.pushdown_and_assign(input_left, pushdown_left, lp_arena, expr_arena)?;
