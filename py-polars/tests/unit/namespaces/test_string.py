@@ -875,6 +875,6 @@ def test_string_extract_groups_lazy_schema_10305() -> None:
 
 def test_strip_deprecated() -> None:
     with pytest.deprecated_call():
-        pl.col("a").strip()
+        pl.col("a").str.strip()
     with pytest.deprecated_call():
-        pl.Series(["a", "b", "c"]).strip()
+        pl.Series(["a", "b", "c"]).str.strip()

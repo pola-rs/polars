@@ -73,6 +73,7 @@ pub enum StringFunction {
     StripChars(Option<String>),
     StripPrefix(String),
     StripSuffix(String),
+    Strip(Option<String>),
     #[cfg(feature = "temporal")]
     Strptime(DataType, StrptimeOptions),
     #[cfg(feature = "dtype-decimal")]
@@ -118,6 +119,7 @@ impl StringFunction {
             | StripChars(_)
             | StripPrefix(_)
             | StripSuffix(_)
+            | Strip(_)
             | LStrip(_)
             | RStrip(_)
             | Slice(_, _) => mapper.with_same_dtype(),
@@ -163,6 +165,7 @@ impl Display for StringFunction {
             StringFunction::StripChars(_) => "strip_chars",
             StringFunction::StripPrefix(_) => "strip_prefix",
             StringFunction::StripSuffix(_) => "strip_suffix",
+            StringFunction::Strip(_) => "strip",
             #[cfg(feature = "temporal")]
             StringFunction::Strptime(_, _) => "strptime",
             #[cfg(feature = "nightly")]
@@ -364,6 +367,11 @@ pub(super) fn strip_suffix(s: &Series, suffix: &str) -> PolarsResult<Series> {
     Ok(ca
         .apply_values(|s| Cow::Borrowed(s.strip_suffix(suffix).unwrap_or(s)))
         .into_series())
+}
+
+#[deprecated(since = "0.32.1", note = "use polars strip_chars")]
+pub(super) fn strip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
+    strip_chars(s, matches)
 }
 
 pub(super) fn lstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
