@@ -5170,13 +5170,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": range(-100_000, 0),
-        ...         "b": range(0, 100_000),
-        ...     }
+        >>> lf = (  # doctest: +SKIP
+        ...     pl.LazyFrame(
+        ...         {
+        ...             "a": pl.int_range(-100_000, 0, eager=True),
+        ...             "b": pl.int_range(0, 100_000, eager=True),
+        ...         }
+        ...     )
+        ...     .map_batches(lambda x: 2 * x, streamable=True)
+        ...     .collect(streaming=True)
         ... )
-        >>> lf.map_batches(lambda x: 2 * x, streamable=True).collect(streaming=True)
         shape: (100_000, 2)
         ┌─────────┬────────┐
         │ a       ┆ b      │
