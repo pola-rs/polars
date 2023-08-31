@@ -341,7 +341,7 @@ impl Series {
     where
         T: NumCast,
     {
-        let max = self.min_as_series().cast(&DataType::Float64).ok()?;
+        let max = self.max_as_series().cast(&DataType::Float64).ok()?;
         T::from(max.f64().unwrap().get(0)?)
     }
 
