@@ -506,7 +506,12 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             return Ok(recurse);
         }
 
-        let (_, count) = self.sub_expr_map.get(id).unwrap();
+        // Because some expressions don't have hash / equality guarantee (e.g. floats)
+        // we can get none here. This must be changed later.
+        let Some((_, count)) = self.sub_expr_map.get(id) else {
+            self.visited_idx += 1;
+            return Ok(RewriteRecursion::NoMutateAndContinue);
+        };
         if *count > 1 {
             self.replaced_identifiers.insert(id.clone());
             // rewrite this sub-expression, don't visit its children
