@@ -29,18 +29,23 @@ impl PyExpr {
     fn __add__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::Plus, rhs.inner).into())
     }
+
     fn __sub__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::Minus, rhs.inner).into())
     }
+
     fn __mul__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::Multiply, rhs.inner).into())
     }
+
     fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::TrueDivide, rhs.inner).into())
     }
+
     fn __mod__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::Modulus, rhs.inner).into())
     }
+
     fn __floordiv__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::FloorDivide, rhs.inner).into())
     }
@@ -48,6 +53,7 @@ impl PyExpr {
     fn to_str(&self) -> String {
         format!("{:?}", self.inner)
     }
+
     fn eq(&self, other: Self) -> Self {
         self.clone().inner.eq(other.inner).into()
     }
@@ -55,21 +61,27 @@ impl PyExpr {
     fn eq_missing(&self, other: Self) -> Self {
         self.clone().inner.eq_missing(other.inner).into()
     }
+
     fn neq(&self, other: Self) -> Self {
         self.clone().inner.neq(other.inner).into()
     }
+
     fn neq_missing(&self, other: Self) -> Self {
         self.clone().inner.neq_missing(other.inner).into()
     }
+
     fn gt(&self, other: Self) -> Self {
         self.clone().inner.gt(other.inner).into()
     }
+
     fn gt_eq(&self, other: Self) -> Self {
         self.clone().inner.gt_eq(other.inner).into()
     }
+
     fn lt_eq(&self, other: Self) -> Self {
         self.clone().inner.lt_eq(other.inner).into()
     }
+
     fn lt(&self, other: Self) -> Self {
         self.clone().inner.lt(other.inner).into()
     }
@@ -98,12 +110,11 @@ impl PyExpr {
     fn alias(&self, name: &str) -> Self {
         self.clone().inner.alias(name).into()
     }
-    fn is_not(&self) -> Self {
-        self.clone().inner.not().into()
-    }
+
     fn is_null(&self) -> Self {
         self.clone().inner.is_null().into()
     }
+
     fn is_not_null(&self) -> Self {
         self.clone().inner.is_not_null().into()
     }
@@ -127,47 +138,65 @@ impl PyExpr {
     fn min(&self) -> Self {
         self.clone().inner.min().into()
     }
+
     fn max(&self) -> Self {
         self.clone().inner.max().into()
     }
+
+    fn mean(&self) -> Self {
+        self.clone().inner.mean().into()
+    }
+
+    fn median(&self) -> Self {
+        self.clone().inner.median().into()
+    }
+
     #[cfg(feature = "propagate_nans")]
     fn nan_max(&self) -> Self {
         self.clone().inner.nan_max().into()
     }
+
     #[cfg(feature = "propagate_nans")]
     fn nan_min(&self) -> Self {
         self.clone().inner.nan_min().into()
     }
-    fn mean(&self) -> Self {
-        self.clone().inner.mean().into()
+
+    fn not_(&self) -> Self {
+        self.clone().inner.not().into()
     }
-    fn median(&self) -> Self {
-        self.clone().inner.median().into()
-    }
+
     fn sum(&self) -> Self {
         self.clone().inner.sum().into()
     }
+
     fn n_unique(&self) -> Self {
         self.clone().inner.n_unique().into()
     }
+
     fn arg_unique(&self) -> Self {
         self.clone().inner.arg_unique().into()
     }
+
     fn unique(&self) -> Self {
         self.clone().inner.unique().into()
     }
+
     fn unique_stable(&self) -> Self {
         self.clone().inner.unique_stable().into()
     }
+
     fn first(&self) -> Self {
         self.clone().inner.first().into()
     }
+
     fn last(&self) -> Self {
         self.clone().inner.last().into()
     }
+
     fn implode(&self) -> Self {
         self.clone().inner.implode().into()
     }
+
     fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
         self.clone()
             .inner
@@ -238,18 +267,23 @@ impl PyExpr {
     fn agg_groups(&self) -> Self {
         self.clone().inner.agg_groups().into()
     }
+
     fn count(&self) -> Self {
         self.clone().inner.count().into()
     }
+
     fn value_counts(&self, sort: bool, parallel: bool) -> Self {
         self.inner.clone().value_counts(sort, parallel).into()
     }
+
     fn unique_counts(&self) -> Self {
         self.inner.clone().unique_counts().into()
     }
+
     fn null_count(&self) -> Self {
         self.inner.clone().null_count().into()
     }
+
     fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> Self {
         let dt = data_type.0;
         let expr = if strict {
@@ -259,6 +293,7 @@ impl PyExpr {
         };
         expr.into()
     }
+
     fn sort_with(&self, descending: bool, nulls_last: bool) -> Self {
         self.clone()
             .inner
@@ -296,6 +331,7 @@ impl PyExpr {
     fn arg_max(&self) -> Self {
         self.clone().inner.arg_max().into()
     }
+
     fn arg_min(&self) -> Self {
         self.clone().inner.arg_min().into()
     }
@@ -307,6 +343,7 @@ impl PyExpr {
             .search_sorted(element.inner, side.0)
             .into()
     }
+
     fn take(&self, idx: Self) -> Self {
         self.clone().inner.take(idx.inner).into()
     }
@@ -327,6 +364,7 @@ impl PyExpr {
     fn shift(&self, periods: i64) -> Self {
         self.clone().inner.shift(periods).into()
     }
+
     fn shift_and_fill(&self, periods: i64, fill_value: Self) -> Self {
         self.clone()
             .inner
@@ -412,6 +450,7 @@ impl PyExpr {
             .with_fmt("take_every")
             .into()
     }
+
     fn tail(&self, n: usize) -> Self {
         self.clone().inner.tail(Some(n)).into()
     }
@@ -598,9 +637,11 @@ impl PyExpr {
     fn cumsum(&self, reverse: bool) -> Self {
         self.clone().inner.cumsum(reverse).into()
     }
+
     fn cummax(&self, reverse: bool) -> Self {
         self.clone().inner.cummax(reverse).into()
     }
+
     fn cummin(&self, reverse: bool) -> Self {
         self.clone().inner.cummin(reverse).into()
     }
@@ -643,18 +684,23 @@ impl PyExpr {
             .map(function, GetOutput::from_type(dt))
             .into()
     }
+
     fn mode(&self) -> Self {
         self.inner.clone().mode().into()
     }
+
     fn keep_name(&self) -> Self {
         self.inner.clone().keep_name().into()
     }
+
     fn prefix(&self, prefix: &str) -> Self {
         self.inner.clone().prefix(prefix).into()
     }
+
     fn suffix(&self, suffix: &str) -> Self {
         self.inner.clone().suffix(suffix).into()
     }
+
     fn map_alias(&self, lambda: PyObject) -> Self {
         self.inner
             .clone()
@@ -669,15 +715,18 @@ impl PyExpr {
             })
             .into()
     }
+
     fn exclude(&self, columns: Vec<String>) -> Self {
         self.inner.clone().exclude(columns).into()
     }
+
     fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> Self {
         // Safety:
         // Wrap is transparent.
         let dtypes: Vec<DataType> = unsafe { std::mem::transmute(dtypes) };
         self.inner.clone().exclude_dtype(&dtypes).into()
     }
+
     fn interpolate(&self, method: Wrap<InterpolationMethod>) -> Self {
         self.inner.clone().interpolate(method.0).into()
     }
@@ -717,6 +766,7 @@ impl PyExpr {
     fn skew(&self, bias: bool) -> Self {
         self.inner.clone().skew(bias).into()
     }
+
     fn kurtosis(&self, fisher: bool, bias: bool) -> Self {
         self.inner.clone().kurtosis(fisher, bias).into()
     }
@@ -770,6 +820,7 @@ impl PyExpr {
         };
         self.inner.clone().ewm_mean(options).into()
     }
+
     fn ewm_std(
         &self,
         alpha: f64,
@@ -787,6 +838,7 @@ impl PyExpr {
         };
         self.inner.clone().ewm_std(options).into()
     }
+
     fn ewm_var(
         &self,
         alpha: f64,
@@ -804,6 +856,7 @@ impl PyExpr {
         };
         self.inner.clone().ewm_var(options).into()
     }
+
     fn extend_constant(&self, py: Python, value: Wrap<AnyValue>, n: usize) -> Self {
         let value = value.into_py(py);
         self.inner
@@ -824,6 +877,7 @@ impl PyExpr {
     fn any(&self, ignore_nulls: bool) -> Self {
         self.inner.clone().any(ignore_nulls).into()
     }
+
     fn all(&self, ignore_nulls: bool) -> Self {
         self.inner.clone().all(ignore_nulls).into()
     }
@@ -843,9 +897,11 @@ impl PyExpr {
     fn entropy(&self, base: f64, normalize: bool) -> Self {
         self.inner.clone().entropy(base, normalize).into()
     }
+
     fn hash(&self, seed: u64, seed_1: u64, seed_2: u64, seed_3: u64) -> Self {
         self.inner.clone().hash(seed, seed_1, seed_2, seed_3).into()
     }
+
     fn set_sorted_flag(&self, descending: bool) -> Self {
         let is_sorted = if descending {
             IsSorted::Descending

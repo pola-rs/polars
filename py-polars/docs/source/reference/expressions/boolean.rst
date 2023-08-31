@@ -16,8 +16,8 @@ Boolean
     Expr.is_infinite
     Expr.is_last
     Expr.is_nan
-    Expr.is_not
     Expr.is_not_nan
     Expr.is_not_null
     Expr.is_null
     Expr.is_unique
+    Expr.not_
