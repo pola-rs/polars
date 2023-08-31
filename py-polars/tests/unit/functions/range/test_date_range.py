@@ -388,17 +388,6 @@ def test_date_range_with_unsupported_datetimes() -> None:
         )
 
 
-def test_date_range_descending() -> None:
-    with pytest.raises(pl.ComputeError, match="'start' cannot be greater than 'stop'"):
-        pl.date_range(
-            datetime(2000, 3, 20), datetime(2000, 3, 5), interval="1h", eager=True
-        )
-    with pytest.raises(pl.ComputeError, match="'interval' cannot be negative"):
-        pl.date_range(
-            datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h", eager=True
-        )
-
-
 def test_date_range_end_of_month_5441() -> None:
     start = date(2020, 1, 31)
     stop = date(2021, 1, 31)
@@ -442,18 +431,6 @@ def test_date_range_eager_explode() -> None:
     result = pl.date_range(start, end, eager=True)
 
     expected = pl.Series("date", [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)])
-    assert_series_equal(result, expected)
-
-
-def test_date_range_only_first_entry_used() -> None:
-    start = pl.Series([date(2022, 1, 1), date(2022, 1, 2)])
-    end = pl.Series([date(2022, 1, 4), date(2022, 1, 3)])
-
-    result = pl.date_range(start, end, eager=True)
-
-    expected = pl.Series(
-        "date", [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3), date(2022, 1, 4)]
-    )
     assert_series_equal(result, expected)
 
 
@@ -861,3 +838,44 @@ def test_date_range_no_alias_schema_9037() -> None:
     }
     assert result.schema == expected_schema
     assert result.collect().schema == expected_schema
+
+
+def test_time_range_empty() -> None:
+    empty = pl.Series(dtype=pl.Datetime)
+    single = pl.Series([datetime(2022, 1, 2)])
+
+    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+        pl.date_range(empty, single, eager=True)
+    with pytest.raises(pl.ComputeError, match="`end` must contain a single value"):
+        pl.date_range(single, empty, eager=True)
+    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+        pl.date_range(empty, empty, eager=True)
+
+
+def test_time_range_multiple_values() -> None:
+    single = pl.Series([datetime(2022, 1, 2)])
+    multiple = pl.Series([datetime(2022, 1, 3), datetime(2022, 1, 4)])
+
+    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+        pl.date_range(multiple, single, eager=True)
+    with pytest.raises(pl.ComputeError, match="`end` must contain a single value"):
+        pl.date_range(single, multiple, eager=True)
+    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+        pl.date_range(multiple, multiple, eager=True)
+
+
+def test_date_range_invalid_start_end() -> None:
+    with pytest.raises(
+        pl.ComputeError, match="`end` must be equal to or greater than `start`"
+    ):
+        pl.date_range(
+            datetime(2000, 3, 20), datetime(2000, 3, 5), interval="1h", eager=True
+        )
+
+
+@pytest.mark.parametrize("interval", [timedelta(0), timedelta(minutes=-10)])
+def test_date_range_invalid_interval(interval: timedelta) -> None:
+    with pytest.raises(pl.ComputeError, match="`interval` must be positive"):
+        pl.date_range(
+            datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h", eager=True
+        )
