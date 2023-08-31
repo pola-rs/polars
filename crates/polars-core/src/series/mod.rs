@@ -282,24 +282,15 @@ impl Series {
     pub unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
         match self.dtype() {
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => {
-                let ca = self.struct_().unwrap();
-                ca.cast_unchecked(dtype)
-            },
-            DataType::List(_) => {
-                let ca = self.list().unwrap();
-                ca.cast_unchecked(dtype)
-            },
+            DataType::Struct(_) => self.struct_().unwrap().cast_unchecked(dtype),
+            DataType::List(_) => self.list().unwrap().cast_unchecked(dtype),
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
                     let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
                         ca.cast_unchecked(dtype)
                 })
             },
-            DataType::Binary => {
-                let ca = self.binary().unwrap();
-                ca.cast_unchecked(dtype)
-            },
+            DataType::Binary => self.binary().unwrap().cast_unchecked(dtype),
             _ => self.cast(dtype),
         }
     }
@@ -335,10 +326,8 @@ impl Series {
     where
         T: NumCast,
     {
-        self.min_as_series()
-            .cast(&DataType::Float64)
-            .ok()
-            .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
+        let min = self.min_as_series().cast(&DataType::Float64).ok()?;
+        T::from(min.f64().unwrap().get(0)?)
     }
 
     /// Returns the maximum value in the array, according to the natural order.
@@ -352,10 +341,8 @@ impl Series {
     where
         T: NumCast,
     {
-        self.max_as_series()
-            .cast(&DataType::Float64)
-            .ok()
-            .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
+        let max = self.min_as_series().cast(&DataType::Float64).ok()?;
+        T::from(max.f64().unwrap().get(0)?)
     }
 
     /// Explode a list Series. This expands every item to a new row..
@@ -436,16 +423,13 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let arr = self.struct_().unwrap();
-                let fields = arr
+                let fields: Vec<_> = arr
                     .fields()
                     .iter()
                     .map(|s| s.to_physical_repr().into_owned())
-                    .collect::<Vec<_>>();
-                Cow::Owned(
-                    StructChunked::new(self.name(), &fields)
-                        .unwrap()
-                        .into_series(),
-                )
+                    .collect();
+                let ca = StructChunked::new(self.name(), &fields).unwrap();
+                Cow::Owned(ca.into_series())
             },
             _ => Cow::Borrowed(self),
         }
@@ -466,7 +450,7 @@ impl Series {
         }
     }
 
-    // take a function pointer to reduce bloat
+    // Take a function pointer to reduce bloat.
     fn threaded_op(
         &self,
         rechunk: bool,
@@ -554,9 +538,9 @@ impl Series {
 
     /// Filter by boolean mask. This operation clones data.
     pub fn filter_threaded(&self, filter: &BooleanChunked, rechunk: bool) -> PolarsResult<Series> {
-        // this would fail if there is a broadcasting filter.
-        // because we cannot split that filter over threads
-        // besides they are a no-op, so we do the standard filter.
+        // This would fail if there is a broadcasting filter, because we cannot
+        // split that filter over threads besides they are a no-op, so we do the
+        // standard filter.
         if filter.len() == 1 {
             return self.filter(filter);
         }
@@ -590,10 +574,8 @@ impl Series {
         if self.is_empty()
             && (self.dtype().is_numeric() || matches!(self.dtype(), DataType::Boolean))
         {
-            return Series::new(self.name(), [0])
-                .cast(self.dtype())
-                .unwrap()
-                .sum_as_series();
+            let zero = Series::new(self.name(), [0]);
+            return zero.cast(self.dtype()).unwrap().sum_as_series();
         }
         match self.dtype() {
             Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_as_series(),
@@ -601,7 +583,7 @@ impl Series {
         }
     }
 
-    /// Get an array with the cumulative max computed at every element
+    /// Get an array with the cumulative max computed at every element.
     pub fn cummax(&self, _reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
         {
@@ -613,7 +595,7 @@ impl Series {
         }
     }
 
-    /// Get an array with the cumulative min computed at every element
+    /// Get an array with the cumulative min computed at every element.
     pub fn cummin(&self, _reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
         {
@@ -912,8 +894,7 @@ impl Series {
     /// than a naive [`Series::unique`](SeriesTrait::unique).
     pub fn unique_stable(&self) -> PolarsResult<Series> {
         let idx = self.arg_unique()?;
-        // Safety:
-        // Indices are in bounds.
+        // SAFETY: Indices are in bounds.
         unsafe { self.take_unchecked(&idx) }
     }
 
@@ -1009,7 +990,7 @@ where
             DataType::Decimal(None, None) => panic!("impl error"),
             _ => {
                 if &T::get_dtype() == self.dtype() ||
-                    // needed because we want to get ref of List no matter what the inner type is.
+                    // Needed because we want to get ref of List no matter what the inner type is.
                     (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
                 {
                     unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
@@ -1031,7 +1012,7 @@ where
 {
     fn as_mut(&mut self) -> &mut ChunkedArray<T> {
         if &T::get_dtype() == self.dtype() ||
-            // needed because we want to get ref of List no matter what the inner type is.
+            // Needed because we want to get ref of List no matter what the inner type is.
             (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
         {
             unsafe { &mut *(self as *mut dyn SeriesTrait as *mut ChunkedArray<T>) }
