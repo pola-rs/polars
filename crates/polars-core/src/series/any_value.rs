@@ -78,7 +78,7 @@ fn any_values_to_decimal(
         );
     } else {
         let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", avs.len());
-        let conversion_needed = s_min == s_max && s_max == scale;
+        let is_equally_scaled = s_min == s_max && s_max == scale;
         for av in avs {
             let (v, s_av) = if av.is_signed() || av.is_unsigned() {
                 (
@@ -93,7 +93,7 @@ fn any_values_to_decimal(
                 continue;
             };
 
-            if !conversion_needed {
+            if is_equally_scaled {
                 builder.append_value(v);
             } else {
                 let factor = 10_i128.pow((scale - s_av) as _); // this cast is safe
