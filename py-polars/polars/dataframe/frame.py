@@ -1509,7 +1509,10 @@ class DataFrame:
         return key in self.columns
 
     def __iter__(self) -> Iterator[Any]:
-        return self.get_columns().__iter__()
+        return iter(self.get_columns())
+
+    def __reversed__(self) -> Iterator[Any]:
+        return reversed(self.get_columns())
 
     def _pos_idx(self, idx: int, dim: int) -> int:
         if idx >= 0:

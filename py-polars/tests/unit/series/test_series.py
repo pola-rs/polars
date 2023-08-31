@@ -1907,6 +1907,10 @@ def test_iter_nested_list() -> None:
     assert_series_equal(elems[0], pl.Series([1, 2]))
     assert_series_equal(elems[1], pl.Series([3, 4]))
 
+    rev_elems = list(reversed(pl.Series("s", [[1, 2], [3, 4]])))
+    assert_series_equal(rev_elems[0], pl.Series([3, 4]))
+    assert_series_equal(rev_elems[1], pl.Series([1, 2]))
+
 
 def test_iter_nested_struct() -> None:
     # note: this feels inconsistent with the above test for nested list, but
@@ -1914,6 +1918,10 @@ def test_iter_nested_struct() -> None:
     elems = list(pl.Series("s", [{"a": 1, "b": 2}, {"a": 3, "b": 4}]))
     assert elems[0] == {"a": 1, "b": 2}
     assert elems[1] == {"a": 3, "b": 4}
+
+    rev_elems = list(reversed(pl.Series("s", [{"a": 1, "b": 2}, {"a": 3, "b": 4}])))
+    assert rev_elems[0] == {"a": 3, "b": 4}
+    assert rev_elems[1] == {"a": 1, "b": 2}
 
 
 @pytest.mark.parametrize(
