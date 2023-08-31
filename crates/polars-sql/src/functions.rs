@@ -175,6 +175,11 @@ pub(crate) enum PolarsSqlFunctions {
     // ----
     // String functions
     // ----
+    /// SQL 'concat_ws' function
+    /// ```sql
+    /// SELECT CONCAT_WS(', ', column_1) from df;
+    /// ```
+    ConcatWs,
     /// SQL 'ends_with' function
     /// ```sql
     /// SELECT ENDS_WITH(column_1, 'a') from df;
@@ -475,6 +480,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             // String functions
             // ----
             "ends_with" => Self::EndsWith,
+            "concat_ws" => Self::ConcatWs,
             "length" => Self::Length,
             "left" => Self::Left,
             "lower" => Self::Lower,
@@ -578,6 +584,19 @@ impl SqlFunctionVisitor<'_> {
             // String functions
             // ----
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
+            ConcatWs => match function.args.len() {
+                2 => self.try_visit_binary(|e, s: Expr| {
+                    let sep = match e {
+                        Expr::Literal(LiteralValue::Utf8(ref sep)) => sep,
+                        _ => {
+                            polars_bail!(InvalidOperation: "Invalid 'separator' for ConcatWs: {}", function.args[0]);
+                        }
+                    };
+
+                    Ok(s.list().join(sep))
+                }),
+                _ => unimplemented!("Currently `ConcatWs` only works as `concat_ws(sep, col)`")
+            },
             Left => self.try_visit_binary(|e, length| {
                 Ok(e.str().str_slice(0, match length {
                     Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
