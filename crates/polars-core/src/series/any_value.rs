@@ -94,7 +94,7 @@ fn any_values_to_decimal(
             };
 
             if !conversion_needed {
-                builder.append(v);
+                builder.append_value(v);
             } else {
                 let factor = 10_i128.pow((scale - s_av) as _); // this cast is safe
                 builder.append_value(v.checked_mul(factor).ok_or_else(|| {
