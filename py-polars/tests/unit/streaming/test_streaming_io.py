@@ -174,3 +174,9 @@ def test_scan_csv_only_header_10792(io_files_path: Path) -> None:
     foods_file_path = io_files_path / "only_header.csv"
     df = pl.scan_csv(foods_file_path).collect(streaming=True)
     assert df.to_dict(False) == {"Name": [], "Address": []}
+
+
+def test_scan_empty_csv_10818(io_files_path: Path) -> None:
+    empty_file_path = io_files_path / "empty.csv"
+    df = pl.scan_csv(empty_file_path, raise_if_empty=False).collect(streaming=True)
+    assert df.is_empty()
