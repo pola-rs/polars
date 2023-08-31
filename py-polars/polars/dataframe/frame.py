@@ -1408,7 +1408,7 @@ class DataFrame:
         df = (
             df
             if not floordiv
-            else df.with_columns([s.floor() for s in df if s.dtype() in FLOAT_DTYPES])
+            else df.with_columns([s.floor() for s in df if s.dtype in FLOAT_DTYPES])
         )
         if floordiv:
             int_casts = [
@@ -1423,7 +1423,7 @@ class DataFrame:
     def _cast_all_from_to(
         self, df: DataFrame, from_: frozenset[PolarsDataType], to: PolarsDataType
     ) -> DataFrame:
-        casts = [s.cast(to).alias(s.name) for s in df if s.dtype() in from_]
+        casts = [s.cast(to).alias(s.name) for s in df if s.dtype in from_]
         return df.with_columns(casts) if casts else df
 
     def __floordiv__(self, other: DataFrame | Series | int | float) -> DataFrame:
@@ -1508,10 +1508,10 @@ class DataFrame:
     def __contains__(self, key: str) -> bool:
         return key in self.columns
 
-    def __iter__(self) -> Iterator[Any]:
+    def __iter__(self) -> Iterator[Series]:
         return iter(self.get_columns())
 
-    def __reversed__(self) -> Iterator[Any]:
+    def __reversed__(self) -> Iterator[Series]:
         return reversed(self.get_columns())
 
     def _pos_idx(self, idx: int, dim: int) -> int:
