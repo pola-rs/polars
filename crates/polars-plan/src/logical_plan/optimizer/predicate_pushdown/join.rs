@@ -69,7 +69,7 @@ fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
 fn all_pred_cols_in_left_on(
     predicate: Node,
     expr_arena: &mut Arena<AExpr>,
-    left_on: &Vec<Node>,
+    left_on: &[Node],
 ) -> bool {
     let left_on_col_exprs: Vec<Expr> = left_on
         .iter()
@@ -128,12 +128,12 @@ pub(super) fn process_join(
             // the right hand side should be renamed with the suffix.
             // in that case we should not push down as the user wants to filter on `x`
             // not on `x_rhs`.
-            if filter_left == false
+            if !filter_left
                 && check_input_node(predicate, &schema_right, expr_arena)
                 && !block_pushdown_right
                 // However, if we push down to the left and all predicate columns are also
                 // join columns, we also push down right
-                || filter_left == true
+                || filter_left
                     && all_pred_cols_in_left_on(predicate, expr_arena, &left_on)
                     // TODO: Restricting to Inner and Left Join is probably too conservative
                     && matches!(&options.args.how, JoinType::Inner | JoinType::Left)
