@@ -25,17 +25,12 @@ pub enum BooleanFunction {
     #[cfg(feature = "is_in")]
     IsIn,
     IsInfinite,
-    IsNan,
-    IsNotNan,
-<<<<<<< HEAD
-    #[cfg(feature = "is_first")]
-    IsFirst,
     #[cfg(feature = "is_last")]
     IsLast,
-=======
+    IsNan,
+    IsNotNan,
     IsNotNull,
     IsNull,
->>>>>>> 20c4bc91f (Replace relevant occurrences of is_not and IsNot)
     #[cfg(feature = "is_unique")]
     IsUnique,
     Not,
