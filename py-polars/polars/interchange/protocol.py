@@ -127,15 +127,6 @@ class CategoricalDescription(TypedDict):
     categories: PolarsColumn
 
 
-class Endianness:
-    """Enum indicating the byte-order of a data type."""
-
-    LITTLE = "<"
-    BIG = ">"
-    NATIVE = "="
-    NA = "|"
-
-
 class Buffer(Protocol):
     """Interchange buffer object."""
 
@@ -239,3 +230,16 @@ class DataFrame(Protocol):
 
     def get_chunks(self, n_chunks: int | None = None) -> Iterable[DataFrame]:
         """Return an iterator yielding the chunks of the dataframe."""
+
+
+class Endianness:
+    """Enum indicating the byte-order of a data type."""
+
+    LITTLE = "<"
+    BIG = ">"
+    NATIVE = "="
+    NA = "|"
+
+
+class CopyNotAllowedError(RuntimeError):
+    """Exception raised when a copy is required, but ``allow_copy`` is set to ``False``."""  # noqa: W505
