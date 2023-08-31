@@ -6,6 +6,9 @@ use polars_time::prelude::*;
 
 use super::*;
 
+const DAYS_TO_MICROSECONDS: i64 = SECONDS_IN_DAY * 1000;
+const CAPACITY_FACTOR: usize = 5;
+
 pub(super) fn datetime(
     s: &[Series],
     time_unit: &TimeUnit,
@@ -210,13 +213,15 @@ pub(super) fn temporal_range_dispatch(
     time_zone: Option<TimeZone>,
 ) -> PolarsResult<Series> {
     let start = &s[0];
-    let stop = &s[1];
+    let end = &s[1];
+
+    polars_ensure!(start.len() == 1, ComputeError: "`start` must contain a single value");
+    polars_ensure!(end.len() == 1, ComputeError: "`end` must contain a single value");
 
     polars_ensure!(
-        start.len() == stop.len(),
-        ComputeError: "'start' and 'stop' should have the same length",
+        start.len() == end.len(),
+        ComputeError: "`start` and `end` must have the same length",
     );
-    const TO_MS: i64 = SECONDS_IN_DAY * 1000;
 
     // Note: `start` and `stop` have already been cast to their supertype,
     // so only `start`'s dtype needs to be matched against.
@@ -241,7 +246,7 @@ pub(super) fn temporal_range_dispatch(
         _ => unreachable!(),
     };
 
-    let (mut start, mut stop) = match dtype {
+    let (mut start, mut end) = match dtype {
         #[cfg(feature = "timezones")]
         DataType::Datetime(_, Some(_)) => (
             polars_ops::prelude::replace_time_zone(
@@ -253,7 +258,7 @@ pub(super) fn temporal_range_dispatch(
             .to_physical_repr()
             .cast(&DataType::Int64)?,
             polars_ops::prelude::replace_time_zone(
-                stop.cast(&dtype)?.datetime().unwrap(),
+                end.cast(&dtype)?.datetime().unwrap(),
                 None,
                 &Utf8Chunked::from_iter(std::iter::once("raise")),
             )?
@@ -266,15 +271,15 @@ pub(super) fn temporal_range_dispatch(
                 .cast(&dtype)?
                 .to_physical_repr()
                 .cast(&DataType::Int64)?,
-            stop.cast(&dtype)?
+            end.cast(&dtype)?
                 .to_physical_repr()
                 .cast(&DataType::Int64)?,
         ),
     };
 
     if dtype == DataType::Date {
-        start = &start * TO_MS;
-        stop = &stop * TO_MS;
+        start = &start * DAYS_TO_MICROSECONDS;
+        end = &end * DAYS_TO_MICROSECONDS;
     }
 
     // overwrite time zone, if specified
@@ -287,20 +292,20 @@ pub(super) fn temporal_range_dispatch(
     };
 
     let start = start.get(0).unwrap().extract::<i64>().unwrap();
-    let stop = stop.get(0).unwrap().extract::<i64>().unwrap();
+    let end = end.get(0).unwrap().extract::<i64>().unwrap();
 
     let out = match dtype {
         DataType::Date => date_range_impl(
             name,
             start,
-            stop,
+            end,
             every,
             closed,
             TimeUnit::Milliseconds,
             None,
         )?,
         DataType::Datetime(tu, ref tz) => {
-            date_range_impl(name, start, stop, every, closed, tu, tz.as_ref())?
+            date_range_impl(name, start, end, every, closed, tu, tz.as_ref())?
         },
         _ => unimplemented!(),
     };
@@ -316,15 +321,14 @@ pub(super) fn temporal_ranges_dispatch(
     time_zone: Option<TimeZone>,
 ) -> PolarsResult<Series> {
     let start = &s[0];
-    let stop = &s[1];
+    let end = &s[1];
 
     polars_ensure!(
-        start.len() == stop.len(),
-        ComputeError: "'start' and 'stop' should have the same length",
+        start.len() == end.len(),
+        ComputeError: "`start` and `end` must have the same length",
     );
-    const TO_MS: i64 = SECONDS_IN_DAY * 1000;
 
-    // Note: `start` and `stop` have already been cast to their supertype,
+    // Note: `start` and `end` have already been cast to their supertype,
     // so only `start`'s dtype needs to be matched against.
     #[allow(unused_mut)] // `dtype` is mutated within a "feature = timezones" block.
     let mut dtype = match (start.dtype(), time_unit) {
@@ -347,7 +351,7 @@ pub(super) fn temporal_ranges_dispatch(
         _ => unreachable!(),
     };
 
-    let (mut start, mut stop) = match dtype {
+    let (mut start, mut end) = match dtype {
         #[cfg(feature = "timezones")]
         DataType::Datetime(_, Some(_)) => (
             polars_ops::prelude::replace_time_zone(
@@ -359,7 +363,7 @@ pub(super) fn temporal_ranges_dispatch(
             .to_physical_repr()
             .cast(&DataType::Int64)?,
             polars_ops::prelude::replace_time_zone(
-                stop.cast(&dtype)?.datetime().unwrap(),
+                end.cast(&dtype)?.datetime().unwrap(),
                 None,
                 &Utf8Chunked::from_iter(std::iter::once("raise")),
             )?
@@ -372,15 +376,15 @@ pub(super) fn temporal_ranges_dispatch(
                 .cast(&dtype)?
                 .to_physical_repr()
                 .cast(&DataType::Int64)?,
-            stop.cast(&dtype)?
+            end.cast(&dtype)?
                 .to_physical_repr()
                 .cast(&DataType::Int64)?,
         ),
     };
 
     if dtype == DataType::Date {
-        start = &start * TO_MS;
-        stop = &stop * TO_MS;
+        start = &start * DAYS_TO_MICROSECONDS;
+        end = &end * DAYS_TO_MICROSECONDS;
     }
 
     // overwrite time zone, if specified
@@ -393,9 +397,8 @@ pub(super) fn temporal_ranges_dispatch(
     };
 
     let start = start.i64().unwrap();
-    let stop = stop.i64().unwrap();
+    let end = end.i64().unwrap();
 
-    const CAPACITY_FACTOR: usize = 5;
     let list = match dtype {
         DataType::Date => {
             let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
@@ -404,13 +407,13 @@ pub(super) fn temporal_ranges_dispatch(
                 start.len() * CAPACITY_FACTOR,
                 DataType::Int32,
             );
-            for (start, stop) in start.into_iter().zip(stop) {
-                match (start, stop) {
-                    (Some(start), Some(stop)) => {
+            for (start, end) in start.into_iter().zip(end) {
+                match (start, end) {
+                    (Some(start), Some(end)) => {
                         let rng = date_range_impl(
                             "",
                             start,
-                            stop,
+                            end,
                             every,
                             closed,
                             TimeUnit::Milliseconds,
@@ -433,10 +436,10 @@ pub(super) fn temporal_ranges_dispatch(
                 start.len() * CAPACITY_FACTOR,
                 DataType::Int64,
             );
-            for (start, stop) in start.into_iter().zip(stop) {
-                match (start, stop) {
-                    (Some(start), Some(stop)) => {
-                        let rng = date_range_impl("", start, stop, every, closed, tu, tz.as_ref())?;
+            for (start, end) in start.into_iter().zip(end) {
+                match (start, end) {
+                    (Some(start), Some(end)) => {
+                        let rng = date_range_impl("", start, end, every, closed, tu, tz.as_ref())?;
                         builder.append_slice(rng.cont_slice().unwrap())
                     },
                     _ => builder.append_null(),
@@ -459,10 +462,8 @@ pub(super) fn time_range(
     let start = &s[0];
     let end = &s[1];
 
-    polars_ensure!(
-        start.len() == end.len(),
-        ComputeError: "'start' and 'end' should have the same length",
-    );
+    polars_ensure!(start.len() == 1, ComputeError: "`start` must contain a single value");
+    polars_ensure!(end.len() == 1, ComputeError: "`end` must contain a single value");
 
     let start = time_series_to_i64_scalar(start)?;
     let end = time_series_to_i64_scalar(end)?;
@@ -491,13 +492,12 @@ pub(super) fn time_ranges(
 
     polars_ensure!(
         start.len() == end.len(),
-        ComputeError: "'start' and 'stop' should have the same length",
+        ComputeError: "`start` and `end` must have the same length",
     );
 
     let start = &time_series_to_i64_ca(start)?;
     let end = &time_series_to_i64_ca(end)?;
 
-    const CAPACITY_FACTOR: usize = 5;
     let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
         "time_range",
         start.len(),
