@@ -211,7 +211,7 @@ pub(super) fn temporal_range(
     time_unit: Option<TimeUnit>,
     time_zone: Option<TimeZone>,
 ) -> PolarsResult<Series> {
-    if *s[0].dtype() == DataType::Date && interval.nanoseconds() == 0 {
+    if s[0].dtype() == &DataType::Date && interval.nanoseconds() == 0 {
         date_range(s, interval, closed)
     } else {
         datetime_range(s, interval, closed, time_unit, time_zone)
@@ -335,7 +335,7 @@ pub(super) fn temporal_ranges(
     time_unit: Option<TimeUnit>,
     time_zone: Option<TimeZone>,
 ) -> PolarsResult<Series> {
-    if *s[0].dtype() == DataType::Date && interval.nanoseconds() == 0 {
+    if s[0].dtype() == &DataType::Date && interval.nanoseconds() == 0 {
         date_ranges(s, interval, closed)
     } else {
         datetime_ranges(s, interval, closed, time_unit, time_zone)
