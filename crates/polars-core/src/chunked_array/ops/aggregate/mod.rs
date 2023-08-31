@@ -291,13 +291,13 @@ where
         ca.into_series()
     }
     fn max_as_series(&self) -> Series {
-        let v = self.max();
+        let v = ChunkAgg::max(self);
         let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
         ca.rename(self.name());
         ca.into_series()
     }
     fn min_as_series(&self) -> Series {
-        let v = self.min();
+        let v = ChunkAgg::min(self);
         let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
         ca.rename(self.name());
         ca.into_series()

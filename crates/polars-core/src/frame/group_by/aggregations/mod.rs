@@ -527,7 +527,7 @@ where
                             1 => self.get(first as usize),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
-                                arr_group.min()
+                                ChunkAgg::min(&arr_group)
                             },
                         }
                     })
@@ -610,7 +610,7 @@ where
                             1 => self.get(first as usize),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
-                                arr_group.max()
+                                ChunkAgg::max(&arr_group)
                             },
                         }
                     })
@@ -692,7 +692,7 @@ impl<T> SeriesWrap<ChunkedArray<T>>
 where
     T: PolarsFloatType,
     ChunkedArray<T>: IntoSeries
-        + ChunkVar<T::Native>
+        + ChunkVar
         + VarAggSeries
         + ChunkQuantile<T::Native>
         + QuantileAggSeries,
