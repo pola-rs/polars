@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::ops::Deref;
 use std::path::Path;
 use std::thread::JoinHandle;
 
@@ -61,7 +62,7 @@ impl SinkWriter for polars_io::csv::BatchedWriter<std::fs::File> {
 }
 
 #[cfg(feature = "json")]
-impl SinkWriter for polars_io::json::BatchedWriter<std::fs::File> {
+impl SinkWriter for dyn polars_io::json::BatchedWriter<std::fs::File> {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         self.write_batch(df)
     }
@@ -244,7 +245,7 @@ impl JsonSink {
             .with_json_format(options.json_format)
             .batched(schema)?;
 
-        let writer = Box::new(writer) as Box<dyn SinkWriter + Send + Sync>;
+        let writer = Box::new(writer.deref()) as Box<dyn SinkWriter + Send + Sync>;
 
         let morsels_per_sink = morsels_per_sink();
         let backpressure = morsels_per_sink * 2;

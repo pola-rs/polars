@@ -67,6 +67,7 @@ use std::ops::Deref;
 
 use arrow::array::StructArray;
 use arrow::legacy::conversion::chunk_to_struct;
+use polars_json::json::write::FallibleStreamingIterator;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
@@ -75,6 +76,7 @@ use simd_json::BorrowedValue;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use polars_json::{json, ndjson};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
@@ -116,18 +118,26 @@ pub struct JsonWriter<W: Write> {
     json_format: JsonFormat,
 }
 
-impl<W: Write> JsonWriter<W> {
+impl<W: Write> JsonWriter<W> where W: Write + 'static {
     pub fn with_json_format(mut self, format: JsonFormat) -> Self {
         self.json_format = format;
         self
     }
 
-    pub fn batched(self, _schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
-        Ok(
-            BatchedWriter {
-                writer: self
-            }
-        )
+    pub fn batched(self, _schema: &Schema) -> PolarsResult<Box<dyn BatchedWriter<W>>> {
+        match self.json_format {
+            JsonFormat::Json => Ok(
+                Box::new(JsonBatchedWriter {
+                    writer: self.buffer,
+                    is_first_row: true
+                })
+            ),
+            JsonFormat::JsonLines => Ok(
+                Box::new(JsonLinesBatchedWriter {
+                    writer: self.buffer
+                })
+            )
+        }
     }
 }
 
@@ -146,12 +156,6 @@ where
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         df.align_chunks();
-        self.write(df)
-    }
-}
-
-impl<W> JsonWriter<W> where W: Write {
-    fn write(&mut self, df: &DataFrame) -> PolarsResult<()> {
         let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
         let batches = df
             .iter_chunks()
@@ -174,24 +178,75 @@ impl<W> JsonWriter<W> where W: Write {
     }
 }
 
-pub struct BatchedWriter<W: Write> {
-    writer: JsonWriter<W>
+pub trait BatchedWriter<W: Write> {
+    fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()>;
+    fn finish(&mut self) -> PolarsResult<()>;
 }
 
-impl<W: Write> BatchedWriter<W> {
+struct JsonBatchedWriter<W: Write>{
+    writer: W,
+    is_first_row: bool
+}
+
+impl <W> BatchedWriter<W> for JsonBatchedWriter<W> where W: Write  {
     /// Write a batch to the json writer.
     ///
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
-    pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
-        self.writer.write(df)
+    fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
+        let batches = df
+            .iter_chunks()
+            .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
+        let mut serializer =
+            json::write::Serializer::new(batches, vec![]);
+
+        while let Some(block) = serializer.next()? {
+            if self.is_first_row {
+                self.writer.write_all(&[b'['])?;
+                self.is_first_row = false;
+            } else {
+                self.writer.write_all(&[b','])?;
+            }
+            self.writer.write_all(block)?;
+        }
+        Ok(())
     }
 
-    /// Writes the footer of the IPC file.
-    pub fn finish(&mut self) -> PolarsResult<()> {
+    /// Writes the footer of the Json file.
+    fn finish(&mut self) -> PolarsResult<()> {
+        self.writer.write_all(&[b']'])?;
         Ok(())
     }
 }
+
+struct JsonLinesBatchedWriter<W: Write> {
+    writer: W
+}
+
+impl <W> BatchedWriter<W> for JsonLinesBatchedWriter<W> where W: Write  {
+    /// Write a batch to the json writer.
+    ///
+    /// # Panics
+    /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
+    fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
+        let batches = df
+            .iter_chunks()
+            .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
+        let mut serializer = ndjson::write::Serializer::new(batches, vec![]);
+        while let Some(block) = serializer.next()? {
+            self.writer.write_all(block)?;
+        }
+        Ok(())
+    }
+
+    /// Writes the footer of the Json file.
+    fn finish(&mut self) -> PolarsResult<()> {
+        Ok(())
+    }
+}
+
 /// Reads JSON in one of the formats in [`JsonFormat`] into a DataFrame.
 #[must_use]
 pub struct JsonReader<'a, R>
