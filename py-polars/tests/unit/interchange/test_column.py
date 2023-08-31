@@ -4,7 +4,7 @@ import pytest
 
 import polars as pl
 from polars.interchange.column import PolarsColumn
-from polars.interchange.protocol import ColumnNullType, DtypeKind
+from polars.interchange.protocol import ColumnNullType, CopyNotAllowedError, DtypeKind
 from polars.testing import assert_series_equal
 
 
@@ -13,7 +13,7 @@ def test_init_global_categorical_zero_copy_fails() -> None:
         s = pl.Series("a", ["x"], dtype=pl.Categorical)
 
     with pytest.raises(
-        RuntimeError, match="column 'a' must be converted to a local categorical"
+        CopyNotAllowedError, match="column 'a' must be converted to a local categorical"
     ):
         PolarsColumn(s, allow_copy=False)
 
@@ -216,7 +216,9 @@ def test_get_buffers_chunked_zero_copy_fails() -> None:
     s = pl.concat([s1, s1], rechunk=False)
     col = PolarsColumn(s, allow_copy=False)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(
+        CopyNotAllowedError, match="non-contiguous buffer must be made contiguous"
+    ):
         col.get_buffers()
 
 
