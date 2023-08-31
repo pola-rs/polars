@@ -691,11 +691,8 @@ where
 impl<T> SeriesWrap<ChunkedArray<T>>
 where
     T: PolarsFloatType,
-    ChunkedArray<T>: IntoSeries
-        + ChunkVar
-        + VarAggSeries
-        + ChunkQuantile<T::Native>
-        + QuantileAggSeries,
+    ChunkedArray<T>:
+        IntoSeries + ChunkVar + VarAggSeries + ChunkQuantile<T::Native> + QuantileAggSeries,
     T::Native: Simd + NumericNative + Pow<T::Native, Output = T::Native>,
     <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
         + arrow::compute::aggregate::Sum<T::Native>
