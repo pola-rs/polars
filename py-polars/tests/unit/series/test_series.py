@@ -2296,10 +2296,19 @@ def test_product() -> None:
     assert out == 6
     a = pl.Series("a", [1, 2, None])
     out = a.product()
-    assert out is None
+    assert out == 2
     a = pl.Series("a", [None, 2, 3])
     out = a.product()
-    assert out is None
+    assert out == 6
+    a = pl.Series("a", [])
+    out = a.product()
+    assert out == 1
+    a = pl.Series("a", [None, None])
+    out = a.product()
+    assert out == 1
+    a = pl.Series("a", [3.0, None, float("nan")])
+    out = a.product()
+    assert math.isnan(out)
 
 
 def test_ceil() -> None:
