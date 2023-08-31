@@ -6,7 +6,7 @@ use polars_time::prelude::*;
 
 use super::*;
 
-const DAYS_TO_MICROSECONDS: i64 = SECONDS_IN_DAY * 1000;
+const DAYS_TO_MILLISECONDS: i64 = SECONDS_IN_DAY * 1000;
 const CAPACITY_FACTOR: usize = 5;
 
 pub(super) fn datetime(
@@ -218,12 +218,7 @@ pub(super) fn temporal_range_dispatch(
     polars_ensure!(start.len() == 1, ComputeError: "`start` must contain a single value");
     polars_ensure!(end.len() == 1, ComputeError: "`end` must contain a single value");
 
-    polars_ensure!(
-        start.len() == end.len(),
-        ComputeError: "`start` and `end` must have the same length",
-    );
-
-    // Note: `start` and `stop` have already been cast to their supertype,
+    // Note: `start` and `end` have already been cast to their supertype,
     // so only `start`'s dtype needs to be matched against.
     #[allow(unused_mut)] // `dtype` is mutated within a "feature = timezones" block.
     let mut dtype = match (start.dtype(), time_unit) {
@@ -278,8 +273,8 @@ pub(super) fn temporal_range_dispatch(
     };
 
     if dtype == DataType::Date {
-        start = &start * DAYS_TO_MICROSECONDS;
-        end = &end * DAYS_TO_MICROSECONDS;
+        start = &start * DAYS_TO_MILLISECONDS;
+        end = &end * DAYS_TO_MILLISECONDS;
     }
 
     // overwrite time zone, if specified
@@ -383,8 +378,8 @@ pub(super) fn temporal_ranges_dispatch(
     };
 
     if dtype == DataType::Date {
-        start = &start * DAYS_TO_MICROSECONDS;
-        end = &end * DAYS_TO_MICROSECONDS;
+        start = &start * DAYS_TO_MILLISECONDS;
+        end = &end * DAYS_TO_MILLISECONDS;
     }
 
     // overwrite time zone, if specified
