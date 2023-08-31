@@ -133,7 +133,7 @@ pub(super) fn process_join(
                 && !block_pushdown_right
                 // However, if we push down to the left and all predicate columns are also
                 // join columns, we also push down right
-                || filter_left == true 
+                || filter_left == true
                     && all_pred_cols_in_left_on(predicate, expr_arena, &left_on)
                     // TODO: Restricting to Inner and Left Join is probably too conservative
                     && matches!(&options.args.how, JoinType::Inner | JoinType::Left)
