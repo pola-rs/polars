@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import timedelta
 
 from polars.utils.convert import _timedelta_to_pl_duration

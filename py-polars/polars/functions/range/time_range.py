@@ -105,7 +105,7 @@ def time_range(
 
     Examples
     --------
-    >>> from datetime import time
+    >>> from datetime import time, timedelta
     >>> pl.time_range(
     ...     start=time(14, 0),
     ...     interval=timedelta(hours=3, minutes=15),
