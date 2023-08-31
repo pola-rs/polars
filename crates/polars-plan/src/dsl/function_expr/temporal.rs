@@ -206,7 +206,6 @@ pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
 
 pub(super) fn temporal_range_dispatch(
     s: &[Series],
-    name: &str,
     every: Duration,
     closed: ClosedWindow,
     time_unit: Option<TimeUnit>,
@@ -291,7 +290,7 @@ pub(super) fn temporal_range_dispatch(
 
     let out = match dtype {
         DataType::Date => date_range_impl(
-            name,
+            "date",
             start,
             end,
             every,
@@ -300,7 +299,7 @@ pub(super) fn temporal_range_dispatch(
             None,
         )?,
         DataType::Datetime(tu, ref tz) => {
-            date_range_impl(name, start, end, every, closed, tu, tz.as_ref())?
+            date_range_impl("date", start, end, every, closed, tu, tz.as_ref())?
         },
         _ => unimplemented!(),
     };
@@ -309,7 +308,6 @@ pub(super) fn temporal_range_dispatch(
 
 pub(super) fn temporal_ranges_dispatch(
     s: &[Series],
-    name: &str,
     every: Duration,
     closed: ClosedWindow,
     time_unit: Option<TimeUnit>,
@@ -397,7 +395,7 @@ pub(super) fn temporal_ranges_dispatch(
     let list = match dtype {
         DataType::Date => {
             let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
-                name,
+                "date_range",
                 start.len(),
                 start.len() * CAPACITY_FACTOR,
                 DataType::Int32,
@@ -426,7 +424,7 @@ pub(super) fn temporal_ranges_dispatch(
         },
         DataType::Datetime(tu, ref tz) => {
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
-                name,
+                "date_range",
                 start.len(),
                 start.len() * CAPACITY_FACTOR,
                 DataType::Int64,
