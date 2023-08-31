@@ -3129,6 +3129,26 @@ def test_set() -> None:
         df[True] = 1  # type: ignore[index]
 
 
+def test_series_iter_over_frame() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [2, 3, 4], "c": [3, 4, 5]})
+
+    expected = {
+        0: pl.Series("a", [1, 2, 3]),
+        1: pl.Series("b", [2, 3, 4]),
+        2: pl.Series("c", [3, 4, 5]),
+    }
+    for idx, s in enumerate(df):
+        assert_series_equal(s, expected[idx])
+
+    expected = {
+        0: pl.Series("c", [3, 4, 5]),
+        1: pl.Series("b", [2, 3, 4]),
+        2: pl.Series("a", [1, 2, 3]),
+    }
+    for idx, s in enumerate(reversed(df)):
+        assert_series_equal(s, expected[idx])
+
+
 def test_union_with_aliases_4770() -> None:
     lf = pl.DataFrame(
         {
