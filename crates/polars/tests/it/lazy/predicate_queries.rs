@@ -271,7 +271,7 @@ fn test_predicate_pushdown_block_8847() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_push_key_predicates_to_both_join_sides_7247() -> PolarsResult<()> {
+fn test_push_join_col_predicates_to_both_sides_7247() -> PolarsResult<()> {
     let df1 = df! {
         "a" => ["a1", "a2"],
         "b" => ["b1", "b2"],
