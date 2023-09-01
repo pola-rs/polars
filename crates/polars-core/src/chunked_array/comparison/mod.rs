@@ -680,59 +680,57 @@ impl ChunkCompare<&str> for Utf8Chunked {
     }
 }
 
+#[doc(hidden)]
+fn _list_comparison_helper<F>(lhs: &ListChunked, rhs: &ListChunked, op: F) -> BooleanChunked
+where
+    F: Fn(&Series, &Series) -> bool,
+{
+    match (lhs.len(), rhs.len()) {
+        (_, 1) => {
+            let right = unsafe { rhs.get_unchecked(0) };
+            lhs.amortized_iter()
+                .map(|left| match (left, &right) {
+                    (Some(l), Some(r)) => Some(op(l.as_ref(), r)),
+                    _ => None,
+                })
+                .collect_trusted()
+        },
+        (1, _) => {
+            let left = unsafe { lhs.get_unchecked(0) };
+            rhs.amortized_iter()
+                .map(|right| match (&left, right) {
+                    (Some(l), Some(r)) => Some(op(r.as_ref(),l)),
+                    _ => None,
+                })
+                .collect_trusted()
+        },
+        _ => lhs
+            .amortized_iter()
+            .zip(rhs.amortized_iter())
+            .map(|(left, right)| match (left, right) {
+                (Some(l), Some(r)) => Some(op(l.as_ref(),r.as_ref())),
+                _ => None,
+            })
+            .collect_trusted(),
+    }
+}
+
 impl ChunkCompare<&ListChunked> for ListChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &ListChunked) -> BooleanChunked {
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
-            self.amortized_iter()
-                .zip(rhs.amortized_iter())
-                .map(|(left, right)| match (left, right) {
-                    (Some(l), Some(r)) => Some(l.as_ref().series_equal_missing(r.as_ref())),
-                    _ => None,
-                })
-                .collect_trusted()
-        }
+        _list_comparison_helper(self, rhs, Series::series_equal)
     }
 
     fn equal_missing(&self, rhs: &ListChunked) -> BooleanChunked {
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
-            self.amortized_iter()
-                .zip(rhs.amortized_iter())
-                .map(|(left, right)| match (left, right) {
-                    (Some(l), Some(r)) => l.as_ref().series_equal_missing(r.as_ref()),
-                    (None, None) => true,
-                    _ => false,
-                })
-                .collect_trusted()
-        }
+        _list_comparison_helper(self, rhs, Series::series_equal_missing)
     }
 
     fn not_equal(&self, rhs: &ListChunked) -> BooleanChunked {
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
-            self.amortized_iter()
-                .zip(rhs.amortized_iter())
-                .map(|(left, right)| match (left, right) {
-                    (Some(l), Some(r)) => Some(!l.as_ref().series_equal_missing(r.as_ref())),
-                    _ => None,
-                })
-                .collect_trusted()
-        }
+        _list_comparison_helper(self, rhs, |l, r| !l.series_equal(r))
     }
 
     fn not_equal_missing(&self, rhs: &ListChunked) -> BooleanChunked {
-        unsafe {
-            self.amortized_iter()
-                .zip(rhs.amortized_iter())
-                .map(|(left, right)| match (left, right) {
-                    (Some(l), Some(r)) => !l.as_ref().series_equal_missing(r.as_ref()),
-                    (None, None) => false,
-                    _ => true,
-                })
-                .collect_trusted()
-        }
+        _list_comparison_helper(self, rhs, |l, r| !l.series_equal_missing(r))
     }
 
     // The following are not implemented because gt, lt comparison of series don't make sense.
@@ -1225,6 +1223,17 @@ mod test {
 
         let c = &a | &falses;
         assert_eq!(Vec::from(&c), &[Some(true), Some(false), None])
+    }
+
+    #[test]
+    fn list_broadcasting_lists() {
+        let s_el = Series::new("", &[1, 2, 3]);
+        let s_lhs = Series::new("", &[s_el.clone(), s_el.clone()]);
+        let s_rhs = Series::new("", &[s_el.clone()]);
+
+        let result = s_lhs.list().unwrap().equal(s_rhs.list().unwrap());
+        assert_eq!(result.len(), 2);
+        assert!(result.all());
     }
 
     #[test]
