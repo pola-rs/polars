@@ -807,7 +807,7 @@ mod test {
             .and_hms_opt(3, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let range = date_range_impl(
+        let range = datetime_range_impl(
             "date",
             start,
             stop,
@@ -860,7 +860,7 @@ mod test {
             .and_hms_opt(3, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let range = date_range_impl(
+        let range = datetime_range_impl(
             "_upper_boundary",
             start,
             stop,
@@ -883,7 +883,7 @@ mod test {
             .and_hms_opt(2, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let range = date_range_impl(
+        let range = datetime_range_impl(
             "_lower_boundary",
             start,
             stop,
@@ -922,7 +922,7 @@ mod test {
             .and_hms_opt(12, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let range = date_range_impl(
+        let range = datetime_range_impl(
             "date",
             start,
             stop,

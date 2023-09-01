@@ -188,7 +188,7 @@ fn upsample_single_impl(
                         TimeUnit::Microseconds => offset.add_us(first, None)?,
                         TimeUnit::Milliseconds => offset.add_ms(first, None)?,
                     };
-                    let range = date_range_impl(
+                    let range = datetime_range_impl(
                         index_col_name,
                         first,
                         last,

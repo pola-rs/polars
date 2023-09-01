@@ -36,7 +36,7 @@ pub const NS_DAY: i64 = 24 * NS_HOUR;
 pub const NS_WEEK: i64 = 7 * NS_DAY;
 
 /// vector of i64 representing temporal values
-pub fn temporal_range(
+pub fn datetime_range_i64(
     start: i64,
     end: i64,
     interval: Duration,
@@ -99,11 +99,7 @@ pub fn temporal_range(
 }
 
 fn check_range_bounds(start: i64, end: i64, interval: Duration) -> PolarsResult<()> {
-    if start > end {
-        polars_bail!(ComputeError: "`end` must be equal to or greater than `start`")
-    }
-    if interval.negative || interval.is_zero() {
-        polars_bail!(ComputeError: "`interval` must be positive")
-    }
+    polars_ensure!(end >= start, ComputeError: "`end` must be equal to or greater than `start`");
+    polars_ensure!(!interval.negative && !interval.is_zero(), ComputeError: "`interval` must be positive");
     Ok(())
 }
