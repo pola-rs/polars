@@ -684,7 +684,7 @@ impl ChunkCompare<&str> for Utf8Chunked {
 #[doc(hidden)]
 fn _list_comparison_helper<F>(lhs: &ListChunked, rhs: &ListChunked, op: F) -> BooleanChunked
 where
-    F: Fn(&Series, &Series) -> bool,
+    F: Fn(Option<&Series>, Option<&Series>) -> Option<bool>,
 {
     match (lhs.len(), rhs.len()) {
         (_, 1) => {
@@ -692,60 +692,71 @@ where
             let mut iter = unsafe { rhs.amortized_iter() };
             let right_us = iter.next().unwrap();
             let right = right_us.as_ref().map(|s| s.as_ref());
-            // Safety: values within iterator do not outlive the iterator itself
-            unsafe {
-                lhs.amortized_iter()
-                    .map(|left| match (left, right) {
-                        (Some(l), Some(r)) => Some(op(l.as_ref(), r)),
-                        _ => None,
-                    })
-                    .collect_trusted()
-            }
+            lhs.amortized_iter()
+                .map(|left| op(left.as_ref().map(|us| us.as_ref()), right.as_ref()))
+                .collect_trusted()
         },
         (1, _) => {
             // Safety: values within iterator do not outlive the iterator itself
             let mut iter = unsafe { lhs.amortized_iter() };
             let left_us = iter.next().unwrap();
             let left = left_us.as_ref().map(|s| s.as_ref());
-            // Safety: values within iterator do not outlive the iterator itself
-            unsafe {
-                rhs.amortized_iter()
-                    .map(|right| match (left, right) {
-                        (Some(l), Some(r)) => Some(op(r.as_ref(), l)),
-                        _ => None,
-                    })
-                    .collect_trusted()
-            }
-        },
-        // Safety: values within iterator do not outlive the iterator itself
-        _ => unsafe {
-            lhs.amortized_iter()
-                .zip(rhs.amortized_iter())
-                .map(|(left, right)| match (left, right) {
-                    (Some(l), Some(r)) => Some(op(l.as_ref(), r.as_ref())),
-                    _ => None,
-                })
+            rhs.amortized_iter()
+                .map(|right| op(left.as_ref(), right.as_ref().map(|us| us.as_ref())))
                 .collect_trusted()
         },
+        _ => lhs
+            .amortized_iter()
+            .zip(rhs.amortized_iter())
+            .map(|(left, right)| {
+                op(
+                    left.as_ref().map(|us| us.as_ref()),
+                    right.as_ref().map(|us| us.as_ref()),
+                )
+            })
+            .collect_trusted(),
     }
 }
 
 impl ChunkCompare<&ListChunked> for ListChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &ListChunked) -> BooleanChunked {
-        _list_comparison_helper(self, rhs, Series::series_equal)
+        let _series_equal = |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
+            (Some(l), Some(r)) => Some(l.series_equal(r)),
+            _ => None,
+        };
+
+        _list_comparison_helper(self, rhs, _series_equal)
     }
 
     fn equal_missing(&self, rhs: &ListChunked) -> BooleanChunked {
-        _list_comparison_helper(self, rhs, Series::series_equal_missing)
+        let _series_equal_missing = |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
+            (Some(l), Some(r)) => Some(l.series_equal_missing(r)),
+            (None, None) => Some(true),
+            _ => Some(false),
+        };
+
+        _list_comparison_helper(self, rhs, _series_equal_missing)
     }
 
     fn not_equal(&self, rhs: &ListChunked) -> BooleanChunked {
-        _list_comparison_helper(self, rhs, |l, r| !l.series_equal(r))
+        let _series_not_equal = |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
+            (Some(l), Some(r)) => Some(!l.series_equal(r)),
+            _ => None,
+        };
+
+        _list_comparison_helper(self, rhs, _series_not_equal)
     }
 
     fn not_equal_missing(&self, rhs: &ListChunked) -> BooleanChunked {
-        _list_comparison_helper(self, rhs, |l, r| !l.series_equal_missing(r))
+        let _series_not_equal_missing =
+            |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
+                (Some(l), Some(r)) => Some(!l.series_equal_missing(r)),
+                (None, None) => Some(false),
+                _ => Some(true),
+            };
+
+        _list_comparison_helper(self, rhs, _series_not_equal_missing)
     }
 
     // The following are not implemented because gt, lt comparison of series don't make sense.
