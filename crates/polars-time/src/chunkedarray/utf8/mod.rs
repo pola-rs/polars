@@ -144,7 +144,7 @@ pub trait Utf8Methods: AsUtf8 {
             let naive_time = NaiveTime::parse_from_str(s, fmt).ok()?;
             Some(time_to_time64ns(&naive_time))
         });
-        let ca = utf8_ca.apply_generic(|opt_s| Some(convert.eval(opt_s?, use_cache)?));
+        let ca = utf8_ca.apply_generic(|opt_s| convert.eval(opt_s?, use_cache));
         Ok(ca.with_name(utf8_ca.name()).into())
     }
 
