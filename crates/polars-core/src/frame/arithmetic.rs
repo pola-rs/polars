@@ -4,6 +4,7 @@ use rayon::prelude::*;
 
 use crate::prelude::*;
 use crate::utils::try_get_supertype;
+use crate::POOL;
 
 /// Get the supertype that is valid for all columns in the DataFrame.
 /// This reduces casting of the rhs in arithmetic.
@@ -17,9 +18,9 @@ macro_rules! impl_arithmetic {
     ($self:expr, $rhs:expr, $operand: tt) => {{
         let st = get_supertype_all($self, $rhs)?;
         let rhs = $rhs.cast(&st)?;
-        let cols = $self.columns.par_iter().map(|s| {
+        let cols = POOL.install(|| {$self.columns.par_iter().map(|s| {
             Ok(&s.cast(&st)? $operand &rhs)
-        }).collect::<PolarsResult<_>>()?;
+        }).collect::<PolarsResult<_>>()})?;
         Ok(DataFrame::new_no_checks(cols))
     }}
 }
