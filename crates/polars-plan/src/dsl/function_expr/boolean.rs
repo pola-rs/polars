@@ -9,31 +9,31 @@ use crate::{map, wrap};
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum BooleanFunction {
-    All {
-        ignore_nulls: bool,
-    },
-    AllHorizontal,
     Any {
         ignore_nulls: bool,
     },
-    AnyHorizontal,
-    #[cfg(feature = "is_unique")]
-    IsDuplicated,
+    All {
+        ignore_nulls: bool,
+    },
+    IsNot,
+    IsNull,
+    IsNotNull,
     IsFinite,
-    #[cfg(feature = "is_first")]
-    IsFirst,
-    #[cfg(feature = "is_in")]
-    IsIn,
     IsInfinite,
-    #[cfg(feature = "is_last")]
-    IsLast,
     IsNan,
     IsNotNan,
-    IsNotNull,
-    IsNull,
+    #[cfg(feature = "is_first")]
+    IsFirst,
+    #[cfg(feature = "is_last")]
+    IsLast,
     #[cfg(feature = "is_unique")]
     IsUnique,
-    Not,
+    #[cfg(feature = "is_unique")]
+    IsDuplicated,
+    #[cfg(feature = "is_in")]
+    IsIn,
+    AllHorizontal,
+    AnyHorizontal,
 }
 
 impl BooleanFunction {
@@ -52,26 +52,26 @@ impl Display for BooleanFunction {
         use BooleanFunction::*;
         let s = match self {
             All { .. } => "all",
-            AllHorizontal => "all_horizontal",
             Any { .. } => "any",
-            AnyHorizontal => "any_horizontal",
-            #[cfg(feature = "is_unique")]
-            IsDuplicated => "is_duplicated",
+            IsNot => "is_not",
+            IsNull => "is_null",
+            IsNotNull => "is_not_null",
             IsFinite => "is_finite",
-            #[cfg(feature = "is_first")]
-            IsFirst => "is_first",
-            #[cfg(feature = "is_in")]
-            IsIn => "is_in",
             IsInfinite => "is_infinite",
-            #[cfg(feature = "is_last")]
-            IsLast => "is_last",
             IsNan => "is_nan",
             IsNotNan => "is_not_nan",
-            IsNotNull => "is_not_null",
-            IsNull => "is_null",
+            #[cfg(feature = "is_first")]
+            IsFirst => "is_first",
+            #[cfg(feature = "is_last")]
+            IsLast => "is_last",
             #[cfg(feature = "is_unique")]
             IsUnique => "is_unique",
-            Not => "not_",
+            #[cfg(feature = "is_unique")]
+            IsDuplicated => "is_duplicated",
+            #[cfg(feature = "is_in")]
+            IsIn => "is_in",
+            AnyHorizontal => "any_horizontal",
+            AllHorizontal => "all_horizontal",
         };
         write!(f, "{s}")
     }
@@ -81,27 +81,27 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: BooleanFunction) -> Self {
         use BooleanFunction::*;
         match func {
-            All { ignore_nulls } => map!(all, ignore_nulls),
-            AllHorizontal => wrap!(all_horizontal),
             Any { ignore_nulls } => map!(any, ignore_nulls),
-            AnyHorizontal => wrap!(any_horizontal),
-            #[cfg(feature = "is_unique")]
-            IsDuplicated => map!(is_duplicated),
+            All { ignore_nulls } => map!(all, ignore_nulls),
+            IsNot => map!(is_not),
+            IsNull => map!(is_null),
+            IsNotNull => map!(is_not_null),
             IsFinite => map!(is_finite),
-            #[cfg(feature = "is_first")]
-            IsFirst => map!(is_first),
-            #[cfg(feature = "is_in")]
-            IsIn => wrap!(is_in),
             IsInfinite => map!(is_infinite),
-            #[cfg(feature = "is_last")]
-            IsLast => map!(is_last),
             IsNan => map!(is_nan),
             IsNotNan => map!(is_not_nan),
-            IsNotNull => map!(is_not_null),
-            IsNull => map!(is_null),
+            #[cfg(feature = "is_first")]
+            IsFirst => map!(is_first),
+            #[cfg(feature = "is_last")]
+            IsLast => map!(is_last),
             #[cfg(feature = "is_unique")]
             IsUnique => map!(is_unique),
-            Not => map!(not_),
+            #[cfg(feature = "is_unique")]
+            IsDuplicated => map!(is_duplicated),
+            #[cfg(feature = "is_in")]
+            IsIn => wrap!(is_in),
+            AllHorizontal => wrap!(all_horizontal),
+            AnyHorizontal => wrap!(any_horizontal),
         }
     }
 }
@@ -130,7 +130,7 @@ fn all(s: &Series, ignore_nulls: bool) -> PolarsResult<Series> {
     }
 }
 
-fn not_(s: &Series) -> PolarsResult<Series> {
+fn is_not(s: &Series) -> PolarsResult<Series> {
     Ok(s.bool()?.not().into_series())
 }
 
