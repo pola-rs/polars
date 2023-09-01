@@ -90,7 +90,7 @@ where
             ChunkedArray::from_chunk_iter(self.name(), iter)
         } else {
             let iter = self.downcast_iter().map(|arr| {
-                let element_iter = arr.iter().map(|x| op(x));
+                let element_iter = arr.iter().map(&mut op);
                 K::array_from_iter(element_iter)
             });
             ChunkedArray::from_chunk_iter(self.name(), iter)
