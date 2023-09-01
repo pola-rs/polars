@@ -3266,7 +3266,6 @@ class Series:
         """
         return self._s.is_sorted(descending)
 
-
     def not_(self) -> Series:
         """
         Negate a boolean Series.

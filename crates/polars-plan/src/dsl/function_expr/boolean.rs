@@ -101,7 +101,7 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsIn => wrap!(is_in),
             AllHorizontal => wrap!(all_horizontal),
             AnyHorizontal => wrap!(any_horizontal),
-            Not => map!(not_)
+            Not => map!(not_),
         }
     }
 }
