@@ -226,8 +226,8 @@ fn date_range(s: &[Series], interval: Duration, closed: ClosedWindow) -> PolarsR
     polars_ensure!(end.len() == 1, ComputeError: "`end` must contain a single value");
 
     let dtype = DataType::Date;
-    let start = temporal_series_to_i64_scalar(start, &dtype)? * DAYS_TO_MILLISECONDS;
-    let end = temporal_series_to_i64_scalar(end, &dtype)? * DAYS_TO_MILLISECONDS;
+    let start = temporal_series_to_i64_scalar(start) * DAYS_TO_MILLISECONDS;
+    let end = temporal_series_to_i64_scalar(end) * DAYS_TO_MILLISECONDS;
 
     let result = date_range_impl(
         "date",
@@ -284,27 +284,15 @@ fn datetime_range(
                 None,
                 &Utf8Chunked::from_iter(std::iter::once("raise")),
             )?
-            .into_series()
-            .to_physical_repr()
-            .cast(&DataType::Int64)?,
+            .into_series(),
             polars_ops::prelude::replace_time_zone(
                 end.cast(&dtype)?.datetime().unwrap(),
                 None,
                 &Utf8Chunked::from_iter(std::iter::once("raise")),
             )?
-            .into_series()
-            .to_physical_repr()
-            .cast(&DataType::Int64)?,
+            .into_series(),
         ),
-        _ => (
-            start
-                .cast(&dtype)?
-                .to_physical_repr()
-                .cast(&DataType::Int64)?,
-            end.cast(&dtype)?
-                .to_physical_repr()
-                .cast(&DataType::Int64)?,
-        ),
+        _ => (start.cast(&dtype)?, end.cast(&dtype)?),
     };
 
     // overwrite time zone, if specified
@@ -316,8 +304,8 @@ fn datetime_range(
         _ => {},
     };
 
-    let start = start.get(0).unwrap().extract::<i64>().unwrap();
-    let end = end.get(0).unwrap().extract::<i64>().unwrap();
+    let start = temporal_series_to_i64_scalar(&start);
+    let end = temporal_series_to_i64_scalar(&end);
 
     let result = match dtype {
         DataType::Datetime(tu, ref tz) => {
@@ -390,8 +378,6 @@ pub(super) fn date_ranges(
     list.cast(&to_type)
 }
 fn date_series_to_i64_ca(s: &Series) -> PolarsResult<ChunkedArray<Int64Type>> {
-    let s = s.cast(&DataType::Date)?;
-    let s = s.to_physical_repr();
     let s = s.cast(&DataType::Int64)?;
     let result = s.i64().unwrap();
     Ok(result.clone())
@@ -514,8 +500,8 @@ pub(super) fn time_range(
     polars_ensure!(end.len() == 1, ComputeError: "`end` must contain a single value");
 
     let dtype = DataType::Time;
-    let start = temporal_series_to_i64_scalar(start, &dtype)?;
-    let end = temporal_series_to_i64_scalar(end, &dtype)?;
+    let start = temporal_series_to_i64_scalar(&start.cast(&dtype)?);
+    let end = temporal_series_to_i64_scalar(&end.cast(&dtype)?);
 
     let out = time_range_impl("time", start, end, interval, closed)?;
     Ok(out.cast(&dtype).unwrap().into_series())
@@ -564,13 +550,10 @@ fn time_series_to_i64_ca(s: &Series) -> PolarsResult<ChunkedArray<Int64Type>> {
     Ok(result.clone())
 }
 
-fn temporal_series_to_i64_scalar(s: &Series, dtype: &DataType) -> PolarsResult<i64> {
-    let s = s.cast(dtype)?;
-    let result = s
-        .to_physical_repr()
+fn temporal_series_to_i64_scalar(s: &Series) -> i64 {
+    s.to_physical_repr()
         .get(0)
         .unwrap()
         .extract::<i64>()
-        .unwrap();
-    Ok(result)
+        .unwrap()
 }
