@@ -50,8 +50,7 @@ impl TimeMethods for TimeChunked {
     }
 
     fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> TimeChunked {
-        v
-            .iter()
+        v.iter()
             .map(|s| {
                 NaiveTime::parse_from_str(s, fmt)
                     .ok()

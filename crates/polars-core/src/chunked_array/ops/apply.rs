@@ -77,8 +77,8 @@ where
     where
         U: PolarsDataType,
         F: FnMut(
-                Option<<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
-            ) -> Option<K>,
+            Option<<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
+        ) -> Option<K>,
         K: ArrayFromElementIter,
         K::ArrayType: StaticallyMatchesPolarsType<U>,
     {
