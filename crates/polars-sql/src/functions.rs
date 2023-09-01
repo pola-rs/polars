@@ -175,11 +175,6 @@ pub(crate) enum PolarsSqlFunctions {
     // ----
     // String functions
     // ----
-    /// SQL 'concat_ws' function
-    /// ```sql
-    /// SELECT CONCAT_WS(', ', column_1) from df;
-    /// ```
-    ConcatWs,
     /// SQL 'ends_with' function
     /// ```sql
     /// SELECT ENDS_WITH(column_1, 'a') from df;
@@ -350,6 +345,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT unnest(column_1) from df;
     /// ```
     Explode,
+    /// SQL 'array_to_string' function
+    /// ```sql
+    /// SELECT ARRAY_TO_STRING(column_1, ', ') from df;
+    /// ```
+    ArrayToString,
     /// SQL 'array_get' function
     /// Returns the value at the given index in the array
     /// ```sql
@@ -480,7 +480,6 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             // String functions
             // ----
             "ends_with" => Self::EndsWith,
-            "concat_ws" => Self::ConcatWs,
             "length" => Self::Length,
             "left" => Self::Left,
             "lower" => Self::Lower,
@@ -515,6 +514,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "array_mean" => Self::ArrayMean,
             "array_reverse" => Self::ArrayReverse,
             "array_sum" => Self::ArraySum,
+            "array_to_string" => Self::ArrayToString,
             "array_unique" => Self::ArrayUnique,
             "array_upper" => Self::ArrayMax,
             "unnest" => Self::Explode,
@@ -584,19 +584,6 @@ impl SqlFunctionVisitor<'_> {
             // String functions
             // ----
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
-            ConcatWs => match function.args.len() {
-                2 => self.try_visit_binary(|e, s: Expr| {
-                    let sep = match e {
-                        Expr::Literal(LiteralValue::Utf8(ref sep)) => sep,
-                        _ => {
-                            polars_bail!(InvalidOperation: "Invalid 'separator' for ConcatWs: {}", function.args[0]);
-                        }
-                    };
-
-                    Ok(s.list().join(sep))
-                }),
-                _ => polars_bail!(InvalidOperation: "Currently `ConcatWs` only works as `concat_ws(sep, col)`")
-            },
             Left => self.try_visit_binary(|e, length| {
                 Ok(e.str().str_slice(0, match length {
                     Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
@@ -694,6 +681,16 @@ impl SqlFunctionVisitor<'_> {
             ArrayMin => self.visit_unary(|e| e.list().min()),
             ArrayReverse => self.visit_unary(|e| e.list().reverse()),
             ArraySum => self.visit_unary(|e| e.list().sum()),
+            ArrayToString => self.try_visit_binary(|e, s| {
+                let sep = match s {
+                    Expr::Literal(LiteralValue::Utf8(ref sep)) => sep,
+                    _ => {
+                        polars_bail!(InvalidOperation: "Invalid 'separator' for ArrayToString: {}", function.args[1]);
+                    }
+                };
+
+                Ok(e.list().join(sep))
+            }),
             ArrayUnique => self.visit_unary(|e| e.list().unique()),
             Explode => self.visit_unary(|e| e.explode()),
         }

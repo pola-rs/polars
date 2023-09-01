@@ -82,7 +82,7 @@ fn test_string_functions() {
 }
 
 #[test]
-fn concat() {
+fn array_to_string() {
     let df = df! {
         "a" => &["first", "first", "third"],
         "b" => &[1, 1, 42],
@@ -105,7 +105,7 @@ fn concat() {
     let sql = r#"
         SELECT
             b,
-            concat_ws(', ', a) as as,
+            array_to_string(a, ', ') as as,
         FROM df_1
         ORDER BY
             b,
