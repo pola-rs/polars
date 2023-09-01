@@ -218,6 +218,20 @@ pub(super) fn temporal_range(
     }
 }
 
+pub(super) fn temporal_ranges(
+    s: &[Series],
+    interval: Duration,
+    closed: ClosedWindow,
+    time_unit: Option<TimeUnit>,
+    time_zone: Option<TimeZone>,
+) -> PolarsResult<Series> {
+    if s[0].dtype() == &DataType::Date && interval.nanoseconds() == 0 {
+        date_ranges(s, interval, closed)
+    } else {
+        datetime_ranges(s, interval, closed, time_unit, time_zone)
+    }
+}
+
 fn date_range(s: &[Series], interval: Duration, closed: ClosedWindow) -> PolarsResult<Series> {
     let start = &s[0];
     let end = &s[1];
@@ -241,6 +255,59 @@ fn date_range(s: &[Series], interval: Duration, closed: ClosedWindow) -> PolarsR
     .cast(&dtype)?;
 
     Ok(result.into_series())
+}
+
+pub(super) fn date_ranges(
+    s: &[Series],
+    interval: Duration,
+    closed: ClosedWindow,
+) -> PolarsResult<Series> {
+    let start = &s[0];
+    let end = &s[1];
+
+    polars_ensure!(
+        start.len() == end.len(),
+        ComputeError: "`start` and `end` must have the same length",
+    );
+
+    let start = date_series_to_i64_ca(start)? * DAYS_TO_MILLISECONDS;
+    let end = date_series_to_i64_ca(end)? * DAYS_TO_MILLISECONDS;
+
+    let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
+        "date_range",
+        start.len(),
+        start.len() * CAPACITY_FACTOR,
+        DataType::Int32,
+    );
+    for (start, end) in start.as_ref().into_iter().zip(&end) {
+        match (start, end) {
+            (Some(start), Some(end)) => {
+                let rng = date_range_impl(
+                    "",
+                    start,
+                    end,
+                    interval,
+                    closed,
+                    TimeUnit::Milliseconds,
+                    None,
+                )?;
+                let rng = rng.cast(&DataType::Date).unwrap();
+                let rng = rng.to_physical_repr();
+                let rng = rng.i32().unwrap();
+                builder.append_slice(rng.cont_slice().unwrap())
+            },
+            _ => builder.append_null(),
+        }
+    }
+    let list = builder.finish().into_series();
+
+    let to_type = DataType::List(Box::new(DataType::Date));
+    list.cast(&to_type)
+}
+fn date_series_to_i64_ca(s: &Series) -> PolarsResult<ChunkedArray<Int64Type>> {
+    let s = s.cast(&DataType::Int64)?;
+    let result = s.i64().unwrap();
+    Ok(result.clone())
 }
 
 fn datetime_range(
@@ -314,73 +381,6 @@ fn datetime_range(
         _ => unimplemented!(),
     };
     Ok(result.cast(&dtype).unwrap().into_series())
-}
-
-pub(super) fn temporal_ranges(
-    s: &[Series],
-    interval: Duration,
-    closed: ClosedWindow,
-    time_unit: Option<TimeUnit>,
-    time_zone: Option<TimeZone>,
-) -> PolarsResult<Series> {
-    if s[0].dtype() == &DataType::Date && interval.nanoseconds() == 0 {
-        date_ranges(s, interval, closed)
-    } else {
-        datetime_ranges(s, interval, closed, time_unit, time_zone)
-    }
-}
-
-pub(super) fn date_ranges(
-    s: &[Series],
-    interval: Duration,
-    closed: ClosedWindow,
-) -> PolarsResult<Series> {
-    let start = &s[0];
-    let end = &s[1];
-
-    polars_ensure!(
-        start.len() == end.len(),
-        ComputeError: "`start` and `end` must have the same length",
-    );
-
-    let start = date_series_to_i64_ca(start)? * DAYS_TO_MILLISECONDS;
-    let end = date_series_to_i64_ca(end)? * DAYS_TO_MILLISECONDS;
-
-    let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
-        "date_range",
-        start.len(),
-        start.len() * CAPACITY_FACTOR,
-        DataType::Int32,
-    );
-    for (start, end) in start.as_ref().into_iter().zip(&end) {
-        match (start, end) {
-            (Some(start), Some(end)) => {
-                let rng = date_range_impl(
-                    "",
-                    start,
-                    end,
-                    interval,
-                    closed,
-                    TimeUnit::Milliseconds,
-                    None,
-                )?;
-                let rng = rng.cast(&DataType::Date).unwrap();
-                let rng = rng.to_physical_repr();
-                let rng = rng.i32().unwrap();
-                builder.append_slice(rng.cont_slice().unwrap())
-            },
-            _ => builder.append_null(),
-        }
-    }
-    let list = builder.finish().into_series();
-
-    let to_type = DataType::List(Box::new(DataType::Date));
-    list.cast(&to_type)
-}
-fn date_series_to_i64_ca(s: &Series) -> PolarsResult<ChunkedArray<Int64Type>> {
-    let s = s.cast(&DataType::Int64)?;
-    let result = s.i64().unwrap();
-    Ok(result.clone())
 }
 
 pub(super) fn datetime_ranges(
