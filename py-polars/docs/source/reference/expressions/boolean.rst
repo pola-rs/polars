@@ -21,3 +21,4 @@ Boolean
     Expr.is_not_null
     Expr.is_null
     Expr.is_unique
+    Expr.not_

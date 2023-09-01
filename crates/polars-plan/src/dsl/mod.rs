@@ -156,7 +156,7 @@ impl Expr {
     /// Negate `Expr`
     #[allow(clippy::should_implement_trait)]
     pub fn not(self) -> Expr {
-        self.map_private(BooleanFunction::IsNot.into())
+        self.map_private(BooleanFunction::Not.into())
     }
 
     /// Rename Column.

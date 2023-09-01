@@ -98,7 +98,7 @@ impl PyExpr {
     fn alias(&self, name: &str) -> Self {
         self.clone().inner.alias(name).into()
     }
-    fn is_not(&self) -> Self {
+    fn not_(&self) -> Self {
         self.clone().inner.not().into()
     }
     fn is_null(&self) -> Self {
