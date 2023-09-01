@@ -380,12 +380,11 @@ where
                 .map(|opt_val| opt_val.and_then(|val| self.parse(val)));
             PrimitiveArray::from_trusted_len_iter(iter)
         });
-        let mut out = ChunkedArray::from_chunk_iter(ca.name(), chunks)
+        ChunkedArray::from_chunk_iter(ca.name(), chunks)
             .into_series()
             .cast(&self.logical_type)
-            .unwrap();
-        out.rename(ca.name());
-        out
+            .unwrap()
+            .with_name(ca.name())
     }
 }
 

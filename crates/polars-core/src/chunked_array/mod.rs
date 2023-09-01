@@ -360,6 +360,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     pub fn rename(&mut self, name: &str) {
         self.field = Arc::new(Field::new(name, self.field.data_type().clone()))
     }
+
+    /// Return this ChunkedArray with a new name.
+    pub fn with_name(mut self, name: &str) -> Self {
+        self.rename(name);
+        self
+    }
 }
 
 impl<T> ChunkedArray<T>

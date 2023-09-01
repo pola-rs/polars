@@ -228,6 +228,12 @@ impl Series {
         self
     }
 
+    /// Return this Series with a new name.
+    pub fn with_name(mut self, name: &str) -> Series {
+        self.rename(name);
+        self
+    }
+
     /// Shrink the capacity of this array to fit its length.
     pub fn shrink_to_fit(&mut self) {
         self._get_inner_mut().shrink_to_fit()
