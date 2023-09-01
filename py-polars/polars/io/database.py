@@ -6,6 +6,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any, Iterable, Sequence, TypedDict
 
 from polars.convert import from_arrow
+from polars.exceptions import UnsuitableSQLError
 from polars.utils.deprecation import (
     deprecate_renamed_parameter,
     issue_deprecation_warning,
@@ -51,6 +52,20 @@ _ARROW_DRIVER_REGISTRY_: dict[str, _DriverProperties_] = {
         "fetch_batches": "fetcharrowbatches",
         "exact_batch_size": False,
     },
+}
+
+_INVALID_QUERY_TYPES = {
+    "ALTER",
+    "ANALYZE",
+    "CREATE",
+    "DELETE",
+    "DROP",
+    "INSERT",
+    "REPLACE",
+    "UPDATE",
+    "UPSERT",
+    "USE",
+    "VACUUM",
 }
 
 
@@ -175,8 +190,15 @@ class ConnectionExecutor:
             )
         return None
 
-    def execute(self, query: str) -> Self:
-        """Execute a query and reference the result set data."""
+    def execute(self, query: str, select_queries_only: bool = True) -> Self:
+        """Execute a query and reference the result set."""
+        if select_queries_only:
+            q = re.search(r"\w{3,}", re.sub(r"/\*(.|[\r\n])*?\*/", "", query))
+            if (query_type := "" if not q else q.group(0)) in _INVALID_QUERY_TYPES:
+                raise UnsuitableSQLError(
+                    f"{query_type} statements are not valid 'read' queries"
+                )
+
         if self.driver == "sqlalchemy":
             from sqlalchemy.sql import text
 
