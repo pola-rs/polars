@@ -278,6 +278,7 @@ fn date_ranges(s: &[Series], interval: Duration, closed: ClosedWindow) -> Polars
     for (start, end) in start.as_ref().into_iter().zip(&end) {
         match (start, end) {
             (Some(start), Some(end)) => {
+                // TODO: Implement an i32 version of `date_range_impl`
                 let rng = date_range_impl(
                     "",
                     start,
