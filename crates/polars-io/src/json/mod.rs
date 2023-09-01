@@ -124,21 +124,6 @@ impl<W: Write> JsonWriter<W> where W: Write + 'static {
         self
     }
 
-    pub fn batched(self, _schema: &Schema) -> PolarsResult<Box<dyn BatchedWriter<W>>> {
-        match self.json_format {
-            JsonFormat::Json => Ok(
-                Box::new(JsonBatchedWriter {
-                    writer: self.buffer,
-                    is_first_row: true
-                })
-            ),
-            JsonFormat::JsonLines => Ok(
-                Box::new(JsonLinesBatchedWriter {
-                    writer: self.buffer
-                })
-            )
-        }
-    }
 }
 
 impl<W> SerWriter<W> for JsonWriter<W>
@@ -183,9 +168,18 @@ pub trait BatchedWriter<W: Write> {
     fn finish(&mut self) -> PolarsResult<()>;
 }
 
-struct JsonBatchedWriter<W: Write>{
+pub struct JsonBatchedWriter<W: Write>{
     writer: W,
     is_first_row: bool
+}
+
+impl <W> JsonBatchedWriter<W> where W: Write {
+    pub fn new(writer: W) -> Self{
+        JsonBatchedWriter {
+            writer,
+            is_first_row: true
+        }
+    }
 }
 
 impl <W> BatchedWriter<W> for JsonBatchedWriter<W> where W: Write  {
@@ -220,8 +214,16 @@ impl <W> BatchedWriter<W> for JsonBatchedWriter<W> where W: Write  {
     }
 }
 
-struct JsonLinesBatchedWriter<W: Write> {
+pub struct JsonLinesBatchedWriter<W: Write> {
     writer: W
+}
+
+impl <W> JsonLinesBatchedWriter<W> where W: Write {
+    pub fn new(writer: W) -> Self{
+        JsonLinesBatchedWriter {
+            writer
+        }
+    }
 }
 
 impl <W> BatchedWriter<W> for JsonLinesBatchedWriter<W> where W: Write  {

@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::ops::Deref;
 use std::path::Path;
 use std::thread::JoinHandle;
 
@@ -14,7 +13,7 @@ use polars_io::prelude::IpcWriter;
 #[cfg(any(feature = "ipc", feature = "csv"))]
 use polars_io::SerWriter;
 #[cfg(feature = "json")]
-use polars_io::json::JsonWriter;
+use polars_io::json::{JsonFormat, JsonBatchedWriter, JsonLinesBatchedWriter, BatchedWriter};
 use polars_plan::prelude::*;
 
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
@@ -62,7 +61,19 @@ impl SinkWriter for polars_io::csv::BatchedWriter<std::fs::File> {
 }
 
 #[cfg(feature = "json")]
-impl SinkWriter for dyn polars_io::json::BatchedWriter<std::fs::File> {
+impl SinkWriter for  polars_io::json::JsonBatchedWriter<std::fs::File> {
+    fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        self.write_batch(df)
+    }
+
+    fn _finish(&mut self) -> PolarsResult<()> {
+        self.finish()?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "json")]
+impl SinkWriter for polars_io::json::JsonLinesBatchedWriter<std::fs::File> {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         self.write_batch(df)
     }
@@ -238,15 +249,15 @@ impl JsonSink {
     pub fn new(
         path: &Path,
         options: JsonWriterOptions,
-        schema: &Schema,
+        _schema: &Schema,
     ) -> PolarsResult<FilesSink> {
         let file = std::fs::File::create(path)?;
-        let writer = JsonWriter::new(file)
-            .with_json_format(options.json_format)
-            .batched(schema)?;
-
-        let writer = Box::new(writer.deref()) as Box<dyn SinkWriter + Send + Sync>;
-
+        let writer = match options.json_format {
+            JsonFormat::Json =>
+                Box::new(JsonBatchedWriter::new(file)) as Box<dyn SinkWriter + Send + Sync>,
+            JsonFormat::JsonLines =>
+                Box::new(JsonLinesBatchedWriter::new(file)) as Box<dyn SinkWriter + Send + Sync>
+        };
         let morsels_per_sink = morsels_per_sink();
         let backpressure = morsels_per_sink * 2;
         let (sender, receiver) = bounded(backpressure);
