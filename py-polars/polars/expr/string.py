@@ -1113,8 +1113,8 @@ class ExprStringNameSpace:
             <https://docs.rs/regex/latest/regex/>`_.
         group_index
             Index of the targeted capture group.
-            Group 0 mean the whole pattern, first group begin at index 1
-            Default to the first capture group
+            Group 0 means the whole pattern, the first group begins at index 1.
+            Defaults to the first capture group.
 
         Notes
         -----
@@ -1187,8 +1187,7 @@ class ExprStringNameSpace:
         Extract all matches for the given regex pattern.
 
         Extract each successive non-overlapping regex match in an individual string
-        as a list. Extracted matches contain ``null`` if the original value is null
-        or the regex did not capture anything.
+        as a list. If the haystack string is ``null``, ``null`` is returned.
 
         Parameters
         ----------
@@ -1249,11 +1248,11 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
+        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t", "bar", None]})
         >>> df.select(
         ...     pl.col("foo").str.extract_all(r"\d+").alias("extracted_nrs"),
         ... )
-        shape: (2, 1)
+        shape: (4, 1)
         ┌────────────────┐
         │ extracted_nrs  │
         │ ---            │
@@ -1261,6 +1260,8 @@ class ExprStringNameSpace:
         ╞════════════════╡
         │ ["123", "45"]  │
         │ ["678", "910"] │
+        │ []             │
+        │ null           │
         └────────────────┘
 
         '''
@@ -1368,16 +1369,16 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`. Contains null values if the
-            original value is null or the regex captures nothing.
+            Expression of data type :class:`UInt32`. Returns null if the
+            original value is null.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
+        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t", "bar", None]})
         >>> df.select(
         ...     pl.col("foo").str.count_match(r"\d").alias("count_digits"),
         ... )
-        shape: (2, 1)
+        shape: (4, 1)
         ┌──────────────┐
         │ count_digits │
         │ ---          │
@@ -1385,6 +1386,8 @@ class ExprStringNameSpace:
         ╞══════════════╡
         │ 5            │
         │ 6            │
+        │ 0            │
+        │ null         │
         └──────────────┘
 
         """
