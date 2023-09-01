@@ -125,7 +125,7 @@ impl JoinValidation {
         if !self.needs_checks() {
             return Ok(());
         }
-        polars_ensure!(n_keys == 1, ComputeError: "{validation} not yet supported for multiple keys");
+        polars_ensure!(n_keys == 1, ComputeError: "{self} validation on a {join_type} is not yet supported for multiple keys");
         polars_ensure!(matches!(join_type, JoinType::Inner | JoinType::Outer | JoinType::Left),
                       ComputeError: "{self} validation on a {join_type} join is not supported");
         Ok(())
