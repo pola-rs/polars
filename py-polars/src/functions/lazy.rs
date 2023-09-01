@@ -240,9 +240,7 @@ pub fn datetime(
     let ambiguous = ambiguous
         .map(|e| e.inner)
         .unwrap_or(dsl::lit(String::from("raise")));
-    println!("ambiguous: {:?}", ambiguous);
     let time_unit = time_unit.0;
-
     let args = DatetimeArgs {
         year,
         month,
