@@ -18,6 +18,17 @@ pub enum RangeFunction {
     IntRanges { step: i64 },
 }
 
+impl RangeFunction {
+    pub(super) fn get_field(&self) -> PolarsResult<Field> {
+        use RangeFunction::*;
+        let field = match self {
+            IntRange { .. } => Field::new("int", DataType::Int64),
+            IntRanges { .. } => Field::new("int_range", DataType::List(Box::new(DataType::Int64))),
+        };
+        Ok(field)
+    }
+}
+
 impl Display for RangeFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use RangeFunction::*;

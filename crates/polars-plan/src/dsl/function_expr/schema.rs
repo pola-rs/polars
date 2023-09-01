@@ -121,16 +121,7 @@ impl FunctionExpr {
             },
 
             #[cfg(feature = "range")]
-            Range(fun) => {
-                use RangeFunction::*;
-                let field = match fun {
-                    IntRange { .. } => Field::new("int", DataType::Int64),
-                    IntRanges { .. } => {
-                        Field::new("int_range", DataType::List(Box::new(DataType::Int64)))
-                    },
-                };
-                Ok(field)
-            },
+            Range(func) => func.get_field(),
             #[cfg(feature = "date_offset")]
             DateOffset(_) => mapper.with_same_dtype(),
             #[cfg(feature = "trigonometry")]
