@@ -595,7 +595,7 @@ impl SqlFunctionVisitor<'_> {
 
                     Ok(s.list().join(sep))
                 }),
-                _ => unimplemented!("Currently `ConcatWs` only works as `concat_ws(sep, col)`")
+                _ => polars_bail!(InvalidOperation: "Currently `ConcatWs` only works as `concat_ws(sep, col)`")
             },
             Left => self.try_visit_binary(|e, length| {
                 Ok(e.str().str_slice(0, match length {
