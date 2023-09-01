@@ -243,7 +243,7 @@ fn date_range(s: &[Series], interval: Duration, closed: ClosedWindow) -> PolarsR
     let start = temporal_series_to_i64_scalar(start) * DAYS_TO_MILLISECONDS;
     let end = temporal_series_to_i64_scalar(end) * DAYS_TO_MILLISECONDS;
 
-    let result = date_range_impl(
+    let result = datetime_range_impl(
         "date",
         start,
         end,
@@ -279,7 +279,7 @@ fn date_ranges(s: &[Series], interval: Duration, closed: ClosedWindow) -> Polars
         match (start, end) {
             (Some(start), Some(end)) => {
                 // TODO: Implement an i32 version of `date_range_impl`
-                let rng = date_range_impl(
+                let rng = datetime_range_impl(
                     "",
                     start,
                     end,
@@ -373,7 +373,7 @@ fn datetime_range(
 
     let result = match dtype {
         DataType::Datetime(tu, ref tz) => {
-            date_range_impl("date", start, end, interval, closed, tu, tz.as_ref())?
+            datetime_range_impl("date", start, end, interval, closed, tu, tz.as_ref())?
         },
         _ => unimplemented!(),
     };
@@ -470,7 +470,7 @@ fn datetime_ranges(
                 match (start, end) {
                     (Some(start), Some(end)) => {
                         let rng =
-                            date_range_impl("", start, end, interval, closed, tu, tz.as_ref())?;
+                            datetime_range_impl("", start, end, interval, closed, tu, tz.as_ref())?;
                         builder.append_slice(rng.cont_slice().unwrap())
                     },
                     _ => builder.append_null(),

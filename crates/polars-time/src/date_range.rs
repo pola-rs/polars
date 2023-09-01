@@ -13,7 +13,7 @@ pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
 }
 
 #[doc(hidden)]
-pub fn date_range_impl(
+pub fn datetime_range_impl(
     name: &str,
     start: i64,
     end: i64,
@@ -62,7 +62,7 @@ pub fn date_range(
         TimeUnit::Microseconds => (start.timestamp_micros(), end.timestamp_micros()),
         TimeUnit::Milliseconds => (start.timestamp_millis(), end.timestamp_millis()),
     };
-    date_range_impl(name, start, end, interval, closed, tu, tz.as_ref())
+    datetime_range_impl(name, start, end, interval, closed, tu, tz.as_ref())
 }
 
 #[doc(hidden)]
