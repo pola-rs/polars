@@ -36,7 +36,7 @@ pub const NS_DAY: i64 = 24 * NS_HOUR;
 pub const NS_WEEK: i64 = 7 * NS_DAY;
 
 /// vector of i64 representing temporal values
-pub fn temporal_range(
+pub fn datetime_range_i64(
     start: i64,
     end: i64,
     interval: Duration,
