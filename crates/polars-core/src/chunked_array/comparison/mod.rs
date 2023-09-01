@@ -699,7 +699,7 @@ where
             let left = unsafe { lhs.get_unchecked(0) };
             rhs.amortized_iter()
                 .map(|right| match (&left, right) {
-                    (Some(l), Some(r)) => Some(op(r.as_ref(),l)),
+                    (Some(l), Some(r)) => Some(op(r.as_ref(), l)),
                     _ => None,
                 })
                 .collect_trusted()
@@ -708,7 +708,7 @@ where
             .amortized_iter()
             .zip(rhs.amortized_iter())
             .map(|(left, right)| match (left, right) {
-                (Some(l), Some(r)) => Some(op(l.as_ref(),r.as_ref())),
+                (Some(l), Some(r)) => Some(op(l.as_ref(), r.as_ref())),
                 _ => None,
             })
             .collect_trusted(),
