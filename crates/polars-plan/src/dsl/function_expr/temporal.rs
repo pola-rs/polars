@@ -257,11 +257,7 @@ fn date_range(s: &[Series], interval: Duration, closed: ClosedWindow) -> PolarsR
     Ok(result.into_series())
 }
 
-pub(super) fn date_ranges(
-    s: &[Series],
-    interval: Duration,
-    closed: ClosedWindow,
-) -> PolarsResult<Series> {
+fn date_ranges(s: &[Series], interval: Duration, closed: ClosedWindow) -> PolarsResult<Series> {
     let start = &s[0];
     let end = &s[1];
 
@@ -383,7 +379,7 @@ fn datetime_range(
     Ok(result.cast(&dtype).unwrap().into_series())
 }
 
-pub(super) fn datetime_ranges(
+fn datetime_ranges(
     s: &[Series],
     interval: Duration,
     closed: ClosedWindow,
