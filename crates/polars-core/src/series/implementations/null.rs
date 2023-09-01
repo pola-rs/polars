@@ -43,7 +43,19 @@ impl PrivateSeriesNumeric for NullChunked {}
 
 impl PrivateSeries for NullChunked {
     fn compute_len(&mut self) {
-        // no-op
+        // NullChunked only has one chunk.
+        self.length = self.chunks[0].len() as IdxSize;
+
+        #[cfg(feature = "python")]
+        assert!(
+            self.length < IdxSize::MAX,
+            "Polars' maximum length reached. Consider installing 'polars-u64-idx'."
+        );
+        #[cfg(not(feature = "python"))]
+        assert!(
+            self.length < IdxSize::MAX,
+            "Polars' maximum length reached. Consider compiling with 'bigidx' feature."
+        );
     }
     fn _field(&self) -> Cow<Field> {
         Cow::Owned(Field::new(self.name(), DataType::Null))
