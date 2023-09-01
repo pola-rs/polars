@@ -533,8 +533,16 @@ def test_extract_all_count() -> None:
 
 
 def test_extract_all_many() -> None:
-    df = pl.DataFrame({"foo": ["ab", "abc", "abcd", "foo", None], "re": ["a", "bc", "a.c", "a", "a"]})
-    assert df["foo"].str.extract_all(df["re"]).to_list() == [["a"], ["bc"], ["abc"], [], None]
+    df = pl.DataFrame(
+        {"foo": ["ab", "abc", "abcd", "foo", None], "re": ["a", "bc", "a.c", "a", "a"]}
+    )
+    assert df["foo"].str.extract_all(df["re"]).to_list() == [
+        ["a"],
+        ["bc"],
+        ["abc"],
+        [],
+        None,
+    ]
 
 
 def test_extract_groups() -> None:
