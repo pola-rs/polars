@@ -50,7 +50,7 @@ impl TimeMethods for TimeChunked {
     }
 
     fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> TimeChunked {
-        let mut ca: Int64Chunked = v
+        v
             .iter()
             .map(|s| {
                 NaiveTime::parse_from_str(s, fmt)
@@ -58,8 +58,8 @@ impl TimeMethods for TimeChunked {
                     .as_ref()
                     .map(time_to_time64ns)
             })
-            .collect_trusted();
-        ca.rename(name);
-        ca.into()
+            .collect_trusted::<Int64Chunked>()
+            .with_name(name)
+            .into()
     }
 }
