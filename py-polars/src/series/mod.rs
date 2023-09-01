@@ -290,7 +290,7 @@ impl PySeries {
         }
     }
 
-    fn _not(&self) -> PyResult<Self> {
+    fn not_(&self) -> PyResult<Self> {
         let bool = self.series.bool().map_err(PyPolarsErr::from)?;
         Ok((!bool).into_series().into())
     }
