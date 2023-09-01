@@ -1,53 +1,5 @@
-use super::*;
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
-pub enum RangeFunction {
-    IntRange { step: i64 },
-    IntRanges { step: i64 },
-}
-
-impl Display for RangeFunction {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use RangeFunction::*;
-        match self {
-            IntRange { .. } => write!(f, "int_range"),
-            IntRanges { .. } => write!(f, "int_ranges"),
-        }
-    }
-}
-
-fn int_range_impl<T>(start: T::Native, end: T::Native, step: i64) -> PolarsResult<Series>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-    std::ops::Range<T::Native>: Iterator<Item = T::Native>,
-    std::ops::RangeInclusive<T::Native>: DoubleEndedIterator<Item = T::Native>,
-{
-    let name = "int";
-
-    let mut ca = match step {
-        0 => polars_bail!(InvalidOperation: "step must not be zero"),
-        1 => ChunkedArray::<T>::from_iter_values(name, start..end),
-        2.. => ChunkedArray::<T>::from_iter_values(name, (start..end).step_by(step as usize)),
-        _ => {
-            polars_ensure!(start > end, InvalidOperation: "range must be decreasing if 'step' is negative");
-            ChunkedArray::<T>::from_iter_values(
-                name,
-                (end..=start).rev().step_by(step.unsigned_abs() as usize),
-            )
-        },
-    };
-
-    let is_sorted = if end < start {
-        IsSorted::Descending
-    } else {
-        IsSorted::Ascending
-    };
-    ca.set_sorted_flag(is_sorted);
-
-    Ok(ca.into_series())
-}
+use polars_core::prelude::*;
+use polars_core::series::{IsSorted, Series};
 
 pub(super) fn int_range(s: &[Series], step: i64) -> PolarsResult<Series> {
     let start = &s[0];
@@ -160,4 +112,36 @@ pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
     }
 
     Ok(builder.finish().into_series())
+}
+
+fn int_range_impl<T>(start: T::Native, end: T::Native, step: i64) -> PolarsResult<Series>
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: IntoSeries,
+    std::ops::Range<T::Native>: Iterator<Item = T::Native>,
+    std::ops::RangeInclusive<T::Native>: DoubleEndedIterator<Item = T::Native>,
+{
+    let name = "int";
+
+    let mut ca = match step {
+        0 => polars_bail!(InvalidOperation: "step must not be zero"),
+        1 => ChunkedArray::<T>::from_iter_values(name, start..end),
+        2.. => ChunkedArray::<T>::from_iter_values(name, (start..end).step_by(step as usize)),
+        _ => {
+            polars_ensure!(start > end, InvalidOperation: "range must be decreasing if 'step' is negative");
+            ChunkedArray::<T>::from_iter_values(
+                name,
+                (end..=start).rev().step_by(step.unsigned_abs() as usize),
+            )
+        },
+    };
+
+    let is_sorted = if end < start {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    };
+    ca.set_sorted_flag(is_sorted);
+
+    Ok(ca.into_series())
 }
