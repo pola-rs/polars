@@ -12,6 +12,8 @@ mod fused;
 mod is_first;
 #[cfg(feature = "is_in")]
 mod is_in;
+#[cfg(feature = "is_last")]
+mod is_last;
 #[cfg(feature = "is_unique")]
 mod is_unique;
 #[cfg(feature = "log")]
@@ -40,6 +42,8 @@ pub use fused::*;
 pub use is_first::*;
 #[cfg(feature = "is_in")]
 pub use is_in::*;
+#[cfg(feature = "is_last")]
+pub use is_last::*;
 #[cfg(feature = "is_unique")]
 pub use is_unique::*;
 #[cfg(feature = "log")]

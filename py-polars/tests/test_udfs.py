@@ -168,7 +168,7 @@ def test_bytecode_parser_expression(col: str, func: str, expected: str) -> None:
         # won't be skipped.
         return
 
-    bytecode_parser = udfs.BytecodeParser(eval(func), apply_target="expr")
+    bytecode_parser = udfs.BytecodeParser(eval(func), map_target="expr")
     result = bytecode_parser.to_expression(col)
     assert result == expected
 
@@ -197,7 +197,7 @@ def test_bytecode_parser_expression_in_ipython(
         "import numpy as np; "
         "import json; "
         f"MY_DICT = {MY_DICT};"
-        f'bytecode_parser = udfs.BytecodeParser({func}, apply_target="expr");'
+        f'bytecode_parser = udfs.BytecodeParser({func}, map_target="expr");'
         f'print(bytecode_parser.to_expression("{col}"));'
     )
 
@@ -220,7 +220,7 @@ def test_bytecode_parser_expression_noop(func: str) -> None:
         # won't be skipped.
         return
 
-    parser = udfs.BytecodeParser(eval(func), apply_target="expr")
+    parser = udfs.BytecodeParser(eval(func), map_target="expr")
     assert not parser.can_attempt_rewrite() or not parser.to_expression("x")
 
 
@@ -242,7 +242,7 @@ def test_bytecode_parser_expression_noop_in_ipython(func: str) -> None:
     script = (
         "import udfs; "
         f"MY_DICT = {MY_DICT};"
-        f'parser = udfs.BytecodeParser({func}, apply_target="expr");'
+        f'parser = udfs.BytecodeParser({func}, map_target="expr");'
         f'print(not parser.can_attempt_rewrite() or not parser.to_expression("x"));'
     )
 
@@ -259,13 +259,13 @@ def test_local_imports() -> None:
     import datetime as dt  # noqa: F811
     import json
 
-    bytecode_parser = udfs.BytecodeParser(lambda x: json.loads(x), apply_target="expr")
+    bytecode_parser = udfs.BytecodeParser(lambda x: json.loads(x), map_target="expr")
     result = bytecode_parser.to_expression("x")
     expected = 'pl.col("x").str.json_extract()'
     assert result == expected
 
     bytecode_parser = udfs.BytecodeParser(
-        lambda x: dt.datetime.strptime(x, "%Y-%m-%d"), apply_target="expr"
+        lambda x: dt.datetime.strptime(x, "%Y-%m-%d"), map_target="expr"
     )
     result = bytecode_parser.to_expression("x")
     expected = 'pl.col("x").str.to_datetime(format="%Y-%m-%d")'

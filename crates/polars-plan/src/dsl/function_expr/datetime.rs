@@ -42,7 +42,7 @@ pub enum TemporalFunction {
     DSTOffset,
     Round(String, String),
     #[cfg(feature = "timezones")]
-    ReplaceTimeZone(Option<TimeZone>, Option<bool>),
+    ReplaceTimeZone(Option<TimeZone>),
     DateRange {
         every: Duration,
         closed: ClosedWindow,
@@ -67,7 +67,6 @@ pub enum TemporalFunction {
     DatetimeFunction {
         time_unit: TimeUnit,
         time_zone: Option<TimeZone>,
-        use_earliest: Option<bool>,
     },
 }
 
@@ -105,7 +104,7 @@ impl Display for TemporalFunction {
             DSTOffset => "dst_offset",
             Round(..) => "round",
             #[cfg(feature = "timezones")]
-            ReplaceTimeZone(_, _) => "replace_time_zone",
+            ReplaceTimeZone(_) => "replace_time_zone",
             DateRange { .. } => return write!(f, "date_range"),
             DateRanges { .. } => return write!(f, "date_ranges"),
             TimeRange { .. } => return write!(f, "time_range"),
@@ -147,10 +146,12 @@ pub(super) fn ordinal_day(s: &Series) -> PolarsResult<Series> {
 pub(super) fn time(s: &Series) -> PolarsResult<Series> {
     match s.dtype() {
         #[cfg(feature = "timezones")]
-        DataType::Datetime(_, Some(_)) => {
-            polars_ops::prelude::replace_time_zone(s.datetime().unwrap(), None, None)?
-                .cast(&DataType::Time)
-        },
+        DataType::Datetime(_, Some(_)) => polars_ops::prelude::replace_time_zone(
+            s.datetime().unwrap(),
+            None,
+            &Utf8Chunked::from_iter(std::iter::once("raise")),
+        )?
+        .cast(&DataType::Time),
         DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Time),
         DataType::Date => s.datetime().unwrap().cast(&DataType::Time),
         DataType::Time => Ok(s.clone()),
@@ -162,8 +163,12 @@ pub(super) fn date(s: &Series) -> PolarsResult<Series> {
         #[cfg(feature = "timezones")]
         DataType::Datetime(_, Some(tz)) => {
             let mut out = {
-                polars_ops::chunked_array::replace_time_zone(s.datetime().unwrap(), None, None)?
-                    .cast(&DataType::Date)?
+                polars_ops::chunked_array::replace_time_zone(
+                    s.datetime().unwrap(),
+                    None,
+                    &Utf8Chunked::from_iter(std::iter::once("raise")),
+                )?
+                .cast(&DataType::Date)?
             };
             if tz != "UTC" {
                 // DST transitions may not preserve sortedness.
@@ -181,8 +186,12 @@ pub(super) fn datetime(s: &Series) -> PolarsResult<Series> {
         #[cfg(feature = "timezones")]
         DataType::Datetime(tu, Some(tz)) => {
             let mut out = {
-                polars_ops::chunked_array::replace_time_zone(s.datetime().unwrap(), None, None)?
-                    .cast(&DataType::Datetime(*tu, None))?
+                polars_ops::chunked_array::replace_time_zone(
+                    s.datetime().unwrap(),
+                    None,
+                    &Utf8Chunked::from_iter(std::iter::once("raise")),
+                )?
+                .cast(&DataType::Datetime(*tu, None))?
             };
             if tz != "UTC" {
                 // DST transitions may not preserve sortedness.
@@ -216,21 +225,31 @@ pub(super) fn timestamp(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
     s.timestamp(tu).map(|ca| ca.into_series())
 }
 
-pub(super) fn truncate(s: &Series, options: &TruncateOptions) -> PolarsResult<Series> {
-    let mut out = match s.dtype() {
+pub(super) fn truncate(s: &[Series], options: &TruncateOptions) -> PolarsResult<Series> {
+    let time_series = &s[0];
+    let ambiguous = &s[1].utf8().unwrap();
+    let mut out = match time_series.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => s
+            Some(tz) => time_series
                 .datetime()
                 .unwrap()
-                .truncate(options, tz.parse::<Tz>().ok().as_ref())?
+                .truncate(options, tz.parse::<Tz>().ok().as_ref(), ambiguous)?
                 .into_series(),
-            _ => s.datetime().unwrap().truncate(options, None)?.into_series(),
+            _ => time_series
+                .datetime()
+                .unwrap()
+                .truncate(options, None, ambiguous)?
+                .into_series(),
         },
-        DataType::Date => s.date().unwrap().truncate(options, None)?.into_series(),
+        DataType::Date => time_series
+            .date()
+            .unwrap()
+            .truncate(options, None, ambiguous)?
+            .into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     };
-    out.set_sorted_flag(s.is_sorted_flag());
+    out.set_sorted_flag(time_series.is_sorted_flag());
     Ok(out)
 }
 

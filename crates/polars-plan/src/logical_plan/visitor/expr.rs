@@ -28,7 +28,7 @@ impl TreeWalker for Expr {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct AexprNode {
     node: Node,
     arena: *mut Arena<AExpr>,

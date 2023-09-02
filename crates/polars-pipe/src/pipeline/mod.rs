@@ -30,6 +30,6 @@ pub(crate) fn determine_chunk_size(n_cols: usize, n_threads: usize) -> PolarsRes
         )
     } else {
         let thread_factor = std::cmp::max(12 / n_threads, 1);
-        Ok(std::cmp::max(50_000 / n_cols * thread_factor, 1000))
+        Ok(std::cmp::max(50_000 / n_cols.max(1) * thread_factor, 1000))
     }
 }

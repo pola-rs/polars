@@ -171,10 +171,10 @@ where
 {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
-        ChunkedArray::full_null("apply", df.height())
+        ChunkedArray::full_null("map", df.height())
     } else {
         let iter = apply_iter(df, py, lambda, init_null_count, skip);
-        iterator_to_primitive(iter, init_null_count, first_value, "apply", df.height())
+        iterator_to_primitive(iter, init_null_count, first_value, "map", df.height())
     }
 }
 
@@ -188,10 +188,10 @@ pub fn apply_lambda_with_bool_out_type<'a>(
 ) -> ChunkedArray<BooleanType> {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
-        ChunkedArray::full_null("apply", df.height())
+        ChunkedArray::full_null("map", df.height())
     } else {
         let iter = apply_iter(df, py, lambda, init_null_count, skip);
-        iterator_to_bool(iter, init_null_count, first_value, "apply", df.height())
+        iterator_to_bool(iter, init_null_count, first_value, "map", df.height())
     }
 }
 
@@ -205,10 +205,10 @@ pub fn apply_lambda_with_utf8_out_type<'a>(
 ) -> Utf8Chunked {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
-        ChunkedArray::full_null("apply", df.height())
+        ChunkedArray::full_null("map", df.height())
     } else {
         let iter = apply_iter::<&str>(df, py, lambda, init_null_count, skip);
-        iterator_to_utf8(iter, init_null_count, first_value, "apply", df.height())
+        iterator_to_utf8(iter, init_null_count, first_value, "map", df.height())
     }
 }
 
@@ -223,7 +223,7 @@ pub fn apply_lambda_with_list_out_type<'a>(
 ) -> PyResult<ListChunked> {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
-        Ok(ChunkedArray::full_null("apply", df.height()))
+        Ok(ChunkedArray::full_null("map", df.height()))
     } else {
         let mut iters = get_iters_skip(df, init_null_count + skip);
         let iter = ((init_null_count + skip)..df.height()).map(|_| {
@@ -243,7 +243,7 @@ pub fn apply_lambda_with_list_out_type<'a>(
                 Err(e) => panic!("python function failed {e}"),
             }
         });
-        iterator_to_list(dt, iter, init_null_count, first_value, "apply", df.height())
+        iterator_to_list(dt, iter, init_null_count, first_value, "map", df.height())
     }
 }
 

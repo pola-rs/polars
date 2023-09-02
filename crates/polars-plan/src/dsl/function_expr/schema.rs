@@ -58,9 +58,7 @@ impl FunctionExpr {
                     DSTOffset => DataType::Duration(TimeUnit::Milliseconds),
                     Round(..) => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "timezones")]
-                    ReplaceTimeZone(tz, _use_earliest) => {
-                        return mapper.map_datetime_dtype_timezone(tz.as_ref())
-                    },
+                    ReplaceTimeZone(tz) => return mapper.map_datetime_dtype_timezone(tz.as_ref()),
                     DateRange {
                         every,
                         closed: _,
@@ -105,7 +103,6 @@ impl FunctionExpr {
                     DatetimeFunction {
                         time_unit,
                         time_zone,
-                        use_earliest: _,
                     } => {
                         return Ok(Field::new(
                             "datetime",

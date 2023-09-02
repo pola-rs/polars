@@ -171,7 +171,6 @@ impl SlicePushDown {
                 predicate,
                 scan_type
             }, Some(state)) if state.offset == 0 && predicate.is_none() => {
-
                 options.n_rows = Some(state.len as usize);
                 let lp = Scan {
                     path,
@@ -184,8 +183,15 @@ impl SlicePushDown {
 
                 Ok(lp)
             }
-            (Union {inputs, mut options }, Some(state)) => {
+            (Union {mut inputs, mut options }, Some(state)) => {
                 options.slice = Some((state.offset, state.len as usize));
+                if state.offset == 0 {
+                    for input in &mut inputs {
+                        let input_lp = lp_arena.take(*input);
+                        let input_lp = self.pushdown(input_lp, Some(state), lp_arena, expr_arena)?;
+                        lp_arena.replace(*input, input_lp);
+                    }
+                }
                 Ok(Union {inputs, options})
             },
             (Join {
@@ -268,9 +274,16 @@ impl SlicePushDown {
                 len
             }, Some(previous_state)) => {
                 let alp = lp_arena.take(input);
-                let state = Some(State {
-                    offset,
-                    len
+                let state = Some(if previous_state.offset == offset  {
+                    State {
+                        offset,
+                        len: std::cmp::min(len, previous_state.len)
+                    }
+                } else {
+                    State {
+                        offset,
+                        len
+                    }
                 });
                 let lp = self.pushdown(alp, state, lp_arena, expr_arena)?;
                 let input = lp_arena.add(lp);

@@ -363,6 +363,12 @@ fn fill_null_binary(ca: &BinaryChunked, strategy: FillNullStrategy) -> PolarsRes
             out.rename(ca.name());
             Ok(out)
         },
+        FillNullStrategy::Min => {
+            ca.fill_null_with_values(ca.min_binary().ok_or_else(err_fill_null)?)
+        },
+        FillNullStrategy::Max => {
+            ca.fill_null_with_values(ca.max_binary().ok_or_else(err_fill_null)?)
+        },
         strat => polars_bail!(InvalidOperation: "fill-null strategy {:?} is not supported", strat),
     }
 }

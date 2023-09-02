@@ -116,7 +116,7 @@ def test_lazy_map_schema() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
 
     # identity
-    assert_frame_equal(df.lazy().map(lambda x: x).collect(), df)
+    assert_frame_equal(df.lazy().map_batches(lambda x: x).collect(), df)
 
     def custom(df: pl.DataFrame) -> pl.Series:
         return df["a"]
@@ -125,7 +125,7 @@ def test_lazy_map_schema() -> None:
         pl.ComputeError,
         match="Expected 'LazyFrame.map' to return a 'DataFrame', got a",
     ):
-        df.lazy().map(custom).collect()  # type: ignore[arg-type]
+        df.lazy().map_batches(custom).collect()  # type: ignore[arg-type]
 
     def custom2(
         df: pl.DataFrame,
@@ -137,11 +137,11 @@ def test_lazy_map_schema() -> None:
         pl.ComputeError,
         match="The output schema of 'LazyFrame.map' is incorrect. Expected",
     ):
-        df.lazy().map(custom2).collect()
+        df.lazy().map_batches(custom2).collect()
 
-    assert df.lazy().map(custom2, validate_output_schema=False).collect().to_dict(
-        False
-    ) == {"a": ["1", "2", "3"], "b": ["a", "b", "c"]}
+    assert df.lazy().map_batches(
+        custom2, validate_output_schema=False
+    ).collect().to_dict(False) == {"a": ["1", "2", "3"], "b": ["a", "b", "c"]}
 
 
 def test_join_as_of_by_schema() -> None:
@@ -151,7 +151,7 @@ def test_join_as_of_by_schema() -> None:
     assert q.collect().columns == q.columns
 
 
-def test_unknown_apply() -> None:
+def test_unknown_map_elements() -> None:
     df = pl.DataFrame(
         {"Amount": [10, 1, 1, 5], "Flour": ["1000g", "100g", "50g", "75g"]}
     )
@@ -159,7 +159,7 @@ def test_unknown_apply() -> None:
     q = df.lazy().select(
         [
             pl.col("Amount"),
-            pl.col("Flour").apply(lambda x: 100.0) / pl.col("Amount"),
+            pl.col("Flour").map_elements(lambda x: 100.0) / pl.col("Amount"),
         ]
     )
 

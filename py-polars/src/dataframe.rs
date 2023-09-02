@@ -22,15 +22,15 @@ use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
 
-use crate::apply::dataframe::{
-    apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
-    apply_lambda_with_utf8_out_type,
-};
 #[cfg(feature = "parquet")]
 use crate::conversion::parse_parquet_compression;
 use crate::conversion::{ObjectValue, Wrap};
 use crate::error::PyPolarsErr;
 use crate::file::{get_either_file, get_file_like, get_mmap_bytes_reader, EitherRustPythonFile};
+use crate::map::dataframe::{
+    apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
+    apply_lambda_with_utf8_out_type,
+};
 use crate::prelude::{dicts_to_rows, strings_to_smartstrings};
 use crate::series::{PySeries, ToPySeries, ToSeries};
 use crate::{arrow_interop, py_modules, PyExpr, PyLazyFrame};
@@ -603,7 +603,7 @@ impl PyDataFrame {
                     .with_time_format(time_format)
                     .with_float_precision(float_precision)
                     .with_null_value(null)
-                    .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or(Default::default()))
+                    .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
                     .finish(&mut self.df)
                     .map_err(PyPolarsErr::from)
             })?;
@@ -620,7 +620,7 @@ impl PyDataFrame {
                 .with_time_format(time_format)
                 .with_float_precision(float_precision)
                 .with_null_value(null)
-                .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or(Default::default()))
+                .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }
@@ -1134,7 +1134,7 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn group_by_apply(
+    pub fn group_by_map_groups(
         &self,
         by: Vec<&str>,
         lambda: PyObject,
@@ -1349,7 +1349,7 @@ impl PyDataFrame {
     }
 
     #[pyo3(signature = (lambda, output_type, inference_size))]
-    pub fn apply(
+    pub fn map_rows(
         &mut self,
         lambda: &PyAny,
         output_type: Option<Wrap<DataType>>,

@@ -7,6 +7,7 @@ Miscellaneous
    :toctree: api/
 
     Series.apply
+    Series.map_elements
     Series.reinterpret
     Series.series_equal
     Series.set_sorted

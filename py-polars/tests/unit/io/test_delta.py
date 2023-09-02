@@ -197,7 +197,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
         pl.Series(
             "date_ns",
             [datetime(2010, 1, 1, 0, 0)],
-            dtype=pl.Datetime(time_unit="ns", time_zone="ETC"),
+            dtype=pl.Datetime(time_unit="ns", time_zone="Australia/Lord_Howe"),
         ),
         pl.Series(
             "date_us",

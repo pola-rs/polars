@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from polars import Expr, Series
     from polars.polars import PySeries
     from polars.type_aliases import (
+        Ambiguous,
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
@@ -79,6 +80,7 @@ class StringNameSpace:
         cache: bool = True,
         utc: bool | None = None,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Convert a Utf8 column into a Datetime column.
@@ -123,6 +125,15 @@ class StringNameSpace:
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Examples
         --------
@@ -181,6 +192,7 @@ class StringNameSpace:
         exact: bool = True,
         cache: bool = True,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -211,6 +223,15 @@ class StringNameSpace:
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Notes
         -----
@@ -624,8 +645,8 @@ class StringNameSpace:
             <https://docs.rs/regex/latest/regex/>`_.
         group_index
             Index of the targeted capture group.
-            Group 0 mean the whole pattern, first group begin at index 1
-            Default to the first capture group
+            Group 0 means the whole pattern, the first group begin at index 1.
+            Defaults to the first capture group.
 
         Returns
         -------
@@ -683,8 +704,7 @@ class StringNameSpace:
         Extract all matches for the given regex pattern.
 
         Extract each successive non-overlapping regex match in an individual string
-        as a list. Extracted matches contain ``null`` if the original value is null
-        or the regex did not capture anything.
+        as a list. If the haystack string is ``null``, ``null`` is returned.
 
         Parameters
         ----------
@@ -736,13 +756,15 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t"])
+        >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t", "bar", None])
         >>> s.str.extract_all(r"\d+")
-        shape: (2,)
+        shape: (4,)
         Series: 'foo' [list[str]]
         [
             ["123", "45"]
             ["678", "910"]
+            []
+            null
         ]
 
         '''
@@ -816,19 +838,21 @@ class StringNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`. Contains null values if the original
-            value is null or if the regex captures nothing.
+            Series of data type :class:`UInt32`. Returns null if the original
+            value is null.
 
         Examples
         --------
-        >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t"])
+        >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t", "bar", None])
         >>> # count digits
         >>> s.str.count_match(r"\d")
-        shape: (2,)
+        shape: (4,)
         Series: 'foo' [u32]
         [
             5
             6
+            0
+            null
         ]
 
         """

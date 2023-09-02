@@ -23,11 +23,6 @@ pub struct StrptimeOptions {
     pub exact: bool,
     /// use a cache of unique, converted dates to apply the datetime conversion.
     pub cache: bool,
-    /// use earliest datetime when localizing ambiguous datetimes
-    /// - True: use earliest datetime
-    /// - False: use latest datetime
-    /// - None: raise
-    pub use_earliest: Option<bool>,
 }
 
 impl Default for StrptimeOptions {
@@ -37,7 +32,6 @@ impl Default for StrptimeOptions {
             strict: true,
             exact: true,
             cache: true,
-            use_earliest: None,
         }
     }
 }
@@ -66,7 +60,7 @@ impl Default for JoinOptions {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct WindowOptions {
     /// Explode the aggregated list and just do a hstack instead of a join
@@ -74,7 +68,7 @@ pub struct WindowOptions {
     pub mapping: WindowMapping,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum WindowMapping {
     /// Map the group values to the position

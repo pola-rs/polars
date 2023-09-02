@@ -232,7 +232,7 @@ def element() -> Expr:
     ┌─────┬─────┬────────────┐
     │ a   ┆ b   ┆ rank       │
     │ --- ┆ --- ┆ ---        │
-    │ i64 ┆ i64 ┆ list[f32]  │
+    │ i64 ┆ i64 ┆ list[f64]  │
     ╞═════╪═════╪════════════╡
     │ 1   ┆ 4   ┆ [1.0, 2.0] │
     │ 8   ┆ 5   ┆ [2.0, 1.0] │
@@ -907,7 +907,7 @@ def corr(
     ┌─────┐
     │ a   │
     │ --- │
-    │ f32 │
+    │ f64 │
     ╞═════╡
     │ 0.5 │
     └─────┘
@@ -961,7 +961,7 @@ def cov(a: str | Expr, b: str | Expr) -> Expr:
     return wrap_expr(plr.cov(a._pyexpr, b._pyexpr))
 
 
-def map(
+def map_batches(
     exprs: Sequence[str] | Sequence[Expr],
     function: Callable[[Sequence[Series]], Series],
     return_dtype: PolarsDataType | None = None,
@@ -974,11 +974,11 @@ def map(
     Parameters
     ----------
     exprs
-        Input Series to f
+        Expression(s) representing the input Series to the function.
     function
-        Function to apply over the input
+        Function to apply over the input.
     return_dtype
-        dtype of the output Series
+        dtype of the output Series.
 
     Returns
     -------
@@ -999,7 +999,7 @@ def map(
     >>>
     >>> df.with_columns(
     ...     (
-    ...         pl.struct(["a", "b"]).map(
+    ...         pl.struct(["a", "b"]).map_batches(
     ...             lambda x: test_func(x.struct.field("a"), x.struct.field("b"), 1)
     ...         )
     ...     ).alias("a+b+c")
@@ -1015,16 +1015,47 @@ def map(
     │ 3   ┆ 6   ┆ 10    │
     │ 4   ┆ 7   ┆ 12    │
     └─────┴─────┴───────┘
+
     """
     exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(
         plr.map_mul(
-            exprs, function, return_dtype, apply_groups=False, returns_scalar=False
+            exprs, function, return_dtype, map_groups=False, returns_scalar=False
         )
     )
 
 
-def apply(
+@deprecate_renamed_function("map_batches", version="0.19.0")
+def map(
+    exprs: Sequence[str] | Sequence[Expr],
+    function: Callable[[Sequence[Series]], Series],
+    return_dtype: PolarsDataType | None = None,
+) -> Expr:
+    """
+    Map a custom function over multiple columns/expressions.
+
+    .. deprecated:: 0.19.0
+        This function has been renamed to :func:`map_batches`.
+
+    Parameters
+    ----------
+    exprs
+        Input Series to f
+    function
+        Function to apply over the input
+    return_dtype
+        dtype of the output Series
+
+    Returns
+    -------
+    Expr
+        Expression with the data type given by ``return_dtype``.
+
+    """
+    return map_batches(exprs, function, return_dtype)
+
+
+def map_groups(
     exprs: Sequence[str | Expr],
     function: Callable[[Sequence[Series]], Series | Any],
     return_dtype: PolarsDataType | None = None,
@@ -1038,22 +1069,14 @@ def apply(
         This method is much slower than the native expressions API.
         Only use it if you cannot implement your logic otherwise.
 
-    Depending on the context it has the following behavior:
-
-    * Select
-        Don't use apply, use `map`
-    * GroupBy
-        expected type `f`: Callable[[Series], Series]
-        Applies a python function over each group.
-
     Parameters
     ----------
     exprs
-        Input Series to f
+        Expression(s) representing the input Series to the function.
     function
-        Function to apply over the input
+        Function to apply over the input; should be of type Callable[[Series], Series].
     return_dtype
-        dtype of the output Series
+        dtype of the output Series.
     returns_scalar
         If the function returns a single scalar as output.
 
@@ -1084,7 +1107,7 @@ def apply(
     └───────┴─────┴─────┘
     >>> (
     ...     df.group_by("group").agg(
-    ...         pl.apply(
+    ...         pl.map_groups(
     ...             exprs=["a", "b"],
     ...             function=lambda list_of_series: list_of_series[0]
     ...             / list_of_series[0].sum()
@@ -1114,10 +1137,44 @@ def apply(
             exprs,
             function,
             return_dtype,
-            apply_groups=True,
+            map_groups=True,
             returns_scalar=returns_scalar,
         )
     )
+
+
+@deprecate_renamed_function("map_groups", version="0.19.0")
+def apply(
+    exprs: Sequence[str | Expr],
+    function: Callable[[Sequence[Series]], Series | Any],
+    return_dtype: PolarsDataType | None = None,
+    *,
+    returns_scalar: bool = True,
+) -> Expr:
+    """
+    Apply a custom/user-defined function (UDF) in a GroupBy context.
+
+    .. deprecated:: 0.19.0
+        This function has been renamed to :func:`map_groups`.
+
+    Parameters
+    ----------
+    exprs
+        Input Series to f
+    function
+        Function to apply over the input
+    return_dtype
+        dtype of the output Series
+    returns_scalar
+        If the function returns a single scalar as output.
+
+    Returns
+    -------
+    Expr
+        Expression with the data type given by ``return_dtype``.
+
+    """
+    return map_groups(exprs, function, return_dtype, returns_scalar=returns_scalar)
 
 
 def fold(

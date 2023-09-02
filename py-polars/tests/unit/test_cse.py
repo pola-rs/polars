@@ -3,6 +3,7 @@ from datetime import date
 from tempfile import NamedTemporaryFile
 from typing import Any
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -198,7 +199,6 @@ def test_windows_cse_excluded() -> None:
     }
 
 
-@pytest.mark.skip()
 def test_cse_group_by_10215() -> None:
     q = (
         pl.DataFrame(
@@ -333,3 +333,49 @@ def test_cse_group_by_ternary_10490() -> None:
         "x3": [12, 32],
         "x4": [18, 56],
     }
+
+
+def test_cse_quantile_10815() -> None:
+    np.random.seed(1)
+    a = np.random.random(10)
+    b = np.random.random(10)
+    df = pl.DataFrame({"a": a, "b": b})
+    cols = ["a", "b"]
+    q = df.lazy().select(
+        *(
+            pl.col(c).quantile(0.75, interpolation="midpoint").suffix("_3")
+            for c in cols
+        ),
+        *(
+            pl.col(c).quantile(0.25, interpolation="midpoint").suffix("_1")
+            for c in cols
+        ),
+    )
+    assert "__POLARS_CSE" not in q.explain()
+    assert q.collect().to_dict(False) == {
+        "a_3": [0.40689473946662197],
+        "b_3": [0.6145786693120769],
+        "a_1": [0.16650805109739197],
+        "b_1": [0.2012768694081981],
+    }
+
+
+def test_cse_nan_10824() -> None:
+    v = pl.col("a") / pl.col("b")
+    magic = pl.when(v > 0).then(pl.lit(float("nan"))).otherwise(v)
+    assert (
+        str(
+            (
+                pl.DataFrame(
+                    {
+                        "a": [1.0],
+                        "b": [1.0],
+                    }
+                )
+                .lazy()
+                .select(magic)
+                .collect(comm_subexpr_elim=True)
+            ).to_dict(False)
+        )
+        == "{'literal': [nan]}"
+    )

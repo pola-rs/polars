@@ -133,7 +133,6 @@ pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow)
         function: FunctionExpr::TemporalExpr(TemporalFunction::TimeRange { every, closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            cast_to_supertypes: false,
             allow_rename: true,
             ..Default::default()
         },
@@ -150,7 +149,6 @@ pub fn time_ranges(start: Expr, end: Expr, every: Duration, closed: ClosedWindow
         function: FunctionExpr::TemporalExpr(TemporalFunction::TimeRanges { every, closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            cast_to_supertypes: false,
             allow_rename: true,
             ..Default::default()
         },

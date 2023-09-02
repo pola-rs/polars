@@ -355,6 +355,22 @@ def test_arr_contains() -> None:
     }
 
 
+def test_rank() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 2, 2, 3],
+        }
+    )
+
+    s = df.select(pl.col("a").rank(method="average").alias("b")).to_series()
+    assert s.to_list() == [1.5, 1.5, 3.5, 3.5, 5.0]
+    assert s.dtype == pl.Float64
+
+    s = df.select(pl.col("a").rank(method="max").alias("b")).to_series()
+    assert s.to_list() == [2, 2, 4, 4, 5]
+    assert s.dtype == pl.get_index_type()
+
+
 def test_rank_so_4109() -> None:
     # also tests ranks null behavior
     df = pl.from_dict(
@@ -1026,3 +1042,14 @@ def test_extend_constant_arr(const: Any, dtype: pl.PolarsDataType) -> None:
     expected = pl.Series("s", [[const, const, const, const]], dtype=pl.List(dtype))
 
     assert_series_equal(s.list.eval(pl.element().extend_constant(const, 3)), expected)
+
+
+def test_is_not_deprecated() -> None:
+    df = pl.DataFrame({"a": [True, False, True]})
+
+    with pytest.deprecated_call():
+        expr = pl.col("a").is_not()
+    result = df.select(expr)
+
+    expected = pl.DataFrame({"a": [False, True, False]})
+    assert_frame_equal(result, expected)

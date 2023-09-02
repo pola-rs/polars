@@ -33,7 +33,7 @@ def test_error_on_reducing_map() -> None:
             r"the input length \(1\); consider using `apply` instead"
         ),
     ):
-        df.group_by("id").agg(pl.map(["t", "y"], np.trapz))
+        df.group_by("id").agg(pl.map_batches(["t", "y"], np.trapz))
 
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
     with pytest.raises(
@@ -45,7 +45,9 @@ def test_error_on_reducing_map() -> None:
     ):
         df.select(
             pl.col("x")
-            .map(lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest())
+            .map_batches(
+                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest()
+            )
             .over("group")
         )
 
@@ -259,7 +261,7 @@ def test_is_nan_on_non_boolean() -> None:
 def test_window_expression_different_group_length() -> None:
     try:
         pl.DataFrame({"groups": ["a", "a", "b", "a", "b"]}).select(
-            [pl.col("groups").apply(lambda _: pl.Series([1, 2])).over("groups")]
+            [pl.col("groups").map_elements(lambda _: pl.Series([1, 2])).over("groups")]
         )
     except pl.ComputeError as exc:
         msg = str(exc)
@@ -513,7 +515,7 @@ def test_skip_nulls_err() -> None:
     with pytest.raises(
         pl.ComputeError, match=r"The output type of 'apply' function cannot determined"
     ):
-        df.with_columns(pl.col("foo").apply(lambda x: x, skip_nulls=True))
+        df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
 
 
 @pytest.mark.parametrize(

@@ -5,6 +5,7 @@ use polars_core::export::ahash::RandomState;
 use polars_row::{RowsEncoded, SortField};
 
 use super::*;
+use crate::executors::sinks::group_by::utils::prepare_key;
 use crate::executors::sinks::utils::hash_rows;
 use crate::expressions::PhysicalPipedExpr;
 
@@ -81,6 +82,7 @@ impl Eval {
                 DataType::Utf8 => unsafe { s.cast_unchecked(&DataType::Binary).unwrap() },
                 _ => s.to_physical_repr().into_owned(),
             };
+            let s = prepare_key(&s, chunk);
             keys_columns.push(s.to_arrow(0));
         }
 

@@ -461,7 +461,7 @@ def test_compressed_csv(io_files_path: Path) -> None:
     assert_frame_equal(out, expected)
 
     # now from disk
-    csv_file = io_files_path / "gzipped.csv"
+    csv_file = io_files_path / "gzipped.csv.gz"
     out = pl.read_csv(str(csv_file), truncate_ragged_lines=True)
     assert_frame_equal(out, expected)
 

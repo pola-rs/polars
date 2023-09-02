@@ -35,7 +35,6 @@ impl<T: PolarsDataType> Default for ChunkedArray<T> {
 }
 
 /// FromIterator trait
-
 impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>
 where
     T: PolarsNumericType,

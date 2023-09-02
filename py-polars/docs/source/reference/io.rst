@@ -12,6 +12,7 @@ CSV
    read_csv_batched
    scan_csv
    DataFrame.write_csv
+   LazyFrame.sink_csv
 
 Feather/ IPC
 ~~~~~~~~~~~~

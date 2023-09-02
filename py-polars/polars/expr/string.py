@@ -3,15 +3,19 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
+import polars._reexport as pl
+from polars import functions as F
 from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.exceptions import ChronoFormatWarning
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
+from polars.utils.deprecation import rename_use_earliest_to_ambiguous
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from polars import Expr
     from polars.type_aliases import (
+        Ambiguous,
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
@@ -83,6 +87,7 @@ class ExprStringNameSpace:
         exact: bool = True,
         cache: bool = True,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Convert a Utf8 column into a Datetime column.
@@ -119,6 +124,15 @@ class ExprStringNameSpace:
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
 
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
+
         Examples
         --------
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
@@ -131,6 +145,9 @@ class ExprStringNameSpace:
         ]
         """
         _validate_format_argument(format)
+        ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
+        if not isinstance(ambiguous, pl.Expr):
+            ambiguous = F.lit(ambiguous)
         return wrap_expr(
             self._pyexpr.str_to_datetime(
                 format,
@@ -139,7 +156,7 @@ class ExprStringNameSpace:
                 strict,
                 exact,
                 cache,
-                use_earliest,
+                ambiguous._pyexpr,
             )
         )
 
@@ -190,6 +207,7 @@ class ExprStringNameSpace:
         exact: bool = True,
         cache: bool = True,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -220,6 +238,15 @@ class ExprStringNameSpace:
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Notes
         -----
@@ -281,6 +308,7 @@ class ExprStringNameSpace:
                 exact=exact,
                 cache=cache,
                 use_earliest=use_earliest,
+                ambiguous=ambiguous,
             )
         elif dtype == Time:
             return self.to_time(format, strict=strict, cache=cache)
@@ -1085,8 +1113,8 @@ class ExprStringNameSpace:
             <https://docs.rs/regex/latest/regex/>`_.
         group_index
             Index of the targeted capture group.
-            Group 0 mean the whole pattern, first group begin at index 1
-            Default to the first capture group
+            Group 0 means the whole pattern, the first group begins at index 1.
+            Defaults to the first capture group.
 
         Notes
         -----
@@ -1159,8 +1187,7 @@ class ExprStringNameSpace:
         Extract all matches for the given regex pattern.
 
         Extract each successive non-overlapping regex match in an individual string
-        as a list. Extracted matches contain ``null`` if the original value is null
-        or the regex did not capture anything.
+        as a list. If the haystack string is ``null``, ``null`` is returned.
 
         Parameters
         ----------
@@ -1221,11 +1248,11 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
+        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t", "bar", None]})
         >>> df.select(
         ...     pl.col("foo").str.extract_all(r"\d+").alias("extracted_nrs"),
         ... )
-        shape: (2, 1)
+        shape: (4, 1)
         ┌────────────────┐
         │ extracted_nrs  │
         │ ---            │
@@ -1233,6 +1260,8 @@ class ExprStringNameSpace:
         ╞════════════════╡
         │ ["123", "45"]  │
         │ ["678", "910"] │
+        │ []             │
+        │ null           │
         └────────────────┘
 
         '''
@@ -1340,16 +1369,16 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`. Contains null values if the
-            original value is null or the regex captures nothing.
+            Expression of data type :class:`UInt32`. Returns null if the
+            original value is null.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
+        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t", "bar", None]})
         >>> df.select(
         ...     pl.col("foo").str.count_match(r"\d").alias("count_digits"),
         ... )
-        shape: (2, 1)
+        shape: (4, 1)
         ┌──────────────┐
         │ count_digits │
         │ ---          │
@@ -1357,6 +1386,8 @@ class ExprStringNameSpace:
         ╞══════════════╡
         │ 5            │
         │ 6            │
+        │ 0            │
+        │ null         │
         └──────────────┘
 
         """

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pandas as pd
 import pytest
@@ -18,91 +18,6 @@ if TYPE_CHECKING:
     from polars.type_aliases import TimeUnit
 else:
     from polars.utils.convert import get_zoneinfo as ZoneInfo
-
-
-def test_arange() -> None:
-    ldf = pl.LazyFrame({"a": [1, 1, 1]})
-    result = ldf.filter(pl.col("a") >= pl.arange(0, 3)).collect()
-    expected = pl.DataFrame({"a": [1, 1]})
-    assert_frame_equal(result, expected)
-
-
-def test_int_range_decreasing() -> None:
-    assert pl.int_range(10, 1, -2, eager=True).to_list() == list(range(10, 1, -2))
-
-
-def test_int_range_expr() -> None:
-    df = pl.DataFrame({"a": ["foobar", "barfoo"]})
-    out = df.select(pl.int_range(0, pl.col("a").count() * 10))
-    assert out.shape == (20, 1)
-    assert out.to_series(0)[-1] == 19
-
-    # eager arange
-    out2 = pl.arange(0, 10, 2, eager=True)
-    assert out2.to_list() == [0, 2, 4, 6, 8]
-
-
-def test_int_range() -> None:
-    result = pl.int_range(0, 3)
-    expected = pl.Series("int", [0, 1, 2])
-    assert_series_equal(pl.select(result).to_series(), expected)
-
-
-def test_int_range_eager() -> None:
-    result = pl.int_range(0, 3, eager=True)
-    expected = pl.Series("int", [0, 1, 2])
-    assert_series_equal(result, expected)
-
-
-def test_int_range_schema() -> None:
-    result = pl.LazyFrame().select(pl.int_range(-3, 3))
-
-    expected_schema = {"int": pl.Int64}
-    assert result.schema == expected_schema
-    assert result.collect().schema == expected_schema
-
-
-@pytest.mark.parametrize(
-    ("start", "end", "expected"),
-    [
-        ("a", "b", pl.Series("int_range", [[1, 2], [2, 3]])),
-        (-1, "a", pl.Series("int_range", [[-1, 0], [-1, 0, 1]])),
-        ("b", 4, pl.Series("int_range", [[3], []])),
-    ],
-)
-def test_int_ranges(start: Any, end: Any, expected: pl.Series) -> None:
-    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-
-    result = df.select(pl.int_ranges(start, end))
-    assert_series_equal(result.to_series(), expected)
-
-
-def test_int_ranges_eager() -> None:
-    start = pl.Series([1, 2])
-    result = pl.int_ranges(start, 4, eager=True)
-
-    expected = pl.Series("int_range", [[1, 2, 3], [2, 3]])
-    assert_series_equal(result, expected)
-
-
-def test_int_ranges_schema_dtype_default() -> None:
-    lf = pl.LazyFrame({"start": [1, 2], "end": [3, 4]})
-
-    result = lf.select(pl.int_ranges("start", "end"))
-
-    expected_schema = {"int_range": pl.List(pl.Int64)}
-    assert result.schema == expected_schema
-    assert result.collect().schema == expected_schema
-
-
-def test_int_ranges_schema_dtype_arg() -> None:
-    lf = pl.LazyFrame({"start": [1, 2], "end": [3, 4]})
-
-    result = lf.select(pl.int_ranges("start", "end", dtype=pl.UInt16))
-
-    expected_schema = {"int_range": pl.List(pl.UInt16)}
-    assert result.schema == expected_schema
-    assert result.collect().schema == expected_schema
 
 
 def test_date_range() -> None:
@@ -473,17 +388,6 @@ def test_date_range_with_unsupported_datetimes() -> None:
         )
 
 
-def test_date_range_descending() -> None:
-    with pytest.raises(pl.ComputeError, match="'start' cannot be greater than 'stop'"):
-        pl.date_range(
-            datetime(2000, 3, 20), datetime(2000, 3, 5), interval="1h", eager=True
-        )
-    with pytest.raises(pl.ComputeError, match="'interval' cannot be negative"):
-        pl.date_range(
-            datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h", eager=True
-        )
-
-
 def test_date_range_end_of_month_5441() -> None:
     start = date(2020, 1, 31)
     stop = date(2021, 1, 31)
@@ -527,18 +431,6 @@ def test_date_range_eager_explode() -> None:
     result = pl.date_range(start, end, eager=True)
 
     expected = pl.Series("date", [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3)])
-    assert_series_equal(result, expected)
-
-
-def test_date_range_only_first_entry_used() -> None:
-    start = pl.Series([date(2022, 1, 1), date(2022, 1, 2)])
-    end = pl.Series([date(2022, 1, 4), date(2022, 1, 3)])
-
-    result = pl.date_range(start, end, eager=True)
-
-    expected = pl.Series(
-        "date", [date(2022, 1, 1), date(2022, 1, 2), date(2022, 1, 3), date(2022, 1, 4)]
-    )
     assert_series_equal(result, expected)
 
 
@@ -948,53 +840,42 @@ def test_date_range_no_alias_schema_9037() -> None:
     assert result.collect().schema == expected_schema
 
 
-def test_time_range_schema() -> None:
-    df = pl.DataFrame({"start": [time(1)], "end": [time(1, 30)]}).lazy()
-    result = df.with_columns(pl.time_ranges(pl.col("start"), pl.col("end")))
-    expected_schema = {"start": pl.Time, "end": pl.Time, "time_range": pl.List(pl.Time)}
-    assert result.schema == expected_schema
-    assert result.collect().schema == expected_schema
+def test_time_range_empty() -> None:
+    empty = pl.Series(dtype=pl.Datetime)
+    single = pl.Series([datetime(2022, 1, 2)])
+
+    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+        pl.date_range(empty, single, eager=True)
+    with pytest.raises(pl.ComputeError, match="`end` must contain a single value"):
+        pl.date_range(single, empty, eager=True)
+    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+        pl.date_range(empty, empty, eager=True)
 
 
-def test_time_range_no_alias_schema_9037() -> None:
-    df = pl.DataFrame({"start": [time(1)], "end": [time(1, 30)]}).lazy()
-    result = df.with_columns(pl.time_ranges(pl.col("start"), pl.col("end")))
-    expected_schema = {"start": pl.Time, "end": pl.Time, "time_range": pl.List(pl.Time)}
-    assert result.schema == expected_schema
-    assert result.collect().schema == expected_schema
+def test_time_range_multiple_values() -> None:
+    single = pl.Series([datetime(2022, 1, 2)])
+    multiple = pl.Series([datetime(2022, 1, 3), datetime(2022, 1, 4)])
+
+    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+        pl.date_range(multiple, single, eager=True)
+    with pytest.raises(pl.ComputeError, match="`end` must contain a single value"):
+        pl.date_range(single, multiple, eager=True)
+    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+        pl.date_range(multiple, multiple, eager=True)
 
 
-def test_time_ranges_eager() -> None:
-    start = pl.Series([time(9, 0), time(10, 0)])
-    end = pl.Series([time(12, 0), time(11, 0)])
-
-    result = pl.time_ranges(start, end, eager=True)
-
-    expected = pl.Series(
-        "time_range",
-        [
-            [time(9, 0), time(10, 0), time(11, 0), time(12, 0)],
-            [time(10, 0), time(11, 0)],
-        ],
-    )
-    assert_series_equal(result, expected)
+def test_date_range_invalid_start_end() -> None:
+    with pytest.raises(
+        pl.ComputeError, match="`end` must be equal to or greater than `start`"
+    ):
+        pl.date_range(
+            datetime(2000, 3, 20), datetime(2000, 3, 5), interval="1h", eager=True
+        )
 
 
-def test_time_range_eager_explode() -> None:
-    start = pl.Series([time(9, 0)])
-    end = pl.Series([time(11, 0)])
-
-    result = pl.time_range(start, end, eager=True)
-
-    expected = pl.Series("time", [time(9, 0), time(10, 0), time(11, 0)])
-    assert_series_equal(result, expected)
-
-
-def test_time_range_only_first_entry_used() -> None:
-    start = pl.Series([time(9, 0), time(10, 0)])
-    end = pl.Series([time(12, 0), time(11, 0)])
-
-    result = pl.time_range(start, end, eager=True)
-
-    expected = pl.Series("time", [time(9, 0), time(10, 0), time(11, 0), time(12, 0)])
-    assert_series_equal(result, expected)
+@pytest.mark.parametrize("interval", [timedelta(0), timedelta(minutes=-10)])
+def test_date_range_invalid_interval(interval: timedelta) -> None:
+    with pytest.raises(pl.ComputeError, match="`interval` must be positive"):
+        pl.date_range(
+            datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h", eager=True
+        )

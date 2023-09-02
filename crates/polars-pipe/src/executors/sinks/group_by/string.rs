@@ -19,7 +19,7 @@ use crate::executors::sinks::group_by::aggregates::AggregateFunction;
 use crate::executors::sinks::group_by::ooc_state::OocState;
 use crate::executors::sinks::group_by::physical_agg_to_logical;
 use crate::executors::sinks::group_by::primitive::apply_aggregation;
-use crate::executors::sinks::group_by::utils::{compute_slices, finalize_group_by};
+use crate::executors::sinks::group_by::utils::{compute_slices, finalize_group_by, prepare_key};
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
@@ -229,7 +229,7 @@ impl Utf8GroupbySink {
             .key_column
             .evaluate(chunk, context.execution_state.as_any())?;
         let s = s.to_physical_repr();
-        let s = s.rechunk();
+        let s = prepare_key(&s, chunk);
 
         // todo! ammortize allocation
         for phys_e in self.aggregation_columns.iter() {
@@ -326,6 +326,9 @@ impl Utf8GroupbySink {
 
 impl Sink for Utf8GroupbySink {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        if chunk.is_empty() {
+            return Ok(SinkResult::CanHaveMoreInput);
+        }
         if self.ooc_state.ooc {
             return self.sink_ooc(context, chunk);
         }

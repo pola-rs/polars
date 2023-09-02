@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import create_engine
 
 import polars as pl
+from polars.exceptions import UnsuitableSQLError
 
 if TYPE_CHECKING:
     from polars.type_aliases import DbReadEngine
@@ -284,6 +285,24 @@ def test_read_database_mocked() -> None:
             TypeError,
             "Unrecognised connection .* unable to find 'execute' method",
             id="Invalid read DB kwargs",
+        ),
+        pytest.param(
+            "read_database",
+            None,
+            "/* tag: misc */ INSERT INTO xyz VALUES ('polars')",
+            sqlite3.connect(":memory:"),
+            UnsuitableSQLError,
+            "INSERT statements are not valid 'read' queries",
+            id="Invalid statement type",
+        ),
+        pytest.param(
+            "read_database",
+            None,
+            "DELETE FROM xyz WHERE id = 'polars'",
+            sqlite3.connect(":memory:"),
+            UnsuitableSQLError,
+            "DELETE statements are not valid 'read' queries",
+            id="Invalid statement type",
         ),
     ],
 )
