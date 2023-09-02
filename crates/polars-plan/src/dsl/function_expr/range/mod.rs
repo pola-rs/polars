@@ -1,5 +1,7 @@
+#[cfg(feature = "temporal")]
 mod date_range;
 mod int_range;
+#[cfg(feature = "dtype-time")]
 mod time_range;
 mod utils;
 
@@ -25,22 +27,26 @@ pub enum RangeFunction {
     IntRanges {
         step: i64,
     },
+    #[cfg(feature = "temporal")]
     DateRange {
         every: Duration,
         closed: ClosedWindow,
         time_unit: Option<TimeUnit>,
         time_zone: Option<TimeZone>,
     },
+    #[cfg(feature = "temporal")]
     DateRanges {
         every: Duration,
         closed: ClosedWindow,
         time_unit: Option<TimeUnit>,
         time_zone: Option<TimeZone>,
     },
+    #[cfg(feature = "dtype-time")]
     TimeRange {
         every: Duration,
         closed: ClosedWindow,
     },
+    #[cfg(feature = "dtype-time")]
     TimeRanges {
         every: Duration,
         closed: ClosedWindow,
@@ -53,6 +59,7 @@ impl RangeFunction {
         let field = match self {
             IntRange { .. } => Field::new("int", DataType::Int64),
             IntRanges { .. } => Field::new("int_range", DataType::List(Box::new(DataType::Int64))),
+            #[cfg(feature = "temporal")]
             DateRange {
                 every,
                 closed: _,
@@ -67,6 +74,7 @@ impl RangeFunction {
                 )?;
                 return Ok(Field::new("date", dtype));
             },
+            #[cfg(feature = "temporal")]
             DateRanges {
                 every,
                 closed: _,
@@ -84,10 +92,11 @@ impl RangeFunction {
                     DataType::List(Box::new(inner_dtype)),
                 ));
             },
-
+            #[cfg(feature = "dtype-time")]
             TimeRange { .. } => {
                 return Ok(Field::new("time", DataType::Time));
             },
+            #[cfg(feature = "dtype-time")]
             TimeRanges { .. } => {
                 return Ok(Field::new(
                     "time_range",
@@ -105,9 +114,13 @@ impl Display for RangeFunction {
         let s = match self {
             IntRange { .. } => "int_range",
             IntRanges { .. } => "int_ranges",
+            #[cfg(feature = "temporal")]
             DateRange { .. } => "date_range",
+            #[cfg(feature = "temporal")]
             DateRanges { .. } => "date_ranges",
+            #[cfg(feature = "dtype-time")]
             TimeRange { .. } => "time_range",
+            #[cfg(feature = "dtype-time")]
             TimeRanges { .. } => "time_ranges",
         };
         write!(f, "{s}")
@@ -124,6 +137,7 @@ impl From<RangeFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IntRanges { step } => {
                 map_as_slice!(int_range::int_ranges, step)
             },
+            #[cfg(feature = "temporal")]
             DateRange {
                 every,
                 closed,
@@ -138,6 +152,7 @@ impl From<RangeFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                     time_zone.clone()
                 )
             },
+            #[cfg(feature = "temporal")]
             DateRanges {
                 every,
                 closed,
@@ -152,9 +167,11 @@ impl From<RangeFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                     time_zone.clone()
                 )
             },
+            #[cfg(feature = "dtype-time")]
             TimeRange { every, closed } => {
                 map_as_slice!(time_range::time_range, every, closed)
             },
+            #[cfg(feature = "dtype-time")]
             TimeRanges { every, closed } => {
                 map_as_slice!(time_range::time_ranges, every, closed)
             },

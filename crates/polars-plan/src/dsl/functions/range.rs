@@ -3,12 +3,10 @@ use super::*;
 /// Generate a range of integers.
 ///
 /// Alias for `int_range`.
-#[cfg(feature = "range")]
 pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
     int_range(start, end, step)
 }
 
-#[cfg(feature = "range")]
 /// Generate a range of integers.
 pub fn int_range(start: Expr, end: Expr, step: i64) -> Expr {
     let input = vec![start, end];
@@ -23,7 +21,6 @@ pub fn int_range(start: Expr, end: Expr, step: i64) -> Expr {
     }
 }
 
-#[cfg(feature = "range")]
 /// Generate a range of integers for each row of the input columns.
 pub fn int_ranges(start: Expr, end: Expr, step: i64) -> Expr {
     let input = vec![start, end];
@@ -97,7 +94,7 @@ pub fn date_ranges(
 }
 
 /// Generate a time range.
-#[cfg(feature = "temporal")]
+#[cfg(feature = "dtype-time")]
 pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow) -> Expr {
     let input = vec![start, end];
 
@@ -113,7 +110,7 @@ pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow)
 }
 
 /// Create a column of time ranges from a `start` and `stop` expression.
-#[cfg(feature = "temporal")]
+#[cfg(feature = "dtype-time")]
 pub fn time_ranges(start: Expr, end: Expr, every: Duration, closed: ClosedWindow) -> Expr {
     let input = vec![start, end];
 
@@ -126,24 +123,6 @@ pub fn time_ranges(start: Expr, end: Expr, every: Duration, closed: ClosedWindow
             ..Default::default()
         },
     }
-}
-
-/// Create a column of length `n` containing `n` copies of the literal `value`. Generally you won't need this function,
-/// as `lit(value)` already represents a column containing only `value` whose length is automatically set to the correct
-/// number of rows.
-pub fn repeat<E: Into<Expr>>(value: E, n: Expr) -> Expr {
-    let function = |s: Series, n: Series| {
-        polars_ensure!(
-            n.dtype().is_integer(),
-            SchemaMismatch: "expected expression of dtype 'integer', got '{}'", n.dtype()
-        );
-        let first_value = n.get(0)?;
-        let n = first_value.extract::<usize>().ok_or_else(
-            || polars_err!(ComputeError: "could not parse value '{}' as a size.", first_value),
-        )?;
-        Ok(Some(s.new_from_index(0, n)))
-    };
-    apply_binary(value.into(), n, function, GetOutput::same_type()).alias("repeat")
 }
 
 pub trait Range<T> {

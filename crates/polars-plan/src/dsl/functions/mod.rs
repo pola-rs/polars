@@ -1,14 +1,15 @@
 //! # Functions
 //!
 //! Functions on expressions that might be useful.
-//!
 mod arity;
 mod coerce;
 mod concat;
 mod correlation;
 mod horizontal;
 mod index;
+#[cfg(feature = "range")]
 mod range;
+mod repeat;
 mod selectors;
 mod syntactic_sugar;
 mod temporal;
@@ -25,9 +26,11 @@ use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "dtype-struct")]
 use polars_core::utils::get_supertype;
+#[cfg(feature = "range")]
 pub use range::*;
-#[cfg(feature = "temporal")]
-pub use range::{date_range, time_range};
+#[cfg(feature = "range")]
+pub use range::{date_range, time_range}; // This shouldn't be necessary, but clippy complains about dead code
+pub use repeat::*;
 pub use selectors::*;
 pub use syntactic_sugar::*;
 pub use temporal::*;
