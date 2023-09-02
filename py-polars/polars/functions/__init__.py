@@ -22,6 +22,7 @@ from polars.functions.as_datatype import (
 from polars.functions.as_datatype import date_ as date
 from polars.functions.as_datatype import datetime_ as datetime
 from polars.functions.as_datatype import time_ as time
+from polars.functions.col import col
 from polars.functions.eager import align_frames, concat
 from polars.functions.lazy import (
     apply,
@@ -32,7 +33,6 @@ from polars.functions.lazy import (
     arg_where,
     avg,
     coalesce,
-    col,
     collect_all,
     collect_all_async,
     corr,
