@@ -124,30 +124,3 @@ pub fn time_ranges(start: Expr, end: Expr, every: Duration, closed: ClosedWindow
         },
     }
 }
-
-pub trait Range<T> {
-    fn into_range(self, high: T) -> Expr;
-}
-
-macro_rules! impl_into_range {
-    ($dt: ty) => {
-        impl Range<$dt> for $dt {
-            fn into_range(self, high: $dt) -> Expr {
-                Expr::Literal(LiteralValue::Range {
-                    low: self as i64,
-                    high: high as i64,
-                    data_type: DataType::Int32,
-                })
-            }
-        }
-    };
-}
-
-impl_into_range!(i32);
-impl_into_range!(i64);
-impl_into_range!(u32);
-
-/// Create a range literal.
-pub fn range<T: Range<T>>(low: T, high: T) -> Expr {
-    low.into_range(high)
-}
