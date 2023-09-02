@@ -1042,3 +1042,14 @@ def test_extend_constant_arr(const: Any, dtype: pl.PolarsDataType) -> None:
     expected = pl.Series("s", [[const, const, const, const]], dtype=pl.List(dtype))
 
     assert_series_equal(s.list.eval(pl.element().extend_constant(const, 3)), expected)
+
+
+def test_is_not_deprecated() -> None:
+    df = pl.DataFrame({"a": [True, False, True]})
+
+    with pytest.deprecated_call():
+        expr = pl.col("a").is_not()
+    result = df.select(expr)
+
+    expected = pl.DataFrame({"a": [False, True, False]})
+    assert_frame_equal(result, expected)

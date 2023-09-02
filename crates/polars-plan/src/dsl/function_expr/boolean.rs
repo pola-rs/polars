@@ -15,7 +15,6 @@ pub enum BooleanFunction {
     All {
         ignore_nulls: bool,
     },
-    IsNot,
     IsNull,
     IsNotNull,
     IsFinite,
@@ -34,6 +33,7 @@ pub enum BooleanFunction {
     IsIn,
     AllHorizontal,
     AnyHorizontal,
+    Not,
 }
 
 impl BooleanFunction {
@@ -53,7 +53,6 @@ impl Display for BooleanFunction {
         let s = match self {
             All { .. } => "all",
             Any { .. } => "any",
-            IsNot => "is_not",
             IsNull => "is_null",
             IsNotNull => "is_not_null",
             IsFinite => "is_finite",
@@ -72,6 +71,7 @@ impl Display for BooleanFunction {
             IsIn => "is_in",
             AnyHorizontal => "any_horizontal",
             AllHorizontal => "all_horizontal",
+            Not => "not_",
         };
         write!(f, "{s}")
     }
@@ -83,7 +83,6 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         match func {
             Any { ignore_nulls } => map!(any, ignore_nulls),
             All { ignore_nulls } => map!(all, ignore_nulls),
-            IsNot => map!(is_not),
             IsNull => map!(is_null),
             IsNotNull => map!(is_not_null),
             IsFinite => map!(is_finite),
@@ -102,6 +101,7 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsIn => wrap!(is_in),
             AllHorizontal => wrap!(all_horizontal),
             AnyHorizontal => wrap!(any_horizontal),
+            Not => map!(not_),
         }
     }
 }
@@ -128,10 +128,6 @@ fn all(s: &Series, ignore_nulls: bool) -> PolarsResult<Series> {
     } else {
         Ok(Series::new(s.name(), [ca.all_kleene()]))
     }
-}
-
-fn is_not(s: &Series) -> PolarsResult<Series> {
-    Ok(s.bool()?.not().into_series())
 }
 
 fn is_null(s: &Series) -> PolarsResult<Series> {
@@ -217,4 +213,8 @@ fn all_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     })?;
     out.rename("all");
     Ok(Some(out.into_series()))
+}
+
+fn not_(s: &Series) -> PolarsResult<Series> {
+    Ok(s.bool()?.not().into_series())
 }

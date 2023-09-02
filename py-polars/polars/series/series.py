@@ -470,7 +470,7 @@ class Series:
             other = Series([other])
         return other ^ self
 
-    def _comp(self, other: Any, op: ComparisonOperator) -> Self:
+    def _comp(self, other: Any, op: ComparisonOperator) -> Series:
         # special edge-case; boolean broadcast series (eq/neq) is its own result
         if self.dtype == Boolean and isinstance(other, bool) and op in ("eq", "neq"):
             if (other is True and op == "eq") or (other is False and op == "neq"):
@@ -514,10 +514,10 @@ class Series:
         ...
 
     @overload
-    def __eq__(self, other: Any) -> Self:
+    def __eq__(self, other: Any) -> Series:
         ...
 
-    def __eq__(self, other: Any) -> Self | Expr:
+    def __eq__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
@@ -527,10 +527,10 @@ class Series:
         ...
 
     @overload
-    def __ne__(self, other: Any) -> Self:
+    def __ne__(self, other: Any) -> Series:
         ...
 
-    def __ne__(self, other: Any) -> Self | Expr:
+    def __ne__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__ne__(other)
         return self._comp(other, "neq")
@@ -540,10 +540,10 @@ class Series:
         ...
 
     @overload
-    def __gt__(self, other: Any) -> Self:
+    def __gt__(self, other: Any) -> Series:
         ...
 
-    def __gt__(self, other: Any) -> Self | Expr:
+    def __gt__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__gt__(other)
         return self._comp(other, "gt")
@@ -553,10 +553,10 @@ class Series:
         ...
 
     @overload
-    def __lt__(self, other: Any) -> Self:
+    def __lt__(self, other: Any) -> Series:
         ...
 
-    def __lt__(self, other: Any) -> Self | Expr:
+    def __lt__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__lt__(other)
         return self._comp(other, "lt")
@@ -566,10 +566,10 @@ class Series:
         ...
 
     @overload
-    def __ge__(self, other: Any) -> Self:
+    def __ge__(self, other: Any) -> Series:
         ...
 
-    def __ge__(self, other: Any) -> Self | Expr:
+    def __ge__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__ge__(other)
         return self._comp(other, "gt_eq")
@@ -579,10 +579,10 @@ class Series:
         ...
 
     @overload
-    def __le__(self, other: Any) -> Self:
+    def __le__(self, other: Any) -> Series:
         ...
 
-    def __le__(self, other: Any) -> Self | Expr:
+    def __le__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__le__(other)
         return self._comp(other, "lt_eq")
@@ -804,10 +804,8 @@ class Series:
             other = F.lit(other)
         return self.to_frame().select(F.col(self.name) // other).to_series()
 
-    def __invert__(self) -> Self:
-        if self.dtype == Boolean:
-            return self._from_pyseries(self._s._not())
-        return NotImplemented
+    def __invert__(self) -> Series:
+        return self.not_()
 
     @overload
     def __mul__(self, other: Expr) -> Expr:  # type: ignore[misc]
@@ -3265,6 +3263,29 @@ class Series:
 
         """
         return self._s.is_sorted(descending)
+
+    def not_(self) -> Series:
+        """
+        Negate a boolean Series.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [True, False, False])
+        >>> s.not_()
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+            false
+            true
+            true
+        ]
+
+        """
 
     def is_null(self) -> Series:
         """

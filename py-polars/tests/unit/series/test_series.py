@@ -264,8 +264,10 @@ def test_bitwise_ops() -> None:
 
 
 def test_bitwise_floats_invert() -> None:
-    a = pl.Series([2.0, 3.0, 0.0])
-    assert ~a == NotImplemented
+    s = pl.Series([2.0, 3.0, 0.0])
+
+    with pytest.raises(pl.SchemaError):
+        ~s
 
 
 def test_equality() -> None:

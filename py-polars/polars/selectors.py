@@ -441,7 +441,7 @@ def boolean() -> SelectorType:
 
     Select and invert boolean columns:
 
-    >>> df.with_columns(is_odd=cs.boolean().is_not())
+    >>> df.with_columns(is_odd=cs.boolean().not_())
     shape: (4, 3)
     ┌─────┬────────┬────────┐
     │ n   ┆ n_even ┆ is_odd │
