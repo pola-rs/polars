@@ -57,7 +57,7 @@ def polars_dtype_to_dtype(dtype: PolarsDataType) -> Dtype:
         result = dtype_map[dtype.base_type()]
     except KeyError as exc:
         raise ValueError(
-            f"data type {dtype} not supported by the interchange protocol"
+            f"data type {dtype!r} not supported by the interchange protocol"
         ) from exc
 
     # Handle instantiated data types

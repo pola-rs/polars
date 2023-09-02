@@ -264,5 +264,5 @@ def test_invalid_arguments() -> None:
     with pytest.raises(InvalidArgument, match=r"\d dtypes for \d names"):
         columns(["colx", "coly"], dtype=[pl.Date, pl.Date, pl.Datetime])
 
-    with pytest.raises(InvalidArgument, match="Unable to determine dtype"):
+    with pytest.raises(InvalidArgument, match="unable to determine dtype"):
         column("colx", strategy=sampled_from([None]))

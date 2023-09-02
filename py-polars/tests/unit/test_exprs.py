@@ -93,7 +93,7 @@ def test_prefix(fruits_cars: pl.DataFrame) -> None:
 def test_cumcount() -> None:
     df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], schema=["A"])
 
-    out = df.groupby("A", maintain_order=True).agg(
+    out = df.group_by("A", maintain_order=True).agg(
         [pl.col("A").cumcount(reverse=False).alias("foo")]
     )
 
@@ -103,10 +103,10 @@ def test_cumcount() -> None:
 
 def test_filter_where() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 1, 2, 3], "b": [4, 5, 6, 7, 8, 9]})
-    result_where = df.groupby("a", maintain_order=True).agg(
+    result_where = df.group_by("a", maintain_order=True).agg(
         pl.col("b").where(pl.col("b") > 4).alias("c")
     )
-    result_filter = df.groupby("a", maintain_order=True).agg(
+    result_filter = df.group_by("a", maintain_order=True).agg(
         pl.col("b").filter(pl.col("b") > 4).alias("c")
     )
     expected = pl.DataFrame({"a": [1, 2, 3], "c": [[7], [5, 8], [6, 9]]})
@@ -127,7 +127,7 @@ def test_count_expr() -> None:
     assert out.shape == (1, 1)
     assert cast(int, out.item()) == 5
 
-    out = df.groupby("b", maintain_order=True).agg(pl.count())
+    out = df.group_by("b", maintain_order=True).agg(pl.count())
     assert out["b"].to_list() == ["a", "b"]
     assert out["count"].to_list() == [4, 1]
 
@@ -169,7 +169,7 @@ def test_entropy() -> None:
             "id": [1, 2, 1, 4, 5, 4, 6],
         }
     )
-    result = df.groupby("group", maintain_order=True).agg(
+    result = df.group_by("group", maintain_order=True).agg(
         pl.col("id").entropy(normalize=True)
     )
     expected = pl.DataFrame(
@@ -178,7 +178,7 @@ def test_entropy() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_dot_in_groupby() -> None:
+def test_dot_in_group_by() -> None:
     df = pl.DataFrame(
         {
             "group": ["a", "a", "a", "b", "b", "b"],
@@ -187,7 +187,7 @@ def test_dot_in_groupby() -> None:
         }
     )
 
-    result = df.groupby("group", maintain_order=True).agg(
+    result = df.group_by("group", maintain_order=True).agg(
         pl.col("x").dot("y").alias("dot")
     )
     expected = pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]})
@@ -355,6 +355,22 @@ def test_arr_contains() -> None:
     }
 
 
+def test_rank() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 2, 2, 3],
+        }
+    )
+
+    s = df.select(pl.col("a").rank(method="average").alias("b")).to_series()
+    assert s.to_list() == [1.5, 1.5, 3.5, 3.5, 5.0]
+    assert s.dtype == pl.Float64
+
+    s = df.select(pl.col("a").rank(method="max").alias("b")).to_series()
+    assert s.to_list() == [2, 2, 4, 4, 5]
+    assert s.dtype == pl.get_index_type()
+
+
 def test_rank_so_4109() -> None:
     # also tests ranks null behavior
     df = pl.from_dict(
@@ -364,7 +380,7 @@ def test_rank_so_4109() -> None:
         }
     ).sort(by=["id", "rank"])
 
-    assert df.groupby("id").agg(
+    assert df.group_by("id").agg(
         [
             pl.col("rank").alias("original"),
             pl.col("rank").rank(method="dense").alias("dense"),
@@ -425,18 +441,18 @@ def test_abs_expr() -> None:
 def test_logical_boolean() -> None:
     # note, cannot use expressions in logical
     # boolean context (eg: and/or/not operators)
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         pl.col("colx") and pl.col("coly")
 
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         pl.col("colx") or pl.col("coly")
 
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         df.select([(pl.col("a") > pl.col("b")) and (pl.col("b") > pl.col("b"))])
 
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         df.select([(pl.col("a") > pl.col("b")) or (pl.col("b") > pl.col("b"))])
 
 
@@ -720,13 +736,13 @@ def test_map_dict() -> None:
 
     with pytest.raises(
         pl.ComputeError,
-        match="Remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion.",
+        match="remapping keys for `map_dict` could not be converted to Utf8 without losing values in the conversion",
     ):
         df_int_as_str.with_columns(pl.col("int").map_dict(int_dict))
 
     with pytest.raises(
         pl.ComputeError,
-        match="Remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion.",
+        match="remapping keys for `map_dict` could not be converted to Utf8 without losing values in the conversion",
     ):
         df_int_as_str.with_columns(pl.col("int").map_dict(int_with_none_dict))
 
@@ -833,7 +849,7 @@ def test_lit_dtypes() -> None:
 def test_incompatible_lit_dtype() -> None:
     with pytest.raises(
         TypeError,
-        match=r"Time zone of dtype \(Asia/Kathmandu\) differs from time zone of value \(UTC\).",
+        match=r"time zone of dtype \('Asia/Kathmandu'\) differs from time zone of value \(datetime.timezone.utc\)",
     ):
         pl.lit(
             datetime(2020, 1, 1, tzinfo=timezone.utc),
@@ -1026,3 +1042,14 @@ def test_extend_constant_arr(const: Any, dtype: pl.PolarsDataType) -> None:
     expected = pl.Series("s", [[const, const, const, const]], dtype=pl.List(dtype))
 
     assert_series_equal(s.list.eval(pl.element().extend_constant(const, 3)), expected)
+
+
+def test_is_not_deprecated() -> None:
+    df = pl.DataFrame({"a": [True, False, True]})
+
+    with pytest.deprecated_call():
+        expr = pl.col("a").is_not()
+    result = df.select(expr)
+
+    expected = pl.DataFrame({"a": [False, True, False]})
+    assert_frame_equal(result, expected)

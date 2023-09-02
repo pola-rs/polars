@@ -1,3 +1,4 @@
+pub mod constants;
 mod warning;
 
 use std::borrow::Cow;
@@ -109,14 +110,14 @@ pub fn map_err<E: Error>(error: E) -> PolarsError {
 
 #[macro_export]
 macro_rules! polars_err {
+    ($variant:ident: $fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::__private::must_use(
+            $crate::PolarsError::$variant(format!($fmt, $($arg),*).into())
+        )
+    };
     ($variant:ident: $err:expr $(,)?) => {
         $crate::__private::must_use(
             $crate::PolarsError::$variant($err.into())
-        )
-    };
-    ($variant:ident: $fmt:literal, $($arg:tt)+) => {
-        $crate::__private::must_use(
-            $crate::PolarsError::$variant(format!($fmt, $($arg)+).into())
         )
     };
     (expr = $expr:expr, $variant:ident: $err:expr $(,)?) => {
@@ -138,6 +139,11 @@ macro_rules! polars_err {
     (opq = $op:ident, got = $arg:expr, expected = $expected:expr) => {
         $crate::polars_err!(
             op = concat!("`", stringify!($op), "`"), got = $arg, expected = $expected
+        )
+    };
+    (un_impl = $op:ident) => {
+        $crate::polars_err!(
+            InvalidOperation: "{} operation is not implemented.", concat!("`", stringify!($op), "`")
         )
     };
     (op = $op:expr, $arg:expr) => {

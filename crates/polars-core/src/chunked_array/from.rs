@@ -70,10 +70,27 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
     }
 }
 
+impl<T, A> From<A> for ChunkedArray<T>
+where
+    T: PolarsDataType,
+    A: StaticallyMatchesPolarsType<T> + Array,
+{
+    fn from(arr: A) -> Self {
+        Self::with_chunk("", arr)
+    }
+}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
+    pub fn with_chunk<A>(name: &str, arr: A) -> Self
+    where
+        A: StaticallyMatchesPolarsType<T> + Array,
+    {
+        unsafe { Self::from_chunks(name, vec![Box::new(arr)]) }
+    }
+
     pub fn from_chunk_iter<I>(name: &str, iter: I) -> Self
     where
         I: IntoIterator,
@@ -218,8 +235,7 @@ where
 {
     /// Create a new ChunkedArray by taking ownership of the Vec. This operation is zero copy.
     pub fn from_vec(name: &str, v: Vec<T::Native>) -> Self {
-        let arr = to_array::<T>(v, None);
-        unsafe { Self::from_chunks(name, vec![arr]) }
+        Self::with_chunk(name, to_primitive::<T>(v, None))
     }
 
     /// Nullify values in slice with an existing null bitmap
@@ -245,8 +261,7 @@ where
     /// The lifetime will be bound to the lifetime of the slice.
     /// This will not be checked by the borrowchecker.
     pub unsafe fn mmap_slice(name: &str, values: &[T::Native]) -> Self {
-        let arr = arrow::ffi::mmap::slice(values);
-        Self::from_chunks(name, vec![Box::new(arr)])
+        Self::with_chunk(name, arrow::ffi::mmap::slice(values))
     }
 }
 
@@ -258,6 +273,6 @@ impl BooleanChunked {
     /// This will not be checked by the borrowchecker.
     pub unsafe fn mmap_slice(name: &str, values: &[u8], offset: usize, len: usize) -> Self {
         let arr = arrow::ffi::mmap::bitmap(values, offset, len).unwrap();
-        BooleanChunked::from_chunks(name, vec![Box::new(arr)])
+        Self::with_chunk(name, arr)
     }
 }

@@ -3,6 +3,7 @@ from datetime import date
 from tempfile import NamedTemporaryFile
 from typing import Any
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -49,7 +50,7 @@ def test_cse_schema_6081() -> None:
         orient="row",
     ).lazy()
 
-    min_value_by_group = df.groupby(["date", "id"]).agg(
+    min_value_by_group = df.group_by(["date", "id"]).agg(
         pl.col("value").min().alias("min_value")
     )
 
@@ -88,7 +89,7 @@ def test_cse_9630() -> None:
                 joined_df2.select("key", pl.col("y").alias("value")),
             ]
         )
-        .groupby("key")
+        .group_by("key")
         .agg(
             [
                 pl.col("value"),
@@ -123,7 +124,7 @@ def test_schema_row_count_cse() -> None:
     csv_a.seek(0)
 
     df_a = pl.scan_csv(csv_a.name).with_row_count("Idx")
-    assert df_a.join(df_a, on="B").groupby(
+    assert df_a.join(df_a, on="B").group_by(
         "A", maintain_order=True
     ).all().collect().to_dict(False) == {
         "A": ["Gr1"],
@@ -198,8 +199,7 @@ def test_windows_cse_excluded() -> None:
     }
 
 
-@pytest.mark.skip()
-def test_cse_groupby_10215() -> None:
+def test_cse_group_by_10215() -> None:
     q = (
         pl.DataFrame(
             {
@@ -208,7 +208,7 @@ def test_cse_groupby_10215() -> None:
             }
         )
         .lazy()
-        .groupby(
+        .group_by(
             "b",
         )
         .agg(
@@ -295,7 +295,7 @@ def test_cse_10452() -> None:
     assert q.collect(comm_subexpr_elim=True).to_dict(False) == {"b": [13, 14, 15]}
 
 
-def test_cse_groupby_ternary_10490() -> None:
+def test_cse_group_by_ternary_10490() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 1, 2, 2],
@@ -306,7 +306,7 @@ def test_cse_groupby_ternary_10490() -> None:
 
     assert (
         df.lazy()
-        .groupby("a")
+        .group_by("a")
         .agg(
             [
                 pl.when(pl.col(col).is_null().all()).then(None).otherwise(1).alias(col)
@@ -333,3 +333,49 @@ def test_cse_groupby_ternary_10490() -> None:
         "x3": [12, 32],
         "x4": [18, 56],
     }
+
+
+def test_cse_quantile_10815() -> None:
+    np.random.seed(1)
+    a = np.random.random(10)
+    b = np.random.random(10)
+    df = pl.DataFrame({"a": a, "b": b})
+    cols = ["a", "b"]
+    q = df.lazy().select(
+        *(
+            pl.col(c).quantile(0.75, interpolation="midpoint").suffix("_3")
+            for c in cols
+        ),
+        *(
+            pl.col(c).quantile(0.25, interpolation="midpoint").suffix("_1")
+            for c in cols
+        ),
+    )
+    assert "__POLARS_CSE" not in q.explain()
+    assert q.collect().to_dict(False) == {
+        "a_3": [0.40689473946662197],
+        "b_3": [0.6145786693120769],
+        "a_1": [0.16650805109739197],
+        "b_1": [0.2012768694081981],
+    }
+
+
+def test_cse_nan_10824() -> None:
+    v = pl.col("a") / pl.col("b")
+    magic = pl.when(v > 0).then(pl.lit(float("nan"))).otherwise(v)
+    assert (
+        str(
+            (
+                pl.DataFrame(
+                    {
+                        "a": [1.0],
+                        "b": [1.0],
+                    }
+                )
+                .lazy()
+                .select(magic)
+                .collect(comm_subexpr_elim=True)
+            ).to_dict(False)
+        )
+        == "{'literal': [nan]}"
+    )

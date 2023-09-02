@@ -89,7 +89,7 @@ def lit(
             and dtype.time_zone != str(value.tzinfo)  # type: ignore[union-attr]
         ):
             raise TypeError(
-                f"Time zone of dtype ({dtype.time_zone}) differs from time zone of value ({value.tzinfo})."  # type: ignore[union-attr]
+                f"time zone of dtype ({dtype.time_zone!r}) differs from time zone of value ({value.tzinfo!r})"  # type: ignore[union-attr]
             )
         e = lit(_datetime_to_pl_timestamp(value, time_unit)).cast(Datetime(time_unit))
         if time_zone is not None:

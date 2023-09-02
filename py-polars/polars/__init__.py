@@ -91,6 +91,7 @@ from polars.functions import (
     coalesce,
     col,
     collect_all,
+    collect_all_async,
     concat,
     concat_list,
     concat_str,
@@ -120,6 +121,8 @@ from polars.functions import (
     last,
     lit,
     map,
+    map_batches,
+    map_groups,
     max,
     max_horizontal,
     mean,
@@ -134,6 +137,7 @@ from polars.functions import (
     rolling_corr,
     rolling_cov,
     select,
+    set_random_seed,
     sql_expr,
     std,
     struct,
@@ -153,17 +157,18 @@ from polars.io import (
     read_csv,
     read_csv_batched,
     read_database,
+    read_database_uri,
     read_delta,
     read_excel,
     read_ipc,
     read_ipc_schema,
+    read_ipc_stream,
     read_json,
     read_ndjson,
     read_parquet,
     read_parquet_schema,
     scan_csv,
     scan_delta,
-    scan_ds,
     scan_ipc,
     scan_ndjson,
     scan_parquet,
@@ -172,20 +177,9 @@ from polars.io import (
 from polars.lazyframe import LazyFrame
 from polars.series import Series
 from polars.sql import SQLContext
-from polars.string_cache import (
-    StringCache,
-    enable_string_cache,
-    toggle_string_cache,
-    using_string_cache,
-)
+from polars.string_cache import StringCache, enable_string_cache, using_string_cache
 from polars.type_aliases import PolarsDataType
-from polars.utils import (
-    build_info,
-    get_idx_type,
-    get_index_type,
-    show_versions,
-    threadpool_size,
-)
+from polars.utils import build_info, get_index_type, show_versions, threadpool_size
 
 # TODO: remove need for importing wrap utils at top level
 from polars.utils._wrap import wrap_df, wrap_s  # noqa: F401
@@ -257,17 +251,18 @@ __all__ = [
     "read_csv",
     "read_csv_batched",
     "read_database",
+    "read_database_uri",
     "read_delta",
     "read_excel",
     "read_ipc",
     "read_ipc_schema",
+    "read_ipc_stream",
     "read_json",
     "read_ndjson",
     "read_parquet",
     "read_parquet_schema",
     "scan_csv",
     "scan_delta",
-    "scan_ds",
     "scan_ipc",
     "scan_ndjson",
     "scan_parquet",
@@ -275,7 +270,6 @@ __all__ = [
     # polars.stringcache
     "StringCache",
     "enable_string_cache",
-    "toggle_string_cache",
     "using_string_cache",
     # polars.config
     "Config",
@@ -317,6 +311,7 @@ __all__ = [
     "coalesce",
     "col",
     "collect_all",
+    "collect_all_async",
     "concat_list",
     "concat_str",
     "corr",
@@ -340,6 +335,8 @@ __all__ = [
     "last",
     "lit",
     "map",
+    "map_batches",
+    "map_groups",
     "mean",
     "median",
     "n_unique",
@@ -353,6 +350,8 @@ __all__ = [
     "tail",
     "time",  # named time_, see import above
     "var",
+    # polars.functions.random
+    "set_random_seed",
     # polars.convert
     "from_arrow",
     "from_dataframe",
@@ -366,7 +365,6 @@ __all__ = [
     "SQLContext",
     # polars.utils
     "build_info",
-    "get_idx_type",
     "get_index_type",
     "show_versions",
     "threadpool_size",

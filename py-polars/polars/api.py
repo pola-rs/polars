@@ -54,10 +54,10 @@ def _create_namespace(
 
     def namespace(ns_class: type[NS]) -> type[NS]:
         if name in _reserved_namespaces:
-            raise AttributeError(f"Cannot override reserved namespace {name!r}")
+            raise AttributeError(f"cannot override reserved namespace {name!r}")
         elif hasattr(cls, name):
             warn(
-                f"Overriding existing custom namespace {name!r} (on {cls.__name__})",
+                f"Overriding existing custom namespace {name!r} (on {cls.__name__!r})",
                 UserWarning,
                 stacklevel=find_stacklevel(),
             )
@@ -77,6 +77,12 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     ----------
     name
         Name under which the functionality will be accessed.
+
+    See Also
+    --------
+    register_dataframe_namespace: Register functionality on a DataFrame.
+    register_lazyframe_namespace: Register functionality on a LazyFrame.
+    register_series_namespace: Register functionality on a Series.
 
     Examples
     --------
@@ -114,12 +120,6 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ 64.001 ┆ 128       ┆ 64        ┆ 64           │
     └────────┴───────────┴───────────┴──────────────┘
 
-    See Also
-    --------
-    register_dataframe_namespace: Register functionality on a DataFrame.
-    register_lazyframe_namespace: Register functionality on a LazyFrame.
-    register_series_namespace: Register functionality on a Series.
-
     """
     return _create_namespace(name, pl.Expr)
 
@@ -132,6 +132,12 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     ----------
     name
         Name under which the functionality will be accessed.
+
+    See Also
+    --------
+    register_expr_namespace: Register functionality on an Expr.
+    register_lazyframe_namespace: Register functionality on a LazyFrame.
+    register_series_namespace: Register functionality on a Series.
 
     Examples
     --------
@@ -214,12 +220,6 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ yz  ┆ 6   ┆ 7   ┆ 8   │
     └─────┴─────┴─────┴─────┘]
 
-    See Also
-    --------
-    register_expr_namespace: Register functionality on an Expr.
-    register_lazyframe_namespace: Register functionality on a LazyFrame.
-    register_series_namespace: Register functionality on a Series.
-
     """
     return _create_namespace(name, pl.DataFrame)
 
@@ -232,6 +232,12 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     ----------
     name
         Name under which the functionality will be accessed.
+
+    See Also
+    --------
+    register_expr_namespace: Register functionality on an Expr.
+    register_dataframe_namespace: Register functionality on a DataFrame.
+    register_series_namespace: Register functionality on a Series.
 
     Examples
     --------
@@ -319,12 +325,6 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ 6   ┆ 7   ┆ 8   │
     └─────┴─────┴─────┘]
 
-    See Also
-    --------
-    register_expr_namespace: Register functionality on an Expr.
-    register_dataframe_namespace: Register functionality on a DataFrame.
-    register_series_namespace: Register functionality on a Series.
-
     """
     return _create_namespace(name, pl.LazyFrame)
 
@@ -337,6 +337,12 @@ def register_series_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     ----------
     name
         Name under which the functionality will be accessed.
+
+    See Also
+    --------
+    register_expr_namespace: Register functionality on an Expr.
+    register_dataframe_namespace: Register functionality on a DataFrame.
+    register_lazyframe_namespace: Register functionality on a LazyFrame.
 
     Examples
     --------
@@ -373,12 +379,6 @@ def register_series_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
         64
         125
     ]
-
-    See Also
-    --------
-    register_expr_namespace: Register functionality on an Expr.
-    register_dataframe_namespace: Register functionality on a DataFrame.
-    register_lazyframe_namespace: Register functionality on a LazyFrame.
 
     """
     return _create_namespace(name, pl.Series)

@@ -282,7 +282,7 @@ where
         })
     } else {
         if arr.null_count() > 0 {
-            panic!("'rolling by' not yet supported for series with null values, consider using 'groupby_rolling'")
+            panic!("'rolling by' not yet supported for series with null values, consider using 'group_by_rolling'")
         }
         let values = arr.values().as_slice();
         let duration = options.window_size;
@@ -291,7 +291,7 @@ where
         let by = options.by.unwrap();
         let closed_window = options.closed_window.expect("closed window  must be set");
         let func = rolling_agg_fn_dynamic.expect(
-            "'rolling by' not yet supported for this expression, consider using 'groupby_rolling'",
+            "'rolling by' not yet supported for this expression, consider using 'group_by_rolling'",
         );
 
         func(

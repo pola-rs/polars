@@ -1,5 +1,5 @@
 //! Traits that indicate the allowed arguments in a ChunkedArray::take operation.
-use crate::frame::groupby::GroupsProxyIter;
+use crate::frame::group_by::GroupsProxyIter;
 use crate::prelude::*;
 
 // Utility traits

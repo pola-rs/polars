@@ -7,7 +7,7 @@
 pub(crate) mod bounds;
 pub(crate) mod calendar;
 pub(crate) mod duration;
-pub(crate) mod groupby;
+pub(crate) mod group_by;
 #[cfg(test)]
 mod test;
 pub(crate) mod window;

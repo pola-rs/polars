@@ -135,11 +135,11 @@ class LazyPolarsSlice:
 
         # fail on operations that require length to do efficiently
         if s.stop and s.stop < 0:
-            raise ValueError("Negative stop is not supported for lazy slices")
+            raise ValueError("negative stop is not supported for lazy slices")
         if step < 0 and (start > 0 or s.stop is not None) and (start != s.stop):
             if not (start > 0 > step and s.stop is None):
                 raise ValueError(
-                    "Negative stride is not supported in conjunction with start+stop"
+                    "negative stride is not supported in conjunction with start+stop"
                 )
 
         # ---------------------------------------
@@ -205,6 +205,6 @@ class LazyPolarsSlice:
             return obj if (step == 1) else obj.take_every(step)
 
         raise ValueError(
-            f"The given slice {s} is not supported by lazy computation; consider a "
-            "more efficient approach, or construct explicitly with other methods"
+            f"the given slice {s!r} is not supported by lazy computation; consider a"
+            " more efficient approach, or construct explicitly with other methods"
         )

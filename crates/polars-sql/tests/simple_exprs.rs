@@ -54,7 +54,7 @@ fn test_nested_expr() -> PolarsResult<()> {
     Ok(())
 }
 #[test]
-fn test_groupby_simple() -> PolarsResult<()> {
+fn test_group_by_simple() -> PolarsResult<()> {
     let df = create_sample_df()?;
     let mut context = SQLContext::new();
     context.register("df", df.clone().lazy());
@@ -78,7 +78,7 @@ fn test_groupby_simple() -> PolarsResult<()> {
         .collect()?;
     let df_pl = df
         .lazy()
-        .groupby(&[col("a")])
+        .group_by(&[col("a")])
         .agg(&[
             col("b").sum().alias("b"),
             (col("a") + col("b")).sum().alias("c"),
@@ -463,7 +463,7 @@ fn test_ctes() -> PolarsResult<()> {
 
 #[test]
 #[cfg(feature = "ipc")]
-fn test_groupby_2() -> PolarsResult<()> {
+fn test_group_by_2() -> PolarsResult<()> {
     let mut context = SQLContext::new();
     let sql = r#"
     CREATE TABLE foods AS
@@ -486,7 +486,7 @@ fn test_groupby_2() -> PolarsResult<()> {
     let df_sql = df_sql.collect()?;
     let expected = LazyFrame::scan_ipc("../../examples/datasets/foods1.ipc", Default::default())?
         .select(&[col("*")])
-        .groupby(vec![col("category")])
+        .group_by(vec![col("category")])
         .agg(vec![
             col("category").count().alias("count"),
             col("calories").max(),

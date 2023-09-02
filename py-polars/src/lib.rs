@@ -12,7 +12,6 @@ extern crate pyo3_built;
 mod build {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
-pub mod apply;
 pub mod arrow_interop;
 #[cfg(feature = "csv")]
 mod batched_csv;
@@ -26,6 +25,7 @@ pub mod functions;
 pub(crate) mod gil_once_cell;
 pub mod lazyframe;
 pub mod lazygroupby;
+pub mod map;
 #[cfg(feature = "object")]
 mod object;
 #[cfg(feature = "object")]
@@ -90,8 +90,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
 
     // Functions - range
-    m.add_wrapped(wrap_pyfunction!(functions::range::arange))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::range::int_range))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::range::int_ranges))
@@ -129,6 +127,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::lazy::col))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::collect_all))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::collect_all_with_callback))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::cols))
         .unwrap();
@@ -218,6 +218,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     #[cfg(feature = "object")]
     m.add_wrapped(wrap_pyfunction!(__register_startup_deps))
+        .unwrap();
+
+    // Functions - random
+    m.add_wrapped(wrap_pyfunction!(functions::random::set_random_seed))
         .unwrap();
 
     // Exceptions

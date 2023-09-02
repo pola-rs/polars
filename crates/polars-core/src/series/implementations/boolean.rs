@@ -10,7 +10,7 @@ use crate::chunked_array::ops::compare_inner::{
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::{AsSinglePtr, ChunkIdIter};
-use crate::frame::groupby::*;
+use crate::frame::group_by::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
@@ -51,12 +51,12 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     }
 
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
-        self.0.vec_hash(random_state, buf);
+        self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
     fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
-        self.0.vec_hash_combine(build_hasher, hashes);
+        self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
 
@@ -136,6 +136,9 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
 
     fn chunks(&self) -> &Vec<ArrayRef> {
         self.0.chunks()
+    }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.chunks_mut()
     }
     fn shrink_to_fit(&mut self) {
         self.0.shrink_to_fit()
@@ -328,10 +331,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    #[cfg(feature = "is_in")]
-    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
-        IsIn::is_in(&self.0, other)
-    }
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
         RepeatBy::repeat_by(&self.0, by)

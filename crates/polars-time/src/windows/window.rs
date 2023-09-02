@@ -31,88 +31,73 @@ impl Window {
     }
 
     /// Truncate the given ns timestamp by the window boundary.
-    pub fn truncate_ns(
-        &self,
-        t: i64,
-        tz: Option<&Tz>,
-        use_earliest: Option<bool>,
-    ) -> PolarsResult<i64> {
-        let t = self.every.truncate_ns(t, tz, use_earliest)?;
+    pub fn truncate_ns(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
+        let t = self.every.truncate_ns(t, tz, ambiguous)?;
         self.offset.add_ns(t, tz)
     }
 
     pub fn truncate_no_offset_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        self.every.truncate_ns(t, tz, None)
+        self.every.truncate_ns(t, tz, "raise")
     }
 
     /// Truncate the given us timestamp by the window boundary.
-    pub fn truncate_us(
-        &self,
-        t: i64,
-        tz: Option<&Tz>,
-        use_earliest: Option<bool>,
-    ) -> PolarsResult<i64> {
-        let t = self.every.truncate_us(t, tz, use_earliest)?;
+    pub fn truncate_us(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
+        let t = self.every.truncate_us(t, tz, ambiguous)?;
         self.offset.add_us(t, tz)
     }
 
     pub fn truncate_no_offset_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        self.every.truncate_us(t, tz, None)
+        self.every.truncate_us(t, tz, "raise")
     }
 
-    pub fn truncate_ms(
-        &self,
-        t: i64,
-        tz: Option<&Tz>,
-        use_earliest: Option<bool>,
-    ) -> PolarsResult<i64> {
-        let t = self.every.truncate_ms(t, tz, use_earliest)?;
+    pub fn truncate_ms(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
+        let t = self.every.truncate_ms(t, tz, ambiguous)?;
         self.offset.add_ms(t, tz)
     }
 
     #[inline]
     pub fn truncate_no_offset_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        self.every.truncate_ms(t, tz, None)
+        self.every.truncate_ms(t, tz, "raise")
     }
 
     /// Round the given ns timestamp by the window boundary.
     pub fn round_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let t = t + self.every.duration_ns() / 2_i64;
-        self.truncate_ns(t, tz, None)
+        self.truncate_ns(t, tz, "raise")
     }
 
     /// Round the given us timestamp by the window boundary.
     pub fn round_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let t = t + self.every.duration_ns()
             / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Microsecond) as i64);
-        self.truncate_us(t, tz, None)
+        self.truncate_us(t, tz, "raise")
     }
 
     /// Round the given ms timestamp by the window boundary.
     pub fn round_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let t = t + self.every.duration_ns()
             / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Millisecond) as i64);
-        self.truncate_ms(t, tz, None)
+        self.truncate_ms(t, tz, "raise")
     }
 
     /// returns the bounds for the earliest window bounds
     /// that contains the given time t.  For underlapping windows that
     /// do not contain time t, the window directly after time t will be returned.
     pub fn get_earliest_bounds_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<Bounds> {
-        let start = self.truncate_ns(t, tz, None)?;
+        let start = self.truncate_ns(t, tz, "raise")?;
         let stop = self.period.add_ns(start, tz)?;
 
         Ok(Bounds::new_checked(start, stop))
     }
 
     pub fn get_earliest_bounds_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<Bounds> {
-        let start = self.truncate_us(t, tz, None)?;
+        let start = self.truncate_us(t, tz, "raise")?;
         let stop = self.period.add_us(start, tz)?;
         Ok(Bounds::new_checked(start, stop))
     }
 
     pub fn get_earliest_bounds_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<Bounds> {
-        let start = self.truncate_ms(t, tz, None)?;
+        let start = self.truncate_ms(t, tz, "raise")?;
         let stop = self.period.add_ms(start, tz)?;
 
         Ok(Bounds::new_checked(start, stop))

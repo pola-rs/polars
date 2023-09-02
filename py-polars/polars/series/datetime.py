@@ -6,14 +6,13 @@ from polars.datatypes import Date
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_date, _to_python_datetime
-from polars.utils.deprecation import deprecate_renamed_parameter
 
 if TYPE_CHECKING:
     import datetime as dt
 
     from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.type_aliases import EpochTimeUnit, TimeUnit
+    from polars.type_aliases import Ambiguous, EpochTimeUnit, TimeUnit
 
 
 @expr_dispatch
@@ -105,7 +104,7 @@ class DateTimeNameSpace:
             if s.dtype == Date:
                 return _to_python_date(int(out))
             else:
-                return _to_python_datetime(int(out), s._s.time_unit())
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
         return None
 
     def mean(self) -> dt.date | dt.datetime | None:
@@ -136,7 +135,7 @@ class DateTimeNameSpace:
             if s.dtype == Date:
                 return _to_python_date(int(out))
             else:
-                return _to_python_datetime(int(out), s._s.time_unit())
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
         return None
 
     def to_string(self, format: str) -> Series:
@@ -171,7 +170,6 @@ class DateTimeNameSpace:
 
         """
 
-    @deprecate_renamed_parameter("fmt", "format", version="0.17.12")
     def strftime(self, format: str) -> Series:
         """
         Convert a Date/Time/Datetime column into a Utf8 column with the given format.
@@ -188,6 +186,10 @@ class DateTimeNameSpace:
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
 
+        See Also
+        --------
+        to_string : The identical Series method for which ``strftime`` is an alias.
+
         Examples
         --------
         >>> from datetime import datetime
@@ -203,10 +205,6 @@ class DateTimeNameSpace:
                 "2020/04/01"
                 "2020/05/01"
         ]
-
-        See Also
-        --------
-        to_string : The identical Series method for which ``strftime`` is an alias.
 
         """
         return self.to_string(format)
@@ -1144,7 +1142,11 @@ class DateTimeNameSpace:
         """
 
     def replace_time_zone(
-        self, time_zone: str | None, *, use_earliest: bool | None = None
+        self,
+        time_zone: str | None,
+        *,
+        use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Replace time zone for a Series of type Datetime.
@@ -1162,6 +1164,15 @@ class DateTimeNameSpace:
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Examples
         --------
@@ -1205,39 +1216,29 @@ class DateTimeNameSpace:
         ...     "2018-10-28 02:00",
         ...     "2018-10-28 02:30",
         ...     "2018-10-28 02:00",
-        ...     "2018-10-28 02:30",
         ... ]
         >>> df = pl.DataFrame(
         ...     {
         ...         "ts": pl.Series(dates).str.strptime(pl.Datetime),
-        ...         "DST": [True, True, True, False, False],
+        ...         "ambiguous": ["earliest", "earliest", "earliest", "latest"],
         ...     }
         ... )
         >>> df.with_columns(
-        ...     ts_localized=pl.when(pl.col("DST"))
-        ...     .then(
-        ...         pl.col("ts").dt.replace_time_zone(
-        ...             "Europe/Brussels", use_earliest=True
-        ...         )
-        ...     )
-        ...     .otherwise(
-        ...         pl.col("ts").dt.replace_time_zone(
-        ...             "Europe/Brussels", use_earliest=False
-        ...         )
+        ...     ts_localized=pl.col("ts").dt.replace_time_zone(
+        ...         "Europe/Brussels", ambiguous=pl.col("ambiguous")
         ...     )
         ... )
-        shape: (5, 3)
-        ┌─────────────────────┬───────┬───────────────────────────────┐
-        │ ts                  ┆ DST   ┆ ts_localized                  │
-        │ ---                 ┆ ---   ┆ ---                           │
-        │ datetime[μs]        ┆ bool  ┆ datetime[μs, Europe/Brussels] │
-        ╞═════════════════════╪═══════╪═══════════════════════════════╡
-        │ 2018-10-28 01:30:00 ┆ true  ┆ 2018-10-28 01:30:00 CEST      │
-        │ 2018-10-28 02:00:00 ┆ true  ┆ 2018-10-28 02:00:00 CEST      │
-        │ 2018-10-28 02:30:00 ┆ true  ┆ 2018-10-28 02:30:00 CEST      │
-        │ 2018-10-28 02:00:00 ┆ false ┆ 2018-10-28 02:00:00 CET       │
-        │ 2018-10-28 02:30:00 ┆ false ┆ 2018-10-28 02:30:00 CET       │
-        └─────────────────────┴───────┴───────────────────────────────┘
+        shape: (4, 3)
+        ┌─────────────────────┬───────────┬───────────────────────────────┐
+        │ ts                  ┆ ambiguous ┆ ts_localized                  │
+        │ ---                 ┆ ---       ┆ ---                           │
+        │ datetime[μs]        ┆ str       ┆ datetime[μs, Europe/Brussels] │
+        ╞═════════════════════╪═══════════╪═══════════════════════════════╡
+        │ 2018-10-28 01:30:00 ┆ earliest  ┆ 2018-10-28 01:30:00 CEST      │
+        │ 2018-10-28 02:00:00 ┆ earliest  ┆ 2018-10-28 02:00:00 CEST      │
+        │ 2018-10-28 02:30:00 ┆ earliest  ┆ 2018-10-28 02:30:00 CEST      │
+        │ 2018-10-28 02:00:00 ┆ latest    ┆ 2018-10-28 02:00:00 CET       │
+        └─────────────────────┴───────────┴───────────────────────────────┘
 
         """
 
@@ -1597,6 +1598,7 @@ class DateTimeNameSpace:
         offset: str | dt.timedelta | None = None,
         *,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Divide the date/ datetime range into buckets.
@@ -1616,6 +1618,15 @@ class DateTimeNameSpace:
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Notes
         -----
@@ -1740,11 +1751,14 @@ class DateTimeNameSpace:
                 2020-10-25 02:15:00 GMT
         ]
 
-        >>> pl.select(
-        ...     pl.when(ser.dt.dst_offset() == pl.duration(hours=1))
-        ...     .then(ser.dt.truncate("30m", use_earliest=True))
-        ...     .otherwise(ser.dt.truncate("30m", use_earliest=False))
-        ... )["date"]
+        >>> (
+        ...     ser.dt.truncate(
+        ...         "30m",
+        ...         ambiguous=(ser.dt.dst_offset() == pl.duration(hours=1)).map_dict(
+        ...             {True: "earliest", False: "latest"}
+        ...         ),
+        ...     )
+        ... )
         shape: (7,)
         Series: 'date' [datetime[μs, Europe/London]]
         [

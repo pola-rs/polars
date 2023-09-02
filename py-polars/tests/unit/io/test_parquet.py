@@ -250,7 +250,7 @@ def test_recursive_logical_type() -> None:
     df = pl.DataFrame({"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]})
     df = df.with_columns(pl.col("str").cast(pl.Categorical))
 
-    df_groups = df.groupby("group").agg([pl.col("str").alias("cat_list")])
+    df_groups = df.group_by("group").agg([pl.col("str").alias("cat_list")])
     f = io.BytesIO()
     df_groups.write_parquet(f, use_pyarrow=True)
     f.seek(0)
@@ -264,7 +264,7 @@ def test_nested_dictionary() -> None:
         df = (
             pl.DataFrame({"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]})
             .with_columns(pl.col("str").cast(pl.Categorical))
-            .groupby("group")
+            .group_by("group")
             .agg([pl.col("str").alias("cat_list")])
         )
         f = io.BytesIO()
@@ -381,40 +381,6 @@ def test_parquet_nested_dictionaries_6217() -> None:
         f.seek(0)
         read = pl.read_parquet(f)
         assert_frame_equal(read, df)  # type: ignore[arg-type]
-
-
-@pytest.mark.write_disk()
-def test_sink_parquet(io_files_path: Path, tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
-
-    file = io_files_path / "small.parquet"
-
-    file_path = tmp_path / "sink.parquet"
-
-    df_scanned = pl.scan_parquet(file)
-    df_scanned.sink_parquet(file_path)
-
-    with pl.StringCache():
-        result = pl.read_parquet(file_path)
-        df_read = pl.read_parquet(file)
-        assert_frame_equal(result, df_read)
-
-
-@pytest.mark.write_disk()
-def test_sink_ipc(io_files_path: Path, tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
-
-    file = io_files_path / "small.parquet"
-
-    file_path = tmp_path / "sink.ipc"
-
-    df_scanned = pl.scan_parquet(file)
-    df_scanned.sink_ipc(file_path)
-
-    with pl.StringCache():
-        result = pl.read_ipc(file_path)
-        df_read = pl.read_parquet(file)
-        assert_frame_equal(result, df_read)
 
 
 @pytest.mark.write_disk()

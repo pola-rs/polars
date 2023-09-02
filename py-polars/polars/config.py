@@ -125,7 +125,7 @@ class Config(contextlib.ContextDecorator):
             if not hasattr(self, opt) and not opt.startswith("set_"):
                 opt = f"set_{opt}"
             if not hasattr(self, opt):
-                raise AttributeError(f"Config has no {opt!r} option")
+                raise AttributeError(f"`Config` has no option {opt!r}")
             getattr(self, opt)(value)
 
     def __enter__(self) -> Config:
@@ -671,6 +671,10 @@ class Config(contextlib.ContextDecorator):
         """
         Hide the '---' separator between the column names and column types.
 
+        See Also
+        --------
+        set_tbl_column_data_type_inline
+
         Examples
         --------
         >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
@@ -686,10 +690,6 @@ class Config(contextlib.ContextDecorator):
         # │ 2.5 ┆ false │      │ 5.0 ┆ true  │
         # │ 5.0 ┆ true  │      └─────┴───────┘
         # └─────┴───────┘
-
-        See Also
-        --------
-        set_tbl_column_data_type_inline
 
         """
         os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR"] = str(int(active))

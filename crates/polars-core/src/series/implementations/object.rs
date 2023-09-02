@@ -6,7 +6,7 @@ use ahash::RandomState;
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ops::compare_inner::{IntoPartialEqInner, PartialEqInner};
 use crate::chunked_array::Settings;
-use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
+use crate::frame::group_by::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
@@ -55,12 +55,12 @@ where
     }
 
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
-        self.0.vec_hash(random_state, buf);
+        self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
     fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
-        self.0.vec_hash_combine(build_hasher, hashes);
+        self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
 
@@ -96,6 +96,9 @@ where
 
     fn chunks(&self) -> &Vec<ArrayRef> {
         ObjectChunked::chunks(&self.0)
+    }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.chunks_mut()
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {

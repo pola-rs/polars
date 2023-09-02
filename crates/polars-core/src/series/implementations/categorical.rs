@@ -8,10 +8,8 @@ use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{IntoPartialOrdInner, PartialOrdInner};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::frame::groupby::*;
+use crate::frame::group_by::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
-#[cfg(feature = "is_in")]
-use crate::frame::hash_join::_check_categorical_src;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 
@@ -98,12 +96,12 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
-        self.0.logical().vec_hash(random_state, buf);
+        self.0.logical().vec_hash(random_state, buf)?;
         Ok(())
     }
 
     fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
-        self.0.logical().vec_hash_combine(build_hasher, hashes);
+        self.0.logical().vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
 
@@ -169,6 +167,9 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     fn chunks(&self) -> &Vec<ArrayRef> {
         self.0.logical().chunks()
+    }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.logical_mut().chunks_mut()
     }
     fn shrink_to_fit(&mut self) {
         self.0.logical_mut().shrink_to_fit()
@@ -358,11 +359,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    #[cfg(feature = "is_in")]
-    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
-        _check_categorical_src(self.dtype(), other.dtype())?;
-        self.0.logical().is_in(&other.to_physical_repr())
-    }
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
         let out = self.0.logical().repeat_by(by)?;

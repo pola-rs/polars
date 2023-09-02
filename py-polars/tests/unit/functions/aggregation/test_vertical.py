@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import assert_frame_equal
 
 
 def assert_expr_equal(
@@ -55,35 +55,3 @@ def test_alias_for_col_agg(function: str, input: str) -> None:
     expected = getattr(pl.col(input), function)()  # e.g. pl.col(input).min()
     context = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
     assert_expr_equal(result, expected, context)
-
-
-@pytest.mark.parametrize("function", ["all", "any"])
-def test_deprecated_alias_for_series_agg_bool(function: str) -> None:
-    s = pl.Series([True, True, False])
-    with pytest.deprecated_call():
-        result = getattr(pl, function)(s)  # e.g. pl.all(s)
-    expected = getattr(s, function)()  # e.g. s.all()
-    assert result == expected
-
-
-@pytest.mark.parametrize("function", ["min", "max", "sum"])
-def test_deprecated_alias_for_series_agg_numeric(function: str) -> None:
-    s = pl.Series([1, 2, 3])
-    with pytest.deprecated_call():
-        result = getattr(pl, function)(s)  # e.g. pl.max(s)
-    expected = getattr(s, function)()  # e.g. s.max()
-    assert result == expected
-
-
-def test_deprecated_alias_for_series_agg_cumsum() -> None:
-    s = pl.Series([1, 2, 3])
-    with pytest.deprecated_call():
-        result = pl.cumsum(s)
-    expected = s.cumsum()
-    assert_series_equal(result, expected)
-
-
-@pytest.mark.parametrize("function", ["all", "any", "min", "max", "sum", "cumsum"])
-def test_deprecated_horizontal(function: str) -> None:
-    with pytest.deprecated_call():
-        getattr(pl, function)(pl.col("a"))  # e.g. pl.all(pl.col("a"))

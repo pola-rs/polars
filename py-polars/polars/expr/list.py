@@ -7,10 +7,7 @@ import polars._reexport as pl
 from polars import functions as F
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import (
-    deprecate_renamed_methods,
-    deprecate_renamed_parameter,
-)
+from polars.utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -19,20 +16,6 @@ if TYPE_CHECKING:
     from polars.type_aliases import IntoExpr, NullBehavior, ToStructStrategy
 
 
-@deprecate_renamed_methods(
-    {
-        "difference": "set_difference",
-        "symmetric_difference": "set_symmetric_difference",
-        "intersection": "set_intersection",
-        "union": "set_union",
-    },
-    versions={
-        "difference": "0.18.10",
-        "symmetric_difference": "0.18.10",
-        "intersection": "0.18.10",
-        "union": "0.18.10",
-    },
-)
 class ExprListNameSpace:
     """Namespace for list related expressions."""
 
@@ -63,7 +46,7 @@ class ExprListNameSpace:
         │ true  │
         │ false │
         │ false │
-        │ false │
+        │ true  │
         │ true  │
         │ null  │
         └───────┘
@@ -785,7 +768,6 @@ class ExprListNameSpace:
         element = parse_as_expression(element, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_count_match(element))
 
-    @deprecate_renamed_parameter("name_generator", "fields", version="0.17.12")
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
@@ -803,7 +785,6 @@ class ExprListNameSpace:
             * "first_non_null": set number of fields equal to the length of the
               first non zero-length sublist.
             * "max_width": set number of fields as max length of all sublists.
-
         fields
             If the name and number of the desired fields is known in advance
             a list of field names can be given, which will be assigned by index.
@@ -875,7 +856,7 @@ class ExprListNameSpace:
             Run all expression parallel. Don't activate this blindly.
             Parallelism is worth it if there is enough work to do per thread.
 
-            This likely should not be use in the groupby context, because we already
+            This likely should not be used in the group by context, because we already
             parallel execution per group
 
         Examples
@@ -888,7 +869,7 @@ class ExprListNameSpace:
         ┌─────┬─────┬────────────┐
         │ a   ┆ b   ┆ rank       │
         │ --- ┆ --- ┆ ---        │
-        │ i64 ┆ i64 ┆ list[f32]  │
+        │ i64 ┆ i64 ┆ list[f64]  │
         ╞═════╪═════╪════════════╡
         │ 1   ┆ 4   ┆ [1.0, 2.0] │
         │ 8   ┆ 5   ┆ [2.0, 1.0] │
@@ -898,7 +879,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
 
-    def set_union(self, other: Expr | IntoExpr) -> Expr:
+    def set_union(self, other: IntoExpr) -> Expr:
         """
         Compute the SET UNION between the elements in this list and the elements of ``other``.
 
@@ -934,7 +915,7 @@ class ExprListNameSpace:
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "union"))
 
-    def set_difference(self, other: Expr | IntoExpr) -> Expr:
+    def set_difference(self, other: IntoExpr) -> Expr:
         """
         Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
 
@@ -972,7 +953,7 @@ class ExprListNameSpace:
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "difference"))
 
-    def set_intersection(self, other: Expr | IntoExpr) -> Expr:
+    def set_intersection(self, other: IntoExpr) -> Expr:
         """
         Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
 
@@ -1008,7 +989,7 @@ class ExprListNameSpace:
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "intersection"))
 
-    def set_symmetric_difference(self, other: Expr | IntoExpr) -> Expr:
+    def set_symmetric_difference(self, other: IntoExpr) -> Expr:
         """
         Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
 
@@ -1043,3 +1024,47 @@ class ExprListNameSpace:
         """  # noqa: W505.
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
+
+    @deprecate_renamed_function("set_union", version="0.18.10")
+    def union(self, other: IntoExpr) -> Expr:
+        """
+        Compute the SET UNION between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Expr.list.set_union``.
+
+        """  # noqa: W505
+        return self.set_union(other)
+
+    @deprecate_renamed_function("set_difference", version="0.18.10")
+    def difference(self, other: IntoExpr) -> Expr:
+        """
+        Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Expr.list.set_difference``.
+
+        """  # noqa: W505
+        return self.set_difference(other)
+
+    @deprecate_renamed_function("set_intersection", version="0.18.10")
+    def intersection(self, other: IntoExpr) -> Expr:
+        """
+        Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Expr.list.set_intersection``.
+
+        """  # noqa: W505
+        return self.set_intersection(other)
+
+    @deprecate_renamed_function("set_symmetric_difference", version="0.18.10")
+    def symmetric_difference(self, other: IntoExpr) -> Expr:
+        """
+        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Expr.list.set_symmetric_difference``.
+
+        """  # noqa: W505
+        return self.set_symmetric_difference(other)

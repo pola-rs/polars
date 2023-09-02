@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_arrow::utils::CustomIterTools;
-use polars_core::frame::groupby::GroupsProxy;
+use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 
@@ -140,7 +140,7 @@ impl PhysicalExpr for TernaryExpr {
         if !aggregation_predicate {
             // unwrap will not fail as it is not an aggregation expression.
             eprintln!(
-                "The predicate '{}' in 'when->then->otherwise' is not a valid aggregation and might produce a different number of rows than the groupby operation would. This behavior is experimental and may be subject to change", self.predicate.as_expression().unwrap()
+                "The predicate '{}' in 'when->then->otherwise' is not a valid aggregation and might produce a different number of rows than the group_by operation would. This behavior is experimental and may be subject to change", self.predicate.as_expression().unwrap()
             )
         }
         let op_mask = || self.predicate.evaluate_on_groups(df, groups, state);

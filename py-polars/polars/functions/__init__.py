@@ -34,6 +34,7 @@ from polars.functions.lazy import (
     coalesce,
     col,
     collect_all,
+    collect_all_async,
     corr,
     count,
     cov,
@@ -49,6 +50,8 @@ from polars.functions.lazy import (
     implode,
     last,
     map,
+    map_batches,
+    map_groups,
     mean,
     median,
     n_unique,
@@ -63,6 +66,7 @@ from polars.functions.lazy import (
     var,
 )
 from polars.functions.lit import lit
+from polars.functions.random import set_random_seed
 from polars.functions.range import (
     arange,
     date_range,
@@ -112,6 +116,7 @@ __all__ = [
     "coalesce",
     "col",
     "collect_all",
+    "collect_all_async",
     "concat_list",
     "concat_str",
     "corr",
@@ -135,6 +140,8 @@ __all__ = [
     "last",
     "lit",
     "map",
+    "map_batches",
+    "map_groups",
     "mean",
     "median",
     "n_unique",
@@ -143,6 +150,7 @@ __all__ = [
     "rolling_corr",
     "rolling_cov",
     "select",
+    "set_random_seed",
     "std",
     "struct",
     "tail",

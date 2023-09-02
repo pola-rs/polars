@@ -21,6 +21,11 @@ impl Hash for AExpr {
             AExpr::AnonymousFunction { options, .. } => {
                 options.hash(state);
             },
+            AExpr::Agg(agg) => agg.hash(state),
+            AExpr::SortBy { descending, .. } => descending.hash(state),
+            AExpr::Cast { strict, .. } => strict.hash(state),
+            AExpr::Window { options, .. } => options.hash(state),
+            AExpr::BinaryExpr { op, .. } => op.hash(state),
             _ => {},
         }
     }

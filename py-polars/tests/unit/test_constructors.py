@@ -179,7 +179,7 @@ def test_init_dict() -> None:
 
 
 def test_error_string_dtypes() -> None:
-    with pytest.raises(ValueError, match="Cannot infer dtype"):
+    with pytest.raises(ValueError, match="cannot infer dtype"):
         pl.DataFrame(
             data={"x": [1, 2], "y": [3, 4], "z": [5, 6]},
             schema={"x": "i16", "y": "i32", "z": "f32"},  # type: ignore[dict-item]
@@ -554,7 +554,7 @@ def test_init_ndarray(monkeypatch: Any) -> None:
 
     # NumPy not available
     monkeypatch.setattr(pl.dataframe.frame, "_check_for_numpy", lambda x: False)
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
     # 2D numpy arrays
@@ -792,7 +792,7 @@ def test_init_pandas(monkeypatch: Any) -> None:
 
     # pandas is not available
     monkeypatch.setattr(pl.dataframe.frame, "_check_for_pandas", lambda x: False)
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         pl.DataFrame(pandas_df)
 
 
@@ -806,7 +806,7 @@ def test_init_errors() -> None:
         pl.DataFrame([[1, 2], [3, 4]], schema=["a", "b", "c"])
 
     # Unmatched input
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         pl.DataFrame(0)
 
 

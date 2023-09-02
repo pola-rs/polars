@@ -3,19 +3,19 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
+import polars._reexport as pl
+from polars import functions as F
 from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.exceptions import ChronoFormatWarning
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import (
-    deprecate_renamed_parameter,
-    issue_deprecation_warning,
-)
+from polars.utils.deprecation import rename_use_earliest_to_ambiguous
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from polars import Expr
     from polars.type_aliases import (
+        Ambiguous,
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
@@ -86,8 +86,8 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool | None = None,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Convert a Utf8 column into a Datetime column.
@@ -117,21 +117,21 @@ class ExprStringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
-        utc
-            Parse time zone aware datetimes as UTC. This may be useful if you have data
-            with mixed offsets.
-
-            .. deprecated:: 0.18.0
-                This is now a no-op, you can safely remove it.
-                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
-                and offset-aware strings are converted to
-                ``pl.Datetime(time_unit, "UTC")``.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Examples
         --------
@@ -145,15 +145,9 @@ class ExprStringNameSpace:
         ]
         """
         _validate_format_argument(format)
-        if utc is not None:
-            issue_deprecation_warning(
-                "The `utc` argument is now a no-op and has no effect. "
-                "You can safely remove it. "
-                "Offset-naive strings are parsed as ``pl.Datetime(time_unit)``, "
-                "and offset-aware strings are converted to "
-                '``pl.Datetime(time_unit, "UTC")``.',
-                version="0.17.15",
-            )
+        ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
+        if not isinstance(ambiguous, pl.Expr):
+            ambiguous = F.lit(ambiguous)
         return wrap_expr(
             self._pyexpr.str_to_datetime(
                 format,
@@ -162,7 +156,7 @@ class ExprStringNameSpace:
                 strict,
                 exact,
                 cache,
-                use_earliest,
+                ambiguous._pyexpr,
             )
         )
 
@@ -204,8 +198,6 @@ class ExprStringNameSpace:
         _validate_format_argument(format)
         return wrap_expr(self._pyexpr.str_to_time(format, strict, cache))
 
-    @deprecate_renamed_parameter("datatype", "dtype", version="0.17.3")
-    @deprecate_renamed_parameter("fmt", "format", version="0.17.3")
     def strptime(
         self,
         dtype: PolarsTemporalType,
@@ -214,8 +206,8 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool | None = None,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -240,21 +232,21 @@ class ExprStringNameSpace:
                 data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
-        utc
-            Parse time zone aware datetimes as UTC. This may be useful if you have data
-            with mixed offsets.
-
-            .. deprecated:: 0.18.0
-                This is now a no-op, you can safely remove it.
-                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
-                and offset-aware strings are converted to
-                ``pl.Datetime(time_unit, "UTC")``.
         use_earliest
             Determine how to deal with ambiguous datetimes:
 
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Notes
         -----
@@ -303,8 +295,6 @@ class ExprStringNameSpace:
                 2001-07-08
         ]
         """
-        _validate_format_argument(format)
-
         if dtype == Date:
             return self.to_date(format, strict=strict, exact=exact, cache=cache)
         elif dtype == Datetime:
@@ -317,13 +307,13 @@ class ExprStringNameSpace:
                 strict=strict,
                 exact=exact,
                 cache=cache,
-                utc=utc,
                 use_earliest=use_earliest,
+                ambiguous=ambiguous,
             )
         elif dtype == Time:
             return self.to_time(format, strict=strict, cache=cache)
         else:
-            raise ValueError("dtype should be of type {Date, Datetime, Time}")
+            raise ValueError("`dtype` must be of type {Date, Datetime, Time}")
 
     def to_decimal(
         self,
@@ -839,6 +829,11 @@ class ExprStringNameSpace:
         <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
         additional information about the use of inline expression modifiers.
 
+        See Also
+        --------
+        starts_with : Check if string values start with a substring.
+        ends_with : Check if string values end with a substring.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": ["Crab", "cat and dog", "rab$bit", None]})
@@ -859,11 +854,6 @@ class ExprStringNameSpace:
         │ null        ┆ null  ┆ null    │
         └─────────────┴───────┴─────────┘
 
-        See Also
-        --------
-        starts_with : Check if string values start with a substring.
-        ends_with : Check if string values end with a substring.
-
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
@@ -876,6 +866,11 @@ class ExprStringNameSpace:
         ----------
         suffix
             Suffix substring.
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+        starts_with : Check if string values start with a substring.
 
         Examples
         --------
@@ -906,11 +901,6 @@ class ExprStringNameSpace:
         │ mango  │
         └────────┘
 
-        See Also
-        --------
-        contains : Check if string contains a substring that matches a regex.
-        starts_with : Check if string values start with a substring.
-
         """
         suffix = parse_as_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_ends_with(suffix))
@@ -923,6 +913,11 @@ class ExprStringNameSpace:
         ----------
         prefix
             Prefix substring.
+
+        See Also
+        --------
+        contains : Check if string contains a substring that matches a regex.
+        ends_with : Check if string values end with a substring.
 
         Examples
         --------
@@ -953,11 +948,6 @@ class ExprStringNameSpace:
         │ apple  │
         └────────┘
 
-        See Also
-        --------
-        contains : Check if string contains a substring that matches a regex.
-        ends_with : Check if string values end with a substring.
-
         """
         prefix = parse_as_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_starts_with(prefix))
@@ -979,6 +969,11 @@ class ExprStringNameSpace:
             How many rows to parse to determine the schema.
             If ``None`` all rows are used.
 
+        See Also
+        --------
+        json_path_match : Extract the first match of json string with provided JSONPath
+            expression.
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -996,11 +991,6 @@ class ExprStringNameSpace:
         │ {null,null} │
         │ {2,false}   │
         └─────────────┘
-
-        See Also
-        --------
-        json_path_match : Extract the first match of json string with provided JSONPath
-            expression.
 
         """
         if dtype is not None:
@@ -1123,8 +1113,8 @@ class ExprStringNameSpace:
             <https://docs.rs/regex/latest/regex/>`_.
         group_index
             Index of the targeted capture group.
-            Group 0 mean the whole pattern, first group begin at index 1
-            Default to the first capture group
+            Group 0 means the whole pattern, the first group begins at index 1.
+            Defaults to the first capture group.
 
         Notes
         -----
@@ -1197,8 +1187,7 @@ class ExprStringNameSpace:
         Extract all matches for the given regex pattern.
 
         Extract each successive non-overlapping regex match in an individual string
-        as a list. Extracted matches contain ``null`` if the original value is null
-        or the regex did not capture anything.
+        as a list. If the haystack string is ``null``, ``null`` is returned.
 
         Parameters
         ----------
@@ -1259,11 +1248,11 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
+        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t", "bar", None]})
         >>> df.select(
         ...     pl.col("foo").str.extract_all(r"\d+").alias("extracted_nrs"),
         ... )
-        shape: (2, 1)
+        shape: (4, 1)
         ┌────────────────┐
         │ extracted_nrs  │
         │ ---            │
@@ -1271,6 +1260,8 @@ class ExprStringNameSpace:
         ╞════════════════╡
         │ ["123", "45"]  │
         │ ["678", "910"] │
+        │ []             │
+        │ null           │
         └────────────────┘
 
         '''
@@ -1378,16 +1369,16 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`UInt32`. Contains null values if the
-            original value is null or the regex captures nothing.
+            Expression of data type :class:`UInt32`. Returns null if the
+            original value is null.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
+        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t", "bar", None]})
         >>> df.select(
         ...     pl.col("foo").str.count_match(r"\d").alias("count_digits"),
         ... )
-        shape: (2, 1)
+        shape: (4, 1)
         ┌──────────────┐
         │ count_digits │
         │ ---          │
@@ -1395,6 +1386,8 @@ class ExprStringNameSpace:
         ╞══════════════╡
         │ 5            │
         │ 6            │
+        │ 0            │
+        │ null         │
         └──────────────┘
 
         """

@@ -110,7 +110,7 @@ fn run_per_sublist(
     }
 }
 
-fn run_on_groupby_engine(
+fn run_on_group_by_engine(
     name: &str,
     lst: &ListChunked,
     expr: &Expr,
@@ -194,7 +194,7 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
             };
 
             if fits_idx_size && s.null_count() == 0 && !is_user_apply() {
-                run_on_groupby_engine(s.name(), &lst, &expr)
+                run_on_group_by_engine(s.name(), &lst, &expr)
             } else {
                 run_per_sublist(s, &lst, &expr, parallel, output_field)
             }

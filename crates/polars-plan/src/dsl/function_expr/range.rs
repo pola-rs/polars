@@ -3,7 +3,6 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
 pub enum RangeFunction {
-    ARange { step: i64 },
     IntRange { step: i64 },
     IntRanges { step: i64 },
 }
@@ -12,7 +11,6 @@ impl Display for RangeFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use RangeFunction::*;
         match self {
-            ARange { .. } => write!(f, "arange"),
             IntRange { .. } => write!(f, "int_range"),
             IntRanges { .. } => write!(f, "int_ranges"),
         }
@@ -49,24 +47,6 @@ where
     ca.set_sorted_flag(is_sorted);
 
     Ok(ca.into_series())
-}
-
-/// Create list entries that are range arrays
-/// - if `start` and `end` are a column, every element will expand into an array in a list column.
-/// - if `start` and `end` are literals the output will be of `Int64`.
-pub(super) fn arange(s: &[Series], step: i64) -> PolarsResult<Series> {
-    let start = &s[0];
-    let end = &s[1];
-
-    let mut result = if start.len() == 1 && end.len() == 1 {
-        int_range(s, step)
-    } else {
-        int_ranges(s, step)
-    }?;
-
-    result.rename("arange");
-
-    Ok(result)
 }
 
 pub(super) fn int_range(s: &[Series], step: i64) -> PolarsResult<Series> {

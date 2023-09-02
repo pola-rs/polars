@@ -282,6 +282,7 @@ impl SQLContext {
 
         let mut lf = self.execute_from_statement(sql_tbl)?;
         let mut contains_wildcard = false;
+        let mut contains_wildcard_exclude = false;
 
         // Filter Expression
         lf = match select_stmt.selection.as_ref() {
@@ -303,13 +304,20 @@ impl SQLContext {
                         let expr = parse_sql_expr(expr, self)?;
                         expr.alias(&alias.value)
                     },
-                    SelectItem::QualifiedWildcard(oname, wildcard_options) => {
-                        self.process_qualified_wildcard(oname, wildcard_options)?
-                    },
+                    SelectItem::QualifiedWildcard(oname, wildcard_options) => self
+                        .process_qualified_wildcard(
+                            oname,
+                            wildcard_options,
+                            &mut contains_wildcard_exclude,
+                        )?,
                     SelectItem::Wildcard(wildcard_options) => {
                         contains_wildcard = true;
                         let e = col("*");
-                        self.process_wildcard_additional_options(e, wildcard_options)?
+                        self.process_wildcard_additional_options(
+                            e,
+                            wildcard_options,
+                            &mut contains_wildcard_exclude,
+                        )?
                     },
                 })
             })
@@ -317,7 +325,7 @@ impl SQLContext {
 
         // Check for group by
         // After projection since there might be number.
-        let groupby_keys: Vec<Expr> = select_stmt
+        let group_by_keys: Vec<Expr> = select_stmt
             .group_by
             .iter()
             .map(|e| match e {
@@ -325,7 +333,7 @@ impl SQLContext {
                     let idx = match idx.parse::<usize>() {
                         Ok(0) | Err(_) => Err(polars_err!(
                             ComputeError:
-                            "groupby error: a positive number or an expression expected, got {}",
+                            "group_by error: a positive number or an expression expected, got {}",
                             idx
                         )),
                         Ok(idx) => Ok(idx),
@@ -334,27 +342,95 @@ impl SQLContext {
                 },
                 SqlExpr::Value(_) => Err(polars_err!(
                     ComputeError:
-                    "groupby error: a positive number or an expression expected",
+                    "group_by error: a positive number or an expression expected",
                 )),
                 _ => parse_sql_expr(e, self),
             })
             .collect::<PolarsResult<_>>()?;
 
-        if groupby_keys.is_empty() {
-            lf = lf.select(projections)
+        lf = if group_by_keys.is_empty() {
+            if query.order_by.is_empty() {
+                lf.select(projections)
+            } else if !contains_wildcard {
+                let schema = lf.schema()?;
+                let mut column_names = schema.get_names();
+                let mut retained_names: BTreeSet<String> = BTreeSet::new();
+
+                projections.iter().for_each(|expr| match expr {
+                    Expr::Alias(_, name) => {
+                        retained_names.insert((name).to_string());
+                    },
+                    Expr::Column(name) => {
+                        retained_names.insert((name).to_string());
+                    },
+                    Expr::Columns(names) => names.iter().for_each(|name| {
+                        retained_names.insert((name).to_string());
+                    }),
+                    Expr::Exclude(inner_expr, excludes) => {
+                        if let Expr::Columns(names) = (*inner_expr).as_ref() {
+                            names.iter().for_each(|name| {
+                                retained_names.insert((name).to_string());
+                            })
+                        }
+
+                        excludes.iter().for_each(|excluded| {
+                            if let Excluded::Name(name) = excluded {
+                                retained_names.remove(&(name.to_string()));
+                            }
+                        });
+                    },
+                    _ => {},
+                });
+
+                lf = lf.with_columns(projections);
+                lf = self.process_order_by(lf, &query.order_by)?;
+
+                column_names.retain(|&name| !retained_names.contains(name));
+                lf.drop_columns(column_names)
+            } else if contains_wildcard_exclude {
+                let mut dropped_names = Vec::with_capacity(projections.len());
+
+                let exclude_expr = projections.iter().find(|expr| {
+                    if let Expr::Exclude(_, excludes) = expr {
+                        excludes.iter().for_each(|excluded| {
+                            if let Excluded::Name(name) = excluded {
+                                dropped_names.push((*name).to_string());
+                            }
+                        });
+                        true
+                    } else {
+                        false
+                    }
+                });
+
+                if exclude_expr.is_some() {
+                    lf = lf.with_columns(projections);
+                    lf = self.process_order_by(lf, &query.order_by)?;
+
+                    lf.drop_columns(dropped_names)
+                } else {
+                    lf = lf.select(projections);
+                    self.process_order_by(lf, &query.order_by)?
+                }
+            } else {
+                lf = lf.select(projections);
+                self.process_order_by(lf, &query.order_by)?
+            }
         } else {
-            lf = self.process_groupby(lf, contains_wildcard, &groupby_keys, &projections)?;
+            lf = self.process_group_by(lf, contains_wildcard, &group_by_keys, &projections)?;
+
+            lf = self.process_order_by(lf, &query.order_by)?;
 
             // Apply optional 'having' clause, post-aggregation
-            lf = match select_stmt.having.as_ref() {
+            match select_stmt.having.as_ref() {
                 Some(expr) => lf.filter(parse_sql_expr(expr, self)?),
                 None => lf,
-            };
+            }
         };
 
         // Apply optional 'distinct' clause
         lf = match &select_stmt.distinct {
-            Some(Distinct::Distinct) => lf.unique(None, UniqueKeepStrategy::Any),
+            Some(Distinct::Distinct) => lf.unique_stable(None, UniqueKeepStrategy::Any),
             Some(Distinct::On(exprs)) => {
                 // TODO: support exprs in `unique` see https://github.com/pola-rs/polars/issues/5760
                 let cols = exprs
@@ -381,11 +457,7 @@ impl SQLContext {
             None => lf,
         };
 
-        if query.order_by.is_empty() {
-            Ok(lf)
-        } else {
-            self.process_order_by(lf, &query.order_by)
-        }
+        Ok(lf)
     }
 
     fn execute_create_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
@@ -481,31 +553,31 @@ impl SQLContext {
         Ok(lf.sort_by_exprs(&by, descending, false, false))
     }
 
-    fn process_groupby(
+    fn process_group_by(
         &mut self,
         lf: LazyFrame,
         contains_wildcard: bool,
-        groupby_keys: &[Expr],
+        group_by_keys: &[Expr],
         projections: &[Expr],
     ) -> PolarsResult<LazyFrame> {
-        // check groupby and projection due to difference between SQL and polars
+        // check group_by and projection due to difference between SQL and polars
         // Return error on wild card, shouldn't process this
         polars_ensure!(
             !contains_wildcard,
-            ComputeError: "groupby error: can't process wildcard in groupby"
+            ComputeError: "group_by error: can't process wildcard in group_by"
         );
         let schema_before = lf.schema()?;
 
-        let groupby_keys_schema =
-            expressions_to_schema(groupby_keys, &schema_before, Context::Default)?;
+        let group_by_keys_schema =
+            expressions_to_schema(group_by_keys, &schema_before, Context::Default)?;
 
-        // remove the groupby keys as polars adds those implicitly
+        // remove the group_by keys as polars adds those implicitly
         let mut aggregation_projection = Vec::with_capacity(projections.len());
         let mut aliases: BTreeSet<&str> = BTreeSet::new();
 
         for mut e in projections {
             // if it is a simple expression & has alias,
-            // we must defer the aliasing until after the groupby
+            // we must defer the aliasing until after the group_by
             if e.clone().meta().is_simple_projection() {
                 if let Expr::Alias(expr, name) = e {
                     aliases.insert(name);
@@ -514,12 +586,12 @@ impl SQLContext {
             }
 
             let field = e.to_field(&schema_before, Context::Default)?;
-            if groupby_keys_schema.get(&field.name).is_none() {
+            if group_by_keys_schema.get(&field.name).is_none() {
                 aggregation_projection.push(e.clone())
             }
         }
 
-        let aggregated = lf.groupby(groupby_keys).agg(&aggregation_projection);
+        let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
         let projection_schema =
             expressions_to_schema(projections, &schema_before, Context::Default)?;
         // a final projection to get the proper order
@@ -527,7 +599,7 @@ impl SQLContext {
             .iter_names()
             .zip(projections)
             .map(|(name, projection_expr)| {
-                if groupby_keys_schema.get(name).is_some() || aliases.contains(name.as_str()) {
+                if group_by_keys_schema.get(name).is_some() || aliases.contains(name.as_str()) {
                     projection_expr.clone()
                 } else {
                     col(name)
@@ -587,6 +659,7 @@ impl SQLContext {
         &mut self,
         ObjectName(idents): &ObjectName,
         options: &WildcardAdditionalOptions,
+        contains_wildcard_exclude: &mut bool,
     ) -> PolarsResult<Expr> {
         let idents = idents.as_slice();
         let e = match idents {
@@ -605,20 +678,25 @@ impl SQLContext {
                 e
             ),
         };
-        self.process_wildcard_additional_options(e, options)
+        self.process_wildcard_additional_options(e, options, contains_wildcard_exclude)
     }
 
     fn process_wildcard_additional_options(
         &mut self,
         expr: Expr,
         options: &WildcardAdditionalOptions,
+        contains_wildcard_exclude: &mut bool,
     ) -> PolarsResult<Expr> {
         if options.opt_except.is_some() {
             polars_bail!(InvalidOperation: "EXCEPT not supported. Use EXCLUDE instead")
         }
         Ok(match &options.opt_exclude {
-            Some(ExcludeSelectItem::Single(ident)) => expr.exclude(vec![&ident.value]),
+            Some(ExcludeSelectItem::Single(ident)) => {
+                *contains_wildcard_exclude = true;
+                expr.exclude(vec![&ident.value])
+            },
             Some(ExcludeSelectItem::Multiple(idents)) => {
+                *contains_wildcard_exclude = true;
                 expr.exclude(idents.iter().map(|i| &i.value))
             },
             _ => expr,

@@ -331,15 +331,15 @@ pub(super) fn strip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
         if matches.chars().count() == 1 {
             // Fast path for when a single character is passed
             Ok(ca
-                .apply(|s| Cow::Borrowed(s.trim_matches(matches.chars().next().unwrap())))
+                .apply_values(|s| Cow::Borrowed(s.trim_matches(matches.chars().next().unwrap())))
                 .into_series())
         } else {
             Ok(ca
-                .apply(|s| Cow::Borrowed(s.trim_matches(|c| matches.contains(c))))
+                .apply_values(|s| Cow::Borrowed(s.trim_matches(|c| matches.contains(c))))
                 .into_series())
         }
     } else {
-        Ok(ca.apply(|s| Cow::Borrowed(s.trim())).into_series())
+        Ok(ca.apply_values(|s| Cow::Borrowed(s.trim())).into_series())
     }
 }
 
@@ -350,15 +350,19 @@ pub(super) fn lstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> 
         if matches.chars().count() == 1 {
             // Fast path for when a single character is passed
             Ok(ca
-                .apply(|s| Cow::Borrowed(s.trim_start_matches(matches.chars().next().unwrap())))
+                .apply_values(|s| {
+                    Cow::Borrowed(s.trim_start_matches(matches.chars().next().unwrap()))
+                })
                 .into_series())
         } else {
             Ok(ca
-                .apply(|s| Cow::Borrowed(s.trim_start_matches(|c| matches.contains(c))))
+                .apply_values(|s| Cow::Borrowed(s.trim_start_matches(|c| matches.contains(c))))
                 .into_series())
         }
     } else {
-        Ok(ca.apply(|s| Cow::Borrowed(s.trim_start())).into_series())
+        Ok(ca
+            .apply_values(|s| Cow::Borrowed(s.trim_start()))
+            .into_series())
     }
 }
 
@@ -368,15 +372,19 @@ pub(super) fn rstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> 
         if matches.chars().count() == 1 {
             // Fast path for when a single character is passed
             Ok(ca
-                .apply(|s| Cow::Borrowed(s.trim_end_matches(matches.chars().next().unwrap())))
+                .apply_values(|s| {
+                    Cow::Borrowed(s.trim_end_matches(matches.chars().next().unwrap()))
+                })
                 .into_series())
         } else {
             Ok(ca
-                .apply(|s| Cow::Borrowed(s.trim_end_matches(|c| matches.contains(c))))
+                .apply_values(|s| Cow::Borrowed(s.trim_end_matches(|c| matches.contains(c))))
                 .into_series())
         }
     } else {
-        Ok(ca.apply(|s| Cow::Borrowed(s.trim_end())).into_series())
+        Ok(ca
+            .apply_values(|s| Cow::Borrowed(s.trim_end()))
+            .into_series())
     }
 }
 
@@ -406,16 +414,16 @@ pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
 
 #[cfg(feature = "temporal")]
 pub(super) fn strptime(
-    s: &Series,
+    s: &[Series],
     dtype: DataType,
     options: &StrptimeOptions,
 ) -> PolarsResult<Series> {
     match dtype {
-        DataType::Date => to_date(s, options),
+        DataType::Date => to_date(&s[0], options),
         DataType::Datetime(time_unit, time_zone) => {
             to_datetime(s, &time_unit, time_zone.as_ref(), options)
         },
-        DataType::Time => to_time(s, options),
+        DataType::Time => to_time(&s[0], options),
         dt => polars_bail!(ComputeError: "not implemented for dtype {}", dt),
     }
 }
@@ -483,11 +491,13 @@ fn to_date(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
 
 #[cfg(feature = "dtype-datetime")]
 fn to_datetime(
-    s: &Series,
+    s: &[Series],
     time_unit: &TimeUnit,
     time_zone: Option<&TimeZone>,
     options: &StrptimeOptions,
 ) -> PolarsResult<Series> {
+    let datetime_strings = &s[0].utf8().unwrap();
+    let ambiguous = &s[1].utf8().unwrap();
     let tz_aware = match &options.format {
         #[cfg(feature = "timezones")]
         Some(format) => TZ_AWARE_RE.is_match(format),
@@ -503,30 +513,31 @@ fn to_datetime(
         }
     };
 
-    let ca = s.utf8()?;
     let out = if options.exact {
-        ca.as_datetime(
-            options.format.as_deref(),
-            *time_unit,
-            options.cache,
-            tz_aware,
-            time_zone,
-            options.use_earliest,
-        )?
-        .into_series()
+        datetime_strings
+            .as_datetime(
+                options.format.as_deref(),
+                *time_unit,
+                options.cache,
+                tz_aware,
+                time_zone,
+                ambiguous,
+            )?
+            .into_series()
     } else {
-        ca.as_datetime_not_exact(
-            options.format.as_deref(),
-            *time_unit,
-            tz_aware,
-            time_zone,
-            options.use_earliest,
-        )?
-        .into_series()
+        datetime_strings
+            .as_datetime_not_exact(
+                options.format.as_deref(),
+                *time_unit,
+                tz_aware,
+                time_zone,
+                ambiguous,
+            )?
+            .into_series()
     };
 
-    if options.strict && ca.null_count() != out.null_count() {
-        handle_temporal_parsing_error(ca, &out, options.format.as_deref(), true)?;
+    if options.strict && datetime_strings.null_count() != out.null_count() {
+        handle_temporal_parsing_error(datetime_strings, &out, options.format.as_deref(), true)?;
     }
     Ok(out.into_series())
 }

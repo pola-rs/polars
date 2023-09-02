@@ -165,7 +165,7 @@ fn test_rolling_mean() {
 }
 
 #[test]
-fn test_rolling_apply() {
+fn test_rolling_map() {
     let ca = Float64Chunked::new(
         "foo",
         &[
@@ -180,7 +180,7 @@ fn test_rolling_apply() {
     );
 
     let out = ca
-        .rolling_apply(
+        .rolling_map(
             &|s| s.sum_as_series(),
             RollingOptionsFixedWindow {
                 window_size: 3,

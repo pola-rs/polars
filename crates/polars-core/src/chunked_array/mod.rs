@@ -68,30 +68,8 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 ///
 /// ```rust
 /// # use polars_core::prelude::*;
-/// fn apply_cosine(ca: &Float32Chunked) -> Float32Chunked {
-///     ca.apply(|v| v.cos())
-/// }
-/// ```
-///
-/// If we would like to cast the result we could use a Rust Iterator instead of an `apply` method.
-/// Note that Iterators are slightly slower as the null values aren't ignored implicitly.
-///
-/// ```rust
-/// # use polars_core::prelude::*;
 /// fn apply_cosine_and_cast(ca: &Float32Chunked) -> Float64Chunked {
-///     ca.into_iter()
-///         .map(|opt_v| {
-///         opt_v.map(|v| v.cos() as f64)
-///     }).collect()
-/// }
-/// ```
-///
-/// Another option is to first cast and then use an apply.
-///
-/// ```rust
-/// # use polars_core::prelude::*;
-/// fn apply_cosine_and_cast(ca: &Float32Chunked) -> Float64Chunked {
-///     ca.apply_cast_numeric(|v| v.cos() as f64)
+///     ca.apply_values_generic(|v| v.cos() as f64)
 /// }
 /// ```
 ///
@@ -382,6 +360,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     pub fn rename(&mut self, name: &str) {
         self.field = Arc::new(Field::new(name, self.field.data_type().clone()))
     }
+
+    /// Return this ChunkedArray with a new name.
+    pub fn with_name(mut self, name: &str) -> Self {
+        self.rename(name);
+        self
+    }
 }
 
 impl<T> ChunkedArray<T>
@@ -396,15 +380,14 @@ where
         I: Iterator<Item = usize>,
     {
         debug_assert!(self.chunks.len() == 1);
-        // Takes a ChunkedArray containing a single chunk
+        // Takes a ChunkedArray containing a single chunk.
         let slice = |ca: &Self| {
             let array = &ca.chunks[0];
 
             let mut offset = 0;
             let chunks = chunk_id
                 .map(|len| {
-                    // safety:
-                    // within bounds
+                    // SAFETY: within bounds.
                     debug_assert!((offset + len) <= array.len());
                     let out = unsafe { array.sliced_unchecked(offset, len) };
                     offset += len;
@@ -574,12 +557,6 @@ pub(crate) fn to_array<T: PolarsNumericType>(
     validity: Option<Bitmap>,
 ) -> ArrayRef {
     Box::new(to_primitive::<T>(values, validity))
-}
-
-impl<T: PolarsNumericType> From<PrimitiveArray<T::Native>> for ChunkedArray<T> {
-    fn from(a: PrimitiveArray<T::Native>) -> Self {
-        unsafe { ChunkedArray::from_chunks("", vec![Box::new(a)]) }
-    }
 }
 
 #[cfg(test)]

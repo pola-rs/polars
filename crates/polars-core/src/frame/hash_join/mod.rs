@@ -36,7 +36,7 @@ pub(crate) use zip_outer::*;
 
 pub use self::multiple_keys::private_left_join_multiple_keys;
 use crate::datatypes::PlHashMap;
-use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
+use crate::frame::group_by::hashing::HASHMAP_INIT_SIZE;
 pub use crate::frame::hash_join::multiple_keys::{
     _inner_join_multiple_keys, _left_join_multiple_keys, _outer_join_multiple_keys,
 };

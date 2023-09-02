@@ -36,28 +36,30 @@ pub const NS_DAY: i64 = 24 * NS_HOUR;
 pub const NS_WEEK: i64 = 7 * NS_DAY;
 
 /// vector of i64 representing temporal values
-pub fn temporal_range(
+pub fn datetime_range_i64(
     start: i64,
-    stop: i64,
-    every: Duration,
+    end: i64,
+    interval: Duration,
     closed: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&Tz>,
 ) -> PolarsResult<Vec<i64>> {
+    check_range_bounds(start, end, interval)?;
+
     let size: usize;
     let offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>;
 
     match tu {
         TimeUnit::Nanoseconds => {
-            size = ((stop - start) / every.duration_ns() + 1) as usize;
+            size = ((end - start) / interval.duration_ns() + 1) as usize;
             offset_fn = Duration::add_ns;
         },
         TimeUnit::Microseconds => {
-            size = ((stop - start) / every.duration_us() + 1) as usize;
+            size = ((end - start) / interval.duration_us() + 1) as usize;
             offset_fn = Duration::add_us;
         },
         TimeUnit::Milliseconds => {
-            size = ((stop - start) / every.duration_ms() + 1) as usize;
+            size = ((end - start) / interval.duration_ms() + 1) as usize;
             offset_fn = Duration::add_ms;
         },
     }
@@ -66,32 +68,38 @@ pub fn temporal_range(
     let mut t = start;
     match closed {
         ClosedWindow::Both => {
-            while t <= stop {
+            while t <= end {
                 ts.push(t);
-                t = offset_fn(&every, t, tz)?
+                t = offset_fn(&interval, t, tz)?
             }
         },
         ClosedWindow::Left => {
-            while t < stop {
+            while t < end {
                 ts.push(t);
-                t = offset_fn(&every, t, tz)?
+                t = offset_fn(&interval, t, tz)?
             }
         },
         ClosedWindow::Right => {
-            t = offset_fn(&every, t, tz)?;
-            while t <= stop {
+            t = offset_fn(&interval, t, tz)?;
+            while t <= end {
                 ts.push(t);
-                t = offset_fn(&every, t, tz)?
+                t = offset_fn(&interval, t, tz)?
             }
         },
         ClosedWindow::None => {
-            t = offset_fn(&every, t, tz)?;
-            while t < stop {
+            t = offset_fn(&interval, t, tz)?;
+            while t < end {
                 ts.push(t);
-                t = offset_fn(&every, t, tz)?
+                t = offset_fn(&interval, t, tz)?
             }
         },
     }
     debug_assert!(size >= ts.len());
     Ok(ts)
+}
+
+fn check_range_bounds(start: i64, end: i64, interval: Duration) -> PolarsResult<()> {
+    polars_ensure!(end >= start, ComputeError: "`end` must be equal to or greater than `start`");
+    polars_ensure!(!interval.negative && !interval.is_zero(), ComputeError: "`interval` must be positive");
+    Ok(())
 }

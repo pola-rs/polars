@@ -48,7 +48,7 @@ pub(crate) mod private {
     use crate::chunked_array::ops::compare_inner::{PartialEqInner, PartialOrdInner};
     use crate::chunked_array::Settings;
     #[cfg(feature = "rows")]
-    use crate::frame::groupby::GroupsProxy;
+    use crate::frame::group_by::GroupsProxy;
 
     pub trait PrivateSeriesNumeric {
         fn bit_repr_is_large(&self) -> bool {
@@ -224,6 +224,11 @@ pub trait SeriesTrait:
 
     /// Underlying chunks.
     fn chunks(&self) -> &Vec<ArrayRef>;
+
+    /// Underlying chunks.
+    /// # Safety
+    /// The caller must ensure the length and the data types of `ArrayRef` does not change.
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef>;
 
     /// Number of chunks in this Series
     fn n_chunks(&self) -> usize {
@@ -501,11 +506,6 @@ pub trait SeriesTrait:
         invalid_operation_panic!(peak_min, self)
     }
 
-    /// Check if elements of this Series are in the right Series, or List values of the right Series.
-    #[cfg(feature = "is_in")]
-    fn is_in(&self, _other: &Series) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_in, self._dtype());
-    }
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, _by: &IdxCa) -> PolarsResult<ListChunked> {
         polars_bail!(opq = repeat_by, self._dtype());
@@ -524,12 +524,12 @@ pub trait SeriesTrait:
     #[cfg(feature = "rolling_window")]
     /// Apply a custom function over a rolling/ moving window of the array.
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
-    fn rolling_apply(
+    fn rolling_map(
         &self,
         _f: &dyn Fn(&Series) -> Series,
         _options: RollingOptionsFixedWindow,
     ) -> PolarsResult<Series> {
-        polars_bail!(opq = rolling_apply, self._dtype());
+        polars_bail!(opq = rolling_map, self._dtype());
     }
     #[cfg(feature = "concat_str")]
     /// Concat the values into a string array.

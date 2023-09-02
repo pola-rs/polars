@@ -31,11 +31,12 @@ where
         mean = new_mean;
         m2 = new_m2;
     }
-    match count {
-        0 => None,
-        1 => Some(0.0),
-        _ => Some(m2 / (count as f64 - ddof as f64)),
+
+    if count <= ddof as u64 {
+        return None;
     }
+
+    Some(m2 / (count as f64 - ddof as f64))
 }
 
 /// Take kernel for single chunk and an iterator as index.

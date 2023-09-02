@@ -1,4 +1,4 @@
-use super::groupby::ClosedWindow;
+use super::group_by::ClosedWindow;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Bounds {
@@ -12,7 +12,7 @@ impl Bounds {
         assert!(
             start <= stop,
             "boundary start must be smaller than stop; is your time column sorted in ascending order?\
-            \nIf you did a groupby, note that null values are a separate group."
+            \nIf you did a group_by, note that null values are a separate group."
         );
         Self::new(start, stop)
     }

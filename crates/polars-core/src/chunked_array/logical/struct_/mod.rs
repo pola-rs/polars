@@ -119,8 +119,14 @@ impl StructChunked {
         }
     }
 
+    #[inline]
     pub(crate) fn chunks(&self) -> &Vec<ArrayRef> {
         &self.chunks
+    }
+
+    #[inline]
+    pub(crate) unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        &mut self.chunks
     }
 
     pub fn rechunk(&mut self) {

@@ -23,6 +23,8 @@ pub mod functions;
 pub mod hashing;
 mod named_from;
 pub mod prelude;
+#[cfg(feature = "random")]
+pub mod random;
 pub mod schema;
 #[cfg(feature = "serde")]
 pub mod serde;

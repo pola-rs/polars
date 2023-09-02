@@ -187,7 +187,7 @@ def test_when_then_edge_cases_3994() -> None:
     # this tests if lazy correctly assigns the list schema to the column aggregation
     assert (
         df.lazy()
-        .groupby(["id"])
+        .group_by(["id"])
         .agg(pl.col("type"))
         .with_columns(
             pl.when(pl.col("type").list.lengths() == 0)
@@ -201,7 +201,7 @@ def test_when_then_edge_cases_3994() -> None:
     # this tests ternary with an empty argument
     assert (
         df.filter(pl.col("id") == 42)
-        .groupby(["id"])
+        .group_by(["id"])
         .agg(pl.col("type"))
         .with_columns(
             pl.when(pl.col("type").list.lengths() == 0)

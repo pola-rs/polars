@@ -34,7 +34,7 @@ def test_streaming_out_of_core_unique(
 
     # TODO: Re-enable this check when this issue is fixed: https://github.com/pola-rs/polars/issues/10466
     _ = capfd.readouterr().err
-    # assert "OOC groupby started" in err
+    # assert "OOC group_by started" in err
 
 
 def test_streaming_unique(monkeypatch: Any, capfd: Any) -> None:
