@@ -9,6 +9,7 @@ use std::fmt::{Display, Formatter};
 
 use polars_core::prelude::*;
 use polars_core::series::Series;
+#[cfg(feature = "temporal")]
 use polars_time::{ClosedWindow, Duration};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

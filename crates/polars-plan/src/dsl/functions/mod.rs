@@ -26,10 +26,12 @@ use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "dtype-struct")]
 use polars_core::utils::get_supertype;
+#[cfg(all(feature = "range", feature = "temporal"))]
+pub use range::date_range; // This shouldn't be necessary, but clippy complains about dead code
+#[cfg(all(feature = "range", feature = "dtype-time"))]
+pub use range::time_range; // This shouldn't be necessary, but clippy complains about dead code
 #[cfg(feature = "range")]
 pub use range::*;
-#[cfg(feature = "range")]
-pub use range::{date_range, time_range}; // This shouldn't be necessary, but clippy complains about dead code
 pub use repeat::*;
 pub use selectors::*;
 pub use syntactic_sugar::*;
