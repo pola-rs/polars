@@ -172,7 +172,7 @@ def test_read_database(
         # other user-supplied connections
         df = pl.read_database(
             connection=engine_or_connection_init(test_db),
-            query="SELECT * FROM test_data",
+            query="SELECT * FROM test_data WHERE name NOT LIKE '%polars%'",
         )
 
     assert df.schema == expected_dtypes

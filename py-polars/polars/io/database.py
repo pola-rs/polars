@@ -72,10 +72,13 @@ _INVALID_QUERY_TYPES = {
 class ConnectionExecutor:
     """Abstraction for querying databases with user-supplied connection objects."""
 
-    acquired_cursor = False
+    # indicate that we acquired a cursor (and are therefore responsible for closing
+    # it on scope-exit). note that we should never close the underlying connection,
+    # or a user-supplied cursor.
+    acquired_cursor: bool = False
 
     def __init__(self, connection: ConnectionOrCursor) -> None:
-        self.driver = type(connection).__module__.split(".", 1)[0].lower()
+        self.driver_name = type(connection).__module__.split(".", 1)[0].lower()
         self.cursor = self._normalise_cursor(connection)
         self.result: Any = None
 
@@ -93,12 +96,12 @@ class ConnectionExecutor:
             self.cursor.close()
 
     def __repr__(self) -> str:
-        return f"<{type(self).__name__} module={self.driver!r}>"
+        return f"<{type(self).__name__} module={self.driver_name!r}>"
 
     def _normalise_cursor(self, conn: ConnectionOrCursor) -> Cursor:
         """Normalise a connection object such that we have the query executor."""
-        if self.driver == "sqlalchemy" and type(conn).__name__ == "Engine":
-            # sqlalchemy engine; direct use is deprecated, so get the connection
+        if self.driver_name == "sqlalchemy" and type(conn).__name__ == "Engine":
+            # sqlalchemy engine; direct use is deprecated, so prefer the connection
             self.acquired_cursor = True
             return conn.connect()  # type: ignore[union-attr]
         elif hasattr(conn, "cursor"):
@@ -153,7 +156,7 @@ class ConnectionExecutor:
         from polars import DataFrame
 
         for driver, driver_properties in _ARROW_DRIVER_REGISTRY_.items():
-            if re.match(f"^{driver}$", self.driver):
+            if re.match(f"^{driver}$", self.driver_name):
                 size = batch_size if driver_properties["exact_batch_size"] else None
                 fetch_batches = driver_properties["fetch_batches"]
                 return DataFrame(
@@ -162,7 +165,7 @@ class ConnectionExecutor:
                     else getattr(self.result, driver_properties["fetch_all"])()
                 )
 
-        if self.driver == "duckdb":
+        if self.driver_name == "duckdb":
             exec_kwargs = {"rows_per_batch": batch_size} if batch_size else {}
             return DataFrame(self.result.arrow(**exec_kwargs))
 
@@ -175,7 +178,7 @@ class ConnectionExecutor:
         if hasattr(self.result, "fetchall"):
             description = (
                 self.result.cursor.description
-                if self.driver == "sqlalchemy"
+                if self.driver_name == "sqlalchemy"
                 else self.result.description
             )
             column_names = [desc[0] for desc in description]
@@ -199,7 +202,7 @@ class ConnectionExecutor:
                     f"{query_type} statements are not valid 'read' queries"
                 )
 
-        if self.driver == "sqlalchemy":
+        if self.driver_name == "sqlalchemy":
             from sqlalchemy.sql import text
 
             query = text(query)  # type: ignore[assignment]
@@ -229,7 +232,7 @@ class ConnectionExecutor:
                 return frame
 
         raise NotImplementedError(
-            f"Currently no support for {self.driver!r} connection {self.cursor!r}"
+            f"Currently no support for {self.driver_name!r} connection {self.cursor!r}"
         )
 
 
@@ -257,11 +260,16 @@ def read_database(  # noqa: D417
 
     Notes
     -----
-    This function supports a wide range of native database drivers (ranging from SQLite
-    to Snowflake), as well as libraries such as ADBC, SQLAlchemy and various flavours
-    of ODBC. If the backend supports returning Arrow data directly then this facility
-    will be used to efficiently instantiate the DataFrame; otherwise, the DataFrame
-    is initialised from row-wise data.
+    * This function supports a wide range of native database drivers (ranging from local
+      databases such as SQLite to large cloud databases such as Snowflake), as well as
+      generic libraries such as ADBC, SQLAlchemy and various flavours of ODBC. If the
+      backend supports returning Arrow data directly then this facility will be used to
+      efficiently instantiate the DataFrame; otherwise, the DataFrame is initialised
+      from row-wise data.
+
+    * If polars has to create a cursor from your connection in order to execute the
+      query then that cursor will be automatically closed when the query completes;
+      however, polars will *never* close any other connection or cursor.
 
     See Also
     --------
@@ -285,7 +293,7 @@ def read_database(  # noqa: D417
         return read_database_uri(query, uri=connection, **kwargs)
     elif kwargs:
         raise ValueError(
-            f"'read_database' does not support arbitrary **kwargs: found {kwargs!r}"
+            f"`read_database` **kwargs only exist for deprecating string URIs: found {kwargs!r}"
         )
 
     with ConnectionExecutor(connection) as cx:
