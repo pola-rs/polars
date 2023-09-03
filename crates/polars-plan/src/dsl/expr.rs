@@ -69,8 +69,8 @@ impl AsRef<Expr> for AggExpr {
 pub enum Expr {
     Alias(Box<Expr>, Arc<str>),
     Column(Arc<str>),
-    Columns(Vec<String>),
     DtypeColumn(Vec<DataType>),
+    Columns(Vec<String>),
     Literal(LiteralValue),
     BinaryExpr {
         left: Box<Expr>,
