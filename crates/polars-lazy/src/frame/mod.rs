@@ -431,22 +431,7 @@ impl LazyFrame {
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
     {
-        let columns: Vec<SmartString> = columns
-            .into_iter()
-            .map(|name| name.as_ref().into())
-            .collect();
-        self.drop_columns_impl(columns)
-    }
-
-    #[allow(clippy::ptr_arg)]
-    fn drop_columns_impl(self, columns: Vec<SmartString>) -> Self {
-        if let Some(lp) = self.check_names(&columns, None) {
-            lp
-        } else {
-            self.map_private(FunctionNode::Drop {
-                names: columns.into(),
-            })
-        }
+        self.select(vec![col("*").exclude(columns)])
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
