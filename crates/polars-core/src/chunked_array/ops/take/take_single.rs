@@ -254,7 +254,7 @@ impl TakeRandom for ListChunked {
         let opt_arr = unsafe { impl_take_random_get!(self, index, LargeListArray) };
         opt_arr.map(|arr| unsafe {
             Series::from_chunks_and_dtype_unchecked(
-                "",
+                self.name(),
                 vec![arr],
                 &self.inner_dtype().to_physical(),
             )
@@ -266,7 +266,7 @@ impl TakeRandom for ListChunked {
         let opt_arr = impl_take_random_get_unchecked!(self, index, LargeListArray);
         opt_arr.map(|arr| unsafe {
             Series::from_chunks_and_dtype_unchecked(
-                "",
+                self.name(),
                 vec![arr],
                 &self.inner_dtype().to_physical(),
             )
@@ -279,7 +279,7 @@ impl TakeRandom for ListChunked {
         if arr.len() > 0 {
             arr.get(arr.len() - 1).map(|arr| unsafe {
                 Series::from_chunks_and_dtype_unchecked(
-                    "",
+                    self.name(),
                     vec![arr],
                     &self.inner_dtype().to_physical(),
                 )
