@@ -13,6 +13,7 @@ use polars_arrow::kernels::rolling::compare_fn_nan_max;
 use polars_arrow::prelude::FromData;
 
 use crate::prelude::*;
+use crate::series::unstable::UnstableSeries;
 use crate::series::IsSorted;
 
 impl<T> ChunkedArray<T>
@@ -687,31 +688,45 @@ where
 {
     match (lhs.len(), rhs.len()) {
         (_, 1) => {
-            let right = unsafe { rhs.get_unchecked(0) };
-            lhs.amortized_iter()
-                .map(|left| match (left, &right) {
-                    (Some(l), Some(r)) => Some(op(l.as_ref(), r)),
-                    _ => None,
-                })
-                .collect_trusted()
+            // Safety: values within iterator do not outlive the iterator itself
+            let mut iter = unsafe { rhs.amortized_iter() };
+            let right_us = iter.next().unwrap();
+            let right = right_us.as_ref().map(|s| s.as_ref());
+            // Safety: values within iterator do not outlive the iterator itself
+            unsafe {
+                lhs.amortized_iter()
+                    .map(|left| match (left, right) {
+                        (Some(l), Some(r)) => Some(op(l.as_ref(), r)),
+                        _ => None,
+                    })
+                    .collect_trusted()
+            }
         },
         (1, _) => {
-            let left = unsafe { lhs.get_unchecked(0) };
-            rhs.amortized_iter()
-                .map(|right| match (&left, right) {
-                    (Some(l), Some(r)) => Some(op(r.as_ref(), l)),
+            // Safety: values within iterator do not outlive the iterator itself
+            let mut iter = unsafe { lhs.amortized_iter() };
+            let left_us = iter.next().unwrap();
+            let left = left_us.as_ref().map(|s| s.as_ref());
+            // Safety: values within iterator do not outlive the iterator itself
+            unsafe {
+                rhs.amortized_iter()
+                    .map(|right| match (left, right) {
+                        (Some(l), Some(r)) => Some(op(r.as_ref(), l)),
+                        _ => None,
+                    })
+                    .collect_trusted()
+            }
+        },
+        // Safety: values within iterator do not outlive the iterator itself
+        _ => unsafe {
+            lhs.amortized_iter()
+                .zip(rhs.amortized_iter())
+                .map(|(left, right)| match (left, right) {
+                    (Some(l), Some(r)) => Some(op(l.as_ref(), r.as_ref())),
                     _ => None,
                 })
                 .collect_trusted()
         },
-        _ => lhs
-            .amortized_iter()
-            .zip(rhs.amortized_iter())
-            .map(|(left, right)| match (left, right) {
-                (Some(l), Some(r)) => Some(op(l.as_ref(), r.as_ref())),
-                _ => None,
-            })
-            .collect_trusted(),
     }
 }
 
