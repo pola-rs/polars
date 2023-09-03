@@ -141,7 +141,7 @@ impl SqlExprVisitor<'_> {
             {
                 polars_bail!(InvalidOperation: "SQL subquery will return more than one column");
             }
-            return Ok(Expr::SubPlan(lf.logical_plan));
+            return Ok(Expr::SubPlan(Box::new(lf.logical_plan)));
         };
 
         polars_bail!(InvalidOperation: "SQL subquery type not implemented");
@@ -476,7 +476,7 @@ impl SqlExprVisitor<'_> {
 
         let subquery_result = self.visit_subquery(subquery, SubqueryRestriction::SingleColumn)?;
 
-        subquery_result.
+        // subquery_result.
 
         if negated {
             Ok(expr.is_in(subquery_result).not())

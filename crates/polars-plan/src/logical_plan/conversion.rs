@@ -146,7 +146,7 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::Wildcard => AExpr::Wildcard,
         Expr::Count => AExpr::Count,
         Expr::Nth(i) => AExpr::Nth(i),
-        Expr::SubPlan(_) => panic!("no SubPlay expected at this point"),
+        Expr::SubPlan(_) => panic!("no SubPlan expected at this point"),
         Expr::KeepName(_) => panic!("no keep_name expected at this point"),
         Expr::Exclude(_, _) => panic!("no exclude expected at this point"),
         Expr::RenameAlias { .. } => panic!("no `rename_alias` expected at this point"),
