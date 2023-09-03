@@ -230,6 +230,7 @@ pub enum FunctionExpr {
         seed: Option<u64>,
     },
     SetSortedFlag(IsSorted),
+    Ffi
 }
 
 impl Hash for FunctionExpr {
