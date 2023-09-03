@@ -15,7 +15,7 @@ import polars as pl
 from polars.exceptions import UnsuitableSQLError
 
 if TYPE_CHECKING:
-    from polars.type_aliases import DbReadEngine
+    from polars.type_aliases import DbReadEngine, SchemaDict
 
 
 def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
@@ -71,30 +71,38 @@ def create_temp_sqlite_db(test_db: str) -> None:
 
 @pytest.mark.write_disk()
 @pytest.mark.parametrize(
-    ("read_method", "engine_or_connection_init", "expected_dtypes", "expected_dates"),
+    (
+        "read_method",
+        "engine_or_connection_init",
+        "expected_dtypes",
+        "expected_dates",
+        "schema_overrides",
+    ),
     [
         pytest.param(
             "read_database_uri",
             "connectorx",
             {
-                "id": pl.Int64,
+                "id": pl.UInt8,
                 "name": pl.Utf8,
                 "value": pl.Float64,
                 "date": pl.Date,
             },
             [date(2020, 1, 1), date(2021, 12, 31)],
+            {"id": pl.UInt8},
             id="uri: connectorx",
         ),
         pytest.param(
             "read_database_uri",
             "adbc",
             {
-                "id": pl.Int64,
+                "id": pl.UInt8,
                 "name": pl.Utf8,
                 "value": pl.Float64,
                 "date": pl.Utf8,
             },
             ["2020-01-01", "2021-12-31"],
+            {"id": pl.UInt8},
             marks=pytest.mark.skipif(
                 sys.version_info < (3, 9) or sys.platform == "win32",
                 reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
@@ -105,12 +113,13 @@ def create_temp_sqlite_db(test_db: str) -> None:
             "read_database",
             lambda path: sqlite3.connect(path, detect_types=True),
             {
-                "id": pl.Int64,
+                "id": pl.UInt8,
                 "name": pl.Utf8,
-                "value": pl.Float64,
+                "value": pl.Float32,
                 "date": pl.Date,
             },
             [date(2020, 1, 1), date(2021, 12, 31)],
+            {"id": pl.UInt8, "value": pl.Float32},
             id="conn: sqlite3",
         ),
         pytest.param(
@@ -126,6 +135,7 @@ def create_temp_sqlite_db(test_db: str) -> None:
                 "date": pl.Date,
             },
             [date(2020, 1, 1), date(2021, 12, 31)],
+            None,
             id="conn: sqlalchemy",
         ),
         pytest.param(
@@ -138,6 +148,7 @@ def create_temp_sqlite_db(test_db: str) -> None:
                 "date": pl.Utf8,
             },
             ["2020-01-01", "2021-12-31"],
+            None,
             marks=pytest.mark.skipif(
                 sys.version_info < (3, 9) or sys.platform == "win32",
                 reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
@@ -151,6 +162,7 @@ def test_read_database(
     engine_or_connection_init: Any,
     expected_dtypes: dict[str, pl.DataType],
     expected_dates: list[date | str],
+    schema_overrides: SchemaDict | None,
     tmp_path: Path,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
