@@ -112,11 +112,13 @@ impl ListChunked {
     /// this function still needs precautions. The returned should never be cloned or taken longer
     /// than a single iteration, as every call on `next` of the iterator will change the contents of
     /// that Series.
-    pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
+    pub unsafe fn amortized_iter(
+        &self,
+    ) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
         self.amortized_iter_with_name("")
     }
 
-    pub fn amortized_iter_with_name(
+    pub unsafe fn amortized_iter_with_name(
         &self,
         name: &str,
     ) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
@@ -161,18 +163,16 @@ impl ListChunked {
     /// Apply a closure `F` elementwise.
     #[must_use]
     pub fn apply_amortized_generic<'a, F, K, V>(&'a self, mut f: F) -> ChunkedArray<V>
-        where
-            V: PolarsDataType,
-            F: FnMut(Option<UnstableSeries<'a>>) -> Option<K> + Copy,
-            K: ArrayFromElementIter,
-            K::ArrayType: StaticallyMatchesPolarsType<V>,
+    where
+        V: PolarsDataType,
+        F: FnMut(Option<UnstableSeries<'a>>) -> Option<K> + Copy,
+        K: ArrayFromElementIter,
+        K::ArrayType: StaticallyMatchesPolarsType<V>,
     {
         // TODO! make an amortized iter that does not flatten
-        let element_iter = self
-            .amortized_iter()
-            .map(|opt_v| {
-                f(opt_v)
-            });
+
+        // SAFETY: unstable series never lives longer than the iterator.
+        let element_iter = unsafe { self.amortized_iter().map(|opt_v| f(opt_v)) };
         let array = K::array_from_iter(element_iter);
         ChunkedArray::from_chunk_iter(self.name(), std::iter::once(array))
     }
@@ -187,18 +187,20 @@ impl ListChunked {
             return self.clone();
         }
         let mut fast_explode = self.null_count() == 0;
-        let mut ca: ListChunked = self
-            .amortized_iter()
-            .map(|opt_v| {
-                opt_v.map(|v| {
-                    let out = f(v);
-                    if out.is_empty() {
-                        fast_explode = false;
-                    }
-                    out
+        // SAFETY: unstable series never lives longer than the iterator.
+        let mut ca: ListChunked = unsafe {
+            self.amortized_iter()
+                .map(|opt_v| {
+                    opt_v.map(|v| {
+                        let out = f(v);
+                        if out.is_empty() {
+                            fast_explode = false;
+                        }
+                        out
+                    })
                 })
-            })
-            .collect_trusted();
+                .collect_trusted()
+        };
 
         ca.rename(self.name());
         if fast_explode {
@@ -215,22 +217,24 @@ impl ListChunked {
             return Ok(self.clone());
         }
         let mut fast_explode = self.null_count() == 0;
-        let mut ca: ListChunked = self
-            .amortized_iter()
-            .map(|opt_v| {
-                opt_v
-                    .map(|v| {
-                        let out = f(v);
-                        if let Ok(out) = &out {
-                            if out.is_empty() {
-                                fast_explode = false
-                            }
-                        };
-                        out
-                    })
-                    .transpose()
-            })
-            .collect::<PolarsResult<_>>()?;
+        // SAFETY: unstable series never lives longer than the iterator.
+        let mut ca: ListChunked = unsafe {
+            self.amortized_iter()
+                .map(|opt_v| {
+                    opt_v
+                        .map(|v| {
+                            let out = f(v);
+                            if let Ok(out) = &out {
+                                if out.is_empty() {
+                                    fast_explode = false
+                                }
+                            };
+                            out
+                        })
+                        .transpose()
+                })
+                .collect::<PolarsResult<_>>()?
+        };
         ca.rename(self.name());
         if fast_explode {
             ca.set_fast_explode();
@@ -252,8 +256,11 @@ mod test {
         builder.append_series(&Series::new("", &[1, 1])).unwrap();
         let ca = builder.finish();
 
-        ca.amortized_iter().zip(&ca).for_each(|(s1, s2)| {
-            assert!(s1.unwrap().as_ref().series_equal(&s2.unwrap()));
-        });
+        // SAFETY: unstable series never lives longer than the iterator.
+        unsafe {
+            ca.amortized_iter().zip(&ca).for_each(|(s1, s2)| {
+                assert!(s1.unwrap().as_ref().series_equal(&s2.unwrap()));
+            })
+        };
     }
 }

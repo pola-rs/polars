@@ -683,45 +683,56 @@ impl ChunkCompare<&str> for Utf8Chunked {
 impl ChunkCompare<&ListChunked> for ListChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &ListChunked) -> BooleanChunked {
-        self.amortized_iter()
-            .zip(rhs.amortized_iter())
-            .map(|(left, right)| match (left, right) {
-                (Some(l), Some(r)) => Some(l.as_ref().series_equal_missing(r.as_ref())),
-                _ => None,
-            })
-            .collect_trusted()
+        // SAFETY: unstable series never lives longer than the iterator.
+        unsafe {
+            self.amortized_iter()
+                .zip(rhs.amortized_iter())
+                .map(|(left, right)| match (left, right) {
+                    (Some(l), Some(r)) => Some(l.as_ref().series_equal_missing(r.as_ref())),
+                    _ => None,
+                })
+                .collect_trusted()
+        }
     }
 
     fn equal_missing(&self, rhs: &ListChunked) -> BooleanChunked {
-        self.amortized_iter()
-            .zip(rhs.amortized_iter())
-            .map(|(left, right)| match (left, right) {
-                (Some(l), Some(r)) => l.as_ref().series_equal_missing(r.as_ref()),
-                (None, None) => true,
-                _ => false,
-            })
-            .collect_trusted()
+        // SAFETY: unstable series never lives longer than the iterator.
+        unsafe {
+            self.amortized_iter()
+                .zip(rhs.amortized_iter())
+                .map(|(left, right)| match (left, right) {
+                    (Some(l), Some(r)) => l.as_ref().series_equal_missing(r.as_ref()),
+                    (None, None) => true,
+                    _ => false,
+                })
+                .collect_trusted()
+        }
     }
 
     fn not_equal(&self, rhs: &ListChunked) -> BooleanChunked {
-        self.amortized_iter()
-            .zip(rhs.amortized_iter())
-            .map(|(left, right)| match (left, right) {
-                (Some(l), Some(r)) => Some(!l.as_ref().series_equal_missing(r.as_ref())),
-                _ => None,
-            })
-            .collect_trusted()
+        // SAFETY: unstable series never lives longer than the iterator.
+        unsafe {
+            self.amortized_iter()
+                .zip(rhs.amortized_iter())
+                .map(|(left, right)| match (left, right) {
+                    (Some(l), Some(r)) => Some(!l.as_ref().series_equal_missing(r.as_ref())),
+                    _ => None,
+                })
+                .collect_trusted()
+        }
     }
 
     fn not_equal_missing(&self, rhs: &ListChunked) -> BooleanChunked {
-        self.amortized_iter()
-            .zip(rhs.amortized_iter())
-            .map(|(left, right)| match (left, right) {
-                (Some(l), Some(r)) => !l.as_ref().series_equal_missing(r.as_ref()),
-                (None, None) => false,
-                _ => true,
-            })
-            .collect_trusted()
+        unsafe {
+            self.amortized_iter()
+                .zip(rhs.amortized_iter())
+                .map(|(left, right)| match (left, right) {
+                    (Some(l), Some(r)) => !l.as_ref().series_equal_missing(r.as_ref()),
+                    (None, None) => false,
+                    _ => true,
+                })
+                .collect_trusted()
+        }
     }
 
     // The following are not implemented because gt, lt comparison of series don't make sense.

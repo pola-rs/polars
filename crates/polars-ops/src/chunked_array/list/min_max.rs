@@ -78,24 +78,18 @@ pub(super) fn list_min_function(ca: &ListChunked) -> Series {
         match ca.inner_dtype() {
             DataType::Boolean => {
                 let out: BooleanChunked = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().bool().unwrap().min()))
-                    .collect_trusted();
+                    .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().bool().unwrap().min()));
                 out.into_series()
             },
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
-                    let out: ChunkedArray<$T> = ca
-                            .amortized_iter()
-                            .map(|opt_s|
-                        {
+
+                    let out: ChunkedArray<$T> = ca.apply_amortized_generic(|opt_s| {
                             let s = opt_s?;
                             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                             ca.min()
-                        }
-                    )
-                            .collect_trusted();
-                        out.into_series()
+                    });
+                    out.into_series()
                 })
             },
             _ => ca
@@ -184,24 +178,19 @@ pub(super) fn list_max_function(ca: &ListChunked) -> Series {
         match ca.inner_dtype() {
             DataType::Boolean => {
                 let out: BooleanChunked = ca
-                    .amortized_iter()
-                    .map(|s| s.and_then(|s| s.as_ref().bool().unwrap().max()))
-                    .collect_trusted();
+                    .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().bool().unwrap().max()));
                 out.into_series()
             },
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
-                    let out: ChunkedArray<$T> = ca
-                            .amortized_iter()
-                            .map(|opt_s|
-                        {
+
+                    let out: ChunkedArray<$T> = ca.apply_amortized_generic(|opt_s| {
                             let s = opt_s?;
                             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                             ca.max()
-                        }
-                    )
-                            .collect_trusted();
-                        out.into_series()
+                    });
+                    out.into_series()
+
                 })
             },
             _ => ca
