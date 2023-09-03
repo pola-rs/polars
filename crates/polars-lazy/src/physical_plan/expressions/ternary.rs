@@ -55,22 +55,25 @@ fn finish_as_iters<'a>(
     mut ac_falsy: AggregationContext<'a>,
     mut ac_mask: AggregationContext<'a>,
 ) -> PolarsResult<AggregationContext<'a>> {
-    let mut ca: ListChunked = ac_truthy
-        .iter_groups(false)
-        .zip(ac_falsy.iter_groups(false))
-        .zip(ac_mask.iter_groups(false))
-        .map(|((truthy, falsy), mask)| {
-            match (truthy, falsy, mask) {
-                (Some(truthy), Some(falsy), Some(mask)) => Some(
-                    truthy
-                        .as_ref()
-                        .zip_with(mask.as_ref().bool()?, falsy.as_ref()),
-                ),
-                _ => None,
-            }
-            .transpose()
-        })
-        .collect::<PolarsResult<_>>()?;
+    // SAFETY: unstable series never lives longer than the iterator.
+    let mut ca: ListChunked = unsafe {
+        ac_truthy
+            .iter_groups(false)
+            .zip(ac_falsy.iter_groups(false))
+            .zip(ac_mask.iter_groups(false))
+            .map(|((truthy, falsy), mask)| {
+                match (truthy, falsy, mask) {
+                    (Some(truthy), Some(falsy), Some(mask)) => Some(
+                        truthy
+                            .as_ref()
+                            .zip_with(mask.as_ref().bool()?, falsy.as_ref()),
+                    ),
+                    _ => None,
+                }
+                .transpose()
+            })
+            .collect::<PolarsResult<_>>()?
+    };
 
     ca.rename(ac_truthy.series().name());
     // aggregation leaves only a single chunks

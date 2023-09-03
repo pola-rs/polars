@@ -169,22 +169,23 @@ impl PhysicalExpr for TakeExpr {
         let s = idx.cast(&DataType::List(Box::new(IDX_DTYPE)))?;
         let idx = s.list().unwrap();
 
-        let mut taken = ac
-            .aggregated()
-            .list()
-            .unwrap()
-            .amortized_iter()
-            .zip(idx.amortized_iter())
-            .map(|(s, idx)| {
-                s.and_then(|s| {
-                    idx.map(|idx| {
-                        let idx = idx.as_ref().idx().unwrap();
-                        s.as_ref().take(idx)
+        let mut taken = unsafe {
+            ac.aggregated()
+                .list()
+                .unwrap()
+                .amortized_iter()
+                .zip(idx.amortized_iter())
+                .map(|(s, idx)| {
+                    s.and_then(|s| {
+                        idx.map(|idx| {
+                            let idx = idx.as_ref().idx().unwrap();
+                            s.as_ref().take(idx)
+                        })
                     })
+                    .transpose()
                 })
-                .transpose()
-            })
-            .collect::<PolarsResult<ListChunked>>()?;
+                .collect::<PolarsResult<ListChunked>>()?
+        };
 
         taken.rename(ac.series().name());
 
