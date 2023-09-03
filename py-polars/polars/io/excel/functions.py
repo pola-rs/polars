@@ -99,8 +99,12 @@ def read_excel(
     """
     Read Excel (XLSX) sheet into a DataFrame.
 
-    Converts an Excel sheet with ``xlsx2csv.Xlsx2csv().convert()`` to CSV and parses the
-    CSV output with :func:`read_csv`.
+    If using the ``xlsx2csv`` engine, converts an Excel sheet with
+    ``xlsx2csv.Xlsx2csv().convert()`` to CSV and parses the CSV output with
+    :func:`read_csv`.
+
+    When using the ``openpyxl`` engine, reads an Excel sheet with
+    ``openpyxl.load_workbook(source)``.
 
     Parameters
     ----------
@@ -164,6 +168,15 @@ def read_excel(
     >>> pl.read_excel(
     ...     source="test.xlsx",
     ...     read_csv_options={"infer_schema_length": None},
+    ... )  # doctest: +SKIP
+
+    The ``openpyxl`` engine can also be used to provide automatic type inference.
+    To do so, specify the right engine (`xlsx2csv_options` and `read_csv_options`
+    will be ignored):
+
+    >>> pl.read_excel(
+    ...     source="test.xlsx",
+    ...     engine="openpyxl",
     ... )  # doctest: +SKIP
 
     If :func:`read_excel` does not work or you need to read other types of
