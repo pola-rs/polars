@@ -112,12 +112,19 @@ impl ListChunked {
     /// this function still needs precautions. The returned should never be cloned or taken longer
     /// than a single iteration, as every call on `next` of the iterator will change the contents of
     /// that Series.
+    ///
+    /// # Safety
+    /// The lifetime of [UnstableSeries] is bound to the iterator. Keeping it alive
+    /// longer than the iterator is UB.
     pub unsafe fn amortized_iter(
         &self,
     ) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
         self.amortized_iter_with_name("")
     }
 
+    /// # Safety
+    /// The lifetime of [UnstableSeries] is bound to the iterator. Keeping it alive
+    /// longer than the iterator is UB.
     pub unsafe fn amortized_iter_with_name(
         &self,
         name: &str,
@@ -162,7 +169,7 @@ impl ListChunked {
 
     /// Apply a closure `F` elementwise.
     #[must_use]
-    pub fn apply_amortized_generic<'a, F, K, V>(&'a self, mut f: F) -> ChunkedArray<V>
+    pub fn apply_amortized_generic<'a, F, K, V>(&'a self, f: F) -> ChunkedArray<V>
     where
         V: PolarsDataType,
         F: FnMut(Option<UnstableSeries<'a>>) -> Option<K> + Copy,
@@ -172,7 +179,7 @@ impl ListChunked {
         // TODO! make an amortized iter that does not flatten
 
         // SAFETY: unstable series never lives longer than the iterator.
-        let element_iter = unsafe { self.amortized_iter().map(|opt_v| f(opt_v)) };
+        let element_iter = unsafe { self.amortized_iter().map(f) };
         let array = K::array_from_iter(element_iter);
         ChunkedArray::from_chunk_iter(self.name(), std::iter::once(array))
     }

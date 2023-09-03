@@ -191,7 +191,7 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
         },
         _ => {
             let out: Float64Chunked = ca
-                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as f64)))
+                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean()))
                 .with_name(ca.name());
             out.into_series()
         },

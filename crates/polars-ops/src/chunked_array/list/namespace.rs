@@ -10,7 +10,7 @@ use polars_core::export::num::ToPrimitive;
 use polars_core::export::num::{NumCast, Signed, Zero};
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::{try_get_supertype, CustomIterTools};
+use polars_core::utils::try_get_supertype;
 
 use super::*;
 #[cfg(feature = "list_any_all")]

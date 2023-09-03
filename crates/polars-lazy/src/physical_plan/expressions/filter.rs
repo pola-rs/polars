@@ -49,17 +49,20 @@ impl PhysicalExpr for FilterExpr {
         let (mut ac_s, mut ac_predicate) = (ac_s?, ac_predicate?);
 
         if ac_predicate.is_aggregated() || ac_s.is_aggregated() {
-            let preds = ac_predicate.iter_groups(false);
+            // SAFETY: unstable series never lives longer than the iterator.
+            let preds = unsafe { ac_predicate.iter_groups(false) };
             let s = ac_s.aggregated();
             let ca = s.list()?;
-            let mut out = ca
-                .amortized_iter()
-                .zip(preds)
-                .map(|(opt_s, opt_pred)| match (opt_s, opt_pred) {
-                    (Some(s), Some(pred)) => s.as_ref().filter(pred.as_ref().bool()?).map(Some),
-                    _ => Ok(None),
-                })
-                .collect::<PolarsResult<ListChunked>>()?;
+            // SAFETY: unstable series never lives longer than the iterator.
+            let mut out = unsafe {
+                ca.amortized_iter()
+                    .zip(preds)
+                    .map(|(opt_s, opt_pred)| match (opt_s, opt_pred) {
+                        (Some(s), Some(pred)) => s.as_ref().filter(pred.as_ref().bool()?).map(Some),
+                        _ => Ok(None),
+                    })
+                    .collect::<PolarsResult<ListChunked>>()?
+            };
             out.rename(s.name());
             ac_s.with_series(out.into_series(), true, Some(&self.expr))?;
             ac_s.update_groups = WithSeriesLen;

@@ -112,21 +112,23 @@ impl BinaryExpr {
         mut ac_r: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
         let name = ac_l.series().name().to_string();
-        let mut ca: ListChunked = ac_l
-            .iter_groups(false)
-            .zip(ac_r.iter_groups(false))
-            .map(|(l, r)| {
-                match (l, r) {
-                    (Some(l), Some(r)) => {
-                        let l = l.as_ref();
-                        let r = r.as_ref();
-                        Some(apply_operator(l, r, self.op))
-                    },
-                    _ => None,
-                }
-                .transpose()
-            })
-            .collect::<PolarsResult<_>>()?;
+        // SAFETY: unstable series never lives longer than the iterator.
+        let mut ca: ListChunked = unsafe {
+            ac_l.iter_groups(false)
+                .zip(ac_r.iter_groups(false))
+                .map(|(l, r)| {
+                    match (l, r) {
+                        (Some(l), Some(r)) => {
+                            let l = l.as_ref();
+                            let r = r.as_ref();
+                            Some(apply_operator(l, r, self.op))
+                        },
+                        _ => None,
+                    }
+                    .transpose()
+                })
+                .collect::<PolarsResult<_>>()?
+        };
         ca.rename(&name);
 
         // try if we can reuse the groups
