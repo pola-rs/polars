@@ -680,59 +680,84 @@ impl ChunkCompare<&str> for Utf8Chunked {
     }
 }
 
+#[doc(hidden)]
+fn _list_comparison_helper<F>(lhs: &ListChunked, rhs: &ListChunked, op: F) -> BooleanChunked
+where
+    F: Fn(Option<&Series>, Option<&Series>) -> Option<bool>,
+{
+    match (lhs.len(), rhs.len()) {
+        (_, 1) => {
+            let right = rhs.get(0).map(|s| s.with_name(""));
+            // SAFETY: values within iterator do not outlive the iterator itself
+            unsafe {
+                lhs.amortized_iter()
+                    .map(|left| op(left.as_ref().map(|us| us.as_ref()), right.as_ref()))
+                    .collect_trusted()
+            }
+        },
+        (1, _) => {
+            let left = lhs.get(0).map(|s| s.with_name(""));
+            // SAFETY: values within iterator do not outlive the iterator itself
+            unsafe {
+                rhs.amortized_iter()
+                    .map(|right| op(left.as_ref(), right.as_ref().map(|us| us.as_ref())))
+                    .collect_trusted()
+            }
+        },
+        // SAFETY: values within iterator do not outlive the iterator itself
+        _ => unsafe {
+            lhs.amortized_iter()
+                .zip(rhs.amortized_iter())
+                .map(|(left, right)| {
+                    op(
+                        left.as_ref().map(|us| us.as_ref()),
+                        right.as_ref().map(|us| us.as_ref()),
+                    )
+                })
+                .collect_trusted()
+        },
+    }
+}
+
 impl ChunkCompare<&ListChunked> for ListChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &ListChunked) -> BooleanChunked {
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
-            self.amortized_iter()
-                .zip(rhs.amortized_iter())
-                .map(|(left, right)| match (left, right) {
-                    (Some(l), Some(r)) => Some(l.as_ref().series_equal_missing(r.as_ref())),
-                    _ => None,
-                })
-                .collect_trusted()
-        }
+        let _series_equal = |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
+            (Some(l), Some(r)) => Some(l.series_equal(r)),
+            _ => None,
+        };
+
+        _list_comparison_helper(self, rhs, _series_equal)
     }
 
     fn equal_missing(&self, rhs: &ListChunked) -> BooleanChunked {
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
-            self.amortized_iter()
-                .zip(rhs.amortized_iter())
-                .map(|(left, right)| match (left, right) {
-                    (Some(l), Some(r)) => l.as_ref().series_equal_missing(r.as_ref()),
-                    (None, None) => true,
-                    _ => false,
-                })
-                .collect_trusted()
-        }
+        let _series_equal_missing = |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
+            (Some(l), Some(r)) => Some(l.series_equal_missing(r)),
+            (None, None) => Some(true),
+            _ => Some(false),
+        };
+
+        _list_comparison_helper(self, rhs, _series_equal_missing)
     }
 
     fn not_equal(&self, rhs: &ListChunked) -> BooleanChunked {
-        // SAFETY: unstable series never lives longer than the iterator.
-        unsafe {
-            self.amortized_iter()
-                .zip(rhs.amortized_iter())
-                .map(|(left, right)| match (left, right) {
-                    (Some(l), Some(r)) => Some(!l.as_ref().series_equal_missing(r.as_ref())),
-                    _ => None,
-                })
-                .collect_trusted()
-        }
+        let _series_not_equal = |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
+            (Some(l), Some(r)) => Some(!l.series_equal(r)),
+            _ => None,
+        };
+
+        _list_comparison_helper(self, rhs, _series_not_equal)
     }
 
     fn not_equal_missing(&self, rhs: &ListChunked) -> BooleanChunked {
-        unsafe {
-            self.amortized_iter()
-                .zip(rhs.amortized_iter())
-                .map(|(left, right)| match (left, right) {
-                    (Some(l), Some(r)) => !l.as_ref().series_equal_missing(r.as_ref()),
-                    (None, None) => false,
-                    _ => true,
-                })
-                .collect_trusted()
-        }
+        let _series_not_equal_missing =
+            |lhs: Option<&Series>, rhs: Option<&Series>| match (lhs, rhs) {
+                (Some(l), Some(r)) => Some(!l.series_equal_missing(r)),
+                (None, None) => Some(false),
+                _ => Some(true),
+            };
+
+        _list_comparison_helper(self, rhs, _series_not_equal_missing)
     }
 
     // The following are not implemented because gt, lt comparison of series don't make sense.
@@ -1225,6 +1250,17 @@ mod test {
 
         let c = &a | &falses;
         assert_eq!(Vec::from(&c), &[Some(true), Some(false), None])
+    }
+
+    #[test]
+    fn list_broadcasting_lists() {
+        let s_el = Series::new("", &[1, 2, 3]);
+        let s_lhs = Series::new("", &[s_el.clone(), s_el.clone()]);
+        let s_rhs = Series::new("", &[s_el.clone()]);
+
+        let result = s_lhs.list().unwrap().equal(s_rhs.list().unwrap());
+        assert_eq!(result.len(), 2);
+        assert!(result.all());
     }
 
     #[test]

@@ -288,6 +288,9 @@ def test_equality() -> None:
     a = pl.Series("name", ["ham", "foo", "bar"])
     assert_series_equal((a == "ham"), pl.Series("name", [True, False, False]))
 
+    a = pl.Series("name", [[1], [1, 2], [2, 3]])
+    assert_series_equal((a == [1]), pl.Series("name", [True, False, False]))
+
 
 def test_agg() -> None:
     series = pl.Series("a", [1, 2])
