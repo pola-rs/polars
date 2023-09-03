@@ -75,52 +75,31 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Series
     // TODO: add fast path for smaller ints?
     let mut out = match inner_dtype {
         Boolean => {
-            let out: IdxCa = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum()))
-                .collect();
+            let out: IdxCa = ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum::<IdxSize>()));
             out.into_series()
         },
         UInt32 => {
-            let out: UInt32Chunked = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum()))
-                .collect();
+            let out: UInt32Chunked = ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum::<u32>()));
             out.into_series()
         },
         UInt64 => {
-            let out: UInt64Chunked = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum()))
-                .collect();
+            let out: UInt64Chunked = ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum::<u64>()));
             out.into_series()
         },
         Int32 => {
-            let out: Int32Chunked = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum()))
-                .collect();
+            let out: Int32Chunked = ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum::<i32>()));
             out.into_series()
         },
         Int64 => {
-            let out: Int64Chunked = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum()))
-                .collect();
+            let out: Int64Chunked = ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum::<i64>()));
             out.into_series()
         },
         Float32 => {
-            let out: Float32Chunked = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum()))
-                .collect();
+            let out: Float32Chunked = ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum::<f32>()));
             out.into_series()
         },
         Float64 => {
-            let out: Float64Chunked = ca
-                .amortized_iter()
-                .map(|s| s.and_then(|s| s.as_ref().sum()))
-                .collect();
+            let out: Float64Chunked = ca.apply_amortized_generic(|s| s.and_then(|s| s.as_ref().sum::<f64>()));
             out.into_series()
         },
         // slowest sum_as_series path

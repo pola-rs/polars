@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::pin::Pin;
 use std::ptr::NonNull;
 
 use crate::prelude::*;
@@ -7,7 +8,7 @@ use crate::utils::CustomIterTools;
 
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     len: usize,
-    series_container: Box<Series>,
+    series_container: Pin<Box<Series>>,
     inner: NonNull<ArrayRef>,
     lifetime: PhantomData<&'a ArrayRef>,
     iter: I,
@@ -19,7 +20,7 @@ pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
 impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
     pub(crate) fn new(
         len: usize,
-        series_container: Box<Series>,
+        series_container: Pin<Box<Series>>,
         inner: NonNull<ArrayRef>,
         iter: I,
         inner_dtype: DataType,
@@ -143,7 +144,7 @@ impl ListChunked {
                 &iter_dtype,
             );
             s.clear_settings();
-            Box::new(s)
+            Box::pin(s)
         };
 
         let ptr = series_container.array_ref(0) as *const ArrayRef as *mut ArrayRef;
@@ -155,6 +156,25 @@ impl ListChunked {
             self.downcast_iter().flat_map(|arr| arr.iter()),
             inner_dtype,
         )
+    }
+
+    /// Apply a closure `F` elementwise.
+    #[must_use]
+    pub fn apply_amortized_generic<'a, F, K, V>(&'a self, mut f: F) -> ChunkedArray<V>
+        where
+            V: PolarsDataType,
+            F: FnMut(Option<UnstableSeries<'a>>) -> Option<K> + Copy,
+            K: ArrayFromElementIter,
+            K::ArrayType: StaticallyMatchesPolarsType<V>,
+    {
+        // TODO! make an amortized iter that does not flatten
+        let element_iter = self
+            .amortized_iter()
+            .map(|opt_v| {
+                f(opt_v)
+            });
+        let array = K::array_from_iter(element_iter);
+        ChunkedArray::from_chunk_iter(self.name(), std::iter::once(array))
     }
 
     /// Apply a closure `F` elementwise.

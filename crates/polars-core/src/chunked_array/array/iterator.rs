@@ -47,7 +47,7 @@ impl ArrayChunked {
         // Safety:
         // inner type passed as physical type
         let series_container = unsafe {
-            Box::new(Series::from_chunks_and_dtype_unchecked(
+            Box::pin(Series::from_chunks_and_dtype_unchecked(
                 name,
                 vec![inner_values.clone()],
                 &iter_dtype,
