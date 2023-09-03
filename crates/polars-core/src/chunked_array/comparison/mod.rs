@@ -13,7 +13,6 @@ use polars_arrow::kernels::rolling::compare_fn_nan_max;
 use polars_arrow::prelude::FromData;
 
 use crate::prelude::*;
-use crate::series::unstable::UnstableSeries;
 use crate::series::IsSorted;
 
 impl<T> ChunkedArray<T>
@@ -692,29 +691,37 @@ where
             let mut iter = unsafe { rhs.amortized_iter() };
             let right_us = iter.next().unwrap();
             let right = right_us.as_ref().map(|s| s.as_ref());
-            lhs.amortized_iter()
-                .map(|left| op(left.as_ref().map(|us| us.as_ref()), right.as_ref()))
-                .collect_trusted()
+            // Safety: values within iterator do not outlive the iterator itself
+            unsafe {
+                lhs.amortized_iter()
+                    .map(|left| op(left.as_ref().map(|us| us.as_ref()), right))
+                    .collect_trusted()
+            }
         },
         (1, _) => {
             // Safety: values within iterator do not outlive the iterator itself
             let mut iter = unsafe { lhs.amortized_iter() };
             let left_us = iter.next().unwrap();
             let left = left_us.as_ref().map(|s| s.as_ref());
-            rhs.amortized_iter()
-                .map(|right| op(left.as_ref(), right.as_ref().map(|us| us.as_ref())))
+            // Safety: values within iterator do not outlive the iterator itself
+            unsafe {
+                rhs.amortized_iter()
+                    .map(|right| op(left, right.as_ref().map(|us| us.as_ref())))
+                    .collect_trusted()
+            }
+        },
+        // Safety: values within iterator do not outlive the iterator itself
+        _ => unsafe {
+            lhs.amortized_iter()
+                .zip(rhs.amortized_iter())
+                .map(|(left, right)| {
+                    op(
+                        left.as_ref().map(|us| us.as_ref()),
+                        right.as_ref().map(|us| us.as_ref()),
+                    )
+                })
                 .collect_trusted()
         },
-        _ => lhs
-            .amortized_iter()
-            .zip(rhs.amortized_iter())
-            .map(|(left, right)| {
-                op(
-                    left.as_ref().map(|us| us.as_ref()),
-                    right.as_ref().map(|us| us.as_ref()),
-                )
-            })
-            .collect_trusted(),
     }
 }
 
