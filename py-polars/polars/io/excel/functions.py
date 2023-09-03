@@ -187,7 +187,7 @@ def read_excel(
             raise ImportError(
                 "openpyxl is not installed. Please run `pip install openpyxl`."
             ) from None
-        parser = openpyxl.load_workbook(source, read_only=True)
+        parser = openpyxl.load_workbook(source)
         sheets = [
             {"index": i + 1, "name": sheet.title} for i, sheet in enumerate(parser)
         ]
