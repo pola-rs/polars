@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from typing import TYPE_CHECKING
-
-from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import enable_string_cache as _enable_string_cache
@@ -117,25 +114,6 @@ def enable_string_cache(enable: bool) -> None:
 
     """
     _enable_string_cache(enable)
-
-
-def toggle_string_cache(toggle: bool) -> None:
-    """
-    Enable (or disable) the global string cache.
-
-    This ensures that casts to Categorical dtypes will have
-    the same category values when string values are equal.
-
-    .. deprecated:: 0.17.0
-
-    """
-    warnings.warn(
-        "`toggle_string_cache` has been renamed; this"
-        " redirect is temporary, please use `enable_string_cache` instead",
-        category=DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
-    enable_string_cache(toggle)
 
 
 def using_string_cache() -> bool:

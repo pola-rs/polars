@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-import os.path
+from pathlib import Path
 from typing import cast
 
 import polars as pl
@@ -51,8 +51,8 @@ def test_unit_io_subdir_has_no_init() -> None:
     # --------------------------------------------------------------------------------
     # TLDR: it can mask the builtin 'io' module, causing a fatal python error.
     # --------------------------------------------------------------------------------
-    io_dir = os.path.dirname(__file__)
-    assert io_dir.endswith(f"unit{os.path.sep}io")
-    assert not os.path.exists(
-        f"{io_dir}{os.path.sep}__init__.py"
-    ), "Found undesirable '__init__.py' in the 'unit.io' tests subdirectory"
+    io_dir = Path(__file__).parent
+    assert io_dir.parts[-2:] == ("unit", "io")
+    assert not (
+        io_dir / "__init__.py"
+    ).exists(), "Found undesirable '__init__.py' in the 'unit.io' tests subdirectory"

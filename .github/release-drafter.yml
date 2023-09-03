@@ -1,8 +1,10 @@
 categories:
   - title: 🏆 Highlights
     labels: highlight
-  - title: ⚠️ Breaking changes
+  - title: 💥 Breaking changes
     labels: breaking
+  - title: ⚠️ Deprecations
+    labels: deprecation
   - title: 🚀 Performance improvements
     labels: performance
   - title: ✨ Enhancements
@@ -12,49 +14,50 @@ categories:
   - title: 🛠️ Other improvements
     labels:
       - build
-      - chore
-      - ci
       - documentation
-      - refactor
-      - revert
-      - style
-      - test
+      - internal
 
 exclude-labels:
-  - skip-changelog
+  - skip changelog
   - release
 
 change-template: '- $TITLE (#$NUMBER)'
 change-title-escapes: '\<*_&'
 replacers:
   # Remove conventional commits from titles
-  - search: '/- (build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)(\(.*\))?(\!)?\: /g'
+  - search: '/- (build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)(\(.*\))?(\!)?\: /g'
     replace: '- '
-
-version-resolver:
-  minor:
-    labels: breaking
-  default: patch
 
 autolabeler:
   - label: rust
     title:
-      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)\(.*rust.*\)/'
+      # Example: feat(rust): ...
+      - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)(\(.*rust.*\))?\!?\: /'
   - label: python
     title:
-      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)\(.*python.*\)/'
+      # Example: feat(python): ...
+      - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)(\(.*python.*\))?\!?\: /'
   - label: breaking
     title:
-      - '/^(build|chore|ci|docs|feat|fix|perf|refactor|release|revert|style|test)(\(.*\))?\!\: /'
+      # Example: feat!: ...
+      - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)(\(.*\))?\!\: /'
+  - label: breaking rust
+    title:
+      # Example: feat(rust!, python): ...
+      - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)\(.*rust\!.*\)\: /'
+  - label: breaking python
+    title:
+      # Example: feat(python!): ...
+      - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)\(.*python\!.*\)\: /'
   - label: build
     title:
       - '/^build/'
-  - label: chore
+  - label: internal
     title:
-      - '/^chore/'
-  - label: ci
+      - '/^(chore|ci|refactor|test)/'
+  - label: deprecation
     title:
-      - '/^ci/'
+      - '/^depr/'
   - label: documentation
     title:
       - '/^docs/'
@@ -67,21 +70,9 @@ autolabeler:
   - label: performance
     title:
       - '/^perf/'
-  - label: refactor
-    title:
-      - '/^refactor/'
   - label: release
     title:
       - '/^release/'
-  - label: revert
-    title:
-      - '/^revert/'
-  - label: style
-    title:
-      - '/^style/'
-  - label: test
-    title:
-      - '/^test/'
 
 template: |
   $CHANGES

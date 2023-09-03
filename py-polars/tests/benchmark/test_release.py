@@ -5,7 +5,6 @@ Tests in this module will be run in the CI using a release build of Polars.
 
 To run these tests: pytest -m benchmark
 """
-import os
 import time
 from pathlib import Path
 from typing import cast
@@ -17,16 +16,16 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 # Mark all tests in this module as benchmark tests
-pytestmark = pytest.mark.benchmark
+pytestmark = pytest.mark.benchmark()
 
 
 @pytest.mark.skipif(
-    not (Path(os.path.dirname(__file__)) / "G1_1e7_1e2_5_0.csv").is_file(),
+    not (Path(__file__).parent / "G1_1e7_1e2_5_0.csv").is_file(),
     reason="Dataset must be generated before running this test.",
 )
 def test_read_scan_large_csv() -> None:
     filename = "G1_1e7_1e2_5_0.csv"
-    path = Path(os.path.dirname(__file__)) / filename
+    path = Path(__file__).parent / filename
 
     predicate = pl.col("v2") < 5
 
@@ -156,11 +155,11 @@ def test_max_statistic_parquet_writer() -> None:
     n = 150_000
 
     # int64 is important to hit the page size
-    df = pl.arange(0, n, eager=True, dtype=pl.Int64).to_frame()
+    df = pl.int_range(0, n, eager=True, dtype=pl.Int64).to_frame()
     f = "/tmp/tmp.parquet"
     df.write_parquet(f, statistics=True, use_pyarrow=False, row_group_size=n)
-    result = pl.scan_parquet(f).filter(pl.col("arange") > n - 3).collect()
-    expected = pl.DataFrame({"arange": [149998, 149999]})
+    result = pl.scan_parquet(f).filter(pl.col("int") > n - 3).collect()
+    expected = pl.DataFrame({"int": [149998, 149999]})
     assert_frame_equal(result, expected)
 
 
@@ -171,7 +170,7 @@ def test_boolean_min_max_agg() -> None:
 
     df = pl.DataFrame({"idx": idx, "c": c})
     aggs = [pl.col("c").min().alias("c_min"), pl.col("c").max().alias("c_max")]
-    assert df.groupby("idx").agg(aggs).sum().to_dict(False) == {
+    assert df.group_by("idx").agg(aggs).sum().to_dict(False) == {
         "idx": [107583],
         "c_min": [120],
         "c_max": [321],
@@ -180,14 +179,14 @@ def test_boolean_min_max_agg() -> None:
     nulls = np.random.randint(0, 500, 1000) < 100
     assert df.with_columns(
         c=pl.when(pl.lit(nulls)).then(None).otherwise(pl.col("c"))
-    ).groupby("idx").agg(aggs).sum().to_dict(False) == {
+    ).group_by("idx").agg(aggs).sum().to_dict(False) == {
         "idx": [107583],
         "c_min": [133],
         "c_max": [276],
     }
 
 
-def test_categorical_vs_str_groupby() -> None:
+def test_categorical_vs_str_group_by() -> None:
     # this triggers the perfect hash table
     s = pl.Series("a", np.random.randint(0, 50, 100))
     s_with_nulls = pl.select(
@@ -199,11 +198,11 @@ def test_categorical_vs_str_groupby() -> None:
         cat_out = (
             s_.cast(pl.Categorical)
             .to_frame("a")
-            .groupby("a")
+            .group_by("a")
             .agg(pl.first().alias("first"))
         )
 
-        str_out = s_.to_frame("a").groupby("a").agg(pl.first().alias("first"))
+        str_out = s_.to_frame("a").group_by("a").agg(pl.first().alias("first"))
         cat_out.with_columns(pl.col("a").cast(str))
         assert_frame_equal(
             cat_out.with_columns(

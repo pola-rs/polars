@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from typing import TYPE_CHECKING, Iterable, overload
 
 from polars import functions as F
@@ -11,32 +10,32 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_expr
-from polars.utils.various import find_stacklevel
+from polars.utils.deprecation import rename_use_earliest_to_ambiguous
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
 
 
 if TYPE_CHECKING:
-    import sys
+    from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import IntoExpr, SchemaDict
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
+    from polars.type_aliases import Ambiguous, IntoExpr, SchemaDict, TimeUnit
 
 
 def datetime_(
-    year: Expr | str | int,
-    month: Expr | str | int,
-    day: Expr | str | int,
-    hour: Expr | str | int | None = None,
-    minute: Expr | str | int | None = None,
-    second: Expr | str | int | None = None,
-    microsecond: Expr | str | int | None = None,
+    year: int | IntoExpr,
+    month: int | IntoExpr,
+    day: int | IntoExpr,
+    hour: int | IntoExpr | None = None,
+    minute: int | IntoExpr | None = None,
+    second: int | IntoExpr | None = None,
+    microsecond: int | IntoExpr | None = None,
+    *,
+    time_unit: TimeUnit = "us",
+    time_zone: str | None = None,
+    use_earliest: bool | None = None,
+    ambiguous: Ambiguous | Expr = "raise",
 ) -> Expr:
     """
     Create a Polars literal expression of type Datetime.
@@ -44,25 +43,49 @@ def datetime_(
     Parameters
     ----------
     year
-        column or literal.
+        Column or literal.
     month
-        column or literal, ranging from 1-12.
+        Column or literal, ranging from 1-12.
     day
-        column or literal, ranging from 1-31.
+        Column or literal, ranging from 1-31.
     hour
-        column or literal, ranging from 0-23.
+        Column or literal, ranging from 0-23.
     minute
-        column or literal, ranging from 0-59.
+        Column or literal, ranging from 0-59.
     second
-        column or literal, ranging from 0-59.
+        Column or literal, ranging from 0-59.
     microsecond
-        column or literal, ranging from 0-999999.
+        Column or literal, ranging from 0-999999.
+    time_unit : {'us', 'ms', 'ns'}
+        Time unit of the resulting expression.
+    time_zone
+        Time zone of the resulting expression.
+    use_earliest
+        Determine how to deal with ambiguous datetimes:
+
+        - ``None`` (default): raise
+        - ``True``: use the earliest datetime
+        - ``False``: use the latest datetime
+
+        .. deprecated:: 0.19.0
+            Use `ambiguous` instead
+    ambiguous
+        Determine how to deal with ambiguous datetimes:
+
+        - ``'raise'`` (default): raise
+        - ``'earliest'``: use the earliest datetime
+        - ``'latest'``: use the latest datetime
+
 
     Returns
     -------
-    Expr of type `pl.Datetime`
+    Expr
+        Expression of data type :class:`Datetime`.
 
     """
+    ambiguous = parse_as_expression(
+        rename_use_earliest_to_ambiguous(use_earliest, ambiguous), str_as_lit=True
+    )
     year_expr = parse_as_expression(year)
     month_expr = parse_as_expression(month)
     day_expr = parse_as_expression(day)
@@ -85,6 +108,9 @@ def datetime_(
             minute,
             second,
             microsecond,
+            time_unit,
+            time_zone,
+            ambiguous,
         )
     )
 
@@ -108,7 +134,8 @@ def date_(
 
     Returns
     -------
-    Expr of type pl.Date
+    Expr
+        Expression of data type :class:`Date`.
 
     """
     return datetime_(year, month, day).cast(Date).alias("date")
@@ -136,7 +163,8 @@ def time_(
 
     Returns
     -------
-    Expr of type pl.Date
+    Expr
+        Expression of data type :class:`Date`.
 
     """
     epoch_start = (1970, 1, 1)
@@ -163,7 +191,8 @@ def duration(
 
     Returns
     -------
-    Expr of type `pl.Duration`
+    Expr
+        Expression of data type :class:`Duration`.
 
     Examples
     --------
@@ -376,18 +405,7 @@ def struct(
     {'my_struct': Struct([Field('p', Int64), Field('q', Boolean)])}
 
     """
-    if "exprs" in named_exprs:
-        warnings.warn(
-            "passing expressions to `struct` using the keyword argument `exprs` is"
-            " deprecated. Use positional syntax instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
-        )
-        first_input = named_exprs.pop("exprs")
-        pyexprs = parse_as_list_of_expressions(first_input, *exprs, **named_exprs)
-    else:
-        pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs)
-
+    pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs)
     expr = wrap_expr(plr.as_struct(pyexprs))
 
     if schema:

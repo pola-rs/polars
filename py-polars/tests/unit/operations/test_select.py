@@ -1,5 +1,3 @@
-import pytest
-
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -39,15 +37,6 @@ def test_select_args_kwargs() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_select_mixed_deprecated() -> None:
-    ldf = pl.LazyFrame({"foo": [1, 2], "bar": [3, 4], "ham": ["a", "b"]})
-
-    with pytest.deprecated_call():
-        result = ldf.select(["bar"], "foo")
-    expected = pl.LazyFrame({"bar": [3, 4], "foo": [1, 2]})
-    assert_frame_equal(result, expected)
-
-
 def test_select_empty() -> None:
     result = pl.select()
     expected = pl.DataFrame()
@@ -55,9 +44,20 @@ def test_select_empty() -> None:
 
 
 def test_select_none() -> None:
-    with pytest.deprecated_call():
-        result = pl.select(None)
-    expected = pl.DataFrame()
+    result = pl.select(None)
+    expected = pl.select(pl.lit(None))
+    assert_frame_equal(result, expected)
+
+
+def test_select_none_combined() -> None:
+    other = pl.lit(1).alias("one")
+
+    result = pl.select(None, other)
+    expected = pl.select(pl.lit(None), other)
+    assert_frame_equal(result, expected)
+
+    result = pl.select(other, None)
+    expected = pl.select(other, pl.lit(None))
     assert_frame_equal(result, expected)
 
 
@@ -70,12 +70,4 @@ def test_select_empty_list() -> None:
 def test_select_named_inputs_reserved() -> None:
     result = pl.select(inputs=1.0, structify=pl.lit("x"))
     expected = pl.DataFrame({"inputs": [1.0], "structify": ["x"]})
-    assert_frame_equal(result, expected)
-
-
-def test_select_deprecation_exprs_keyword() -> None:
-    with pytest.deprecated_call():
-        result = pl.select(exprs=1.0)
-
-    expected = pl.DataFrame({"literal": [1.0]})
     assert_frame_equal(result, expected)

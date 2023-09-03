@@ -1,12 +1,13 @@
 mod aggregation;
 mod arithmetic;
+mod buffers;
 mod comparison;
 mod construction;
 mod export;
 mod numpy_ufunc;
 mod set_at_idx;
 
-use polars_algo::{cut, hist, qcut};
+use polars_algo::hist;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
 use polars_core::with_match_physical_numeric_polars_type;
@@ -15,9 +16,9 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::Python;
 
-use crate::apply::series::{call_lambda_and_extract, ApplyLambda};
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
+use crate::map::series::{call_lambda_and_extract, ApplyLambda};
 use crate::prelude::*;
 use crate::py_modules::POLARS;
 use crate::{apply_method_all_arrow_series2, raise_err};
@@ -91,6 +92,21 @@ impl PySeries {
             Err(_) => false,
             Ok(list) => list._can_fast_explode(),
         }
+    }
+
+    pub fn cat_uses_lexical_ordering(&self) -> PyResult<bool> {
+        let ca = self.series.categorical().map_err(PyPolarsErr::from)?;
+        Ok(ca.uses_lexical_ordering())
+    }
+
+    pub fn cat_is_local(&self) -> PyResult<bool> {
+        let ca = self.series.categorical().map_err(PyPolarsErr::from)?;
+        Ok(ca.get_rev_map().is_local())
+    }
+
+    pub fn cat_to_local(&self) -> PyResult<Self> {
+        let ca = self.series.categorical().map_err(PyPolarsErr::from)?;
+        Ok(ca.to_local().into_series().into())
     }
 
     fn estimated_size(&self) -> usize {
@@ -250,14 +266,6 @@ impl PySeries {
         self.series.sort(descending).into()
     }
 
-    fn value_counts(&self, sorted: bool) -> PyResult<PyDataFrame> {
-        let df = self
-            .series
-            .value_counts(true, sorted)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
-    }
-
     fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.idx().map_err(PyPolarsErr::from)?;
         let take = self.series.take(idx).map_err(PyPolarsErr::from)?;
@@ -280,11 +288,6 @@ impl PySeries {
         } else {
             self.series.series_equal(&other.series)
         }
-    }
-
-    fn _not(&self) -> PyResult<Self> {
-        let bool = self.series.bool().map_err(PyPolarsErr::from)?;
-        Ok((!bool).into_series().into())
     }
 
     fn as_str(&self) -> PyResult<String> {
@@ -368,7 +371,7 @@ impl PySeries {
                         call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, input)
                             .unwrap()
                             .0
-                    }
+                    },
                 });
                 avs.extend(iter);
                 return Ok(Series::new(self.name(), &avs).into());
@@ -385,7 +388,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::Int16) => {
                     let ca: Int16Chunked = dispatch_apply!(
                         series,
@@ -396,7 +399,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::Int32) => {
                     let ca: Int32Chunked = dispatch_apply!(
                         series,
@@ -407,7 +410,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::Int64) => {
                     let ca: Int64Chunked = dispatch_apply!(
                         series,
@@ -418,7 +421,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::UInt8) => {
                     let ca: UInt8Chunked = dispatch_apply!(
                         series,
@@ -429,7 +432,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::UInt16) => {
                     let ca: UInt16Chunked = dispatch_apply!(
                         series,
@@ -440,7 +443,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::UInt32) => {
                     let ca: UInt32Chunked = dispatch_apply!(
                         series,
@@ -451,7 +454,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::UInt64) => {
                     let ca: UInt64Chunked = dispatch_apply!(
                         series,
@@ -462,7 +465,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::Float32) => {
                     let ca: Float32Chunked = dispatch_apply!(
                         series,
@@ -473,7 +476,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::Float64) => {
                     let ca: Float64Chunked = dispatch_apply!(
                         series,
@@ -484,7 +487,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::Boolean) => {
                     let ca: BooleanChunked = dispatch_apply!(
                         series,
@@ -495,7 +498,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 Some(DataType::Utf8) => {
                     let ca = dispatch_apply!(
                         series,
@@ -507,7 +510,7 @@ impl PySeries {
                     )?;
 
                     ca.into_series()
-                }
+                },
                 #[cfg(feature = "object")]
                 Some(DataType::Object(_)) => {
                     let ca = dispatch_apply!(
@@ -519,7 +522,7 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
+                },
                 None => return dispatch_apply!(series, apply_lambda_unknown, py, lambda),
 
                 _ => return dispatch_apply!(series, apply_lambda_unknown, py, lambda),
@@ -598,7 +601,7 @@ impl PySeries {
                 self.series = ciborium::de::from_reader(s.as_bytes())
                     .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 Ok(())
-            }
+            },
             Err(e) => Err(e),
         }
     }
@@ -627,20 +630,6 @@ impl PySeries {
         Ok(out.into())
     }
 
-    fn time_unit(&self) -> Option<&str> {
-        if let DataType::Datetime(time_unit, _) | DataType::Duration(time_unit) =
-            self.series.dtype()
-        {
-            Some(match time_unit {
-                TimeUnit::Nanoseconds => "ns",
-                TimeUnit::Microseconds => "us",
-                TimeUnit::Milliseconds => "ms",
-            })
-        } else {
-            None
-        }
-    }
-
     fn get_chunks(&self) -> PyResult<Vec<PyObject>> {
         Python::with_gil(|py| {
             let wrap_s = py_modules::POLARS.getattr(py, "wrap_s").unwrap();
@@ -651,67 +640,18 @@ impl PySeries {
         })
     }
 
-    fn is_sorted(&self, descending: bool) -> bool {
+    fn is_sorted(&self, descending: bool) -> PyResult<bool> {
         let options = SortOptions {
             descending,
             nulls_last: descending,
             multithreaded: true,
+            maintain_order: false,
         };
-        self.series.is_sorted(options)
+        Ok(self.series.is_sorted(options).map_err(PyPolarsErr::from)?)
     }
 
     fn clear(&self) -> Self {
         self.series.clear().into()
-    }
-
-    #[pyo3(signature = (bins, labels, break_point_label, category_label, maintain_order))]
-    fn cut(
-        &self,
-        bins: Self,
-        labels: Option<Vec<&str>>,
-        break_point_label: Option<&str>,
-        category_label: Option<&str>,
-        maintain_order: bool,
-    ) -> PyResult<PyDataFrame> {
-        let out = cut(
-            &self.series,
-            bins.series,
-            labels,
-            break_point_label,
-            category_label,
-            maintain_order,
-        )
-        .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
-    }
-
-    #[pyo3(signature = (quantiles, labels, break_point_label, category_label, maintain_order))]
-    fn qcut(
-        &self,
-        quantiles: Self,
-        labels: Option<Vec<&str>>,
-        break_point_label: Option<&str>,
-        category_label: Option<&str>,
-        maintain_order: bool,
-    ) -> PyResult<PyDataFrame> {
-        if quantiles.series.null_count() > 0 {
-            return Err(PyValueError::new_err(
-                "did not expect null values in list of quantiles",
-            ));
-        }
-        let quantiles = quantiles.series.cast(&DataType::Float64).unwrap();
-        let quantiles = quantiles.f64().unwrap().rechunk();
-
-        let out = qcut(
-            &self.series,
-            quantiles.cont_slice().unwrap(),
-            labels,
-            break_point_label,
-            category_label,
-            maintain_order,
-        )
-        .map_err(PyPolarsErr::from)?;
-        Ok(out.into())
     }
 
     fn hist(&self, bins: Option<Self>, bin_count: Option<usize>) -> PyResult<PyDataFrame> {
@@ -719,43 +659,6 @@ impl PySeries {
         let out = hist(&self.series, bins.as_ref(), bin_count).map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
-
-    fn get_ptr(&self) -> PyResult<usize> {
-        let s = self.series.to_physical_repr();
-        let arrays = s.chunks();
-        if arrays.len() != 1 {
-            let msg = "Only can take pointer, if the 'series' contains a single chunk";
-            raise_err!(msg, ComputeError);
-        }
-        match s.dtype() {
-            DataType::Boolean => {
-                let ca = s.bool().unwrap();
-                let arr = ca.downcast_iter().next().unwrap();
-                // this one is quite useless as you need to know the offset
-                // into the first byte.
-                let (slice, start, _len) = arr.values().as_slice();
-                if start == 0 {
-                    Ok(slice.as_ptr() as usize)
-                } else {
-                    let msg = "Cannot take pointer boolean buffer as it is not perfectly aligned.";
-                    raise_err!(msg, ComputeError);
-                }
-            }
-            dt if dt.is_numeric() => Ok(with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                get_ptr(ca)
-            })),
-            _ => {
-                let msg = "Cannot take pointer of nested type";
-                raise_err!(msg, ComputeError);
-            }
-        }
-    }
-}
-
-fn get_ptr<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> usize {
-    let arr = ca.downcast_iter().next().unwrap();
-    arr.values().as_ptr() as usize
 }
 
 macro_rules! impl_set_with_mask {

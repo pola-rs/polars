@@ -13,6 +13,7 @@ from typing import (
     Callable,
     Generator,
     Iterable,
+    Iterator,
     Mapping,
     MutableMapping,
     Sequence,
@@ -102,8 +103,9 @@ else:
 def is_namedtuple(cls: Any, annotated: bool = False) -> bool:
     """Check whether given class derives from NamedTuple."""
     if all(hasattr(cls, attr) for attr in ("_fields", "_field_defaults", "_replace")):
-        if len(cls.__annotations__) == len(cls._fields) if annotated else True:
-            return all(isinstance(fld, str) for fld in cls._fields)
+        if not isinstance(cls._fields, property):
+            if not annotated or len(cls.__annotations__) == len(cls._fields):
+                return all(isinstance(fld, str) for fld in cls._fields)
     return False
 
 
@@ -153,8 +155,8 @@ def nt_unpack(obj: Any) -> Any:
 
 
 def series_to_pyseries(name: str, values: Series) -> PySeries:
-    """Construct a PySeries from a Polars Series."""
-    py_s = values._s
+    """Construct a new PySeries from a Polars Series."""
+    py_s = values._s.clone()
     py_s.rename(name)
     return py_s
 
@@ -264,7 +266,7 @@ def iterable_to_pyseries(
     chunk_size: int = 1_000_000,
 ) -> PySeries:
     """Construct a PySeries from an iterable/generator."""
-    if not isinstance(values, Generator):
+    if not isinstance(values, (Generator, Iterator)):
         values = iter(values)
 
     def to_series_chunk(values: list[Any], dtype: PolarsDataType | None) -> Series:
@@ -287,7 +289,7 @@ def iterable_to_pyseries(
             series = schunk
             dtype = series.dtype
         else:
-            series.append(schunk, append_chunks=True)
+            series.append(schunk)
             n_chunks += 1
 
     if series is None:
@@ -447,7 +449,7 @@ def sequence_to_pyseries(
                 raise TypeError(
                     # we do not accept float values as temporal; if this is
                     # required, the caller should explicitly cast to int first.
-                    f"'float' object cannot be interpreted as a {python_dtype.__name__}"
+                    f"'float' object cannot be interpreted as a {python_dtype.__name__!r}"
                 )
 
             # we use anyvalue builder to create the datetime array
@@ -458,24 +460,32 @@ def sequence_to_pyseries(
                 s = wrap_s(py_series)
             else:
                 s = wrap_s(py_series).dt.cast_time_unit(time_unit)
-            if dtype == Datetime and value.tzinfo is not None:
-                tz = str(value.tzinfo)
+            time_zone = getattr(dtype, "time_zone", None)
+            if dtype == Datetime and (
+                value.tzinfo is not None or time_zone is not None
+            ):
+                values_tz = str(value.tzinfo) if value.tzinfo is not None else None
                 dtype_tz = dtype.time_zone  # type: ignore[union-attr]
-                if dtype_tz is not None and tz != dtype_tz:
+                if values_tz is not None and (
+                    dtype_tz is not None and dtype_tz != "UTC"
+                ):
                     raise ValueError(
-                        "Given time_zone is different from that of timezone aware datetimes."
-                        f" Given: '{dtype_tz}', got: '{tz}'."
+                        "time-zone-aware datetimes are converted to UTC. "
+                        "Please either drop the time zone from the dtype, "
+                        "or set it to 'UTC'. To convert to a different time zone, "
+                        "please use `.dt.convert_time_zone`"
                     )
-                if tz != "UTC":
+                if values_tz != "UTC" and dtype_tz is None:
                     warnings.warn(
                         "Constructing a Series with time-zone-aware "
                         "datetimes results in a Series with UTC time zone. "
                         "To silence this warning, you can filter "
-                        "warnings of class TimeZoneAwareConstructorWarning.",
+                        "warnings of class TimeZoneAwareConstructorWarning, or "
+                        "set 'UTC' as the time zone of your datatype.",
                         TimeZoneAwareConstructorWarning,
                         stacklevel=find_stacklevel(),
                     )
-                return s.dt.replace_time_zone("UTC")._s
+                return s.dt.replace_time_zone(dtype_tz or "UTC")._s
             return s._s
 
         elif (
@@ -519,7 +529,7 @@ def sequence_to_pyseries(
 
 
 def _pandas_series_to_arrow(
-    values: pd.Series | pd.DatetimeIndex,
+    values: pd.Series[Any] | pd.Index[Any],
     nan_to_null: bool = True,
     length: int | None = None,
 ) -> pa.Array:
@@ -528,7 +538,7 @@ def _pandas_series_to_arrow(
 
     Parameters
     ----------
-    values : :class:`pandas.Series` or :class:`pandas.DatetimeIndex`.
+    values : :class:`pandas.Series` or :class:`pandas.Index`.
         Series to convert to arrow
     nan_to_null : bool, default = True
         Interpret `NaN` as missing values.
@@ -555,13 +565,13 @@ def _pandas_series_to_arrow(
         # Pandas Series is actually a Pandas DataFrame when the original dataframe
         # contains duplicated columns and a duplicated column is requested with df["a"].
         raise ValueError(
-            "Duplicate column names found: "
-            + f"{values.columns.tolist()!s}"  # type: ignore[union-attr]
+            "duplicate column names found: ",
+            f"{values.columns.tolist()!s}",  # type: ignore[union-attr]
         )
 
 
 def pandas_to_pyseries(
-    name: str, values: pd.Series | pd.DatetimeIndex, nan_to_null: bool = True
+    name: str, values: pd.Series[Any] | pd.DatetimeIndex, nan_to_null: bool = True
 ) -> PySeries:
     """Construct a PySeries from a pandas Series or DatetimeIndex."""
     # TODO: Change `if not name` to `if name is not None` once name is Optional[str]
@@ -597,7 +607,7 @@ def _handle_columns_arg(
                     data[i].rename(c)
             return data
         else:
-            raise ValueError("Dimensions of columns arg must match data dimensions.")
+            raise ValueError("dimensions of columns arg must match data dimensions")
 
 
 def _post_apply_columns(
@@ -683,6 +693,23 @@ def _unpack_schema(
     )
 
 
+def _expand_dict_data(
+    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    dtypes: SchemaDict,
+) -> Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series]:
+    """
+    Expand any unsized generators/iterators.
+
+    (Note that `range` is sized, and will take a fast-path on Series init).
+    """
+    expanded_data = {}
+    for name, val in data.items():
+        expanded_data[name] = (
+            pl.Series(name, val, dtypes.get(name)) if _is_generator(val) else val
+        )
+    return expanded_data
+
+
 def _expand_dict_scalars(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
     schema_overrides: SchemaDict | None = None,
@@ -693,6 +720,7 @@ def _expand_dict_scalars(
     updated_data = {}
     if data:
         dtypes = schema_overrides or {}
+        data = _expand_dict_data(data, dtypes)
         array_len = max((arrlen(val) or 0) for val in data.values())
         if array_len > 0:
             for name, val in data.items():
@@ -747,7 +775,7 @@ def dict_to_pydf(
     if isinstance(schema, dict) and data:
         if not all((col in schema) for col in data):
             raise ValueError(
-                "The given column-schema names do not match the data dictionary"
+                "the given column-schema names do not match the data dictionary"
             )
         data = {col: data[col] for col in schema}
 
@@ -804,7 +832,13 @@ def dict_to_pydf(
         ]
 
     data_series = _handle_columns_arg(data_series, columns=column_names, from_dict=True)
-    return PyDataFrame(data_series)
+    pydf = PyDataFrame(data_series)
+
+    if schema_overrides and pydf.dtypes() != list(schema_overrides.values()):
+        pydf = _post_apply_columns(
+            pydf, column_names, schema_overrides=schema_overrides
+        )
+    return pydf
 
 
 def sequence_to_pydf(
@@ -942,7 +976,7 @@ def _sequence_of_sequence_to_pydf(
             include_unknowns(schema_overrides, column_names) if schema_overrides else {}
         )
         if column_names and len(first_element) != len(column_names):
-            raise ShapeError("The row data does not match the number of columns")
+            raise ShapeError("the row data does not match the number of columns")
 
         unpack_nested = False
         for col, tp in local_schema_override.items():
@@ -981,7 +1015,7 @@ def _sequence_of_sequence_to_pydf(
         return PyDataFrame(data_series)
 
     raise ValueError(
-        f"orient must be one of {{'col', 'row', None}}, got {orient} instead."
+        f"orient must be one of {{'col', 'row', None}}, got {orient!r} instead"
     )
 
 
@@ -1036,9 +1070,9 @@ def _sequence_of_dict_to_pydf(
     )
     pydf = PyDataFrame.read_dicts(data, infer_schema_length, dicts_schema)
 
-    if column_names and set(column_names).intersection(pydf.columns()):
-        column_names = []
-    if column_names or schema_overrides:
+    if not schema_overrides and set(pydf.columns()) == set(column_names):
+        pass
+    elif column_names or schema_overrides:
         pydf = _post_apply_columns(
             pydf,
             columns=column_names,
@@ -1078,7 +1112,7 @@ def _sequence_of_numpy_to_pydf(
 
 
 def _sequence_of_pandas_to_pydf(
-    first_element: pd.Series | pd.DatetimeIndex,
+    first_element: pd.Series[Any] | pd.DatetimeIndex,
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None,
@@ -1191,7 +1225,7 @@ def numpy_to_pydf(
             shape = data[nm].shape
             if len(data[nm].shape) > 2:
                 raise ValueError(
-                    f"Cannot create DataFrame from structured array with elements > 2D; shape[{nm!r}] = {shape}"
+                    f"cannot create DataFrame from structured array with elements > 2D; shape[{nm!r}] = {shape}"
                 )
         if not schema:
             schema = record_names
@@ -1211,8 +1245,10 @@ def numpy_to_pydf(
                 orient = "row"
 
             elif orient is None and schema is not None:
-                # infer orientation from 'schema' param
-                if len(schema) == shape[0]:
+                # infer orientation from 'schema' param; if square array
+                # we maintain the default convention where first axis = rows
+                n_schema_cols = len(schema)
+                if n_schema_cols == shape[0] and n_schema_cols != shape[1]:
                     orient = "col"
                     n_columns = shape[0]
                 else:
@@ -1225,15 +1261,15 @@ def numpy_to_pydf(
                 n_columns = shape[0]
             else:
                 raise ValueError(
-                    f"orient must be one of {{'col', 'row', None}}; found {orient!r} instead."
+                    f"orient must be one of {{'col', 'row', None}}; found {orient!r} instead"
                 )
         else:
             raise ValueError(
-                f"Cannot create DataFrame from array with more than two dimensions; shape = {shape}"
+                f"cannot create DataFrame from array with more than two dimensions; shape = {shape}"
             )
 
     if schema is not None and len(schema) != n_columns:
-        raise ValueError("Dimensions of 'schema' arg must match data dimensions.")
+        raise ValueError("dimensions of 'schema' arg must match data dimensions")
 
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides, n_expected=n_columns
@@ -1303,7 +1339,7 @@ def arrow_to_pydf(
         if column_names != data.column_names:
             data = data.rename_columns(column_names)
     except pa.lib.ArrowInvalid as e:
-        raise ValueError("Dimensions of columns arg must match data dimensions.") from e
+        raise ValueError("dimensions of columns arg must match data dimensions") from e
 
     data_dict = {}
     # dictionaries cannot be built in different batches (categorical does not allow
@@ -1385,7 +1421,7 @@ def series_to_pydf(
         schema or series_name, schema_overrides=schema_overrides, n_expected=1
     )
     if schema_overrides:
-        new_dtype = list(schema_overrides.values())[0]
+        new_dtype = next(iter(schema_overrides.values()))
         if new_dtype != data.dtype:
             data_series[0] = data_series[0].cast(new_dtype, True)
 
@@ -1464,7 +1500,8 @@ def iterable_to_pydf(
             if not original_schema:
                 original_schema = list(df.schema.items())
             if chunk_size != adaptive_chunk_size:
-                chunk_size = adaptive_chunk_size = n_chunk_elems // len(df.columns)
+                if (n_columns := len(df.columns)) > 0:
+                    chunk_size = adaptive_chunk_size = n_chunk_elems // n_columns
         else:
             df.vstack(frame_chunk, in_place=True)
             n_chunks += 1
@@ -1556,7 +1593,7 @@ def numpy_to_idxs(idxs: np.ndarray[Any, Any], size: int) -> pl.Series:
     #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
     #     to absolute indexes.
     if idxs.ndim != 1:
-        raise ValueError("Only 1D numpy array is supported as index.")
+        raise ValueError("only 1D numpy array is supported as index")
 
     idx_type = get_index_type()
 
@@ -1565,13 +1602,13 @@ def numpy_to_idxs(idxs: np.ndarray[Any, Any], size: int) -> pl.Series:
 
     # Numpy array with signed or unsigned integers.
     if idxs.dtype.kind not in ("i", "u"):
-        raise NotImplementedError("Unsupported idxs datatype.")
+        raise NotImplementedError("unsupported idxs datatype.")
 
     if idx_type == UInt32:
         if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:
-            raise ValueError("Index positions should be smaller than 2^32.")
+            raise ValueError("index positions should be smaller than 2^32")
         if idxs.dtype == np.int64 and idxs.min() < -(2**32):
-            raise ValueError("Index positions should be bigger than -2^32 + 1.")
+            raise ValueError("index positions should be bigger than -2^32 + 1")
 
     if idxs.dtype.kind == "i" and idxs.min() < 0:
         if idx_type == UInt32:

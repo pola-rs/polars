@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import typing
 from datetime import date, datetime
 
 import numpy as np
@@ -169,10 +168,10 @@ def test_list_eval_dtype_inference() -> None:
             .list.first()
         ]
     ).to_series().to_list() == [
-        0.3333333432674408,
-        0.6666666865348816,
-        0.6666666865348816,
-        0.3333333432674408,
+        0.3333333333333333,
+        0.6666666666666666,
+        0.6666666666666666,
+        0.3333333333333333,
     ]
 
 
@@ -212,7 +211,7 @@ def test_arr_contains_categorical() -> None:
         {"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]}
     ).lazy()
     df = df.with_columns(pl.col("str").cast(pl.Categorical))
-    df_groups = df.groupby("group").agg([pl.col("str").alias("str_list")])
+    df_groups = df.group_by("group").agg([pl.col("str").alias("str_list")])
     assert df_groups.filter(pl.col("str_list").list.contains("C")).collect().to_dict(
         False
     ) == {"group": [2], "str_list": [["A", "C"]]}
@@ -255,7 +254,6 @@ def test_list_slice() -> None:
     }
 
 
-@typing.no_type_check
 def test_list_sliced_get_5186() -> None:
     # https://github.com/pola-rs/polars/issues/5186
     n = 30
@@ -366,7 +364,7 @@ def test_list_function_group_awareness() -> None:
         }
     )
 
-    assert df.groupby("group").agg(
+    assert df.group_by("group").agg(
         [
             pl.col("a").implode().list.get(0).alias("get"),
             pl.col("a").implode().list.take([0]).alias("take"),
@@ -454,3 +452,108 @@ def test_list_count_match_boolean_nulls_9141() -> None:
     a = pl.DataFrame({"a": [[True, None, False]]})
 
     assert a.select(pl.col("a").list.count_match(True))["a"].to_list() == [1]
+
+
+def test_list_set_operations() -> None:
+    df = pl.DataFrame(
+        {"a": [[1, 2, 3], [1, 1, 1], [4]], "b": [[4, 2, 1], [2, 1, 12], [4]]}
+    )
+
+    assert df.select(pl.col("a").list.set_union("b"))["a"].to_list() == [
+        [1, 2, 3, 4],
+        [1, 2, 12],
+        [4],
+    ]
+    assert df.select(pl.col("a").list.set_intersection("b"))["a"].to_list() == [
+        [1, 2],
+        [1],
+        [4],
+    ]
+    assert df.select(pl.col("a").list.set_difference("b"))["a"].to_list() == [
+        [3],
+        [],
+        [],
+    ]
+    assert df.select(pl.col("b").list.set_difference("a"))["b"].to_list() == [
+        [4],
+        [2, 12],
+        [],
+    ]
+
+    # check logical types
+    dtype = pl.List(pl.Date)
+    assert (
+        df.select(pl.col("b").cast(dtype).list.set_difference(pl.col("a").cast(dtype)))[
+            "b"
+        ].dtype
+        == dtype
+    )
+
+    df = pl.DataFrame(
+        {
+            "a": [["a", "b", "c"], ["b", "e", "z"]],
+            "b": [["b", "s", "a"], ["a", "e", "f"]],
+        }
+    )
+
+    assert df.select(pl.col("a").list.set_union("b"))["a"].to_list() == [
+        ["a", "b", "c", "s"],
+        ["b", "e", "z", "a", "f"],
+    ]
+
+    df = pl.DataFrame(
+        {
+            "a": [[2, 3, 3], [3, 1], [1, 2, 3]],
+            "b": [[2, 3, 4], [3, 3, 1], [3, 3]],
+        }
+    )
+    r1 = df.with_columns(pl.col("a").list.set_intersection("b"))["a"].to_list()
+    r2 = df.with_columns(pl.col("b").list.set_intersection("a"))["b"].to_list()
+    exp = [[2, 3], [3, 1], [3]]
+    assert r1 == exp
+    assert r2 == exp
+
+
+def test_list_set_operations_broadcast() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[2, 3, 3], [3, 1], [1, 2, 3]],
+        }
+    )
+
+    assert df.with_columns(
+        pl.col("a").list.set_intersection(pl.lit(pl.Series([[1, 2]])))
+    ).to_dict(False) == {"a": [[2], [1], [1, 2]]}
+    assert df.with_columns(
+        pl.col("a").list.set_union(pl.lit(pl.Series([[1, 2]])))
+    ).to_dict(False) == {"a": [[2, 3, 1], [3, 1, 2], [1, 2, 3]]}
+    assert df.with_columns(
+        pl.col("a").list.set_difference(pl.lit(pl.Series([[1, 2]])))
+    ).to_dict(False) == {"a": [[3], [3], [3]]}
+    assert df.with_columns(
+        pl.lit(pl.Series("a", [[1, 2]])).list.set_difference("a")
+    ).to_dict(False) == {"a": [[1], [2], []]}
+
+
+def test_list_take_oob_10079() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2, 3], [], [None, 3], [5, 6, 7]],
+            "b": [["2"], ["3"], [None], ["3", "Hi"]],
+        }
+    )
+    with pytest.raises(pl.ComputeError, match="take indices are out of bounds"):
+        df.select(pl.col("a").take(999))
+
+
+def test_utf8_empty_series_arg_min_max_10703() -> None:
+    res = pl.select(pl.lit(pl.Series("list", [["a"], []]))).with_columns(
+        pl.all(),
+        pl.all().list.arg_min().alias("arg_min"),
+        pl.all().list.arg_max().alias("arg_max"),
+    )
+    assert res.to_dict(False) == {
+        "list": [["a"], []],
+        "arg_min": [0, None],
+        "arg_max": [0, None],
+    }

@@ -12,7 +12,6 @@ extern crate pyo3_built;
 mod build {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
-pub mod apply;
 pub mod arrow_interop;
 #[cfg(feature = "csv")]
 mod batched_csv;
@@ -23,10 +22,14 @@ pub mod error;
 pub mod expr;
 pub mod file;
 pub mod functions;
+pub(crate) mod gil_once_cell;
 pub mod lazyframe;
 pub mod lazygroupby;
+pub mod map;
 #[cfg(feature = "object")]
 mod object;
+#[cfg(feature = "object")]
+mod on_startup;
 pub mod prelude;
 pub(crate) mod py_modules;
 pub mod series;
@@ -39,7 +42,7 @@ use jemallocator::Jemalloc;
 #[cfg(any(not(target_os = "linux"), use_mimalloc))]
 use mimalloc::MiMalloc;
 #[cfg(feature = "object")]
-pub use object::__register_startup_deps;
+pub use on_startup::__register_startup_deps;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
@@ -81,18 +84,38 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::eager::concat_series))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::eager::date_range_eager))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::eager::diag_concat_df))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::eager::hor_concat_df))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::eager::time_range_eager))
+
+    // Functions - range
+    m.add_wrapped(wrap_pyfunction!(functions::range::int_range))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::range::int_ranges))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::range::date_range))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::range::date_ranges))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::range::time_range))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::range::time_ranges))
+        .unwrap();
+
+    // Functions - aggregation
+    m.add_wrapped(wrap_pyfunction!(functions::aggregation::all_horizontal))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::aggregation::any_horizontal))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::aggregation::max_horizontal))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::aggregation::min_horizontal))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::aggregation::sum_horizontal))
         .unwrap();
 
     // Functions - lazy
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::arange))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arg_sort_by))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arg_where))
@@ -104,6 +127,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::lazy::col))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::collect_all))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::collect_all_with_callback))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::cols))
         .unwrap();
@@ -121,7 +146,9 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::cumreduce))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::date_range_lazy))
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::arctan2))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::arctan2d))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::datetime))
         .unwrap();
@@ -143,10 +170,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::map_mul))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::max_exprs))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::min_exprs))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::pearson_corr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::rolling_corr))
@@ -158,10 +181,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::lazy::repeat))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::spearman_rank_corr))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::sum_exprs))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::time_range_lazy))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::whenthen::when))
         .unwrap();
@@ -201,6 +220,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(__register_startup_deps))
         .unwrap();
 
+    // Functions - random
+    m.add_wrapped(wrap_pyfunction!(functions::random::set_random_seed))
+        .unwrap();
+
     // Exceptions
     m.add("ArrowError", py.get_type::<ArrowErrorException>())
         .unwrap();
@@ -226,6 +249,11 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     .unwrap();
     m.add("ShapeError", py.get_type::<crate::error::ShapeError>())
         .unwrap();
+    m.add(
+        "StringCacheMismatchError",
+        py.get_type::<crate::error::StringCacheMismatchError>(),
+    )
+    .unwrap();
     m.add(
         "StructFieldNotFoundError",
         py.get_type::<StructFieldNotFoundError>(),

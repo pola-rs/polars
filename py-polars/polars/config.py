@@ -10,7 +10,7 @@ from polars.utils.various import normalise_filepath
 
 
 # dummy func required (so docs build)
-def _get_float_fmt() -> str:
+def _get_float_fmt() -> str:  # pragma: no cover
     return "n/a"
 
 
@@ -20,15 +20,10 @@ with contextlib.suppress(ImportError):
     from polars.polars import set_float_fmt as _set_float_fmt
 
 if TYPE_CHECKING:
-    import sys
     from types import TracebackType
+    from typing import Literal
 
     from polars.type_aliases import FloatFmt
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 # note: register all Config-specific environment variable names here; need to constrain
@@ -130,7 +125,7 @@ class Config(contextlib.ContextDecorator):
             if not hasattr(self, opt) and not opt.startswith("set_"):
                 opt = f"set_{opt}"
             if not hasattr(self, opt):
-                raise AttributeError(f"Config has no {opt!r} option")
+                raise AttributeError(f"`Config` has no option {opt!r}")
             getattr(self, opt)(value)
 
     def __enter__(self) -> Config:
@@ -161,7 +156,7 @@ class Config(contextlib.ContextDecorator):
         """
         options = json.loads(
             Path(normalise_filepath(cfg)).read_text()
-            if isinstance(cfg, Path) or os.path.exists(cfg)
+            if isinstance(cfg, Path) or Path(cfg).exists()
             else cfg
         )
         os.environ.update(options.get("environment", {}))
@@ -209,7 +204,9 @@ class Config(contextlib.ContextDecorator):
 
         Returns
         -------
-        str : json string containing current Config options, or filepath where saved.
+        str
+            JSON string containing current Config options, or the path to the file where
+            the options are saved.
 
         """
         environment_vars = {
@@ -226,9 +223,9 @@ class Config(contextlib.ContextDecorator):
             separators=(",", ":"),
         )
         if isinstance(file, (str, Path)):
-            file = os.path.abspath(normalise_filepath(file))
-            Path(file).write_text(options)
-            return file
+            file = Path(normalise_filepath(file)).resolve()
+            file.write_text(options)
+            return str(file)
 
         return options
 
@@ -674,6 +671,10 @@ class Config(contextlib.ContextDecorator):
         """
         Hide the '---' separator between the column names and column types.
 
+        See Also
+        --------
+        set_tbl_column_data_type_inline
+
         Examples
         --------
         >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
@@ -689,10 +690,6 @@ class Config(contextlib.ContextDecorator):
         # │ 2.5 ┆ false │      │ 5.0 ┆ true  │
         # │ 5.0 ┆ true  │      └─────┴───────┘
         # └─────┴───────┘
-
-        See Also
-        --------
-        set_tbl_column_data_type_inline
 
         """
         os.environ["POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR"] = str(int(active))

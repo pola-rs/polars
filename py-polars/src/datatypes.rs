@@ -64,7 +64,7 @@ impl From<&DataType> for PyDataType {
             DataType::Struct(_) => Struct,
             DataType::Null | DataType::Unknown => {
                 panic!("null or unknown not expected here")
-            }
+            },
         }
     }
 }

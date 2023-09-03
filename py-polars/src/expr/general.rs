@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
@@ -7,12 +5,11 @@ use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::series::IsSorted;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyFloat};
+use pyo3::types::PyBytes;
 
-use crate::apply::lazy::{call_lambda_with_series, map_single};
 use crate::conversion::{parse_fill_null_strategy, Wrap};
 use crate::error::PyPolarsErr;
-use crate::series::PySeries;
+use crate::map::lazy::map_single;
 use crate::utils::reinterpret;
 use crate::PyExpr;
 
@@ -93,7 +90,7 @@ impl PyExpr {
                 self.inner = ciborium::de::from_reader(s.as_bytes())
                     .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 Ok(())
-            }
+            },
             Err(e) => Err(e),
         }
     }
@@ -101,7 +98,7 @@ impl PyExpr {
     fn alias(&self, name: &str) -> Self {
         self.clone().inner.alias(name).into()
     }
-    fn is_not(&self) -> Self {
+    fn not_(&self) -> Self {
         self.clone().inner.not().into()
     }
     fn is_null(&self) -> Self {
@@ -177,17 +174,75 @@ impl PyExpr {
             .quantile(quantile.inner, interpolation.0)
             .into()
     }
+
+    #[pyo3(signature = (breaks, labels, left_closed, include_breaks))]
+    #[cfg(feature = "cutqcut")]
+    fn cut(
+        &self,
+        breaks: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        include_breaks: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .cut(breaks, labels, left_closed, include_breaks)
+            .into()
+    }
+    #[pyo3(signature = (probs, labels, left_closed, allow_duplicates, include_breaks))]
+    #[cfg(feature = "cutqcut")]
+    fn qcut(
+        &self,
+        probs: Vec<f64>,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+        include_breaks: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .qcut(probs, labels, left_closed, allow_duplicates, include_breaks)
+            .into()
+    }
+    #[pyo3(signature = (n_bins, labels, left_closed, allow_duplicates, include_breaks))]
+    #[cfg(feature = "cutqcut")]
+    fn qcut_uniform(
+        &self,
+        n_bins: usize,
+        labels: Option<Vec<String>>,
+        left_closed: bool,
+        allow_duplicates: bool,
+        include_breaks: bool,
+    ) -> Self {
+        self.inner
+            .clone()
+            .qcut_uniform(
+                n_bins,
+                labels,
+                left_closed,
+                allow_duplicates,
+                include_breaks,
+            )
+            .into()
+    }
+
+    #[cfg(feature = "rle")]
+    fn rle(&self) -> Self {
+        self.clone().inner.rle().into()
+    }
+    #[cfg(feature = "rle")]
+    fn rle_id(&self) -> Self {
+        self.clone().inner.rle_id().into()
+    }
+
     fn agg_groups(&self) -> Self {
         self.clone().inner.agg_groups().into()
     }
     fn count(&self) -> Self {
         self.clone().inner.count().into()
     }
-    fn value_counts(&self, multithreaded: bool, sorted: bool) -> Self {
-        self.inner
-            .clone()
-            .value_counts(multithreaded, sorted)
-            .into()
+    fn value_counts(&self, sort: bool, parallel: bool) -> Self {
+        self.inner.clone().value_counts(sort, parallel).into()
     }
     fn unique_counts(&self) -> Self {
         self.inner.clone().unique_counts().into()
@@ -211,6 +266,7 @@ impl PyExpr {
                 descending,
                 nulls_last,
                 multithreaded: true,
+                maintain_order: false,
             })
             .into()
     }
@@ -222,6 +278,7 @@ impl PyExpr {
                 descending,
                 nulls_last,
                 multithreaded: true,
+                maintain_order: false,
             })
             .into()
     }
@@ -309,25 +366,33 @@ impl PyExpr {
     fn filter(&self, predicate: Self) -> Self {
         self.clone().inner.filter(predicate.inner).into()
     }
+
     fn reverse(&self) -> Self {
         self.clone().inner.reverse().into()
     }
+
     fn std(&self, ddof: u8) -> Self {
         self.clone().inner.std(ddof).into()
     }
+
     fn var(&self, ddof: u8) -> Self {
         self.clone().inner.var(ddof).into()
     }
+
     fn is_unique(&self) -> Self {
         self.clone().inner.is_unique().into()
     }
 
-    fn approx_unique(&self) -> Self {
-        self.clone().inner.approx_unique().into()
+    fn approx_n_unique(&self) -> Self {
+        self.clone().inner.approx_n_unique().into()
     }
 
     fn is_first(&self) -> Self {
         self.clone().inner.is_first().into()
+    }
+
+    fn is_last(&self) -> Self {
+        self.clone().inner.is_last().into()
     }
 
     fn explode(&self) -> Self {
@@ -338,7 +403,10 @@ impl PyExpr {
         self.clone()
             .inner
             .map(
-                move |s: Series| Ok(Some(s.take_every(n))),
+                move |s: Series| {
+                    polars_ensure!(n > 0, InvalidOperation: "take_every(n): n can't be zero");
+                    Ok(Some(s.take_every(n)))
+                },
                 GetOutput::same_type(),
             )
             .with_fmt("take_every")
@@ -430,6 +498,11 @@ impl PyExpr {
     }
 
     #[cfg(feature = "trigonometry")]
+    fn arctan2(&self, y: Self) -> Self {
+        self.clone().inner.arctan2(y.inner).into()
+    }
+
+    #[cfg(feature = "trigonometry")]
     fn sinh(&self) -> Self {
         self.clone().inner.sinh().into()
     }
@@ -514,6 +587,14 @@ impl PyExpr {
         self.clone().inner.pow(exponent.inner).into()
     }
 
+    fn sqrt(&self) -> Self {
+        self.clone().inner.sqrt().into()
+    }
+
+    fn cbrt(&self) -> Self {
+        self.clone().inner.cbrt().into()
+    }
+
     fn cumsum(&self, reverse: bool) -> Self {
         self.clone().inner.cumsum(reverse).into()
     }
@@ -536,139 +617,13 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
-    #[pyo3(signature = (lambda, window_size, weights, min_periods, center))]
-    fn rolling_apply(
+    #[pyo3(signature = (lambda, output_type, agg_list))]
+    fn map_batches(
         &self,
         lambda: PyObject,
-        window_size: usize,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
+        output_type: Option<Wrap<DataType>>,
+        agg_list: bool,
     ) -> Self {
-        let options = RollingOptionsFixedWindow {
-            window_size,
-            weights,
-            min_periods,
-            center,
-            ..Default::default()
-        };
-        let function = move |s: &Series| {
-            Python::with_gil(|py| {
-                let out = call_lambda_with_series(py, s.clone(), &lambda)
-                    .expect("python function failed");
-                match out.getattr(py, "_s") {
-                    Ok(pyseries) => {
-                        let pyseries = pyseries.extract::<PySeries>(py).unwrap();
-                        pyseries.series
-                    }
-                    Err(_) => {
-                        let obj = out;
-                        let is_float = obj.as_ref(py).is_instance_of::<PyFloat>();
-
-                        let dtype = s.dtype();
-
-                        use DataType::*;
-                        let result = match dtype {
-                            UInt8 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(UInt8Chunked::from_slice("", &[v as u8]).into_series())
-                                } else {
-                                    obj.extract::<u8>(py)
-                                        .map(|v| UInt8Chunked::from_slice("", &[v]).into_series())
-                                }
-                            }
-                            UInt16 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(UInt16Chunked::from_slice("", &[v as u16]).into_series())
-                                } else {
-                                    obj.extract::<u16>(py)
-                                        .map(|v| UInt16Chunked::from_slice("", &[v]).into_series())
-                                }
-                            }
-                            UInt32 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(UInt32Chunked::from_slice("", &[v as u32]).into_series())
-                                } else {
-                                    obj.extract::<u32>(py)
-                                        .map(|v| UInt32Chunked::from_slice("", &[v]).into_series())
-                                }
-                            }
-                            UInt64 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(UInt64Chunked::from_slice("", &[v as u64]).into_series())
-                                } else {
-                                    obj.extract::<u64>(py)
-                                        .map(|v| UInt64Chunked::from_slice("", &[v]).into_series())
-                                }
-                            }
-                            Int8 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(Int8Chunked::from_slice("", &[v as i8]).into_series())
-                                } else {
-                                    obj.extract::<i8>(py)
-                                        .map(|v| Int8Chunked::from_slice("", &[v]).into_series())
-                                }
-                            }
-                            Int16 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(Int16Chunked::from_slice("", &[v as i16]).into_series())
-                                } else {
-                                    obj.extract::<i16>(py)
-                                        .map(|v| Int16Chunked::from_slice("", &[v]).into_series())
-                                }
-                            }
-                            Int32 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(Int32Chunked::from_slice("", &[v as i32]).into_series())
-                                } else {
-                                    obj.extract::<i32>(py)
-                                        .map(|v| Int32Chunked::from_slice("", &[v]).into_series())
-                                }
-                            }
-                            Int64 => {
-                                if is_float {
-                                    let v = obj.extract::<f64>(py).unwrap();
-                                    Ok(Int64Chunked::from_slice("", &[v as i64]).into_series())
-                                } else {
-                                    obj.extract::<i64>(py)
-                                        .map(|v| Int64Chunked::from_slice("", &[v]).into_series())
-                                }
-                            }
-                            Float32 => obj
-                                .extract::<f32>(py)
-                                .map(|v| Float32Chunked::from_slice("", &[v]).into_series()),
-                            Float64 => obj
-                                .extract::<f64>(py)
-                                .map(|v| Float64Chunked::from_slice("", &[v]).into_series()),
-                            dt => panic!("{dt:?} not implemented"),
-                        };
-
-                        match result {
-                            Ok(s) => s,
-                            Err(e) => {
-                                panic!("{e:?}")
-                            }
-                        }
-                    }
-                }
-            })
-        };
-        self.clone()
-            .inner
-            .rolling_apply(Arc::new(function), GetOutput::same_type(), options)
-            .with_fmt("rolling_apply")
-            .into()
-    }
-
-    #[pyo3(signature = (lambda, output_type, agg_list))]
-    fn map(&self, lambda: PyObject, output_type: Option<Wrap<DataType>>, agg_list: bool) -> Self {
         map_single(self, lambda, output_type, agg_list)
     }
 
@@ -727,200 +682,6 @@ impl PyExpr {
         self.inner.clone().interpolate(method.0).into()
     }
 
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    fn rolling_sum(
-        &self,
-        window_size: &str,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
-    ) -> Self {
-        let options = RollingOptions {
-            window_size: Duration::parse(window_size),
-            weights,
-            min_periods,
-            center,
-            by,
-            closed_window: closed.map(|c| c.0),
-            ..Default::default()
-        };
-        self.inner.clone().rolling_sum(options).into()
-    }
-
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    fn rolling_min(
-        &self,
-        window_size: &str,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
-    ) -> Self {
-        let options = RollingOptions {
-            window_size: Duration::parse(window_size),
-            weights,
-            min_periods,
-            center,
-            by,
-            closed_window: closed.map(|c| c.0),
-            ..Default::default()
-        };
-        self.inner.clone().rolling_min(options).into()
-    }
-
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    fn rolling_max(
-        &self,
-        window_size: &str,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
-    ) -> Self {
-        let options = RollingOptions {
-            window_size: Duration::parse(window_size),
-            weights,
-            min_periods,
-            center,
-            by,
-            closed_window: closed.map(|c| c.0),
-            ..Default::default()
-        };
-        self.inner.clone().rolling_max(options).into()
-    }
-
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    fn rolling_mean(
-        &self,
-        window_size: &str,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
-    ) -> Self {
-        let options = RollingOptions {
-            window_size: Duration::parse(window_size),
-            weights,
-            min_periods,
-            center,
-            by,
-            closed_window: closed.map(|c| c.0),
-            ..Default::default()
-        };
-
-        self.inner.clone().rolling_mean(options).into()
-    }
-
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, ddof))]
-    #[allow(clippy::too_many_arguments)]
-    fn rolling_std(
-        &self,
-        window_size: &str,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
-        ddof: u8,
-    ) -> Self {
-        let options = RollingOptions {
-            window_size: Duration::parse(window_size),
-            weights,
-            min_periods,
-            center,
-            by,
-            closed_window: closed.map(|c| c.0),
-            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
-        };
-
-        self.inner.clone().rolling_std(options).into()
-    }
-
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, ddof))]
-    #[allow(clippy::too_many_arguments)]
-    fn rolling_var(
-        &self,
-        window_size: &str,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
-        ddof: u8,
-    ) -> Self {
-        let options = RollingOptions {
-            window_size: Duration::parse(window_size),
-            weights,
-            min_periods,
-            center,
-            by,
-            closed_window: closed.map(|c| c.0),
-            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
-        };
-
-        self.inner.clone().rolling_var(options).into()
-    }
-
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    fn rolling_median(
-        &self,
-        window_size: &str,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
-    ) -> Self {
-        let options = RollingOptions {
-            window_size: Duration::parse(window_size),
-            weights,
-            min_periods,
-            center,
-            by,
-            closed_window: closed.map(|c| c.0),
-            ..Default::default()
-        };
-        self.inner.clone().rolling_median(options).into()
-    }
-
-    #[pyo3(signature = (quantile, interpolation, window_size, weights, min_periods, center, by, closed))]
-    #[allow(clippy::too_many_arguments)]
-    fn rolling_quantile(
-        &self,
-        quantile: f64,
-        interpolation: Wrap<QuantileInterpolOptions>,
-        window_size: &str,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-        by: Option<String>,
-        closed: Option<Wrap<ClosedWindow>>,
-    ) -> Self {
-        let options = RollingOptions {
-            window_size: Duration::parse(window_size),
-            weights,
-            min_periods,
-            center,
-            by,
-            closed_window: closed.map(|c| c.0),
-            ..Default::default()
-        };
-
-        self.inner
-            .clone()
-            .rolling_quantile(quantile, interpolation.0, options)
-            .into()
-    }
-
-    fn rolling_skew(&self, window_size: usize, bias: bool) -> Self {
-        self.inner.clone().rolling_skew(window_size, bias).into()
-    }
-
     fn lower_bound(&self) -> Self {
         self.inner.clone().lower_bound().into()
     }
@@ -972,10 +733,12 @@ impl PyExpr {
         self.inner.clone().to_physical().into()
     }
 
+    #[pyo3(signature = (seed))]
     fn shuffle(&self, seed: Option<u64>) -> Self {
         self.inner.clone().shuffle(seed).into()
     }
 
+    #[pyo3(signature = (n, with_replacement, shuffle, seed))]
     fn sample_n(&self, n: usize, with_replacement: bool, shuffle: bool, seed: Option<u64>) -> Self {
         self.inner
             .clone()
@@ -983,6 +746,7 @@ impl PyExpr {
             .into()
     }
 
+    #[pyo3(signature = (frac, with_replacement, shuffle, seed))]
     fn sample_frac(
         &self,
         frac: f64,
@@ -1056,12 +820,12 @@ impl PyExpr {
             .with_fmt("extend")
             .into()
     }
-    fn any(&self) -> Self {
-        self.inner.clone().any().into()
-    }
 
-    fn all(&self) -> Self {
-        self.inner.clone().all().into()
+    fn any(&self, ignore_nulls: bool) -> Self {
+        self.inner.clone().any(ignore_nulls).into()
+    }
+    fn all(&self, ignore_nulls: bool) -> Self {
+        self.inner.clone().all(ignore_nulls).into()
     }
 
     fn log(&self, base: f64) -> Self {
@@ -1089,9 +853,5 @@ impl PyExpr {
             IsSorted::Ascending
         };
         self.inner.clone().set_sorted_flag(is_sorted).into()
-    }
-
-    fn cache(&self) -> Self {
-        self.inner.clone().cache().into()
     }
 }

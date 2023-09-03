@@ -5,22 +5,6 @@ import numpy as np
 import polars as pl
 
 
-def test_object_when_then_4702() -> None:
-    # please don't ever do this
-    x = pl.DataFrame({"Row": [1, 2], "Type": [pl.Date, pl.UInt8]})
-
-    assert x.with_columns(
-        pl.when(pl.col("Row") == 1)
-        .then(pl.lit(pl.UInt16, allow_object=True))
-        .otherwise(pl.lit(pl.UInt8, allow_object=True))
-        .alias("New_Type")
-    ).to_dict(False) == {
-        "Row": [1, 2],
-        "Type": [pl.Date, pl.UInt8],
-        "New_Type": [pl.UInt16, pl.UInt8],
-    }
-
-
 def test_object_empty_filter_5911() -> None:
     df = pl.DataFrame(
         data=[
@@ -65,12 +49,14 @@ def test_empty_sort() -> None:
         orient="row",
     )
     df_filtered = df.filter(
-        pl.col("blob").apply(
+        pl.col("blob").map_elements(
             lambda blob: blob["name"] == "baz", return_dtype=pl.Boolean
         )
     )
     df_filtered.sort(
-        pl.col("blob").apply(lambda blob: blob["sort_key"], return_dtype=pl.Int64)
+        pl.col("blob").map_elements(
+            lambda blob: blob["sort_key"], return_dtype=pl.Int64
+        )
     )
 
 
@@ -112,5 +98,5 @@ def test_object_row_construction() -> None:
 
 def test_object_apply_to_struct() -> None:
     s = pl.Series([0, 1, 2], dtype=pl.Object)
-    out = s.apply(lambda x: {"a": str(x), "b": x})
+    out = s.map_elements(lambda x: {"a": str(x), "b": x})
     assert out.dtype == pl.Struct([pl.Field("a", pl.Utf8), pl.Field("b", pl.Int64)])

@@ -4,10 +4,7 @@ import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
-from polars.datatypes import (
-    N_INFER_DEFAULT,
-    py_type_to_dtype,
-)
+from polars.datatypes import N_INFER_DEFAULT, py_type_to_dtype
 from polars.io.csv._utils import _update_columns
 from polars.utils._wrap import wrap_df
 from polars.utils.various import (
@@ -26,6 +23,8 @@ if TYPE_CHECKING:
 
 
 class BatchedCsvReader:
+    """Read a CSV file in batches."""
+
     def __init__(
         self,
         source: str | Path,
@@ -53,6 +52,8 @@ class BatchedCsvReader:
         sample_size: int = 1024,
         eol_char: str = "\n",
         new_columns: Sequence[str] | None = None,
+        raise_if_empty: bool = True,
+        truncate_ragged_lines: bool = False,
     ):
         path: str | None
         if isinstance(source, (str, Path)):
@@ -68,7 +69,7 @@ class BatchedCsvReader:
             elif isinstance(dtypes, Sequence):
                 dtype_slice = dtypes
             else:
-                raise ValueError("dtype arg should be list or dict")
+                raise TypeError("`dtypes` arg should be list or dict")
 
         processed_null_values = _process_null_values(null_values)
         projection, columns = handle_projection_columns(columns)
@@ -99,6 +100,8 @@ class BatchedCsvReader:
             row_count=_prepare_row_count_args(row_count_name, row_count_offset),
             sample_size=sample_size,
             eol_char=eol_char,
+            raise_if_empty=raise_if_empty,
+            truncate_ragged_lines=truncate_ragged_lines,
         )
         self.new_columns = new_columns
 
@@ -126,7 +129,7 @@ class BatchedCsvReader:
 
         Returns
         -------
-        Sequence of DataFrames
+        list of DataFrames
 
         """
         batches = self._reader.next_batches(n)

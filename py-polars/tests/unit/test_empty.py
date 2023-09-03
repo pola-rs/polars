@@ -1,7 +1,7 @@
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_empty_str_concat_lit() -> None:
@@ -65,16 +65,23 @@ def test_empty_sort_by_args() -> None:
 def test_empty_9137() -> None:
     out = (
         pl.DataFrame({"id": [], "value": []})
-        .groupby("id")
+        .group_by("id")
         .agg(pl.col("value").pow(2).mean())
     )
     assert out.shape == (0, 2)
     assert out.dtypes == [pl.Float32, pl.Float32]
 
 
-def test_empty_groupby_apply_err() -> None:
-    df = pl.DataFrame(schema={"x": pl.Int64})
-    with pytest.raises(
-        pl.ComputeError, match=r"cannot groupby \+ apply on empty 'DataFrame'"
-    ):
-        df.groupby("x").apply(lambda x: x)
+def test_empty_list_namespace_output_9585() -> None:
+    dtype = pl.List(pl.Utf8)
+    names = ["sort", "unique", "head", "tail", "shift", "reverse"]
+    df = pl.DataFrame([[None]], schema={"A": dtype})
+    assert df.select(
+        [eval(f"pl.col('A').list.{name}().suffix(f'_{name}')") for name in names]
+    ).dtypes == [dtype] * len(names)
+
+
+def test_empty_is_in() -> None:
+    assert_series_equal(
+        pl.Series("a", [1, 2, 3]).is_in([]), pl.Series("a", [False] * 3)
+    )

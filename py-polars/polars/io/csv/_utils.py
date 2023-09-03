@@ -15,12 +15,12 @@ def _check_arg_is_1byte(
             if arg_byte_length > 1:
                 raise ValueError(
                     f'{arg_name}="{arg}" should be a single byte character or empty,'
-                    f" but is {arg_byte_length} bytes long."
+                    f" but is {arg_byte_length} bytes long"
                 )
         elif arg_byte_length != 1:
             raise ValueError(
                 f'{arg_name}="{arg}" should be a single byte character, but is'
-                f" {arg_byte_length} bytes long."
+                f" {arg_byte_length} bytes long"
             )
 
 

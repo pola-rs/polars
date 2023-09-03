@@ -6,7 +6,7 @@ body:
   - type: checkboxes
     id: checks
     attributes:
-      label: Polars version checks
+      label: Checks
       options:
         - label: >
             I have checked that this issue has not already been reported.
@@ -17,35 +17,25 @@ body:
           required: true
 
   - type: textarea
-    id: problem
-    attributes:
-      label: Issue description
-      description: >
-        Please provide a high-level description of the issue.
-    validations:
-      required: true
-
-  - type: textarea
     id: example
     attributes:
       label: Reproducible example
       description: >
         Please follow [this guide](https://matthewrocklin.com/blog/work/2018/02/28/minimal-bug-reports) on how to
         provide a minimal, copy-pastable example. Include the (wrong) output if applicable.
-      placeholder: >
-        import polars as pl
+      value: |
+        ```python
 
-        import numpy as np
+        ```
+    validations:
+      required: true
 
-        # Create a simple dataset on which we can reproduce the bug.
-
-        pl.DataFrame({
-            "foo": [None, 1, 2],
-            "bar": np.arange(3)
-        })
-
-        ...
-      render: python
+  - type: textarea
+    id: problem
+    attributes:
+      label: Issue description
+      description: >
+        Provide any additional information you think might be relevant.
     validations:
       required: true
 
@@ -54,7 +44,7 @@ body:
     attributes:
       label: Expected behavior
       description: >
-        Please describe or show a code example of the expected behavior.
+        Describe or show a code example of the expected behavior.
     validations:
       required: true
 
@@ -63,14 +53,14 @@ body:
     attributes:
       label: Installed versions
       description: >
-        Please paste the output of ``pl.show_versions()``
+        Paste the output of ``pl.show_versions()``
       value: |
         <details>
 
         ```
-        Replace this line with the output of pl.show_versions(), leave the backticks in place
+        Replace this line with the output of pl.show_versions(). Leave the backticks in place.
         ```
-        
+
         </details>
     validations:
       required: true

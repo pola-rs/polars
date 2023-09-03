@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+import polars.selectors as cs
+from polars.exceptions import NoDataError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -16,6 +18,11 @@ if TYPE_CHECKING:
 @pytest.fixture()
 def excel_file_path(io_files_path: Path) -> Path:
     return io_files_path / "example.xlsx"
+
+
+@pytest.fixture()
+def empty_excel_file_path(io_files_path: Path) -> Path:
+    return io_files_path / "empty.xlsx"
 
 
 def test_read_excel(excel_file_path: Path) -> None:
@@ -87,7 +94,8 @@ def test_unsupported_engine() -> None:
 
 def test_read_excel_all_sheets_with_sheet_name(excel_file_path: Path) -> None:
     with pytest.raises(
-        ValueError, match="Cannot specify both `sheet_name` and `sheet_id`"
+        ValueError,
+        match=r"cannot specify both `sheet_name` \('Sheet1'\) and `sheet_id` \(1\)",
     ):
         pl.read_excel(excel_file_path, sheet_id=1, sheet_name="Sheet1")
 
@@ -120,6 +128,7 @@ def test_read_excel_all_sheets_with_sheet_name(excel_file_path: Path) -> None:
                 "val": "#,##0.000;[White]-#,##0.000",
                 ("day", "month", "year"): {"align": "left", "num_format": "0"},
             },
+            "header_format": {"italic": True, "bg_color": "#d9d9d9"},
             "column_widths": {"val": 100},
             "row_heights": {0: 35},
             "formulas": {
@@ -261,7 +270,7 @@ def test_excel_sparklines() -> None:
             worksheet="frame_data",
             table_style="Table Style Light 2",
             dtype_formats={pl.INTEGER_DTYPES: "#,##0_);(#,##0)"},
-            column_formats={("h1", "h2"): "#,##0_);(#,##0)"},
+            column_formats={cs.starts_with("h"): "#,##0_);(#,##0)"},
             sparklines={
                 "trend": ["q1", "q2", "q3", "q4"],
                 "+/-": {
@@ -271,13 +280,13 @@ def test_excel_sparklines() -> None:
                 },
             },
             conditional_formats={
-                ("q1", "q2", "q3", "q4", "h1", "h2"): {
+                cs.starts_with("q", "h"): {
                     "type": "2_color_scale",
                     "min_color": "#95b3d7",
                     "max_color": "#ffffff",
                 }
             },
-            column_widths={("q1", "q2", "q3", "q4", "h1", "h2"): 40},
+            column_widths={cs.starts_with("q", "h"): 40},
             row_totals={
                 "h1": ("q1", "q2"),
                 "h2": ("q3", "q4"),
@@ -347,3 +356,36 @@ def test_excel_write_multiple_tables() -> None:
         )
     assert table_names == {f"Frame{n}" for n in range(4)}
     assert pl.read_excel(xls, sheet_name="sheet3").rows() == []
+
+
+def test_excel_freeze_panes() -> None:
+    from xlsxwriter import Workbook
+
+    # note: checks that empty tables don't error on write
+    df1 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
+    df2 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
+    df3 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
+
+    xls = BytesIO()
+
+    # use all three freeze_pane notations
+    with Workbook(xls) as wb:
+        df1.write_excel(workbook=wb, worksheet="sheet1", freeze_panes=(1, 0))
+        df2.write_excel(workbook=wb, worksheet="sheet2", freeze_panes=(1, 0, 3, 4))
+        df3.write_excel(workbook=wb, worksheet="sheet3", freeze_panes=("B2"))
+
+    table_names: set[str] = set()
+    for sheet in ("sheet1", "sheet2", "sheet3"):
+        table_names.update(
+            tbl["name"] for tbl in wb.get_worksheet_by_name(sheet).tables
+        )
+    assert table_names == {f"Frame{n}" for n in range(3)}
+    assert pl.read_excel(xls, sheet_name="sheet3").rows() == []
+
+
+def test_excel_empty_sheet(empty_excel_file_path: Path) -> None:
+    with pytest.raises(NoDataError, match="Empty Excel sheet"):
+        pl.read_excel(empty_excel_file_path)
+
+    df = pl.read_excel(empty_excel_file_path, raise_if_empty=False)
+    assert_frame_equal(df, pl.DataFrame())

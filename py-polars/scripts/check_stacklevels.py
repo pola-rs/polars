@@ -7,6 +7,7 @@ import ast
 import subprocess
 import sys
 from ast import NodeVisitor
+from pathlib import Path
 
 # Files in which it's OK to set the stacklevel manually.
 # `git ls-files` lists files with forwards-slashes
@@ -14,12 +15,12 @@ from ast import NodeVisitor
 EXCLUDE = frozenset(["polars/utils/polars_version.py"])
 
 
-class StackLevelChecker(NodeVisitor):
+class StackLevelChecker(NodeVisitor):  # noqa: D101
     def __init__(self, file) -> None:
         self.file = file
         self.violations = set()
 
-    def visit_Call(self, node: ast.Call) -> None:
+    def visit_Call(self, node: ast.Call) -> None:  # noqa: D102
         for keyword in node.keywords:
             if keyword.arg == "stacklevel" and isinstance(keyword.value, ast.Constant):
                 self.violations.add(
@@ -38,10 +39,9 @@ if __name__ == "__main__":
     for file in files:
         if file in EXCLUDE:
             continue
-        if not file.endswith(".py"):
+        if Path(file).suffix != ".py":
             continue
-        with open(file) as fd:
-            content = fd.read()
+        content = Path(file).read_text()
         tree = ast.parse(content)
         stacklevel_checker = StackLevelChecker(file)
         stacklevel_checker.visit(tree)

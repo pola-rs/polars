@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_frame_equal_local_categoricals
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -18,7 +18,7 @@ def test_to_from_buffer(df: pl.DataFrame, buf: io.IOBase) -> None:
     df.write_json(buf)
     buf.seek(0)
     read_df = pl.read_json(buf)
-    assert_frame_equal_local_categoricals(df, read_df)
+    assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
 @pytest.mark.write_disk()
@@ -29,13 +29,13 @@ def test_to_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
     df.write_json(file_path)
     out = pl.read_json(file_path)
 
-    assert_frame_equal_local_categoricals(df, out)
+    assert_frame_equal(df, out, categorical_as_str=True)
 
 
 def test_write_json_to_string() -> None:
     # Tests if it runs if no arg given
     df = pl.DataFrame({"a": [1, 2, 3]})
-    expected_str = '{"columns":[{"name":"a","datatype":"Int64","values":[1,2,3]}]}'
+    expected_str = '{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]}'
     assert df.write_json() == expected_str
 
 
@@ -138,3 +138,85 @@ def test_json_sliced_list_serialization() -> None:
     sliced_df = df[1, :]
     sliced_df.write_ndjson(f)
     assert f.getvalue() == b'{"col1":2,"col2":[6,7,8]}\n'
+
+
+def test_json_deserialize_empty_list_10458() -> None:
+    schema = {"LIST_OF_STRINGS": pl.List(pl.Utf8)}
+    serialized_schema = pl.DataFrame(schema=schema).write_json()
+    df = pl.read_json(io.StringIO(serialized_schema))
+    assert df.schema == schema
+
+
+def test_json_deserialize_9687() -> None:
+    response = {
+        "volume": [0.0, 0.0, 0.0],
+        "open": [1263.0, 1263.0, 1263.0],
+        "close": [1263.0, 1263.0, 1263.0],
+        "high": [1263.0, 1263.0, 1263.0],
+        "low": [1263.0, 1263.0, 1263.0],
+    }
+
+    result = pl.read_json(json.dumps(response).encode())
+
+    assert result.to_dict(False) == {k: [v] for k, v in response.items()}
+
+
+def test_ndjson_ignore_errors() -> None:
+    # this schema is inconsistent as "value" is string and object
+    jsonl = r"""{"Type":"insert","Key":[1],"SeqNo":1,"Timestamp":1,"Fields":[{"Name":"added_id","Value":2},{"Name":"body","Value":{"a": 1}}]}
+    {"Type":"insert","Key":[1],"SeqNo":1,"Timestamp":1,"Fields":[{"Name":"added_id","Value":2},{"Name":"body","Value":{"a": 1}}]}"""
+
+    buf = io.BytesIO(jsonl.encode())
+
+    # check if we can replace with nulls
+    assert pl.read_ndjson(buf, ignore_errors=True).to_dict(False) == {
+        "Type": ["insert", "insert"],
+        "Key": [[1], [1]],
+        "SeqNo": [1, 1],
+        "Timestamp": [1, 1],
+        "Fields": [
+            [{"Name": "added_id", "Value": "2"}, {"Name": "body", "Value": None}],
+            [{"Name": "added_id", "Value": "2"}, {"Name": "body", "Value": None}],
+        ],
+    }
+
+    schema = {
+        "Fields": pl.List(
+            pl.Struct([pl.Field("Name", pl.Utf8), pl.Field("Value", pl.Int64)])
+        )
+    }
+    # schema argument only parses Fields
+    assert pl.read_ndjson(buf, schema=schema, ignore_errors=True).to_dict(False) == {
+        "Fields": [
+            [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
+            [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
+        ]
+    }
+
+    # schema_overrides argument does schema inference, but overrides Fields
+    assert pl.read_ndjson(buf, schema_overrides=schema, ignore_errors=True).to_dict(
+        False
+    ) == {
+        "Type": ["insert", "insert"],
+        "Key": [[1], [1]],
+        "SeqNo": [1, 1],
+        "Timestamp": [1, 1],
+        "Fields": [
+            [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
+            [{"Name": "added_id", "Value": 2}, {"Name": "body", "Value": None}],
+        ],
+    }
+
+
+def test_write_json_duration() -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [91762939, 91762890, 6020836], dtype=pl.Duration(time_unit="ms")
+            )
+        }
+    )
+    assert (
+        df.write_json(row_oriented=True)
+        == '[{"a":"P1DT5362.939S"},{"a":"P1DT5362.890S"},{"a":"PT6020.836S"}]'
+    )

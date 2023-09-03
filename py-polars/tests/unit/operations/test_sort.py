@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-import random
-import string
 from datetime import date, datetime
-from typing import Any
 
-import numpy as np
 import pytest
 
 import polars as pl
@@ -226,7 +222,6 @@ def test_sorted_flag() -> None:
     ).sort("timestamp")
 
     assert q.collect()["timestamp"].flags["SORTED_ASC"]
-    assert q.collect(streaming=True)["timestamp"].flags["SORTED_ASC"]
 
     # top-k/bottom-k
     df = pl.DataFrame({"foo": [56, 2, 3]})
@@ -319,7 +314,7 @@ def test_sorted_flag_unset_by_arithmetic_4937() -> None:
         }
     )
 
-    assert df.sort("price").groupby("ts").agg(
+    assert df.sort("price").group_by("ts").agg(
         [
             (pl.col("price") * pl.col("mask")).max().alias("pmax"),
             (pl.col("price") * pl.col("mask")).min().alias("pmin"),
@@ -337,7 +332,7 @@ def test_unset_sorted_flag_after_extend() -> None:
 
     df1.extend(df2)
     assert not df1["Add"].flags["SORTED_ASC"]
-    df = df1.groupby("Add").agg([pl.col("Batch").min()]).sort("Add")
+    df = df1.group_by("Add").agg([pl.col("Batch").min()]).sort("Add")
     assert df["Add"].flags["SORTED_ASC"]
     assert df.to_dict(False) == {"Add": [37, 41], "Batch": [48, 49]}
 
@@ -361,12 +356,12 @@ def test_sort_slice_fast_path_5245() -> None:
     }
 
 
-def test_explicit_list_agg_sort_in_groupby() -> None:
+def test_explicit_list_agg_sort_in_group_by() -> None:
     df = pl.DataFrame({"A": ["a", "a", "a", "b", "b", "a"], "B": [1, 2, 3, 4, 5, 6]})
 
     # this was col().implode().sort() before we changed the logic
-    result = df.groupby("A").agg(pl.col("B").sort(descending=True)).sort("A")
-    expected = df.groupby("A").agg(pl.col("B").sort(descending=True)).sort("A")
+    result = df.group_by("A").agg(pl.col("B").sort(descending=True)).sort("A")
+    expected = df.group_by("A").agg(pl.col("B").sort(descending=True)).sort("A")
     assert_frame_equal(result, expected)
 
 
@@ -393,7 +388,7 @@ def test_sorted_join_query_5406() -> None:
     df1 = df.sort(by=["Datetime", "RowId"])
 
     filter1 = (
-        df1.groupby(["Datetime", "Group"])
+        df1.group_by(["Datetime", "Group"])
         .agg([pl.all().sort_by("Value", descending=True).first()])
         .sort(["Datetime", "RowId"])
     )
@@ -491,11 +486,6 @@ def test_sort_args() -> None:
     result = df.sort("a", "b")
     assert_frame_equal(result, expected)
 
-    # Mixed
-    with pytest.deprecated_call():
-        result = df.sort(["a"], "b")
-    assert_frame_equal(result, expected)
-
     # nulls_last
     result = df.sort("a", nulls_last=True)
     assert_frame_equal(result, df)
@@ -509,52 +499,21 @@ def test_sort_type_coercion_6892() -> None:
     }
 
 
-def get_str_ints_df(n: int) -> pl.DataFrame:
-    strs = pl.Series("strs", random.choices(string.ascii_lowercase, k=n))
-    strs = pl.select(
-        pl.when(strs == "a")
-        .then("")
-        .when(strs == "b")
-        .then(None)
-        .otherwise(strs)
-        .alias("strs")
-    ).to_series()
-
-    vals = pl.Series("vals", np.random.rand(n))
-
-    return pl.DataFrame([vals, strs])
-
-
 @pytest.mark.slow()
-def test_sort_row_fmt() -> None:
+def test_sort_row_fmt(str_ints_df: pl.DataFrame) -> None:
     # we sort nulls_last as this will always dispatch
     # to row_fmt and is the default in pandas
 
-    df = get_str_ints_df(1000)
+    df = str_ints_df
     df_pd = df.to_pandas()
 
     for descending in [True, False]:
-        pl.testing.assert_frame_equal(
+        assert_frame_equal(
             df.sort(["strs", "vals"], nulls_last=True, descending=descending),
             pl.from_pandas(
                 df_pd.sort_values(["strs", "vals"], ascending=not descending)
             ),
         )
-
-
-@pytest.mark.slow()
-def test_streaming_sort_multiple_columns(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-    df = get_str_ints_df(1000)
-
-    out = df.lazy().sort(["strs", "vals"]).collect(streaming=True)
-    assert_frame_equal(out, out.sort(["strs", "vals"]))
-    err = capfd.readouterr().err
-    assert "OOC sort forced" in err
-    assert "RUN STREAMING PIPELINE" in err
-    assert "df -> sort_multiple" in err
-    assert out.columns == ["vals", "strs"]
 
 
 def test_sort_by_logical() -> None:
@@ -576,7 +535,7 @@ def test_sort_by_logical() -> None:
             "num": [3, 4, 1],
         }
     )
-    assert df.groupby("name").agg([pl.col("num").sort_by(["dt1", "dt2"])]).sort(
+    assert df.group_by("name").agg([pl.col("num").sort_by(["dt1", "dt2"])]).sort(
         "name"
     ).to_dict(False) == {"name": ["a", "b"], "num": [[3, 1], [4]]}
 
@@ -688,11 +647,11 @@ def test_sort_top_k_fast_path() -> None:
     }
 
 
-def test_sorted_flag_groupby_dynamic() -> None:
+def test_sorted_flag_group_by_dynamic() -> None:
     df = pl.DataFrame({"ts": [date(2020, 1, 1), date(2020, 1, 2)], "val": [1, 2]})
     assert (
         (
-            df.groupby_dynamic(pl.col("ts").set_sorted(), every="1d").agg(
+            df.group_by_dynamic(pl.col("ts").set_sorted(), every="1d").agg(
                 pl.col("val").sum()
             )
         )
@@ -705,3 +664,30 @@ def test_top_k_9385() -> None:
     assert pl.LazyFrame({"b": [True, False]}).sort(["b"]).slice(0, 1).collect()[
         "b"
     ].to_list() == [False]
+
+
+def test_sorted_flag_partition_by() -> None:
+    assert (
+        pl.DataFrame({"one": [1, 2, 3], "two": ["a", "a", "b"]})
+        .set_sorted("one")
+        .partition_by("two", maintain_order=True)[0]["one"]
+        .flags["SORTED_ASC"]
+    )
+
+
+def test_sorted_flag_singletons() -> None:
+    assert pl.DataFrame({"x": [1]})["x"].flags["SORTED_ASC"]
+    assert pl.DataFrame({"x": ["a"]})["x"].flags["SORTED_ASC"]
+    assert pl.DataFrame({"x": [True]})["x"].flags["SORTED_ASC"]
+    assert pl.DataFrame({"x": [None]})["x"].flags["SORTED_ASC"]
+
+
+def test_sorted_update_flags_10327() -> None:
+    assert pl.concat(
+        [
+            pl.Series("a", [1], dtype=pl.Int64).to_frame(),
+            pl.Series("a", [], dtype=pl.Int64).to_frame(),
+            pl.Series("a", [2], dtype=pl.Int64).to_frame(),
+            pl.Series("a", [], dtype=pl.Int64).to_frame(),
+        ]
+    )["a"].to_list() == [1, 2]

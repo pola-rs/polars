@@ -8,12 +8,7 @@ from textwrap import dedent
 from typing import TYPE_CHECKING, Any, Collection, Sequence, overload
 
 from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
-from hypothesis.strategies import (
-    booleans,
-    composite,
-    lists,
-    sampled_from,
-)
+from hypothesis.strategies import booleans, composite, lists, sampled_from
 from hypothesis.strategies._internal.utils import defines_strategy
 
 from polars.dataframe import DataFrame
@@ -41,17 +36,12 @@ from polars.testing.parametric.strategies import (
 )
 
 if TYPE_CHECKING:
-    import sys
+    from typing import Literal
 
     from hypothesis.strategies import DrawFn, SearchStrategy
 
     from polars import LazyFrame
     from polars.type_aliases import OneOrMoreDataTypes, PolarsDataType
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 _time_units = list(DTYPE_TEMPORAL_UNITS)
@@ -122,7 +112,7 @@ class column:
         ):
             raise InvalidArgument(
                 "null_probability should be between 0.0 and 1.0, or None; found"
-                f" {self.null_probability}"
+                f" {self.null_probability!r}"
             )
 
         if self.dtype is None:
@@ -146,7 +136,7 @@ class column:
         elif self.dtype not in scalar_strategies:
             if self.dtype is not None:
                 raise InvalidArgument(
-                    f"No strategy (currently) available for {self.dtype} type"
+                    f"no strategy (currently) available for {self.dtype!r} type"
                 )
             else:
                 # given a custom strategy, but no explicit dtype. infer one
@@ -170,8 +160,9 @@ class column:
                         )
                     except StopIteration:
                         raise InvalidArgument(
-                            "Unable to determine dtype for strategy"
+                            "unable to determine dtype for strategy"
                         ) from None
+
                 if sample_value_type is not None:
                     value_dtype = py_type_to_dtype(sample_value_type)
                     if value_dtype is not List:
@@ -251,14 +242,14 @@ def columns(
 
     if isinstance(dtype, Sequence):
         if len(dtype) != len(names):
-            raise InvalidArgument(f"Given {len(dtype)} dtypes for {len(names)} names")
+            raise InvalidArgument(f"given {len(dtype)} dtypes for {len(names)} names")
         dtypes = list(dtype)
     elif dtype is None:
         dtypes = [random.choice(strategy_dtypes) for _ in range(len(names))]
     elif is_polars_dtype(dtype):
         dtypes = [dtype] * len(names)
     else:
-        raise InvalidArgument(f"{dtype} is not a valid polars datatype")
+        raise InvalidArgument(f"{dtype!r} is not a valid polars datatype")
 
     # init list of named/typed columns
     return [column(name=nm, dtype=tp, unique=unique) for nm, tp in zip(names, dtypes)]
@@ -442,7 +433,7 @@ def series(
                 s = s.cast(Categorical)
             if series_size and (chunked or (chunked is None and draw(booleans()))):
                 split_at = series_size // 2
-                s = s[:split_at].append(s[split_at:], append_chunks=True)
+                s = s[:split_at].append(s[split_at:])
             return s
 
     return draw_series()
@@ -651,7 +642,7 @@ def dataframes(
                 coldefs = list(cols)
 
             # append any explicitly provided cols
-            coldefs.extend(include_cols or ())  # type: ignore[arg-type]
+            coldefs.extend(include_cols or ())
 
             # assign dataframe/series size
             series_size = (

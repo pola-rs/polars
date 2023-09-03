@@ -1,9 +1,19 @@
+from __future__ import annotations
+
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
+    from polars.type_aliases import TimeUnit
+else:
+    from polars.utils.convert import get_zoneinfo as ZoneInfo
 
 
 def test_date_datetime() -> None:
@@ -22,6 +32,44 @@ def test_date_datetime() -> None:
     )
     assert_series_equal(out["date"], df["day"].rename("date"))
     assert_series_equal(out["h2"], df["hour"].rename("h2"))
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_datetime_time_unit(time_unit: TimeUnit) -> None:
+    result = pl.datetime(2022, 1, 2, time_unit=time_unit)
+
+    assert pl.select(result.dt.year()).item() == 2022
+    assert pl.select(result.dt.month()).item() == 1
+    assert pl.select(result.dt.day()).item() == 2
+
+
+@pytest.mark.parametrize("time_zone", [None, "Europe/Amsterdam", "UTC"])
+def test_datetime_time_zone(time_zone: str | None) -> None:
+    result = pl.datetime(2022, 1, 2, 10, time_zone=time_zone)
+
+    assert pl.select(result.dt.year()).item() == 2022
+    assert pl.select(result.dt.month()).item() == 1
+    assert pl.select(result.dt.day()).item() == 2
+    assert pl.select(result.dt.hour()).item() == 10
+
+
+def test_datetime_ambiguous_time_zone() -> None:
+    expr = pl.datetime(2018, 10, 28, 2, 30, time_zone="Europe/Brussels")
+
+    with pytest.raises(pl.ArrowError):
+        pl.select(expr)
+
+
+def test_datetime_ambiguous_time_zone_use_earliest() -> None:
+    expr = pl.datetime(
+        2018, 10, 28, 2, 30, time_zone="Europe/Brussels", ambiguous="earliest"
+    )
+
+    result = pl.select(expr).item()
+
+    expected = datetime(2018, 10, 28, 2, 30, tzinfo=ZoneInfo("Europe/Brussels"))
+    assert result == expected
+    assert result.fold == 0
 
 
 def test_time() -> None:
@@ -108,7 +156,7 @@ def test_concat_list_in_agg_6397() -> None:
     df = pl.DataFrame({"group": [1, 2, 2, 3], "value": ["a", "b", "c", "d"]})
 
     # single list
-    assert df.groupby("group").agg(
+    assert df.group_by("group").agg(
         [
             # this casts every element to a list
             pl.concat_list(pl.col("value")),
@@ -119,7 +167,7 @@ def test_concat_list_in_agg_6397() -> None:
     }
 
     # nested list
-    assert df.groupby("group").agg(
+    assert df.group_by("group").agg(
         [
             pl.concat_list(pl.col("value").implode()).alias("result"),
         ]
@@ -409,16 +457,21 @@ def test_struct_lit_cast() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
 
-    for lit in [pl.lit(None), pl.lit([[]])]:
-        s = df.select(pl.struct([pl.col("a"), lit.alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
-        assert s.dtype == pl.Struct(
-            [pl.Field("a", pl.Int64), pl.Field("b", pl.List(pl.Int64))]
+    for lit in [pl.lit(None), pl.lit(pl.Series([[]]))]:
+        out = df.select(pl.struct([pl.col("a"), lit.alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
+
+        expected = pl.Series(
+            "a",
+            [
+                {"a": 1, "b": None},
+                {"a": 2, "b": None},
+                {"a": 3, "b": None},
+            ],
+            dtype=pl.Struct(
+                [pl.Field("a", pl.Int64), pl.Field("b", pl.List(pl.Int64))]
+            ),
         )
-        assert s.to_list() == [
-            {"a": 1, "b": None},
-            {"a": 2, "b": None},
-            {"a": 3, "b": None},
-        ]
+        assert_series_equal(out, expected)
 
 
 def test_suffix_in_struct_creation() -> None:
@@ -456,14 +509,3 @@ def test_format() -> None:
 
     out = df.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])
     assert out["fmt"].to_list() == ["foo_a_bar_1", "foo_b_bar_2", "foo_c_bar_3"]
-
-
-def test_struct_deprecation_exprs_keyword() -> None:
-    with pytest.deprecated_call():
-        result = pl.select(pl.struct(exprs=1.0))
-
-    expected = pl.DataFrame(
-        {"literal": [{"literal": 1.0}]},
-        schema={"literal": pl.Struct({"literal": pl.Float64})},
-    )
-    assert_frame_equal(result, expected)

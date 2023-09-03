@@ -5,6 +5,7 @@
 --prefer-binary
 
 # Dependencies
+dataframe-api-compat >= 0.1.6
 deltalake >= 0.10.0
 numpy
 pandas
@@ -12,18 +13,22 @@ pyarrow
 pydantic
 backports.zoneinfo; python_version < '3.9'
 tzdata; platform_system == 'Windows'
+SQLAlchemy
 xlsx2csv
 openpyxl
 XlsxWriter
 adbc_driver_sqlite; python_version >= '3.9' and platform_system != 'Windows'
-connectorx==0.3.2a5; python_version >= '3.8'  # Latest full release is broken - unpin when 0.3.2 released
+connectorx
+cloudpickle
+fsspec
 
 # Tooling
-hypothesis==6.75.1
-maturin==1.0.1
-pytest==7.3.0
+hypothesis==6.82.6
+maturin==1.2.3
+patchelf; platform_system == 'Linux'  # Extra dependency for maturin, only for Linux
+pytest==7.4.0
 pytest-cov==4.1.0
 pytest-xdist==3.3.1
 
 # Stub files
-pandas-stubs==1.2.0.62
+pandas-stubs

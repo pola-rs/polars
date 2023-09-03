@@ -116,20 +116,18 @@ def test_window_function_cache() -> None:
     assert out["values_rev"].to_list() == [1, 0, 4, 3, 2]
 
 
-def test_arange_no_rows() -> None:
+def test_window_range_no_rows() -> None:
     df = pl.DataFrame({"x": [5, 5, 4, 4, 2, 2]})
-    expr = pl.arange(0, pl.count()).over("x")
+    expr = pl.int_range(0, pl.count()).over("x")
     out = df.with_columns(expr)
     assert_frame_equal(
-        out, pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "arange": [0, 1, 0, 1, 0, 1]})
+        out, pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "int": [0, 1, 0, 1, 0, 1]})
     )
 
     df = pl.DataFrame({"x": []})
     out = df.with_columns(expr)
-    print(out)
-    expected = pl.DataFrame(
-        {"x": [], "arange": []}, schema={"x": pl.Float32, "arange": pl.Int64}
-    )
+
+    expected = pl.DataFrame(schema={"x": pl.Float32, "int": pl.Int64})
     assert_frame_equal(out, expected)
 
 
@@ -310,7 +308,7 @@ def test_window_5868() -> None:
     df = pl.DataFrame({"a": [None, 1, 2, 3, 3, 3, 4, 4]})
 
     result = df.select(pl.col("a").sum().over("a")).get_column("a")
-    expected = pl.Series("a", [None, 1, 2, 9, 9, 9, 8, 8])
+    expected = pl.Series("a", [0, 1, 2, 9, 9, 9, 8, 8])
     assert_series_equal(result, expected)
 
     result = (
@@ -405,3 +403,31 @@ def test_window_filtered_aggregation() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_window_and_cse_10152() -> None:
+    q = pl.LazyFrame(
+        {
+            "a": [0.0],
+            "b": [0.0],
+        }
+    )
+
+    q = q.with_columns(
+        a=pl.col("a").diff().over("a") / pl.col("a"),
+        b=pl.col("b").diff().over("a") / pl.col("a"),
+        c=pl.col("a").diff().over("a"),
+    )
+
+    assert q.collect().columns == ["a", "b", "c"]
+
+
+def test_window_10417() -> None:
+    df = pl.DataFrame({"a": [1], "b": [1.2], "c": [2.1]})
+
+    assert df.lazy().with_columns(
+        [
+            pl.col("b") - pl.col("b").mean().over("a"),
+            pl.col("c") - pl.col("c").mean().over("a"),
+        ]
+    ).collect().to_dict(False) == {"a": [1], "b": [0.0], "c": [0.0]}

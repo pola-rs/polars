@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import (
@@ -9,7 +8,9 @@ from typing import (
     Collection,
     Iterable,
     List,
+    Literal,
     Mapping,
+    Protocol,
     Sequence,
     Tuple,
     Type,
@@ -17,18 +18,14 @@ from typing import (
     Union,
 )
 
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
-
 if TYPE_CHECKING:
+    import sys
+
     from polars import DataFrame, Expr, LazyFrame, Series
-    from polars.datatypes import DataType, DataTypeClass, TemporalType
+    from polars.datatypes import DataType, DataTypeClass, IntegralType, TemporalType
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
-    from polars.functions.whenthen import WhenThen, WhenThenThen
     from polars.selectors import _selector_proxy_
 
     if sys.version_info >= (3, 10):
@@ -39,6 +36,7 @@ if TYPE_CHECKING:
 # Data types
 PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
 PolarsTemporalType: TypeAlias = Union[Type["TemporalType"], "TemporalType"]
+PolarsIntegerType: TypeAlias = Union[Type["IntegralType"], "IntegralType"]
 OneOrMoreDataTypes: TypeAlias = Union[PolarsDataType, Iterable[PolarsDataType]]
 PythonDataType: TypeAlias = Union[
     Type[int],
@@ -63,29 +61,29 @@ SchemaDefinition: TypeAlias = Union[
 ]
 SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
-# Types that qualify as expressions (eg: for use in 'select', 'with_columns'...)
-PolarsExprType: TypeAlias = Union["Expr", "WhenThen", "WhenThenThen"]
-
 # literal types that are allowed in expressions (auto-converted to pl.lit)
 PythonLiteral: TypeAlias = Union[
     str, int, float, bool, date, time, datetime, timedelta, bytes, Decimal, List[Any]
 ]
 
-IntoExpr: TypeAlias = Union[PolarsExprType, PythonLiteral, "Series", None]
+IntoExpr: TypeAlias = Union["Expr", PythonLiteral, "Series", None]
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
 
-# selector type
+# selector type, and related collection/sequence
 SelectorType: TypeAlias = "_selector_proxy_"
+ColumnNameOrSelector: TypeAlias = Union[str, SelectorType]
 
 # User-facing string literal types
 # The following all have an equivalent Rust enum with the same name
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
+CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
 ]
 FloatFmt: TypeAlias = Literal["full", "mixed"]
+IndexOrder: TypeAlias = Literal["c", "fortran"]
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 JoinValidation: TypeAlias = Literal["m:m", "m:1", "1:m", "1:1"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
@@ -124,7 +122,7 @@ StartBy: TypeAlias = Literal[
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last", "any", "none"]
 UnstackDirection: TypeAlias = Literal["vertical", "horizontal"]
-ApplyStrategy: TypeAlias = Literal["thread_local", "threading"]
+MapElementsStrategy: TypeAlias = Literal["thread_local", "threading"]
 
 # The following have a Rust enum equivalent with a different name
 AsofJoinStrategy: TypeAlias = Literal["backward", "forward", "nearest"]  # AsofStrategy
@@ -141,6 +139,7 @@ ToStructStrategy: TypeAlias = Literal[
 ]  # ListToStructWidthStrategy
 
 # The following have no equivalent on the Rust side
+Ambiguous: TypeAlias = Literal["earliest", "latest", "raise"]
 ConcatMethod = Literal[
     "vertical", "vertical_relaxed", "diagonal", "horizontal", "align"
 ]
@@ -164,9 +163,14 @@ FrameInitTypes: TypeAlias = Union[
 ]
 
 # Excel IO
+ColumnFormatDict: TypeAlias = Mapping[
+    # dict of colname(s) or selector(s) to format string or dict
+    Union[ColumnNameOrSelector, Tuple[ColumnNameOrSelector, ...]],
+    Union[str, Mapping[str, str]],
+]
 ConditionalFormatDict: TypeAlias = Mapping[
     # dict of colname(s) to str, dict, or sequence of str/dict
-    Union[str, Collection[str]],
+    Union[ColumnNameOrSelector, Collection[str]],
     Union[str, Union[Mapping[str, Any], Sequence[Union[str, Mapping[str, Any]]]]],
 ]
 ColumnTotalsDefinition: TypeAlias = Union[
@@ -174,6 +178,9 @@ ColumnTotalsDefinition: TypeAlias = Union[
     Mapping[Union[str, Collection[str]], str],
     Sequence[str],
     bool,
+]
+ColumnWidthsDefinition: TypeAlias = Union[
+    Mapping[ColumnNameOrSelector, Union[Tuple[str, ...], int]], int
 ]
 RowTotalsDefinition: TypeAlias = Union[
     # dict of colname to str(s), a collection of str, or a boolean
@@ -188,3 +195,32 @@ ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
 # typevars for core polars types
 PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
 FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
+
+
+# minimal protocol definitions that can reasonably represent
+# an executable connection, cursor, or equivalent object
+class BasicConnection(Protocol):  # noqa: D101
+    def close(self) -> None:
+        """Close the connection."""
+
+    def cursor(self, *args: Any, **kwargs: Any) -> Any:
+        """Return a cursor object."""
+
+
+class BasicCursor(Protocol):  # noqa: D101
+    def close(self) -> None:
+        """Close the cursor."""
+
+    def execute(self, *args: Any, **kwargs: Any) -> Any:
+        """Execute a query."""
+
+
+class Cursor(BasicCursor):  # noqa: D101
+    def fetchall(self, *args: Any, **kwargs: Any) -> Any:
+        """Fetch all results."""
+
+    def fetchmany(self, *args: Any, **kwargs: Any) -> Any:
+        """Fetch results in batches."""
+
+
+ConnectionOrCursor = Union[BasicConnection, BasicCursor, Cursor]

@@ -1,7 +1,6 @@
 =========
 Selectors
 =========
-
 .. currentmodule:: polars
 
 Selectors allow for more intuitive selection of columns from :class:`DataFrame`
@@ -29,7 +28,7 @@ Importing
               "z": ["a", "b", "a", "b", "b"],
           },
       )
-      df.groupby(by=cs.string()).agg(cs.numeric().sum())
+      df.group_by(by=cs.string()).agg(cs.numeric().sum())
 
 Set operations
 --------------

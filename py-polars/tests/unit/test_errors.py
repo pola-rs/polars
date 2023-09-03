@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import io
-import typing
+import re
 from datetime import date, datetime, time, timedelta
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -10,12 +11,15 @@ import pytest
 import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
 
+if TYPE_CHECKING:
+    from polars.type_aliases import ConcatMethod
 
-def test_error_on_empty_groupby() -> None:
+
+def test_error_on_empty_group_by() -> None:
     with pytest.raises(
-        pl.ComputeError, match="at least one key is required in a groupby operation"
+        pl.ComputeError, match="at least one key is required in a group_by operation"
     ):
-        pl.DataFrame({"x": [0, 0, 1, 1]}).groupby([]).agg(pl.count())
+        pl.DataFrame({"x": [0, 0, 1, 1]}).group_by([]).agg(pl.count())
 
 
 def test_error_on_reducing_map() -> None:
@@ -29,7 +33,7 @@ def test_error_on_reducing_map() -> None:
             r"the input length \(1\); consider using `apply` instead"
         ),
     ):
-        df.groupby("id").agg(pl.map(["t", "y"], np.trapz))
+        df.group_by("id").agg(pl.map_batches(["t", "y"], np.trapz))
 
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
     with pytest.raises(
@@ -41,7 +45,9 @@ def test_error_on_reducing_map() -> None:
     ):
         df.select(
             pl.col("x")
-            .map(lambda x: x.cut(bins=[1, 2, 3], maintain_order=True))
+            .map_batches(
+                lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest()
+            )
             .over("group")
         )
 
@@ -65,7 +71,7 @@ def test_error_on_invalid_series_init() -> None:
         py_type = dtype_to_py_type(dtype)
         with pytest.raises(
             TypeError,
-            match=f"'float' object cannot be interpreted as a {py_type.__name__}",
+            match=f"'float' object cannot be interpreted as a {py_type.__name__!r}",
         ):
             pl.Series([1.5, 2.0, 3.75], dtype=dtype)
 
@@ -102,7 +108,6 @@ def test_panic_error() -> None:
         pl.Series("a", [1, 2, 3]).reshape(())
 
 
-@typing.no_type_check
 def test_join_lazy_on_df() -> None:
     df_left = pl.DataFrame(
         {
@@ -114,15 +119,15 @@ def test_join_lazy_on_df() -> None:
 
     with pytest.raises(
         TypeError,
-        match="Expected 'other' .* to be a LazyFrame.* not a DataFrame",
+        match="expected `other` .* to be a LazyFrame.* not a 'DataFrame'",
     ):
-        df_left.lazy().join(df_right, on="Id")
+        df_left.lazy().join(df_right, on="Id")  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="Expected 'other' .* to be a LazyFrame.* not a DataFrame",
+        match="expected `other` .* to be a LazyFrame.* not a 'DataFrame'",
     ):
-        df_left.lazy().join_asof(df_right, on="Id")
+        df_left.lazy().join_asof(df_right, on="Id")  # type: ignore[arg-type]
 
 
 def test_projection_update_schema_missing_column() -> None:
@@ -133,7 +138,7 @@ def test_projection_update_schema_missing_column() -> None:
             pl.DataFrame({"colA": ["a", "b", "c"], "colB": [1, 2, 3]})
             .lazy()
             .filter(~pl.col("colC").is_null())
-            .groupby(["colA"])
+            .group_by(["colA"])
             .agg([pl.col("colB").sum().alias("result")])
             .collect()
         )
@@ -150,33 +155,26 @@ def test_not_found_on_rename() -> None:
         df.select(pl.col("does_not_exist").alias("new_name"))
 
 
-@typing.no_type_check
 def test_getitem_errs() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
     with pytest.raises(
-        ValueError,
-        match=r"Cannot __getitem__ on DataFrame with item: "
-        r"'{'some'}' of type: '<class 'set'>'.",
+        TypeError,
+        match=r"cannot use `__getitem__` on DataFrame with item {'some'} of type 'set'",
     ):
-        df[{"some"}]
+        df[{"some"}]  # type: ignore[call-overload]
 
     with pytest.raises(
-        ValueError,
-        match=r"Cannot __getitem__ on Series of dtype: "
-        r"'Int64' with argument: "
-        r"'{'strange'}' of type: '<class 'set'>'.",
+        TypeError,
+        match=r"cannot use `__getitem__` on Series of dtype Int64 with argument {'strange'} of type 'set'",
     ):
-        df["a"][{"strange"}]
+        df["a"][{"strange"}]  # type: ignore[call-overload]
 
     with pytest.raises(
-        ValueError,
-        match=r"Cannot __setitem__ on "
-        r"DataFrame with key: '{'some'}' of "
-        r"type: '<class 'set'>' and value: "
-        r"'foo' of type: '<class 'str'>'",
+        TypeError,
+        match=r"cannot use `__setitem__` on DataFrame with key {'some'} of type 'set' and value 'foo' of type 'str'",
     ):
-        df[{"some"}] = "foo"
+        df[{"some"}] = "foo"  # type: ignore[index]
 
 
 def test_err_bubbling_up_to_lit() -> None:
@@ -208,14 +206,9 @@ def test_error_on_double_agg() -> None:
                         "b": [1, 2, 3, 4, 5],
                     }
                 )
-                .groupby("a")
+                .group_by("a")
                 .agg([getattr(pl.col("b").min(), e)()])
             )
-
-
-def test_unique_on_list_df() -> None:
-    with pytest.raises(pl.InvalidOperationError):
-        pl.DataFrame({"a": [1, 2, 3, 4], "b": [[1, 1], [2], [3], [4, 4]]}).unique()
 
 
 def test_filter_not_of_type_bool() -> None:
@@ -268,7 +261,7 @@ def test_is_nan_on_non_boolean() -> None:
 def test_window_expression_different_group_length() -> None:
     try:
         pl.DataFrame({"groups": ["a", "a", "b", "a", "b"]}).select(
-            [pl.col("groups").apply(lambda _: pl.Series([1, 2])).over("groups")]
+            [pl.col("groups").map_elements(lambda _: pl.Series([1, 2])).over("groups")]
         )
     except pl.ComputeError as exc:
         msg = str(exc)
@@ -280,7 +273,6 @@ def test_window_expression_different_group_length() -> None:
         assert "output: 'shape:" in msg
 
 
-@typing.no_type_check
 def test_lazy_concat_err() -> None:
     df1 = pl.DataFrame(
         {
@@ -298,20 +290,19 @@ def test_lazy_concat_err() -> None:
     )
     with pytest.raises(
         ValueError,
-        match="'LazyFrame' only allows {'vertical','vertical_relaxed','diagonal','align'} concat strategies.",
+        match="'LazyFrame' only allows {'vertical','vertical_relaxed','diagonal','align'} concat strategies",
     ):
         pl.concat([df1.lazy(), df2.lazy()], how="horizontal").collect()
 
 
-@typing.no_type_check
-def test_series_concat_err() -> None:
+@pytest.mark.parametrize("how", ["horizontal", "diagonal"])
+def test_series_concat_err(how: ConcatMethod) -> None:
     s = pl.Series([1, 2, 3])
-    for how in ("horizontal", "diagonal"):
-        with pytest.raises(
-            ValueError,
-            match="'Series' only allows {'vertical'} concat strategy.",
-        ):
-            pl.concat([s, s], how=how)
+    with pytest.raises(
+        ValueError,
+        match="Series only allows {'vertical'} concat strategy",
+    ):
+        pl.concat([s, s], how=how)
 
 
 def test_invalid_sort_by() -> None:
@@ -344,7 +335,7 @@ def test_duplicate_columns_arg_csv() -> None:
     pl.DataFrame({"x": [1, 2, 3], "y": ["a", "b", "c"]}).write_csv(f)
     f.seek(0)
     with pytest.raises(
-        ValueError, match=r"'columns' arg should only have unique values"
+        ValueError, match=r"`columns` arg should only have unique values"
     ):
         pl.read_csv(f, columns=["x", "x", "y"])
 
@@ -354,13 +345,12 @@ def test_datetime_time_add_err() -> None:
         pl.Series([datetime(1970, 1, 1, 0, 0, 1)]) + pl.Series([time(0, 0, 2)])
 
 
-@typing.no_type_check
 def test_invalid_dtype() -> None:
     with pytest.raises(
         ValueError,
-        match=r"Given dtype: 'mayonnaise' is not a valid Polars data type and cannot be converted into one",
+        match=r"given dtype: 'mayonnaise' is not a valid Polars data type and cannot be converted into one",
     ):
-        pl.Series([1, 2], dtype="mayonnaise")
+        pl.Series([1, 2], dtype="mayonnaise")  # type: ignore[arg-type]
 
 
 def test_arr_eval_named_cols() -> None:
@@ -393,7 +383,7 @@ def test_sort_by_different_lengths() -> None:
         pl.ComputeError,
         match=r"the expression in `sort_by` argument must result in the same length",
     ):
-        df.groupby("group").agg(
+        df.group_by("group").agg(
             [
                 pl.col("col1").sort_by(pl.col("col2").unique()),
             ]
@@ -403,7 +393,7 @@ def test_sort_by_different_lengths() -> None:
         pl.ComputeError,
         match=r"the expression in `sort_by` argument must result in the same length",
     ):
-        df.groupby("group").agg(
+        df.group_by("group").agg(
             [
                 pl.col("col1").sort_by(pl.col("col2").arg_unique()),
             ]
@@ -425,7 +415,14 @@ def test_err_filter_no_expansion() -> None:
         df.filter(pl.col(pl.Int16).min() < 0.1)
 
 
-def test_date_string_comparison() -> None:
+@pytest.mark.parametrize(
+    ("e"),
+    [
+        pl.col("date") > "2021-11-10",
+        pl.col("date") < "2021-11-10",
+    ],
+)
+def test_date_string_comparison(e: pl.Expr) -> None:
     df = pl.DataFrame(
         {
             "date": [
@@ -439,7 +436,7 @@ def test_date_string_comparison() -> None:
     with pytest.raises(
         pl.ComputeError, match=r"cannot compare 'date/datetime/time' to a string value"
     ):
-        df.select(pl.col("date") > "2021-11-10")
+        df.select(e)
 
 
 def test_err_on_multiple_column_expansion() -> None:
@@ -518,13 +515,41 @@ def test_skip_nulls_err() -> None:
     with pytest.raises(
         pl.ComputeError, match=r"The output type of 'apply' function cannot determined"
     ):
-        df.with_columns(pl.col("foo").apply(lambda x: x, skip_nulls=True))
+        df.with_columns(pl.col("foo").map_elements(lambda x: x, skip_nulls=True))
+
+
+@pytest.mark.parametrize(
+    ("test_df", "type", "expected_message"),
+    [
+        pytest.param(
+            pl.DataFrame({"A": [1, 2, 3], "B": ["1", "2", "help"]}),
+            pl.UInt32,
+            re.escape(
+                "strict conversion from `str` to `u32` failed for column: B, "
+                'value(s) ["help"]; if you were trying to cast Utf8 to temporal '
+                "dtypes, consider using `strptime`"
+            ),
+            id="Unsigned integer",
+        )
+    ],
+)
+def test_cast_err_column_value_highlighting(
+    test_df: pl.DataFrame, type: pl.DataType, expected_message: str
+) -> None:
+    with pytest.raises(pl.ComputeError, match=expected_message):
+        test_df.with_columns(pl.all().cast(type))
 
 
 def test_err_on_time_datetime_cast() -> None:
     s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
     with pytest.raises(pl.ComputeError, match=r"cannot cast `Time` to `Datetime`"):
         s.cast(pl.Datetime)
+
+
+def test_err_on_invalid_time_zone_cast() -> None:
+    s = pl.Series([datetime(2021, 1, 1)])
+    with pytest.raises(pl.ComputeError, match=r"unable to parse time zone: 'qwerty'"):
+        s.cast(pl.Datetime("us", "qwerty"))
 
 
 def test_invalid_inner_type_cast_list() -> None:
@@ -545,7 +570,7 @@ def test_invalid_inner_type_cast_list() -> None:
         ),
     ],
 )
-def test_groupby_dynamic_validation(every: str, match: str) -> None:
+def test_group_by_dynamic_validation(every: str, match: str) -> None:
     df = pl.DataFrame(
         {
             "index": [0, 0, 1, 1],
@@ -555,7 +580,7 @@ def test_groupby_dynamic_validation(every: str, match: str) -> None:
     )
 
     with pytest.raises(pl.ComputeError, match=match):
-        df.groupby_dynamic("index", by="group", every=every, period="2i").agg(
+        df.group_by_dynamic("index", by="group", every=every, period="2i").agg(
             pl.col("weight")
         )
 
@@ -568,24 +593,23 @@ def test_lit_agg_err() -> None:
 def test_window_size_validation() -> None:
     df = pl.DataFrame({"x": [1.0]})
 
-    with pytest.raises(ValueError, match=r"'window_size' should be positive"):
+    with pytest.raises(ValueError, match=r"`window_size` must be positive"):
         df.with_columns(trailing_min=pl.col("x").rolling_min(window_size=-3))
 
 
-@typing.no_type_check
 def test_invalid_getitem_key_err() -> None:
     df = pl.DataFrame({"x": [1.0], "y": [1.0]})
 
     with pytest.raises(KeyError, match=r"('x', 'y')"):
-        df["x", "y"]
+        df["x", "y"]  # type: ignore[index]
 
 
-def test_invalid_groupby_arg() -> None:
+def test_invalid_group_by_arg() -> None:
     df = pl.DataFrame({"a": [1]})
     with pytest.raises(
-        ValueError, match="specifying aggregations as a dictionary is not supported"
+        TypeError, match="specifying aggregations as a dictionary is not supported"
     ):
-        df.groupby(1).agg({"a": "sum"})
+        df.group_by(1).agg({"a": "sum"})
 
 
 def test_no_sorted_err() -> None:
@@ -596,9 +620,9 @@ def test_no_sorted_err() -> None:
     )
     with pytest.raises(
         pl.InvalidOperationError,
-        match=r"argument in operation 'groupby_dynamic' is not explicitly sorted",
+        match=r"argument in operation 'group_by_dynamic' is not explicitly sorted",
     ):
-        df.groupby_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
+        df.group_by_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
 
 
 def test_serde_validation() -> None:
@@ -656,6 +680,6 @@ def test_sort_by_err_9259() -> None:
         schema={"a": pl.Float32, "b": pl.Float32, "c": pl.Float32},
     )
     with pytest.raises(pl.ComputeError):
-        df.lazy().groupby("c").agg(
+        df.lazy().group_by("c").agg(
             [pl.col("a").sort_by(pl.col("b").filter(pl.col("b") > 100)).sum()]
         ).collect()

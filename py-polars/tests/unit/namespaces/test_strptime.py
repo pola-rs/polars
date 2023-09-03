@@ -6,7 +6,6 @@ This method gets its own module due to its complexity.
 from __future__ import annotations
 
 import contextlib
-import sys
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
 
@@ -16,15 +15,12 @@ import polars as pl
 from polars.exceptions import ArrowError, ComputeError, TimeZoneAwareConstructorWarning
 from polars.testing import assert_series_equal
 
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-else:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
-
 if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
     from polars.type_aliases import PolarsTemporalType, TimeUnit
+else:
+    from polars.utils.convert import get_zoneinfo as ZoneInfo
 
 
 def test_str_strptime() -> None:
@@ -133,6 +129,20 @@ def test_to_date_non_exact_strptime() -> None:
 
     with pytest.raises(pl.ComputeError):
         s.str.to_date(format, strict=True, exact=True)
+
+
+@pytest.mark.parametrize(
+    ("value", "attr"),
+    [
+        ("a", "to_date"),
+        ("ab", "to_date"),
+        ("a", "to_datetime"),
+        ("ab", "to_datetime"),
+    ],
+)
+def test_non_exact_short_elements_10223(value: str, attr: str) -> None:
+    with pytest.raises(pl.ComputeError, match="strict .* parsing failed"):
+        getattr(pl.Series(["2019-01-01", value]).str, attr)(exact=False)
 
 
 @pytest.mark.parametrize(
@@ -443,12 +453,7 @@ def test_invalid_date_parsing_4898() -> None:
 
 def test_strptime_invalid_timezone() -> None:
     ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.to_datetime("%Y-%m-%d %H:%M:%S%z")
-    with pytest.raises(
-        ComputeError, match=r"unable to parse time zone: 'foo'"
-    ), pytest.warns(
-        DeprecationWarning,
-        match="time zones other than those in `zoneinfo.available_timezones",
-    ):
+    with pytest.raises(ComputeError, match=r"unable to parse time zone: 'foo'"):
         ts.dt.replace_time_zone("foo")
 
 
@@ -533,12 +538,72 @@ def test_strptime_subseconds_datetime(data: str, format: str, expected: time) ->
     assert result == expected
 
 
-def test_strptime_hour_without_minute_8849() -> None:
+@pytest.mark.parametrize(
+    ("string", "fmt"),
+    [
+        pytest.param("2023-05-04|7", "%Y-%m-%d|%H", id="hour but no minute"),
+        pytest.param("2023-05-04|7", "%Y-%m-%d|%k", id="padded hour but no minute"),
+        pytest.param("2023-05-04|10", "%Y-%m-%d|%M", id="minute but no hour"),
+        pytest.param("2023-05-04|10", "%Y-%m-%d|%S", id="second but no hour"),
+        pytest.param(
+            "2000-Jan-01 01 00 01", "%Y-%b-%d %I %M %S", id="12-hour clock but no AM/PM"
+        ),
+        pytest.param(
+            "2000-Jan-01 01 00 01",
+            "%Y-%b-%d %l %M %S",
+            id="padded 12-hour clock but no AM/PM",
+        ),
+    ],
+)
+def test_strptime_incomplete_formats(string: str, fmt: str) -> None:
     with pytest.raises(
         ComputeError,
-        match="Invalid format string: found hour, but no minute directive",
+        match="Invalid format string",
     ):
-        pl.Series(["2023-05-04|7", "2023-05-04|10"]).str.to_datetime("%Y-%m-%d|%H")
+        pl.Series([string]).str.to_datetime(fmt)
+
+
+@pytest.mark.parametrize(
+    ("string", "fmt", "expected"),
+    [
+        ("2023-05-04|7:3", "%Y-%m-%d|%H:%M", datetime(2023, 5, 4, 7, 3)),
+        ("2023-05-04|10:03", "%Y-%m-%d|%H:%M", datetime(2023, 5, 4, 10, 3)),
+        (
+            "2000-Jan-01 01 00 01 am",
+            "%Y-%b-%d %I %M %S %P",
+            datetime(2000, 1, 1, 1, 0, 1),
+        ),
+        (
+            "2000-Jan-01 01 00 01 am",
+            "%Y-%b-%d %_I %M %S %P",
+            datetime(2000, 1, 1, 1, 0, 1),
+        ),
+        (
+            "2000-Jan-01 01 00 01 am",
+            "%Y-%b-%d %l %M %S %P",
+            datetime(2000, 1, 1, 1, 0, 1),
+        ),
+        (
+            "2000-Jan-01 01 00 01 AM",
+            "%Y-%b-%d %I %M %S %p",
+            datetime(2000, 1, 1, 1, 0, 1),
+        ),
+        (
+            "2000-Jan-01 01 00 01 AM",
+            "%Y-%b-%d %_I %M %S %p",
+            datetime(2000, 1, 1, 1, 0, 1),
+        ),
+        (
+            "2000-Jan-01 01 00 01 AM",
+            "%Y-%b-%d %l %M %S %p",
+            datetime(2000, 1, 1, 1, 0, 1),
+        ),
+    ],
+)
+def test_strptime_complete_formats(string: str, fmt: str, expected: datetime) -> None:
+    # Similar to the above, but these formats are complete and should work
+    result = pl.Series([string]).str.to_datetime(fmt).item()
+    assert result == expected
 
 
 @pytest.mark.parametrize(
@@ -560,3 +625,53 @@ def test_to_time_format_warning() -> None:
     with pytest.warns(pl.ChronoFormatWarning, match=".%f"):
         result = s.str.to_time("%H:%M:%S.%f").item()
     assert result == time(5, 10, 10, 74)
+
+
+@pytest.mark.parametrize("exact", [True, False])
+def test_to_datetime_use_earliest(exact: bool) -> None:
+    result = (
+        pl.Series(["2020-10-25 01:00"])
+        .str.to_datetime(time_zone="Europe/London", ambiguous="earliest", exact=exact)
+        .item()
+    )
+    expected = datetime(2020, 10, 25, 1, fold=0, tzinfo=ZoneInfo("Europe/London"))
+    assert result == expected
+    result = (
+        pl.Series(["2020-10-25 01:00"])
+        .str.to_datetime(time_zone="Europe/London", ambiguous="latest", exact=exact)
+        .item()
+    )
+    expected = datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London"))
+    assert result == expected
+    with pytest.raises(ArrowError):
+        pl.Series(["2020-10-25 01:00"]).str.to_datetime(
+            time_zone="Europe/London",
+            exact=exact,
+        ).item()
+
+
+@pytest.mark.parametrize("exact", [True, False])
+def test_strptime_use_earliest(exact: bool) -> None:
+    result = (
+        pl.Series(["2020-10-25 01:00"])
+        .str.strptime(
+            pl.Datetime("us", "Europe/London"), ambiguous="earliest", exact=exact
+        )
+        .item()
+    )
+    expected = datetime(2020, 10, 25, 1, fold=0, tzinfo=ZoneInfo("Europe/London"))
+    assert result == expected
+    result = (
+        pl.Series(["2020-10-25 01:00"])
+        .str.strptime(
+            pl.Datetime("us", "Europe/London"), ambiguous="latest", exact=exact
+        )
+        .item()
+    )
+    expected = datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London"))
+    assert result == expected
+    with pytest.raises(ArrowError):
+        pl.Series(["2020-10-25 01:00"]).str.strptime(
+            pl.Datetime("us", "Europe/London"),
+            exact=exact,
+        ).item()

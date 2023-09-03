@@ -31,19 +31,6 @@ def test_fold_regex_expand() -> None:
     }
 
 
-def test_expanding_sum() -> None:
-    df = pl.DataFrame(
-        {
-            "x": [0, 1, 2],
-            "y_1": [1.1, 2.2, 3.3],
-            "y_2": [1.0, 2.5, 3.5],
-        }
-    )
-    assert df.with_columns(pl.sum(pl.col(r"^y_.*$")).alias("y_sum"))[
-        "y_sum"
-    ].to_list() == [2.1, 4.7, 6.8]
-
-
 def test_arg_sort_argument_expansion() -> None:
     df = pl.DataFrame(
         {
@@ -94,7 +81,46 @@ def test_multiple_columns_length_9137() -> None:
     # list is larger than groups
     cmp_list = ["a", "b", "c"]
 
-    assert df.groupby("a").agg(pl.col("b").is_in(cmp_list)).to_dict(False) == {
+    assert df.group_by("a").agg(pl.col("b").is_in(cmp_list)).to_dict(False) == {
         "a": [1],
         "b": [[True, False]],
+    }
+
+
+def test_regex_in_cols() -> None:
+    df = pl.DataFrame(
+        {
+            "col1": [1, 2, 3],
+            "col2": [4, 5, 6],
+            "val1": ["a", "b", "c"],
+            "val2": ["A", "B", "C"],
+        }
+    )
+
+    assert df.select(pl.col("^col.*$").prefix("matched_")).to_dict(False) == {
+        "matched_col1": [1, 2, 3],
+        "matched_col2": [4, 5, 6],
+    }
+
+    assert df.with_columns(pl.col("^col.*$", "^val.*$").prefix("matched_")).to_dict(
+        False
+    ) == {
+        "col1": [1, 2, 3],
+        "col2": [4, 5, 6],
+        "val1": ["a", "b", "c"],
+        "val2": ["A", "B", "C"],
+        "matched_col1": [1, 2, 3],
+        "matched_col2": [4, 5, 6],
+        "matched_val1": ["a", "b", "c"],
+        "matched_val2": ["A", "B", "C"],
+    }
+    assert df.select(pl.col("^col.*$", "val1").prefix("matched_")).to_dict(False) == {
+        "matched_col1": [1, 2, 3],
+        "matched_col2": [4, 5, 6],
+        "matched_val1": ["a", "b", "c"],
+    }
+
+    assert df.select(pl.col("^col.*$", "val1").exclude("col2")).to_dict(False) == {
+        "col1": [1, 2, 3],
+        "val1": ["a", "b", "c"],
     }

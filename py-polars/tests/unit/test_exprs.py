@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import random
 import sys
-import typing
 from datetime import date, datetime, time, timedelta, timezone
 from itertools import permutations
 from typing import Any, cast
@@ -65,15 +63,6 @@ def test_col_select() -> None:
     ]
 
 
-def test_horizontal_agg(fruits_cars: pl.DataFrame) -> None:
-    df = fruits_cars
-    out = df.select(pl.max([pl.col("A"), pl.col("B")]))
-    assert out[:, 0].to_list() == [5, 4, 3, 4, 5]
-
-    out = df.select(pl.min([pl.col("A"), pl.col("B")]))
-    assert out[:, 0].to_list() == [1, 2, 3, 2, 1]
-
-
 def test_suffix(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select([pl.all().suffix("_reverse")])
@@ -104,7 +93,7 @@ def test_prefix(fruits_cars: pl.DataFrame) -> None:
 def test_cumcount() -> None:
     df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], schema=["A"])
 
-    out = df.groupby("A", maintain_order=True).agg(
+    out = df.group_by("A", maintain_order=True).agg(
         [pl.col("A").cumcount(reverse=False).alias("foo")]
     )
 
@@ -114,26 +103,15 @@ def test_cumcount() -> None:
 
 def test_filter_where() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 1, 2, 3], "b": [4, 5, 6, 7, 8, 9]})
-    result_where = df.groupby("a", maintain_order=True).agg(
+    result_where = df.group_by("a", maintain_order=True).agg(
         pl.col("b").where(pl.col("b") > 4).alias("c")
     )
-    result_filter = df.groupby("a", maintain_order=True).agg(
+    result_filter = df.group_by("a", maintain_order=True).agg(
         pl.col("b").filter(pl.col("b") > 4).alias("c")
     )
     expected = pl.DataFrame({"a": [1, 2, 3], "c": [[7], [5, 8], [6, 9]]})
     assert_frame_equal(result_where, expected)
     assert_frame_equal(result_filter, expected)
-
-
-def test_min_nulls_consistency() -> None:
-    df = pl.DataFrame({"a": [None, 2, 3], "b": [4, None, 6], "c": [7, 5, 0]})
-    out = df.select([pl.min(["a", "b", "c"])]).to_series()
-    expected = pl.Series("min", [4, 2, 0])
-    assert_series_equal(out, expected)
-
-    out = df.select([pl.max(["a", "b", "c"])]).to_series()
-    expected = pl.Series("max", [7, 5, 6])
-    assert_series_equal(out, expected)
 
 
 def test_list_join_strings() -> None:
@@ -149,46 +127,9 @@ def test_count_expr() -> None:
     assert out.shape == (1, 1)
     assert cast(int, out.item()) == 5
 
-    out = df.groupby("b", maintain_order=True).agg(pl.count())
+    out = df.group_by("b", maintain_order=True).agg(pl.count())
     assert out["b"].to_list() == ["a", "b"]
     assert out["count"].to_list() == [4, 1]
-
-
-def test_shuffle() -> None:
-    # setting 'random.seed' should lead to reproducible results
-    s = pl.Series("a", range(20))
-    s_list = s.to_list()
-
-    random.seed(1)
-    result1 = pl.select(pl.lit(s).shuffle()).to_series()
-
-    random.seed(1)
-    result2 = pl.select(a=pl.lit(s_list).shuffle()).to_series()
-    assert_series_equal(result1, result2)
-
-
-def test_sample() -> None:
-    a = pl.Series("a", range(0, 20))
-    out = pl.select(
-        pl.lit(a).sample(fraction=0.5, with_replacement=False, seed=1)
-    ).to_series()
-
-    assert out.shape == (10,)
-    assert out.to_list() != out.sort().to_list()
-    assert out.unique().shape == (10,)
-    assert set(out).issubset(set(a))
-
-    out = pl.select(pl.lit(a).sample(n=10, with_replacement=False, seed=1)).to_series()
-    assert out.shape == (10,)
-    assert out.to_list() != out.sort().to_list()
-    assert out.unique().shape == (10,)
-
-    # Setting random.seed should lead to reproducible results
-    random.seed(1)
-    result1 = pl.select(pl.lit(a).sample(n=10)).to_series()
-    random.seed(1)
-    result2 = pl.select(pl.lit(a).sample(n=10)).to_series()
-    assert_series_equal(result1, result2)
 
 
 def test_map_alias() -> None:
@@ -228,7 +169,7 @@ def test_entropy() -> None:
             "id": [1, 2, 1, 4, 5, 4, 6],
         }
     )
-    result = df.groupby("group", maintain_order=True).agg(
+    result = df.group_by("group", maintain_order=True).agg(
         pl.col("id").entropy(normalize=True)
     )
     expected = pl.DataFrame(
@@ -237,7 +178,7 @@ def test_entropy() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_dot_in_groupby() -> None:
+def test_dot_in_group_by() -> None:
     df = pl.DataFrame(
         {
             "group": ["a", "a", "a", "b", "b", "b"],
@@ -246,7 +187,7 @@ def test_dot_in_groupby() -> None:
         }
     )
 
-    result = df.groupby("group", maintain_order=True).agg(
+    result = df.group_by("group", maintain_order=True).agg(
         pl.col("x").dot("y").alias("dot")
     )
     expected = pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]})
@@ -397,24 +338,6 @@ def test_expression_appends() -> None:
     assert out.to_series().to_list() == [None, None, None, 1, 1, 2]
 
 
-def test_regex_in_filter() -> None:
-    df = pl.DataFrame(
-        {
-            "nrs": [1, 2, 3, None, 5],
-            "names": ["foo", "ham", "spam", "egg", None],
-            "flt": [1.0, None, 3.0, 1.0, None],
-        }
-    )
-
-    res = df.filter(
-        pl.fold(
-            acc=False, function=lambda acc, s: acc | s, exprs=(pl.col("^nrs|flt*$") < 3)
-        )
-    ).row(0)
-    expected = (1, "foo", 1.0)
-    assert res == expected
-
-
 def test_arr_contains() -> None:
     df_groups = pl.DataFrame(
         {
@@ -432,6 +355,22 @@ def test_arr_contains() -> None:
     }
 
 
+def test_rank() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 2, 2, 3],
+        }
+    )
+
+    s = df.select(pl.col("a").rank(method="average").alias("b")).to_series()
+    assert s.to_list() == [1.5, 1.5, 3.5, 3.5, 5.0]
+    assert s.dtype == pl.Float64
+
+    s = df.select(pl.col("a").rank(method="max").alias("b")).to_series()
+    assert s.to_list() == [2, 2, 4, 4, 5]
+    assert s.dtype == pl.get_index_type()
+
+
 def test_rank_so_4109() -> None:
     # also tests ranks null behavior
     df = pl.from_dict(
@@ -441,7 +380,7 @@ def test_rank_so_4109() -> None:
         }
     ).sort(by=["id", "rank"])
 
-    assert df.groupby("id").agg(
+    assert df.group_by("id").agg(
         [
             pl.col("rank").alias("original"),
             pl.col("rank").rank(method="dense").alias("dense"),
@@ -460,35 +399,20 @@ def test_rank_so_4109() -> None:
     }
 
 
-def test_rank_random() -> None:
-    df = pl.from_dict(
-        {"a": [1] * 5, "b": [1, 2, 3, 4, 5], "c": [200, 100, 100, 50, 100]}
-    )
-
-    df_ranks1 = df.with_columns(
-        pl.col("c").rank(method="random", seed=1).over("a").alias("rank")
-    )
-    df_ranks2 = df.with_columns(
-        pl.col("c").rank(method="random", seed=1).over("a").alias("rank")
-    )
-    assert_frame_equal(df_ranks1, df_ranks2)
-
-
 def test_unique_empty() -> None:
     for dt in [pl.Utf8, pl.Boolean, pl.Int32, pl.UInt32]:
         s = pl.Series([], dtype=dt)
         assert_series_equal(s.unique(), s)
 
 
-@typing.no_type_check
 def test_search_sorted() -> None:
     for seed in [1, 2, 3]:
         np.random.seed(seed)
-        a = np.sort(np.random.randn(10) * 100)
-        s = pl.Series(a)
+        arr = np.sort(np.random.randn(10) * 100)
+        s = pl.Series(arr)
 
-        for v in range(int(np.min(a)), int(np.max(a)), 20):
-            assert np.searchsorted(a, v) == s.search_sorted(v)
+        for v in range(int(np.min(arr)), int(np.max(arr)), 20):
+            assert np.searchsorted(arr, v) == s.search_sorted(v)
 
     a = pl.Series([1, 2, 3])
     b = pl.Series([1, 2, 2, -1])
@@ -517,18 +441,18 @@ def test_abs_expr() -> None:
 def test_logical_boolean() -> None:
     # note, cannot use expressions in logical
     # boolean context (eg: and/or/not operators)
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         pl.col("colx") and pl.col("coly")
 
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         pl.col("colx") or pl.col("coly")
 
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         df.select([(pl.col("a") > pl.col("b")) and (pl.col("b") > pl.col("b"))])
 
-    with pytest.raises(ValueError, match="ambiguous"):
+    with pytest.raises(TypeError, match="ambiguous"):
         df.select([(pl.col("a") > pl.col("b")) or (pl.col("b") > pl.col("b"))])
 
 
@@ -812,13 +736,13 @@ def test_map_dict() -> None:
 
     with pytest.raises(
         pl.ComputeError,
-        match="Remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion.",
+        match="remapping keys for `map_dict` could not be converted to Utf8 without losing values in the conversion",
     ):
         df_int_as_str.with_columns(pl.col("int").map_dict(int_dict))
 
     with pytest.raises(
         pl.ComputeError,
-        match="Remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion.",
+        match="remapping keys for `map_dict` could not be converted to Utf8 without losing values in the conversion",
     ):
         df_int_as_str.with_columns(pl.col("int").map_dict(int_with_none_dict))
 
@@ -882,8 +806,8 @@ def test_lit_dtypes() -> None:
             "f32": lit_series(0, pl.Float32),
             "u16": lit_series(0, pl.UInt16),
             "i16": lit_series(0, pl.Int16),
-            "i64": lit_series([8], None),
-            "list_i64": lit_series([[1, 2, 3]], None),
+            "i64": lit_series(pl.Series([8]), None),
+            "list_i64": lit_series(pl.Series([[1, 2, 3]]), None),
         }
     )
     assert df.dtypes == [
@@ -925,7 +849,7 @@ def test_lit_dtypes() -> None:
 def test_incompatible_lit_dtype() -> None:
     with pytest.raises(
         TypeError,
-        match=r"Time zone of dtype \(Asia/Kathmandu\) differs from time zone of value \(UTC\).",
+        match=r"time zone of dtype \('Asia/Kathmandu'\) differs from time zone of value \(datetime.timezone.utc\)",
     ):
         pl.lit(
             datetime(2020, 1, 1, tzinfo=timezone.utc),
@@ -962,7 +886,7 @@ def test_exclude(input: tuple[Any, ...], expected: list[str]) -> None:
     assert df.select(pl.all().exclude(*input)).columns == expected
 
 
-@pytest.mark.parametrize("input", [(5,), (["a"], "b"), (pl.Int64, "a")])
+@pytest.mark.parametrize("input", [(5,), (["a"], date.today()), (pl.Int64, "a")])
 def test_exclude_invalid_input(input: tuple[Any, ...]) -> None:
     df = pl.DataFrame(schema=["a", "b", "c"])
     with pytest.raises(TypeError):
@@ -1068,23 +992,6 @@ def test_tail() -> None:
     assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(False) == {"a": [4, 5]}
 
 
-def test_cache_expr(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-    df = pl.DataFrame(
-        {
-            "x": [3, 3, 3, 5, 8],
-        }
-    )
-    x = (pl.col("x") * 10).cache()
-
-    assert (df.groupby(1).agg([x * x * x])).to_dict(False) == {
-        "literal": [1],
-        "x": [[27000, 27000, 27000, 125000, 512000]],
-    }
-    _, err = capfd.readouterr()
-    assert """cache hit: CACHE [(col("x")) * (10)]""" in err
-
-
 @pytest.mark.parametrize(
     ("const", "dtype"),
     [
@@ -1135,3 +1042,14 @@ def test_extend_constant_arr(const: Any, dtype: pl.PolarsDataType) -> None:
     expected = pl.Series("s", [[const, const, const, const]], dtype=pl.List(dtype))
 
     assert_series_equal(s.list.eval(pl.element().extend_constant(const, 3)), expected)
+
+
+def test_is_not_deprecated() -> None:
+    df = pl.DataFrame({"a": [True, False, True]})
+
+    with pytest.deprecated_call():
+        expr = pl.col("a").is_not()
+    result = df.select(expr)
+
+    expected = pl.DataFrame({"a": [False, True, False]})
+    assert_frame_equal(result, expected)

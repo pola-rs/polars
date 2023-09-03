@@ -19,6 +19,7 @@ Descriptive
     Series.is_in
     Series.is_infinite
     Series.is_integer
+    Series.is_last
     Series.is_nan
     Series.is_not_nan
     Series.is_not_null

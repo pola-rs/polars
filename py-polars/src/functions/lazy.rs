@@ -1,28 +1,20 @@
 use polars::lazy::dsl;
 use polars::lazy::dsl::Expr;
 use polars::prelude::*;
-use polars_core::datatypes::TimeZone;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
-use crate::apply::lazy::binary_lambda;
 use crate::conversion::{get_lf, Wrap};
 use crate::expr::ToExprs;
-use crate::prelude::{
-    vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs, ObjectValue,
-};
-use crate::{apply, PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr, PySeries};
+use crate::map::lazy::binary_lambda;
+use crate::prelude::{vec_extract_wrapped, DataType, DatetimeArgs, DurationArgs, ObjectValue};
+use crate::{map, PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr, PySeries};
 
 macro_rules! set_unwrapped_or_0 {
     ($($var:ident),+ $(,)?) => {
         $(let $var = $var.map(|e| e.inner).unwrap_or(dsl::lit(0));)+
     };
-}
-
-#[pyfunction]
-pub fn arange(start: PyExpr, end: PyExpr, step: i64) -> PyExpr {
-    dsl::arange(start.inner, end.inner, step).into()
 }
 
 #[pyfunction]
@@ -113,6 +105,38 @@ pub fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFram
 }
 
 #[pyfunction]
+pub fn collect_all_with_callback(lfs: Vec<PyLazyFrame>, lambda: PyObject, py: Python) {
+    use polars_core::utils::rayon::prelude::*;
+
+    py.allow_threads(|| {
+        polars_core::POOL.install(move || {
+            polars_core::POOL.spawn(move || {
+                let result = lfs
+                    .par_iter()
+                    .map(|lf| {
+                        let df = lf.ldf.clone().collect()?;
+                        Ok(PyDataFrame::new(df))
+                    })
+                    .collect::<polars_core::error::PolarsResult<Vec<_>>>()
+                    .map_err(PyPolarsErr::from);
+
+                Python::with_gil(|py| match result {
+                    Ok(dfs) => {
+                        lambda.call1(py, (dfs,)).map_err(|err| err.restore(py)).ok();
+                    },
+                    Err(err) => {
+                        lambda
+                            .call1(py, (PyErr::from(err).to_object(py),))
+                            .map_err(|err| err.restore(py))
+                            .ok();
+                    },
+                })
+            })
+        });
+    });
+}
+
+#[pyfunction]
 pub fn cols(names: Vec<String>) -> PyExpr {
     dsl::cols(names).into()
 }
@@ -169,6 +193,16 @@ pub fn cov(a: PyExpr, b: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
+pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
+    y.inner.arctan2(x.inner).into()
+}
+
+#[pyfunction]
+pub fn arctan2d(y: PyExpr, x: PyExpr) -> PyExpr {
+    y.inner.arctan2(x.inner).degrees().into()
+}
+
+#[pyfunction]
 pub fn cumfold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
     let exprs = exprs.to_exprs();
 
@@ -184,21 +218,9 @@ pub fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     dsl::cumreduce_exprs(func, exprs).into()
 }
 
+#[allow(clippy::too_many_arguments)]
 #[pyfunction]
-pub fn date_range_lazy(
-    start: PyExpr,
-    end: PyExpr,
-    every: &str,
-    closed: Wrap<ClosedWindow>,
-    time_zone: Option<TimeZone>,
-) -> PyExpr {
-    let start = start.inner;
-    let end = end.inner;
-    let every = Duration::parse(every);
-    dsl::functions::date_range(start, end, every, closed.0, time_zone).into()
-}
-
-#[pyfunction]
+#[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=None, ambiguous=None))]
 pub fn datetime(
     year: PyExpr,
     month: PyExpr,
@@ -207,13 +229,18 @@ pub fn datetime(
     minute: Option<PyExpr>,
     second: Option<PyExpr>,
     microsecond: Option<PyExpr>,
+    time_unit: Wrap<TimeUnit>,
+    time_zone: Option<TimeZone>,
+    ambiguous: Option<PyExpr>,
 ) -> PyExpr {
     let year = year.inner;
     let month = month.inner;
     let day = day.inner;
-
     set_unwrapped_or_0!(hour, minute, second, microsecond);
-
+    let ambiguous = ambiguous
+        .map(|e| e.inner)
+        .unwrap_or(dsl::lit(String::from("raise")));
+    let time_unit = time_unit.0;
     let args = DatetimeArgs {
         year,
         month,
@@ -222,6 +249,9 @@ pub fn datetime(
         minute,
         second,
         microsecond,
+        time_unit,
+        time_zone,
+        ambiguous,
     };
     dsl::datetime(args).into()
 }
@@ -320,11 +350,11 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
                 } else {
                     Ok(dsl::lit(val).into())
                 }
-            }
+            },
             _ => {
                 let val = int.extract::<u64>().unwrap();
                 Ok(dsl::lit(val).into())
-            }
+            },
         }
     } else if let Ok(float) = value.downcast::<PyFloat>() {
         let val = float.extract::<f64>().unwrap();
@@ -356,35 +386,16 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (pyexpr, lambda, output_type, apply_groups, returns_scalar))]
+#[pyo3(signature = (pyexpr, lambda, output_type, map_groups, returns_scalar))]
 pub fn map_mul(
     py: Python,
     pyexpr: Vec<PyExpr>,
     lambda: PyObject,
     output_type: Option<Wrap<DataType>>,
-    apply_groups: bool,
+    map_groups: bool,
     returns_scalar: bool,
 ) -> PyExpr {
-    apply::lazy::map_mul(
-        &pyexpr,
-        py,
-        lambda,
-        output_type,
-        apply_groups,
-        returns_scalar,
-    )
-}
-
-#[pyfunction]
-pub fn max_exprs(exprs: Vec<PyExpr>) -> PyExpr {
-    let exprs = exprs.to_exprs();
-    dsl::max_exprs(exprs).into()
-}
-
-#[pyfunction]
-pub fn min_exprs(exprs: Vec<PyExpr>) -> PyExpr {
-    let exprs = exprs.to_exprs();
-    dsl::min_exprs(exprs).into()
+    map::lazy::map_mul(&pyexpr, py, lambda, output_type, map_groups, returns_scalar)
 }
 
 #[pyfunction]
@@ -401,38 +412,25 @@ pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn repeat(value: Wrap<AnyValue>, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResult<PyExpr> {
-    let value = value.0;
+pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResult<PyExpr> {
+    let mut value = value.inner;
     let n = n.inner;
-    let dtype = dtype.map(|wrap| wrap.0);
 
-    let target_dtype = match dtype {
-        Some(dtype) => dtype,
-        None => match value.dtype() {
-            // Integer inputs that fit in Int32 are parsed as such
-            DataType::Int64 => {
-                let int_value: i64 = value.try_extract().unwrap();
-                if int_value >= i32::MIN as i64 && int_value <= i32::MAX as i64 {
-                    DataType::Int32
-                } else {
-                    DataType::Int64
-                }
-            }
-            DataType::Unknown => DataType::Null,
-            _ => value.dtype(),
-        },
-    };
-
-    let lit_value = LiteralValue::try_from(value).map_err(PyPolarsErr::from)?;
-    let must_cast = lit_value.get_datatype() != target_dtype;
-
-    let mut expr = dsl::repeat(lit_value, n);
-
-    if must_cast {
-        expr = expr.cast(target_dtype);
+    if let Some(dtype) = dtype {
+        value = value.cast(dtype.0);
     }
 
-    Ok(expr.into())
+    if let Expr::Literal(lv) = &value {
+        let av = lv.to_anyvalue().unwrap();
+        // Integer inputs that fit in Int32 are parsed as such
+        if let DataType::Int64 = av.dtype() {
+            let int_value = av.try_extract::<i64>().unwrap();
+            if int_value >= i32::MIN as i64 && int_value <= i32::MAX as i64 {
+                value = value.cast(DataType::Int32);
+            }
+        }
+    }
+    Ok(dsl::repeat(value, n).into())
 }
 
 #[pyfunction]
@@ -445,25 +443,6 @@ pub fn spearman_rank_corr(a: PyExpr, b: PyExpr, ddof: u8, propagate_nans: bool) 
     {
         panic!("activate 'propagate_nans'")
     }
-}
-
-#[pyfunction]
-pub fn sum_exprs(exprs: Vec<PyExpr>) -> PyExpr {
-    let exprs = exprs.to_exprs();
-    dsl::sum_exprs(exprs).into()
-}
-
-#[pyfunction]
-pub fn time_range_lazy(
-    start: PyExpr,
-    end: PyExpr,
-    every: &str,
-    closed: Wrap<ClosedWindow>,
-) -> PyExpr {
-    let start = start.inner;
-    let end = end.inner;
-    let every = Duration::parse(every);
-    dsl::functions::time_range(start, end, every, closed.0).into()
 }
 
 #[pyfunction]

@@ -1,6 +1,6 @@
-============
+======
 Config
-============
+======
 .. currentmodule:: polars
 
 Config options

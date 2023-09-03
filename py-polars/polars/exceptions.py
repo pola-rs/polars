@@ -10,6 +10,7 @@ try:
         SchemaError,
         SchemaFieldNotFoundError,
         ShapeError,
+        StringCacheMismatchError,
         StructFieldNotFoundError,
     )
 except ImportError:
@@ -43,31 +44,14 @@ except ImportError:
     class ShapeError(Exception):  # type: ignore[no-redef]
         """Exception raised when trying to combine data structures with incompatible shapes."""  # noqa: W505
 
+    class StringCacheMismatchError(Exception):  # type: ignore[no-redef]
+        """Exception raised when string caches come from different sources."""
+
     class StructFieldNotFoundError(Exception):  # type: ignore[no-redef]
         """Exception raised when a specified schema field is not found."""
 
     class PolarsPanicError(Exception):  # type: ignore[no-redef]
         """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
-
-
-class InvalidAssert(Exception):
-    """Exception raised when an unsupported testing assert is made."""
-
-
-class RowsError(Exception):
-    """Exception raised when the number of returned rows does not match expectation."""
-
-
-class NoRowsReturnedError(RowsError):
-    """Exception raised when no rows are returned, but at least one row is expected."""
-
-
-class TooManyRowsReturnedError(RowsError):
-    """Exception raised when more rows than expected are returned."""
-
-
-class TimeZoneAwareConstructorWarning(Warning):
-    """Warning raised when constructing Series from non-UTC time-zone-aware inputs."""
 
 
 class ChronoFormatWarning(Warning):
@@ -82,6 +66,34 @@ class ChronoFormatWarning(Warning):
     """
 
 
+class InvalidAssert(Exception):
+    """Exception raised when an unsupported testing assert is made."""
+
+
+class RowsError(Exception):
+    """Exception raised when the number of returned rows does not match expectation."""
+
+
+class NoRowsReturnedError(RowsError):
+    """Exception raised when no rows are returned, but at least one row is expected."""
+
+
+class PolarsInefficientMapWarning(Warning):
+    """Warning raised when a potentially slow `apply` operation is performed."""
+
+
+class TooManyRowsReturnedError(RowsError):
+    """Exception raised when more rows than expected are returned."""
+
+
+class TimeZoneAwareConstructorWarning(Warning):
+    """Warning raised when constructing Series from non-UTC time-zone-aware inputs."""
+
+
+class UnsuitableSQLError(ValueError):
+    """Exception raised when unsuitable SQL is given to a database method."""
+
+
 __all__ = [
     "ArrowError",
     "ColumnNotFoundError",
@@ -91,11 +103,13 @@ __all__ = [
     "InvalidOperationError",
     "NoDataError",
     "NoRowsReturnedError",
+    "PolarsInefficientMapWarning",
     "PolarsPanicError",
     "RowsError",
     "SchemaError",
     "SchemaFieldNotFoundError",
     "ShapeError",
+    "StringCacheMismatchError",
     "StructFieldNotFoundError",
     "TooManyRowsReturnedError",
 ]

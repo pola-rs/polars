@@ -29,7 +29,7 @@ impl PySeries {
             DataType::Boolean => {
                 let s = self.series.cast(&DataType::UInt8).unwrap();
                 s.mean()
-            }
+            },
             _ => self.series.mean(),
         }
     }
@@ -39,7 +39,7 @@ impl PySeries {
             DataType::Boolean => {
                 let s = self.series.cast(&DataType::UInt8).unwrap();
                 s.median()
-            }
+            },
             _ => self.series.median(),
         }
     }

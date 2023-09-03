@@ -1,8 +1,18 @@
+from typing import Any
+
 import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.selectors import expand_selector
 from polars.testing import assert_frame_equal
+
+
+def assert_repr_equals(item: Any, expected: str) -> None:
+    """Assert that the repr of an item matches the expected string."""
+    if not isinstance(expected, str):
+        raise TypeError(f"'expected' must be a string; found {type(expected)}")
+    assert repr(item) == expected
 
 
 @pytest.fixture()
@@ -33,7 +43,7 @@ def test_selector_all(df: pl.DataFrame) -> None:
 
 
 def test_selector_by_dtype(df: pl.DataFrame) -> None:
-    assert df.select(cs.by_dtype(pl.UInt16, pl.Boolean)).schema == {
+    assert df.select(cs.by_dtype(pl.UInt16) | cs.boolean()).schema == {
         "abc": pl.UInt16,
         "eee": pl.Boolean,
         "fgg": pl.Boolean,
@@ -85,6 +95,106 @@ def test_selector_datetime(df: pl.DataFrame) -> None:
 
     all_columns = set(df.columns)
     assert set(df.select(~cs.datetime()).columns) == all_columns - {"opp"}
+
+    df = pl.DataFrame(
+        schema={
+            "d1": pl.Datetime("ns", "Asia/Tokyo"),
+            "d2": pl.Datetime("ns", "UTC"),
+            "d3": pl.Datetime("us", "UTC"),
+            "d4": pl.Datetime("us"),
+            "d5": pl.Datetime("ms"),
+        },
+    )
+    assert df.select(cs.datetime()).columns == ["d1", "d2", "d3", "d4", "d5"]
+    assert df.select(~cs.datetime()).schema == {}
+
+    assert df.select(cs.datetime(["ms", "ns"])).columns == ["d1", "d2", "d5"]
+    assert df.select(cs.datetime(["ms", "ns"], time_zone="*")).columns == ["d1", "d2"]
+
+    assert df.select(~cs.datetime(["ms", "ns"])).columns == ["d3", "d4"]
+    assert df.select(~cs.datetime(["ms", "ns"], time_zone="*")).columns == [
+        "d3",
+        "d4",
+        "d5",
+    ]
+    assert df.select(
+        cs.datetime(time_zone=["UTC", "Asia/Tokyo", "Europe/London"])
+    ).columns == ["d1", "d2", "d3"]
+
+    assert df.select(cs.datetime(time_zone="*")).columns == ["d1", "d2", "d3"]
+    assert df.select(cs.datetime("ns", time_zone="*")).columns == ["d1", "d2"]
+    assert df.select(cs.datetime(time_zone="UTC")).columns == ["d2", "d3"]
+    assert df.select(cs.datetime("us", time_zone="UTC")).columns == ["d3"]
+    assert df.select(cs.datetime(time_zone="Asia/Tokyo")).columns == ["d1"]
+    assert df.select(cs.datetime("us", time_zone="Asia/Tokyo")).columns == []
+    assert df.select(cs.datetime(time_zone=None)).columns == ["d4", "d5"]
+    assert df.select(cs.datetime("ns", time_zone=None)).columns == []
+
+    assert df.select(~cs.datetime(time_zone="*")).columns == ["d4", "d5"]
+    assert df.select(~cs.datetime("ns", time_zone="*")).columns == ["d3", "d4", "d5"]
+    assert df.select(~cs.datetime(time_zone="UTC")).columns == ["d1", "d4", "d5"]
+    assert df.select(~cs.datetime("us", time_zone="UTC")).columns == [
+        "d1",
+        "d2",
+        "d4",
+        "d5",
+    ]
+    assert df.select(~cs.datetime(time_zone="Asia/Tokyo")).columns == [
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+    ]
+    assert df.select(~cs.datetime("us", time_zone="Asia/Tokyo")).columns == [
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+    ]
+    assert df.select(~cs.datetime(time_zone=None)).columns == ["d1", "d2", "d3"]
+    assert df.select(~cs.datetime("ns", time_zone=None)).columns == [
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+    ]
+    assert df.select(cs.datetime("ns")).columns == ["d1", "d2"]
+    assert df.select(cs.datetime("us")).columns == ["d3", "d4"]
+    assert df.select(cs.datetime("ms")).columns == ["d5"]
+
+    # bonus check; significantly more verbose, but equivalent to a selector -
+    assert (
+        df.select(
+            pl.all().exclude(
+                pl.Datetime("ms", time_zone="*"), pl.Datetime("ns", time_zone="*")
+            )
+        ).columns
+        == df.select(~cs.datetime(["ms", "ns"], time_zone="*")).columns
+    )
+
+
+def test_selector_drop(df: pl.DataFrame) -> None:
+    dfd = df.drop(cs.numeric(), cs.temporal())
+    assert dfd.columns == ["eee", "fgg", "qqR"]
+
+
+def test_selector_duration(df: pl.DataFrame) -> None:
+    assert df.select(cs.duration("ms")).columns == []
+    assert df.select(cs.duration(["ms", "ns"])).columns == []
+    assert expand_selector(df, cs.duration()) == ("Lmn",)
+
+    df = pl.DataFrame(
+        schema={
+            "d1": pl.Duration("ns"),
+            "d2": pl.Duration("us"),
+            "d3": pl.Duration("ms"),
+        },
+    )
+    assert expand_selector(df, cs.duration()) == ("d1", "d2", "d3")
+    assert expand_selector(df, cs.duration("us")) == ("d2",)
+    assert expand_selector(df, cs.duration(["ms", "ns"])) == ("d1", "d3")
 
 
 def test_selector_ends_with(df: pl.DataFrame) -> None:
@@ -151,6 +261,24 @@ def test_selector_matches(df: pl.DataFrame) -> None:
     ]
 
 
+def test_selector_miscellaneous(df: pl.DataFrame) -> None:
+    assert df.select(cs.string()).columns == ["qqR"]
+    assert df.select(cs.categorical()).columns == []
+
+    test_schema = {
+        "abc": pl.Utf8,
+        "mno": pl.Binary,
+        "tuv": pl.Object,
+        "xyz": pl.Categorical,
+    }
+    assert expand_selector(test_schema, cs.binary()) == ("mno",)
+    assert expand_selector(test_schema, ~cs.binary()) == ("abc", "tuv", "xyz")
+    assert expand_selector(test_schema, cs.object()) == ("tuv",)
+    assert expand_selector(test_schema, ~cs.object()) == ("abc", "mno", "xyz")
+    assert expand_selector(test_schema, cs.categorical()) == ("xyz",)
+    assert expand_selector(test_schema, ~cs.categorical()) == ("abc", "mno", "tuv")
+
+
 def test_selector_numeric(df: pl.DataFrame) -> None:
     assert df.select(cs.numeric()).schema == {
         "abc": pl.UInt16,
@@ -200,6 +328,8 @@ def test_selector_temporal(df: pl.DataFrame) -> None:
     assert set(df.select(~cs.temporal()).columns) == (
         all_columns - {"ghi", "JJK", "Lmn", "opp"}
     )
+    assert df.select(cs.time()).schema == {"ghi": pl.Time}
+    assert df.select(cs.date() | cs.time()).schema == {"ghi": pl.Time, "JJK": pl.Date}
 
 
 def test_selector_expansion() -> None:
@@ -230,11 +360,15 @@ def test_selector_expansion() -> None:
 
 
 def test_selector_repr() -> None:
-    assert repr(cs.all() - cs.first()) == "cs.all() - cs.first()"
-    assert repr(~cs.starts_with("a", "b")) == "~cs.starts_with('a', 'b')"
-    assert repr(cs.float() | cs.by_name("x")) == "cs.float() | cs.by_name('x')"
-    assert (
-        repr(cs.integer() & cs.matches("z")) == "cs.integer() & cs.matches(pattern='z')"
+    assert_repr_equals(cs.all() - cs.first(), "(cs.all() - cs.first())")
+    assert_repr_equals(~cs.starts_with("a", "b"), "~cs.starts_with('a', 'b')")
+    assert_repr_equals(cs.float() | cs.by_name("x"), "(cs.float() | cs.by_name('x'))")
+    assert_repr_equals(
+        cs.integer() & cs.matches("z"), "(cs.integer() & cs.matches(pattern='z'))"
+    )
+    assert_repr_equals(
+        cs.temporal() | cs.by_dtype(pl.Utf8) & cs.string(False),
+        "(cs.temporal() | (cs.by_dtype(dtypes=[Utf8]) & cs.string(include_categorical=False)))",
     )
 
 
@@ -321,8 +455,8 @@ def test_selector_expr_dispatch() -> None:
 
     # check that "as_expr" behaves, both explicitly and implicitly
     for nan_or_inf in (
-        cs.float().is_nan().as_expr() | cs.float().is_infinite().as_expr(),  # type: ignore[attr-defined]
-        cs.float().is_nan().as_expr() | cs.float().is_infinite(),  # type: ignore[attr-defined]
+        cs.float().is_nan().as_expr() | cs.float().is_infinite().as_expr(),
+        cs.float().is_nan().as_expr() | cs.float().is_infinite(),
         cs.float().is_nan() | cs.float().is_infinite(),
     ):
         assert_frame_equal(
@@ -331,3 +465,21 @@ def test_selector_expr_dispatch() -> None:
                 pl.when(nan_or_inf).then(0.0).otherwise(cs.float()).keep_name()
             ).fill_null(0),
         )
+
+
+def test_regex_expansion_group_by_9947() -> None:
+    df = pl.DataFrame({"g": [3], "abc": [1], "abcd": [3]})
+    assert df.group_by("g").agg(pl.col("^ab.*$")).columns == ["g", "abc", "abcd"]
+
+
+def test_regex_expansion_exclude_10002() -> None:
+    df = pl.DataFrame({"col_1": [1, 2, 3], "col_2": [2, 4, 3]})
+    expected = {"col_1": [10, 20, 30], "col_2": [0.2, 0.4, 0.3]}
+
+    assert (
+        df.select(
+            pl.col("^col_.*$").exclude("col_2").mul(10),
+            pl.col("^col_.*$").exclude("col_1") / 10,
+        ).to_dict(as_series=False)
+        == expected
+    )

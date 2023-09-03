@@ -15,6 +15,7 @@ Computation
     Series.arctanh
     Series.arg_true
     Series.arg_unique
+    Series.cbrt
     Series.cos
     Series.cosh
     Series.cummax
@@ -41,6 +42,7 @@ Computation
     Series.peak_min
     Series.rank
     Series.rolling_apply
+    Series.rolling_map
     Series.rolling_max
     Series.rolling_mean
     Series.rolling_median

@@ -4,13 +4,13 @@ on:
   pull_request:
     paths:
       - py-polars/**
-      - polars/**
+      - crates/**
       - .github/workflows/test-python.yml
   push:
     branches:
       - main
     paths:
-      - polars/**
+      - crates/**
       - py-polars/**
       - .github/workflows/test-python.yml
 
@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.7', '3.11']
+        python-version: ['3.8', '3.11']
 
     steps:
       - uses: actions/checkout@v3
@@ -65,7 +65,7 @@ jobs:
 
       - name: Run tests and report coverage
         if: github.ref_name != 'main'
-        run: pytest --cov -n auto --dist worksteal -m "not benchmark"
+        run: pytest --cov -n auto --dist loadgroup -m "not benchmark"
 
       - name: Run doctests
         if: github.ref_name != 'main'
@@ -125,7 +125,7 @@ jobs:
 
       - name: Run tests
         if: github.ref_name != 'main'
-        run: pytest -n auto --dist worksteal -m "not benchmark"
+        run: pytest -n auto --dist loadgroup -m "not benchmark"
 
       - name: Check import without optional dependencies
         if: github.ref_name != 'main'

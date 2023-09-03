@@ -1,176 +1,22 @@
+from __future__ import annotations
+
 import time
-import typing
 from datetime import date
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.exceptions import PolarsInefficientMapWarning
+from polars.testing import assert_frame_equal
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
-def test_streaming_groupby_types() -> None:
-    df = pl.DataFrame(
-        {
-            "person_id": [1, 1],
-            "year": [1995, 1995],
-            "person_name": ["bob", "foo"],
-            "bool": [True, False],
-            "date": [date(2022, 1, 1), date(2022, 1, 1)],
-        }
-    )
+    from polars.type_aliases import JoinStrategy
 
-    for by in ["person_id", "year", "date", ["person_id", "year"]]:
-        out = (
-            (
-                df.lazy()
-                .groupby(by)
-                .agg(
-                    [
-                        pl.col("person_name").first().alias("str_first"),
-                        pl.col("person_name").last().alias("str_last"),
-                        pl.col("person_name").mean().alias("str_mean"),
-                        pl.col("person_name").sum().alias("str_sum"),
-                        pl.col("bool").first().alias("bool_first"),
-                        pl.col("bool").last().alias("bool_last"),
-                        pl.col("bool").mean().alias("bool_mean"),
-                        pl.col("bool").sum().alias("bool_sum"),
-                        pl.col("date").sum().alias("date_sum"),
-                        pl.col("date").mean().alias("date_mean"),
-                        pl.col("date").first().alias("date_first"),
-                        pl.col("date").last().alias("date_last"),
-                        pl.col("date").min().alias("date_min"),
-                        pl.col("date").max().alias("date_max"),
-                    ]
-                )
-            )
-            .select(pl.all().exclude(by))
-            .collect(streaming=True)
-        )
-        assert out.schema == {
-            "str_first": pl.Utf8,
-            "str_last": pl.Utf8,
-            "str_mean": pl.Utf8,
-            "str_sum": pl.Utf8,
-            "bool_first": pl.Boolean,
-            "bool_last": pl.Boolean,
-            "bool_mean": pl.Boolean,
-            "bool_sum": pl.UInt32,
-            "date_sum": pl.Date,
-            "date_mean": pl.Date,
-            "date_first": pl.Date,
-            "date_last": pl.Date,
-            "date_min": pl.Date,
-            "date_max": pl.Date,
-        }
-
-        assert out.to_dict(False) == {
-            "str_first": ["bob"],
-            "str_last": ["foo"],
-            "str_mean": [None],
-            "str_sum": [None],
-            "bool_first": [True],
-            "bool_last": [False],
-            "bool_mean": [None],
-            "bool_sum": [1],
-            "date_sum": [date(2074, 1, 1)],
-            "date_mean": [date(2022, 1, 1)],
-            "date_first": [date(2022, 1, 1)],
-            "date_last": [date(2022, 1, 1)],
-            "date_min": [date(2022, 1, 1)],
-            "date_max": [date(2022, 1, 1)],
-        }
-
-    with pytest.raises(pl.DuplicateError):
-        (
-            df.lazy()
-            .groupby("person_id")
-            .agg(
-                [
-                    pl.col("person_name").first().alias("str_first"),
-                    pl.col("person_name").last().alias("str_last"),
-                    pl.col("person_name").mean().alias("str_mean"),
-                    pl.col("person_name").sum().alias("str_sum"),
-                    pl.col("bool").first().alias("bool_first"),
-                    pl.col("bool").last().alias("bool_first"),
-                ]
-            )
-            .select(pl.all().exclude("person_id"))
-            .collect(streaming=True)
-        )
-
-
-def test_streaming_groupby_min_max() -> None:
-    df = pl.DataFrame(
-        {
-            "person_id": [1, 2, 3, 4, 5, 6],
-            "year": [1995, 1995, 1995, 2, 2, 2],
-        }
-    )
-    out = (
-        df.lazy()
-        .groupby("year")
-        .agg([pl.min("person_id").alias("min"), pl.max("person_id").alias("max")])
-        .collect()
-        .sort("year")
-    )
-    assert out["min"].to_list() == [4, 1]
-    assert out["max"].to_list() == [6, 3]
-
-
-def test_streaming_non_streaming_gb() -> None:
-    n = 100
-    df = pl.DataFrame({"a": np.random.randint(0, 20, n)})
-    q = df.lazy().groupby("a").agg(pl.count()).sort("a")
-    assert_frame_equal(q.collect(streaming=True), q.collect())
-
-    q = df.lazy().with_columns(pl.col("a").cast(pl.Utf8))
-    q = q.groupby("a").agg(pl.count()).sort("a")
-    assert_frame_equal(q.collect(streaming=True), q.collect())
-    q = df.lazy().with_columns(pl.col("a").alias("b"))
-    q = (
-        q.groupby(["a", "b"])
-        .agg(pl.count(), pl.col("a").sum().alias("sum_a"))
-        .sort("a")
-    )
-    assert_frame_equal(q.collect(streaming=True), q.collect())
-
-
-def test_streaming_groupby_sorted_fast_path() -> None:
-    a = np.random.randint(0, 20, 80)
-    df = pl.DataFrame(
-        {
-            # test on int8 as that also tests proper conversions
-            "a": pl.Series(np.sort(a), dtype=pl.Int8)
-        }
-    ).with_row_count()
-
-    df_sorted = df.with_columns(pl.col("a").set_sorted())
-
-    for streaming in [True, False]:
-        results = []
-        for df_ in [df, df_sorted]:
-            out = (
-                df_.lazy()
-                .groupby("a")
-                .agg(
-                    [
-                        pl.first("a").alias("first"),
-                        pl.last("a").alias("last"),
-                        pl.sum("a").alias("sum"),
-                        pl.mean("a").alias("mean"),
-                        pl.count("a").alias("count"),
-                        pl.min("a").alias("min"),
-                        pl.max("a").alias("max"),
-                    ]
-                )
-                .sort("a")
-                .collect(streaming=streaming)
-            )
-            results.append(out)
-
-        assert_frame_equal(results[0], results[1])
+pytestmark = pytest.mark.xdist_group("streaming")
 
 
 def test_streaming_categoricals_5921() -> None:
@@ -179,7 +25,7 @@ def test_streaming_categoricals_5921() -> None:
             pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
             .lazy()
             .with_columns(pl.col("X").cast(pl.Categorical))
-            .groupby("X")
+            .group_by("X")
             .agg(pl.col("Y").min())
             .sort("Y", descending=True)
             .collect(streaming=True)
@@ -188,7 +34,7 @@ def test_streaming_categoricals_5921() -> None:
         out_eager = (
             pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
             .with_columns(pl.col("X").cast(pl.Categorical))
-            .groupby("X")
+            .group_by("X")
             .agg(pl.col("Y").min())
             .sort("Y", descending=True)
         )
@@ -202,7 +48,7 @@ def test_streaming_block_on_literals_6054() -> None:
     df = pl.DataFrame({"col_1": [0] * 5 + [1] * 5})
     s = pl.Series("col_2", list(range(10)))
 
-    assert df.lazy().with_columns(s).groupby("col_1").agg(pl.all().first()).collect(
+    assert df.lazy().with_columns(s).group_by("col_1").agg(pl.all().first()).collect(
         streaming=True
     ).sort("col_1").to_dict(False) == {"col_1": [0, 1], "col_2": [0, 5]}
 
@@ -212,7 +58,7 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
     assert (
         pl.DataFrame({"a": [1, 2, 3]})
         .lazy()
-        .map(
+        .map_batches(
             function=lambda df: df.with_columns(pl.col("a").alias("b")),
             schema={"a": pl.Int64, "b": pl.Int64},
             streamable=True,
@@ -234,22 +80,6 @@ def test_cross_join_stack() -> None:
     assert (t1 - t0) < 0.5
 
 
-@pytest.mark.slow()
-def test_ooc_sort(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
-
-    s = pl.arange(0, 100_000, eager=True).rename("idx")
-
-    df = s.shuffle().to_frame()
-
-    for descending in [True, False]:
-        out = (
-            df.lazy().sort("idx", descending=descending).collect(streaming=True)
-        ).to_series()
-
-        assert_series_equal(out, s.sort(descending=descending))
-
-
 def test_streaming_literal_expansion() -> None:
     df = pl.DataFrame(
         {
@@ -269,14 +99,14 @@ def test_streaming_literal_expansion() -> None:
         "y": ["a", "b"],
         "z": [1, 2],
     }
-    assert q.groupby(["x", "y"]).agg(pl.mean("z")).sort("y").collect(
+    assert q.group_by(["x", "y"]).agg(pl.mean("z")).sort("y").collect(
         streaming=True
     ).to_dict(False) == {
         "x": ["constant", "constant"],
         "y": ["a", "b"],
         "z": [1.0, 2.0],
     }
-    assert q.groupby(["x"]).agg(pl.mean("z")).collect().to_dict(False) == {
+    assert q.group_by(["x"]).agg(pl.mean("z")).collect().to_dict(False) == {
         "x": ["constant"],
         "z": [1.5],
     }
@@ -320,15 +150,19 @@ def test_tree_validation_streaming() -> None:
 
 def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
+
     q = pl.DataFrame({"a": [1, 2]}).lazy()
 
-    (
-        q.select(pl.col("a").apply(lambda x: x * 2, return_dtype=pl.Int64)).collect(
-            streaming=True
+    with pytest.warns(
+        PolarsInefficientMapWarning, match="In this case, you can replace"
+    ):
+        (
+            q.select(
+                pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Int64)
+            ).collect(streaming=True)
         )
-    )
-    (_, err) = capfd.readouterr()
-    assert "df -> projection -> ordered_sink" in err
+        (_, err) = capfd.readouterr()
+        assert "df -> projection -> ordered_sink" in err
 
 
 def test_streaming_ternary() -> None:
@@ -343,195 +177,6 @@ def test_streaming_ternary() -> None:
     )
 
 
-def test_streaming_unique(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-    df = pl.DataFrame({"a": [1, 2, 2, 2], "b": [3, 4, 4, 4], "c": [5, 6, 7, 7]})
-    q = df.lazy().unique(subset=["a", "c"], maintain_order=False).sort(["a", "b", "c"])
-    assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
-
-    q = df.lazy().unique(subset=["b", "c"], maintain_order=False).sort(["a", "b", "c"])
-    assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
-
-    q = df.lazy().unique(subset=None, maintain_order=False).sort(["a", "b", "c"])
-    assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
-    (_, err) = capfd.readouterr()
-    assert "df -> re-project-sink -> sort_multiple" in err
-
-
-@pytest.mark.write_disk()
-def test_streaming_sort(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
-    # this creates a lot of duplicate partitions and triggers: #7568
-    assert (
-        pl.Series(np.random.randint(0, 100, 100))
-        .to_frame("s")
-        .lazy()
-        .sort("s")
-        .collect(streaming=True)["s"]
-        .is_sorted()
-    )
-    (_, err) = capfd.readouterr()
-    assert "df -> sort" in err
-
-
-@pytest.mark.write_disk()
-def test_streaming_groupby_ooc(monkeypatch: Any) -> None:
-    np.random.seed(1)
-    s = pl.Series("a", np.random.randint(0, 10, 100))
-
-    for env in ["POLARS_FORCE_OOC", "_NO_OP"]:
-        monkeypatch.setenv(env, "1")
-        q = (
-            s.to_frame()
-            .lazy()
-            .groupby("a")
-            .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
-            .sort("a")
-        )
-
-        assert q.collect(streaming=True).to_dict(False) == {
-            "a": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-            "a_first": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-            "a_last": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-        }
-
-        q = (
-            s.cast(str)
-            .to_frame()
-            .lazy()
-            .groupby("a")
-            .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
-            .sort("a")
-        )
-
-        assert q.collect(streaming=True).to_dict(False) == {
-            "a": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
-            "a_first": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
-            "a_last": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
-        }
-
-        q = (
-            pl.DataFrame(
-                {
-                    "a": s,
-                    "b": s.rename("b"),
-                }
-            )
-            .lazy()
-            .groupby(["a", "b"])
-            .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
-            .sort("a")
-        )
-
-        assert q.collect(streaming=True).to_dict(False) == {
-            "a": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-            "b": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-            "a_first": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-            "a_last": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-        }
-
-
-def test_streaming_groupby_struct_key() -> None:
-    df = pl.DataFrame(
-        {"A": [1, 2, 3, 2], "B": ["google", "ms", "apple", "ms"], "C": [2, 3, 4, 3]}
-    )
-    df1 = df.lazy().with_columns(pl.struct(["A", "C"]).alias("tuples"))
-    assert df1.groupby("tuples").agg(pl.count(), pl.col("B").first()).sort("B").collect(
-        streaming=True
-    ).to_dict(False) == {
-        "tuples": [{"A": 3, "C": 4}, {"A": 1, "C": 2}, {"A": 2, "C": 3}],
-        "count": [1, 1, 2],
-        "B": ["apple", "google", "ms"],
-    }
-
-
-@pytest.mark.slow()
-def test_streaming_groupby_all_numeric_types_stability_8570() -> None:
-    m = 1000
-    n = 1000
-
-    rng = np.random.default_rng(seed=0)
-    dfa = pl.DataFrame({"x": pl.arange(start=0, end=n, eager=True)})
-    dfb = pl.DataFrame(
-        {
-            "y": rng.integers(low=0, high=10, size=m),
-            "z": rng.integers(low=0, high=2, size=m),
-        }
-    )
-    dfc = dfa.join(dfb, how="cross")
-
-    for keys in [["x", "y"], "z"]:
-        for dtype in [pl.Boolean, *pl.INTEGER_DTYPES]:
-            # the alias checks if the schema is correctly handled
-            dfd = (
-                dfc.lazy()
-                .with_columns(pl.col("z").cast(dtype))
-                .groupby(keys)
-                .agg(pl.col("z").sum().alias("z_sum"))
-                .collect(streaming=True)
-            )
-            assert dfd["z_sum"].sum() == dfc["z"].sum()
-
-
-@typing.no_type_check
-def test_streaming_groupby_categorical_aggregate() -> None:
-    with pl.StringCache():
-        out = (
-            pl.LazyFrame(
-                {
-                    "a": pl.Series(
-                        ["a", "a", "b", "b", "c", "c", None, None], dtype=pl.Categorical
-                    ),
-                    "b": pl.Series(
-                        pl.date_range(
-                            date(2023, 4, 28),
-                            date(2023, 5, 5),
-                            eager=True,
-                        ).to_list(),
-                        dtype=pl.Date,
-                    ),
-                }
-            )
-            .groupby(["a", "b"])
-            .agg([pl.col("a").first().alias("sum")])
-            .collect(streaming=True)
-        )
-
-    assert out.sort("b").to_dict(False) == {
-        "a": ["a", "a", "b", "b", "c", "c", None, None],
-        "b": [
-            date(2023, 4, 28),
-            date(2023, 4, 29),
-            date(2023, 4, 30),
-            date(2023, 5, 1),
-            date(2023, 5, 2),
-            date(2023, 5, 3),
-            date(2023, 5, 4),
-            date(2023, 5, 5),
-        ],
-        "sum": ["a", "a", "b", "b", "c", "c", None, None],
-    }
-
-
-def test_streaming_restart_non_streamable_groupby() -> None:
-    df = pl.DataFrame({"id": [1], "id2": [1], "id3": [1], "value": [1]})
-    res = (
-        df.lazy()
-        .join(df.lazy(), on=["id", "id2"], how="left")
-        .filter(
-            (pl.col("id3") > pl.col("id3_right"))
-            & (pl.col("id3") - pl.col("id3_right") < 30)
-        )
-        .groupby(["id2", "id3", "id3_right"])
-        .agg(
-            pl.col("value").apply(lambda x: x).sum() * pl.col("value").sum()
-        )  # non-streamable UDF + nested_agg
-    )
-
-    assert """--- PIPELINE""" in res.explain(streaming=True)
-
-
 def test_streaming_sortedness_propagation_9494() -> None:
     assert (
         pl.DataFrame(
@@ -542,62 +187,130 @@ def test_streaming_sortedness_propagation_9494() -> None:
         )
         .lazy()
         .sort("when")
-        .groupby_dynamic("when", every="1mo")
+        .group_by_dynamic("when", every="1mo")
         .agg(pl.col("what").sum())
         .collect(streaming=True)
     ).to_dict(False) == {"when": [date(2023, 5, 1), date(2023, 6, 1)], "what": [3, 3]}
 
 
 @pytest.mark.write_disk()
-def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
-    np.random.seed(0)
+@pytest.mark.slow()
+def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    p0 = tmp_path / "df0.parquet"
+    p1 = tmp_path / "df1.parquet"
+    # by loading from disk, we get different chunks
+    n = 200_000
+    k = 100
 
-    num_rows = 1_00_000
-    num_columns = 2
-    num_tables = 10
-
-    # ensure we create many chunks
-    # this will ensure we create more files
-    # and that creates contention while dumping
-    q = pl.concat(
-        [
-            pl.DataFrame(
-                [
-                    pl.Series(np.random.randint(0, 10000, size=num_rows))
-                    for _ in range(num_columns)
-                ]
-            )
-            for _ in range(num_tables)
-        ],
-        rechunk=False,
-    ).lazy()
-    q = q.sort(q.columns)
-    df = q.collect(streaming=True)
-    assert df.shape == (1_000_000, 2)
-    assert df["column_0"].flags["SORTED_ASC"]
-    assert df.head(20).to_dict(False) == {
-        "column_0": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        "column_1": [
-            242,
-            245,
-            588,
-            618,
-            732,
-            902,
-            925,
-            945,
-            1009,
-            1161,
-            1352,
-            1365,
-            1451,
-            1581,
-            1778,
-            1836,
-            1976,
-            2091,
-            2120,
-            2124,
-        ],
+    d0: dict[str, np.ndarray[Any, Any]] = {
+        f"x{i}": np.random.random(n) for i in range(k)
     }
+    d0.update({"id": np.arange(n)})
+
+    df0 = pl.DataFrame(d0)
+    df1 = df0.clone().select(pl.all().shuffle(111))
+
+    df0.write_parquet(p0)
+    df1.write_parquet(p1)
+
+    lf0 = pl.scan_parquet(p0)
+    lf1 = pl.scan_parquet(p1).select(pl.all().suffix("_r"))
+
+    join_strategies: list[JoinStrategy] = ["left", "inner"]
+    for how in join_strategies:
+        q = lf0.join(lf1, left_on="id", right_on="id_r", how=how)
+        assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
+
+
+def test_streaming_9776() -> None:
+    df = pl.DataFrame({"col_1": ["a"] * 1000, "ID": [None] + ["a"] * 999})
+    ordered = (
+        df.group_by("col_1", "ID", maintain_order=True)
+        .count()
+        .filter(pl.col("col_1") == "a")
+    )
+    unordered = (
+        df.group_by("col_1", "ID", maintain_order=False)
+        .count()
+        .filter(pl.col("col_1") == "a")
+    )
+    expected = [("a", None, 1), ("a", "a", 999)]
+    assert ordered.rows() == expected
+    assert unordered.sort(["col_1", "ID"]).rows() == expected
+
+
+@pytest.mark.write_disk()
+def test_stream_empty_file(tmp_path: Path) -> None:
+    p = tmp_path / "in.parquet"
+    schema = {
+        "KLN_NR": pl.Utf8,
+    }
+
+    df = pl.DataFrame(
+        {
+            "KLN_NR": [],
+        },
+        schema=schema,
+    )
+    df.write_parquet(p)
+    assert pl.scan_parquet(p).collect(streaming=True).schema == schema
+
+
+def test_streaming_empty_df() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", ["a", "b", "c", "b", "a", "a"], dtype=pl.Categorical()),
+            pl.Series("b", ["b", "c", "c", "b", "a", "c"], dtype=pl.Categorical()),
+        ]
+    )
+
+    result = (
+        df.lazy()
+        .join(df.lazy(), on="a", how="inner")
+        .filter(False)
+        .collect(streaming=True)
+    )
+
+    assert result.to_dict(False) == {"a": [], "b": [], "b_right": []}
+
+
+def test_streaming_duplicate_cols_5537() -> None:
+    assert pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).lazy().with_columns(
+        [(pl.col("a") * 2).alias("foo"), (pl.col("a") * 3)]
+    ).collect(streaming=True).to_dict(False) == {
+        "a": [3, 6, 9],
+        "b": [1, 2, 3],
+        "foo": [2, 4, 6],
+    }
+
+
+def test_null_sum_streaming_10455() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1] * 10,
+            "y": [None] * 10,
+        }
+    )
+    assert df.lazy().group_by("x").sum().collect(streaming=True).to_dict(False) == {
+        "x": [1],
+        "y": [0.0],
+    }
+
+
+def test_boolean_agg_schema() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1, 1, 1],
+            "y": [False, True, False],
+        }
+    ).lazy()
+
+    agg_df = df.group_by("x").agg(pl.col("y").max().alias("max_y"))
+
+    for streaming in [True, False]:
+        assert (
+            agg_df.collect(streaming=streaming).schema
+            == agg_df.schema
+            == {"x": pl.Int64, "max_y": pl.Boolean}
+        )
