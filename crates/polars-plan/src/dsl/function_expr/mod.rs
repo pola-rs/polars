@@ -380,6 +380,7 @@ macro_rules! wrap {
 // Fn(&[Series], args)
 // all expression arguments are in the slice.
 // the first element is the root expression.
+#[macro_export]
 macro_rules! map_as_slice {
     ($func:path) => {{
         let f = move |s: &mut [Series]| {
@@ -765,60 +766,11 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(dispatch::replace_time_zone, tz.as_deref())
             },
             Combine(tu) => map_as_slice!(temporal::combine, tu),
-            DateRange {
-                every,
-                closed,
-                time_unit,
-                time_zone,
-            } => {
-                map_as_slice!(
-                    temporal::temporal_range,
-                    every,
-                    closed,
-                    time_unit,
-                    time_zone.clone()
-                )
-            },
-            DateRanges {
-                every,
-                closed,
-                time_unit,
-                time_zone,
-            } => {
-                map_as_slice!(
-                    temporal::temporal_ranges,
-                    every,
-                    closed,
-                    time_unit,
-                    time_zone.clone()
-                )
-            },
-            TimeRange { every, closed } => {
-                map_as_slice!(temporal::time_range, every, closed)
-            },
-            TimeRanges { every, closed } => {
-                map_as_slice!(temporal::time_ranges, every, closed)
-            },
             DatetimeFunction {
                 time_unit,
                 time_zone,
             } => {
                 map_as_slice!(temporal::datetime, &time_unit, time_zone.as_deref())
-            },
-        }
-    }
-}
-
-#[cfg(feature = "range")]
-impl From<RangeFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
-    fn from(func: RangeFunction) -> Self {
-        use RangeFunction::*;
-        match func {
-            IntRange { step } => {
-                map_as_slice!(range::int_range, step)
-            },
-            IntRanges { step } => {
-                map_as_slice!(range::int_ranges, step)
             },
         }
     }

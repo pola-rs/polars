@@ -59,47 +59,6 @@ impl FunctionExpr {
                     Round(..) => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "timezones")]
                     ReplaceTimeZone(tz) => return mapper.map_datetime_dtype_timezone(tz.as_ref()),
-                    DateRange {
-                        every,
-                        closed: _,
-                        time_unit,
-                        time_zone,
-                    } => {
-                        // output dtype may change based on `every`, `time_unit`, and `time_zone`
-                        let dtype = mapper.map_to_date_range_dtype(
-                            every,
-                            time_unit.as_ref(),
-                            time_zone.as_deref(),
-                        )?;
-                        return Ok(Field::new("date", dtype));
-                    },
-                    DateRanges {
-                        every,
-                        closed: _,
-                        time_unit,
-                        time_zone,
-                    } => {
-                        // output dtype may change based on `every`, `time_unit`, and `time_zone`
-                        let inner_dtype = mapper.map_to_date_range_dtype(
-                            every,
-                            time_unit.as_ref(),
-                            time_zone.as_deref(),
-                        )?;
-                        return Ok(Field::new(
-                            "date_range",
-                            DataType::List(Box::new(inner_dtype)),
-                        ));
-                    },
-
-                    TimeRange { .. } => {
-                        return Ok(Field::new("time", DataType::Time));
-                    },
-                    TimeRanges { .. } => {
-                        return Ok(Field::new(
-                            "time_range",
-                            DataType::List(Box::new(DataType::Time)),
-                        ));
-                    },
                     DatetimeFunction {
                         time_unit,
                         time_zone,
@@ -121,16 +80,7 @@ impl FunctionExpr {
             },
 
             #[cfg(feature = "range")]
-            Range(fun) => {
-                use RangeFunction::*;
-                let field = match fun {
-                    IntRange { .. } => Field::new("int", DataType::Int64),
-                    IntRanges { .. } => {
-                        Field::new("int_range", DataType::List(Box::new(DataType::Int64)))
-                    },
-                };
-                Ok(field)
-            },
+            Range(func) => func.get_field(mapper),
             #[cfg(feature = "date_offset")]
             DateOffset(_) => mapper.with_same_dtype(),
             #[cfg(feature = "trigonometry")]
@@ -377,71 +327,6 @@ impl<'a> FieldsMapper<'a> {
             .unwrap_or(DataType::Unknown);
         first.coerce(dt);
         Ok(first)
-    }
-
-    #[cfg(feature = "temporal")]
-    pub(super) fn map_to_date_range_dtype(
-        &self,
-        every: &Duration,
-        time_unit: Option<&TimeUnit>,
-        time_zone: Option<&str>,
-    ) -> PolarsResult<DataType> {
-        let data_dtype = self.map_to_supertype()?.dtype;
-        match data_dtype {
-            DataType::Datetime(tu, tz) => {
-                self.map_datetime_to_date_range_dtype(tu, tz, time_unit, time_zone)
-            },
-            DataType::Date => {
-                let schema_dtype = self.map_date_to_date_range_dtype(every, time_unit, time_zone);
-                Ok(schema_dtype)
-            },
-            _ => polars_bail!(ComputeError: "expected Date or Datetime, got {}", data_dtype),
-        }
-    }
-    #[cfg(feature = "temporal")]
-    fn map_datetime_to_date_range_dtype(
-        &self,
-        data_time_unit: TimeUnit,
-        data_time_zone: Option<String>,
-        given_time_unit: Option<&TimeUnit>,
-        given_time_zone: Option<&str>,
-    ) -> PolarsResult<DataType> {
-        let schema_time_zone = match (data_time_zone, given_time_zone) {
-            (Some(data_tz), Some(given_tz)) => {
-                polars_ensure!(
-                    data_tz == given_tz,
-                    ComputeError: format!(
-                        "`time_zone` does not match the data\
-                        \n\nData has time zone '{}', got '{}'.", data_tz, given_tz)
-                );
-                Some(data_tz)
-            },
-            (_, Some(given_tz)) => Some(given_tz.to_string()),
-            (Some(data_tz), None) => Some(data_tz),
-            (_, _) => None,
-        };
-        let schema_time_unit = given_time_unit.unwrap_or(&data_time_unit);
-
-        let schema_dtype = DataType::Datetime(*schema_time_unit, schema_time_zone);
-        Ok(schema_dtype)
-    }
-    #[cfg(feature = "temporal")]
-    fn map_date_to_date_range_dtype(
-        &self,
-        every: &Duration,
-        time_unit: Option<&TimeUnit>,
-        time_zone: Option<&str>,
-    ) -> DataType {
-        let nsecs = every.nanoseconds();
-        if nsecs == 0 {
-            DataType::Date
-        } else if let Some(tu) = time_unit {
-            DataType::Datetime(*tu, time_zone.map(String::from))
-        } else if nsecs % 1000 != 0 {
-            DataType::Datetime(TimeUnit::Nanoseconds, time_zone.map(String::from))
-        } else {
-            DataType::Datetime(TimeUnit::Microseconds, time_zone.map(String::from))
-        }
     }
 
     /// Map the dtypes to the "supertype" of a list of lists.
