@@ -687,30 +687,24 @@ where
 {
     match (lhs.len(), rhs.len()) {
         (_, 1) => {
-            // Safety: values within iterator do not outlive the iterator itself
-            let mut iter = unsafe { rhs.amortized_iter() };
-            let right_us = iter.next().unwrap();
-            let right = right_us.as_ref().map(|s| s.as_ref());
-            // Safety: values within iterator do not outlive the iterator itself
+            let right = rhs.get(0).map(|s| s.with_name(""));
+            // SAFETY: values within iterator do not outlive the iterator itself
             unsafe {
                 lhs.amortized_iter()
-                    .map(|left| op(left.as_ref().map(|us| us.as_ref()), right))
+                    .map(|left| op(left.as_ref().map(|us| us.as_ref()), right.as_ref()))
                     .collect_trusted()
             }
         },
         (1, _) => {
-            // Safety: values within iterator do not outlive the iterator itself
-            let mut iter = unsafe { lhs.amortized_iter() };
-            let left_us = iter.next().unwrap();
-            let left = left_us.as_ref().map(|s| s.as_ref());
-            // Safety: values within iterator do not outlive the iterator itself
+            let left = lhs.get(0).map(|s| s.with_name(""));
+            // SAFETY: values within iterator do not outlive the iterator itself
             unsafe {
                 rhs.amortized_iter()
-                    .map(|right| op(left, right.as_ref().map(|us| us.as_ref())))
+                    .map(|right| op(left.as_ref(), right.as_ref().map(|us| us.as_ref())))
                     .collect_trusted()
             }
         },
-        // Safety: values within iterator do not outlive the iterator itself
+        // SAFETY: values within iterator do not outlive the iterator itself
         _ => unsafe {
             lhs.amortized_iter()
                 .zip(rhs.amortized_iter())
