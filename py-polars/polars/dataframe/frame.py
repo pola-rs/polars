@@ -104,6 +104,7 @@ from polars.utils.various import (
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
+    from polars.polars import dtype_str_repr
 
 if TYPE_CHECKING:
     import sys
@@ -4026,36 +4027,29 @@ class DataFrame:
         $ a  <f64> 1.0, 2.8, 3.0
         $ b  <i64> 4, 5, None
         $ c <bool> True, False, True
-        $ d  <str> None, b, c
-        $ e  <str> usd, eur, None
+        $ d  <str> None, 'b', 'c'
+        $ e  <str> 'usd', 'eur', None
         $ f <date> 2020-01-01, 2021-01-02, 2022-01-01
 
         """
         # always print at most this number of values (mainly ensures that
         # we do not cast long arrays to strings, which would be slow)
         max_n_values = min(max_items_per_column, self.height)
+        schema = self.schema
 
         def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
-            dtype_str = (
-                f"<{DataTypeClass._string_repr(dtype)}>"
-                if isinstance(dtype, DataTypeClass)
-                else f"<{dtype._string_repr()}>"
-            )
-            val = self[:max_n_values][col_name].to_list()
-            val_str = ", ".join(map(str, val))
+            fn = repr if schema[col_name] == Utf8 else str
+            values = self[:max_n_values][col_name].to_list()
+            val_str = ", ".join(fn(v) for v in values)  # type: ignore[operator]
             if len(col_name) > max_colname_length:
                 col_name = col_name[: (max_colname_length - 1)] + "…"
-            return col_name, dtype_str, val_str
+            return col_name, f"<{dtype_str_repr(dtype)}>", val_str
 
         data = [_parse_column(s, dtype) for s, dtype in self.schema.items()]
 
-        # we make the first column as small as possible by taking the longest col name
+        # determine column layout widths
         max_col_name = max((len(col_name) for col_name, _, _ in data))
-
-        # dtype string
         max_col_dtype = max((len(dtype_str) for _, dtype_str, _ in data))
-
-        # limit the amount of data printed such that total width is fixed
         max_col_values = 100 - max_col_name - max_col_dtype
 
         # print header

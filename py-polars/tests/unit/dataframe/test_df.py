@@ -3370,8 +3370,8 @@ def test_glimpse(capsys: Any) -> None:
         $ a          <f64> 1.0, 2.8, 3.0
         $ b          <i64> 4, 5, None
         $ c         <bool> True, False, True
-        $ d          <str> None, b, c
-        $ e          <str> usd, eur, None
+        $ d          <str> None, 'b', 'c'
+        $ e          <str> 'usd', 'eur', None
         $ f <datetime[μs]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
         $ g <datetime[ms]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
         $ h <datetime[ns]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
