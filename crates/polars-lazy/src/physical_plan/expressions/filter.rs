@@ -54,7 +54,7 @@ impl PhysicalExpr for FilterExpr {
             let s = ac_s.aggregated();
             let ca = s.list()?;
             // SAFETY: unstable series never lives longer than the iterator.
-            let mut out = unsafe {
+            let out = unsafe {
                 ca.amortized_iter()
                     .zip(preds)
                     .map(|(opt_s, opt_pred)| match (opt_s, opt_pred) {
@@ -62,8 +62,8 @@ impl PhysicalExpr for FilterExpr {
                         _ => Ok(None),
                     })
                     .collect::<PolarsResult<ListChunked>>()?
+                    .with_name(s.name())
             };
-            out.rename(s.name());
             ac_s.with_series(out.into_series(), true, Some(&self.expr))?;
             ac_s.update_groups = WithSeriesLen;
             Ok(ac_s)
@@ -72,12 +72,11 @@ impl PhysicalExpr for FilterExpr {
             let predicate_s = ac_predicate.flat_naive();
             let predicate = predicate_s.bool()?;
 
-            // all values true don't do anything
+            // All values true - don't do anything.
             if predicate.all() {
                 return Ok(ac_s);
             }
-            // all values false
-            // create empty groups
+            // All values false - create empty groups.
             let groups = if !predicate.any() {
                 let groups = groups.iter().map(|gi| [gi.first(), 0]).collect::<Vec<_>>();
                 GroupsProxy::Slice {
@@ -85,7 +84,7 @@ impl PhysicalExpr for FilterExpr {
                     rolling: false,
                 }
             }
-            // filter the indexes that are true
+            // Filter the indexes that are true.
             else {
                 let predicate = predicate.rechunk();
                 let predicate = predicate.downcast_iter().next().unwrap();
@@ -97,15 +96,11 @@ impl PhysicalExpr for FilterExpr {
                                 .map(|(first, idx)| unsafe {
                                     let idx: Vec<IdxSize> = idx
                                         .iter()
-                                        // Safety:
-                                        // just checked bounds in short circuited lhs
-                                        .filter_map(|i| {
-                                            match predicate.value(*i as usize)
+                                        .copied()
+                                        .filter(|i| {
+                                            // SAFETY: just checked bounds in short circuited lhs.
+                                            predicate.value(*i as usize)
                                                 && predicate.is_valid_unchecked(*i as usize)
-                                            {
-                                                true => Some(*i),
-                                                _ => None,
-                                            }
                                         })
                                         .collect();
 
@@ -120,9 +115,8 @@ impl PhysicalExpr for FilterExpr {
                                 .par_iter()
                                 .map(|&[first, len]| unsafe {
                                     let idx: Vec<IdxSize> = (first..first + len)
-                                        // Safety:
-                                        // just checked bounds in short circuited lhs
                                         .filter(|&i| {
+                                            // SAFETY: just checked bounds in short circuited lhs
                                             predicate.value(i as usize)
                                                 && predicate.is_valid_unchecked(i as usize)
                                         })
