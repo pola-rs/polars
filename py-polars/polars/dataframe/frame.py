@@ -37,7 +37,6 @@ from polars.datatypes import (
     N_INFER_DEFAULT,
     NUMERIC_DTYPES,
     Boolean,
-    DataTypeClass,
     Float64,
     Object,
     Utf8,
@@ -104,7 +103,7 @@ from polars.utils.various import (
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
-    from polars.polars import dtype_str_repr
+    from polars.polars import dtype_str_repr as _dtype_str_repr
 
 if TYPE_CHECKING:
     import sys
@@ -4043,7 +4042,7 @@ class DataFrame:
             val_str = ", ".join(fn(v) for v in values)  # type: ignore[operator]
             if len(col_name) > max_colname_length:
                 col_name = col_name[: (max_colname_length - 1)] + "…"
-            return col_name, f"<{dtype_str_repr(dtype)}>", val_str
+            return col_name, f"<{_dtype_str_repr(dtype)}>", val_str
 
         data = [_parse_column(s, dtype) for s, dtype in self.schema.items()]
 
