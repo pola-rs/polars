@@ -259,8 +259,8 @@ impl PyExpr {
             .into())
     }
 
-    fn str_count_match(&self, pat: &str) -> Self {
-        self.inner.clone().str().count_match(pat).into()
+    fn str_count_match(&self, pat: Self) -> Self {
+        self.inner.clone().str().count_match(pat.inner).into()
     }
 
     fn str_split(&self, by: &str) -> Self {

@@ -311,7 +311,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                     } else {
                         builder.append_null()
                     }
-                },
+                }
             }
         }
         Ok(builder.finish())
@@ -339,7 +339,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                     } else {
                         builder.append_null()
                     }
-                },
+                }
             }
         }
         Ok(builder.finish())
@@ -359,8 +359,45 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
         let mut out: UInt32Chunked = ca
             .into_iter()
-            .map(|opt_s| opt_s.map(|s| reg.find_iter(s).count() as u32))
+            .map(|opt_s| {
+                let out = opt_s.map(|s| reg.find_iter(s).count() as u32);
+                out
+            })
             .collect();
+        out.rename(ca.name());
+        Ok(out)
+    }
+
+    /// Count all successive non-overlapping regex matches.
+    fn count_match_many(&self, pat: &Utf8Chunked) -> PolarsResult<UInt32Chunked> {
+        let ca = self.as_utf8();
+        polars_ensure!(
+            ca.len() == pat.len(),
+            ComputeError: "pattern's length: {} does not match that of the argument series: {}",
+            pat.len(), ca.len(),
+        );
+
+        let out = ca
+            .into_iter()
+            .zip(pat)
+            .map(|(opt_s, opt_pat)| {
+                match (opt_s, opt_pat) {
+                    (_, None) | (None, _) => Ok(Some(0)),
+                    (Some(s), Some(pat)) => {
+                        let reg = Regex::new(pat)?;
+                        let mut iter = reg.find_iter(s).map(|m| m.as_str()).peekable();
+                        if iter.peek().is_some() {
+                            Ok(Some(iter.count() as u32))
+                        } else {
+                            Ok(Some(0))
+                        }
+                    }
+                }
+            })
+            // Return early on error
+            .collect::<PolarsResult<_>>()?;
+
+        let mut out: UInt32Chunked = out;
         out.rename(ca.name());
         Ok(out)
     }

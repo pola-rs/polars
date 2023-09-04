@@ -824,7 +824,7 @@ class StringNameSpace:
 
         """
 
-    def count_match(self, pattern: str) -> Series:
+    def count_match(self, pattern: str | Series) -> Series:
         r"""
         Count all successive non-overlapping regex matches.
 
@@ -832,7 +832,8 @@ class StringNameSpace:
         ----------
         pattern
             A valid regular expression pattern, compatible with the `regex crate
-            <https://docs.rs/regex/latest/regex/>`_.
+            <https://docs.rs/regex/latest/regex/>`_. Can also be a :class:`Series` of
+            regular expressions.
 
         Returns
         -------
