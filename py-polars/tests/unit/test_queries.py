@@ -364,3 +364,9 @@ def test_datetime_supertype_5236() -> None:
     )
     assert out.shape == (0, 2)
     assert out.dtypes == [pl.Datetime("ns", "UTC")] * 2
+
+
+def test_shift_drop_nulls_10875() -> None:
+    assert pl.LazyFrame({"a": [1, 2, 3]}).shift(1).drop_nulls().collect()[
+        "a"
+    ].to_list() == [1, 2]
