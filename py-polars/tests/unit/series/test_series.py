@@ -2445,7 +2445,7 @@ def test_set_at_idx() -> None:
     assert a.to_list() == [None, 1, 2, None, 4]
 
     with pytest.raises(pl.ComputeError):
-        a[-100]
+        a[-100] = None
 
 
 def test_repr() -> None:
