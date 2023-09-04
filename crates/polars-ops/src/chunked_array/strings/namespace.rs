@@ -8,6 +8,7 @@ use polars_arrow::kernels::string::*;
 #[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
 use polars_core::export::regex::{escape, Regex};
+use polars_core::prelude::arity::try_binary_elementwise;
 
 use super::*;
 #[cfg(feature = "binary_encoding")]
@@ -367,25 +368,17 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             pat.len(), ca.len(),
         );
 
-        // Very simple cache: don't recompile the same regex for multiple values in a row.
-        // TODO: proper LRU cache with reasonable memory limit.
-        let mut reg = Regex::new("").unwrap();
-        let mut lastpat = "";
-
-        let out: UInt32Chunked = ca
-            .into_iter()
-            .zip(pat)
-            .map(|(opt_s, opt_pat)| match (opt_s, opt_pat) {
+        let op = |opt_s: Option<&str>, opt_pat: Option<&str>| -> PolarsResult<Option<u32>> {
+            match (opt_s, opt_pat) {
                 (Some(s), Some(pat)) => {
-                    if pat != lastpat {
-                        reg = Regex::new(pat)?;
-                        lastpat = pat;
-                    }
+                    let reg = Regex::new(pat)?;
                     Ok(Some(reg.find_iter(s).count() as u32))
                 },
                 _ => Ok(None),
-            })
-            .collect::<PolarsResult<_>>()?;
+            }
+        };
+
+        let out: UInt32Chunked = try_binary_elementwise(ca, pat, op)?;
 
         Ok(out.with_name(ca.name()))
     }
