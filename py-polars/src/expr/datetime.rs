@@ -10,9 +10,8 @@ impl PyExpr {
         self.inner.clone().dt().to_string(format).into()
     }
 
-    fn dt_offset_by(&self, by: &str) -> Self {
-        let by = Duration::parse(by);
-        self.inner.clone().dt().offset_by(by).into()
+    fn dt_offset_by(&self, by: PyExpr) -> Self {
+        self.inner.clone().dt().offset_by(by.inner).into()
     }
 
     fn dt_epoch_seconds(&self) -> Self {

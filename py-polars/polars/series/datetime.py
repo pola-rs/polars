@@ -1497,7 +1497,7 @@ class DateTimeNameSpace:
 
         """
 
-    def offset_by(self, by: str) -> Series:
+    def offset_by(self, by: str | Expr) -> Series:
         """
         Offset this date by a relative time offset.
 
@@ -1575,20 +1575,6 @@ class DateTimeNameSpace:
                 2001-11-01 00:00:00
                 2002-11-01 00:00:00
                 2003-11-01 00:00:00
-        ]
-
-        To get to the end of each month, combine with `truncate`:
-
-        >>> dates.dt.truncate("1mo").dt.offset_by("1mo").dt.offset_by("-1d")
-        shape: (6,)
-        Series: 'date' [datetime[μs]]
-        [
-                2000-01-31 00:00:00
-                2001-01-31 00:00:00
-                2002-01-31 00:00:00
-                2003-01-31 00:00:00
-                2004-01-31 00:00:00
-                2005-01-31 00:00:00
         ]
         """
 

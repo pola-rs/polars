@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -10,7 +10,7 @@ import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ComputeError, InvalidOperationError
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -688,6 +688,83 @@ def test_offset_by_truncate_sorted_flag() -> None:
     assert s1.flags["SORTED_ASC"]
     s2 = s1.dt.truncate("1mo")
     assert s2.flags["SORTED_ASC"]
+
+
+def test_offset_by_expressions() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [
+                datetime(2020, 10, 25),
+                datetime(2021, 1, 2),
+                None,
+                datetime(2021, 1, 4),
+                None,
+            ],
+            "b": ["1d", "10d", "3d", None, None],
+        }
+    )
+    df = df.sort("a")
+    result = df.select(
+        c=pl.col("a").dt.offset_by(pl.col("b")),
+        d=pl.col("a").dt.cast_time_unit("ms").dt.offset_by(pl.col("b")),
+        e=pl.col("a").dt.replace_time_zone("Europe/London").dt.offset_by(pl.col("b")),
+        f=pl.col("a").dt.date().dt.offset_by(pl.col("b")),
+    )
+    expected = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+shape: (5, 4)
+┌─────────────────────┬─────────────────────┬─────────────────────────────┬────────────┐
+│ c                   ┆ d                   ┆ e                           ┆ f          │
+│ ---                 ┆ ---                 ┆ ---                         ┆ ---        │
+│ datetime[μs]        ┆ datetime[ms]        ┆ datetime[μs, Europe/London] ┆ date       │
+╞═════════════════════╪═════════════════════╪═════════════════════════════╪════════════╡
+│ null                ┆ null                ┆ null                        ┆ null       │
+│ null                ┆ null                ┆ null                        ┆ null       │
+│ 2020-10-26 00:00:00 ┆ 2020-10-26 00:00:00 ┆ 2020-10-26 00:00:00 GMT     ┆ 2020-10-26 │
+│ 2021-01-12 00:00:00 ┆ 2021-01-12 00:00:00 ┆ 2021-01-12 00:00:00 GMT     ┆ 2021-01-12 │
+│ null                ┆ null                ┆ null                        ┆ null       │
+└─────────────────────┴─────────────────────┴─────────────────────────────┴────────────┘
+"""
+        ),
+    )
+    assert_frame_equal(result, expected)
+    assert result.flags == {
+        "c": {"SORTED_ASC": False, "SORTED_DESC": False},
+        "d": {"SORTED_ASC": False, "SORTED_DESC": False},
+        "e": {"SORTED_ASC": False, "SORTED_DESC": False},
+        "f": {"SORTED_ASC": False, "SORTED_DESC": False},
+    }
+
+    # Check single-row cases
+    for i in range(len(df)):
+        df_slice = df[i : i + 1]
+        result = df_slice.select(
+            c=pl.col("a").dt.offset_by(pl.col("b")),
+            d=pl.col("a").dt.cast_time_unit("ms").dt.offset_by(pl.col("b")),
+            e=pl.col("a")
+            .dt.replace_time_zone("Europe/London")
+            .dt.offset_by(pl.col("b")),
+            f=pl.col("a").dt.date().dt.offset_by(pl.col("b")),
+        )
+        assert_frame_equal(result, expected[i : i + 1])
+        if df_slice["b"].item() is None:
+            # Offset is None, so result will be all-None, so sortedness isn't preserved.
+            assert result.flags == {
+                "c": {"SORTED_ASC": False, "SORTED_DESC": False},
+                "d": {"SORTED_ASC": False, "SORTED_DESC": False},
+                "e": {"SORTED_ASC": False, "SORTED_DESC": False},
+                "f": {"SORTED_ASC": False, "SORTED_DESC": False},
+            }
+        else:
+            # For tz-aware, sortedness is not preserved.
+            assert result.flags == {
+                "c": {"SORTED_ASC": True, "SORTED_DESC": False},
+                "d": {"SORTED_ASC": True, "SORTED_DESC": False},
+                "e": {"SORTED_ASC": False, "SORTED_DESC": False},
+                "f": {"SORTED_ASC": True, "SORTED_DESC": False},
+            }
 
 
 @pytest.mark.parametrize(

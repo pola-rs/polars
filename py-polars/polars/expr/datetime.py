@@ -1925,7 +1925,7 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.duration_nanoseconds())
 
-    def offset_by(self, by: str) -> Expr:
+    def offset_by(self, by: str | Expr) -> Expr:
         """
         Offset this date by a relative time offset.
 
@@ -1971,7 +1971,8 @@ class ExprDateTimeNameSpace:
         ...     {
         ...         "dates": pl.date_range(
         ...             datetime(2000, 1, 1), datetime(2005, 1, 1), "1y", eager=True
-        ...         )
+        ...         ),
+        ...         "offset": ["1d", "2d", "-1d", "1mo", None, "1y"],
         ...     }
         ... )
         >>> df.select(
@@ -1994,29 +1995,24 @@ class ExprDateTimeNameSpace:
         │ 2006-01-01 00:00:00 ┆ 2003-11-01 00:00:00 │
         └─────────────────────┴─────────────────────┘
 
-        To get to the end of each month, combine with `truncate`:
+        You can also pass the relative offset as an expression:
 
-        >>> df.select(
-        ...     pl.col("dates")
-        ...     .dt.truncate("1mo")
-        ...     .dt.offset_by("1mo")
-        ...     .dt.offset_by("-1d")
-        ... )
-        shape: (6, 1)
-        ┌─────────────────────┐
-        │ dates               │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2000-01-31 00:00:00 │
-        │ 2001-01-31 00:00:00 │
-        │ 2002-01-31 00:00:00 │
-        │ 2003-01-31 00:00:00 │
-        │ 2004-01-31 00:00:00 │
-        │ 2005-01-31 00:00:00 │
-        └─────────────────────┘
-
+        >>> df.with_columns(new_dates=pl.col("dates").dt.offset_by(pl.col("offset")))
+        shape: (6, 3)
+        ┌─────────────────────┬────────┬─────────────────────┐
+        │ dates               ┆ offset ┆ new_dates           │
+        │ ---                 ┆ ---    ┆ ---                 │
+        │ datetime[μs]        ┆ str    ┆ datetime[μs]        │
+        ╞═════════════════════╪════════╪═════════════════════╡
+        │ 2000-01-01 00:00:00 ┆ 1d     ┆ 2000-01-02 00:00:00 │
+        │ 2001-01-01 00:00:00 ┆ 2d     ┆ 2001-01-03 00:00:00 │
+        │ 2002-01-01 00:00:00 ┆ -1d    ┆ 2001-12-31 00:00:00 │
+        │ 2003-01-01 00:00:00 ┆ 1mo    ┆ 2003-02-01 00:00:00 │
+        │ 2004-01-01 00:00:00 ┆ null   ┆ null                │
+        │ 2005-01-01 00:00:00 ┆ 1y     ┆ 2006-01-01 00:00:00 │
+        └─────────────────────┴────────┴─────────────────────┘
         """
+        by = parse_as_expression(by, str_as_lit=True)
         return wrap_expr(self._pyexpr.dt_offset_by(by))
 
     def month_start(self) -> Expr:
