@@ -102,9 +102,9 @@ pub(super) fn int_ranges(s: &[Series], step: i64) -> PolarsResult<Series> {
                     builder.append_iter_values((start_v..end_v).step_by(step as usize));
                 },
                 _ => builder.append_iter_values(
-                    (end_v..=start_v)
-                        .rev()
-                        .step_by(step.unsigned_abs() as usize),
+                    (end_v..start_v)
+                        .step_by(step.unsigned_abs() as usize)
+                        .map(|x| start_v - (x - end_v)),
                 ),
             },
             _ => builder.append_null(),
@@ -118,8 +118,7 @@ fn int_range_impl<T>(start: T::Native, end: T::Native, step: i64) -> PolarsResul
 where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
-    std::ops::Range<T::Native>: Iterator<Item = T::Native>,
-    std::ops::RangeInclusive<T::Native>: DoubleEndedIterator<Item = T::Native>,
+    std::ops::Range<T::Native>: DoubleEndedIterator<Item = T::Native>,
 {
     let name = "int";
 
@@ -131,7 +130,9 @@ where
             polars_ensure!(start > end, InvalidOperation: "range must be decreasing if 'step' is negative");
             ChunkedArray::<T>::from_iter_values(
                 name,
-                (end..=start).rev().step_by(step.unsigned_abs() as usize),
+                (end..start)
+                    .step_by(step.unsigned_abs() as usize)
+                    .map(|x| start - (x - end)),
             )
         },
     };
