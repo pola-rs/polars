@@ -231,21 +231,6 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             },
-            LocalProjection { expr, input, .. } => {
-                let schema = input.schema().map_err(|_| {
-                    eprintln!("could not determine schema");
-                    std::fmt::Error
-                })?;
-
-                let fmt = format!("LOCAL π {}/{}", expr.len(), schema.len(),);
-                let current_node = DotNode {
-                    branch,
-                    id,
-                    fmt: &fmt,
-                };
-                self.write_dot(acc_str, prev_node, current_node, id_map)?;
-                input.dot(acc_str, (branch, id + 1), current_node, id_map)
-            },
             Aggregate {
                 input, keys, aggs, ..
             } => {

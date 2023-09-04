@@ -169,9 +169,7 @@ pub(super) fn set_cache_states(
 
                         let lp = pd.optimize(lp, lp_arena, expr_arena).unwrap();
                         // remove the projection added by the optimization
-                        let lp = if let ALogicalPlan::Projection { input, .. }
-                        | ALogicalPlan::LocalProjection { input, .. } = lp
-                        {
+                        let lp = if let ALogicalPlan::Projection { input, .. } = lp {
                             lp_arena.take(input)
                         } else {
                             lp
