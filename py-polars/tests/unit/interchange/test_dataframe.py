@@ -4,6 +4,7 @@ import pytest
 
 import polars as pl
 from polars.interchange.dataframe import PolarsDataFrame
+from polars.interchange.protocol import CopyNotAllowedError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -207,7 +208,9 @@ def test_get_chunks_zero_copy_fail() -> None:
 
     dfi = PolarsDataFrame(df, allow_copy=False)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(
+        CopyNotAllowedError, match="unevenly chunked columns must be rechunked"
+    ):
         next(dfi.get_chunks())
 
 
@@ -282,7 +285,7 @@ def test_get_chunks_from_col_chunks_uneven_chunks_zero_copy_fails() -> None:
     assert_frame_equal(chunk1, expected1)
 
     # Second chunk requires a rechunk of the second column
-    with pytest.raises(RuntimeError, match="columns must be rechunked"):
+    with pytest.raises(CopyNotAllowedError, match="columns must be rechunked"):
         next(out)
 
 

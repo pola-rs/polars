@@ -15,7 +15,6 @@ pub enum BooleanFunction {
     All {
         ignore_nulls: bool,
     },
-    IsNot,
     IsNull,
     IsNotNull,
     IsFinite,
@@ -24,6 +23,8 @@ pub enum BooleanFunction {
     IsNotNan,
     #[cfg(feature = "is_first")]
     IsFirst,
+    #[cfg(feature = "is_last")]
+    IsLast,
     #[cfg(feature = "is_unique")]
     IsUnique,
     #[cfg(feature = "is_unique")]
@@ -32,6 +33,7 @@ pub enum BooleanFunction {
     IsIn,
     AllHorizontal,
     AnyHorizontal,
+    Not,
 }
 
 impl BooleanFunction {
@@ -51,7 +53,6 @@ impl Display for BooleanFunction {
         let s = match self {
             All { .. } => "all",
             Any { .. } => "any",
-            IsNot => "is_not",
             IsNull => "is_null",
             IsNotNull => "is_not_null",
             IsFinite => "is_finite",
@@ -60,6 +61,8 @@ impl Display for BooleanFunction {
             IsNotNan => "is_not_nan",
             #[cfg(feature = "is_first")]
             IsFirst => "is_first",
+            #[cfg(feature = "is_last")]
+            IsLast => "is_last",
             #[cfg(feature = "is_unique")]
             IsUnique => "is_unique",
             #[cfg(feature = "is_unique")]
@@ -68,6 +71,7 @@ impl Display for BooleanFunction {
             IsIn => "is_in",
             AnyHorizontal => "any_horizontal",
             AllHorizontal => "all_horizontal",
+            Not => "not_",
         };
         write!(f, "{s}")
     }
@@ -79,7 +83,6 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         match func {
             Any { ignore_nulls } => map!(any, ignore_nulls),
             All { ignore_nulls } => map!(all, ignore_nulls),
-            IsNot => map!(is_not),
             IsNull => map!(is_null),
             IsNotNull => map!(is_not_null),
             IsFinite => map!(is_finite),
@@ -88,6 +91,8 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsNotNan => map!(is_not_nan),
             #[cfg(feature = "is_first")]
             IsFirst => map!(is_first),
+            #[cfg(feature = "is_last")]
+            IsLast => map!(is_last),
             #[cfg(feature = "is_unique")]
             IsUnique => map!(is_unique),
             #[cfg(feature = "is_unique")]
@@ -96,6 +101,7 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsIn => wrap!(is_in),
             AllHorizontal => wrap!(all_horizontal),
             AnyHorizontal => wrap!(any_horizontal),
+            Not => map!(not_),
         }
     }
 }
@@ -122,10 +128,6 @@ fn all(s: &Series, ignore_nulls: bool) -> PolarsResult<Series> {
     } else {
         Ok(Series::new(s.name(), [ca.all_kleene()]))
     }
-}
-
-fn is_not(s: &Series) -> PolarsResult<Series> {
-    Ok(s.bool()?.not().into_series())
 }
 
 fn is_null(s: &Series) -> PolarsResult<Series> {
@@ -155,6 +157,11 @@ pub(super) fn is_not_nan(s: &Series) -> PolarsResult<Series> {
 #[cfg(feature = "is_first")]
 fn is_first(s: &Series) -> PolarsResult<Series> {
     polars_ops::prelude::is_first(s).map(|ca| ca.into_series())
+}
+
+#[cfg(feature = "is_last")]
+fn is_last(s: &Series) -> PolarsResult<Series> {
+    polars_ops::prelude::is_last(s).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "is_unique")]
@@ -206,4 +213,8 @@ fn all_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     })?;
     out.rename("all");
     Ok(Some(out.into_series()))
+}
+
+fn not_(s: &Series) -> PolarsResult<Series> {
+    Ok(s.bool()?.not().into_series())
 }

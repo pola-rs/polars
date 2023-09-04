@@ -826,7 +826,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
         >>> json = lf.serialize()
         >>> json
-        '{"LocalProjection":{"expr":[{"Agg":{"Sum":{"Column":"a"}}}],"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"projection":null,"selection":null}},"schema":{"inner":{"a":"Int64"}}}}'
+        '{"Projection":{"expr":[{"Agg":{"Sum":{"Column":"a"}}}],"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"projection":null,"selection":null}},"schema":{"inner":{"a":"Int64"}},"options":{"run_parallel":true}}}'
 
         The logical plan can later be deserialized back into a LazyFrame.
 
@@ -3630,7 +3630,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     [
         ...         (pl.col("a") ** 2).alias("a^2"),
         ...         (pl.col("b") / 2).alias("b/2"),
-        ...         (pl.col("c").is_not()).alias("not c"),
+        ...         (pl.col("c").not_()).alias("not c"),
         ...     ]
         ... ).collect()
         shape: (4, 6)
@@ -3650,7 +3650,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.with_columns(
         ...     (pl.col("a") ** 2).alias("a^2"),
         ...     (pl.col("b") / 2).alias("b/2"),
-        ...     (pl.col("c").is_not()).alias("not c"),
+        ...     (pl.col("c").not_()).alias("not c"),
         ... ).collect()
         shape: (4, 6)
         ┌─────┬──────┬───────┬──────┬──────┬───────┐
@@ -3668,7 +3668,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> lf.with_columns(
         ...     ab=pl.col("a") * pl.col("b"),
-        ...     not_c=pl.col("c").is_not(),
+        ...     not_c=pl.col("c").not_(),
         ... ).collect()
         shape: (4, 5)
         ┌─────┬──────┬───────┬──────┬───────┐
@@ -5170,22 +5170,32 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": [1, 2],
-        ...         "b": [3, 4],
-        ...     }
+        >>> lf = (  # doctest: +SKIP
+        ...     pl.LazyFrame(
+        ...         {
+        ...             "a": pl.int_range(-100_000, 0, eager=True),
+        ...             "b": pl.int_range(0, 100_000, eager=True),
+        ...         }
+        ...     )
+        ...     .map_batches(lambda x: 2 * x, streamable=True)
+        ...     .collect(streaming=True)
         ... )
-        >>> lf.map_batches(lambda x: 2 * x).collect()
-        shape: (2, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 2   ┆ 6   │
-        │ 4   ┆ 8   │
-        └─────┴─────┘
+        shape: (100_000, 2)
+        ┌─────────┬────────┐
+        │ a       ┆ b      │
+        │ ---     ┆ ---    │
+        │ i64     ┆ i64    │
+        ╞═════════╪════════╡
+        │ -200000 ┆ 0      │
+        │ -199998 ┆ 2      │
+        │ -199996 ┆ 4      │
+        │ -199994 ┆ 6      │
+        │ …       ┆ …      │
+        │ -8      ┆ 199992 │
+        │ -6      ┆ 199994 │
+        │ -4      ┆ 199996 │
+        │ -2      ┆ 199998 │
+        └─────────┴────────┘
 
         """
         if no_optimizations:

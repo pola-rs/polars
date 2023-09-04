@@ -384,40 +384,6 @@ def test_parquet_nested_dictionaries_6217() -> None:
 
 
 @pytest.mark.write_disk()
-def test_sink_parquet(io_files_path: Path, tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
-
-    file = io_files_path / "small.parquet"
-
-    file_path = tmp_path / "sink.parquet"
-
-    df_scanned = pl.scan_parquet(file)
-    df_scanned.sink_parquet(file_path)
-
-    with pl.StringCache():
-        result = pl.read_parquet(file_path)
-        df_read = pl.read_parquet(file)
-        assert_frame_equal(result, df_read)
-
-
-@pytest.mark.write_disk()
-def test_sink_ipc(io_files_path: Path, tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
-
-    file = io_files_path / "small.parquet"
-
-    file_path = tmp_path / "sink.ipc"
-
-    df_scanned = pl.scan_parquet(file)
-    df_scanned.sink_ipc(file_path)
-
-    with pl.StringCache():
-        result = pl.read_ipc(file_path)
-        df_read = pl.read_parquet(file)
-        assert_frame_equal(result, df_read)
-
-
-@pytest.mark.write_disk()
 def test_fetch_union(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 

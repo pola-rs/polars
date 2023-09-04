@@ -33,7 +33,7 @@ use arrow::types::NativeType;
 pub use dtype::*;
 pub use field::*;
 pub use from_values::ArrayFromElementIter;
-use num_traits::{Bounded, FromPrimitive, Num, NumCast, Zero};
+use num_traits::{Bounded, FromPrimitive, Num, NumCast, One, Zero};
 use polars_arrow::data_types::IsFloat;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
@@ -190,6 +190,7 @@ pub trait NumericNative:
     + Num
     + NumCast
     + Zero
+    + One
     + Simd
     + Simd8
     + std::iter::Sum<Self>

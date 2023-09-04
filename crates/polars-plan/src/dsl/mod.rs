@@ -156,7 +156,7 @@ impl Expr {
     /// Negate `Expr`
     #[allow(clippy::should_implement_trait)]
     pub fn not(self) -> Expr {
-        self.map_private(BooleanFunction::IsNot.into())
+        self.map_private(BooleanFunction::Not.into())
     }
 
     /// Rename Column.
@@ -1101,6 +1101,13 @@ impl Expr {
     /// Get a mask of the first unique value.
     pub fn is_first(self) -> Expr {
         self.apply_private(BooleanFunction::IsFirst.into())
+    }
+
+    #[cfg(feature = "is_last")]
+    #[allow(clippy::wrong_self_convention)]
+    /// Get a mask of the last unique value.
+    pub fn is_last(self) -> Expr {
+        self.apply_private(BooleanFunction::IsLast.into())
     }
 
     fn dot_impl(self, other: Expr) -> Expr {

@@ -387,24 +387,13 @@ impl LogicalPlanBuilder {
         }
     }
 
-    pub fn project_local(self, exprs: Vec<Expr>) -> Self {
-        let schema = try_delayed!(self.0.schema(), &self.0, into);
-        let (exprs, schema) = try_delayed!(prepare_projection(exprs, &schema), &self.0, into);
-        LogicalPlan::LocalProjection {
-            expr: exprs,
-            input: Box::new(self.0),
-            schema: Arc::new(schema),
-        }
-        .into()
-    }
-
     pub fn fill_null(self, fill_value: Expr) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let exprs = schema
             .iter_names()
             .map(|name| col(name).fill_null(fill_value.clone()))
             .collect();
-        self.project_local(exprs)
+        self.project(exprs, Default::default())
     }
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {

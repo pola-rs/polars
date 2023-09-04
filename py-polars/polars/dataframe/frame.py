@@ -1408,7 +1408,7 @@ class DataFrame:
         df = (
             df
             if not floordiv
-            else df.with_columns([s.floor() for s in df if s.dtype() in FLOAT_DTYPES])
+            else df.with_columns([s.floor() for s in df if s.dtype in FLOAT_DTYPES])
         )
         if floordiv:
             int_casts = [
@@ -1423,7 +1423,7 @@ class DataFrame:
     def _cast_all_from_to(
         self, df: DataFrame, from_: frozenset[PolarsDataType], to: PolarsDataType
     ) -> DataFrame:
-        casts = [s.cast(to).alias(s.name) for s in df if s.dtype() in from_]
+        casts = [s.cast(to).alias(s.name) for s in df if s.dtype in from_]
         return df.with_columns(casts) if casts else df
 
     def __floordiv__(self, other: DataFrame | Series | int | float) -> DataFrame:
@@ -1508,8 +1508,11 @@ class DataFrame:
     def __contains__(self, key: str) -> bool:
         return key in self.columns
 
-    def __iter__(self) -> Iterator[Any]:
-        return self.get_columns().__iter__()
+    def __iter__(self) -> Iterator[Series]:
+        return iter(self.get_columns())
+
+    def __reversed__(self) -> Iterator[Series]:
+        return reversed(self.get_columns())
 
     def _pos_idx(self, idx: int, dim: int) -> int:
         if idx >= 0:
@@ -6011,7 +6014,7 @@ class DataFrame:
             Output type of the operation. If none given, Polars tries to infer the type.
         inference_size
             Only used in the case when the custom function returns rows.
-            This uses the first `n` rows to determine the output schema
+            This uses the first `n` rows to determine the output schema.
 
         Notes
         -----
@@ -6022,7 +6025,7 @@ class DataFrame:
 
         * If your function is expensive and you don't want it to be called more than
           once for a given input, consider applying an ``@lru_cache`` decorator to it.
-          With suitable data you may achieve order-of-magnitude speedups (or more).
+          If your data is suitable you may achieve *significant* speedups.
 
         Examples
         --------
@@ -7765,7 +7768,7 @@ class DataFrame:
         ...     [
         ...         (pl.col("a") ** 2).alias("a^2"),
         ...         (pl.col("b") / 2).alias("b/2"),
-        ...         (pl.col("c").is_not()).alias("not c"),
+        ...         (pl.col("c").not_()).alias("not c"),
         ...     ]
         ... )
         shape: (4, 6)
@@ -7785,7 +7788,7 @@ class DataFrame:
         >>> df.with_columns(
         ...     (pl.col("a") ** 2).alias("a^2"),
         ...     (pl.col("b") / 2).alias("b/2"),
-        ...     (pl.col("c").is_not()).alias("not c"),
+        ...     (pl.col("c").not_()).alias("not c"),
         ... )
         shape: (4, 6)
         ┌─────┬──────┬───────┬──────┬──────┬───────┐
@@ -7803,7 +7806,7 @@ class DataFrame:
 
         >>> df.with_columns(
         ...     ab=pl.col("a") * pl.col("b"),
-        ...     not_c=pl.col("c").is_not(),
+        ...     not_c=pl.col("c").not_(),
         ... )
         shape: (4, 5)
         ┌─────┬──────┬───────┬──────┬───────┐

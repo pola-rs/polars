@@ -1,4 +1,3 @@
-import math
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -100,7 +99,7 @@ def test_median() -> None:
 
 def test_single_element_std() -> None:
     s = pl.Series([1])
-    assert math.isnan(s.std(ddof=1))  # type: ignore[arg-type]
+    assert s.std(ddof=1) is None
     assert s.std(ddof=0) == 0.0
 
 

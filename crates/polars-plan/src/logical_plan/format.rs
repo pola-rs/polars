@@ -170,10 +170,6 @@ impl LogicalPlan {
                 write!(f, "{:indent$} SELECT {expr:?} FROM", "")?;
                 input._format(f, sub_indent)
             },
-            LocalProjection { expr, input, .. } => {
-                write!(f, "{:indent$} LOCAL SELECT {expr:?} FROM", "")?;
-                input._format(f, sub_indent)
-            },
             Sort {
                 input, by_column, ..
             } => {

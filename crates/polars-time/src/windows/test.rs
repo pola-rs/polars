@@ -2,6 +2,7 @@ use chrono::prelude::*;
 use polars_arrow::export::arrow::temporal_conversions::timestamp_ns_to_datetime;
 use polars_core::prelude::*;
 
+use crate::date_range::datetime_range_i64;
 use crate::prelude::*;
 
 #[test]
@@ -15,7 +16,7 @@ fn test_date_range() {
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();
-    let dates = temporal_range_vec(
+    let dates = datetime_range_i64(
         start.timestamp_nanos(),
         end.timestamp_nanos(),
         Duration::parse("1mo"),
@@ -46,7 +47,7 @@ fn test_feb_date_range() {
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();
-    let dates = temporal_range_vec(
+    let dates = datetime_range_i64(
         start.timestamp_nanos(),
         end.timestamp_nanos(),
         Duration::parse("1mo"),
@@ -167,7 +168,7 @@ fn test_boundaries() {
         .and_hms_opt(3, 0, 0)
         .unwrap();
 
-    let ts = temporal_range_vec(
+    let ts = datetime_range_i64(
         start.timestamp_nanos(),
         stop.timestamp_nanos(),
         Duration::parse("30m"),
@@ -343,7 +344,7 @@ fn test_boundaries_2() {
         .and_hms_opt(4, 0, 0)
         .unwrap();
 
-    let ts = temporal_range_vec(
+    let ts = datetime_range_i64(
         start.timestamp_nanos(),
         stop.timestamp_nanos(),
         Duration::parse("30m"),
@@ -451,7 +452,7 @@ fn test_boundaries_ms() {
         .and_hms_opt(3, 0, 0)
         .unwrap();
 
-    let ts = temporal_range_vec(
+    let ts = datetime_range_i64(
         start.timestamp_millis(),
         stop.timestamp_millis(),
         Duration::parse("30m"),
@@ -627,7 +628,7 @@ fn test_rolling_lookback() {
         .unwrap()
         .and_hms_opt(4, 0, 0)
         .unwrap();
-    let dates = temporal_range_vec(
+    let dates = datetime_range_i64(
         start.timestamp_millis(),
         end.timestamp_millis(),
         Duration::parse("30m"),

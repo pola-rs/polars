@@ -630,6 +630,10 @@ class Struct(NestedType):
         for fld in self.fields or []:
             yield fld.name, fld.dtype
 
+    def __reversed__(self) -> Iterator[tuple[str, PolarsDataType]]:
+        for fld in reversed(self.fields or []):
+            yield fld.name, fld.dtype
+
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
         return f"{class_name}({self.fields})"

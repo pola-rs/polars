@@ -358,3 +358,24 @@ def test_cse_quantile_10815() -> None:
         "a_1": [0.16650805109739197],
         "b_1": [0.2012768694081981],
     }
+
+
+def test_cse_nan_10824() -> None:
+    v = pl.col("a") / pl.col("b")
+    magic = pl.when(v > 0).then(pl.lit(float("nan"))).otherwise(v)
+    assert (
+        str(
+            (
+                pl.DataFrame(
+                    {
+                        "a": [1.0],
+                        "b": [1.0],
+                    }
+                )
+                .lazy()
+                .select(magic)
+                .collect(comm_subexpr_elim=True)
+            ).to_dict(False)
+        )
+        == "{'literal': [nan]}"
+    )

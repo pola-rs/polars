@@ -974,11 +974,11 @@ def map_batches(
     Parameters
     ----------
     exprs
-        Input Series to f
+        Expression(s) representing the input Series to the function.
     function
-        Function to apply over the input
+        Function to apply over the input.
     return_dtype
-        dtype of the output Series
+        dtype of the output Series.
 
     Returns
     -------
@@ -1069,22 +1069,14 @@ def map_groups(
         This method is much slower than the native expressions API.
         Only use it if you cannot implement your logic otherwise.
 
-    Depending on the context it has the following behavior:
-
-    * Select
-        Don't use apply, use `map`
-    * GroupBy
-        expected type `f`: Callable[[Series], Series]
-        Applies a python function over each group.
-
     Parameters
     ----------
     exprs
-        Input Series to f
+        Expression(s) representing the input Series to the function.
     function
-        Function to apply over the input
+        Function to apply over the input; should be of type Callable[[Series], Series].
     return_dtype
-        dtype of the output Series
+        dtype of the output Series.
     returns_scalar
         If the function returns a single scalar as output.
 

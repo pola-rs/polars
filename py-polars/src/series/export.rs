@@ -113,7 +113,8 @@ impl PySeries {
                     DataType::List(_) => {
                         let v = PyList::empty(py);
                         let ca = series.list().unwrap();
-                        for opt_s in ca.amortized_iter() {
+                        // SAFETY: unstable series never lives longer than the iterator.
+                        for opt_s in unsafe { ca.amortized_iter() } {
                             match opt_s {
                                 None => {
                                     v.append(py.None()).unwrap();

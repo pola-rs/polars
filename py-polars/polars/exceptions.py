@@ -54,26 +54,6 @@ except ImportError:
         """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
 
 
-class InvalidAssert(Exception):
-    """Exception raised when an unsupported testing assert is made."""
-
-
-class RowsError(Exception):
-    """Exception raised when the number of returned rows does not match expectation."""
-
-
-class NoRowsReturnedError(RowsError):
-    """Exception raised when no rows are returned, but at least one row is expected."""
-
-
-class TooManyRowsReturnedError(RowsError):
-    """Exception raised when more rows than expected are returned."""
-
-
-class TimeZoneAwareConstructorWarning(Warning):
-    """Warning raised when constructing Series from non-UTC time-zone-aware inputs."""
-
-
 class ChronoFormatWarning(Warning):
     """
     Warning raised when a chrono format string contains dubious patterns.
@@ -86,12 +66,32 @@ class ChronoFormatWarning(Warning):
     """
 
 
-class PolarsInefficientMapWarning(Warning):
-    """
-    Warning raised when a potentially slow `apply` operation is performed.
+class InvalidAssert(Exception):
+    """Exception raised when an unsupported testing assert is made."""
 
-    Suggestion of what to replace slow pattern with will also be shown.
-    """
+
+class RowsError(Exception):
+    """Exception raised when the number of returned rows does not match expectation."""
+
+
+class NoRowsReturnedError(RowsError):
+    """Exception raised when no rows are returned, but at least one row is expected."""
+
+
+class PolarsInefficientMapWarning(Warning):
+    """Warning raised when a potentially slow `apply` operation is performed."""
+
+
+class TooManyRowsReturnedError(RowsError):
+    """Exception raised when more rows than expected are returned."""
+
+
+class TimeZoneAwareConstructorWarning(Warning):
+    """Warning raised when constructing Series from non-UTC time-zone-aware inputs."""
+
+
+class UnsuitableSQLError(ValueError):
+    """Exception raised when unsuitable SQL is given to a database method."""
 
 
 __all__ = [

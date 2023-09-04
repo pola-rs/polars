@@ -157,7 +157,7 @@ class LazyGroupBy:
             This method is much slower than the native expressions API.
             Only use it if you cannot implement your logic otherwise.
 
-        Using this is considered an anti-pattern. This will be very slow because:
+        Using this is considered an anti-pattern as it will be very slow because:
 
         - it forces the engine to materialize the whole `DataFrames` for the groups.
         - it is not parallelized
