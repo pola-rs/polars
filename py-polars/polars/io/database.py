@@ -253,6 +253,7 @@ class ConnectionExecutor:
 def read_database(  # noqa: D417
     query: str,
     connection: ConnectionOrCursor,
+    *,
     batch_size: int | None = None,
     schema_overrides: SchemaDict | None = None,
     **kwargs: Any,
@@ -286,6 +287,13 @@ def read_database(  # noqa: D417
       backend supports returning Arrow data directly then this facility will be used to
       efficiently instantiate the DataFrame; otherwise, the DataFrame is initialised
       from row-wise data.
+
+    * The ``read_connection_uri`` function is likely to be noticeably faster than
+      ``read_database`` if you are using a SQLAlchemy or DBAPI2 connection, as
+      ``connectorx`` will optimise translation of the result data into Arrow format
+      in Rust, whereas these libraries will return row-wise data to Python. Note that
+      you can easily determine the connection's URI from a SQLAlchemy engine object by
+      calling ``str(conn.engine.url)``.
 
     * If polars has to create a cursor from your connection in order to execute the
       query then that cursor will be automatically closed when the query completes;

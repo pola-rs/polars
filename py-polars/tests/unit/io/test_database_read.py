@@ -175,16 +175,22 @@ def test_read_database(
             uri=f"sqlite:///{test_db}",
             query="SELECT * FROM test_data",
             engine=str(engine_or_connection_init),  # type: ignore[arg-type]
+            schema_overrides=schema_overrides,
         )
     elif "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
         # externally instantiated adbc connections
         with engine_or_connection_init(test_db) as conn, conn.cursor():
-            df = pl.read_database(connection=conn, query="SELECT * FROM test_data")
+            df = pl.read_database(
+                connection=conn,
+                query="SELECT * FROM test_data",
+                schema_overrides=schema_overrides,
+            )
     else:
         # other user-supplied connections
         df = pl.read_database(
             connection=engine_or_connection_init(test_db),
             query="SELECT * FROM test_data WHERE name NOT LIKE '%polars%'",
+            schema_overrides=schema_overrides,
         )
 
     assert df.schema == expected_dtypes
