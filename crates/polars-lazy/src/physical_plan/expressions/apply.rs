@@ -461,7 +461,7 @@ impl ApplyExpr {
                     let Expr::Literal(LiteralValue::Series(input)) = &input[1] else {
                         return None;
                     };
-                    let input: &Series = &*input;
+                    let input: &Series = &**input;
                     let st = stats.get_stats(&root).ok()?;
                     let min = st.to_min()?;
                     let max = st.to_max()?;
