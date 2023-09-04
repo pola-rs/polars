@@ -15,7 +15,7 @@ pub(super) fn temporal_range(
     time_unit: Option<TimeUnit>,
     time_zone: Option<TimeZone>,
 ) -> PolarsResult<Series> {
-    if s[0].dtype() == &DataType::Date && interval.nanoseconds() == 0 {
+    if s[0].dtype() == &DataType::Date && interval.is_full_days() {
         date_range(s, interval, closed)
     } else {
         datetime_range(s, interval, closed, time_unit, time_zone)
@@ -29,7 +29,7 @@ pub(super) fn temporal_ranges(
     time_unit: Option<TimeUnit>,
     time_zone: Option<TimeZone>,
 ) -> PolarsResult<Series> {
-    if s[0].dtype() == &DataType::Date && interval.nanoseconds() == 0 {
+    if s[0].dtype() == &DataType::Date && interval.is_full_days() {
         date_ranges(s, interval, closed)
     } else {
         datetime_ranges(s, interval, closed, time_unit, time_zone)
@@ -292,7 +292,7 @@ fn datetime_ranges(
 impl<'a> FieldsMapper<'a> {
     pub(super) fn map_to_date_range_dtype(
         &self,
-        every: &Duration,
+        interval: &Duration,
         time_unit: Option<&TimeUnit>,
         time_zone: Option<&str>,
     ) -> PolarsResult<DataType> {
@@ -302,7 +302,7 @@ impl<'a> FieldsMapper<'a> {
                 map_datetime_to_date_range_dtype(tu, tz, time_unit, time_zone)
             },
             DataType::Date => {
-                let schema_dtype = map_date_to_date_range_dtype(every, time_unit, time_zone);
+                let schema_dtype = map_date_to_date_range_dtype(interval, time_unit, time_zone);
                 Ok(schema_dtype)
             },
             _ => polars_bail!(ComputeError: "expected Date or Datetime, got {}", data_dtype),
@@ -336,16 +336,15 @@ fn map_datetime_to_date_range_dtype(
     Ok(schema_dtype)
 }
 fn map_date_to_date_range_dtype(
-    every: &Duration,
+    interval: &Duration,
     time_unit: Option<&TimeUnit>,
     time_zone: Option<&str>,
 ) -> DataType {
-    let nsecs = every.nanoseconds();
-    if nsecs == 0 {
+    if interval.is_full_days() {
         DataType::Date
     } else if let Some(tu) = time_unit {
         DataType::Datetime(*tu, time_zone.map(String::from))
-    } else if nsecs % 1000 != 0 {
+    } else if interval.nanoseconds() % 1000 != 0 {
         DataType::Datetime(TimeUnit::Nanoseconds, time_zone.map(String::from))
     } else {
         DataType::Datetime(TimeUnit::Microseconds, time_zone.map(String::from))
