@@ -879,3 +879,15 @@ def test_date_range_invalid_interval(interval: timedelta) -> None:
         pl.date_range(
             datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h", eager=True
         )
+
+
+def test_date_range_24h_interval_results_in_datetime() -> None:
+    result = pl.LazyFrame().select(
+        pl.date_range(date(2022, 1, 1), date(2022, 1, 3), interval="24h")
+    )
+
+    assert result.schema == {"date": pl.Datetime}
+    expected = pl.Series(
+        "date", [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2022, 1, 3)]
+    )
+    assert_series_equal(result.collect().to_series(), expected)
