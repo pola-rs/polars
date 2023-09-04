@@ -31,6 +31,15 @@ body:
       required: true
 
   - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: >
+        Set the environment variable ``POLARS_VERBOSE=1`` before running the query.
+        Paste the output of ``stderr`` here.
+      render: shell
+
+  - type: textarea
     id: problem
     attributes:
       label: Issue description
@@ -58,23 +67,6 @@ body:
         <details>
 
         Replace this line with a list of feature gates
-
-        </details>
-    validations:
-      required: true
-
-  - type: textarea
-    id: version
-    attributes:
-      label: Log output
-      description: >
-        Set ``POLARS_VERBOSE=1`` environment before running the query. Paste the output of ``stderr`` here.
-      value: |
-        <details>
-
-        ```
-        Replace this line with the output of ``stderr``. Leave the backticks in place.
-        ```
 
         </details>
     validations:
