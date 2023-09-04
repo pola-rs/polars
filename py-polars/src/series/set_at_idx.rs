@@ -24,7 +24,7 @@ impl PySeries {
 fn set_at_idx(mut s: Series, idx: &Series, values: &Series) -> PolarsResult<Series> {
     let logical_dtype = s.dtype().clone();
 
-    let idx = polars_ops::prelude::convert_to_positive_index(idx, s.len())?;
+    let idx = polars_ops::prelude::convert_to_unsigned_index(idx, s.len())?;
     let idx = idx.rechunk();
     let idx = idx.downcast_iter().next().unwrap();
 
