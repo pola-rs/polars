@@ -367,27 +367,28 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             pat.len(), ca.len(),
         );
 
-        let out = ca
+        // Very simple cache: don't recompile the same regex for multiple values in a row.
+        // TODO: proper LRU cache with reasonable memory limit.
+        let mut reg = Regex::new("").unwrap();
+        let mut lastpat = "";
+
+        let out: UInt32Chunked = ca
             .into_iter()
             .zip(pat)
             .map(|(opt_s, opt_pat)| match (opt_s, opt_pat) {
-                (_, None) | (None, _) => Ok(Some(0)),
                 (Some(s), Some(pat)) => {
-                    let reg = Regex::new(pat)?;
-                    let mut iter = reg.find_iter(s).map(|m| m.as_str()).peekable();
-                    if iter.peek().is_some() {
-                        Ok(Some(iter.count() as u32))
-                    } else {
-                        Ok(Some(0))
+                    if pat != lastpat {
+                        reg = Regex::new(pat)?;
+                        lastpat = pat;
                     }
+                    Ok(Some(reg.find_iter(s).count() as u32))
                 },
+                _ => Ok(None),
             })
             // Return early on error
             .collect::<PolarsResult<_>>()?;
 
-        let mut out: UInt32Chunked = out;
-        out.rename(ca.name());
-        Ok(out)
+        Ok(out.with_name(ca.name()))
     }
 
     /// Modify the strings to their lowercase equivalent.
