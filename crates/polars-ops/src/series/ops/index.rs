@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use polars_core::error::{polars_bail, polars_ensure, PolarsError, PolarsResult};
-use polars_core::export::num::{FromPrimitive, Signed, ToPrimitive};
+use polars_core::export::num::{FromPrimitive, Signed, ToPrimitive, Zero};
 use polars_core::prelude::{ChunkedArray, DataType, IdxCa, PolarsIntegerType, Series, IDX_DTYPE};
 use polars_utils::IdxSize;
 
@@ -10,13 +10,15 @@ where
     T: PolarsIntegerType,
     IdxSize: TryFrom<T::Native>,
     <IdxSize as TryFrom<T::Native>>::Error: Debug,
-    T::Native: FromPrimitive + Signed,
+    T::Native: FromPrimitive + Signed + Zero,
 {
     let len =
         i64::from_usize(target_len).ok_or_else(|| PolarsError::ComputeError("overflow".into()))?;
 
+    let zero = T::Native::zero();
+
     ca.try_apply_values_generic(|v| {
-        if v.is_positive() {
+        if v >= zero {
             Ok(IdxSize::try_from(v).unwrap())
         } else {
             IdxSize::from_i64(len + v.to_i64().unwrap()).ok_or_else(|| {
@@ -32,7 +34,7 @@ where
     })
 }
 
-pub fn convert_to_index(s: &Series, target_len: usize) -> PolarsResult<IdxCa> {
+pub fn convert_to_positive_index(s: &Series, target_len: usize) -> PolarsResult<IdxCa> {
     let dtype = s.dtype();
     polars_ensure!(dtype.is_integer(), InvalidOperation: "expected integers as index");
     if dtype.is_unsigned() {
