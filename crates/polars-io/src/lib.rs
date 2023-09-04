@@ -35,6 +35,7 @@ pub mod prelude;
 mod tests;
 pub(crate) mod utils;
 
+pub mod input;
 #[cfg(feature = "partition")]
 pub mod partition;
 
@@ -44,6 +45,7 @@ use std::path::{Path, PathBuf};
 #[allow(unused)] // remove when updating to rust nightly >= 1.61
 use arrow::array::new_empty_array;
 use arrow::error::Result as ArrowResult;
+pub use input::files_async;
 pub use options::*;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;

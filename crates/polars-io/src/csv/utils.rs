@@ -102,7 +102,7 @@ static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// Infer the data type of a record
-fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
+pub(crate) fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
     // Utf8 for them
     if string.starts_with('"') {
