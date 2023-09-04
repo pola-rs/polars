@@ -685,7 +685,7 @@ where
                     }
                 })
             }
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsProxy::Slice { .. } => {
                 unimplemented!("Used slice op with xor");
             }
         }
@@ -722,7 +722,7 @@ where
                     }
                 })
             }
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsProxy::Slice { .. } => {
                 unimplemented!("Used slice op with xor");
             }
         }
@@ -759,7 +759,7 @@ where
                     }
                 })
             }
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsProxy::Slice { .. } => {
                 unimplemented!("Used slice op with xor");
             }
         }
