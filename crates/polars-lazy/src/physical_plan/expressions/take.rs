@@ -22,9 +22,7 @@ impl TakeExpr {
         series: Series,
     ) -> PolarsResult<Series> {
         let idx = self.idx.evaluate(df, state)?;
-
         let nulls_before_cast = idx.null_count();
-
         let idx = idx.cast(&IDX_DTYPE)?;
         if idx.null_count() != nulls_before_cast {
             self.oob_err()?;
@@ -64,17 +62,16 @@ impl PhysicalExpr for TakeExpr {
                 let idx = idx.idx().unwrap();
 
                 // The indexes are AggregatedFlat, meaning they are a single values pointing into
-                // a group.
-                // If we zip this with the first of each group -> `idx + firs` then we can
+                // a group. If we zip this with the first of each group -> `idx + firs` then we can
                 // simply use a take operation on the whole array instead of per group.
 
-                // The groups maybe scattered all over the place, so we sort by group
+                // The groups maybe scattered all over the place, so we sort by group.
                 ac.sort_by_groups();
 
-                // A previous aggregation may have updated the groups
+                // A previous aggregation may have updated the groups.
                 let groups = ac.groups();
 
-                // Determine the take indices
+                // Determine the take indices.
                 let idx: IdxCa = match groups.as_ref() {
                     GroupsProxy::Idx(groups) => {
                         if groups.all().iter().zip(idx).any(|(g, idx)| match idx {
@@ -108,7 +105,7 @@ impl PhysicalExpr for TakeExpr {
                 return Ok(ac);
             },
             AggState::AggregatedList(s) => s.list().unwrap().clone(),
-            // Maybe a literal as well, this needs a different path
+            // Maybe a literal as well, this needs a different path.
             AggState::NotAggregated(_) => {
                 let s = idx.aggregated();
                 s.list().unwrap().clone()
@@ -123,13 +120,13 @@ impl PhysicalExpr for TakeExpr {
                         Some(idx) => {
                             if idx != 0 {
                                 // We must make sure that the column we take from is sorted by
-                                // groups otherwise we might point into the wrong group
+                                // groups otherwise we might point into the wrong group.
                                 ac.sort_by_groups()
                             }
                             // Make sure that we look at the updated groups.
                             let groups = ac.groups();
 
-                            // we offset the groups first by idx;
+                            // We offset the groups first by idx.
                             let idx: NoNull<IdxCa> = match groups.as_ref() {
                                 GroupsProxy::Idx(groups) => {
                                     if groups.all().iter().any(|g| idx >= g.len() as IdxSize) {
@@ -169,25 +166,17 @@ impl PhysicalExpr for TakeExpr {
         let s = idx.cast(&DataType::List(Box::new(IDX_DTYPE)))?;
         let idx = s.list().unwrap();
 
-        let mut taken = unsafe {
+        let taken = unsafe {
             ac.aggregated()
                 .list()
                 .unwrap()
                 .amortized_iter()
                 .zip(idx.amortized_iter())
-                .map(|(s, idx)| {
-                    s.and_then(|s| {
-                        idx.map(|idx| {
-                            let idx = idx.as_ref().idx().unwrap();
-                            s.as_ref().take(idx)
-                        })
-                    })
-                    .transpose()
-                })
+                .map(|(s, idx)| Some(s?.as_ref().take(idx?.as_ref().idx().unwrap())))
+                .map(|opt_res| opt_res.transpose())
                 .collect::<PolarsResult<ListChunked>>()?
+                .with_name(ac.series().name())
         };
-
-        taken.rename(ac.series().name());
 
         ac.with_series(taken.into_series(), true, Some(&self.expr))?;
         ac.with_update_groups(UpdateGroups::WithGroupsLen);
