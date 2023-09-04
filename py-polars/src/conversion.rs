@@ -1326,7 +1326,7 @@ impl FromPyObject<'_> for Wrap<JsonFormat> {
             "json_lines" => JsonFormat::JsonLines,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "json fommat must be one of: {{'json', 'json_lines'}}, got {v}",
+                    "json format must be one of: {{'json', 'json_lines'}}, got {v}",
                 )))
             },
         };
