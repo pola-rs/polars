@@ -385,7 +385,6 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                 },
                 _ => Ok(None),
             })
-            // Return early on error
             .collect::<PolarsResult<_>>()?;
 
         Ok(out.with_name(ca.name()))
@@ -413,7 +412,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         case::to_titlecase(ca)
     }
 
-    /// Concat with the values from a second Utf8Chunked
+    /// Concat with the values from a second Utf8Chunked.
     #[must_use]
     fn concat(&self, other: &Utf8Chunked) -> Utf8Chunked {
         let ca = self.as_utf8();
