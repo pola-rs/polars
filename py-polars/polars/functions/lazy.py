@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 import polars._reexport as pl
 import polars.functions as F
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
-from polars.utils._async import _AsyncDataFrameResult
+from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -23,7 +23,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
-    from queue import Queue
+    from collections.abc import Awaitable
     from typing import Collection, Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -1652,10 +1652,29 @@ def collect_all(
     return result
 
 
+@overload
 def collect_all_async(
     lazy_frames: Sequence[LazyFrame],
-    queue: Queue[list[DataFrame] | Exception],
     *,
+    gevent: Literal[True],
+    type_coercion: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    no_optimization: bool = True,
+    slice_pushdown: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
+    streaming: bool = True,
+) -> _GeventDataFrameResult[list[DataFrame]]:
+    ...
+
+
+@overload
+def collect_all_async(
+    lazy_frames: Sequence[LazyFrame],
+    *,
+    gevent: Literal[False] = False,
     type_coercion: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
@@ -1665,33 +1684,38 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     streaming: bool = False,
-) -> _AsyncDataFrameResult[list[DataFrame]]:
+) -> Awaitable[list[DataFrame]]:
+    ...
+
+
+def collect_all_async(
+    lazy_frames: Sequence[LazyFrame],
+    *,
+    gevent: bool = False,
+    type_coercion: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    no_optimization: bool = False,
+    slice_pushdown: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
+    streaming: bool = False,
+) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
     Collect multiple LazyFrames at the same time asynchronously in thread pool.
 
     Collects into a list of DataFrame, like :func:`polars.collect_all`
-    but instead of returning them directly its collected inside thread pool
-    and gets put into `queue` with `put_nowait` method,
-    while this method returns almost instantly.
+    but instead of returning them directly they are scheduled to be collected
+    inside thread pool, while this method returns almost instantly.
 
     May be useful if you use gevent or asyncio and want to release control to other
     greenlets/tasks while LazyFrames are being collected.
-    You must use correct queue in that case.
-    Given `queue` must be thread safe!
-
-    For gevent use
-    [`gevent.queue.Queue`](https://www.gevent.org/api/gevent.queue.html#gevent.queue.Queue).
-
-    For asyncio
-    [`asyncio.queues.Queue`](https://docs.python.org/3/library/asyncio-queue.html#queue)
-    can not be used, since it's not thread safe!
-    For that purpose use [janus](https://github.com/aio-libs/janus) library.
 
     Notes
     -----
-    Results are put in queue exactly once using `put_nowait`.
-    If error occurred then Exception will be put in the queue instead of result
-    which is then raised by returned wrapper `get` method.
+    In case of error `set_exception` is used on
+    `asyncio.Future`/`gevent.event.AsyncResult` and will be reraised by them.
 
     Warnings
     --------
@@ -1705,8 +1729,10 @@ def collect_all_async(
 
     Returns
     -------
-    Wrapper that has `get` method and `queue` attribute with given queue.
-    `get` accepts kwargs that are passed down to `queue.get`.
+    If `gevent=False` (default) then returns awaitable.
+
+    If `gevent=True` then returns wrapper that has
+    `.get(block=True, timeout=None)` method.
     """
     if no_optimization:
         predicate_pushdown = False
@@ -1731,9 +1757,9 @@ def collect_all_async(
         )
         prepared.append(ldf)
 
-    result = _AsyncDataFrameResult(queue)
-    plr.collect_all_with_callback(prepared, result._callback_all)
-    return result
+    result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+    plr.collect_all_with_callback(prepared, result._callback_all)  # type: ignore[attr-defined]
+    return result  # type: ignore[return-value]
 
 
 def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> DataFrame:

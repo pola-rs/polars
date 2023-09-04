@@ -50,7 +50,7 @@ from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.selectors import _expand_selectors, expand_selector
 from polars.slice import LazyPolarsSlice
-from polars.utils._async import _AsyncDataFrameResult
+from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -74,8 +74,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Awaitable
     from io import IOBase
-    from queue import Queue
     from typing import Literal
 
     import pyarrow as pa
@@ -1703,10 +1703,44 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return wrap_df(ldf.collect())
 
+    @overload
     def collect_async(
         self,
-        queue: Queue[DataFrame | Exception],
         *,
+        gevent: Literal[True],
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = True,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        streaming: bool = True,
+    ) -> _GeventDataFrameResult[DataFrame]:
+        ...
+
+    @overload
+    def collect_async(
+        self,
+        *,
+        gevent: Literal[False] = False,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = True,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        streaming: bool = True,
+    ) -> Awaitable[DataFrame]:
+        ...
+
+    def collect_async(
+        self,
+        *,
+        gevent: bool = False,
         type_coercion: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
@@ -1716,33 +1750,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = False,
-    ) -> _AsyncDataFrameResult[DataFrame]:
+    ) -> Awaitable[DataFrame] | _GeventDataFrameResult[DataFrame]:
         """
         Collect DataFrame asynchronously in thread pool.
 
-        Collects into a DataFrame, like :func:`collect`
-        but instead of returning DataFrame directly its collected inside thread pool
-        and gets put into `queue` with `put_nowait` method,
+        Collects into a DataFrame, like :func:`collect` but instead of returning
+        dataframe directly they are scheduled to be collected inside thread pool,
         while this method returns almost instantly.
 
         May be useful if you use gevent or asyncio and want to release control to other
         greenlets/tasks while LazyFrames are being collected.
-        You must use correct queue in that case.
-        Given `queue` must be thread safe!
-
-        For gevent use
-        [`gevent.queue.Queue`](https://www.gevent.org/api/gevent.queue.html#gevent.queue.Queue).
-
-        For asyncio
-        [`asyncio.queues.Queue`](https://docs.python.org/3/library/asyncio-queue.html#queue)
-        can not be used, since it's not thread safe!
-        For that purpose use [janus](https://github.com/aio-libs/janus) library.
 
         Notes
         -----
-        Results are put in queue exactly once using `put_nowait`.
-        If error occurred then Exception will be put in the queue instead of result
-        which is then raised by returned wrapper `get` method.
+        In case of error `set_exception` is used on
+        `asyncio.Future`/`gevent.event.AsyncResult` and will be reraised by them.
 
         Warnings
         --------
@@ -1756,12 +1778,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Returns
         -------
-        Wrapper that has `get` method and `queue` attribute with given queue.
-        `get` accepts kwargs that are passed down to `queue.get`.
+        If `gevent=False` (default) then returns awaitable.
+
+        If `gevent=True` then returns wrapper that has
+        `.get(block=True, timeout=None)` method.
 
         Examples
         --------
-        >>> import queue
+        >>> import asyncio
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": ["a", "b", "a", "b", "b", "c"],
@@ -1769,12 +1793,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> a = (
-        ...     lf.group_by("a", maintain_order=True)
-        ...     .agg(pl.all().sum())
-        ...     .collect_async(queue.Queue())
-        ... )
-        >>> a.get()
+        >>> async def main():
+        ...     return await (
+        ...         lf.group_by("a", maintain_order=True)
+        ...         .agg(pl.all().sum())
+        ...         .collect_async()
+        ...     )
+        ...
+        >>> asyncio.run(main())
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -1785,7 +1811,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b   ┆ 11  ┆ 10  │
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
-
         """
         if no_optimization:
             predicate_pushdown = False
@@ -1809,9 +1834,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             eager=False,
         )
 
-        result = _AsyncDataFrameResult(queue)
-        ldf.collect_with_callback(result._callback)
-        return result
+        result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+        ldf.collect_with_callback(result._callback)  # type: ignore[attr-defined]
+        return result  # type: ignore[return-value]
 
     def sink_parquet(
         self,
