@@ -41,7 +41,7 @@ where
 
         Ok(Some(
             exponent
-                .apply_cast_numeric(|exp| Pow::pow(base, exp))
+                .apply_values_generic(|exp| Pow::pow(base, exp))
                 .into_series(),
         ))
     } else {
@@ -116,7 +116,9 @@ where
                 }
                 out.into_series()
             },
-            _ => base.apply(|v| Pow::pow(v, exponent_value)).into_series(),
+            _ => base
+                .apply_values(|v| Pow::pow(v, exponent_value))
+                .into_series(),
         };
         Ok(Some(s))
     } else {
@@ -127,24 +129,24 @@ where
 fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Option<Series>> {
     use DataType::*;
     match (base.dtype(), exponent.dtype()) {
-        (UInt8 | UInt16 | UInt32, UInt8 | UInt16 | UInt32) => {
+        (UInt8 | UInt16 | UInt32, UInt8 | UInt16 | UInt32 | UInt64) => {
             let base = base.strict_cast(&DataType::UInt32)?;
             let ca = base.u32().unwrap();
             let exponent = exponent.strict_cast(&DataType::UInt32)?;
             pow_on_integral_dtypes(ca, exponent.u32().unwrap())
         },
-        (Int8 | Int16 | Int32, UInt8 | UInt16 | UInt32) => {
+        (Int8 | Int16 | Int32, UInt8 | UInt16 | UInt32 | UInt64) => {
             let base = base.strict_cast(&DataType::Int32)?;
             let ca = base.i32().unwrap();
             let exponent = exponent.strict_cast(&DataType::UInt32)?;
             pow_on_integral_dtypes(ca, exponent.u32().unwrap())
         },
-        (UInt64, UInt8 | UInt16 | UInt32) => {
+        (UInt64, UInt8 | UInt16 | UInt32 | UInt64) => {
             let ca = base.u64().unwrap();
             let exponent = exponent.strict_cast(&DataType::UInt32)?;
             pow_on_integral_dtypes(ca, exponent.u32().unwrap())
         },
-        (Int64, UInt8 | UInt16 | UInt32) => {
+        (Int64, UInt8 | UInt16 | UInt32 | UInt64) => {
             let ca = base.i64().unwrap();
             let exponent = exponent.strict_cast(&DataType::UInt32)?;
             pow_on_integral_dtypes(ca, exponent.u32().unwrap())

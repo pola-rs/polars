@@ -397,6 +397,7 @@ def test_power() -> None:
     i = pl.Series([1, 2], dtype=Int32)
     j = pl.Series([1, 2], dtype=UInt64)
     k = pl.Series([1, 2], dtype=Int64)
+    l = pl.Series([2**33, 2**33], dtype=UInt64)
 
     # pow
     assert_series_equal(a**2, pl.Series([1.0, 4.0], dtype=Float64))
@@ -405,7 +406,6 @@ def test_power() -> None:
     assert_series_equal(b**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
     assert_series_equal(a**None, pl.Series([None] * len(a), dtype=Float64))
-<<<<<<< HEAD
     assert_series_equal(d**d, pl.Series([1, 4], dtype=UInt32))
     assert_series_equal(e**d, pl.Series([1, 4], dtype=Int32))
     assert_series_equal(f**d, pl.Series([1, 4], dtype=UInt32))
@@ -414,13 +414,12 @@ def test_power() -> None:
     assert_series_equal(i**d, pl.Series([1, 4], dtype=Int32))
     assert_series_equal(j**d, pl.Series([1, 4], dtype=UInt64))
     assert_series_equal(k**d, pl.Series([1, 4], dtype=Int64))
-    with pytest.raises(ValueError):
-=======
     with pytest.raises(TypeError):
->>>>>>> upstream/main
         c**2
     with pytest.raises(pl.ColumnNotFoundError):
         a ** "hi"  # type: ignore[operator]
+    with pytest.raises(pl.ComputeError, match='strict conversion from `u64` to `u32` failed'):
+        a ** l
 
     # rpow
     assert_series_equal(2.0**a, pl.Series("literal", [2.0, 4.0], dtype=Float64))
