@@ -127,7 +127,7 @@ pub fn qcut(
                 Some(
                     ll.into_iter()
                         .enumerate()
-                        .filter(|(i, _)| *i == 0 || *i == blen || qbreaks[*i] != qbreaks[i - 1])
+                        .filter(|(i, _)| *i == 0 || *i == blen - 1 || qbreaks[*i] != qbreaks[i - 1])
                         .unzip::<_, _, Vec<_>, Vec<_>>()
                         .1,
                 )

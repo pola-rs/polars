@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Iterable
 import polars._reexport as pl
 from polars import functions as F
 from polars.exceptions import ComputeError
-from polars.utils.deprecation import issue_deprecation_warning
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -49,39 +48,19 @@ def _parse_regular_inputs(
     if not inputs:
         return []
 
-    if (
-        len(inputs) > 1
-        and isinstance(inputs[0], Iterable)
-        and not isinstance(inputs[0], (str, pl.Series))
-    ):
-        issue_deprecation_warning(
-            "In the next breaking release, combining list input and positional input will result in an error."
-            " To silence this warning, either unpack the list , or append the positional inputs to the list first."
-            " The resulting behavior will be identical",
-            version="0.18.4",
-        )
-
-    input_list = _first_input_to_list(inputs[0])
-    input_list.extend(inputs[1:])  # type: ignore[arg-type]
-    return [parse_as_expression(e, structify=structify) for e in input_list]
-
-
-def _first_input_to_list(
-    inputs: IntoExpr | Iterable[IntoExpr],
-) -> list[IntoExpr]:
-    if inputs is None:
-        issue_deprecation_warning(
-            "In the next breaking release, passing `None` as the first expression input will evaluate to `lit(None)`,"
-            " rather than be ignored."
-            " To silence this warning, either pass no arguments or an empty list to retain the current behavior,"
-            " or pass `lit(None)` to opt into the new behavior.",
-            version="0.18.0",
-        )
-        return []
-    elif not isinstance(inputs, Iterable) or isinstance(inputs, (str, pl.Series)):
-        return [inputs]
+    inputs_iter: Iterable[IntoExpr]
+    if len(inputs) == 1 and _is_iterable(inputs[0]):
+        inputs_iter = inputs[0]  # type: ignore[assignment]
     else:
-        return list(inputs)
+        inputs_iter = inputs  # type: ignore[assignment]
+
+    return [parse_as_expression(e, structify=structify) for e in inputs_iter]
+
+
+def _is_iterable(input: IntoExpr | Iterable[IntoExpr]) -> bool:
+    return isinstance(input, Iterable) and not isinstance(
+        input, (str, bytes, pl.Series)
+    )
 
 
 def _parse_named_inputs(
@@ -121,18 +100,20 @@ def parse_as_expression(
         expr = F.col(input)
         structify = False
     elif (
-        isinstance(input, (int, float, str, pl.Series, datetime, date, time, timedelta))
+        isinstance(
+            input, (int, float, str, bytes, pl.Series, datetime, date, time, timedelta)
+        )
         or input is None
     ):
         expr = F.lit(input)
         structify = False
-    elif isinstance(input, list):
-        expr = F.lit(pl.Series("", [input]))
+    elif isinstance(input, (list, tuple)):
+        expr = F.lit(pl.Series("literal", [input]))
         structify = False
     else:
         raise TypeError(
-            f"did not expect value {input!r} of type {type(input)}, maybe disambiguate with"
-            " pl.lit or pl.col"
+            f"did not expect value {input!r} of type {type(input).__name__!r}"
+            "\n\nTry disambiguating with `lit` or `col`."
         )
 
     if structify:

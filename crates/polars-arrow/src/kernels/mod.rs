@@ -4,6 +4,7 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitChunks;
 #[cfg(feature = "simd")]
 pub mod agg_mean;
+pub mod atan2;
 #[cfg(feature = "dtype-array")]
 pub mod comparison;
 pub mod concatenate;
@@ -24,7 +25,7 @@ pub mod take_agg;
 mod time;
 
 #[cfg(feature = "timezones")]
-pub use time::replace_time_zone;
+pub use time::convert_to_naive_local;
 
 /// Internal state of [SlicesIterator]
 #[derive(Debug, PartialEq)]

@@ -65,7 +65,7 @@ jobs:
 
       - name: Run tests and report coverage
         if: github.ref_name != 'main'
-        run: pytest --cov -n auto --dist worksteal -m "not benchmark"
+        run: pytest --cov -n auto --dist loadgroup -m "not benchmark"
 
       - name: Run doctests
         if: github.ref_name != 'main'
@@ -125,7 +125,7 @@ jobs:
 
       - name: Run tests
         if: github.ref_name != 'main'
-        run: pytest -n auto --dist worksteal -m "not benchmark"
+        run: pytest -n auto --dist loadgroup -m "not benchmark"
 
       - name: Check import without optional dependencies
         if: github.ref_name != 'main'

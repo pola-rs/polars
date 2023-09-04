@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::datatypes::PlIdHashMap;
-use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
+use crate::frame::group_by::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::InitHashMaps;
 
 /// We use atomic reference counting

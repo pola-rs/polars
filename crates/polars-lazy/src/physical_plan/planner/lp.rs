@@ -12,17 +12,17 @@ fn partitionable_gb(
     expr_arena: &Arena<AExpr>,
     apply: &Option<Arc<dyn DataFrameUdf>>,
 ) -> bool {
-    // We first check if we can partition the groupby on the latest moment.
+    // We first check if we can partition the group_by on the latest moment.
     let mut partitionable = true;
 
     // checks:
-    //      1. complex expressions in the groupby itself are also not partitionable
+    //      1. complex expressions in the group_by itself are also not partitionable
     //          in this case anything more than col("foo")
     //      2. a custom function cannot be partitioned
     //      3. we don't bother with more than 2 keys, as the cardinality likely explodes
     //         by the combinations
     if !keys.is_empty() && keys.len() < 3 && apply.is_none() {
-        // complex expressions in the groupby itself are also not partitionable
+        // complex expressions in the group_by itself are also not partitionable
         // in this case anything more than col("foo")
         for key in keys {
             if (expr_arena).iter(*key).count() > 1 {
@@ -165,10 +165,16 @@ pub fn create_physical_plan(
             Ok(Box::new(executors::SliceExec { input, offset, len }))
         },
         Selection { input, predicate } => {
+            let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             let mut state = ExpressionConversionState::default();
-            let predicate =
-                create_physical_expr(predicate, Context::Default, expr_arena, None, &mut state)?;
+            let predicate = create_physical_expr(
+                predicate,
+                Context::Default,
+                expr_arena,
+                Some(&input_schema),
+                &mut state,
+            )?;
             Ok(Box::new(executors::FilterExec::new(
                 predicate,
                 input,
@@ -324,6 +330,7 @@ pub fn create_physical_plan(
             output_schema,
             ..
         } => {
+            let mut state = ExpressionConversionState::default();
             let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
             let predicate = predicate
                 .map(|pred| {
@@ -332,7 +339,7 @@ pub fn create_physical_plan(
                         Context::Default,
                         expr_arena,
                         output_schema.as_ref(),
-                        &mut Default::default(),
+                        &mut state,
                     )
                 })
                 .map_or(Ok(None), |v| v.map(Some))?;
@@ -340,6 +347,7 @@ pub fn create_physical_plan(
                 function,
                 predicate,
                 options,
+                predicate_has_windows: state.has_windows,
             }))
         },
         Sort {
@@ -397,7 +405,7 @@ pub fn create_physical_plan(
             )?;
 
             let _slice = options.slice;
-            #[cfg(feature = "dynamic_groupby")]
+            #[cfg(feature = "dynamic_group_by")]
             if let Some(options) = options.dynamic {
                 let input = create_physical_plan(input, lp_arena, expr_arena)?;
                 return Ok(Box::new(executors::GroupByDynamicExec {
@@ -411,7 +419,7 @@ pub fn create_physical_plan(
                 }));
             }
 
-            #[cfg(feature = "dynamic_groupby")]
+            #[cfg(feature = "dynamic_group_by")]
             if let Some(options) = options.rolling {
                 let input = create_physical_plan(input, lp_arena, expr_arena)?;
                 return Ok(Box::new(executors::GroupByRollingExec {
@@ -425,7 +433,7 @@ pub fn create_physical_plan(
                 }));
             }
 
-            // We first check if we can partition the groupby on the latest moment.
+            // We first check if we can partition the group_by on the latest moment.
             let partitionable = partitionable_gb(&keys, &aggs, &input_schema, expr_arena, &apply);
             if partitionable {
                 let from_partitioned_ds = (&*lp_arena).iter(input).any(|(_, lp)| {

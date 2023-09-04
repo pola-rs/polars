@@ -27,12 +27,12 @@ where
 
     let mut vals = Vec::with_capacity(len - null_count);
 
-    // if we sort descending, the nulls are last
-    // and need to be extended to the indices in descending order
+    // If we sort descending, the nulls are last
+    // and need to be extended to the indices in descending order.
     let null_cap = if descending || nulls_last {
         null_count
-        // if we sort normally, the nulls are first
-        // and can be extended with the sorted indices
+        // If we sort normally, the nulls are first
+        // and can be extended with the sorted indices.
     } else {
         len
     };
@@ -46,8 +46,7 @@ where
             match v {
                 Some(v) => Some((i, v)),
                 None => {
-                    // Safety:
-                    // we allocated enough
+                    // SAFETY: we allocated enough.
                     unsafe { nulls_idx.push_unchecked(i) };
                     None
                 },
@@ -73,11 +72,10 @@ where
     } else {
         let ptr = nulls_idx.as_ptr() as usize;
         nulls_idx.extend(iter);
-        // we had a realloc
+        // We had a realloc.
         debug_assert_eq!(nulls_idx.as_ptr() as usize, ptr);
         nulls_idx
     };
 
-    let arr = IdxArr::from_data_default(Buffer::from(idx), None);
-    unsafe { IdxCa::from_chunks(name, vec![Box::new(arr)]) }
+    ChunkedArray::with_chunk(name, IdxArr::from_data_default(Buffer::from(idx), None))
 }

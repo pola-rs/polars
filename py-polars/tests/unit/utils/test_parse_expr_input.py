@@ -7,7 +7,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
-from polars.utils._parse_expr_input import _first_input_to_list, parse_as_expression
+from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 
 
@@ -22,32 +22,9 @@ def assert_expr_equal(result: pl.Expr, expected: pl.Expr) -> None:
     assert_frame_equal(df.select(result), df.select(expected))
 
 
-def test_first_input_to_list_empty() -> None:
-    assert _first_input_to_list([]) == []
-
-
-def test_first_input_to_list_none() -> None:
-    with pytest.deprecated_call():
-        assert _first_input_to_list(None) == []
-
-
 @pytest.mark.parametrize(
-    "input",
-    [5, 2.0, "a", pl.Series([1, 2, 3]), pl.lit(4)],
+    "input", [5, 2.0, pl.Series([1, 2, 3]), date(2022, 1, 1), b"hi"]
 )
-def test_first_input_to_list_single(input: Any) -> None:
-    assert _first_input_to_list(input) == [input]
-
-
-@pytest.mark.parametrize(
-    "input",
-    [[5], ["a", "b"], (1, 2, 3), ["a", 5, 3.2]],
-)
-def test_first_input_to_list_multiple(input: Any) -> None:
-    assert _first_input_to_list(input) == list(input)
-
-
-@pytest.mark.parametrize("input", [5, 2.0, pl.Series([1, 2, 3]), date(2022, 1, 1)])
 def test_parse_as_expression_lit(input: Any) -> None:
     result = wrap_expr(parse_as_expression(input))
     expected = pl.lit(input)
@@ -76,9 +53,10 @@ def test_parse_as_expression_whenthen(input: Any) -> None:
     assert_expr_equal(result, expected)
 
 
-def test_parse_as_expression_list() -> None:
-    result = wrap_expr(parse_as_expression([1, 2, 3]))
-    expected = pl.lit(pl.Series([[1, 2, 3]]))
+@pytest.mark.parametrize("input", [[1, 2, 3], (1, 2)])
+def test_parse_as_expression_list(input: Any) -> None:
+    result = wrap_expr(parse_as_expression(input))
+    expected = pl.lit(pl.Series("literal", [input]))
     assert_expr_equal(result, expected)
 
 

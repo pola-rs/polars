@@ -324,7 +324,7 @@ impl Debug for Expr {
                     AggGroups(expr) => write!(f, "{expr:?}.groups()"),
                     Count(expr) => write!(f, "{expr:?}.count()"),
                     Var(expr, _) => write!(f, "{expr:?}.var()"),
-                    Std(expr, _) => write!(f, "{expr:?}.var()"),
+                    Std(expr, _) => write!(f, "{expr:?}.std()"),
                     Quantile { expr, .. } => write!(f, "{expr:?}.quantile()"),
                 }
             },

@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     data=st.data(),
     time_unit=strategy_time_unit,
 )
-def test_groupby_rolling(
+def test_group_by_rolling(
     period: str,
     offset: str,
     closed: ClosedInterval,
@@ -43,7 +43,7 @@ def test_groupby_rolling(
     )
     df = dataframe.sort("ts").unique("ts")
     try:
-        result = df.groupby_rolling(
+        result = df.group_by_rolling(
             "ts", period=period, offset=offset, closed=closed
         ).agg(pl.col("value"))
     except pl.exceptions.PolarsPanicError as exc:

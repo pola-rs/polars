@@ -215,11 +215,12 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TimeStamp(tu)))
     }
 
-    pub fn truncate(self, options: TruncateOptions) -> Expr {
-        self.0
-            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Truncate(
-                options,
-            )))
+    pub fn truncate(self, options: TruncateOptions, ambiguous: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::Truncate(options)),
+            &[ambiguous],
+            false,
+        )
     }
 
     // roll backward to the first day of the month
@@ -267,14 +268,12 @@ impl DateLikeNameSpace {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn replace_time_zone(
-        self,
-        time_zone: Option<TimeZone>,
-        use_earliest: Option<bool>,
-    ) -> Expr {
-        self.0.map_private(FunctionExpr::TemporalExpr(
-            TemporalFunction::ReplaceTimeZone(time_zone, use_earliest),
-        ))
+    pub fn replace_time_zone(self, time_zone: Option<TimeZone>, ambiguous: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::ReplaceTimeZone(time_zone)),
+            &[ambiguous],
+            false,
+        )
     }
 
     pub fn combine(self, time: Expr, tu: TimeUnit) -> Expr {

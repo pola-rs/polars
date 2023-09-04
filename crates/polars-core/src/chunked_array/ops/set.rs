@@ -59,7 +59,7 @@ where
                         value,
                         T::get_dtype().to_arrow(),
                     )?;
-                    return Ok(Self::from_chunk_iter(self.name(), [arr]));
+                    return Ok(Self::with_chunk(self.name(), arr));
                 }
                 // Other fast path. Slightly slower as it does not do a memcpy.
                 else {
@@ -154,7 +154,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
             validity.set(i, f(input).unwrap_or(false));
         }
         let arr = BooleanArray::from_data_default(values.into(), Some(validity.into()));
-        Ok(BooleanChunked::from_chunk_iter(self.name(), [arr]))
+        Ok(BooleanChunked::with_chunk(self.name(), arr))
     }
 
     fn set(&'a self, mask: &BooleanChunked, value: Option<bool>) -> PolarsResult<Self> {

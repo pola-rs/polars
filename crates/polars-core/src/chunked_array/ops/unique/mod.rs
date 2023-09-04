@@ -8,10 +8,10 @@ use arrow::bitmap::MutableBitmap;
 #[cfg(feature = "object")]
 use crate::datatypes::ObjectType;
 use crate::datatypes::PlHashSet;
-use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
-use crate::frame::groupby::GroupsProxy;
+use crate::frame::group_by::hashing::HASHMAP_INIT_SIZE;
+use crate::frame::group_by::GroupsProxy;
 #[cfg(feature = "mode")]
-use crate::frame::groupby::IntoGroupsProxy;
+use crate::frame::group_by::IntoGroupsProxy;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -28,7 +28,7 @@ fn finish_is_unique_helper(
         unsafe { values.set_unchecked(idx as usize, setter) }
     }
     let arr = BooleanArray::from_data_default(values.into(), None);
-    unsafe { BooleanChunked::from_chunks("", vec![Box::new(arr)]) }
+    arr.into()
 }
 
 pub(crate) fn is_unique_helper(
@@ -169,13 +169,7 @@ where
 
                     arr.extend(to_extend);
                     let arr: PrimitiveArray<T::Native> = arr.into();
-
-                    unsafe {
-                        Ok(ChunkedArray::from_chunks(
-                            self.name(),
-                            vec![Box::new(arr) as ArrayRef],
-                        ))
-                    }
+                    Ok(ChunkedArray::with_chunk(self.name(), arr))
                 } else {
                     let mask = self.not_equal_and_validity(&self.shift(1));
                     self.filter(&mask)

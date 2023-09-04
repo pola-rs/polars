@@ -13,7 +13,6 @@ from polars.utils.convert import (
     _timedelta_to_pl_duration,
     _timedelta_to_pl_timedelta,
 )
-from polars.utils.meta import get_idx_type
 from polars.utils.various import _in_notebook, parse_percentiles, parse_version
 
 if TYPE_CHECKING:
@@ -114,11 +113,6 @@ def test_estimated_size() -> None:
 def test_parse_version(v1: Any, v2: Any) -> None:
     assert parse_version(v1) > parse_version(v2)
     assert parse_version(v2) < parse_version(v1)
-
-
-def test_get_idx_type_deprecation() -> None:
-    with pytest.deprecated_call():
-        get_idx_type()
 
 
 def test_in_notebook() -> None:

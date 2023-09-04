@@ -1,6 +1,6 @@
 mod functions;
 mod generic;
-mod groupby;
+mod group_by;
 mod hstack;
 mod joins;
 mod projection;
@@ -17,7 +17,7 @@ use semi_anti_join::process_semi_anti_join;
 use crate::logical_plan::Context;
 use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
-use crate::prelude::optimizer::projection_pushdown::groupby::process_groupby;
+use crate::prelude::optimizer::projection_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
@@ -580,7 +580,7 @@ impl ProjectionPushDown {
                 schema,
                 maintain_order,
                 options,
-            } => process_groupby(
+            } => process_group_by(
                 self,
                 input,
                 keys,

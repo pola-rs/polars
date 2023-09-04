@@ -1,5 +1,5 @@
 use super::*;
-use crate::frame::groupby::IntoGroupsProxy;
+use crate::frame::group_by::IntoGroupsProxy;
 
 impl CategoricalChunked {
     pub fn unique(&self) -> PolarsResult<Self> {

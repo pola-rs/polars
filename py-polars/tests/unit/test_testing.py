@@ -195,7 +195,7 @@ def test_compare_frame_equal_nans() -> None:
         schema=[("x", pl.Float32), ("y", pl.Float64)],
     )
     assert_frame_not_equal(df1, df2)
-    with pytest.raises(AssertionError, match="Values for column 'y' are different"):
+    with pytest.raises(AssertionError, match="values for column 'y' are different"):
         assert_frame_equal(df1, df2, check_exact=True)
 
 
@@ -214,7 +214,7 @@ def test_compare_frame_equal_nested_nans() -> None:
         schema=[("x", pl.List(pl.Float32)), ("y", pl.List(pl.Float64))],
     )
     assert_frame_not_equal(df1, df2)
-    with pytest.raises(AssertionError, match="Values for column 'y' are different"):
+    with pytest.raises(AssertionError, match="values for column 'y' are different"):
         assert_frame_equal(df1, df2, check_exact=True)
 
     # struct dtype
@@ -295,7 +295,7 @@ def test_assert_frame_equal_column_mismatch() -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
     df2 = pl.DataFrame({"b": [1, 2]})
     with pytest.raises(
-        AssertionError, match="Columns \\['a'\\] in left frame, but not in right"
+        AssertionError, match="columns \\['a'\\] in left frame, but not in right"
     ):
         assert_frame_equal(df1, df2)
 
@@ -304,7 +304,7 @@ def test_assert_frame_equal_column_mismatch2() -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
     df2 = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
     with pytest.raises(
-        AssertionError, match="Columns \\['b', 'c'\\] in right frame, but not in left"
+        AssertionError, match="columns \\['b', 'c'\\] in right frame, but not in left"
     ):
         assert_frame_equal(df1, df2)
 
@@ -312,7 +312,7 @@ def test_assert_frame_equal_column_mismatch2() -> None:
 def test_assert_frame_equal_column_mismatch_order() -> None:
     df1 = pl.DataFrame({"b": [3, 4], "a": [1, 2]})
     df2 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    with pytest.raises(AssertionError, match="Columns are not in the same order"):
+    with pytest.raises(AssertionError, match="columns are not in the same order"):
         assert_frame_equal(df1, df2)
 
     assert_frame_equal(df1, df2, check_column_order=False)
@@ -322,7 +322,7 @@ def test_assert_frame_equal_ignore_row_order() -> None:
     df1 = pl.DataFrame({"a": [1, 2], "b": [4, 3]})
     df2 = pl.DataFrame({"a": [2, 1], "b": [3, 4]})
     df3 = pl.DataFrame({"b": [3, 4], "a": [2, 1]})
-    with pytest.raises(AssertionError, match="Values for column 'a' are different."):
+    with pytest.raises(AssertionError, match="values for column 'a' are different."):
         assert_frame_equal(df1, df2)
 
     assert_frame_equal(df1, df2, check_row_order=False)
@@ -336,7 +336,7 @@ def test_assert_frame_equal_ignore_row_order() -> None:
     # │ 2   ┆ 3   │      │ 1   ┆ 4   │
     # └─────┴─────┘      └─────┴─────┘
 
-    with pytest.raises(AssertionError, match="Columns are not in the same order"):
+    with pytest.raises(AssertionError, match="columns are not in the same order"):
         assert_frame_equal(df1, df3, check_row_order=False)
 
     assert_frame_equal(df1, df3, check_row_order=False, check_column_order=False)
@@ -344,7 +344,7 @@ def test_assert_frame_equal_ignore_row_order() -> None:
     # note: not all column types support sorting
     with pytest.raises(
         InvalidAssert,
-        match="Cannot set 'check_row_order=False'.*unsortable columns",
+        match="cannot set 'check_row_order=False'.*unsortable columns",
     ):
         assert_frame_equal(
             left=pl.DataFrame({"a": [[1, 2], [3, 4]], "b": [3, 4]}),
@@ -595,6 +595,19 @@ def test_assert_series_equal_uint_overflow() -> None:
     with pytest.raises(AssertionError):
         assert_series_equal(s1, s2, atol=0)
     assert_series_equal(s1, s2, atol=1)
+
+    # confirm no OverflowError in the below test case:
+    # as "(left-right).abs()" > max(Int64)
+    left = pl.Series(
+        values=[2810428175213635359],
+        dtype=pl.UInt64,
+    )
+    right = pl.Series(
+        values=[15807433754238349345],
+        dtype=pl.UInt64,
+    )
+    with pytest.raises(AssertionError):
+        assert_series_equal(left, right)
 
 
 @pytest.mark.parametrize(

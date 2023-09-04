@@ -1,7 +1,6 @@
-
-============
+=====
 Utils
-============
+=====
 .. currentmodule:: polars
 
 .. autosummary::

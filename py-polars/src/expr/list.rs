@@ -158,10 +158,10 @@ impl PyExpr {
     fn list_set_operation(&self, other: PyExpr, operation: Wrap<SetOperation>) -> Self {
         let e = self.inner.clone().list();
         match operation.0 {
-            SetOperation::Intersection => e.intersection(other.inner),
-            SetOperation::Difference => e.difference(other.inner),
+            SetOperation::Intersection => e.set_intersection(other.inner),
+            SetOperation::Difference => e.set_difference(other.inner),
             SetOperation::Union => e.union(other.inner),
-            SetOperation::SymmetricDifference => e.symmetric_difference(other.inner),
+            SetOperation::SymmetricDifference => e.set_symmetric_difference(other.inner),
         }
         .into()
     }

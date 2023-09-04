@@ -41,46 +41,21 @@ fn covariance(s: &[Series]) -> PolarsResult<Series> {
     let b = &s[1];
     let name = "cov";
 
-    let s = match a.dtype() {
-        DataType::Float32 => {
-            let ca_a = a.f32().unwrap();
-            let ca_b = b.f32().unwrap();
-            Series::new(name, &[polars_core::functions::cov_f(ca_a, ca_b)])
-        },
-        DataType::Float64 => {
-            let ca_a = a.f64().unwrap();
-            let ca_b = b.f64().unwrap();
-            Series::new(name, &[polars_core::functions::cov_f(ca_a, ca_b)])
-        },
-        DataType::Int32 => {
-            let ca_a = a.i32().unwrap();
-            let ca_b = b.i32().unwrap();
-            Series::new(name, &[polars_core::functions::cov_i(ca_a, ca_b)])
-        },
-        DataType::Int64 => {
-            let ca_a = a.i64().unwrap();
-            let ca_b = b.i64().unwrap();
-            Series::new(name, &[polars_core::functions::cov_i(ca_a, ca_b)])
-        },
-        DataType::UInt32 => {
-            let ca_a = a.u32().unwrap();
-            let ca_b = b.u32().unwrap();
-            Series::new(name, &[polars_core::functions::cov_i(ca_a, ca_b)])
-        },
-        DataType::UInt64 => {
-            let ca_a = a.u64().unwrap();
-            let ca_b = b.u64().unwrap();
-            Series::new(name, &[polars_core::functions::cov_i(ca_a, ca_b)])
-        },
+    use polars_core::functions::cov;
+    let ret = match a.dtype() {
+        DataType::Float32 => cov(a.f32().unwrap(), b.f32().unwrap()),
+        DataType::Float64 => cov(a.f64().unwrap(), b.f64().unwrap()),
+        DataType::Int32 => cov(a.i32().unwrap(), b.i32().unwrap()),
+        DataType::Int64 => cov(a.i64().unwrap(), b.i64().unwrap()),
+        DataType::UInt32 => cov(a.u32().unwrap(), b.u32().unwrap()),
+        DataType::UInt64 => cov(a.u64().unwrap(), b.u64().unwrap()),
         _ => {
             let a = a.cast(&DataType::Float64)?;
             let b = b.cast(&DataType::Float64)?;
-            let ca_a = a.f64().unwrap();
-            let ca_b = b.f64().unwrap();
-            Series::new(name, &[polars_core::functions::cov_f(ca_a, ca_b)])
+            cov(a.f64().unwrap(), b.f64().unwrap())
         },
     };
-    Ok(s)
+    Ok(Series::new(name, &[ret]))
 }
 
 fn pearson_corr(s: &[Series], ddof: u8) -> PolarsResult<Series> {
@@ -88,67 +63,20 @@ fn pearson_corr(s: &[Series], ddof: u8) -> PolarsResult<Series> {
     let b = &s[1];
     let name = "pearson_corr";
 
-    let s = match a.dtype() {
-        DataType::Float32 => {
-            let ca_a = a.f32().unwrap();
-            let ca_b = b.f32().unwrap();
-            Series::new(
-                name,
-                &[polars_core::functions::pearson_corr_f(ca_a, ca_b, ddof)],
-            )
-        },
-        DataType::Float64 => {
-            let ca_a = a.f64().unwrap();
-            let ca_b = b.f64().unwrap();
-            Series::new(
-                name,
-                &[polars_core::functions::pearson_corr_f(ca_a, ca_b, ddof)],
-            )
-        },
-        DataType::Int32 => {
-            let ca_a = a.i32().unwrap();
-            let ca_b = b.i32().unwrap();
-            Series::new(
-                name,
-                &[polars_core::functions::pearson_corr_i(ca_a, ca_b, ddof)],
-            )
-        },
-        DataType::Int64 => {
-            let ca_a = a.i64().unwrap();
-            let ca_b = b.i64().unwrap();
-            Series::new(
-                name,
-                &[polars_core::functions::pearson_corr_i(ca_a, ca_b, ddof)],
-            )
-        },
-        DataType::UInt32 => {
-            let ca_a = a.u32().unwrap();
-            let ca_b = b.u32().unwrap();
-            Series::new(
-                name,
-                &[polars_core::functions::pearson_corr_i(ca_a, ca_b, ddof)],
-            )
-        },
-        DataType::UInt64 => {
-            let ca_a = a.u64().unwrap();
-            let ca_b = b.u64().unwrap();
-            Series::new(
-                name,
-                &[polars_core::functions::pearson_corr_i(ca_a, ca_b, ddof)],
-            )
-        },
+    use polars_core::functions::pearson_corr;
+    let ret = match a.dtype() {
+        DataType::Float32 => pearson_corr(a.f32().unwrap(), b.f32().unwrap(), ddof),
+        DataType::Float64 => pearson_corr(a.f64().unwrap(), b.f64().unwrap(), ddof),
+        DataType::Int32 => pearson_corr(a.i32().unwrap(), b.i32().unwrap(), ddof),
+        DataType::Int64 => pearson_corr(a.i64().unwrap(), b.i64().unwrap(), ddof),
+        DataType::UInt32 => pearson_corr(a.u32().unwrap(), b.u32().unwrap(), ddof),
         _ => {
             let a = a.cast(&DataType::Float64)?;
             let b = b.cast(&DataType::Float64)?;
-            let ca_a = a.f64().unwrap();
-            let ca_b = b.f64().unwrap();
-            Series::new(
-                name,
-                &[polars_core::functions::pearson_corr_f(ca_a, ca_b, ddof)],
-            )
+            pearson_corr(a.f64().unwrap(), b.f64().unwrap(), ddof)
         },
     };
-    Ok(s)
+    Ok(Series::new(name, &[ret]))
 }
 
 #[cfg(all(feature = "rank", feature = "propagate_nans"))]

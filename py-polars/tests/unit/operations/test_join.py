@@ -65,7 +65,7 @@ def test_join_same_cat_src() -> None:
         data={"column": ["a", "a", "b"], "more": [1, 2, 3]},
         schema=[("column", pl.Categorical), ("more", pl.Int32)],
     )
-    df_agg = df.groupby("column").agg(pl.col("more").mean())
+    df_agg = df.group_by("column").agg(pl.col("more").mean())
     assert df.join(df_agg, on="column").to_dict(False) == {
         "column": ["a", "a", "b"],
         "more": [1, 2, 3],
@@ -359,16 +359,6 @@ def test_sorted_flag_after_joins() -> None:
     joined = dfb.join(dfa, on="b", how="anti")
     assert not joined["a"].flags["SORTED_ASC"]
 
-    # streaming left join
-    df1 = pl.DataFrame({"x": [1, 2, 3, 4], "y": [2, 4, 6, 6]}).set_sorted("x")
-    df2 = pl.DataFrame({"x": [4, 2, 3, 1], "z": [1, 4, 9, 1]})
-    assert (
-        df1.lazy()
-        .join(df2.lazy(), on="x", how="left")
-        .collect(streaming=True)["x"]
-        .flags["SORTED_ASC"]
-    )
-
 
 def test_jit_sort_joins() -> None:
     n = 200
@@ -412,54 +402,6 @@ def test_jit_sort_joins() -> None:
         assert pl_result["a"].flags["SORTED_ASC"]
 
 
-def test_streaming_joins() -> None:
-    n = 100
-    dfa = pd.DataFrame(
-        {
-            "a": np.random.randint(0, 40, n),
-            "b": np.arange(0, n),
-        }
-    )
-
-    n = 100
-    dfb = pd.DataFrame(
-        {
-            "a": np.random.randint(0, 40, n),
-            "b": np.arange(0, n),
-        }
-    )
-    dfa_pl = pl.from_pandas(dfa).sort("a")
-    dfb_pl = pl.from_pandas(dfb)
-
-    join_strategies: list[Literal["inner", "left"]] = ["inner", "left"]
-    for how in join_strategies:
-        pd_result = dfa.merge(dfb, on="a", how=how)
-        pd_result.columns = pd.Index(["a", "b", "b_right"])
-
-        pl_result = (
-            dfa_pl.lazy()
-            .join(dfb_pl.lazy(), on="a", how=how)
-            .sort(["a", "b"])
-            .collect(streaming=True)
-        )
-
-        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
-        pl.testing.assert_frame_equal(a, pl_result, check_dtype=False)
-
-        pd_result = dfa.merge(dfb, on=["a", "b"], how=how)
-
-        pl_result = (
-            dfa_pl.lazy()
-            .join(dfb_pl.lazy(), on=["a", "b"], how=how)
-            .sort(["a", "b"])
-            .collect(streaming=True)
-        )
-
-        # we cast to integer because pandas joins creates floats
-        a = pl.from_pandas(pd_result).with_columns(pl.all().cast(int)).sort(["a", "b"])
-        pl.testing.assert_frame_equal(a, pl_result, check_dtype=False)
-
-
 def test_join_panic_on_binary_expr_5915() -> None:
     df_a = pl.DataFrame({"a": [1, 2, 3]}).lazy()
     df_b = pl.DataFrame({"b": [1, 4, 9, 9, 0]}).lazy()
@@ -492,7 +434,7 @@ def test_semi_join_projection_pushdown_6455() -> None:
         }
     ).lazy()
 
-    latest = df.groupby("id").agg(pl.col("timestamp").max())
+    latest = df.group_by("id").agg(pl.col("timestamp").max())
     df = df.join(latest, on=["id", "timestamp"], how="semi")
     assert df.select(["id", "value"]).collect().to_dict(False) == {
         "id": [1, 2],
@@ -525,13 +467,13 @@ def test_join_frame_consistency() -> None:
     df = pl.DataFrame({"A": [1, 2, 3]})
     ldf = pl.DataFrame({"A": [1, 2, 5]}).lazy()
 
-    with pytest.raises(TypeError, match="Expected 'other'.* LazyFrame"):
+    with pytest.raises(TypeError, match="expected `other`.* LazyFrame"):
         _ = ldf.join(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="Expected 'other'.* DataFrame"):
+    with pytest.raises(TypeError, match="expected `other`.* DataFrame"):
         _ = df.join(ldf, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="Expected 'other'.* LazyFrame"):
+    with pytest.raises(TypeError, match="expected `other`.* LazyFrame"):
         _ = ldf.join_asof(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="Expected 'other'.* DataFrame"):
+    with pytest.raises(TypeError, match="expected `other`.* DataFrame"):
         _ = df.join_asof(ldf, on="A")  # type: ignore[arg-type]
 
 

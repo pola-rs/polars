@@ -12,7 +12,9 @@ Usage:
 
 Running it without `PYTHONPATH` set will result in the test being skipped.
 """
+import datetime as dt  # noqa: F401
 import subprocess
+from datetime import datetime  # noqa: F401
 from typing import Any, Callable
 
 import pytest
@@ -20,6 +22,7 @@ import pytest
 MY_CONSTANT = 3
 MY_DICT = {0: "a", 1: "b", 2: "c", 3: "d", 4: "e"}
 MY_LIST = [1, 2, 3]
+
 
 # column_name, function, expected_suggestion
 TEST_CASES = [
@@ -125,6 +128,19 @@ TEST_CASES = [
         "lambda x: MY_DICT[x - 1] + MY_DICT[1 + x]",
         '(pl.col("a") - 1).map_dict(MY_DICT) + (1 + pl.col("a")).map_dict(MY_DICT)',
     ),
+    # ---------------------------------------------
+    # standard library datetime parsing
+    # ---------------------------------------------
+    (
+        "d",
+        'lambda x: datetime.strptime(x, "%Y-%m-%d")',
+        'pl.col("d").str.to_datetime(format="%Y-%m-%d")',
+    ),
+    (
+        "d",
+        'lambda x: dt.datetime.strptime(x, "%Y-%m-%d")',
+        'pl.col("d").str.to_datetime(format="%Y-%m-%d")',
+    ),
 ]
 
 NOOP_TEST_CASES = [
@@ -152,7 +168,7 @@ def test_bytecode_parser_expression(col: str, func: str, expected: str) -> None:
         # won't be skipped.
         return
 
-    bytecode_parser = udfs.BytecodeParser(eval(func), apply_target="expr")
+    bytecode_parser = udfs.BytecodeParser(eval(func), map_target="expr")
     result = bytecode_parser.to_expression(col)
     assert result == expected
 
@@ -176,10 +192,12 @@ def test_bytecode_parser_expression_in_ipython(
 
     script = (
         "import udfs; "
+        "import datetime as dt; "
+        "from datetime import datetime; "
         "import numpy as np; "
         "import json; "
         f"MY_DICT = {MY_DICT};"
-        f'bytecode_parser = udfs.BytecodeParser({func}, apply_target="expr");'
+        f'bytecode_parser = udfs.BytecodeParser({func}, map_target="expr");'
         f'print(bytecode_parser.to_expression("{col}"));'
     )
 
@@ -202,7 +220,7 @@ def test_bytecode_parser_expression_noop(func: str) -> None:
         # won't be skipped.
         return
 
-    parser = udfs.BytecodeParser(eval(func), apply_target="expr")
+    parser = udfs.BytecodeParser(eval(func), map_target="expr")
     assert not parser.can_attempt_rewrite() or not parser.to_expression("x")
 
 
@@ -224,7 +242,7 @@ def test_bytecode_parser_expression_noop_in_ipython(func: str) -> None:
     script = (
         "import udfs; "
         f"MY_DICT = {MY_DICT};"
-        f'parser = udfs.BytecodeParser({func}, apply_target="expr");'
+        f'parser = udfs.BytecodeParser({func}, map_target="expr");'
         f'print(not parser.can_attempt_rewrite() or not parser.to_expression("x"));'
     )
 
@@ -238,9 +256,17 @@ def test_local_imports() -> None:
     except ModuleNotFoundError as exc:
         assert "No module named 'udfs'" in str(exc)  # noqa: PT017
         return
+    import datetime as dt  # noqa: F811
     import json
 
-    bytecode_parser = udfs.BytecodeParser(lambda x: json.loads(x), apply_target="expr")
+    bytecode_parser = udfs.BytecodeParser(lambda x: json.loads(x), map_target="expr")
     result = bytecode_parser.to_expression("x")
     expected = 'pl.col("x").str.json_extract()'
+    assert result == expected
+
+    bytecode_parser = udfs.BytecodeParser(
+        lambda x: dt.datetime.strptime(x, "%Y-%m-%d"), map_target="expr"
+    )
+    result = bytecode_parser.to_expression("x")
+    expected = 'pl.col("x").str.to_datetime(format="%Y-%m-%d")'
     assert result == expected

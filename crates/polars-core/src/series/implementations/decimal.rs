@@ -51,10 +51,10 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
-    fn _get_flags(&self) -> u8 {
+    fn _get_flags(&self) -> Settings {
         self.0.get_flags()
     }
-    fn _set_flags(&mut self, flags: u8) -> PolarsResult<()> {
+    fn _set_flags(&mut self, flags: Settings) {
         self.0.set_flags(flags)
     }
 
@@ -116,6 +116,9 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn chunks(&self) -> &Vec<ArrayRef> {
         self.0.chunks()
+    }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.chunks_mut()
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {

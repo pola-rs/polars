@@ -10,7 +10,7 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import issue_deprecation_warning
+from polars.utils.deprecation import rename_use_earliest_to_ambiguous
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import IntoExpr, SchemaDict, TimeUnit
+    from polars.type_aliases import Ambiguous, IntoExpr, SchemaDict, TimeUnit
 
 
 def datetime_(
@@ -35,6 +35,7 @@ def datetime_(
     time_unit: TimeUnit = "us",
     time_zone: str | None = None,
     use_earliest: bool | None = None,
+    ambiguous: Ambiguous | Expr = "raise",
 ) -> Expr:
     """
     Create a Polars literal expression of type Datetime.
@@ -66,6 +67,15 @@ def datetime_(
         - ``True``: use the earliest datetime
         - ``False``: use the latest datetime
 
+        .. deprecated:: 0.19.0
+            Use `ambiguous` instead
+    ambiguous
+        Determine how to deal with ambiguous datetimes:
+
+        - ``'raise'`` (default): raise
+        - ``'earliest'``: use the earliest datetime
+        - ``'latest'``: use the latest datetime
+
 
     Returns
     -------
@@ -73,6 +83,9 @@ def datetime_(
         Expression of data type :class:`Datetime`.
 
     """
+    ambiguous = parse_as_expression(
+        rename_use_earliest_to_ambiguous(use_earliest, ambiguous), str_as_lit=True
+    )
     year_expr = parse_as_expression(year)
     month_expr = parse_as_expression(month)
     day_expr = parse_as_expression(day)
@@ -97,7 +110,7 @@ def datetime_(
             microsecond,
             time_unit,
             time_zone,
-            use_earliest,
+            ambiguous,
         )
     )
 
@@ -392,17 +405,7 @@ def struct(
     {'my_struct': Struct([Field('p', Int64), Field('q', Boolean)])}
 
     """
-    if "exprs" in named_exprs:
-        issue_deprecation_warning(
-            "passing expressions to `struct` using the keyword argument `exprs` is"
-            " deprecated. Use positional syntax instead.",
-            version="0.18.1",
-        )
-        first_input = named_exprs.pop("exprs")
-        pyexprs = parse_as_list_of_expressions(first_input, *exprs, **named_exprs)
-    else:
-        pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs)
-
+    pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs)
     expr = wrap_expr(plr.as_struct(pyexprs))
 
     if schema:

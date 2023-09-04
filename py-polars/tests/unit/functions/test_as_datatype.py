@@ -62,7 +62,7 @@ def test_datetime_ambiguous_time_zone() -> None:
 
 def test_datetime_ambiguous_time_zone_use_earliest() -> None:
     expr = pl.datetime(
-        2018, 10, 28, 2, 30, time_zone="Europe/Brussels", use_earliest=True
+        2018, 10, 28, 2, 30, time_zone="Europe/Brussels", ambiguous="earliest"
     )
 
     result = pl.select(expr).item()
@@ -156,7 +156,7 @@ def test_concat_list_in_agg_6397() -> None:
     df = pl.DataFrame({"group": [1, 2, 2, 3], "value": ["a", "b", "c", "d"]})
 
     # single list
-    assert df.groupby("group").agg(
+    assert df.group_by("group").agg(
         [
             # this casts every element to a list
             pl.concat_list(pl.col("value")),
@@ -167,7 +167,7 @@ def test_concat_list_in_agg_6397() -> None:
     }
 
     # nested list
-    assert df.groupby("group").agg(
+    assert df.group_by("group").agg(
         [
             pl.concat_list(pl.col("value").implode()).alias("result"),
         ]
@@ -457,16 +457,21 @@ def test_struct_lit_cast() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
 
-    for lit in [pl.lit(None), pl.lit([[]])]:
-        s = df.select(pl.struct([pl.col("a"), lit.alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
-        assert s.dtype == pl.Struct(
-            [pl.Field("a", pl.Int64), pl.Field("b", pl.List(pl.Int64))]
+    for lit in [pl.lit(None), pl.lit(pl.Series([[]]))]:
+        out = df.select(pl.struct([pl.col("a"), lit.alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
+
+        expected = pl.Series(
+            "a",
+            [
+                {"a": 1, "b": None},
+                {"a": 2, "b": None},
+                {"a": 3, "b": None},
+            ],
+            dtype=pl.Struct(
+                [pl.Field("a", pl.Int64), pl.Field("b", pl.List(pl.Int64))]
+            ),
         )
-        assert s.to_list() == [
-            {"a": 1, "b": None},
-            {"a": 2, "b": None},
-            {"a": 3, "b": None},
-        ]
+        assert_series_equal(out, expected)
 
 
 def test_suffix_in_struct_creation() -> None:
@@ -504,14 +509,3 @@ def test_format() -> None:
 
     out = df.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])
     assert out["fmt"].to_list() == ["foo_a_bar_1", "foo_b_bar_2", "foo_c_bar_3"]
-
-
-def test_struct_deprecation_exprs_keyword() -> None:
-    with pytest.deprecated_call():
-        result = pl.select(pl.struct(exprs=1.0))
-
-    expected = pl.DataFrame(
-        {"literal": [{"literal": 1.0}]},
-        schema={"literal": pl.Struct({"literal": pl.Float64})},
-    )
-    assert_frame_equal(result, expected)

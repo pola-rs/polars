@@ -36,10 +36,9 @@ jobs:
           python-version: '3.11'
 
       - name: Create virtual environment
-        working-directory: py-polars
         run: |
           python -m venv .venv
-          echo "$GITHUB_WORKSPACE/py-polars/.venv/bin" >> $GITHUB_PATH
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
 
       - name: Install Python dependencies
         working-directory: py-polars

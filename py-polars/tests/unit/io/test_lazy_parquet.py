@@ -331,7 +331,7 @@ def test_streaming_categorical(tmp_path: Path) -> None:
     with pl.StringCache():
         result = (
             pl.scan_parquet(file_path)
-            .groupby("name")
+            .group_by("name")
             .agg(pl.col("amount").sum())
             .collect()
             .sort("name")

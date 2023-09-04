@@ -30,6 +30,7 @@ extensions = [
     # Sphinx extensions
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
+    "sphinx.ext.githubpages",
     "sphinx.ext.intersphinx",
     "sphinx.ext.linkcode",
     "sphinx.ext.mathjax",
@@ -93,6 +94,11 @@ static_assets_root = "https://raw.githubusercontent.com/pola-rs/polars-static/ma
 github_root = "https://github.com/pola-rs/polars"
 web_root = "https://pola-rs.github.io"
 
+# Specify version for version switcher dropdown menu
+git_ref = os.environ.get("POLARS_VERSION", "main")
+version_match = re.fullmatch(r"py-(\d+\.\d+)\.\d+.*", git_ref)
+switcher_version = version_match.group(1) if version_match is not None else "dev"
+
 html_theme_options = {
     "external_links": [
         {
@@ -124,8 +130,13 @@ html_theme_options = {
     "logo": {
         "image_light": f"{static_assets_root}/logos/polars-logo-dark-medium.png",
         "image_dark": f"{static_assets_root}/logos/polars-logo-dimmed-medium.png",
-        "link": f"{web_root}/polars/py-polars/html/reference/index.html",
     },
+    "switcher": {
+        "json_url": f"{web_root}/polars/docs/python/dev/_static/version_switcher.json",
+        "version_match": switcher_version,
+    },
+    "navbar_end": ["version-switcher", "navbar-icon-links"],
+    "check_switcher": False,
 }
 
 # sphinx-favicon - Add support for custom favicons
@@ -199,7 +210,7 @@ def linkcode_resolve(domain, info):
     polars_root = (conf_dir_path.parent.parent / "polars").absolute()
 
     fn = os.path.relpath(fn, start=polars_root)
-    return f"{github_root}/blob/main/py-polars/polars/{fn}{linespec}"
+    return f"{github_root}/blob/{git_ref}/py-polars/polars/{fn}{linespec}"
 
 
 def _minify_classpaths(s: str) -> str:

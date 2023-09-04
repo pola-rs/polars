@@ -4,9 +4,9 @@ numpy
 pandas
 pyarrow
 
-hypothesis==6.82.0
+hypothesis==6.82.6
 
-sphinx==7.1.1
+sphinx==7.2.4
 
 # Third-party Sphinx extensions
 autodocsumm==0.2.11

@@ -62,7 +62,7 @@ impl CsvSource {
         let reader = CsvReader::from_path(&path)
             .unwrap()
             .has_header(options.has_header)
-            .with_schema(self.schema.clone())
+            .with_dtypes(Some(self.schema.clone()))
             .with_delimiter(options.delimiter)
             .with_ignore_errors(options.ignore_errors)
             .with_skip_rows(options.skip_rows)
@@ -79,7 +79,9 @@ impl CsvSource {
             .with_rechunk(false)
             .with_chunk_size(chunk_size)
             .with_row_count(file_options.row_count)
-            .with_try_parse_dates(options.try_parse_dates);
+            .with_try_parse_dates(options.try_parse_dates)
+            .truncate_ragged_lines(options.truncate_ragged_lines)
+            .raise_if_empty(options.raise_if_empty);
 
         let reader = Box::new(reader);
         let reader = Box::leak(reader) as *mut CsvReader<'static, File>;

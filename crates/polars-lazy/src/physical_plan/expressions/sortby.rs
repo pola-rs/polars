@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use polars_core::frame::groupby::{GroupsIndicator, GroupsProxy};
+use polars_core::frame::group_by::{GroupsIndicator, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::POOL;
 use rayon::prelude::*;
@@ -298,7 +298,7 @@ impl PhysicalExpr for SortByExpr {
             );
 
             // if the rhs is already aggregated once,
-            // it is reordered by the groupby operation
+            // it is reordered by the group_by operation
             // we must ensure that we are as well.
             if ordered_by_group_operation {
                 let s = ac_in.aggregated();

@@ -2,13 +2,15 @@ use std::path::PathBuf;
 
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
+use polars_io::csv::SerializeOptions;
+#[cfg(feature = "csv")]
 use polars_io::csv::{CsvEncoding, NullValues};
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcCompression;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetCompression;
 use polars_io::RowCount;
-#[cfg(feature = "dynamic_groupby")]
+#[cfg(feature = "dynamic_group_by")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -34,6 +36,8 @@ pub struct CsvParserOptions {
     pub null_values: Option<NullValues>,
     pub encoding: CsvEncoding,
     pub try_parse_dates: bool,
+    pub raise_if_empty: bool,
+    pub truncate_ragged_lines: bool,
 }
 
 #[cfg(feature = "parquet")]
@@ -71,6 +75,16 @@ pub struct IpcWriterOptions {
     pub maintain_order: bool,
 }
 
+#[cfg(feature = "csv")]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct CsvWriterOptions {
+    pub has_header: bool,
+    pub batch_size: usize,
+    pub maintain_order: bool,
+    pub serialize_options: SerializeOptions,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptions {
@@ -104,9 +118,9 @@ pub struct UnionOptions {
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {
-    #[cfg(feature = "dynamic_groupby")]
+    #[cfg(feature = "dynamic_group_by")]
     pub dynamic: Option<DynamicGroupOptions>,
-    #[cfg(feature = "dynamic_groupby")]
+    #[cfg(feature = "dynamic_group_by")]
     pub rolling: Option<RollingGroupOptions>,
     /// Take only a slice of the result
     pub slice: Option<(i64, usize)>,
@@ -194,7 +208,7 @@ pub struct FunctionOptions {
     // If set to `false` the physical engine will ensure the left input
     // expression is the output name.
     pub allow_rename: bool,
-    // if set, then the `Series` passed to the function in the groupby operation
+    // if set, then the `Series` passed to the function in the group_by operation
     // will ensure the name is set. This is an extra heap allocation per group.
     pub pass_name_to_apply: bool,
     // For example a `unique` or a `slice`
@@ -301,6 +315,8 @@ pub enum FileType {
     Parquet(ParquetWriteOptions),
     #[cfg(feature = "ipc")]
     Ipc(IpcWriterOptions),
+    #[cfg(feature = "csv")]
+    Csv(CsvWriterOptions),
     Memory,
 }
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+import pyarrow as pa
 import pyarrow.fs
 import pytest
 from deltalake import DeltaTable
@@ -196,7 +197,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
         pl.Series(
             "date_ns",
             [datetime(2010, 1, 1, 0, 0)],
-            dtype=pl.Datetime(time_unit="ns"),
+            dtype=pl.Datetime(time_unit="ns", time_zone="Australia/Lord_Howe"),
         ),
         pl.Series(
             "date_us",
@@ -261,7 +262,7 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
                 [
                     pl.Field(
                         "date_range",
-                        pl.List(pl.Datetime(time_unit="ms", time_zone=None)),
+                        pl.List(pl.Datetime(time_unit="ms", time_zone="UTC")),
                     ),
                     pl.Field(
                         "date_us", pl.List(pl.Datetime(time_unit="ms", time_zone=None))
@@ -335,3 +336,36 @@ def test_write_delta_w_compatible_schema(series: pl.Series, tmp_path: Path) -> N
 
     tbl = DeltaTable(tmp_path)
     assert tbl.version() == 1
+
+
+def test_write_delta_with_schema_10540(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    pa_schema = pa.schema([("a", pa.int64())])
+    df.write_delta(tmp_path, delta_write_options={"schema": pa_schema})
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.datetime(2010, 1, 1, time_unit="us", time_zone="UTC"),
+        pl.datetime(2010, 1, 1, time_unit="ns", time_zone="EST"),
+        pl.datetime(2010, 1, 1, time_unit="ms", time_zone="Europe/Amsterdam"),
+    ],
+)
+def test_write_delta_with_tz_in_df(expr: pl.Expr, tmp_path: Path) -> None:
+    df = pl.select(expr)
+
+    pa_schema = pa.schema([("datetime", pa.timestamp("us"))])
+
+    df.write_delta(tmp_path, mode="append")
+    # write second time because delta-rs also casts timestamp with tz to timestamp no tz
+    df.write_delta(tmp_path, mode="append")
+
+    tbl = DeltaTable(tmp_path)
+    assert pa_schema == tbl.schema().to_pyarrow()
+
+    result = pl.read_delta(str(tmp_path), version=0)
+
+    expected = df.cast(pl.Datetime)
+    assert_frame_equal(result, expected)

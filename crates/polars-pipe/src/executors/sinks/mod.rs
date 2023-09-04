@@ -1,6 +1,6 @@
 #[cfg(any(feature = "parquet", feature = "ipc"))]
 mod file_sink;
-pub(crate) mod groupby;
+pub(crate) mod group_by;
 mod io;
 mod joins;
 mod memory;

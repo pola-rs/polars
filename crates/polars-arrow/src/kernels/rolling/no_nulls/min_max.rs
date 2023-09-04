@@ -168,7 +168,7 @@ macro_rules! minmax_window {
                 };
                 let empty_overlap = old_last_end <= start;
 
-                if entering.is_some_and(|em| $new_is_m(&self.m, em.1) || empty_overlap) {
+                if entering.map(|em| $new_is_m(&self.m, em.1) || empty_overlap) == Some(true) {
                     // The entering extremum "beats" the previous extremum so we can ignore the overlap
                     self.update_m_and_m_idx(entering.unwrap());
                     return self.m;

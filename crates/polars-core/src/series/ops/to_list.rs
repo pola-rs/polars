@@ -7,20 +7,16 @@ use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 
 fn reshape_fast_path(name: &str, s: &Series) -> Series {
-    let chunks = match s.dtype() {
+    let mut ca = match s.dtype() {
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => {
-            vec![Box::new(array_to_unit_list(s.array_ref(0).clone())) as ArrayRef]
+            ListChunked::with_chunk(name, array_to_unit_list(s.array_ref(0).clone()))
         },
-        _ => s
-            .chunks()
-            .iter()
-            .map(|arr| Box::new(array_to_unit_list(arr.clone())) as ArrayRef)
-            .collect::<Vec<_>>(),
+        _ => ListChunked::from_chunk_iter(
+            name,
+            s.chunks().iter().map(|arr| array_to_unit_list(arr.clone())),
+        ),
     };
-
-    // safety dtype is checked.
-    let mut ca = unsafe { ListChunked::from_chunks(name, chunks) };
     ca.set_inner_dtype(s.dtype().clone());
     ca.set_fast_explode();
     ca.into_series()
@@ -28,8 +24,7 @@ fn reshape_fast_path(name: &str, s: &Series) -> Series {
 
 impl Series {
     /// Convert the values of this Series to a ListChunked with a length of 1,
-    /// So a Series of:
-    /// `[1, 2, 3]` becomes `[[1, 2, 3]]`
+    /// so a Series of `[1, 2, 3]` becomes `[[1, 2, 3]]`.
     pub fn implode(&self) -> PolarsResult<ListChunked> {
         let s = self.rechunk();
         let values = s.array_ref(0);
@@ -39,8 +34,7 @@ impl Series {
 
         let data_type = ListArray::<i64>::default_datatype(values.data_type().clone());
 
-        // Safety:
-        // offsets are correct;
+        // SAFETY: offsets are correct.
         let arr = unsafe {
             ListArray::new(
                 data_type,
@@ -49,12 +43,10 @@ impl Series {
                 None,
             )
         };
-        let name = self.name();
 
-        let mut ca = unsafe { ListChunked::from_chunks(name, vec![Box::new(arr)]) };
+        let mut ca = ListChunked::with_chunk(self.name(), arr);
         ca.to_logical(inner_type.clone());
         ca.set_fast_explode();
-
         Ok(ca)
     }
 
@@ -68,7 +60,7 @@ impl Series {
             Cow::Borrowed(self)
         };
 
-        // no rows
+        // No rows.
         if dims[0] == 0 {
             let s = reshape_fast_path(self.name(), &s);
             return Ok(s);
@@ -99,7 +91,7 @@ impl Series {
                 let mut rows = dims[0];
                 let mut cols = dims[1];
 
-                // infer dimension
+                // Infer dimension.
                 if rows == -1 {
                     rows = cols / s_ref.len() as i64
                 }
@@ -107,7 +99,7 @@ impl Series {
                     cols = rows / s_ref.len() as i64
                 }
 
-                // fast path, we can create a unit list so we only allocate offsets
+                // Fast path, we can create a unit list so we only allocate offsets.
                 if rows as usize == s_ref.len() && cols == 1 {
                     let s = reshape_fast_path(self.name(), s_ref);
                     return Ok(s);

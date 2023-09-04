@@ -20,7 +20,7 @@ fn test_duration() -> PolarsResult<()> {
                 .cast(DataType::Datetime(TimeUnit::Milliseconds, None))
                 .alias("datetime"),
         )
-        .groupby([col("groups")])
+        .group_by([col("groups")])
         .agg([
             (col("date") - col("date").first()).alias("date"),
             (col("datetime") - col("datetime").first()).alias("datetime"),
@@ -104,7 +104,7 @@ fn test_lazy_logical_plan_schema() {
 
     let lp = df
         .lazy()
-        .groupby([col("variety")])
+        .group_by([col("variety")])
         .agg([col("sepal.width").min()])
         .logical_plan;
     assert!(lp.schema().unwrap().get("sepal.width").is_some());

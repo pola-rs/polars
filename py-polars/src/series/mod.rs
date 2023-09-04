@@ -16,9 +16,9 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::Python;
 
-use crate::apply::series::{call_lambda_and_extract, ApplyLambda};
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
+use crate::map::series::{call_lambda_and_extract, ApplyLambda};
 use crate::prelude::*;
 use crate::py_modules::POLARS;
 use crate::{apply_method_all_arrow_series2, raise_err};
@@ -266,14 +266,6 @@ impl PySeries {
         self.series.sort(descending).into()
     }
 
-    fn value_counts(&self, sorted: bool) -> PyResult<PyDataFrame> {
-        let df = self
-            .series
-            .value_counts(true, sorted)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
-    }
-
     fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.idx().map_err(PyPolarsErr::from)?;
         let take = self.series.take(idx).map_err(PyPolarsErr::from)?;
@@ -296,11 +288,6 @@ impl PySeries {
         } else {
             self.series.series_equal(&other.series)
         }
-    }
-
-    fn _not(&self) -> PyResult<Self> {
-        let bool = self.series.bool().map_err(PyPolarsErr::from)?;
-        Ok((!bool).into_series().into())
     }
 
     fn as_str(&self) -> PyResult<String> {
@@ -641,20 +628,6 @@ impl PySeries {
         };
         let out = out.map_err(PyPolarsErr::from)?;
         Ok(out.into())
-    }
-
-    fn time_unit(&self) -> Option<&str> {
-        if let DataType::Datetime(time_unit, _) | DataType::Duration(time_unit) =
-            self.series.dtype()
-        {
-            Some(match time_unit {
-                TimeUnit::Nanoseconds => "ns",
-                TimeUnit::Microseconds => "us",
-                TimeUnit::Milliseconds => "ms",
-            })
-        } else {
-            None
-        }
     }
 
     fn get_chunks(&self) -> PyResult<Vec<PyObject>> {

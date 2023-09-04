@@ -1,5 +1,5 @@
 /* To have blue background of width of the block (instead of width of content) */
-dl.class > dt:first-of-type {
+dl.class>dt:first-of-type {
     display: block !important;
 }
 
@@ -28,7 +28,7 @@ div.bd-sidebar-primary {
     background-image: linear-gradient(90deg, var(--pst-gradient-sidebar-left) 0%, var(--pst-gradient-sidebar-right) 100%);
 }
 
-footer.bd-footer{
+footer.bd-footer {
     background-color: var(--pst-color-on-background);
 }
 
@@ -39,6 +39,7 @@ footer.bd-footer{
 div.bd-sidebar-secondary {
     display: none;
 }
+
 label.sidebar-toggle.secondary-toggle {
     display: none !important;
 }

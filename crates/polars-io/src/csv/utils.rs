@@ -192,6 +192,7 @@ pub fn infer_file_schema_inner(
     null_values: Option<&NullValues>,
     try_parse_dates: bool,
     recursion_count: u8,
+    raise_if_empty: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
     // keep track so that we can determine the amount of bytes read
     let start_ptr = reader_bytes.as_ptr() as usize;
@@ -201,7 +202,9 @@ pub fn infer_file_schema_inner(
     let encoding = CsvEncoding::LossyUtf8;
 
     let bytes = skip_line_ending(skip_bom(reader_bytes), eol_char);
-    polars_ensure!(!bytes.is_empty(), NoData: "empty CSV");
+    if raise_if_empty {
+        polars_ensure!(!bytes.is_empty(), NoData: "empty CSV");
+    };
     let mut lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
     // it can be that we have a single line without eol char
     let has_eol = bytes.contains(&eol_char);
@@ -301,7 +304,10 @@ pub fn infer_file_schema_inner(
             null_values,
             try_parse_dates,
             recursion_count + 1,
+            raise_if_empty,
         );
+    } else if !raise_if_empty {
+        return Ok((Schema::new(), 0, 0));
     } else {
         polars_bail!(NoData: "empty CSV");
     };
@@ -484,6 +490,7 @@ pub fn infer_file_schema_inner(
             null_values,
             try_parse_dates,
             recursion_count + 1,
+            raise_if_empty,
         );
     }
 
@@ -515,6 +522,7 @@ pub fn infer_file_schema(
     eol_char: u8,
     null_values: Option<&NullValues>,
     try_parse_dates: bool,
+    raise_if_empty: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
     infer_file_schema_inner(
         reader_bytes,
@@ -530,6 +538,7 @@ pub fn infer_file_schema(
         null_values,
         try_parse_dates,
         0,
+        raise_if_empty,
     )
 }
 

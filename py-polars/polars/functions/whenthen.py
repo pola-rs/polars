@@ -21,10 +21,14 @@ def when(condition: IntoExpr) -> pl.When:
 
     Expression similar to an `if-else` statement in Python. Always initiated by a
     `pl.when(<condition>).then(<value if condition>)`. Optionally followed by chaining
-    one or more `.when(<condition>).then(<value>)` statements. If none of the conditions
-    are `True`, an optional `.otherwise(<value if all statements are false>)` can be
-    appended at the end. If not appended, and none of the conditions are `True`, `None`
-    will be returned.
+    one or more `.when(<condition>).then(<value>)` statements.
+
+    Chained `when, thens` should be read as Python `if, elif, ... elif` blocks, not as
+    `if, if, ... if`, i.e. the first condition that evaluates to True will be picked.
+
+    If none of the conditions are `True`, an optional `.otherwise(<value if all
+    statements are false>)` can be appended at the end. If not appended, and none
+    of the conditions are `True`, `None` will be returned.
 
     Parameters
     ----------
@@ -82,9 +86,7 @@ def when(condition: IntoExpr) -> pl.When:
     │ 4   ┆ 0   ┆ 1   │
     └─────┴─────┴─────┘
 
-    Chained `when, thens` should be read as `if, elif, ... elif`, not
-    as `if, if, ... if`, i.e. the first condition that evaluates to True will
-    be picked. Note how in the example above for the second row in the dataframe,
+    Note how in the example above for the second row in the dataframe,
     where `foo=3` and `bar=4`, the first `when` evaluates to `True`, and therefore
     the second `when`, which is also `True`, is not evaluated.
 

@@ -2,19 +2,12 @@ from __future__ import annotations
 
 import io
 import re
-from itertools import zip_longest
-from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
+from itertools import chain, zip_longest
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, overload
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.datatypes import (
-    N_INFER_DEFAULT,
-    Categorical,
-    List,
-    Object,
-    Struct,
-    Utf8,
-)
+from polars.datatypes import N_INFER_DEFAULT, Categorical, List, Object, Struct, Utf8
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
@@ -173,7 +166,7 @@ def from_dicts(
 
     """
     if not data and not (schema or schema_overrides):
-        raise NoDataError("No rows. Cannot infer schema.")
+        raise NoDataError("no data, cannot infer schema")
 
     return pl.DataFrame(
         data,
@@ -298,7 +291,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
     for dtype in set(schema.values()):
         if dtype in (List, Struct, Object):
             raise NotImplementedError(
-                f"'from_repr' does not support {dtype.base_type()} dtype"
+                f"`from_repr` does not support data type {dtype.base_type().__name__!r}"
             )
 
     # construct DataFrame from string series and cast from repr to native dtype
@@ -448,7 +441,7 @@ def from_repr(tbl: str) -> DataFrame | Series:
     if m is not None:
         return _from_series_repr(m)
 
-    raise ValueError("No DataFrame or Series found in the given string")
+    raise ValueError("input string does not contain DataFrame or Series")
 
 
 def from_numpy(
@@ -523,7 +516,7 @@ def from_arrow(
         | pa.Array
         | pa.ChunkedArray
         | pa.RecordBatch
-        | Sequence[pa.RecordBatch]
+        | Iterable[pa.RecordBatch | pa.Table]
     ),
     schema: SchemaDefinition | None = None,
     *,
@@ -539,7 +532,7 @@ def from_arrow(
     Parameters
     ----------
     data : :class:`pyarrow.Table`, :class:`pyarrow.Array`, one or more :class:`pyarrow.RecordBatch`
-        Data representing an Arrow Table, Array, or sequence of RecordBatches.
+        Data representing an Arrow Table, Array, or sequence of RecordBatches or Tables.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -606,22 +599,29 @@ def from_arrow(
             schema_overrides=schema_overrides,
         ).to_series()
         return s if (name or schema or schema_overrides) else s.alias("")
+    elif not data:
+        return pl.DataFrame(
+            schema=schema,
+            schema_overrides=schema_overrides,
+        )
 
     if isinstance(data, pa.RecordBatch):
         data = [data]
-    if isinstance(data, Sequence) and data and isinstance(data[0], pa.RecordBatch):
+    if isinstance(data, Iterable):
         return pl.DataFrame._from_arrow(
-            data=pa.Table.from_batches(data),
+            data=pa.Table.from_batches(
+                chain.from_iterable(
+                    (b.to_batches() if isinstance(b, pa.Table) else [b]) for b in data
+                )
+            ),
             rechunk=rechunk,
             schema=schema,
             schema_overrides=schema_overrides,
         )
-    elif isinstance(data, Sequence) and (schema or schema_overrides) and not data:
-        return pl.DataFrame(data=[], schema=schema, schema_overrides=schema_overrides)
-    else:
-        raise ValueError(
-            f"expected pyarrow Table, Array, or sequence of RecordBatches; got {type(data)}."
-        )
+
+    raise TypeError(
+        f"expected PyArrow Table, Array, or one or more RecordBatches; got {type(data).__name__!r}"
+    )
 
 
 @overload
@@ -638,7 +638,7 @@ def from_pandas(
 
 @overload
 def from_pandas(
-    data: pd.Series[Any] | pd.Index,
+    data: pd.Series[Any] | pd.Index[Any],
     *,
     schema_overrides: SchemaDict | None = ...,
     rechunk: bool = ...,
@@ -649,7 +649,7 @@ def from_pandas(
 
 
 def from_pandas(
-    data: pd.DataFrame | pd.Series[Any] | pd.Index,
+    data: pd.DataFrame | pd.Series[Any] | pd.Index[Any],
     *,
     schema_overrides: SchemaDict | None = None,
     rechunk: bool = True,
@@ -724,4 +724,6 @@ def from_pandas(
             include_index=include_index,
         )
     else:
-        raise ValueError(f"Expected pandas DataFrame or Series, got {type(data)}.")
+        raise TypeError(
+            f"expected pandas DataFrame or Series, got {type(data).__name__!r}"
+        )

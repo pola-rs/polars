@@ -33,7 +33,7 @@ where
     let buf = buf.into_bytes();
     let offsets = vec![0, buf.len() as i64];
     let arr = unsafe { Utf8Array::from_data_unchecked_default(offsets.into(), buf.into(), None) };
-    Utf8Chunked::from_chunk_iter(name, [arr])
+    Utf8Chunked::with_chunk(name, arr)
 }
 
 impl<T> StrConcat for ChunkedArray<T>

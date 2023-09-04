@@ -119,7 +119,7 @@ pub(super) fn predicate_to_pa(
             }
         },
         AExpr::Function {
-            function: FunctionExpr::Boolean(BooleanFunction::IsNot),
+            function: FunctionExpr::Boolean(BooleanFunction::Not),
             input,
             ..
         } => {

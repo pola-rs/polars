@@ -10,15 +10,19 @@ use crate::series::ops::SeriesSealed;
 pub trait SeriesMethods: SeriesSealed {
     /// Create a [`DataFrame`] with the unique `values` of this [`Series`] and a column `"counts"`
     /// with dtype [`IdxType`]
-    fn value_counts(&self, multithreaded: bool, sorted: bool) -> PolarsResult<DataFrame> {
+    fn value_counts(&self, sort: bool, parallel: bool) -> PolarsResult<DataFrame> {
         let s = self.as_series();
+        polars_ensure!(
+            s.name() != "counts",
+            Duplicate: "using `value_counts` on a column named 'counts' would lead to duplicate column names"
+        );
         // we need to sort here as well in case of `maintain_order` because duplicates behavior is undefined
-        let groups = s.group_tuples(multithreaded, sorted)?;
+        let groups = s.group_tuples(parallel, sort)?;
         let values = unsafe { s.agg_first(&groups) };
         let counts = groups.group_lengths("counts");
         let cols = vec![values, counts.into_series()];
         let df = DataFrame::new_no_checks(cols);
-        if sorted {
+        if sort {
             df.sort(["counts"], true, false)
         } else {
             Ok(df)

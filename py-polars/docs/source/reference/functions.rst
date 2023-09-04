@@ -1,6 +1,6 @@
-=================
+=========
 Functions
-=================
+=========
 .. currentmodule:: polars
 
 Conversion
@@ -31,6 +31,13 @@ Parallelization
    :toctree: api/
 
    collect_all
+
+Random
+~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   set_random_seed
 
 StringCache
 ~~~~~~~~~~~

@@ -2,7 +2,7 @@
 
 PYTHONPATH=
 SHELL=/bin/bash
-VENV = .venv
+VENV=../.venv
 
 ifeq ($(OS),Windows_NT)
 	VENV_BIN=$(VENV)/Scripts
@@ -10,16 +10,13 @@ else
 	VENV_BIN=$(VENV)/bin
 endif
 
+.PHONY: .venv
 .venv:  ## Set up virtual environment and install requirements
-	python3 -m venv $(VENV)
-	$(MAKE) requirements
+	@$(MAKE) -s -C .. $@
 
 .PHONY: requirements
 requirements: .venv  ## Install/refresh all project requirements
-	$(VENV_BIN)/python -m pip install --upgrade pip
-	$(VENV_BIN)/pip install -r requirements-dev.txt
-	$(VENV_BIN)/pip install -r requirements-lint.txt
-	$(VENV_BIN)/pip install -r docs/requirements-docs.txt
+	@$(MAKE) -s -C .. $@
 
 .PHONY: build
 build: .venv  ## Compile and install Polars for development
@@ -37,7 +34,7 @@ build-opt: .venv  ## Compile and install Polars for performance-sensitive develo
 .PHONY: build-release
 build-release: .venv  ## Compile and install a faster Polars binary with full optimizations
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --release
-	
+
 .PHONY: build-native
 build-native: .venv  ## Same as build, except with native CPU optimizations turned on
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop -- -C target-cpu=native
@@ -53,7 +50,6 @@ build-opt-native: .venv  ## Same as build-opt, except with native CPU optimizati
 .PHONY: build-release-native
 build-release-native: .venv  ## Same as build-release, except with native CPU optimizations turned on
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --release -- -C target-cpu=native
-	
 
 .PHONY: fmt
 fmt: .venv  ## Run autoformatting and linting
@@ -68,14 +64,14 @@ fmt: .venv  ## Run autoformatting and linting
 
 .PHONY: clippy
 clippy:  ## Run clippy
-	cargo clippy -- -D warnings
+	cargo clippy --locked -- -D warnings
 
 .PHONY: pre-commit
 pre-commit: fmt clippy  ## Run all code quality checks
 
 .PHONY: test
 test: .venv build  ## Run fast unittests
-	$(VENV_BIN)/pytest -n auto --dist worksteal
+	$(VENV_BIN)/pytest -n auto --dist loadgroup
 
 .PHONY: doctest
 doctest: .venv build  ## Run doctests
@@ -83,16 +79,15 @@ doctest: .venv build  ## Run doctests
 
 .PHONY: test-all
 test-all: .venv build  ## Run all tests
-	$(VENV_BIN)/pytest -n auto --dist worksteal -m "slow or not slow"
+	$(VENV_BIN)/pytest -n auto --dist loadgroup -m "slow or not slow"
 	$(VENV_BIN)/python tests/docs/run_doctest.py
 
 .PHONY: coverage
 coverage: .venv build  ## Run tests and report coverage
-	$(VENV_BIN)/pytest --cov -n auto --dist worksteal -m "not benchmark"
+	$(VENV_BIN)/pytest --cov -n auto --dist loadgroup -m "not benchmark"
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
-	@rm -rf .venv/
 	@rm -rf target/
 	@rm -rf docs/build/
 	@rm -rf docs/source/reference/api/

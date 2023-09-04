@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import pytest
 
 import polars as pl
+from polars import StringCache
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -29,7 +30,7 @@ def test_lazyframe_deprecated_serde() -> None:
     lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
 
     with pytest.deprecated_call():
-        json = lf.write_json()  # type: ignore[attr-defined]
+        json = lf.write_json()
     with pytest.deprecated_call():
         result_from = pl.LazyFrame.from_json(json)
     with pytest.deprecated_call():
@@ -125,13 +126,13 @@ def times2(x: pl.Series) -> pl.Series:
 def test_pickle_udf_expression() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
-    e = pl.col("a").map(times2)
+    e = pl.col("a").map_batches(times2)
     b = pickle.dumps(e)
     e = pickle.loads(b)
 
     assert df.select(e).to_dict(False) == {"a": [2, 4, 6]}
 
-    e = pl.col("a").map(times2, return_dtype=pl.Utf8)
+    e = pl.col("a").map_batches(times2, return_dtype=pl.Utf8)
     b = pickle.dumps(e)
     e = pickle.loads(b)
 
@@ -163,7 +164,7 @@ def df_times2(df: pl.DataFrame) -> pl.DataFrame:
 def test_pickle_lazyframe_udf() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
-    q = df.lazy().map(df_times2)
+    q = df.lazy().map_batches(df_times2)
     b = pickle.dumps(q)
 
     q = pickle.loads(b)
@@ -177,8 +178,15 @@ def test_pickle_lazyframe_nested_function_udf() -> None:
     def inner_df_times2(df: pl.DataFrame) -> pl.DataFrame:
         return df.select(pl.all() * 2)
 
-    q = df.lazy().map(inner_df_times2)
+    q = df.lazy().map_batches(inner_df_times2)
     b = pickle.dumps(q)
 
     q = pickle.loads(b)
     assert q.collect()["a"].to_list() == [2, 4, 6]
+
+
+@StringCache()
+def test_serde_categorical_series_10586() -> None:
+    s = pl.Series(["a", "b", "b", "a", "c"], dtype=pl.Categorical)
+    loaded_s = pickle.loads(pickle.dumps(s))
+    assert_series_equal(loaded_s, s)

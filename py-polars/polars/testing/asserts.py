@@ -12,6 +12,7 @@ from polars.datatypes import (
     DataTypeClass,
     List,
     Struct,
+    UInt64,
     Utf8,
     dtype_to_py_type,
     unpack_dtypes,
@@ -88,17 +89,17 @@ def assert_frame_equal(
     left_not_right = [c for c in left.columns if c not in right.columns]
     if left_not_right:
         raise AssertionError(
-            f"Columns {left_not_right} in left frame, but not in right."
+            f"columns {left_not_right!r} in left frame, but not in right"
         )
     right_not_left = [c for c in right.columns if c not in left.columns]
     if right_not_left:
         raise AssertionError(
-            f"Columns {right_not_left} in right frame, but not in left."
+            f"columns {right_not_left!r} in right frame, but not in left"
         )
 
     if check_column_order and left.columns != right.columns:
         raise AssertionError(
-            f"Columns are not in the same order:\n{left.columns!r}\n{right.columns!r}"
+            f"columns are not in the same order:\n{left.columns!r}\n{right.columns!r}"
         )
 
     if not check_row_order:
@@ -107,7 +108,7 @@ def assert_frame_equal(
             right = right.sort(by=left.columns)
         except ComputeError as exc:
             raise InvalidAssert(
-                "Cannot set 'check_row_order=False' on frame with unsortable columns."
+                "cannot set 'check_row_order=False' on frame with unsortable columns"
             ) from exc
 
     # note: does not assume a particular column order
@@ -124,7 +125,7 @@ def assert_frame_equal(
                 categorical_as_str=categorical_as_str,
             )
         except AssertionError as exc:
-            msg = f"Values for column {c!r} are different."
+            msg = f"values for column {c!r} are different."
             raise AssertionError(msg) from exc
 
 
@@ -196,7 +197,7 @@ def assert_frame_not_equal(
     except AssertionError:
         return
     else:
-        raise AssertionError("Expected the input frames to be unequal.")
+        raise AssertionError("expected the input frames to be unequal")
 
 
 def assert_series_equal(
@@ -330,7 +331,7 @@ def assert_series_not_equal(
     except AssertionError:
         return
     else:
-        raise AssertionError("Expected the input Series to be unequal.")
+        raise AssertionError("expected the input Series to be unequal")
 
 
 def _assert_series_inner(
@@ -407,7 +408,9 @@ def _assert_series_inner(
 
             if all(tp in UNSIGNED_INTEGER_DTYPES for tp in (left.dtype, right.dtype)):
                 # avoid potential "subtract-with-overflow" panic on uint math
-                s_diff = Series("diff", [abs(v1 - v2) for v1, v2 in zip(left, right)])
+                s_diff = Series(
+                    "diff", [abs(v1 - v2) for v1, v2 in zip(left, right)], dtype=UInt64
+                )
             else:
                 s_diff = (left - right).abs()
 

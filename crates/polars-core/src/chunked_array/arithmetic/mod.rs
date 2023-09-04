@@ -15,7 +15,7 @@ use polars_arrow::utils::combine_validities_and;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::utils::{align_chunks_binary, align_chunks_binary_owned};
+use crate::utils::align_chunks_binary_owned;
 
 pub trait ArrayArithmetics
 where
@@ -124,8 +124,8 @@ impl Add for &BinaryChunked {
                     self.apply_mut(|s| {
                         concat_binary_arrs(s, rhs, &mut buf);
                         let out = buf.as_slice();
-                        // safety: lifetime is bound to the outer scope and the
-                        // ref is valid for the lifetime of this closure
+                        // SAFETY: lifetime is bound to the outer scope and the
+                        // ref is valid for the lifetime of this closure.
                         unsafe { std::mem::transmute::<_, &'static [u8]>(out) }
                     })
                 },
@@ -139,24 +139,16 @@ impl Add for &BinaryChunked {
             return match lhs {
                 Some(lhs) => rhs.apply_mut(|s| {
                     concat_binary_arrs(lhs, s, &mut buf);
-
                     let out = buf.as_slice();
-                    // safety: lifetime is bound to the outer scope and the
-                    // ref is valid for the lifetime of this closure
+                    // SAFETY: lifetime is bound to the outer scope and the
+                    // ref is valid for the lifetime of this closure.
                     unsafe { std::mem::transmute::<_, &'static [u8]>(out) }
                 }),
                 None => BinaryChunked::full_null(self.name(), rhs.len()),
             };
         }
 
-        let (lhs, rhs) = align_chunks_binary(self, rhs);
-        let chunks = lhs
-            .downcast_iter()
-            .zip(rhs.downcast_iter())
-            .map(|(a, b)| Box::new(concat_binary(a, b)) as ArrayRef)
-            .collect();
-
-        unsafe { BinaryChunked::from_chunks(self.name(), chunks) }
+        arity::binary(self, rhs, concat_binary)
     }
 }
 
@@ -173,7 +165,7 @@ impl Add<&[u8]> for &BinaryChunked {
 
     fn add(self, rhs: &[u8]) -> Self::Output {
         let arr = BinaryArray::<i64>::from_slice([rhs]);
-        let rhs = unsafe { BinaryChunked::from_chunks("", vec![Box::new(arr) as ArrayRef]) };
+        let rhs: BinaryChunked = arr.into();
         self.add(&rhs)
     }
 }
@@ -193,26 +185,19 @@ impl Add for &BooleanChunked {
     type Output = IdxCa;
 
     fn add(self, rhs: Self) -> Self::Output {
-        // broadcasting path rhs
+        // Broadcasting path rhs.
         if rhs.len() == 1 {
             let rhs = rhs.get(0);
             return match rhs {
-                Some(rhs) => self.apply_cast_numeric(|v| v as IdxSize + rhs as IdxSize),
+                Some(rhs) => self.apply_values_generic(|v| v as IdxSize + rhs as IdxSize),
                 None => IdxCa::full_null(self.name(), self.len()),
             };
         }
-        // broadcasting path lhs
+        // Broadcasting path lhs.
         if self.len() == 1 {
             return rhs.add(self);
         }
-        let (lhs, rhs) = align_chunks_binary(self, rhs);
-        let chunks = lhs
-            .downcast_iter()
-            .zip(rhs.downcast_iter())
-            .map(|(a, b)| Box::new(add_boolean(a, b)) as ArrayRef)
-            .collect::<Vec<_>>();
-
-        unsafe { IdxCa::from_chunks(self.name(), chunks) }
+        arity::binary(self, rhs, add_boolean)
     }
 }
 
@@ -240,13 +225,13 @@ pub(crate) mod test {
     #[allow(clippy::eq_op)]
     fn test_chunk_mismatch() {
         let (a1, a2) = create_two_chunked();
-        // with different chunks
+        // With different chunks.
         let _ = &a1 + &a2;
         let _ = &a1 - &a2;
         let _ = &a1 / &a2;
         let _ = &a1 * &a2;
 
-        // with same chunks
+        // With same chunks.
         let _ = &a1 + &a1;
         let _ = &a1 - &a1;
         let _ = &a1 / &a1;
