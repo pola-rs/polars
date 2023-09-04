@@ -952,9 +952,8 @@ mod test {
                 },
             )
             .unwrap();
-        let mut lower_bound = keys[1].clone();
         time_key.rename("");
-        lower_bound.rename("");
+        let lower_bound = keys[1].clone().with_name("");
         assert!(time_key.series_equal(&lower_bound));
         Ok(())
     }

@@ -52,11 +52,11 @@ impl PyDataFrame {
         infer_schema_length: Option<usize>,
         schema_overwrite: Option<Schema>,
     ) -> PyResult<Self> {
-        // object builder must be registered. this is done on import
+        // Object builder must be registered, this is done on import.
         let schema =
             rows_to_schema_supertypes(&rows, infer_schema_length.map(|n| std::cmp::max(1, n)))
                 .map_err(PyPolarsErr::from)?;
-        // replace inferred nulls with boolean and erase scale from inferred decimals
+        // Replace inferred nulls with boolean and erase scale from inferred decimals.
         let fields = schema.iter_fields().map(|mut fld| match fld.data_type() {
             DataType::Null => {
                 fld.coerce(DataType::Boolean);
@@ -75,7 +75,7 @@ impl PyDataFrame {
                 if let Some((name_, dtype_)) = schema.get_at_index_mut(i) {
                     *name_ = name;
 
-                    // if user sets dtype unknown, we use the inferred datatype
+                    // If user sets dtype unknown, we use the inferred datatype.
                     if !matches!(dtype, DataType::Unknown) {
                         *dtype_ = dtype;
                     }
@@ -104,8 +104,8 @@ impl From<DataFrame> for PyDataFrame {
 )]
 impl PyDataFrame {
     pub fn into_raw_parts(&mut self) -> (usize, usize, usize) {
-        // used for polars-lazy python node. This takes the dataframe from underneath of you, so
-        // don't use this anywhere else.
+        // Used for polars-lazy python node. This takes the dataframe from
+        // underneath of you, so don't use this anywhere else.
         let mut df = std::mem::take(&mut self.df);
         let cols = unsafe { std::mem::take(df.get_columns_mut()) };
         let (ptr, len, cap) = cols.into_raw_parts();
@@ -176,15 +176,7 @@ impl PyDataFrame {
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let eol_char = eol_char.as_bytes()[0];
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
-        let quote_char = if let Some(s) = quote_char {
-            if s.is_empty() {
-                None
-            } else {
-                Some(s.as_bytes()[0])
-            }
-        } else {
-            None
-        };
+        let quote_char = quote_char.and_then(|s| s.as_bytes().first().copied());
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             overwrite_dtype
@@ -387,26 +379,21 @@ impl PyDataFrame {
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
-        // memmap the file first
+        // memmap the file first.
         let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
         let mmap_read: ReaderBytes = (&mmap_bytes_r).into();
         let bytes = mmap_read.deref();
 
-        // Happy path is our column oriented json as that is most performant
-        // on failure we try
+        // Happy path is our column oriented json as that is most performant,
+        // on failure we try the arrow json reader instead, which is row-oriented.
         match serde_json::from_slice::<DataFrame>(bytes) {
             Ok(df) => Ok(df.into()),
             Err(e) => {
                 let msg = format!("{e}");
-                // parsing succeeded, but the dataframe was invalid
                 if msg.contains("successful parse invalid data") {
                     let e = PyPolarsErr::from(PolarsError::ComputeError(msg.into()));
                     Err(PyErr::from(e))
-                }
-                // parsing error
-                // try arrow json reader instead
-                // this is row oriented
-                else {
+                } else {
                     let mut builder =
                         JsonReader::new(mmap_bytes_r).with_json_format(JsonFormat::Json);
 
@@ -464,9 +451,10 @@ impl PyDataFrame {
                 .with_json_format(JsonFormat::Json)
                 .finish(&mut self.df),
             (true, _) => serde_json::to_writer_pretty(file, &self.df)
-                .map_err(|e| PolarsError::ComputeError(format!("{e}").into())),
-            (false, _) => serde_json::to_writer(file, &self.df)
-                .map_err(|e| PolarsError::ComputeError(format!("{e}").into())),
+                .map_err(|e| polars_err!(ComputeError: "{e}")),
+            (false, _) => {
+                serde_json::to_writer(file, &self.df).map_err(|e| polars_err!(ComputeError: "{e}"))
+            },
         };
         r.map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
         Ok(())
@@ -497,9 +485,8 @@ impl PyDataFrame {
         infer_schema_length: Option<usize>,
         schema_overwrite: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
-        // safety:
-        // wrap is transparent
-        let rows: Vec<Row> = unsafe { std::mem::transmute(rows) };
+        // SAFETY: Wrap<T> is transparent.
+        let rows = unsafe { std::mem::transmute::<Vec<Wrap<Row>>, Vec<Row>>(rows) };
         Self::finish_from_rows(
             rows,
             infer_schema_length,
@@ -513,13 +500,12 @@ impl PyDataFrame {
         infer_schema_length: Option<usize>,
         schema_overwrite: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
-        // if given, read dict fields in schema order
+        // If given, read dict fields in schema order.
         let mut schema_columns = PlIndexSet::new();
         if let Some(schema) = &schema_overwrite {
             schema_columns.extend(schema.0.iter_names().map(|n| n.to_string()))
         }
         let (rows, names) = dicts_to_rows(dicts, infer_schema_length, schema_columns)?;
-
         let mut pydf = Self::finish_from_rows(
             rows,
             infer_schema_length,
@@ -527,13 +513,9 @@ impl PyDataFrame {
         )?;
 
         unsafe {
-            pydf.df
-                .get_columns_mut()
-                .iter_mut()
-                .zip(&names)
-                .for_each(|(s, name)| {
-                    s.rename(name);
-                });
+            for (s, name) in pydf.df.get_columns_mut().iter_mut().zip(&names) {
+                s.rename(name);
+            }
         }
         let length = names.len();
         if names.into_iter().collect::<PlHashSet<_>>().len() != length {
@@ -591,7 +573,7 @@ impl PyDataFrame {
         if let Ok(s) = py_f.extract::<&str>(py) {
             py.allow_threads(|| {
                 let f = std::fs::File::create(s).unwrap();
-                // no need for a buffered writer, because the csv writer does internal buffering
+                // No need for a buffered writer, because the csv writer does internal buffering.
                 CsvWriter::new(f)
                     .has_header(has_header)
                     .with_delimiter(separator)
@@ -745,39 +727,17 @@ impl PyDataFrame {
         }
         let st = st?;
 
-        match st {
-            DataType::UInt32 => self
-                .df
-                .to_ndarray::<UInt32Type>(order.0)
-                .ok()
-                .map(|arr| arr.into_pyarray(py).into_py(py)),
-            DataType::UInt64 => self
-                .df
-                .to_ndarray::<UInt64Type>(order.0)
-                .ok()
-                .map(|arr| arr.into_pyarray(py).into_py(py)),
-            DataType::Int32 => self
-                .df
-                .to_ndarray::<Int32Type>(order.0)
-                .ok()
-                .map(|arr| arr.into_pyarray(py).into_py(py)),
-            DataType::Int64 => self
-                .df
-                .to_ndarray::<Int64Type>(order.0)
-                .ok()
-                .map(|arr| arr.into_pyarray(py).into_py(py)),
-            DataType::Float32 => self
-                .df
-                .to_ndarray::<Float32Type>(order.0)
-                .ok()
-                .map(|arr| arr.into_pyarray(py).into_py(py)),
-            DataType::Float64 => self
-                .df
-                .to_ndarray::<Float64Type>(order.0)
-                .ok()
-                .map(|arr| arr.into_pyarray(py).into_py(py)),
-            _ => None,
-        }
+        #[rustfmt::skip]
+        let pyarray = match st {
+            DataType::UInt32 => self.df.to_ndarray::<UInt32Type>(order.0).ok()?.into_pyarray(py).into_py(py),
+            DataType::UInt64 => self.df.to_ndarray::<UInt64Type>(order.0).ok()?.into_pyarray(py).into_py(py),
+            DataType::Int32 => self.df.to_ndarray::<Int32Type>(order.0).ok()?.into_pyarray(py).into_py(py),
+            DataType::Int64 => self.df.to_ndarray::<Int64Type>(order.0).ok()?.into_pyarray(py).into_py(py),
+            DataType::Float32 => self.df.to_ndarray::<Float32Type>(order.0).ok()?.into_pyarray(py).into_py(py),
+            DataType::Float64 => self.df.to_ndarray::<Float64Type>(order.0).ok()?.into_pyarray(py).into_py(py),
+            _ => return None,
+        };
+        Some(pyarray)
     }
 
     #[cfg(feature = "parquet")]
@@ -1149,34 +1109,27 @@ impl PyDataFrame {
 
         let function = move |df: DataFrame| {
             Python::with_gil(|py| {
-                // get the pypolars module
                 let pypolars = PyModule::import(py, "polars").unwrap();
-
-                // create a PyDataFrame struct/object for Python
                 let pydf = PyDataFrame::new(df);
-
-                // Wrap this PySeries object in the python side DataFrame wrapper
                 let python_df_wrapper =
                     pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
 
-                // call the lambda and get a python side DataFrame wrapper
+                // Call the lambda and get a python-side DataFrame wrapper.
                 let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                     Ok(pyobj) => pyobj,
                     Err(e) => panic!("UDF failed: {}", e.value(py)),
                 };
-                // unpack the wrapper in a PyDataFrame
                 let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
-                "Could not get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
-            );
-                // Downcast to Rust
+                    "Could not get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
+                );
+
                 let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
-                // Finally get the actual DataFrame
                 Ok(pydf.df)
             })
         };
         // We don't use `py.allow_threads(|| gb.par_apply(..)` because that segfaulted
-        // due to code related to Pyo3 or rayon, cannot reproduce it in native polars
-        // so we lose parallelism, but it doesn't really matter because we are GIL bound anyways
+        // due to code related to Pyo3 or rayon, cannot reproduce it in native polars.
+        // So we lose parallelism, but it doesn't really matter because we are GIL bound anyways
         // and this function should not be used in idiomatic polars anyway.
         let df = gb.apply(function).map_err(PyPolarsErr::from)?;
 
@@ -1218,14 +1171,8 @@ impl PyDataFrame {
         aggregate_expr: Option<PyExpr>,
         separator: Option<&str>,
     ) -> PyResult<Self> {
-        let fun = match maintain_order {
-            true => pivot_stable,
-            false => pivot,
-        };
-        let agg_expr = match aggregate_expr {
-            Some(aggregate_expr) => Some(aggregate_expr.inner),
-            None => None,
-        };
+        let fun = if maintain_order { pivot_stable } else { pivot };
+        let agg_expr = aggregate_expr.map(|expr| expr.inner);
         let df = fun(
             &self.df,
             values,
@@ -1251,8 +1198,8 @@ impl PyDataFrame {
             self.df.partition_by(by, include_key)
         }
         .map_err(PyPolarsErr::from)?;
-        // Safety:
-        // Repr mem layout
+
+        // SAFETY: PyDataFrame is a repr(transparent) DataFrame.
         Ok(unsafe { std::mem::transmute::<Vec<DataFrame>, Vec<PyDataFrame>>(out) })
     }
 
@@ -1360,48 +1307,19 @@ impl PyDataFrame {
             self.df.as_single_chunk_par();
             let df = &self.df;
 
-            let output_type = output_type.map(|dt| dt.0);
-            let out = match output_type {
-                Some(DataType::Int32) => {
-                    apply_lambda_with_primitive_out_type::<Int32Type>(df, py, lambda, 0, None)
-                        .into_series()
-                },
-                Some(DataType::Int64) => {
-                    apply_lambda_with_primitive_out_type::<Int64Type>(df, py, lambda, 0, None)
-                        .into_series()
-                },
-                Some(DataType::UInt32) => {
-                    apply_lambda_with_primitive_out_type::<UInt32Type>(df, py, lambda, 0, None)
-                        .into_series()
-                },
-                Some(DataType::UInt64) => {
-                    apply_lambda_with_primitive_out_type::<UInt64Type>(df, py, lambda, 0, None)
-                        .into_series()
-                },
-                Some(DataType::Float32) => {
-                    apply_lambda_with_primitive_out_type::<Float32Type>(df, py, lambda, 0, None)
-                        .into_series()
-                },
-                Some(DataType::Float64) => {
-                    apply_lambda_with_primitive_out_type::<Float64Type>(df, py, lambda, 0, None)
-                        .into_series()
-                },
-                Some(DataType::Boolean) => {
-                    apply_lambda_with_bool_out_type(df, py, lambda, 0, None).into_series()
-                },
-                Some(DataType::Date) => {
-                    apply_lambda_with_primitive_out_type::<Int32Type>(df, py, lambda, 0, None)
-                        .into_date()
-                        .into_series()
-                },
-                Some(DataType::Datetime(tu, tz)) => {
-                    apply_lambda_with_primitive_out_type::<Int64Type>(df, py, lambda, 0, None)
-                        .into_datetime(tu, tz)
-                        .into_series()
-                },
-                Some(DataType::Utf8) => {
-                    apply_lambda_with_utf8_out_type(df, py, lambda, 0, None).into_series()
-                },
+            use apply_lambda_with_primitive_out_type as apply;
+            #[rustfmt::skip]
+            let out = match output_type.map(|dt| dt.0) {
+                Some(DataType::Int32) => apply::<Int32Type>(df, py, lambda, 0, None).into_series(),
+                Some(DataType::Int64) => apply::<Int64Type>(df, py, lambda, 0, None).into_series(),
+                Some(DataType::UInt32) => apply::<UInt32Type>(df, py, lambda, 0, None).into_series(),
+                Some(DataType::UInt64) => apply::<UInt64Type>(df, py, lambda, 0, None).into_series(),
+                Some(DataType::Float32) => apply::<Float32Type>(df, py, lambda, 0, None).into_series(),
+                Some(DataType::Float64) => apply::<Float64Type>(df, py, lambda, 0, None).into_series(),
+                Some(DataType::Date) => apply::<Int32Type>(df, py, lambda, 0, None).into_date().into_series(),
+                Some(DataType::Datetime(tu, tz)) => apply::<Int64Type>(df, py, lambda, 0, None).into_datetime(tu, tz).into_series(),
+                Some(DataType::Boolean) => apply_lambda_with_bool_out_type(df, py, lambda, 0, None).into_series(),
+                Some(DataType::Utf8) => apply_lambda_with_utf8_out_type(df, py, lambda, 0, None).into_series(),
                 _ => return apply_lambda_unknown(df, py, lambda, inference_size),
             };
 
