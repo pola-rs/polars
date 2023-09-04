@@ -26,7 +26,7 @@ pub struct SQLContext {
 }
 
 impl SQLContext {
-    /// Create a new SQLContext
+    /// Create a new SQLContext.
     /// ```rust
     /// # use polars_sql::SQLContext;
     /// # fn main() {
@@ -103,7 +103,7 @@ impl SQLContext {
             .map_err(to_compute_err)?;
         polars_ensure!(ast.len() == 1, ComputeError: "One and only one statement at a time please");
         let res = self.execute_statement(ast.get(0).unwrap());
-        // every execution should clear the cte map
+        // Every execution should clear the CTE map.
         self.cte_map.borrow_mut().clear();
         res
     }
@@ -115,11 +115,8 @@ impl SQLContext {
     }
 
     fn get_table_from_current_scope(&mut self, name: &str) -> Option<LazyFrame> {
-        if let Some(lf) = self.table_map.get(name) {
-            Some(lf.clone())
-        } else {
-            self.cte_map.borrow().get(name).cloned()
-        }
+        let table_name = self.table_map.get(name).cloned();
+        table_name.or_else(|| self.cte_map.borrow().get(name).cloned())
     }
 
     pub(crate) fn execute_statement(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
@@ -141,9 +138,7 @@ impl SQLContext {
 
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         self.register_ctes(query)?;
-
         let lf = self.process_set_expr(&query.body, query)?;
-
         self.process_limit_offset(lf, &query.limit, &query.offset)
     }
 
@@ -187,15 +182,17 @@ impl SQLContext {
             _ => concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any)),
         }
     }
+
     // EXPLAIN SELECT * FROM DF
     fn execute_explain(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         match stmt {
             Statement::Explain { statement, .. } => {
                 let lf = self.execute_statement(statement)?;
                 let plan = lf.describe_optimized_plan()?;
-                let mut plan = plan.split('\n').collect::<Series>();
-                plan.rename("Logical Plan");
-
+                let plan = plan
+                    .split('\n')
+                    .collect::<Series>()
+                    .with_name("Logical Plan");
                 let df = DataFrame::new(vec![plan])?;
                 Ok(df.lazy())
             },
@@ -203,7 +200,7 @@ impl SQLContext {
         }
     }
 
-    /// SHOW TABLES
+    // SHOW TABLES
     fn execute_show_tables(&mut self, _: &Statement) -> PolarsResult<LazyFrame> {
         let tables = Series::new("name", self.get_tables());
         let df = DataFrame::new(vec![tables])?;
@@ -271,10 +268,11 @@ impl SQLContext {
 
         Ok(lf)
     }
-    /// execute the 'SELECT' part of the query
+
+    /// Execute the 'SELECT' part of the query.
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
-        // Determine involved dataframe
-        // Implicit join require some more work in query parsers, Explicit join are preferred for now.
+        // Determine involved dataframes.
+        // Implicit joins require some more work in query parsers, explicit joins are preferred for now.
         let sql_tbl: &TableWithJoins = select_stmt
             .from
             .get(0)
@@ -284,16 +282,13 @@ impl SQLContext {
         let mut contains_wildcard = false;
         let mut contains_wildcard_exclude = false;
 
-        // Filter Expression
-        lf = match select_stmt.selection.as_ref() {
-            Some(expr) => {
-                let filter_expression = parse_sql_expr(expr, self)?;
-                lf.filter(filter_expression)
-            },
-            None => lf,
-        };
+        // Filter expression.
+        if let Some(expr) = select_stmt.selection.as_ref() {
+            let filter_expression = parse_sql_expr(expr, self)?;
+            lf = lf.filter(filter_expression)
+        }
 
-        // Column Projections
+        // Column projections.
         let projections: Vec<_> = select_stmt
             .projection
             .iter()
@@ -323,8 +318,7 @@ impl SQLContext {
             })
             .collect::<PolarsResult<_>>()?;
 
-        // Check for group by
-        // After projection since there might be number.
+        // Check for group by (after projections since there might be numbers).
         let group_by_keys: Vec<Expr> = select_stmt
             .group_by
             .iter()
@@ -392,11 +386,11 @@ impl SQLContext {
 
                 let exclude_expr = projections.iter().find(|expr| {
                     if let Expr::Exclude(_, excludes) = expr {
-                        excludes.iter().for_each(|excluded| {
+                        for excluded in excludes.iter() {
                             if let Excluded::Name(name) = excluded {
-                                dropped_names.push((*name).to_string());
+                                dropped_names.push(name.to_string());
                             }
-                        });
+                        }
                         true
                     } else {
                         false
@@ -406,7 +400,6 @@ impl SQLContext {
                 if exclude_expr.is_some() {
                     lf = lf.with_columns(projections);
                     lf = self.process_order_by(lf, &query.order_by)?;
-
                     lf.drop_columns(dropped_names)
                 } else {
                     lf = lf.select(projections);
@@ -418,17 +411,16 @@ impl SQLContext {
             }
         } else {
             lf = self.process_group_by(lf, contains_wildcard, &group_by_keys, &projections)?;
-
             lf = self.process_order_by(lf, &query.order_by)?;
 
-            // Apply optional 'having' clause, post-aggregation
+            // Apply optional 'having' clause, post-aggregation.
             match select_stmt.having.as_ref() {
                 Some(expr) => lf.filter(parse_sql_expr(expr, self)?),
                 None => lf,
             }
         };
 
-        // Apply optional 'distinct' clause
+        // Apply optional 'distinct' clause.
         lf = match &select_stmt.distinct {
             Some(Distinct::Distinct) => lf.unique_stable(None, UniqueKeepStrategy::Any),
             Some(Distinct::On(exprs)) => {
@@ -539,11 +531,7 @@ impl SQLContext {
 
         for ob in ob {
             by.push(parse_sql_expr(&ob.expr, self)?);
-            if let Some(false) = ob.asc {
-                descending.push(true)
-            } else {
-                descending.push(false)
-            }
+            descending.push(!ob.asc.unwrap_or(true));
             polars_ensure!(
                 ob.nulls_first.is_none(),
                 ComputeError: "nulls first/last is not yet supported",
@@ -560,8 +548,8 @@ impl SQLContext {
         group_by_keys: &[Expr],
         projections: &[Expr],
     ) -> PolarsResult<LazyFrame> {
-        // check group_by and projection due to difference between SQL and polars
-        // Return error on wild card, shouldn't process this
+        // Check group_by and projection due to difference between SQL and polars.
+        // Return error on wild card, shouldn't process this.
         polars_ensure!(
             !contains_wildcard,
             ComputeError: "group_by error: can't process wildcard in group_by"
@@ -571,13 +559,13 @@ impl SQLContext {
         let group_by_keys_schema =
             expressions_to_schema(group_by_keys, &schema_before, Context::Default)?;
 
-        // remove the group_by keys as polars adds those implicitly
+        // Remove the group_by keys as polars adds those implicitly.
         let mut aggregation_projection = Vec::with_capacity(projections.len());
         let mut aliases: BTreeSet<&str> = BTreeSet::new();
 
         for mut e in projections {
-            // if it is a simple expression & has alias,
-            // we must defer the aliasing until after the group_by
+            // If it is a simple expression & has alias,
+            // we must defer the aliasing until after the group_by.
             if e.clone().meta().is_simple_projection() {
                 if let Expr::Alias(expr, name) = e {
                     aliases.insert(name);
@@ -594,7 +582,7 @@ impl SQLContext {
         let aggregated = lf.group_by(group_by_keys).agg(&aggregation_projection);
         let projection_schema =
             expressions_to_schema(projections, &schema_before, Context::Default)?;
-        // a final projection to get the proper order
+        // A final projection to get the proper order.
         let final_projection = projection_schema
             .iter_names()
             .zip(projections)

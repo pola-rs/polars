@@ -348,7 +348,7 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn reverse(self) -> Self {
-        self.select_local(vec![col("*").reverse()])
+        self.select(vec![col("*").reverse()])
     }
 
     /// Check the if the `names` are available in the `schema`, if not
@@ -431,22 +431,7 @@ impl LazyFrame {
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
     {
-        let columns: Vec<SmartString> = columns
-            .into_iter()
-            .map(|name| name.as_ref().into())
-            .collect();
-        self.drop_columns_impl(columns)
-    }
-
-    #[allow(clippy::ptr_arg)]
-    fn drop_columns_impl(self, columns: Vec<SmartString>) -> Self {
-        if let Some(lp) = self.check_names(&columns, None) {
-            lp
-        } else {
-            self.map_private(FunctionNode::Drop {
-                names: columns.into(),
-            })
-        }
+        self.select(vec![col("*").exclude(columns)])
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -454,7 +439,7 @@ impl LazyFrame {
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
     pub fn shift(self, periods: i64) -> Self {
-        self.select_local(vec![col("*").shift(periods)])
+        self.select(vec![col("*").shift(periods)])
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -462,7 +447,7 @@ impl LazyFrame {
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
     pub fn shift_and_fill<E: Into<Expr>>(self, periods: i64, fill_value: E) -> Self {
-        self.select_local(vec![col("*").shift_and_fill(periods, fill_value.into())])
+        self.select(vec![col("*").shift_and_fill(periods, fill_value.into())])
     }
 
     /// Fill None values in the DataFrame with an expression.
@@ -793,14 +778,6 @@ impl LazyFrame {
     fn select_impl(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().project(exprs, options).build();
-        Self::from_logical_plan(lp, opt_state)
-    }
-
-    /// A projection that doesn't get optimized and may drop projections if they are not in
-    /// schema after optimization
-    fn select_local(self, exprs: Vec<Expr>) -> Self {
-        let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().project_local(exprs).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -1177,14 +1154,14 @@ impl LazyFrame {
     ///
     /// Aggregated columns will have the same names as the original columns.
     pub fn max(self) -> LazyFrame {
-        self.select_local(vec![col("*").max()])
+        self.select(vec![col("*").max()])
     }
 
     /// Aggregate all the columns as their minimum values.
     ///
     /// Aggregated columns will have the same names as the original columns.
     pub fn min(self) -> LazyFrame {
-        self.select_local(vec![col("*").min()])
+        self.select(vec![col("*").min()])
     }
 
     /// Aggregate all the columns as their sum values.
@@ -1197,7 +1174,7 @@ impl LazyFrame {
     /// silently wrap.
     /// - String columns will sum to None.
     pub fn sum(self) -> LazyFrame {
-        self.select_local(vec![col("*").sum()])
+        self.select(vec![col("*").sum()])
     }
 
     /// Aggregate all the columns as their mean values.
@@ -1205,7 +1182,7 @@ impl LazyFrame {
     /// - Boolean and integer columns are converted to `f64` before computing the mean.
     /// - String columns will have a mean of None.
     pub fn mean(self) -> LazyFrame {
-        self.select_local(vec![col("*").mean()])
+        self.select(vec![col("*").mean()])
     }
 
     /// Aggregate all the columns as their median values.
@@ -1214,12 +1191,12 @@ impl LazyFrame {
     ///   susceptible to overflow before this conversion occurs.
     /// - String columns will sum to None.
     pub fn median(self) -> LazyFrame {
-        self.select_local(vec![col("*").median()])
+        self.select(vec![col("*").median()])
     }
 
     /// Aggregate all the columns as their quantile values.
     pub fn quantile(self, quantile: Expr, interpol: QuantileInterpolOptions) -> LazyFrame {
-        self.select_local(vec![col("*").quantile(quantile, interpol)])
+        self.select(vec![col("*").quantile(quantile, interpol)])
     }
 
     /// Aggregate all the columns as their standard deviation values.
@@ -1235,7 +1212,7 @@ impl LazyFrame {
     ///
     /// Source: [Numpy](https://numpy.org/doc/stable/reference/generated/numpy.std.html#)
     pub fn std(self, ddof: u8) -> LazyFrame {
-        self.select_local(vec![col("*").std(ddof)])
+        self.select(vec![col("*").std(ddof)])
     }
 
     /// Aggregate all the columns as their variance values.
@@ -1248,7 +1225,7 @@ impl LazyFrame {
     ///
     /// Source: [Numpy](https://numpy.org/doc/stable/reference/generated/numpy.var.html#)
     pub fn var(self, ddof: u8) -> LazyFrame {
-        self.select_local(vec![col("*").var(ddof)])
+        self.select(vec![col("*").var(ddof)])
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
@@ -1265,7 +1242,7 @@ impl LazyFrame {
 
     /// Aggregate all the columns as the sum of their null value count.
     pub fn null_count(self) -> LazyFrame {
-        self.select_local(vec![col("*").null_count()])
+        self.select(vec![col("*").null_count()])
     }
 
     /// Drop non-unique rows and maintain the order of kept rows.

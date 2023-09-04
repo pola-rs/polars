@@ -269,34 +269,6 @@ pub fn create_physical_plan(
                 options,
             }))
         },
-        LocalProjection {
-            expr,
-            input,
-            schema: _schema,
-            ..
-        } => {
-            let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-
-            let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            let mut state = ExpressionConversionState::new(POOL.current_num_threads() > expr.len());
-            let phys_expr = create_physical_expressions(
-                &expr,
-                Context::Default,
-                expr_arena,
-                Some(&input_schema),
-                &mut state,
-            )?;
-            Ok(Box::new(executors::ProjectionExec {
-                input,
-                cse_exprs: vec![],
-                expr: phys_expr,
-                has_windows: state.has_windows,
-                input_schema,
-                #[cfg(test)]
-                schema: _schema,
-                options: Default::default(),
-            }))
-        },
         DataFrameScan {
             df,
             projection,

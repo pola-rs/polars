@@ -399,7 +399,14 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-duration")]
             Duration(v, _) => NumCast::from(*v),
             #[cfg(feature = "dtype-decimal")]
-            Decimal(v, _) => NumCast::from(*v),
+            Decimal(v, scale) => {
+                if *scale == 0 {
+                    NumCast::from(*v)
+                } else {
+                    let f: Option<f64> = NumCast::from(*v);
+                    NumCast::from(f? / 10f64.powi(*scale as _))
+                }
+            },
             Boolean(v) => {
                 if *v {
                     NumCast::from(1)

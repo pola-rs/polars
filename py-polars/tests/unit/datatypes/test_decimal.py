@@ -6,6 +6,7 @@ from decimal import Decimal as D
 from typing import Any, NamedTuple
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def permutations_int_dec_none() -> list[tuple[D | int | None, ...]]:
@@ -82,6 +83,28 @@ def test_init_decimal_dtype() -> None:
         {"a": [D("-0.01"), D("1.2345678"), D("500")]}, schema={"a": pl.Decimal}
     )
     assert df["a"].is_numeric()
+
+
+def test_decimal_convert_to_float_by_schema() -> None:
+    # Column Based
+    df = pl.DataFrame(
+        {"a": [D("1"), D("2.55"), D("45.000"), D("10.0")]}, schema={"a": pl.Float64}
+    )
+    expected = pl.DataFrame({"a": [1.0, 2.55, 45.0, 10.0]})
+    assert_frame_equal(df, expected)
+
+    # Row Based
+    df = pl.DataFrame(
+        [[D("1"), D("2.55"), D("45.000"), D("10.0")]], schema={"a": pl.Float64}
+    )
+    expected = pl.DataFrame({"a": [1.0, 2.55, 45.0, 10.0]})
+    assert_frame_equal(df, expected)
+
+
+def test_df_constructor_convert_decimal_to_float_9873() -> None:
+    result = pl.DataFrame([[D("45.0000")], [D("45.0000")]], schema={"a": pl.Float64})
+    expected = pl.DataFrame({"a": [45.0, 45.0]})
+    assert_frame_equal(result, expected)
 
 
 def test_decimal_cast() -> None:

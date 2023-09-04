@@ -324,6 +324,7 @@ impl ExprIdentifierVisitor<'_> {
                 function: FunctionExpr::Random { .. },
                 ..
             } => REFUSE_NO_MEMBER,
+            AExpr::AnonymousFunction { .. } => REFUSE_NO_MEMBER,
             _ => {
                 // During aggregation we only store elementwise operation in the state
                 // other operations we cannot add to the state as they have the output size of the

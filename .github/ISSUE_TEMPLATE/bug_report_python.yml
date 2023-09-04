@@ -31,6 +31,15 @@ body:
       required: true
 
   - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: >
+        Set the environment variable ``POLARS_VERBOSE=1`` before running the query.
+        Paste the output of ``stderr`` here.
+      render: shell
+
+  - type: textarea
     id: problem
     attributes:
       label: Issue description
@@ -64,3 +73,4 @@ body:
         </details>
     validations:
       required: true
+

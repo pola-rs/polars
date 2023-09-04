@@ -34,35 +34,6 @@ def test_arg_true() -> None:
     assert_frame_equal(res, expected)
 
 
-def test_col_select() -> None:
-    df = pl.DataFrame(
-        {
-            "ham": [1, 2, 3],
-            "hamburger": [11, 22, 33],
-            "foo": [3, 2, 1],
-            "bar": ["a", "b", "c"],
-        }
-    )
-
-    # Single column
-    assert df.select(pl.col("foo")).columns == ["foo"]
-    # Regex
-    assert df.select(pl.col("*")).columns == ["ham", "hamburger", "foo", "bar"]
-    assert df.select(pl.col("^ham.*$")).columns == ["ham", "hamburger"]
-    assert df.select(pl.col("*").exclude("ham")).columns == ["hamburger", "foo", "bar"]
-    # Multiple inputs
-    assert df.select(pl.col(["hamburger", "foo"])).columns == ["hamburger", "foo"]
-    assert df.select(pl.col("hamburger", "foo")).columns == ["hamburger", "foo"]
-    assert df.select(pl.col(pl.Series(["ham", "foo"]))).columns == ["ham", "foo"]
-    # Dtypes
-    assert df.select(pl.col(pl.Utf8)).columns == ["bar"]
-    assert df.select(pl.col(pl.Int64, pl.Float64)).columns == [
-        "ham",
-        "hamburger",
-        "foo",
-    ]
-
-
 def test_suffix(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select([pl.all().suffix("_reverse")])

@@ -24,25 +24,24 @@ fn offsets_to_groups(offsets: &[i64]) -> Option<GroupsProxy> {
     let mut start = offsets[0];
     let end = *offsets.last().unwrap();
     let fits_into_idx = (end - start) <= IdxSize::MAX as i64;
-
-    if fits_into_idx {
-        let groups = offsets
-            .iter()
-            .skip(1)
-            .map(|end| {
-                let offset = start as IdxSize;
-                let len = (*end - start) as IdxSize;
-                start = *end;
-                [offset, len]
-            })
-            .collect();
-        Some(GroupsProxy::Slice {
-            groups,
-            rolling: false,
-        })
-    } else {
-        None
+    if !fits_into_idx {
+        return None;
     }
+
+    let groups = offsets
+        .iter()
+        .skip(1)
+        .map(|end| {
+            let offset = start as IdxSize;
+            let len = (*end - start) as IdxSize;
+            start = *end;
+            [offset, len]
+        })
+        .collect();
+    Some(GroupsProxy::Slice {
+        groups,
+        rolling: false,
+    })
 }
 
 fn run_per_sublist(
@@ -75,7 +74,7 @@ fn run_per_sublist(
                 })
             })
             .collect();
-        err = m_err.lock().unwrap().take();
+        err = m_err.into_inner().unwrap();
         ca
     } else {
         let mut df_container = DataFrame::new_no_checks(vec![]);
@@ -119,10 +118,10 @@ fn run_on_group_by_engine(
     let arr = lst.downcast_iter().next().unwrap();
     let groups = offsets_to_groups(arr.offsets()).unwrap();
 
-    // list elements in a series
+    // List elements in a series.
     let values = Series::try_from(("", arr.values().clone())).unwrap();
     let inner_dtype = lst.inner_dtype();
-    // ensure we use the logical type
+    // Ensure we use the logical type.
     let values = values.cast(&inner_dtype).unwrap();
 
     let df_context = DataFrame::new_no_checks(vec![values]);
@@ -130,15 +129,14 @@ fn run_on_group_by_engine(
 
     let state = ExecutionState::new();
     let mut ac = phys_expr.evaluate_on_groups(&df_context, &groups, &state)?;
-    let mut out = match ac.agg_state() {
+    let out = match ac.agg_state() {
         AggState::AggregatedFlat(_) | AggState::Literal(_) => {
             let out = ac.aggregated();
             out.as_list().into_series()
         },
         _ => ac.aggregated(),
     };
-    out.rename(name);
-    Ok(Some(out))
+    Ok(Some(out.with_name(name)))
 }
 
 pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
@@ -182,15 +180,10 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
             }
 
             let fits_idx_size = lst.get_values_size() <= (IdxSize::MAX as usize);
-            // if a users passes a return type to `apply`
-            // e.g. `return_dtype=pl.Int64`
-            // this fails as the list builder expects `List<Int64>`
-            // so let's skip that for now
+            // If a users passes a return type to `apply`, e.g. `return_dtype=pl.Int64`,
+            // this fails as the list builder expects `List<Int64>`, so let's skip that for now.
             let is_user_apply = || {
-                expr.into_iter().any(|e| match e {
-                    Expr::AnonymousFunction { options, .. } => options.fmt_str == MAP_LIST_NAME,
-                    _ => false,
-                })
+                expr.into_iter().any(|e| matches!(e, Expr::AnonymousFunction { options, .. } if options.fmt_str == MAP_LIST_NAME))
             };
 
             if fits_idx_size && s.null_count() == 0 && !is_user_apply() {

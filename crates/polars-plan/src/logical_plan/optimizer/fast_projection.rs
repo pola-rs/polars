@@ -74,7 +74,6 @@ impl OptimizationRule for FastProjectionAndCollapse {
                     None
                 }
             },
-            LocalProjection { input, expr, .. } => impl_fast_projection(*input, expr, expr_arena),
             MapFunction {
                 input,
                 function: FunctionNode::FastProjection { columns },

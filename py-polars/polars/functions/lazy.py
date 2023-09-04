@@ -4,13 +4,8 @@ import contextlib
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
 import polars._reexport as pl
-from polars.datatypes import (
-    DTYPE_TEMPORAL_UNITS,
-    Date,
-    Datetime,
-    Int64,
-    is_polars_dtype,
-)
+import polars.functions as F
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
 from polars.utils._async import _AsyncDataFrameResult
 from polars.utils._parse_expr_input import (
     parse_as_expression,
@@ -39,181 +34,6 @@ if TYPE_CHECKING:
         PolarsDataType,
         RollingInterpolationMethod,
     )
-
-
-def col(
-    name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
-    *more_names: str | PolarsDataType,
-) -> Expr:
-    """
-    Return an expression representing column(s) in a dataframe.
-
-    Parameters
-    ----------
-    name
-        The name or datatype of the column(s) to represent. Accepts regular expression
-        input. Regular expressions should start with ``^`` and end with ``$``.
-    *more_names
-        Additional names or datatypes of columns to represent, specified as positional
-        arguments.
-
-    Examples
-    --------
-    Pass a single column name to represent that column.
-
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "ham": [1, 2, 3],
-    ...         "hamburger": [11, 22, 33],
-    ...         "foo": [3, 2, 1],
-    ...         "bar": ["a", "b", "c"],
-    ...     }
-    ... )
-    >>> df.select(pl.col("foo"))
-    shape: (3, 1)
-    ┌─────┐
-    │ foo │
-    │ --- │
-    │ i64 │
-    ╞═════╡
-    │ 3   │
-    │ 2   │
-    │ 1   │
-    └─────┘
-
-    Use the wildcard ``*`` to represent all columns.
-
-    >>> df.select(pl.col("*"))
-    shape: (3, 4)
-    ┌─────┬───────────┬─────┬─────┐
-    │ ham ┆ hamburger ┆ foo ┆ bar │
-    │ --- ┆ ---       ┆ --- ┆ --- │
-    │ i64 ┆ i64       ┆ i64 ┆ str │
-    ╞═════╪═══════════╪═════╪═════╡
-    │ 1   ┆ 11        ┆ 3   ┆ a   │
-    │ 2   ┆ 22        ┆ 2   ┆ b   │
-    │ 3   ┆ 33        ┆ 1   ┆ c   │
-    └─────┴───────────┴─────┴─────┘
-    >>> df.select(pl.col("*").exclude("ham"))
-    shape: (3, 3)
-    ┌───────────┬─────┬─────┐
-    │ hamburger ┆ foo ┆ bar │
-    │ ---       ┆ --- ┆ --- │
-    │ i64       ┆ i64 ┆ str │
-    ╞═══════════╪═════╪═════╡
-    │ 11        ┆ 3   ┆ a   │
-    │ 22        ┆ 2   ┆ b   │
-    │ 33        ┆ 1   ┆ c   │
-    └───────────┴─────┴─────┘
-
-    Regular expression input is supported.
-
-    >>> df.select(pl.col("^ham.*$"))
-    shape: (3, 2)
-    ┌─────┬───────────┐
-    │ ham ┆ hamburger │
-    │ --- ┆ ---       │
-    │ i64 ┆ i64       │
-    ╞═════╪═══════════╡
-    │ 1   ┆ 11        │
-    │ 2   ┆ 22        │
-    │ 3   ┆ 33        │
-    └─────┴───────────┘
-
-    Multiple columns can be represented by passing a list of names.
-
-    >>> df.select(pl.col(["hamburger", "foo"]))
-    shape: (3, 2)
-    ┌───────────┬─────┐
-    │ hamburger ┆ foo │
-    │ ---       ┆ --- │
-    │ i64       ┆ i64 │
-    ╞═══════════╪═════╡
-    │ 11        ┆ 3   │
-    │ 22        ┆ 2   │
-    │ 33        ┆ 1   │
-    └───────────┴─────┘
-
-    Or use positional arguments to represent multiple columns in the same way.
-
-    >>> df.select(pl.col("hamburger", "foo"))
-    shape: (3, 2)
-    ┌───────────┬─────┐
-    │ hamburger ┆ foo │
-    │ ---       ┆ --- │
-    │ i64       ┆ i64 │
-    ╞═══════════╪═════╡
-    │ 11        ┆ 3   │
-    │ 22        ┆ 2   │
-    │ 33        ┆ 1   │
-    └───────────┴─────┘
-
-    Easily select all columns that match a certain data type by passing that datatype.
-
-    >>> df.select(pl.col(pl.Utf8))
-    shape: (3, 1)
-    ┌─────┐
-    │ bar │
-    │ --- │
-    │ str │
-    ╞═════╡
-    │ a   │
-    │ b   │
-    │ c   │
-    └─────┘
-    >>> df.select(pl.col(pl.Int64, pl.Float64))
-    shape: (3, 3)
-    ┌─────┬───────────┬─────┐
-    │ ham ┆ hamburger ┆ foo │
-    │ --- ┆ ---       ┆ --- │
-    │ i64 ┆ i64       ┆ i64 │
-    ╞═════╪═══════════╪═════╡
-    │ 1   ┆ 11        ┆ 3   │
-    │ 2   ┆ 22        ┆ 2   │
-    │ 3   ┆ 33        ┆ 1   │
-    └─────┴───────────┴─────┘
-
-    """
-    if more_names:
-        if isinstance(name, str):
-            names_str = [name]
-            names_str.extend(more_names)  # type: ignore[arg-type]
-            return wrap_expr(plr.cols(names_str))
-        elif is_polars_dtype(name):
-            dtypes = [name]
-            dtypes.extend(more_names)
-            return wrap_expr(plr.dtype_cols(dtypes))
-        else:
-            raise TypeError(
-                "invalid input for `col`"
-                f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}."
-            )
-
-    if isinstance(name, str):
-        return wrap_expr(plr.col(name))
-    elif is_polars_dtype(name):
-        return wrap_expr(plr.dtype_cols([name]))
-    elif isinstance(name, Iterable):
-        names = list(name)
-        if not names:
-            return wrap_expr(plr.cols(names))
-
-        item = names[0]
-        if isinstance(item, str):
-            return wrap_expr(plr.cols(names))
-        elif is_polars_dtype(item):
-            return wrap_expr(plr.dtype_cols(names))
-        else:
-            raise TypeError(
-                "invalid input for `col`"
-                "\n\nExpected iterable of type `str` or `DataType`,"
-                f" got iterable of type {type(item).__name__!r}"
-            )
-    else:
-        raise TypeError(
-            "invalid input for `col`"
-            f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}"
-        )
 
 
 def element() -> Expr:
@@ -257,7 +77,7 @@ def element() -> Expr:
     └─────┴─────┴─────────────┘
 
     """
-    return col("")
+    return F.col("")
 
 
 @overload
@@ -324,7 +144,7 @@ def count(column: str | Series | None = None) -> Expr | int:
             version="0.18.8",
         )
         return column.len()
-    return col(column).count()
+    return F.col(column).count()
 
 
 def implode(name: str) -> Expr:
@@ -337,7 +157,7 @@ def implode(name: str) -> Expr:
         Name of the column that should be imploded.
 
     """
-    return col(name).implode()
+    return F.col(name).implode()
 
 
 @overload
@@ -385,7 +205,7 @@ def std(column: str | Series, ddof: int = 1) -> Expr | float | None:
             version="0.18.8",
         )
         return column.std(ddof)
-    return col(column).std(ddof)
+    return F.col(column).std(ddof)
 
 
 @overload
@@ -433,7 +253,7 @@ def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
             version="0.18.8",
         )
         return column.var(ddof)
-    return col(column).var(ddof)
+    return F.col(column).var(ddof)
 
 
 @overload
@@ -470,7 +290,7 @@ def mean(column: str | Series) -> Expr | float | None:
             version="0.18.8",
         )
         return column.mean()
-    return col(column).mean()
+    return F.col(column).mean()
 
 
 @overload
@@ -542,7 +362,7 @@ def median(column: str | Series) -> Expr | float | int | None:
             version="0.18.8",
         )
         return column.median()
-    return col(column).median()
+    return F.col(column).median()
 
 
 @overload
@@ -579,7 +399,7 @@ def n_unique(column: str | Series) -> Expr | int:
             version="0.18.8",
         )
         return column.n_unique()
-    return col(column).n_unique()
+    return F.col(column).n_unique()
 
 
 def approx_n_unique(column: str | Expr) -> Expr:
@@ -609,7 +429,7 @@ def approx_n_unique(column: str | Expr) -> Expr:
     """
     if isinstance(column, pl.Expr):
         return column.approx_n_unique()
-    return col(column).approx_n_unique()
+    return F.col(column).approx_n_unique()
 
 
 @overload
@@ -676,7 +496,7 @@ def first(column: str | Series | None = None) -> Expr | Any:
             return column[0]
         else:
             raise IndexError("the series is empty, so no first value can be returned")
-    return col(column).first()
+    return F.col(column).first()
 
 
 @overload
@@ -741,7 +561,7 @@ def last(column: str | Series | None = None) -> Expr:
             return column[-1]
         else:
             raise IndexError("the series is empty, so no last value can be returned")
-    return col(column).last()
+    return F.col(column).last()
 
 
 @overload
@@ -797,7 +617,7 @@ def head(column: str | Series, n: int = 10) -> Expr | Series:
             version="0.18.8",
         )
         return column.head(n)
-    return col(column).head(n)
+    return F.col(column).head(n)
 
 
 @overload
@@ -853,7 +673,7 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
             version="0.18.8",
         )
         return column.tail(n)
-    return col(column).tail(n)
+    return F.col(column).tail(n)
 
 
 def corr(
@@ -913,9 +733,9 @@ def corr(
     └─────┘
     """
     if isinstance(a, str):
-        a = col(a)
+        a = F.col(a)
     if isinstance(b, str):
-        b = col(b)
+        b = F.col(b)
 
     if method == "pearson":
         return wrap_expr(plr.pearson_corr(a._pyexpr, b._pyexpr, ddof))
@@ -955,9 +775,9 @@ def cov(a: str | Expr, b: str | Expr) -> Expr:
 
     """
     if isinstance(a, str):
-        a = col(a)
+        a = F.col(a)
     if isinstance(b, str):
-        b = col(b)
+        b = F.col(b)
     return wrap_expr(plr.cov(a._pyexpr, b._pyexpr))
 
 
@@ -1276,7 +1096,7 @@ def fold(
     │ 3   ┆ 2   │
     └─────┴─────┘
     """
-    # in case of pl.col("*")
+    # in case of col("*")
     acc = parse_as_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
@@ -1327,7 +1147,7 @@ def reduce(
     Horizontally sum over all columns.
 
     >>> df.select(
-    ...     pl.reduce(function=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum"),
+    ...     pl.reduce(function=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum")
     ... )
     shape: (3, 1)
     ┌─────┐
@@ -1341,7 +1161,7 @@ def reduce(
     └─────┘
 
     """
-    # in case of pl.col("*")
+    # in case of col("*")
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
@@ -1417,7 +1237,7 @@ def cumfold(
     └───────────┘
 
     """  # noqa: W505
-    # in case of pl.col("*")
+    # in case of col("*")
     acc = parse_as_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
@@ -1480,7 +1300,7 @@ def cumreduce(
     │ {3,8,15}  │
     └───────────┘
     """  # noqa: W505
-    # in case of pl.col("*")
+    # in case of col("*")
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
@@ -1529,9 +1349,9 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
 
     """
     if isinstance(y, str):
-        y = col(y)
+        y = F.col(y)
     if isinstance(x, str):
-        x = col(x)
+        x = F.col(x)
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
 
 
@@ -1576,9 +1396,9 @@ def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
 
     """
     if isinstance(y, str):
-        y = col(y)
+        y = F.col(y)
     if isinstance(x, str):
-        x = col(x)
+        x = F.col(x)
     return wrap_expr(plr.arctan2d(y._pyexpr, x._pyexpr))
 
 
@@ -1652,12 +1472,12 @@ def exclude(
     └──────┘
 
     """
-    return col("*").exclude(columns, *more_columns)
+    return F.col("*").exclude(columns, *more_columns)
 
 
 def groups(column: str) -> Expr:
     """Syntactic sugar for `pl.col("foo").agg_groups()`."""
-    return col(column).agg_groups()
+    return F.col(column).agg_groups()
 
 
 def quantile(
@@ -1678,7 +1498,7 @@ def quantile(
         Interpolation method.
 
     """
-    return col(column).quantile(quantile, interpolation)
+    return F.col(column).quantile(quantile, interpolation)
 
 
 def arg_sort_by(
@@ -2007,7 +1827,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
                 "expected 'Series' in 'arg_where' if 'eager=True', got"
                 f" {type(condition).__name__!r}"
             )
-        return condition.to_frame().select(arg_where(col(condition.name))).to_series()
+        return condition.to_frame().select(arg_where(F.col(condition.name))).to_series()
     else:
         condition = parse_as_expression(condition)
         return wrap_expr(plr.arg_where(condition))
@@ -2124,7 +1944,7 @@ def from_epoch(
 
     """
     if isinstance(column, str):
-        column = col(column)
+        column = F.col(column)
     elif not isinstance(column, (pl.Series, pl.Expr)):
         column = pl.Series(column)  # Sequence input handled by Series constructor
 
@@ -2173,9 +1993,9 @@ def rolling_cov(
     if min_periods is None:
         min_periods = window_size
     if isinstance(a, str):
-        a = col(a)
+        a = F.col(a)
     if isinstance(b, str):
-        b = col(b)
+        b = F.col(b)
     return wrap_expr(
         plr.rolling_cov(a._pyexpr, b._pyexpr, window_size, min_periods, ddof)
     )
@@ -2214,9 +2034,9 @@ def rolling_corr(
     if min_periods is None:
         min_periods = window_size
     if isinstance(a, str):
-        a = col(a)
+        a = F.col(a)
     if isinstance(b, str):
-        b = col(b)
+        b = F.col(b)
     return wrap_expr(
         plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_periods, ddof)
     )

@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_cse_rename_cross_join_5405() -> None:
@@ -379,3 +380,27 @@ def test_cse_nan_10824() -> None:
         )
         == "{'literal': [nan]}"
     )
+
+
+def test_cse_() -> None:
+    df = pl.DataFrame(data=range(6), schema={"a": pl.Int64})
+    a = pl.col("a").rolling_sum(window_size=2)
+    b = pl.col("a").rolling_sum(window_size=3)
+    exprs = {
+        "ax1": a,
+        "ax2": a * 2,
+        "bx1": b,
+        "bx2": b * 2,
+    }
+
+    expected = pl.DataFrame(
+        {
+            "a": [0, 1, 2, 3, 4, 5],
+            "ax1": [None, 1, 3, 5, 7, 9],
+            "ax2": [None, 2, 6, 10, 14, 18],
+            "bx1": [None, None, 3, 6, 9, 12],
+            "bx2": [None, None, 6, 12, 18, 24],
+        }
+    )
+
+    assert_frame_equal(df.lazy().with_columns(**exprs).collect(), expected)

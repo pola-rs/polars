@@ -1,4 +1,3 @@
-mod drop;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 #[cfg(feature = "python")]
@@ -80,9 +79,6 @@ pub enum FunctionNode {
         // A column name gets swapped with an existing column
         swapping: bool,
     },
-    Drop {
-        names: Arc<[SmartString]>,
-    },
     Explode {
         columns: Arc<[Arc<str>]>,
         schema: SchemaRef,
@@ -117,7 +113,6 @@ impl PartialEq for FunctionNode {
                     ..
                 },
             ) => existing_l == existing_r && new_l == new_r,
-            (Drop { names: l }, Drop { names: r }) => l == r,
             (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
             (Melt { args: l, .. }, Melt { args: r, .. }) => l == r,
             (RowCount { name: l, .. }, RowCount { name: r, .. }) => l == r,
@@ -138,8 +133,7 @@ impl FunctionNode {
             | FastProjection { .. }
             | Unnest { .. }
             | Rename { .. }
-            | Explode { .. }
-            | Drop { .. } => true,
+            | Explode { .. } => true,
             Melt { args, .. } => args.streamable,
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
@@ -229,7 +223,6 @@ impl FunctionNode {
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
             Rename { existing, new, .. } => rename::rename_schema(input_schema, existing, new),
-            Drop { names } => drop::drop_schema(input_schema, names),
             Explode { schema, .. } | RowCount { schema, .. } | Melt { schema, .. } => {
                 Ok(Cow::Owned(schema.clone()))
             },
@@ -248,8 +241,7 @@ impl FunctionNode {
             | Unnest { .. }
             | Rename { .. }
             | Explode { .. }
-            | Melt { .. }
-            | Drop { .. } => true,
+            | Melt { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
             RowCount { .. } => false,
@@ -269,8 +261,7 @@ impl FunctionNode {
             | Unnest { .. }
             | Rename { .. }
             | Explode { .. }
-            | Melt { .. }
-            | Drop { .. } => true,
+            | Melt { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
             RowCount { .. } => true,
@@ -332,7 +323,6 @@ impl FunctionNode {
                 }
             },
             Rename { existing, new, .. } => rename::rename_impl(df, existing, new),
-            Drop { names } => drop::drop_impl(df, names),
             Explode { columns, .. } => df.explode(columns.as_ref()),
             Melt { args, .. } => {
                 let args = (**args).clone();
@@ -385,7 +375,6 @@ impl Display for FunctionNode {
                 }
             },
             Rename { .. } => write!(f, "RENAME"),
-            Drop { .. } => write!(f, "DROP"),
             Explode { .. } => write!(f, "EXPLODE"),
             Melt { .. } => write!(f, "MELT"),
             RowCount { .. } => write!(f, "WITH ROW COUNT"),

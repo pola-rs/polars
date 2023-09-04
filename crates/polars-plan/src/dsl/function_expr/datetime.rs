@@ -43,26 +43,6 @@ pub enum TemporalFunction {
     Round(String, String),
     #[cfg(feature = "timezones")]
     ReplaceTimeZone(Option<TimeZone>),
-    DateRange {
-        every: Duration,
-        closed: ClosedWindow,
-        time_unit: Option<TimeUnit>,
-        time_zone: Option<TimeZone>,
-    },
-    DateRanges {
-        every: Duration,
-        closed: ClosedWindow,
-        time_unit: Option<TimeUnit>,
-        time_zone: Option<TimeZone>,
-    },
-    TimeRange {
-        every: Duration,
-        closed: ClosedWindow,
-    },
-    TimeRanges {
-        every: Duration,
-        closed: ClosedWindow,
-    },
     Combine(TimeUnit),
     DatetimeFunction {
         time_unit: TimeUnit,
@@ -105,10 +85,6 @@ impl Display for TemporalFunction {
             Round(..) => "round",
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(_) => "replace_time_zone",
-            DateRange { .. } => return write!(f, "date_range"),
-            DateRanges { .. } => return write!(f, "date_ranges"),
-            TimeRange { .. } => return write!(f, "time_range"),
-            TimeRanges { .. } => return write!(f, "time_ranges"),
             DatetimeFunction { .. } => return write!(f, "datetime"),
             Combine(_) => "combine",
         };

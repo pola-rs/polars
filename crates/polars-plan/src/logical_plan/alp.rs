@@ -60,11 +60,6 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         options: ProjectionOptions,
     },
-    LocalProjection {
-        expr: Vec<Node>,
-        input: Node,
-        schema: SchemaRef,
-    },
     Sort {
         input: Node,
         by_column: Vec<Node>,
@@ -157,7 +152,6 @@ impl ALogicalPlan {
             Selection { .. } => "selection",
             DataFrameScan { .. } => "df",
             Projection { .. } => "projection",
-            LocalProjection { .. } => "local_projection",
             Sort { .. } => "sort",
             Cache { .. } => "cache",
             Aggregate { .. } => "aggregate",
@@ -197,7 +191,6 @@ impl ALogicalPlan {
             } => output_schema.as_ref().unwrap_or(&file_info.schema),
             Selection { input, .. } => return arena.get(*input).schema(arena),
             Projection { schema, .. } => schema,
-            LocalProjection { schema, .. } => schema,
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
@@ -248,11 +241,6 @@ impl ALogicalPlan {
             Selection { .. } => Selection {
                 input: inputs[0],
                 predicate: exprs[0],
-            },
-            LocalProjection { schema, .. } => LocalProjection {
-                input: inputs[0],
-                expr: exprs,
-                schema: schema.clone(),
             },
             Projection {
                 schema, options, ..
@@ -400,7 +388,6 @@ impl ALogicalPlan {
             Sort { by_column, .. } => container.extend_from_slice(by_column),
             Selection { predicate, .. } => container.push(*predicate),
             Projection { expr, .. } => container.extend_from_slice(expr),
-            LocalProjection { expr, .. } => container.extend_from_slice(expr),
             Aggregate { keys, aggs, .. } => {
                 let iter = keys.iter().copied().chain(aggs.iter().copied());
                 container.extend(iter)
@@ -458,7 +445,6 @@ impl ALogicalPlan {
             Slice { input, .. } => *input,
             Selection { input, .. } => *input,
             Projection { input, .. } => *input,
-            LocalProjection { input, .. } => *input,
             Sort { input, .. } => *input,
             Cache { input, .. } => *input,
             Aggregate { input, .. } => *input,

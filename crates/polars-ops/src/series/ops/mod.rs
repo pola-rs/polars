@@ -8,6 +8,8 @@ mod cut;
 mod floor_divide;
 #[cfg(feature = "fused")]
 mod fused;
+#[cfg(feature = "convert_index")]
+mod index;
 #[cfg(feature = "is_first")]
 mod is_first;
 #[cfg(feature = "is_in")]
@@ -38,6 +40,8 @@ pub use cut::*;
 pub use floor_divide::*;
 #[cfg(feature = "fused")]
 pub use fused::*;
+#[cfg(feature = "convert_index")]
+pub use index::*;
 #[cfg(feature = "is_first")]
 pub use is_first::*;
 #[cfg(feature = "is_in")]
