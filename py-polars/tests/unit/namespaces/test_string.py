@@ -532,13 +532,13 @@ def test_extract_all_count() -> None:
     assert df["foo"].str.count_match(r"a").dtype == pl.UInt32
 
 
-def test_count_many() -> None:
-    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"], "bar": [r"\d", r"[a-z]"]})
+def test_count_match_many() -> None:
+    df = pl.DataFrame(
+        {"foo": ["123 bla 45 asd", "xyz 678 910t"], "bar": [r"\d", r"[a-z]"]}
+    )
     assert (
         df.select(
-            [
-                pl.col("foo").str.count_match(pl.col("bar")).alias("count")
-            ]
+            [pl.col("foo").str.count_match(pl.col("bar")).alias("count")]
         ).to_dict(False)
     ) == {"count": [5, 4]}
 

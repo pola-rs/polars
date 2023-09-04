@@ -411,7 +411,7 @@ pub(super) fn count_match(args: &[Series]) -> PolarsResult<Series> {
 
     let ca = s.utf8()?;
     let pat = pat.utf8()?;
-        if pat.len() == 1 {
+    if pat.len() == 1 {
         let pat = pat
             .get(0)
             .ok_or_else(|| polars_err!(ComputeError: "expected a pattern, got null"))?;

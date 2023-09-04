@@ -311,7 +311,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                     } else {
                         builder.append_null()
                     }
-                }
+                },
             }
         }
         Ok(builder.finish())
@@ -339,7 +339,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                     } else {
                         builder.append_null()
                     }
-                }
+                },
             }
         }
         Ok(builder.finish())
@@ -380,19 +380,17 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         let out = ca
             .into_iter()
             .zip(pat)
-            .map(|(opt_s, opt_pat)| {
-                match (opt_s, opt_pat) {
-                    (_, None) | (None, _) => Ok(Some(0)),
-                    (Some(s), Some(pat)) => {
-                        let reg = Regex::new(pat)?;
-                        let mut iter = reg.find_iter(s).map(|m| m.as_str()).peekable();
-                        if iter.peek().is_some() {
-                            Ok(Some(iter.count() as u32))
-                        } else {
-                            Ok(Some(0))
-                        }
+            .map(|(opt_s, opt_pat)| match (opt_s, opt_pat) {
+                (_, None) | (None, _) => Ok(Some(0)),
+                (Some(s), Some(pat)) => {
+                    let reg = Regex::new(pat)?;
+                    let mut iter = reg.find_iter(s).map(|m| m.as_str()).peekable();
+                    if iter.peek().is_some() {
+                        Ok(Some(iter.count() as u32))
+                    } else {
+                        Ok(Some(0))
                     }
-                }
+                },
             })
             // Return early on error
             .collect::<PolarsResult<_>>()?;
