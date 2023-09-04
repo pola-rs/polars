@@ -204,8 +204,11 @@ impl<'de> Deserialize<'de> for Series {
                     },
                     DataType::List(_) => {
                         let values: Vec<Option<Series>> = map.next_value()?;
+                        // retain dtype information in case of no actual values
                         if values.is_empty() {
                             Ok(Series::new_empty(&name, &dtype))
+                        } else if values.iter().all(|s| s.is_none()) {
+                            Ok(Series::full_null(&name, values.len(), &dtype))
                         } else {
                             Ok(Series::new(&name, values))
                         }
