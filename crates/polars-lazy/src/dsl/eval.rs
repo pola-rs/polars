@@ -7,7 +7,7 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub(crate) fn eval_field_to_dtype(f: &Field, expr: &Expr, list: bool) -> Field {
-    // dummy df to determine output dtype
+    // Dummy df to determine output dtype.
     let dtype = f
         .data_type()
         .inner_dtype()
@@ -41,7 +41,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
     /// Run an expression over a sliding window that increases `1` slot every iteration.
     ///
     /// # Warning
-    /// this can be really slow as it can have `O(n^2)` complexity. Don't use this for operations
+    /// This can be really slow as it can have `O(n^2)` complexity. Don't use this for operations
     /// that visit all elements.
     fn cumulative_eval(self, expr: Expr, min_periods: usize, parallel: bool) -> Expr {
         let this = self.into_expr();
@@ -50,7 +50,7 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
             let name = s.name().to_string();
             s.rename("");
 
-            // ensure we get the new schema
+            // Ensure we get the new schema.
             let output_field = eval_field_to_dtype(s.field().as_ref(), &expr, false);
 
             let expr = expr.clone();
