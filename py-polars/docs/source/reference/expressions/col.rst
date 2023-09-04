@@ -11,7 +11,7 @@ See the class documentation below for examples and further documentation.
 -----
 
 .. currentmodule:: polars.functions.col
-.. autoclass:: Column
+.. autoclass:: ColumnFactory
    :members: __call__, __getattr__
    :noindex:
    :autosummary:

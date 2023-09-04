@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 __all__ = ["col"]
 
 
-class Column:
+class ColumnFactory:
     """
     Helper class for creating column expressions.
 
@@ -259,4 +259,4 @@ class Column:
 
 
 # Set up a single instance of the class and use it as a column factory
-col = Column()
+col = ColumnFactory()
