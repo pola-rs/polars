@@ -461,6 +461,7 @@ impl ApplyExpr {
                     let Expr::Literal(LiteralValue::Series(input)) = &input[1] else {
                         return None;
                     };
+                    #[allow(clippy::explicit_auto_deref)]
                     let input: &Series = &**input;
                     let st = stats.get_stats(&root).ok()?;
                     let min = st.to_min()?;
