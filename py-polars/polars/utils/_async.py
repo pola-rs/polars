@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable
-from typing import TYPE_CHECKING, Any, Generator, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Awaitable, Generator, Generic, TypeVar
 
 from polars.utils._wrap import wrap_df
 

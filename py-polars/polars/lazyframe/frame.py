@@ -74,9 +74,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Awaitable
     from io import IOBase
-    from typing import Literal
+    from typing import Awaitable, Literal
 
     import pyarrow as pa
 
