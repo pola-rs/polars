@@ -13,7 +13,7 @@ pub struct TernaryExpr {
     truthy: Arc<dyn PhysicalExpr>,
     falsy: Arc<dyn PhysicalExpr>,
     expr: Expr,
-    // can expensive on small data to run literals in parallel
+    // Can be expensive on small data to run literals in parallel.
     run_par: bool,
 }
 
@@ -56,7 +56,7 @@ fn finish_as_iters<'a>(
     mut ac_mask: AggregationContext<'a>,
 ) -> PolarsResult<AggregationContext<'a>> {
     // SAFETY: unstable series never lives longer than the iterator.
-    let mut ca: ListChunked = unsafe {
+    let ca = unsafe {
         ac_truthy
             .iter_groups(false)
             .zip(ac_falsy.iter_groups(false))
@@ -72,17 +72,17 @@ fn finish_as_iters<'a>(
                 }
                 .transpose()
             })
-            .collect::<PolarsResult<_>>()?
+            .collect::<PolarsResult<ListChunked>>()?
+            .with_name(ac_truthy.series().name())
     };
 
-    ca.rename(ac_truthy.series().name());
-    // aggregation leaves only a single chunks
+    // Aggregation leaves only a single chunk.
     let arr = ca.downcast_iter().next().unwrap();
     let list_vals_len = arr.values().len();
-    let mut out = ca.into_series();
 
+    let mut out = ca.into_series();
     if ac_truthy.arity_should_explode() && ac_falsy.arity_should_explode() && ac_mask.arity_should_explode() &&
-        // exploded list should be equal to groups length
+        // Exploded list should be equal to groups length.
         list_vals_len == ac_truthy.groups.len()
     {
         out = out.explode()?
@@ -96,16 +96,16 @@ impl PhysicalExpr for TernaryExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
+
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let mut state = state.split();
-        // don't cache window functions as they run in parallel
+        // Don't cache window functions as they run in parallel.
         state.remove_cache_window_flag();
         let mask_series = self.predicate.evaluate(df, &state)?;
         let mut mask = mask_series.bool()?.clone();
 
         let op_truthy = || self.truthy.evaluate(df, &state);
         let op_falsy = || self.falsy.evaluate(df, &state);
-
         let (truthy, falsy) = if self.run_par {
             POOL.install(|| rayon::join(op_truthy, op_falsy))
         } else {
@@ -125,9 +125,9 @@ impl PhysicalExpr for TernaryExpr {
         }
 
         expand_lengths(&mut truthy, &mut falsy, &mut mask);
-
         truthy.zip_with(&mask, &falsy)
     }
+
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.truthy.to_field(input_schema)
     }
@@ -141,15 +141,15 @@ impl PhysicalExpr for TernaryExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         let aggregation_predicate = self.predicate.is_valid_aggregation();
         if !aggregation_predicate {
-            // unwrap will not fail as it is not an aggregation expression.
+            // Unwrap will not fail as it is not an aggregation expression.
             eprintln!(
                 "The predicate '{}' in 'when->then->otherwise' is not a valid aggregation and might produce a different number of rows than the group_by operation would. This behavior is experimental and may be subject to change", self.predicate.as_expression().unwrap()
             )
         }
+
         let op_mask = || self.predicate.evaluate_on_groups(df, groups, state);
         let op_truthy = || self.truthy.evaluate_on_groups(df, groups, state);
         let op_falsy = || self.falsy.evaluate_on_groups(df, groups, state);
-
         let (ac_mask, (ac_truthy, ac_falsy)) = if self.run_par {
             POOL.install(|| rayon::join(op_mask, || rayon::join(op_truthy, op_falsy)))
         } else {
@@ -162,10 +162,10 @@ impl PhysicalExpr for TernaryExpr {
 
         let mask_s = ac_mask.flat_naive();
 
-        // BIG TODO: find which branches are never hit and remove them
+        // BIG TODO: find which branches are never hit and remove them.
         use AggState::*;
         match (ac_truthy.agg_state(), ac_falsy.agg_state()) {
-            // all branches are aggregated-flat or literal
+            // All branches are aggregated-flat or literal
             // mask -> aggregated-flat
             // truthy -> aggregated-flat | literal
             // falsy -> aggregated-flat | literal
@@ -178,23 +178,23 @@ impl PhysicalExpr for TernaryExpr {
                 let mut falsy = falsy.clone();
                 let mut mask = ac_mask.series().bool()?.clone();
                 expand_lengths(&mut truthy, &mut falsy, &mut mask);
-                let mut out = truthy.zip_with(&mask, &falsy).unwrap();
-                out.rename(truthy.name());
-                ac_truthy.with_series(out, true, Some(&self.expr))?;
+                let out = truthy.zip_with(&mask, &falsy).unwrap();
+                ac_truthy.with_series(out.with_name(truthy.name()), true, Some(&self.expr))?;
                 Ok(ac_truthy)
             },
 
-            // we cannot flatten a list because that changes the order, so we apply over groups
+            // We cannot flatten a list because that changes the order, so we apply over groups.
             (AggregatedList(_), NotAggregated(_)) | (NotAggregated(_), AggregatedList(_)) => {
                 finish_as_iters(ac_truthy, ac_falsy, ac_mask)
             },
-            // then:
+
+            // Then:
             //     col().shift()
-            // otherwise:
+            // Otherwise:
             //     None
             (AggregatedList(_), Literal(_)) | (Literal(_), AggregatedList(_)) => {
                 if !aggregation_predicate {
-                    // experimental elementwise behavior tested in `test_binary_agg_context_1`
+                    // Experimental elementwise behavior tested in `test_binary_agg_context_1`.
                     return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
                 }
                 let mask = mask_s.bool()?;
@@ -211,16 +211,12 @@ impl PhysicalExpr for TernaryExpr {
                     let s = ac_truthy.aggregated();
                     let ca = s.list().unwrap();
                     check_length(ca, mask)?;
-                    let mut out: ListChunked = ca
+                    let out = ca
                         .into_iter()
                         .zip(mask)
-                        .map(|(truthy, take)| match (truthy, take) {
-                            (Some(v), Some(true)) => Some(v),
-                            (Some(_), Some(false)) => None,
-                            _ => None,
-                        })
-                        .collect_trusted();
-                    out.rename(ac_truthy.series().name());
+                        .map(|(truthy, take)| if take? { truthy } else { None })
+                        .collect_trusted::<ListChunked>()
+                        .with_name(ac_truthy.series().name());
                     ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
                     Ok(ac_truthy)
                 } else if ac_truthy.is_literal()
@@ -229,38 +225,30 @@ impl PhysicalExpr for TernaryExpr {
                     let s = ac_falsy.aggregated();
                     let ca = s.list().unwrap();
                     check_length(ca, mask)?;
-                    let mut out: ListChunked = ca
+                    let out = ca
                         .into_iter()
                         .zip(mask)
-                        .map(|(falsy, take)| match (falsy, take) {
-                            (Some(_), Some(true)) => None,
-                            (Some(v), Some(false)) => Some(v),
-                            _ => None,
-                        })
-                        .collect_trusted();
-                    out.rename(ac_truthy.series().name());
+                        .map(|(falsy, take)| if take? { None } else { falsy })
+                        .collect_trusted::<ListChunked>()
+                        .with_name(ac_truthy.series().name());
                     ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
                     Ok(ac_truthy)
                 }
-                // then:
+                // Then:
                 //     col().shift()
-                // otherwise:
+                // Otherwise:
                 //     lit(list)
                 else if ac_truthy.is_literal() {
                     let literal = ac_truthy.series();
                     let s = ac_falsy.aggregated();
                     let ca = s.list().unwrap();
                     check_length(ca, mask)?;
-                    let mut out: ListChunked = ca
+                    let out = ca
                         .into_iter()
                         .zip(mask)
-                        .map(|(falsy, take)| match (falsy, take) {
-                            (Some(_), Some(true)) => Some(literal.clone()),
-                            (Some(v), Some(false)) => Some(v),
-                            _ => None,
-                        })
-                        .collect_trusted();
-                    out.rename(ac_truthy.series().name());
+                        .map(|(falsy, take)| if take? { Some(literal.clone()) } else { falsy })
+                        .collect_trusted::<ListChunked>()
+                        .with_name(ac_truthy.series().name());
                     ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
                     Ok(ac_truthy)
                 } else {
@@ -268,25 +256,21 @@ impl PhysicalExpr for TernaryExpr {
                     let s = ac_truthy.aggregated();
                     let ca = s.list().unwrap();
                     check_length(ca, mask)?;
-                    let mut out: ListChunked = ca
+                    let out = ca
                         .into_iter()
                         .zip(mask)
-                        .map(|(truthy, take)| match (truthy, take) {
-                            (Some(v), Some(true)) => Some(v),
-                            (Some(_), Some(false)) => Some(literal.clone()),
-                            _ => None,
-                        })
-                        .collect_trusted();
-                    out.rename(ac_truthy.series().name());
+                        .map(|(truthy, take)| if take? { truthy } else { Some(literal.clone()) })
+                        .collect_trusted::<ListChunked>()
+                        .with_name(ac_truthy.series().name());
                     ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
                     Ok(ac_truthy)
                 }
             },
             // Both are or a flat series or aggregated into a list
-            // so we can flatten the Series an apply the operators
+            // so we can flatten the Series an apply the operators.
             _ => {
-                // inspect the predicate and if it is consisting
-                // if arity/binary and some aggregation we apply as iters as
+                // Inspect the predicate and if it is consisting
+                // of arity/binary and some aggregation we apply as iters as
                 // it gets complicated quickly.
                 // For instance:
                 //  when(col(..) > min(..)).then(..).otherwise(..)
@@ -312,7 +296,7 @@ impl PhysicalExpr for TernaryExpr {
                 }
 
                 if !aggregation_predicate {
-                    // experimental elementwise behavior tested in `test_binary_agg_context_1`
+                    // Experimental elementwise behavior tested in `test_binary_agg_context_1`.
                     return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
                 }
                 let mut mask = mask_s.bool()?.clone();
@@ -321,7 +305,7 @@ impl PhysicalExpr for TernaryExpr {
                 expand_lengths(&mut truthy, &mut falsy, &mut mask);
                 let out = truthy.zip_with(&mask, &falsy)?;
 
-                // because of the flattening we don't have to do that anymore
+                // Because of the flattening we don't have to do that anymore.
                 if matches!(ac_truthy.update_groups, UpdateGroups::WithSeriesLen) {
                     ac_truthy.with_update_groups(UpdateGroups::No);
                 }
