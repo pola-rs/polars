@@ -1180,7 +1180,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order: bool = False,
     ) -> Self:
         """
-        Sort the dataframe by the given columns.
+        Sort the DataFrame by the given columns.
 
         Parameters
         ----------
@@ -1709,10 +1709,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
     ) -> _AsyncDataFrameResult[DataFrame]:
         """
-        Collect dataframe asynchronously in thread pool.
+        Collect DataFrame asynchronously in thread pool.
 
         Collects into a DataFrame, like :func:`collect`
-        but instead of returning dataframe directly its collected inside thread pool
+        but instead of returning DataFrame directly its collected inside thread pool
         and gets put into `queue` with `put_nowait` method,
         while this method returns almost instantly.
 

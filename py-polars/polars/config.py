@@ -514,7 +514,7 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     def set_tbl_dataframe_shape_below(cls, active: bool = True) -> type[Config]:
         """
-        Print the dataframe shape below the dataframe when displaying tables.
+        Print the DataFrame shape information below the data when displaying tables.
 
         Examples
         --------
@@ -698,7 +698,7 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     def set_tbl_hide_dataframe_shape(cls, active: bool = True) -> type[Config]:
         """
-        Hide the shape information of the dataframe when displaying tables.
+        Hide the DataFrame shape information when displaying tables.
 
         Examples
         --------

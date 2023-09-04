@@ -3388,13 +3388,15 @@ def test_glimpse(capsys: Any) -> None:
     assert capsys.readouterr().out[:-1] == expected
 
     colc = "a" * 96
-    df = pl.DataFrame({colc: [11, 22, 33]})
-    result = df.glimpse(return_as_string=True)
+    df = pl.DataFrame({colc: [11, 22, 33, 44, 55, 66]})
+    result = df.glimpse(
+        return_as_string=True, max_colname_length=20, max_items_per_column=4
+    )
     expected = textwrap.dedent(
         """\
-        Rows: 3
+        Rows: 6
         Columns: 1
-        $ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa... <i64> 11, 22, 33
+        $ aaaaaaaaaaaaaaaaaaa… <i64> 11, 22, 33, 44
         """
     )
     assert result == expected
