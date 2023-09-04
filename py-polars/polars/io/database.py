@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame
     from polars.dependencies import pyarrow as pa
-    from polars.type_aliases import ConnectionOrCursor, Cursor, DbReadEngine
+    from polars.type_aliases import ConnectionOrCursor, Cursor, DbReadEngine, SchemaDict
 
 
 class _DriverProperties_(TypedDict):
@@ -151,7 +151,9 @@ class ConnectionExecutor:
             else:
                 yield from rows
 
-    def _from_arrow(self, batch_size: int | None) -> DataFrame | None:
+    def _from_arrow(
+        self, batch_size: int | None, schema_overrides: SchemaDict | None
+    ) -> DataFrame | None:
         """Return resultset data in Arrow format for frame init."""
         from polars import DataFrame
 
@@ -160,18 +162,26 @@ class ConnectionExecutor:
                 size = batch_size if driver_properties["exact_batch_size"] else None
                 fetch_batches = driver_properties["fetch_batches"]
                 return DataFrame(
-                    self._fetch_arrow(self.result, fetch_batches, size)
-                    if batch_size and fetch_batches is not None
-                    else getattr(self.result, driver_properties["fetch_all"])()
+                    data=(
+                        self._fetch_arrow(self.result, fetch_batches, size)
+                        if batch_size and fetch_batches is not None
+                        else getattr(self.result, driver_properties["fetch_all"])()
+                    ),
+                    schema_overrides=schema_overrides,
                 )
 
         if self.driver_name == "duckdb":
             exec_kwargs = {"rows_per_batch": batch_size} if batch_size else {}
-            return DataFrame(self.result.arrow(**exec_kwargs))
+            return DataFrame(
+                self.result.arrow(**exec_kwargs),
+                schema_overrides=schema_overrides,
+            )
 
         return None
 
-    def _from_rows(self, batch_size: int | None) -> DataFrame | None:
+    def _from_rows(
+        self, batch_size: int | None, schema_overrides: SchemaDict | None
+    ) -> DataFrame | None:
         """Return resultset data row-wise for frame init."""
         from polars import DataFrame
 
@@ -189,6 +199,7 @@ class ConnectionExecutor:
                     else self._fetchmany_rows(self.result, batch_size)
                 ),
                 schema=column_names,
+                schema_overrides=schema_overrides,
                 orient="row",
             )
         return None
@@ -213,7 +224,9 @@ class ConnectionExecutor:
         self.result = result
         return self
 
-    def to_frame(self, batch_size: int | None = None) -> DataFrame:
+    def to_frame(
+        self, batch_size: int | None = None, schema_overrides: SchemaDict | None = None
+    ) -> DataFrame:
         """
         Convert the result set to a DataFrame.
 
@@ -227,7 +240,7 @@ class ConnectionExecutor:
             self._from_arrow,  # init from arrow-native data (most efficient option)
             self._from_rows,  # row-wise fallback covering sqlalchemy, dbapi2, pyodbc
         ):
-            frame = frame_init(batch_size)
+            frame = frame_init(batch_size=batch_size, schema_overrides=schema_overrides)
             if frame is not None:
                 return frame
 
@@ -240,7 +253,9 @@ class ConnectionExecutor:
 def read_database(  # noqa: D417
     query: str,
     connection: ConnectionOrCursor,
+    *,
     batch_size: int | None = None,
+    schema_overrides: SchemaDict | None = None,
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -257,6 +272,12 @@ def read_database(  # noqa: D417
         The number of rows to fetch each time as data is collected; if this option is
         supported by the backend it will be passed to the underlying query execution
         method (if the backend does not have such support it is ignored without error).
+    schema_overrides
+        A dictionary mapping column names to dtypes, used to override the schema
+        inferred from the query cursor or given by the incoming Arrow data (depending
+        on driver/backend). This can be useful if the given types can be more precisely
+        defined (for example, if you know that a given column can be declared as `u32`
+        instead of `i64`).
 
     Notes
     -----
@@ -266,6 +287,13 @@ def read_database(  # noqa: D417
       backend supports returning Arrow data directly then this facility will be used to
       efficiently instantiate the DataFrame; otherwise, the DataFrame is initialised
       from row-wise data.
+
+    * The ``read_connection_uri`` function is likely to be noticeably faster than
+      ``read_database`` if you are using a SQLAlchemy or DBAPI2 connection, as
+      ``connectorx`` will optimise translation of the result data into Arrow format
+      in Rust, whereas these libraries will return row-wise data to Python. Note that
+      you can easily determine the connection's URI from a SQLAlchemy engine object by
+      calling ``str(conn.engine.url)``.
 
     * If polars has to create a cursor from your connection in order to execute the
       query then that cursor will be automatically closed when the query completes;
@@ -281,7 +309,8 @@ def read_database(  # noqa: D417
 
     >>> df = pl.read_database(
     ...     query="SELECT * FROM test_data",
-    ...     connection=conn,
+    ...     connection=user_conn,
+    ...     schema_overrides={"normalised_score": pl.UInt8},
     ... )  # doctest: +SKIP
 
     """
@@ -290,14 +319,19 @@ def read_database(  # noqa: D417
             message="Use of a string URI with 'read_database' is deprecated; use 'read_database_uri' instead",
             version="0.19.0",
         )
-        return read_database_uri(query, uri=connection, **kwargs)
+        return read_database_uri(
+            query, uri=connection, schema_overrides=schema_overrides, **kwargs
+        )
     elif kwargs:
         raise ValueError(
             f"`read_database` **kwargs only exist for deprecating string URIs: found {kwargs!r}"
         )
 
     with ConnectionExecutor(connection) as cx:
-        return cx.execute(query).to_frame(batch_size)
+        return cx.execute(query).to_frame(
+            batch_size=batch_size,
+            schema_overrides=schema_overrides,
+        )
 
 
 def read_database_uri(
@@ -309,6 +343,7 @@ def read_database_uri(
     partition_num: int | None = None,
     protocol: str | None = None,
     engine: DbReadEngine | None = None,
+    schema_overrides: SchemaDict | None = None,
 ) -> DataFrame:
     """
     Read the results of a SQL query into a DataFrame, given a URI.
@@ -348,10 +383,13 @@ def read_database_uri(
           an up-to-date list of drivers please see the ADBC docs:
 
           * https://arrow.apache.org/adbc/
+    schema_overrides
+        A dictionary mapping column names to dtypes, used to override the schema
+        given in the data returned by the query.
 
     Notes
     -----
-    For ``connectorx``, ensure that you have ``connectorx>=0.3.1``. The documentation
+    For ``connectorx``, ensure that you have ``connectorx>=0.3.2``. The documentation
     is available `here <https://sfu-db.github.io/connector-x/intro.html>`_.
 
     For ``adbc`` you will need to have installed ``pyarrow`` and the ADBC driver associated
@@ -416,11 +454,12 @@ def read_database_uri(
             partition_range=partition_range,
             partition_num=partition_num,
             protocol=protocol,
+            schema_overrides=schema_overrides,
         )
     elif engine == "adbc":
         if not isinstance(query, str):
             raise ValueError("only a single SQL query string is accepted for adbc")
-        return _read_sql_adbc(query, uri)
+        return _read_sql_adbc(query, uri, schema_overrides)
     else:
         raise ValueError(
             f"engine must be one of {{'connectorx', 'adbc'}}, got {engine!r}"
@@ -434,6 +473,7 @@ def _read_sql_connectorx(
     partition_range: tuple[int, int] | None = None,
     partition_num: int | None = None,
     protocol: str | None = None,
+    schema_overrides: SchemaDict | None = None,
 ) -> DataFrame:
     try:
         import connectorx as cx
@@ -452,14 +492,16 @@ def _read_sql_connectorx(
         partition_num=partition_num,
         protocol=protocol,
     )
-    return from_arrow(tbl)  # type: ignore[return-value]
+    return from_arrow(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
 
 
-def _read_sql_adbc(query: str, connection_uri: str) -> DataFrame:
+def _read_sql_adbc(
+    query: str, connection_uri: str, schema_overrides: SchemaDict | None
+) -> DataFrame:
     with _open_adbc_connection(connection_uri) as conn, conn.cursor() as cursor:
         cursor.execute(query)
         tbl = cursor.fetch_arrow_table()
-    return from_arrow(tbl)  # type: ignore[return-value]
+    return from_arrow(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
 
 
 def _open_adbc_connection(connection_uri: str) -> Any:
