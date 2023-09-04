@@ -397,7 +397,7 @@ def test_power() -> None:
     i = pl.Series([1, 2], dtype=Int32)
     j = pl.Series([1, 2], dtype=UInt64)
     k = pl.Series([1, 2], dtype=Int64)
-    l = pl.Series([2**33, 2**33], dtype=UInt64)
+    m = pl.Series([2**33, 2**33], dtype=UInt64)
 
     # pow
     assert_series_equal(a**2, pl.Series([1.0, 4.0], dtype=Float64))
@@ -418,8 +418,14 @@ def test_power() -> None:
         c**2
     with pytest.raises(pl.ColumnNotFoundError):
         a ** "hi"  # type: ignore[operator]
-    with pytest.raises(pl.ComputeError, match='strict conversion from `u64` to `u32` failed'):
-        a ** l
+
+    # Raising to UInt64: raises if can't be downcast safely to UInt32...
+    with pytest.raises(
+        pl.ComputeError, match="strict conversion from `u64` to `u32` failed"
+    ):
+        a**m
+    # ... but succeeds otherwise.
+    assert_series_equal(a**j, pl.Series([1, 4], dtype=Int64))
 
     # rpow
     assert_series_equal(2.0**a, pl.Series("literal", [2.0, 4.0], dtype=Float64))
