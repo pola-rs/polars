@@ -2441,6 +2441,15 @@ def test_set_at_idx() -> None:
     s = pl.Series([True, False, True])
     assert s.set_at_idx([0, 1], [False, True]).to_list() == [False, True, True]
 
+    # set negative indices
+    a = pl.Series(range(5))
+    a[-2] = None
+    a[-5] = None
+    assert a.to_list() == [None, 1, 2, None, 4]
+
+    with pytest.raises(pl.ComputeError):
+        a[-100] = None
+
 
 def test_repr() -> None:
     s = pl.Series("ints", [1001, 2002, 3003])
