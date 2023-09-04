@@ -129,14 +129,36 @@ where
 fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Option<Series>> {
     use DataType::*;
     match (base.dtype(), exponent.dtype()) {
-        (UInt8 | UInt16 | UInt32, UInt8 | UInt16 | UInt32 | UInt64) => {
-            let base = base.strict_cast(&DataType::UInt32)?;
+        #[cfg(feature = "dtype-u8")]
+        (UInt8, UInt8 | UInt16 | UInt32 | UInt64) => {
+            let ca = base.u8().unwrap();
+            let exponent = exponent.strict_cast(&DataType::UInt32)?;
+            pow_on_integral_dtypes(ca, exponent.u32().unwrap())
+        },
+        #[cfg(feature = "dtype-i8")]
+        (Int8, UInt8 | UInt16 | UInt32 | UInt64) => {
+            let ca = base.i8().unwrap();
+            let exponent = exponent.strict_cast(&DataType::UInt32)?;
+            pow_on_integral_dtypes(ca, exponent.u32().unwrap())
+        },
+        #[cfg(feature = "dtype-u16")]
+        (UInt16, UInt8 | UInt16 | UInt32 | UInt64) => {
+            let ca = base.u16().unwrap();
+            let exponent = exponent.strict_cast(&DataType::UInt32)?;
+            pow_on_integral_dtypes(ca, exponent.u32().unwrap())
+        },
+        #[cfg(feature = "dtype-i16")]
+        (Int16, UInt8 | UInt16 | UInt32 | UInt64) => {
+            let ca = base.i16().unwrap();
+            let exponent = exponent.strict_cast(&DataType::UInt32)?;
+            pow_on_integral_dtypes(ca, exponent.u32().unwrap())
+        },
+        (UInt32, UInt8 | UInt16 | UInt32 | UInt64) => {
             let ca = base.u32().unwrap();
             let exponent = exponent.strict_cast(&DataType::UInt32)?;
             pow_on_integral_dtypes(ca, exponent.u32().unwrap())
         },
-        (Int8 | Int16 | Int32, UInt8 | UInt16 | UInt32 | UInt64) => {
-            let base = base.strict_cast(&DataType::Int32)?;
+        (Int32, UInt8 | UInt16 | UInt32 | UInt64) => {
             let ca = base.i32().unwrap();
             let exponent = exponent.strict_cast(&DataType::UInt32)?;
             pow_on_integral_dtypes(ca, exponent.u32().unwrap())

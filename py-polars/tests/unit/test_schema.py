@@ -51,8 +51,8 @@ def test_pow_dtype() -> None:
             "d": [1, 2, 3, 4, 5],
             "e": [1, 2, 3, 4, 5],
             "f": [1, 2, 3, 4, 5],
-            "g": [1, 2, 3, 4, 5],
-            "h": [1, 2, 3, 4, 5],
+            "g": [1, 2, 1, 2, 1],
+            "h": [1, 2, 1, 2, 1],
         },
         schema_overrides={
             "a": pl.Int64,
@@ -92,10 +92,10 @@ def test_pow_dtype() -> None:
         pl.UInt64,
         pl.Int32,
         pl.UInt32,
-        pl.Int32,
-        pl.UInt32,
-        pl.Int32,
-        pl.UInt32,
+        pl.Int16,
+        pl.UInt16,
+        pl.Int8,
+        pl.UInt8,
     ]
     # `scaled_foo2` currently is UInt32 (in the lazy plan) but should be Float64
     assert df.dtypes == [
@@ -106,10 +106,10 @@ def test_pow_dtype() -> None:
         pl.UInt64,
         pl.Int32,
         pl.UInt32,
-        pl.Int32,
-        pl.UInt32,
-        pl.Int32,
-        pl.UInt32,
+        pl.Int16,
+        pl.UInt16,
+        pl.Int8,
+        pl.UInt8,
     ]
 
 

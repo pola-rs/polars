@@ -501,19 +501,9 @@ impl<'a> FieldsMapper<'a> {
         // base, exponent
         match (self.fields[0].data_type(), self.fields[1].data_type()) {
             (
-                DataType::UInt8 | DataType::UInt16 | DataType::UInt32,
-                DataType::UInt8 | DataType::UInt16 | DataType::UInt32,
-            ) => Ok(Field::new(self.fields[0].name(), DataType::UInt32)),
-            (
-                DataType::Int8 | DataType::Int16 | DataType::Int32,
-                DataType::UInt8 | DataType::UInt16 | DataType::UInt32,
-            ) => Ok(Field::new(self.fields[0].name(), DataType::Int32)),
-            (DataType::UInt64, DataType::UInt8 | DataType::UInt16 | DataType::UInt32) => {
-                Ok(Field::new(self.fields[0].name(), DataType::UInt64))
-            },
-            (DataType::Int64, DataType::UInt8 | DataType::UInt16 | DataType::UInt32) => {
-                Ok(Field::new(self.fields[0].name(), DataType::Int64))
-            },
+                base_dtype,
+                DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64,
+            ) => Ok(Field::new(self.fields[0].name(), base_dtype.clone())),
             (DataType::Float32, _) => Ok(Field::new(self.fields[0].name(), DataType::Float32)),
             (_, _) => Ok(Field::new(self.fields[0].name(), DataType::Float64)),
         }
