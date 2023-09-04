@@ -17,6 +17,7 @@ def test_arange() -> None:
 
 def test_int_range_decreasing() -> None:
     assert pl.int_range(10, 1, -2, eager=True).to_list() == list(range(10, 1, -2))
+    assert pl.int_range(10, -1, -1, eager=True).to_list() == list(range(10, -1, -1))
 
 
 def test_int_range_expr() -> None:
