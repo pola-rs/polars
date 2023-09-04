@@ -368,10 +368,18 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             pat.len(), ca.len(),
         );
 
-        let op = |opt_s: Option<&str>, opt_pat: Option<&str>| -> PolarsResult<Option<u32>> {
+        // Very simple cache: don't recompile the same regex for multiple values in a row.
+        // TODO: proper LRU cache with reasonable memory limit.
+        let mut reg = Regex::new("").unwrap();
+        let mut last_pat = String::new();
+
+        let op = move |opt_s: Option<&str>, opt_pat: Option<&str>| -> PolarsResult<Option<u32>> {
             match (opt_s, opt_pat) {
                 (Some(s), Some(pat)) => {
-                    let reg = Regex::new(pat)?;
+                    if pat != last_pat {
+                        reg = Regex::new(pat)?;
+                        last_pat = pat.to_owned();
+                    }
                     Ok(Some(reg.find_iter(s).count() as u32))
                 },
                 _ => Ok(None),
