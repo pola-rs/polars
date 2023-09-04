@@ -373,17 +373,35 @@ pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
             is_in_boolean(ca, other)
         },
         DataType::Float32 => {
-            let other = other.cast(&DataType::Float32)?;
-            let other = other.f32().unwrap();
-            let other = other.reinterpret_unsigned();
+            let other = match other.dtype() {
+                DataType::List(_) => {
+                    let other = other.cast(&DataType::List(Box::new(DataType::Float32)))?;
+                    let other = other.list().unwrap();
+                    other.reinterpret_unsigned()
+                },
+                _ => {
+                    let other = other.cast(&DataType::Float32)?;
+                    let other = other.f32().unwrap();
+                    other.reinterpret_unsigned()
+                },
+            };
             let ca = s.f32().unwrap();
             let s = ca.reinterpret_unsigned();
             is_in(&s, &other)
         },
         DataType::Float64 => {
-            let other = other.cast(&DataType::Float64)?;
-            let other = other.f64().unwrap();
-            let other = other.reinterpret_unsigned();
+            let other = match other.dtype() {
+                DataType::List(_) => {
+                    let other = other.cast(&DataType::List(Box::new(DataType::Float64)))?;
+                    let other = other.list().unwrap();
+                    other.reinterpret_unsigned()
+                },
+                _ => {
+                    let other = other.cast(&DataType::Float64)?;
+                    let other = other.f64().unwrap();
+                    other.reinterpret_unsigned()
+                },
+            };
             let ca = s.f64().unwrap();
             let s = ca.reinterpret_unsigned();
             is_in(&s, &other)

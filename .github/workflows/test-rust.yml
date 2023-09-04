@@ -138,4 +138,3 @@ jobs:
       - name: Check wasm
         working-directory: crates
         run: make check-wasm
-

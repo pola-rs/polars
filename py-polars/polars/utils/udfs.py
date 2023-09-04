@@ -845,7 +845,7 @@ def warn_on_inefficient_map(
         or ``"series"``.
     """
     if map_target == "frame":
-        raise NotImplementedError("TODO: 'frame' and 'series' map-function parsing")
+        raise NotImplementedError("TODO: 'frame' map-function parsing")
 
     # note: we only consider simple functions with a single col/param
     if not (col := columns and columns[0]):

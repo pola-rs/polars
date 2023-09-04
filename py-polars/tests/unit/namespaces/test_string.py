@@ -518,7 +518,7 @@ def test_replace_expressions() -> None:
 
 
 def test_extract_all_count() -> None:
-    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
+    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xaz 678 910t", "boo", None]})
     assert (
         df.select(
             [
@@ -526,15 +526,23 @@ def test_extract_all_count() -> None:
                 pl.col("foo").str.count_match(r"a").alias("count"),
             ]
         ).to_dict(False)
-    ) == {"extract": [["a", "a"], None], "count": [2, 0]}
+    ) == {"extract": [["a", "a"], ["a"], [], None], "count": [2, 1, 0, None]}
 
     assert df["foo"].str.extract_all(r"a").dtype == pl.List
     assert df["foo"].str.count_match(r"a").dtype == pl.UInt32
 
 
 def test_extract_all_many() -> None:
-    df = pl.DataFrame({"foo": ["ab", "abc", "abcd"], "re": ["a", "bc", "a.c"]})
-    assert df["foo"].str.extract_all(df["re"]).to_list() == [["a"], ["bc"], ["abc"]]
+    df = pl.DataFrame(
+        {"foo": ["ab", "abc", "abcd", "foo", None], "re": ["a", "bc", "a.c", "a", "a"]}
+    )
+    assert df["foo"].str.extract_all(df["re"]).to_list() == [
+        ["a"],
+        ["bc"],
+        ["abc"],
+        [],
+        None,
+    ]
 
 
 def test_extract_groups() -> None:

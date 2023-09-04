@@ -1,6 +1,10 @@
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use super::*;
 
 #[derive(Copy, Clone, Default, Eq, Hash, PartialEq, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum QuoteStyle {
     /// This puts quotes around every field. Always.
     Always,
@@ -130,5 +134,40 @@ where
     pub fn with_quote_style(mut self, quote_style: QuoteStyle) -> Self {
         self.options.quote_style = quote_style;
         self
+    }
+
+    pub fn batched(self, _schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
+        let expects_header = self.header;
+        Ok(BatchedWriter {
+            writer: self,
+            has_written_header: !expects_header,
+        })
+    }
+}
+
+pub struct BatchedWriter<W: Write> {
+    writer: CsvWriter<W>,
+    has_written_header: bool,
+}
+
+impl<W: Write> BatchedWriter<W> {
+    /// Write a batch to the csv writer.
+    ///
+    /// # Panics
+    /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
+    pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        if !self.has_written_header {
+            self.has_written_header = true;
+            let names = df.get_column_names();
+            write_impl::write_header(&mut self.writer.buffer, &names, &self.writer.options)?;
+        }
+
+        write_impl::write(
+            &mut self.writer.buffer,
+            df,
+            self.writer.batch_size,
+            &self.writer.options,
+        )?;
+        Ok(())
     }
 }

@@ -171,7 +171,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.gt(self._to_expr(other)._pyexpr))
 
     def __invert__(self) -> Self:
-        return self.is_not()
+        return self.not_()
 
     def __le__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr.lt_eq(self._to_expr(other)._pyexpr))
@@ -258,7 +258,7 @@ class Expr:
             args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
             return ufunc(*args, **kwargs)
 
-        return self.map(function)
+        return self.map_batches(function)
 
     @classmethod
     def from_json(cls, value: str) -> Self:
@@ -959,7 +959,18 @@ class Expr:
         '''
         return function(self, *args, **kwargs)
 
+    @deprecate_renamed_function("not_", version="0.19.2")
     def is_not(self) -> Self:
+        """
+        Negate a boolean expression.
+
+        .. deprecated:: 0.19.2
+            This method has been renamed to :func:`Expr.not_`.
+
+        """
+        return self.not_()
+
+    def not_(self) -> Self:
         """
         Negate a boolean expression.
 
@@ -982,7 +993,7 @@ class Expr:
         │ false ┆ b    │
         │ false ┆ null │
         └───────┴──────┘
-        >>> df.select(pl.col("a").is_not())
+        >>> df.select(pl.col("a").not_())
         shape: (3, 1)
         ┌───────┐
         │ a     │
@@ -995,7 +1006,7 @@ class Expr:
         └───────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.is_not())
+        return self._from_pyexpr(self._pyexpr.not_())
 
     def is_null(self) -> Self:
         """
@@ -3215,6 +3226,39 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.is_first())
 
+    def is_last(self) -> Self:
+        """
+        Get a mask of the last unique value.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "num": [1, 2, 3, 1, 5],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("num").is_last().alias("is_last"))
+        shape: (5, 2)
+        ┌─────┬─────────┐
+        │ num ┆ is_last │
+        │ --- ┆ ---     │
+        │ i64 ┆ bool    │
+        ╞═════╪═════════╡
+        │ 1   ┆ false   │
+        │ 2   ┆ true    │
+        │ 3   ┆ true    │
+        │ 1   ┆ true    │
+        │ 5   ┆ true    │
+        └─────┴─────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.is_last())
+
     def is_duplicated(self) -> Self:
         """
         Get mask of duplicated values.
@@ -3634,7 +3678,7 @@ class Expr:
         """
         return self.filter(predicate)
 
-    def map(
+    def map_batches(
         self,
         function: Callable[[Series], Series | Any],
         return_dtype: PolarsDataType | None = None,
@@ -3642,12 +3686,12 @@ class Expr:
         agg_list: bool = False,
     ) -> Self:
         """
-        Apply a custom python function to a Series or sequence of Series.
+        Apply a custom python function to a whole Series or sequence of Series.
 
-        The output of this custom function must be a Series.
-        If you want to apply a custom function elementwise over single values, see
-        :func:`apply`. A use case for ``map`` is when you want to transform an
-        expression with a third-party library.
+        The output of this custom function must be a Series. If you want to apply a
+        custom function elementwise over single values, see :func:`map_elements`.
+        A reasonable use case for ``map`` functions is transforming the values
+        represented by an expression using a third-party library.
 
         Read more in `the book
         <https://pola-rs.github.io/polars-book/user-guide/expressions/user-defined-functions>`_.
@@ -3655,11 +3699,16 @@ class Expr:
         Parameters
         ----------
         function
-            Lambda/ function to apply.
+            Lambda/function to apply.
         return_dtype
             Dtype of the output Series.
         agg_list
-            Aggregate list
+            Aggregate list.
+
+        Notes
+        -----
+        If you are looking to map a function over a window function or groupby context,
+        refer to func:`map_elements` instead.
 
         Warnings
         --------
@@ -3669,6 +3718,7 @@ class Expr:
         See Also
         --------
         map_dict
+        map_elements
 
         Examples
         --------
@@ -3678,7 +3728,7 @@ class Expr:
         ...         "cosine": [1.0, 0.0, -1.0, 0.0],
         ...     }
         ... )
-        >>> df.select(pl.all().map(lambda x: x.to_numpy().argmax()))
+        >>> df.select(pl.all().map_batches(lambda x: x.to_numpy().argmax()))
         shape: (1, 2)
         ┌──────┬────────┐
         │ sine ┆ cosine │
@@ -3691,7 +3741,9 @@ class Expr:
         """
         if return_dtype is not None:
             return_dtype = py_type_to_dtype(return_dtype)
-        return self._from_pyexpr(self._pyexpr.map(function, return_dtype, agg_list))
+        return self._from_pyexpr(
+            self._pyexpr.map_batches(function, return_dtype, agg_list)
+        )
 
     def map_elements(
         self,
@@ -3712,29 +3764,25 @@ class Expr:
         Depending on the context it has the following behavior:
 
         * Selection
-            Expects `f` to be of type Callable[[Any], Any].
+            Expects `function` to be of type Callable[[Any], Any].
             Applies a python function over each individual value in the column.
         * GroupBy
-            Expects `f` to be of type Callable[[Series], Series].
+            Expects `function` to be of type Callable[[Series], Series].
             Applies a python function over each group.
 
         Parameters
         ----------
         function
-            Lambda/ function to map.
+            Lambda/function to map.
         return_dtype
             Dtype of the output Series.
-            If not set, the dtype will be
-            ``polars.Unknown``.
+            If not set, the dtype will be ``pl.Unknown``.
         skip_nulls
-            Don't map the function over values
-            that contain nulls. This is faster.
+            Don't map the function over values that contain nulls (this is faster).
         pass_name
-            Pass the Series name to the custom function
-            This is more expensive.
+            Pass the Series name to the custom function (this is more expensive).
         strategy : {'thread_local', 'threading'}
-            This functionality is in `alpha` stage. This may be removed
-            /changed without it being considered a breaking change.
+            This functionality is considered experimental and may be removed/changed.
 
             - 'thread_local': run the python function on a single thread.
             - 'threading': run the python function on separate threads. Use with
@@ -3745,13 +3793,16 @@ class Expr:
 
         Notes
         -----
-        * Using ``map`` is strongly discouraged as you will be effectively running
-          python "for" loops. This will be very slow. Wherever possible you should
-          strongly prefer the native expression API to achieve the best performance.
+        * Using ``map_elements`` is strongly discouraged as you will be effectively
+          running python "for" loops, which will be very slow. Wherever possible you
+          should prefer the native expression API to achieve the best performance.
 
         * If your function is expensive and you don't want it to be called more than
           once for a given input, consider applying an ``@lru_cache`` decorator to it.
-          With suitable data you may achieve order-of-magnitude speedups (or more).
+          If your data is suitable you may achieve *significant* speedups.
+
+        * Window function application using ``over`` is considered a GroupBy context
+          here, so ``map_elements`` can be used to map functions over window groups.
 
         Warnings
         --------
@@ -3812,6 +3863,40 @@ class Expr:
         ...     pl.col("a").sum(),
         ... )  # doctest: +IGNORE_RESULT
 
+        Window function application using ``over`` will behave as a GroupBy
+        context, with your function receiving individual window groups:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "key": ["x", "x", "y", "x", "y", "z"],
+        ...         "val": [1, 1, 1, 1, 1, 1],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     scaled=pl.col("val").map_elements(lambda s: s * len(s)).over("key"),
+        ... ).sort("key")
+        shape: (6, 3)
+        ┌─────┬─────┬────────┐
+        │ key ┆ val ┆ scaled │
+        │ --- ┆ --- ┆ ---    │
+        │ str ┆ i64 ┆ i64    │
+        ╞═════╪═════╪════════╡
+        │ x   ┆ 1   ┆ 3      │
+        │ x   ┆ 1   ┆ 3      │
+        │ x   ┆ 1   ┆ 3      │
+        │ y   ┆ 1   ┆ 2      │
+        │ y   ┆ 1   ┆ 2      │
+        │ z   ┆ 1   ┆ 1      │
+        └─────┴─────┴────────┘
+
+        Note that this function would *also* be better-implemented natively:
+
+        >>> df.with_columns(
+        ...     scaled=(pl.col("val") * pl.col("val").count()).over("key"),
+        ... ).sort(
+        ...     "key"
+        ... )  # doctest: +IGNORE_RESULT
+
         """
         # input x: Series of type list containing the group values
         from polars.utils.udfs import warn_on_inefficient_map
@@ -3842,13 +3927,15 @@ class Expr:
                     )
 
         if strategy == "thread_local":
-            return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
+            return self.map_batches(wrap_f, agg_list=True, return_dtype=return_dtype)
         elif strategy == "threading":
 
             def wrap_threading(x: Series) -> Series:
                 def get_lazy_promise(df: DataFrame) -> LazyFrame:
                     return df.lazy().select(
-                        F.col("x").map(wrap_f, agg_list=True, return_dtype=return_dtype)
+                        F.col("x").map_batches(
+                            wrap_f, agg_list=True, return_dtype=return_dtype
+                        )
                     )
 
                 df = x.to_frame("x")
@@ -3880,7 +3967,9 @@ class Expr:
                 out = [df.to_series() for df in F.collect_all(partitions)]
                 return F.concat(out, rechunk=False)
 
-            return self.map(wrap_threading, agg_list=True, return_dtype=return_dtype)
+            return self.map_batches(
+                wrap_threading, agg_list=True, return_dtype=return_dtype
+            )
         else:
             ValueError(f"Strategy {strategy} is not supported.")
 
@@ -5075,7 +5164,7 @@ class Expr:
             print(fmt.format(s))
             return s
 
-        return self.map(inspect, return_dtype=None, agg_list=True)
+        return self.map_batches(inspect, return_dtype=None, agg_list=True)
 
     def interpolate(self, method: InterpolationMethod = "linear") -> Self:
         """
@@ -6880,79 +6969,6 @@ class Expr:
             )
         )
 
-    def rolling_apply(
-        self,
-        function: Callable[[Series], Any],
-        window_size: int,
-        weights: list[float] | None = None,
-        min_periods: int | None = None,
-        *,
-        center: bool = False,
-    ) -> Self:
-        """
-        Apply a custom rolling window function.
-
-        Prefer the specific rolling window functions over this one, as they are faster.
-
-        Prefer:
-
-            * rolling_min
-            * rolling_max
-            * rolling_mean
-            * rolling_sum
-
-        The window at a given row will include the row itself and the `window_size - 1`
-        elements before it.
-
-        Parameters
-        ----------
-        function
-            Aggregation function
-        window_size
-            The length of the window.
-        weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
-        min_periods
-            The number of values in the window that should be non-null before computing
-            a result. If None, it will be set equal to window size.
-        center
-            Set the labels at the center of the window
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "A": [1.0, 2.0, 9.0, 2.0, 13.0],
-        ...     }
-        ... )
-        >>> df.select(
-        ...     [
-        ...         pl.col("A").rolling_apply(lambda s: s.std(), window_size=3),
-        ...     ]
-        ... )
-         shape: (5, 1)
-        ┌──────────┐
-        │ A        │
-        │ ---      │
-        │ f64      │
-        ╞══════════╡
-        │ null     │
-        │ null     │
-        │ 4.358899 │
-        │ 4.041452 │
-        │ 5.567764 │
-        └──────────┘
-
-        """
-        if min_periods is None:
-            min_periods = window_size
-        return self._from_pyexpr(
-            self._pyexpr.rolling_apply(
-                function, window_size, weights, min_periods, center
-            )
-        )
-
     def rolling_skew(self, window_size: int, *, bias: bool = True) -> Self:
         """
         Compute a rolling skew.
@@ -6990,6 +7006,65 @@ class Expr:
 
         """
         return self._from_pyexpr(self._pyexpr.rolling_skew(window_size, bias))
+
+    def rolling_map(
+        self,
+        function: Callable[[Series], Any],
+        window_size: int,
+        weights: list[float] | None = None,
+        min_periods: int | None = None,
+        *,
+        center: bool = False,
+    ) -> Self:
+        """
+        Compute a custom rolling window function.
+
+        .. warning::
+            Computing custom functions is extremely slow. Use specialized rolling
+            functions such as :func:`Expr.rolling_sum` if at all possible.
+
+        Parameters
+        ----------
+        function
+            Custom aggregation function.
+        window_size
+            Size of the window. The window at a given row will include the row
+            itself and the ``window_size - 1`` elements before it.
+        weights
+            A list of weights with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window.
+
+        Examples
+        --------
+        >>> from numpy import nansum
+        >>> df = pl.DataFrame({"a": [11.0, 2.0, 9.0, float("nan"), 8.0]})
+        >>> df.select(pl.col("a").rolling_map(nansum, window_size=3))
+        shape: (5, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ null │
+        │ null │
+        │ 22.0 │
+        │ 11.0 │
+        │ 17.0 │
+        └──────┘
+
+        """
+        if min_periods is None:
+            min_periods = window_size
+        return self._from_pyexpr(
+            self._pyexpr.rolling_map(
+                function, window_size, weights, min_periods, center
+            )
+        )
 
     def abs(self) -> Self:
         """
@@ -9025,7 +9100,33 @@ class Expr:
             )
 
         func = inner_with_default if default is not None else inner
-        return self.map(func)
+        return self.map_batches(func)
+
+    @deprecate_renamed_function("map_batches", version="0.19.0")
+    def map(
+        self,
+        function: Callable[[Series], Series | Any],
+        return_dtype: PolarsDataType | None = None,
+        *,
+        agg_list: bool = False,
+    ) -> Self:
+        """
+        Apply a custom python function to a Series or sequence of Series.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`Expr.map_batches`.
+
+        Parameters
+        ----------
+        function
+            Lambda/ function to apply.
+        return_dtype
+            Dtype of the output Series.
+        agg_list
+            Aggregate list
+
+        """
+        return self.map_batches(function, return_dtype, agg_list=agg_list)
 
     @deprecate_renamed_function("map_elements", version="0.19.0")
     def apply(
@@ -9075,6 +9176,42 @@ class Expr:
             skip_nulls=skip_nulls,
             pass_name=pass_name,
             strategy=strategy,
+        )
+
+    @deprecate_renamed_function("rolling_map", version="0.19.0")
+    def rolling_apply(
+        self,
+        function: Callable[[Series], Any],
+        window_size: int,
+        weights: list[float] | None = None,
+        min_periods: int | None = None,
+        *,
+        center: bool = False,
+    ) -> Self:
+        """
+        Apply a custom rolling window function.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`Expr.rolling_map`.
+
+        Parameters
+        ----------
+        function
+            Aggregation function
+        window_size
+            The length of the window.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+
+        """
+        return self.rolling_map(
+            function, window_size, weights, min_periods, center=center
         )
 
     @property

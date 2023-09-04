@@ -132,7 +132,7 @@ pub trait ChunkBytes {
 /// This likely is a bit slower than ChunkWindow
 #[cfg(feature = "rolling_window")]
 pub trait ChunkRollApply: AsRefDataType {
-    fn rolling_apply(
+    fn rolling_map(
         &self,
         _f: &dyn Fn(&Series) -> Series,
         _options: RollingOptionsFixedWindow,
@@ -140,7 +140,7 @@ pub trait ChunkRollApply: AsRefDataType {
     where
         Self: Sized,
     {
-        polars_bail!(opq = rolling_apply, self.as_ref_dtype());
+        polars_bail!(opq = rolling_map, self.as_ref_dtype());
     }
 }
 
@@ -380,14 +380,14 @@ pub trait ChunkQuantile<T> {
 }
 
 /// Variance and standard deviation aggregation.
-pub trait ChunkVar<T> {
+pub trait ChunkVar {
     /// Compute the variance of this ChunkedArray/Series.
-    fn var(&self, _ddof: u8) -> Option<T> {
+    fn var(&self, _ddof: u8) -> Option<f64> {
         None
     }
 
     /// Compute the standard deviation of this ChunkedArray/Series.
-    fn std(&self, _ddof: u8) -> Option<T> {
+    fn std(&self, _ddof: u8) -> Option<f64> {
         None
     }
 }

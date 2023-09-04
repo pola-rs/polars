@@ -1134,7 +1134,7 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn group_by_apply(
+    pub fn group_by_map_groups(
         &self,
         by: Vec<&str>,
         lambda: PyObject,
@@ -1349,7 +1349,7 @@ impl PyDataFrame {
     }
 
     #[pyo3(signature = (lambda, output_type, inference_size))]
-    pub fn apply(
+    pub fn map_rows(
         &mut self,
         lambda: &PyAny,
         output_type: Option<Wrap<DataType>>,

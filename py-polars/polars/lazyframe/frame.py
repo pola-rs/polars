@@ -86,6 +86,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         ColumnNameOrSelector,
         CsvEncoding,
+        CsvQuoteStyle,
         FillNullStrategy,
         FrameInitTypes,
         IntoExpr,
@@ -1166,7 +1167,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             print(fmt.format(s))
             return s
 
-        return self.map(inspect, predicate_pushdown=True, projection_pushdown=True)
+        return self.map_batches(
+            inspect, predicate_pushdown=True, projection_pushdown=True
+        )
 
     def sort(
         self,
@@ -1968,6 +1971,145 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return lf.sink_ipc(
             path=path,
             compression=compression,
+            maintain_order=maintain_order,
+        )
+
+    def sink_csv(
+        self,
+        path: str | Path,
+        *,
+        has_header: bool = True,
+        separator: str = ",",
+        line_terminator: str = "\n",
+        quote: str = '"',
+        batch_size: int = 1024,
+        datetime_format: str | None = None,
+        date_format: str | None = None,
+        time_format: str | None = None,
+        float_precision: int | None = None,
+        null_value: str | None = None,
+        quote_style: CsvQuoteStyle | None = None,
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
+    ) -> DataFrame:
+        """
+        Persists a LazyFrame at the provided path.
+
+        This allows streaming results that are larger than RAM to be written to disk.
+
+        Parameters
+        ----------
+        path
+            File path to which the file should be written.
+        has_header
+            Whether to include header in the CSV output.
+        separator
+            Separate CSV fields with this symbol.
+        line_terminator
+            String used to end each row.
+        quote
+            Byte to use as quoting character.
+        batch_size
+            Number of rows that will be processed per thread.
+        datetime_format
+            A format string, with the specifiers defined by the
+            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Rust crate. If no format specified, the default fractional-second
+            precision is inferred from the maximum timeunit found in the frame's
+            Datetime cols (if any).
+        date_format
+            A format string, with the specifiers defined by the
+            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Rust crate.
+        time_format
+            A format string, with the specifiers defined by the
+            `chrono <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            Rust crate.
+        float_precision
+            Number of decimal places to write, applied to both ``Float32`` and
+            ``Float64`` datatypes.
+        null_value
+            A string representing null values (defaulting to the empty string).
+        quote_style : {'necessary', 'always', 'non_numeric'}
+            Determines the quoting strategy used.
+            - necessary (default): This puts quotes around fields only when necessary.
+            They are necessary when fields contain a quote,
+            delimiter or record terminator.
+            Quotes are also necessary when writing an empty record
+            (which is indistinguishable from a record with one empty field).
+            This is the default.
+            - always: This puts quotes around every field. Always.
+            - non_numeric: This puts quotes around all fields that are non-numeric.
+            Namely, when writing a field that does not parse as a valid float
+            or integer, then quotes will be used even if they aren`t strictly
+            necessary.
+        maintain_order
+            Maintain the order in which data is processed.
+            Setting this to `False` will  be slightly faster.
+        type_coercion
+            Do type coercion optimization.
+        predicate_pushdown
+            Do predicate pushdown optimization.
+        projection_pushdown
+            Do projection pushdown optimization.
+        simplify_expression
+            Run simplify expressions optimization.
+        no_optimization
+            Turn off (certain) optimizations.
+        slice_pushdown
+            Slice pushdown optimization.
+
+        Returns
+        -------
+        DataFrame
+
+        Examples
+        --------
+        >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
+        >>> lf.sink_csv("out.csv")  # doctest: +SKIP
+
+        """
+        if len(separator) != 1:
+            raise ValueError("only single byte separator is allowed")
+        if len(quote) != 1:
+            raise ValueError("only single byte quote char is allowed")
+        if not null_value:
+            null_value = None
+
+        if no_optimization:
+            predicate_pushdown = False
+            projection_pushdown = False
+            slice_pushdown = False
+
+        lf = self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            comm_subplan_elim=False,
+            comm_subexpr_elim=False,
+            streaming=True,
+        )
+
+        return lf.sink_csv(
+            path=path,
+            has_header=has_header,
+            separator=ord(separator),
+            line_terminator=line_terminator,
+            quote=ord(quote),
+            batch_size=batch_size,
+            datetime_format=datetime_format,
+            date_format=date_format,
+            time_format=time_format,
+            float_precision=float_precision,
+            null_value=null_value,
+            quote_style=quote_style,
             maintain_order=maintain_order,
         )
 
@@ -3488,7 +3630,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     [
         ...         (pl.col("a") ** 2).alias("a^2"),
         ...         (pl.col("b") / 2).alias("b/2"),
-        ...         (pl.col("c").is_not()).alias("not c"),
+        ...         (pl.col("c").not_()).alias("not c"),
         ...     ]
         ... ).collect()
         shape: (4, 6)
@@ -3508,7 +3650,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.with_columns(
         ...     (pl.col("a") ** 2).alias("a^2"),
         ...     (pl.col("b") / 2).alias("b/2"),
-        ...     (pl.col("c").is_not()).alias("not c"),
+        ...     (pl.col("c").not_()).alias("not c"),
         ... ).collect()
         shape: (4, 6)
         ┌─────┬──────┬───────┬──────┬──────┬───────┐
@@ -3526,7 +3668,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> lf.with_columns(
         ...     ab=pl.col("a") * pl.col("b"),
-        ...     not_c=pl.col("c").is_not(),
+        ...     not_c=pl.col("c").not_(),
         ... ).collect()
         shape: (4, 5)
         ┌─────┬──────┬───────┬──────┬───────┐
@@ -4974,7 +5116,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             self._ldf.melt(id_vars, value_vars, value_name, variable_name, streamable)
         )
 
-    def map(
+    def map_batches(
         self,
         function: Callable[[DataFrame], DataFrame],
         *,
@@ -5028,22 +5170,32 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": [1, 2],
-        ...         "b": [3, 4],
-        ...     }
+        >>> lf = (  # doctest: +SKIP
+        ...     pl.LazyFrame(
+        ...         {
+        ...             "a": pl.int_range(-100_000, 0, eager=True),
+        ...             "b": pl.int_range(0, 100_000, eager=True),
+        ...         }
+        ...     )
+        ...     .map_batches(lambda x: 2 * x, streamable=True)
+        ...     .collect(streaming=True)
         ... )
-        >>> lf.map(lambda x: 2 * x).collect()
-        shape: (2, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 2   ┆ 6   │
-        │ 4   ┆ 8   │
-        └─────┴─────┘
+        shape: (100_000, 2)
+        ┌─────────┬────────┐
+        │ a       ┆ b      │
+        │ ---     ┆ ---    │
+        │ i64     ┆ i64    │
+        ╞═════════╪════════╡
+        │ -200000 ┆ 0      │
+        │ -199998 ┆ 2      │
+        │ -199996 ┆ 4      │
+        │ -199994 ┆ 6      │
+        │ …       ┆ …      │
+        │ -8      ┆ 199992 │
+        │ -6      ┆ 199994 │
+        │ -4      ┆ 199996 │
+        │ -2      ┆ 199998 │
+        └─────────┴────────┘
 
         """
         if no_optimizations:
@@ -5052,7 +5204,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown = False
 
         return self._from_pyldf(
-            self._ldf.map(
+            self._ldf.map_batches(
                 function,
                 predicate_pushdown,
                 projection_pushdown,
@@ -5370,7 +5522,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Start a group by operation.
 
-        Alias for :func:`LazyFrame.group_by`.
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`LazyFrame.group_by`.
 
         Parameters
         ----------
@@ -5402,7 +5555,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Create rolling groups based on a time, Int32, or Int64 column.
 
-        Alias for :func:`LazyFrame.group_by_rolling`.
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`LazyFrame.group_by_rolling`.
 
         Parameters
         ----------
@@ -5465,7 +5619,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Group based on a time value (or index value of type Int32, Int64).
 
-        Alias for :func:`LazyFrame.group_by_rolling`.
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`LazyFrame.group_by_dynamic`.
 
         Parameters
         ----------
@@ -5533,4 +5688,61 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             by=by,
             start_by=start_by,
             check_sorted=check_sorted,
+        )
+
+    @deprecate_renamed_function("map_batches", version="0.19.0")
+    def map(
+        self,
+        function: Callable[[DataFrame], DataFrame],
+        *,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        slice_pushdown: bool = True,
+        no_optimizations: bool = False,
+        schema: None | SchemaDict = None,
+        validate_output_schema: bool = True,
+        streamable: bool = False,
+    ) -> Self:
+        """
+        Apply a custom function.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`LazyFrame.map_batches`.
+
+        Parameters
+        ----------
+        function
+            Lambda/ function to apply.
+        predicate_pushdown
+            Allow predicate pushdown optimization to pass this node.
+        projection_pushdown
+            Allow projection pushdown optimization to pass this node.
+        slice_pushdown
+            Allow slice pushdown optimization to pass this node.
+        no_optimizations
+            Turn off all optimizations past this point.
+        schema
+            Output schema of the function, if set to ``None`` we assume that the schema
+            will remain unchanged by the applied function.
+        validate_output_schema
+            It is paramount that polars' schema is correct. This flag will ensure that
+            the output schema of this function will be checked with the expected schema.
+            Setting this to ``False`` will not do this check, but may lead to hard to
+            debug bugs.
+        streamable
+            Whether the function that is given is eligible to be running with the
+            streaming engine. That means that the function must produce the same result
+            when it is executed in batches or when it is be executed on the full
+            dataset.
+
+        """
+        return self.map_batches(
+            function,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            slice_pushdown=slice_pushdown,
+            no_optimizations=no_optimizations,
+            schema=schema,
+            validate_output_schema=validate_output_schema,
+            streamable=streamable,
         )

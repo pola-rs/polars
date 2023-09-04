@@ -2,7 +2,7 @@
 
 PYTHONPATH=
 SHELL=/bin/bash
-VENV = .venv
+VENV=../.venv
 
 ifeq ($(OS),Windows_NT)
 	VENV_BIN=$(VENV)/Scripts
@@ -10,16 +10,13 @@ else
 	VENV_BIN=$(VENV)/bin
 endif
 
+.PHONY: .venv
 .venv:  ## Set up virtual environment and install requirements
-	python3 -m venv $(VENV)
-	$(MAKE) requirements
+	@$(MAKE) -s -C .. $@
 
 .PHONY: requirements
 requirements: .venv  ## Install/refresh all project requirements
-	$(VENV_BIN)/python -m pip install --upgrade pip
-	$(VENV_BIN)/pip install --upgrade -r requirements-dev.txt
-	$(VENV_BIN)/pip install --upgrade -r requirements-lint.txt
-	$(VENV_BIN)/pip install --upgrade -r docs/requirements-docs.txt
+	@$(MAKE) -s -C .. $@
 
 .PHONY: build
 build: .venv  ## Compile and install Polars for development
@@ -91,7 +88,6 @@ coverage: .venv build  ## Run tests and report coverage
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
-	@rm -rf .venv/
 	@rm -rf target/
 	@rm -rf docs/build/
 	@rm -rf docs/source/reference/api/

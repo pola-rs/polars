@@ -290,11 +290,6 @@ impl PySeries {
         }
     }
 
-    fn _not(&self) -> PyResult<Self> {
-        let bool = self.series.bool().map_err(PyPolarsErr::from)?;
-        Ok((!bool).into_series().into())
-    }
-
     fn as_str(&self) -> PyResult<String> {
         Ok(format!("{:?}", self.series))
     }

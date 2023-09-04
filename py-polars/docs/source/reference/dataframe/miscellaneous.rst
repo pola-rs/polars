@@ -10,3 +10,4 @@ Miscellaneous
     DataFrame.corr
     DataFrame.frame_equal
     DataFrame.lazy
+    DataFrame.map_rows

@@ -240,9 +240,7 @@ pub fn datetime(
     let ambiguous = ambiguous
         .map(|e| e.inner)
         .unwrap_or(dsl::lit(String::from("raise")));
-    println!("ambiguous: {:?}", ambiguous);
     let time_unit = time_unit.0;
-
     let args = DatetimeArgs {
         year,
         month,
@@ -388,23 +386,16 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (pyexpr, lambda, output_type, apply_groups, returns_scalar))]
+#[pyo3(signature = (pyexpr, lambda, output_type, map_groups, returns_scalar))]
 pub fn map_mul(
     py: Python,
     pyexpr: Vec<PyExpr>,
     lambda: PyObject,
     output_type: Option<Wrap<DataType>>,
-    apply_groups: bool,
+    map_groups: bool,
     returns_scalar: bool,
 ) -> PyExpr {
-    map::lazy::map_mul(
-        &pyexpr,
-        py,
-        lambda,
-        output_type,
-        apply_groups,
-        returns_scalar,
-    )
+    map::lazy::map_mul(&pyexpr, py, lambda, output_type, map_groups, returns_scalar)
 }
 
 #[pyfunction]

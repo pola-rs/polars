@@ -275,7 +275,7 @@ impl SqlExprVisitor<'_> {
                 } else {
                     s.parse::<i64>().map(AnyValue::Int64).map_err(|_| ())
                 }
-                .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {:?}"))?
+                .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {s:?}"))?
             },
             SqlValue::SingleQuotedString(s)
             | SqlValue::NationalStringLiteral(s)

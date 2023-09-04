@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta
-from functools import reduce
-from typing import Any, Sequence
 
 import numpy as np
 import pytest
@@ -11,75 +9,6 @@ import pytest
 import polars as pl
 from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal
-
-
-def test_apply_none() -> None:
-    df = pl.DataFrame(
-        {
-            "g": [1, 1, 1, 2, 2, 2, 5],
-            "a": [2, 4, 5, 190, 1, 4, 1],
-            "b": [1, 3, 2, 1, 43, 3, 1],
-        }
-    )
-
-    out = (
-        df.group_by("g", maintain_order=True).agg(
-            pl.apply(
-                exprs=["a", pl.col("b") ** 4, pl.col("a") / 4],
-                function=lambda x: x[0] * x[1] + x[2].sum(),
-            ).alias("multiple")
-        )
-    )["multiple"]
-    assert out[0].to_list() == [4.75, 326.75, 82.75]
-    assert out[1].to_list() == [238.75, 3418849.75, 372.75]
-
-    out_df = df.select(pl.map(exprs=["a", "b"], function=lambda s: s[0] * s[1]))
-    assert out_df["a"].to_list() == (df["a"] * df["b"]).to_list()
-
-    # check if we can return None
-    def func(s: Sequence[pl.Series]) -> pl.Series | None:
-        if s[0][0] == 190:
-            return None
-        else:
-            return s[0]
-
-    out = (
-        df.group_by("g", maintain_order=True).agg(
-            pl.apply(
-                exprs=["a", pl.col("b") ** 4, pl.col("a") / 4], function=func
-            ).alias("multiple")
-        )
-    )["multiple"]
-    assert out[1] is None
-
-
-def test_map_return_py_object() -> None:
-    df = pl.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6]})
-    out = df.select([pl.all().map(lambda s: reduce(lambda a, b: a + b, s))])
-    assert out.rows() == [(6, 15)]
-
-
-def test_agg_objects() -> None:
-    df = pl.DataFrame(
-        {
-            "names": ["foo", "ham", "spam", "cheese", "egg", "foo"],
-            "dates": ["1", "1", "2", "3", "3", "4"],
-            "groups": ["A", "A", "B", "B", "B", "C"],
-        }
-    )
-
-    class Foo:
-        def __init__(self, payload: Any):
-            self.payload = payload
-
-    out = df.group_by("groups").agg(
-        [
-            pl.apply(
-                [pl.col("dates"), pl.col("names")], lambda s: Foo(dict(zip(s[0], s[1])))
-            )
-        ]
-    )
-    assert out.dtypes == [pl.Utf8, pl.Object]
 
 
 def test_map_elements_infer_list() -> None:
@@ -123,21 +52,6 @@ def test_map_elements_struct() -> None:
     )
 
     assert_frame_equal(out, expected)
-
-
-def test_apply_numpy_out_3057() -> None:
-    df = pl.DataFrame(
-        {
-            "id": [0, 0, 0, 1, 1, 1],
-            "t": [2.0, 4.3, 5, 10, 11, 14],
-            "y": [0.0, 1, 1.3, 2, 3, 4],
-        }
-    )
-    result = df.group_by("id", maintain_order=True).agg(
-        pl.apply(["y", "t"], lambda lst: np.trapz(y=lst[0], x=lst[1])).alias("result")
-    )
-    expected = pl.DataFrame({"id": [0, 1], "result": [1.955, 13.0]})
-    assert_frame_equal(result, expected)
 
 
 def test_map_elements_numpy_int_out() -> None:
@@ -342,44 +256,12 @@ def test_map_elements_binary() -> None:
     }
 
 
-def test_map_no_dtype_set_8531() -> None:
-    assert (
-        pl.DataFrame({"a": [1]})
-        .with_columns(
-            pl.col("a").map(lambda x: x * 2).shift_and_fill(fill_value=0, periods=0)
-        )
-        .item()
-        == 2
-    )
-
-
 def test_map_elements_set_datetime_output_8984() -> None:
     df = pl.DataFrame({"a": [""]})
     payload = datetime(2001, 1, 1)
     assert df.select(
         pl.col("a").map_elements(lambda _: payload, return_dtype=pl.Datetime),
     )["a"].to_list() == [payload]
-
-
-def test_err_df_apply_return_type() -> None:
-    df = pl.DataFrame({"a": [[1, 2], [2, 3]], "b": [[4, 5], [6, 7]]})
-
-    def cmb(row: tuple[Any, ...]) -> list[Any]:
-        res = [x + y for x, y in zip(row[0], row[1])]
-        return [res]
-
-    with pytest.raises(pl.ComputeError, match="expected tuple, got list"):
-        df.apply(cmb)
-
-
-def test_apply_shifted_chunks() -> None:
-    df = pl.DataFrame(pl.Series("texts", ["test", "test123", "tests"]))
-    assert df.select(
-        pl.col("texts"), pl.col("texts").shift(1).alias("texts_shifted")
-    ).apply(lambda x: x).to_dict(False) == {
-        "column_0": ["test", "test123", "tests"],
-        "column_1": [None, "test", "test123"],
-    }
 
 
 def test_map_elements_dict_order_10128() -> None:

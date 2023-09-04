@@ -26,8 +26,6 @@ def test_group_by() -> None:
         }
     )
 
-    assert df.group_by("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
-
     # Use lazy API in eager group_by
     assert sorted(df.group_by("a").agg([pl.sum("b")]).rows()) == [
         ("a", 4),

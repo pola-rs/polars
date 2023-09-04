@@ -264,8 +264,10 @@ def test_bitwise_ops() -> None:
 
 
 def test_bitwise_floats_invert() -> None:
-    a = pl.Series([2.0, 3.0, 0.0])
-    assert ~a == NotImplemented
+    s = pl.Series([2.0, 3.0, 0.0])
+
+    with pytest.raises(pl.SchemaError):
+        ~s
 
 
 def test_equality() -> None:
@@ -1035,78 +1037,6 @@ def test_shift() -> None:
     assert_series_equal(a.shift_and_fill(10, periods=-1), pl.Series("a", [2, 3, 10]))
 
 
-def test_rolling() -> None:
-    a = pl.Series("a", [1, 2, 3, 2, 1])
-    assert_series_equal(a.rolling_min(2), pl.Series("a", [None, 1, 2, 2, 1]))
-    assert_series_equal(a.rolling_max(2), pl.Series("a", [None, 2, 3, 3, 2]))
-    assert_series_equal(a.rolling_sum(2), pl.Series("a", [None, 3, 5, 5, 3]))
-    assert_series_equal(a.rolling_mean(2), pl.Series("a", [None, 1.5, 2.5, 2.5, 1.5]))
-
-    assert a.rolling_std(2).to_list()[1] == pytest.approx(0.7071067811865476)
-    assert a.rolling_var(2).to_list()[1] == pytest.approx(0.5)
-    assert a.rolling_std(2, ddof=0).to_list()[1] == pytest.approx(0.5)
-    assert a.rolling_var(2, ddof=0).to_list()[1] == pytest.approx(0.25)
-
-    assert_series_equal(
-        a.rolling_median(4), pl.Series("a", [None, None, None, 2, 2], dtype=Float64)
-    )
-    assert_series_equal(
-        a.rolling_quantile(0, "nearest", 3),
-        pl.Series("a", [None, None, 1, 2, 1], dtype=Float64),
-    )
-    assert_series_equal(
-        a.rolling_quantile(0, "lower", 3),
-        pl.Series("a", [None, None, 1, 2, 1], dtype=Float64),
-    )
-    assert_series_equal(
-        a.rolling_quantile(0, "higher", 3),
-        pl.Series("a", [None, None, 1, 2, 1], dtype=Float64),
-    )
-    assert a.rolling_skew(4).null_count() == 3
-
-    # 3099
-    # test if we maintain proper dtype
-    for dt in [pl.Float32, pl.Float64]:
-        result = pl.Series([1, 2, 3], dtype=dt).rolling_min(2, weights=[0.1, 0.2])
-        expected = pl.Series([None, 0.1, 0.2], dtype=dt)
-        assert_series_equal(result, expected)
-
-    df = pl.DataFrame({"val": [1.0, 2.0, 3.0, np.NaN, 5.0, 6.0, 7.0]})
-
-    for e in [
-        pl.col("val").rolling_min(window_size=3),
-        pl.col("val").rolling_max(window_size=3),
-    ]:
-        out = df.with_columns(e).to_series()
-        assert out.null_count() == 2
-        assert np.isnan(out.to_numpy()).sum() == 5
-
-    expected_values = [None, None, 2.0, 3.0, 5.0, 6.0, 6.0]
-    assert (
-        df.with_columns(pl.col("val").rolling_median(window_size=3))
-        .to_series()
-        .to_list()
-        == expected_values
-    )
-    assert (
-        df.with_columns(pl.col("val").rolling_quantile(0.5, window_size=3))
-        .to_series()
-        .to_list()
-        == expected_values
-    )
-
-    nan = float("nan")
-    a = pl.Series("a", [11.0, 2.0, 9.0, nan, 8.0])
-    assert_series_equal(
-        a.rolling_sum(3),
-        pl.Series("a", [None, None, 22.0, nan, nan]),
-    )
-    assert_series_equal(
-        a.rolling_apply(np.nansum, 3),
-        pl.Series("a", [None, None, 22.0, 11.0, 17.0]),
-    )
-
-
 def test_object() -> None:
     vals = [[12], "foo", 9]
     a = pl.Series("a", vals)
@@ -1264,8 +1194,66 @@ def test_apply_list_out() -> None:
 
 
 def test_is_first() -> None:
-    s = pl.Series("", [1, 1, 2])
-    assert s.is_first().to_list() == [True, False, True]
+    # numeric
+    s = pl.Series([1, 1, None, 2, None, 3, 3])
+    assert s.is_first().to_list() == [True, False, True, True, False, True, False]
+    # str
+    s = pl.Series(["x", "x", None, "y", None, "z", "z"])
+    assert s.is_first().to_list() == [True, False, True, True, False, True, False]
+    # boolean
+    s = pl.Series([True, True, None, False, None, False, False])
+    assert s.is_first().to_list() == [True, False, True, True, False, False, False]
+    # struct
+    s = pl.Series(
+        [
+            {"x": 1, "y": 2},
+            {"x": 1, "y": 2},
+            None,
+            {"x": 2, "y": 1},
+            None,
+            {"x": 3, "y": 2},
+            {"x": 3, "y": 2},
+        ]
+    )
+    assert s.is_first().to_list() == [True, False, True, True, False, True, False]
+    # list
+    s = pl.Series([[1, 2], [1, 2], None, [2, 3], None, [3, 4], [3, 4]])
+    assert s.is_first().to_list() == [True, False, True, True, False, True, False]
+
+
+def test_is_last() -> None:
+    # numeric
+    s = pl.Series([1, 1, None, 2, None, 3, 3])
+    assert s.is_last().to_list() == [False, True, False, True, True, False, True]
+    # str
+    s = pl.Series(["x", "x", None, "y", None, "z", "z"])
+    assert s.is_last().to_list() == [False, True, False, True, True, False, True]
+    # boolean
+    s = pl.Series([True, True, None, False, None, False, False])
+    assert s.is_last().to_list() == [False, True, False, False, True, False, True]
+    # struct
+    s = pl.Series(
+        [
+            {"x": 1, "y": 2},
+            {"x": 1, "y": 2},
+            None,
+            {"x": 2, "y": 1},
+            None,
+            {"x": 3, "y": 2},
+            {"x": 3, "y": 2},
+        ]
+    )
+    assert s.is_last().to_list() == [False, True, False, True, True, False, True]
+    # list
+    s = pl.Series([[1, 2], [1, 2], None, [2, 3], None, [3, 4], [3, 4]])
+    assert s.is_last().to_list() == [False, True, False, True, True, False, True]
+
+
+@pytest.mark.parametrize("dtypes", [pl.Int32, pl.Utf8, pl.Boolean, pl.List(pl.Int32)])
+def test_is_first_last_all_null(dtypes: pl.PolarsDataType) -> None:
+    s = pl.Series([None, None, None], dtype=dtypes)
+    assert s.is_first().to_list() == [True, False, False]
+    assert s.is_last().to_list() == [False, False, True]
 
 
 def test_reinterpret() -> None:
@@ -1979,6 +1967,10 @@ def test_iter_nested_list() -> None:
     assert_series_equal(elems[0], pl.Series([1, 2]))
     assert_series_equal(elems[1], pl.Series([3, 4]))
 
+    rev_elems = list(reversed(pl.Series("s", [[1, 2], [3, 4]])))
+    assert_series_equal(rev_elems[0], pl.Series([3, 4]))
+    assert_series_equal(rev_elems[1], pl.Series([1, 2]))
+
 
 def test_iter_nested_struct() -> None:
     # note: this feels inconsistent with the above test for nested list, but
@@ -1986,6 +1978,10 @@ def test_iter_nested_struct() -> None:
     elems = list(pl.Series("s", [{"a": 1, "b": 2}, {"a": 3, "b": 4}]))
     assert elems[0] == {"a": 1, "b": 2}
     assert elems[1] == {"a": 3, "b": 4}
+
+    rev_elems = list(reversed(pl.Series("s", [{"a": 1, "b": 2}, {"a": 3, "b": 4}])))
+    assert rev_elems[0] == {"a": 3, "b": 4}
+    assert rev_elems[1] == {"a": 1, "b": 2}
 
 
 @pytest.mark.parametrize(
@@ -2302,10 +2298,19 @@ def test_product() -> None:
     assert out == 6
     a = pl.Series("a", [1, 2, None])
     out = a.product()
-    assert out is None
+    assert out == 2
     a = pl.Series("a", [None, 2, 3])
     out = a.product()
-    assert out is None
+    assert out == 6
+    a = pl.Series("a", [])
+    out = a.product()
+    assert out == 1
+    a = pl.Series("a", [None, None])
+    out = a.product()
+    assert out == 1
+    a = pl.Series("a", [3.0, None, float("nan")])
+    out = a.product()
+    assert math.isnan(out)
 
 
 def test_ceil() -> None:

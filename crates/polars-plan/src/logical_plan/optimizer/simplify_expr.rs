@@ -254,7 +254,7 @@ impl OptimizationRule for SimplifyBooleanRule {
             },
             AExpr::Function {
                 input,
-                function: FunctionExpr::Boolean(BooleanFunction::IsNot),
+                function: FunctionExpr::Boolean(BooleanFunction::Not),
                 ..
             } => {
                 let y = expr_arena.get(input[0]);
@@ -263,7 +263,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                     // not(not x) => x
                     AExpr::Function {
                         input,
-                        function: FunctionExpr::Boolean(BooleanFunction::IsNot),
+                        function: FunctionExpr::Boolean(BooleanFunction::Not),
                         ..
                     } => Some(expr_arena.get(input[0]).clone()),
                     // not(lit x) => !x

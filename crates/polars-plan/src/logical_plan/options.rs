@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
+use polars_io::csv::SerializeOptions;
+#[cfg(feature = "csv")]
 use polars_io::csv::{CsvEncoding, NullValues};
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcCompression;
@@ -71,6 +73,16 @@ pub struct IpcWriterOptions {
     pub compression: Option<IpcCompression>,
     /// maintain the order the data was processed
     pub maintain_order: bool,
+}
+
+#[cfg(feature = "csv")]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct CsvWriterOptions {
+    pub has_header: bool,
+    pub batch_size: usize,
+    pub maintain_order: bool,
+    pub serialize_options: SerializeOptions,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -303,6 +315,8 @@ pub enum FileType {
     Parquet(ParquetWriteOptions),
     #[cfg(feature = "ipc")]
     Ipc(IpcWriterOptions),
+    #[cfg(feature = "csv")]
+    Csv(CsvWriterOptions),
     Memory,
 }
 

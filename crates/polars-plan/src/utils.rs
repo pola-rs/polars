@@ -192,11 +192,12 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
             Expr::SortBy { expr, .. } => return get_single_leaf(expr),
             Expr::Window { function, .. } => return get_single_leaf(function),
             Expr::Column(name) => return Ok(name.clone()),
+            Expr::Count => return Ok(Arc::from(COUNT)),
             _ => {},
         }
     }
     polars_bail!(
-        ComputeError: "unable to find a single leaf column in {expr:?}"
+        ComputeError: "unable to find a single leaf column in expr {:?}", expr
     );
 }
 

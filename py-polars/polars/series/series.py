@@ -470,7 +470,7 @@ class Series:
             other = Series([other])
         return other ^ self
 
-    def _comp(self, other: Any, op: ComparisonOperator) -> Self:
+    def _comp(self, other: Any, op: ComparisonOperator) -> Series:
         # special edge-case; boolean broadcast series (eq/neq) is its own result
         if self.dtype == Boolean and isinstance(other, bool) and op in ("eq", "neq"):
             if (other is True and op == "eq") or (other is False and op == "neq"):
@@ -514,10 +514,10 @@ class Series:
         ...
 
     @overload
-    def __eq__(self, other: Any) -> Self:
+    def __eq__(self, other: Any) -> Series:
         ...
 
-    def __eq__(self, other: Any) -> Self | Expr:
+    def __eq__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
@@ -527,10 +527,10 @@ class Series:
         ...
 
     @overload
-    def __ne__(self, other: Any) -> Self:
+    def __ne__(self, other: Any) -> Series:
         ...
 
-    def __ne__(self, other: Any) -> Self | Expr:
+    def __ne__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__ne__(other)
         return self._comp(other, "neq")
@@ -540,10 +540,10 @@ class Series:
         ...
 
     @overload
-    def __gt__(self, other: Any) -> Self:
+    def __gt__(self, other: Any) -> Series:
         ...
 
-    def __gt__(self, other: Any) -> Self | Expr:
+    def __gt__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__gt__(other)
         return self._comp(other, "gt")
@@ -553,10 +553,10 @@ class Series:
         ...
 
     @overload
-    def __lt__(self, other: Any) -> Self:
+    def __lt__(self, other: Any) -> Series:
         ...
 
-    def __lt__(self, other: Any) -> Self | Expr:
+    def __lt__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__lt__(other)
         return self._comp(other, "lt")
@@ -566,10 +566,10 @@ class Series:
         ...
 
     @overload
-    def __ge__(self, other: Any) -> Self:
+    def __ge__(self, other: Any) -> Series:
         ...
 
-    def __ge__(self, other: Any) -> Self | Expr:
+    def __ge__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__ge__(other)
         return self._comp(other, "gt_eq")
@@ -579,10 +579,10 @@ class Series:
         ...
 
     @overload
-    def __le__(self, other: Any) -> Self:
+    def __le__(self, other: Any) -> Series:
         ...
 
-    def __le__(self, other: Any) -> Self | Expr:
+    def __le__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__le__(other)
         return self._comp(other, "lt_eq")
@@ -804,10 +804,8 @@ class Series:
             other = F.lit(other)
         return self.to_frame().select(F.col(self.name) // other).to_series()
 
-    def __invert__(self) -> Self:
-        if self.dtype == Boolean:
-            return self._from_pyseries(self._s._not())
-        return NotImplemented
+    def __invert__(self) -> Series:
+        return self.not_()
 
     @overload
     def __mul__(self, other: Expr) -> Expr:  # type: ignore[misc]
@@ -3266,6 +3264,29 @@ class Series:
         """
         return self._s.is_sorted(descending)
 
+    def not_(self) -> Series:
+        """
+        Negate a boolean Series.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [True, False, False])
+        >>> s.not_()
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+            false
+            true
+            true
+        ]
+
+        """
+
     def is_null(self) -> Series:
         """
         Returns a boolean Series indicating which values are null.
@@ -3517,6 +3538,16 @@ class Series:
         -------
         Series
             Series of data type :class:`Boolean`.
+
+        """
+
+    def is_last(self) -> Series:
+        """
+        Get a mask of the last unique value.
+
+        Returns
+        -------
+        Boolean Series
 
         """
 
@@ -4875,7 +4906,7 @@ class Series:
         -----
         If your function is expensive and you don't want it to be called more than
         once for a given input, consider applying an ``@lru_cache`` decorator to it.
-        With suitable data you may achieve order-of-magnitude speedups (or more).
+        If your data is suitable you may achieve *significant* speedups.
 
         Examples
         --------
@@ -5346,7 +5377,7 @@ class Series:
             .to_series()
         )
 
-    def rolling_apply(
+    def rolling_map(
         self,
         function: Callable[[Series], Any],
         window_size: int,
@@ -5356,46 +5387,45 @@ class Series:
         center: bool = False,
     ) -> Series:
         """
-        Apply a custom rolling window function.
+        Compute a custom rolling window function.
 
-        Prefer the specific rolling window functions over this one, as they are faster:
-
-            * rolling_min
-            * rolling_max
-            * rolling_mean
-            * rolling_sum
-
-        The window at a given row will include the row itself and the `window_size - 1`
-        elements before it.
+        .. warning::
+            Computing custom functions is extremely slow. Use specialized rolling
+            functions such as :func:`Series.rolling_sum` if at all possible.
 
         Parameters
         ----------
         function
-            Aggregation function
+            Custom aggregation function.
         window_size
-            The length of the window.
+            Size of the window. The window at a given row will include the row
+            itself and the ``window_size - 1`` elements before it.
         weights
-            An optional slice with the same length as the window that will be multiplied
+            A list of weights with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
             a result. If None, it will be set equal to window size.
         center
-            Set the labels at the center of the window
+            Set the labels at the center of the window.
+
+        Warnings
+        --------
+
 
         Examples
         --------
-        >>> import numpy as np
-        >>> s = pl.Series("A", [11.0, 2.0, 9.0, float("nan"), 8.0])
-        >>> print(s.rolling_apply(function=np.nanstd, window_size=3))
+        >>> from numpy import nansum
+        >>> s = pl.Series([11.0, 2.0, 9.0, float("nan"), 8.0])
+        >>> s.rolling_map(nansum, window_size=3)
         shape: (5,)
-        Series: 'A' [f64]
+        Series: '' [f64]
         [
-            null
-            null
-            3.858612
-            3.5
-            0.5
+                null
+                null
+                22.0
+                11.0
+                17.0
         ]
 
         """
@@ -6586,6 +6616,39 @@ class Series:
 
         """
         return self.map_elements(function, return_dtype, skip_nulls=skip_nulls)
+
+    @deprecate_renamed_function("rolling_map", version="0.19.0")
+    def rolling_apply(
+        self,
+        function: Callable[[Series], Any],
+        window_size: int,
+        weights: list[float] | None = None,
+        min_periods: int | None = None,
+        *,
+        center: bool = False,
+    ) -> Series:
+        """
+        Apply a custom rolling window function.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`Series.rolling_map`.
+
+        Parameters
+        ----------
+        function
+            Aggregation function
+        window_size
+            The length of the window.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+
+        """
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

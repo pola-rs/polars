@@ -69,7 +69,7 @@ def test_lazyframe_membership_operator() -> None:
 
 def test_apply() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    new = ldf.with_columns_seq(pl.col("a").map(lambda s: s * 2).alias("foo"))
+    new = ldf.with_columns_seq(pl.col("a").map_batches(lambda s: s * 2).alias("foo"))
 
     expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
     assert_frame_equal(new, expected)
@@ -146,21 +146,24 @@ def test_agg() -> None:
     assert res.row(0) == (1, 1.0)
 
 
+def test_count_suffix_10783() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [["a", "c", "b"], ["a", "b", "c"], ["a", "d", "c"], ["c", "a", "b"]],
+            "b": [["a", "c", "b"], ["a", "b", "c"], ["a", "d", "c"], ["c", "a", "b"]],
+        }
+    )
+    df_with_cnt = df.with_columns(
+        pl.count().over(pl.col("a").list.sort().list.join("").hash()).suffix("_suffix")
+    )
+    df_expect = df.with_columns(pl.Series("count_suffix", [3, 3, 1, 3]))
+    assert_frame_equal(df_with_cnt, df_expect, check_dtype=False)
+
+
 def test_or() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = ldf.filter((pl.col("a") == 1) | (pl.col("b") > 2)).collect()
     assert out.rows() == [(1, 1.0), (3, 3.0)]
-
-
-def test_group_by_apply() -> None:
-    ldf = (
-        pl.LazyFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 3.0]})
-        .group_by("a")
-        .apply(lambda df: df * 2.0, schema={"a": pl.Float64, "b": pl.Float64})
-    )
-    out = ldf.collect()
-    assert out.schema == ldf.schema
-    assert out.shape == (3, 2)
 
 
 def test_filter_str() -> None:
@@ -1318,7 +1321,7 @@ def test_lazy_cache_parallel() -> None:
         df_evaluated += 1
         return df
 
-    df = pl.LazyFrame({"a": [1]}).map(map_df).cache()
+    df = pl.LazyFrame({"a": [1]}).map_batches(map_df).cache()
 
     df = pl.concat(
         [
@@ -1349,8 +1352,8 @@ def test_lazy_cache_nested_parallel() -> None:
         df_outer_evaluated += 1
         return df
 
-    df_inner = pl.LazyFrame({"a": [1]}).map(map_df_inner).cache()
-    df_outer = df_inner.select(pl.col("a") + 1).map(map_df_outer).cache()
+    df_inner = pl.LazyFrame({"a": [1]}).map_batches(map_df_inner).cache()
+    df_outer = df_inner.select(pl.col("a") + 1).map_batches(map_df_outer).cache()
 
     df = pl.concat(
         [

@@ -25,7 +25,7 @@ use crate::executors::sinks::group_by::aggregates::AggregateFunction;
 use crate::executors::sinks::group_by::ooc_state::OocState;
 use crate::executors::sinks::group_by::physical_agg_to_logical;
 use crate::executors::sinks::group_by::string::{apply_aggregate, write_agg_idx};
-use crate::executors::sinks::group_by::utils::{compute_slices, finalize_group_by};
+use crate::executors::sinks::group_by::utils::{compute_slices, finalize_group_by, prepare_key};
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
@@ -219,6 +219,9 @@ where
     }
 
     fn sink_sorted(&mut self, ca: &ChunkedArray<K>, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        if chunk.is_empty() {
+            return Ok(SinkResult::CanHaveMoreInput);
+        }
         let arr = ca.downcast_iter().next().unwrap();
         let values = arr.values().as_slice();
         partition_to_groups_amortized(values, 0, false, 0, &mut self.sort_partitions);
@@ -270,7 +273,7 @@ where
     ) -> PolarsResult<Series> {
         let s = self.key.evaluate(chunk, context.execution_state.as_any())?;
         let s = s.to_physical_repr();
-        let s = s.rechunk();
+        let s = prepare_key(&s, chunk);
 
         // todo! ammortize allocation
         for phys_e in self.aggregation_columns.iter() {

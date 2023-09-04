@@ -7,6 +7,14 @@ pub unsafe trait IsFloat: private::Sealed {
         false
     }
 
+    fn is_f32() -> bool {
+        false
+    }
+
+    fn is_f64() -> bool {
+        false
+    }
+
     #[allow(clippy::wrong_self_convention)]
     fn is_nan(&self) -> bool
     where
@@ -50,11 +58,19 @@ mod private {
 }
 
 macro_rules! impl_is_float {
-    ($tp:ty) => {
+    ($tp:ty, $is_f32:literal, $is_f64:literal) => {
         unsafe impl IsFloat for $tp {
             #[inline]
             fn is_float() -> bool {
                 true
+            }
+
+            fn is_f32() -> bool {
+                $is_f32
+            }
+
+            fn is_f64() -> bool {
+                $is_f64
             }
 
             #[inline]
@@ -65,7 +81,7 @@ macro_rules! impl_is_float {
     };
 }
 
-impl_is_float!(f32);
-impl_is_float!(f64);
+impl_is_float!(f32, true, false);
+impl_is_float!(f64, false, true);
 
 pub type ArrayRef = Box<dyn Array>;

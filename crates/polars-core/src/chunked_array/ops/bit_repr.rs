@@ -22,6 +22,38 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
     ChunkedArray::from_chunk_iter(ca.name(), chunks)
 }
 
+/// Reinterprets the type of a ListChunked. T and U must have the same size
+/// and alignment.
+fn reinterpret_list_chunked<T: PolarsNumericType, U: PolarsNumericType>(
+    ca: &ListChunked,
+) -> ListChunked {
+    assert!(std::mem::size_of::<T::Native>() == std::mem::size_of::<U::Native>());
+    assert!(std::mem::align_of::<T::Native>() == std::mem::align_of::<U::Native>());
+
+    let chunks = ca.downcast_iter().map(|array| {
+        let inner_arr = array
+            .values()
+            .as_any()
+            .downcast_ref::<PrimitiveArray<T::Native>>()
+            .unwrap();
+        // SAFETY: we checked that the size and alignment matches.
+        #[allow(clippy::transmute_undefined_repr)]
+        let reinterpreted_buf = unsafe {
+            std::mem::transmute::<Buffer<T::Native>, Buffer<U::Native>>(inner_arr.values().clone())
+        };
+        let pa =
+            PrimitiveArray::from_data_default(reinterpreted_buf, inner_arr.validity().cloned());
+        LargeListArray::new(
+            DataType::List(Box::new(U::get_dtype())).to_arrow(),
+            array.offsets().clone(),
+            pa.to_boxed(),
+            array.validity().cloned(),
+        )
+    });
+
+    ListChunked::from_chunk_iter(ca.name(), chunks)
+}
+
 #[cfg(all(feature = "reinterpret", feature = "dtype-i16", feature = "dtype-u16"))]
 impl Reinterpret for Int16Chunked {
     fn reinterpret_signed(&self) -> Series {
@@ -162,6 +194,27 @@ impl Reinterpret for Float32Chunked {
 
     fn reinterpret_unsigned(&self) -> Series {
         reinterpret_chunked_array::<_, UInt32Type>(self).into_series()
+    }
+}
+
+#[cfg(feature = "reinterpret")]
+impl Reinterpret for ListChunked {
+    fn reinterpret_signed(&self) -> Series {
+        match self.inner_dtype() {
+            DataType::Float32 => reinterpret_list_chunked::<Float32Type, Int32Type>(self),
+            DataType::Float64 => reinterpret_list_chunked::<Float64Type, Int64Type>(self),
+            _ => unimplemented!(),
+        }
+        .into_series()
+    }
+
+    fn reinterpret_unsigned(&self) -> Series {
+        match self.inner_dtype() {
+            DataType::Float32 => reinterpret_list_chunked::<Float32Type, UInt32Type>(self),
+            DataType::Float64 => reinterpret_list_chunked::<Float64Type, UInt64Type>(self),
+            _ => unimplemented!(),
+        }
+        .into_series()
     }
 }
 
