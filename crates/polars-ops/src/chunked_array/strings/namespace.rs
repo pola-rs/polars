@@ -360,8 +360,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         let mut out: UInt32Chunked = ca
             .into_iter()
             .map(|opt_s| {
-                let out = opt_s.map(|s| reg.find_iter(s).count() as u32);
-                out
+                opt_s.map(|s| reg.find_iter(s).count() as u32)
             })
             .collect();
         out.rename(ca.name());
