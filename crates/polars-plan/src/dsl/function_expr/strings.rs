@@ -26,7 +26,7 @@ pub enum StringFunction {
         literal: bool,
         strict: bool,
     },
-    CountMatch(String),
+    CountMatch,
     EndsWith,
     Explode,
     Extract {
@@ -90,7 +90,7 @@ impl StringFunction {
             ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_same_dtype(),
             #[cfg(feature = "regex")]
             Contains { .. } => mapper.with_dtype(DataType::Boolean),
-            CountMatch(_) => mapper.with_dtype(DataType::UInt32),
+            CountMatch => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
             Explode => mapper.with_same_dtype(),
             Extract { .. } => mapper.with_same_dtype(),
@@ -125,7 +125,7 @@ impl Display for StringFunction {
         let s = match self {
             #[cfg(feature = "regex")]
             StringFunction::Contains { .. } => "contains",
-            StringFunction::CountMatch(_) => "count_match",
+            StringFunction::CountMatch => "count_match",
             StringFunction::EndsWith { .. } => "ends_with",
             StringFunction::Extract { .. } => "extract",
             #[cfg(feature = "concat_str")]
@@ -405,11 +405,20 @@ pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
     }
 }
 
-pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
-    let pat = pat.to_string();
+pub(super) fn count_match(args: &[Series]) -> PolarsResult<Series> {
+    let s = &args[0];
+    let pat = &args[1];
 
     let ca = s.utf8()?;
-    ca.count_match(&pat).map(|ca| ca.into_series())
+    let pat = pat.utf8()?;
+    if pat.len() == 1 {
+        let pat = pat
+            .get(0)
+            .ok_or_else(|| polars_err!(ComputeError: "expected a pattern, got null"))?;
+        ca.count_match(pat).map(|ca| ca.into_series())
+    } else {
+        ca.count_match_many(pat).map(|ca| ca.into_series())
+    }
 }
 
 #[cfg(feature = "temporal")]

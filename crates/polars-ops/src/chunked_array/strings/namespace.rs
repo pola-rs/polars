@@ -8,6 +8,7 @@ use polars_arrow::kernels::string::*;
 #[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
 use polars_core::export::regex::{escape, Regex};
+use polars_core::prelude::arity::try_binary_elementwise;
 
 use super::*;
 #[cfg(feature = "binary_encoding")]
@@ -322,6 +323,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         let mut reg = Regex::new("").unwrap();
         let mut lastpat = "";
         let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+
         for (opt_s, opt_pat) in ca.into_iter().zip(pat) {
             match (opt_s, opt_pat) {
                 (_, None) | (None, _) => builder.append_null(),
@@ -355,6 +357,36 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             .collect();
         out.rename(ca.name());
         Ok(out)
+    }
+
+    /// Count all successive non-overlapping regex matches.
+    fn count_match_many(&self, pat: &Utf8Chunked) -> PolarsResult<UInt32Chunked> {
+        let ca = self.as_utf8();
+        polars_ensure!(
+            ca.len() == pat.len(),
+            ComputeError: "pattern's length: {} does not match that of the argument series: {}",
+            pat.len(), ca.len(),
+        );
+
+        // Very simple cache: don't recompile the same regex for multiple values in a row.
+        // TODO: proper LRU cache with reasonable memory limit.
+        let mut reg = Regex::new("").unwrap();
+
+        let op = move |opt_s: Option<&str>, opt_pat: Option<&str>| -> PolarsResult<Option<u32>> {
+            match (opt_s, opt_pat) {
+                (Some(s), Some(pat)) => {
+                    if pat != reg.as_str() {
+                        reg = Regex::new(pat)?;
+                    }
+                    Ok(Some(reg.find_iter(s).count() as u32))
+                },
+                _ => Ok(None),
+            }
+        };
+
+        let out: UInt32Chunked = try_binary_elementwise(ca, pat, op)?;
+
+        Ok(out.with_name(ca.name()))
     }
 
     /// Modify the strings to their lowercase equivalent.
