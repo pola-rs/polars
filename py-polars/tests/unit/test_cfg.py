@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 import pytest
 
 import polars as pl
-from polars.config import _get_float_fmt
+from polars.config import _POLARS_CFG_ENV_VARS, _get_float_fmt
 from polars.exceptions import StringCacheMismatchError
 from polars.testing import assert_frame_equal
 
@@ -350,6 +350,10 @@ def test_set_tbl_formats() -> None:
         "+-----------------+"
     )
 
+    # invalid style
+    with pytest.raises(ValueError, match="invalid table format name: 'NOPE'"):
+        pl.Config().set_tbl_formatting("NOPE")  # type: ignore[arg-type]
+
 
 def test_set_tbl_width_chars() -> None:
     df = pl.DataFrame(
@@ -413,7 +417,7 @@ def test_shape_below_table_and_inlined_dtype() -> None:
         "╰─────────┴─────────┴─────────╯"
     )
     (
-        pl.Config.set_tbl_formatting(rounded_corners=False)
+        pl.Config.set_tbl_formatting(None, rounded_corners=False)
         .set_tbl_column_data_type_inline(False)
         .set_tbl_cell_alignment("RIGHT")
     )
@@ -425,10 +429,11 @@ def test_shape_below_table_and_inlined_dtype() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│   1 ┆   3 ┆   5 │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│   2 ┆   4 ┆   6 │\n"
         "└─────┴─────┴─────┘"
     )
+    with pytest.raises(ValueError):
+        pl.Config.set_tbl_cell_alignment("INVALID")  # type: ignore[arg-type]
 
 
 def test_shape_format_for_big_numbers() -> None:
@@ -640,3 +645,72 @@ def test_set_fmt_str_lengths_invalid_length() -> None:
             cfg.set_fmt_str_lengths(0)
         with pytest.raises(ValueError):
             cfg.set_fmt_str_lengths(-2)
+
+
+@pytest.mark.parametrize(
+    ("environment_variable", "config_setting", "value", "expected"),
+    [
+        ("POLARS_ACTIVATE_DECIMAL", "activate_decimals", True, "1"),
+        ("POLARS_AUTO_STRUCTIFY", "set_auto_structify", True, "1"),
+        ("POLARS_FMT_MAX_COLS", "set_tbl_cols", 12, "12"),
+        ("POLARS_FMT_MAX_ROWS", "set_tbl_rows", 3, "3"),
+        ("POLARS_FMT_STR_LEN", "set_fmt_str_lengths", 42, "42"),
+        ("POLARS_FMT_TABLE_CELL_ALIGNMENT", "set_tbl_cell_alignment", "RIGHT", "RIGHT"),
+        ("POLARS_FMT_TABLE_HIDE_COLUMN_NAMES", "set_tbl_hide_column_names", True, "1"),
+        (
+            "POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW",
+            "set_tbl_dataframe_shape_below",
+            True,
+            "1",
+        ),
+        (
+            "POLARS_FMT_TABLE_FORMATTING",
+            "set_ascii_tables",
+            True,
+            "ASCII_FULL_CONDENSED",
+        ),
+        (
+            "POLARS_FMT_TABLE_FORMATTING",
+            "set_tbl_formatting",
+            "ASCII_MARKDOWN",
+            "ASCII_MARKDOWN",
+        ),
+        (
+            "POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES",
+            "set_tbl_hide_column_data_types",
+            True,
+            "1",
+        ),
+        (
+            "POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR",
+            "set_tbl_hide_dtype_separator",
+            True,
+            "1",
+        ),
+        (
+            "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
+            "set_tbl_hide_dataframe_shape",
+            True,
+            "1",
+        ),
+        (
+            "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
+            "set_tbl_column_data_type_inline",
+            True,
+            "1",
+        ),
+        ("POLARS_STREAMING_CHUNK_SIZE", "set_streaming_chunk_size", 100, "100"),
+        ("POLARS_TABLE_WIDTH", "set_tbl_width_chars", 80, "80"),
+        ("POLARS_VERBOSE", "set_verbose", True, "1"),
+    ],
+)
+def test_unset_config_env_vars(
+    environment_variable: str, config_setting: str, value: Any, expected: str
+) -> None:
+    assert environment_variable in _POLARS_CFG_ENV_VARS
+
+    with pl.Config(**{config_setting: value}):
+        assert os.environ[environment_variable] == expected
+
+    with pl.Config(**{config_setting: None}):  # type: ignore[arg-type]
+        assert environment_variable not in os.environ
