@@ -95,8 +95,8 @@ impl<K: Hash + Eq, V> FastFixedCache<K, V> {
     pub fn get_or_insert_with<Q, F>(&mut self, key: &Q, f: F) -> &mut V
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ToOwned<Owned=K> + ?Sized,
-        F: FnOnce(&K) -> V
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        F: FnOnce(&K) -> V,
     {
         unsafe {
             let h = self.hash(key);
@@ -119,19 +119,21 @@ impl<K: Hash + Eq, V> FastFixedCache<K, V> {
             // SAFETY: we assume h is a HashResult from self.hash with valid indices
             // and we check slot.last_access != 0 before assuming the slot is initialized.
             let slot = self.slots.get_unchecked(h.i1);
-            if slot.last_access.get() != 0 && slot.hash_tag == h.tag {
-                if slot.key.assume_init_ref().borrow() == key {
-                    slot.last_access.set(self.new_access_ctr());
-                    return Some(h.i1);
-                }
+            if slot.last_access.get() != 0
+                && slot.hash_tag == h.tag
+                && slot.key.assume_init_ref().borrow() == key
+            {
+                slot.last_access.set(self.new_access_ctr());
+                return Some(h.i1);
             }
 
             let slot = self.slots.get_unchecked(h.i2);
-            if slot.last_access.get() != 0 && slot.hash_tag == h.tag {
-                if slot.key.assume_init_ref().borrow() == key {
-                    slot.last_access.set(self.new_access_ctr());
-                    return Some(h.i2);
-                }
+            if slot.last_access.get() != 0
+                && slot.hash_tag == h.tag
+                && slot.key.assume_init_ref().borrow() == key
+            {
+                slot.last_access.set(self.new_access_ctr());
+                return Some(h.i2);
             }
         }
 
