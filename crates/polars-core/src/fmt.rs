@@ -674,7 +674,7 @@ impl Display for DataFrame {
                 for (column_index, column) in table.column_iter_mut().enumerate() {
                     let dtype = fields[column_index].data_type();
                     let mut preset = str_preset.as_str();
-                    if dtype.to_physical().is_numeric() {
+                    if dtype.is_numeric() {
                         preset = num_preset.as_str();
                     }
                     match preset {
