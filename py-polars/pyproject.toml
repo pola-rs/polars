@@ -78,6 +78,7 @@ module = [
   "deltalake.*",
   "fsspec.*",
   "matplotlib.*",
+  "moto.server",
   "polars.polars",
   "pyarrow.*",
   "pydantic",

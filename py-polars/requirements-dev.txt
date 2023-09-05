@@ -20,6 +20,7 @@ adbc_driver_sqlite; python_version >= '3.9' and platform_system != 'Windows'
 connectorx
 cloudpickle
 fsspec
+s3fs[boto3]
 
 # Tooling
 hypothesis==6.82.6
@@ -29,5 +30,11 @@ pytest==7.4.0
 pytest-cov==4.1.0
 pytest-xdist==3.3.1
 
+# Need moto.server to mock s3fs - see: https://github.com/aio-libs/aiobotocore/issues/755
+moto[s3]==4.2.2
+flask
+flask-cors
+
 # Stub files
 pandas-stubs
+boto3-stubs
