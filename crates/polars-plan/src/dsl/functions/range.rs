@@ -94,7 +94,7 @@ pub fn date_ranges(
 }
 
 /// Create a datetime range from a `start` and `stop` expression.
-#[cfg(feature = "temporal")]
+#[cfg(feature = "dtype-datetime")]
 pub fn datetime_range(
     start: Expr,
     end: Expr,
@@ -123,7 +123,7 @@ pub fn datetime_range(
 }
 
 /// Create a column of datetime ranges from a `start` and `stop` expression.
-#[cfg(feature = "temporal")]
+#[cfg(feature = "dtype-datetime")]
 pub fn datetime_ranges(
     start: Expr,
     end: Expr,
