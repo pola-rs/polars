@@ -382,7 +382,7 @@ def test_cse_nan_10824() -> None:
     )
 
 
-def test_cse_() -> None:
+def test_cse_10901() -> None:
     df = pl.DataFrame(data=range(6), schema={"a": pl.Int64})
     a = pl.col("a").rolling_sum(window_size=2)
     b = pl.col("a").rolling_sum(window_size=3)
@@ -404,3 +404,18 @@ def test_cse_() -> None:
     )
 
     assert_frame_equal(df.lazy().with_columns(**exprs).collect(), expected)
+
+
+def test_cse_count_in_group_by() -> None:
+    q = (
+        pl.LazyFrame({"a": [1, 1, 2], "b": [1, 2, 3], "c": [40, 51, 12]})
+        .group_by("a")
+        .agg(pl.all().slice(0, pl.count() - 1))
+    )
+
+    assert "POLARS_CSER" not in q.explain()
+    assert q.collect().sort("a").to_dict(False) == {
+        "a": [1, 2],
+        "b": [[1], []],
+        "c": [[40], []],
+    }
