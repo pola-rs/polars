@@ -883,6 +883,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.serialize(file)
 
+    @overload
+    def pipe(
+        self,
+        function: Callable[Concatenate[LazyFrame, P], LazyFrame],
+        *args: P.args,
+        **kwargs: P.kwargs,
+     ) -> T:
+        ...
+
     def pipe(
         self,
         function: Callable[Concatenate[LazyFrame, P], T],
