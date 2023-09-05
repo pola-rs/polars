@@ -9,7 +9,7 @@ use crate::prelude::visitor::{ALogicalPlanNode, AexprNode, RewritingVisitor, Tre
 // We use hashes to get an Identifier
 // but this is very hard to debug, so we also have a version that
 // uses a string trail.
-// #[cfg(test)]
+#[cfg(test)]
 mod identifier_impl {
     use std::hash::{Hash, Hasher};
 
@@ -75,7 +75,6 @@ mod identifier_impl {
 }
 
 #[cfg(not(test))]
-#[cfg(foo)]
 mod identifier_impl {
     use std::hash::{Hash, Hasher};
 
