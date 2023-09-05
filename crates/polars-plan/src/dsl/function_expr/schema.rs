@@ -240,6 +240,10 @@ impl FunctionExpr {
             #[cfg(feature = "random")]
             Random { .. } => mapper.with_same_dtype(),
             SetSortedFlag(_) => mapper.with_same_dtype(),
+            #[cfg(feature = "ffi_plugin")]
+            // TODO! must be a function that calls the inner type.
+            // use python for this?
+            FfiPlugin { output_type, .. } => mapper.with_dtype(output_type.clone()),
         }
     }
 }

@@ -24,6 +24,8 @@ mod list;
 #[cfg(feature = "log")]
 mod log;
 mod nan;
+#[cfg(feature = "ffi_plugin")]
+mod plugin;
 mod pow;
 #[cfg(feature = "random")]
 mod random;
@@ -230,7 +232,12 @@ pub enum FunctionExpr {
         seed: Option<u64>,
     },
     SetSortedFlag(IsSorted),
-    Ffi
+    #[cfg(feature = "ffi_plugin")]
+    FfiPlugin {
+        lib: Arc<str>,
+        symbol: Arc<str>,
+        output_type: DataType,
+    },
 }
 
 impl Hash for FunctionExpr {
@@ -257,6 +264,16 @@ impl Hash for FunctionExpr {
             FunctionExpr::Interpolate(f) => f.hash(state),
             #[cfg(feature = "dtype-categorical")]
             FunctionExpr::Categorical(f) => f.hash(state),
+            #[cfg(feature = "ffi_plugin")]
+            FunctionExpr::FfiPlugin {
+                lib,
+                symbol,
+                output_type,
+            } => {
+                lib.hash(state);
+                symbol.hash(state);
+                output_type.hash(state);
+            },
             _ => {},
         }
     }
@@ -368,6 +385,8 @@ impl Display for FunctionExpr {
             #[cfg(feature = "random")]
             Random { method, .. } => method.into(),
             SetSortedFlag(_) => "set_sorted",
+            #[cfg(feature = "ffi_plugin")]
+            FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
         };
         write!(f, "{s}")
     }
@@ -639,6 +658,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "random")]
             Random { method, seed } => map!(random::random, method, seed),
             SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
+            #[cfg(feature = "ffi_plugin")]
+            FfiPlugin { lib, symbol, .. } => {
+                map_as_slice!(plugin::call_plugin, lib.as_ref(), symbol.as_ref())
+            },
         }
     }
 }
