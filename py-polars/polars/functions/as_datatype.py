@@ -194,7 +194,6 @@ def duration(
     Expr
         Expression of data type :class:`Duration`.
 
-
     Notes
     -----
     A `duration` represents a fixed amount of time. For example,
