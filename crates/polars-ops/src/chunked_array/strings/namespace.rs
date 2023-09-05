@@ -7,7 +7,7 @@ use polars_arrow::export::arrow::{self};
 use polars_arrow::kernels::string::*;
 #[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
-use polars_core::export::regex::{escape, Regex};
+use polars_core::export::regex::Regex;
 use polars_core::prelude::arity::try_binary_elementwise;
 use polars_utils::cache::FastFixedCache;
 
