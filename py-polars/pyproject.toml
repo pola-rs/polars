@@ -74,7 +74,6 @@ module = [
   "adbc_driver_postgresql.*",
   "adbc_driver_sqlite.*",
   "backports",
-  "boto3",
   "connectorx",
   "deltalake.*",
   "fsspec.*",
