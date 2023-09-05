@@ -117,26 +117,35 @@ class Config(contextlib.ContextDecorator):
         """
         Initialise a Config object instance for context manager usage.
 
-        Any `options` kwargs should correspond to the available named "set_"
-        methods, but can optionally to omit the "set_" prefix for brevity.
+        Any ``options`` kwargs should correspond to the available named "set_*"
+        methods, but are allowed to omit the "set_" prefix for brevity.
 
         Parameters
         ----------
         restore_defaults
             set all options to their default values (this is applied before
             setting any other options).
-        options
+        **options
             keyword args that will set the option; equivalent to calling the
             named "set_<option>" method with the given value.
 
         Examples
         --------
+        >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
         >>> with pl.Config(
         ...     # these options will be set for scope duration
         ...     tbl_formatting="ASCII_MARKDOWN",
-        ...     tbl_width_chars=180,
+        ...     tbl_hide_dataframe_shape=True,
+        ...     tbl_rows=10,
         ... ):
-        ...     pass
+        ...     print(df)
+        | abc | xyz   |
+        | --- | ---   |
+        | f64 | bool  |
+        |-----|-------|
+        | 1.0 | true  |
+        | 2.5 | false |
+        | 5.0 | true  |
 
         """
         # save original state _before_ any changes are made
