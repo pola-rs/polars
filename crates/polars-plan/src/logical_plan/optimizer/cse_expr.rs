@@ -316,8 +316,13 @@ impl ExprIdentifierVisitor<'_> {
             // Don't allow this for now, as we can get `null().cast()` in ternary expressions.
             // TODO! Add a typed null
             AExpr::Literal(LiteralValue::Null) => REFUSE_NO_MEMBER,
-            AExpr::Column(_) | AExpr::Literal(_) | AExpr::Count | AExpr::Alias(_, _) => {
-                REFUSE_ALLOW_MEMBER
+            AExpr::Column(_) | AExpr::Literal(_) | AExpr::Alias(_, _) => REFUSE_ALLOW_MEMBER,
+            AExpr::Count => {
+                if self.is_group_by {
+                    REFUSE_NO_MEMBER
+                } else {
+                    REFUSE_ALLOW_MEMBER
+                }
             },
             #[cfg(feature = "random")]
             AExpr::Function {
