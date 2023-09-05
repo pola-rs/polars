@@ -194,6 +194,16 @@ def duration(
     Expr
         Expression of data type :class:`Duration`.
 
+
+    Notes
+    -----
+    A `duration` represents a fixed amount of time. For example,
+    ``pl.duration(days=1)`` means "exactly 24 hours". By contrast,
+    ``pl.offset_by('1d')``, which means "1 calendar day", which could sometimes be
+    23 hours or 25 hours depending on Daylight Savings Time.
+    For non-fixed durations such as "calendar month" or "calendar day",
+    please use :meth:`Expr.offset_by` instead.
+
     Examples
     --------
     >>> from datetime import datetime
@@ -203,7 +213,7 @@ def duration(
     ...         "add": [1, 2],
     ...     }
     ... )
-    >>> print(df)
+    >>> df
     shape: (2, 2)
     ┌─────────────────────┬─────┐
     │ dt                  ┆ add │
@@ -232,6 +242,30 @@ def duration(
     │ 2022-01-16 00:00:00 ┆ 2022-01-04 00:00:00 ┆ 2022-01-02 00:00:02 ┆ 2022-01-02 00:00:00.002 ┆ 2022-01-02 02:00:00 │
     └─────────────────────┴─────────────────────┴─────────────────────┴─────────────────────────┴─────────────────────┘
 
+    If you need to add non-fixed durations, you should use :meth:`Expr.offset_by` instead:
+
+    >>> with pl.Config(tbl_width_chars=120):
+    ...     df.select(
+    ...         add_calendar_days=pl.col("dt").dt.offset_by(
+    ...             pl.format("{}d", pl.col("add"))
+    ...         ),
+    ...         add_calendar_months=pl.col("dt").dt.offset_by(
+    ...             pl.format("{}mo", pl.col("add"))
+    ...         ),
+    ...         add_calendar_years=pl.col("dt").dt.offset_by(
+    ...             pl.format("{}y", pl.col("add"))
+    ...         ),
+    ...     )
+    ...
+    shape: (2, 3)
+    ┌─────────────────────┬─────────────────────┬─────────────────────┐
+    │ add_calendar_days   ┆ add_calendar_months ┆ add_calendar_years  │
+    │ ---                 ┆ ---                 ┆ ---                 │
+    │ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        │
+    ╞═════════════════════╪═════════════════════╪═════════════════════╡
+    │ 2022-01-02 00:00:00 ┆ 2022-02-01 00:00:00 ┆ 2023-01-01 00:00:00 │
+    │ 2022-01-04 00:00:00 ┆ 2022-03-02 00:00:00 ┆ 2024-01-02 00:00:00 │
+    └─────────────────────┴─────────────────────┴─────────────────────┘
     """  # noqa: W505
     if hours is not None:
         hours = parse_as_expression(hours)
