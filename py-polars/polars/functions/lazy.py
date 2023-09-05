@@ -1711,6 +1711,31 @@ def collect_all_async(
     May be useful if you use gevent or asyncio and want to release control to other
     greenlets/tasks while LazyFrames are being collected.
 
+    Parameters
+    ----------
+    lazy_frames
+        A list of LazyFrames to collect.
+    gevent
+        Return wrapper to `gevent.event.AsyncResult` instead of Awaitable
+    type_coercion
+        Do type coercion optimization.
+    predicate_pushdown
+        Do predicate pushdown optimization.
+    projection_pushdown
+        Do projection pushdown optimization.
+    simplify_expression
+        Run simplify expressions optimization.
+    no_optimization
+        Turn off (certain) optimizations.
+    slice_pushdown
+        Slice pushdown optimization.
+    comm_subplan_elim
+        Will try to cache branching subplans that occur on self-joins or unions.
+    comm_subexpr_elim
+        Common subexpressions will be cached and reused.
+    streaming
+        Run parts of the query in a streaming fashion (this is in an alpha state)
+
     Notes
     -----
     In case of error `set_exception` is used on

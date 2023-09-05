@@ -38,6 +38,7 @@ deltalake == 0.10.1
 dataframe-api-compat >= 0.1.6
 # Other
 matplotlib
+gevent
 
 # -------
 # TOOLING
