@@ -2,7 +2,7 @@ use polars_core::prelude::*;
 use polars_core::series::Series;
 use polars_time::{time_range_impl, ClosedWindow, Duration};
 
-use super::utils::temporal_series_to_i64_scalar;
+use super::utils::{ensure_range_bounds_contain_exactly_one_value, temporal_series_to_i64_scalar};
 
 const CAPACITY_FACTOR: usize = 5;
 
@@ -14,8 +14,7 @@ pub(super) fn time_range(
     let start = &s[0];
     let end = &s[1];
 
-    polars_ensure!(start.len() == 1, ComputeError: "`start` must contain a single value");
-    polars_ensure!(end.len() == 1, ComputeError: "`end` must contain a single value");
+    ensure_range_bounds_contain_exactly_one_value(start, end)?;
 
     let dtype = DataType::Time;
     let start = temporal_series_to_i64_scalar(&start.cast(&dtype)?);

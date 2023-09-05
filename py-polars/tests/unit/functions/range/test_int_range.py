@@ -92,3 +92,39 @@ def test_int_ranges_schema_dtype_arg() -> None:
     expected_schema = {"int_range": pl.List(pl.UInt16)}
     assert result.schema == expected_schema
     assert result.collect().schema == expected_schema
+
+
+def test_int_range_input_shape_empty() -> None:
+    empty = pl.Series(dtype=pl.Time)
+    single = pl.Series([5])
+
+    with pytest.raises(
+        pl.ComputeError, match="`start` must contain exactly one value, got 0 values"
+    ):
+        pl.int_range(empty, single, eager=True)
+    with pytest.raises(
+        pl.ComputeError, match="`end` must contain exactly one value, got 0 values"
+    ):
+        pl.int_range(single, empty, eager=True)
+    with pytest.raises(
+        pl.ComputeError, match="`start` must contain exactly one value, got 0 values"
+    ):
+        pl.int_range(empty, empty, eager=True)
+
+
+def test_int_range_input_shape_multiple_values() -> None:
+    single = pl.Series([5])
+    multiple = pl.Series([10, 15])
+
+    with pytest.raises(
+        pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
+    ):
+        pl.int_range(multiple, single, eager=True)
+    with pytest.raises(
+        pl.ComputeError, match="`end` must contain exactly one value, got 2 values"
+    ):
+        pl.int_range(single, multiple, eager=True)
+    with pytest.raises(
+        pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
+    ):
+        pl.int_range(multiple, multiple, eager=True)

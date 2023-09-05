@@ -1,35 +1,27 @@
 use polars_core::prelude::*;
 use polars_core::series::{IsSorted, Series};
 
+use super::utils::ensure_range_bounds_contain_exactly_one_value;
+
 pub(super) fn int_range(s: &[Series], step: i64) -> PolarsResult<Series> {
     let start = &s[0];
     let end = &s[1];
 
+    ensure_range_bounds_contain_exactly_one_value(start, end)?;
+
     match start.dtype() {
         dt if dt == &IDX_DTYPE => {
-            let start = start
-                .idx()?
-                .get(0)
-                .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
+            let start = start.idx()?.get(0).unwrap();
             let end = end.cast(&IDX_DTYPE)?;
-            let end = end
-                .idx()?
-                .get(0)
-                .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
+            let end = end.idx()?.get(0).unwrap();
 
             int_range_impl::<IdxType>(start, end, step)
         },
         _ => {
             let start = start.cast(&DataType::Int64)?;
             let end = end.cast(&DataType::Int64)?;
-            let start = start
-                .i64()?
-                .get(0)
-                .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
-            let end = end
-                .i64()?
-                .get(0)
-                .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
+            let start = start.i64()?.get(0).unwrap();
+            let end = end.i64()?.get(0).unwrap();
             int_range_impl::<Int64Type>(start, end, step)
         },
     }
