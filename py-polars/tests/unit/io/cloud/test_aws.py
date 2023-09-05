@@ -11,6 +11,10 @@ import polars as pl
 if TYPE_CHECKING:
     from pathlib import Path
 
+pytestmark = [
+    pytest.mark.xdist_group("aws"),
+    pytest.mark.slow(),
+]
 
 port = 5000
 host = "127.0.0.1"
@@ -43,18 +47,6 @@ def s3(s3_base: str, io_files_path: Path) -> str:
     return s3_base
 
 
-def test_err_on_s3_glob() -> None:
-    with pytest.raises(
-        ValueError,
-        match=r"globbing patterns not supported when scanning non-local files",
-    ):
-        pl.scan_parquet(
-            "s3://saturn-public-data/nyc-taxi/data/yellow_tripdata_2019-1.*.parquet"
-        )
-
-
-@pytest.mark.slow()
-@pytest.mark.xdist_group("cloud")
 def test_read_csv_on_s3(s3: str) -> None:
     df = pl.read_csv(
         "s3://bucket/foods1.csv",
@@ -64,8 +56,6 @@ def test_read_csv_on_s3(s3: str) -> None:
     assert df.shape == (27, 4)
 
 
-@pytest.mark.slow()
-@pytest.mark.xdist_group("cloud")
 def test_read_ipc_on_s3(s3: str) -> None:
     df = pl.read_ipc(
         "s3://bucket/foods1.ipc",
@@ -75,8 +65,6 @@ def test_read_ipc_on_s3(s3: str) -> None:
     assert df.shape == (27, 4)
 
 
-@pytest.mark.slow()
-@pytest.mark.xdist_group("cloud")
 def test_scan_ipc_on_s3(s3: str) -> None:
     df = pl.scan_ipc(
         "s3://bucket/foods1.ipc",
@@ -86,8 +74,6 @@ def test_scan_ipc_on_s3(s3: str) -> None:
     assert df.collect().shape == (27, 4)
 
 
-@pytest.mark.slow()
-@pytest.mark.xdist_group("cloud")
 def test_read_parquet_on_s3(s3: str) -> None:
     df = pl.read_parquet(
         "s3://bucket/foods1.parquet",
@@ -97,8 +83,6 @@ def test_read_parquet_on_s3(s3: str) -> None:
     assert df.shape == (27, 4)
 
 
-@pytest.mark.slow()
-@pytest.mark.xdist_group("cloud")
 def test_scan_parquet_on_s3(s3: str) -> None:
     df = pl.scan_parquet(
         "s3://bucket/foods1.parquet",
