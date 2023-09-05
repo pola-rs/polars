@@ -72,15 +72,13 @@ use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_json::json::infer;
-use simd_json::BorrowedValue;
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use polars_json::{json, ndjson};
+use simd_json::BorrowedValue;
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
-
 
 /// The format to use to write the DataFrame to JSON: `Json` (a JSON array) or `JsonLines` (each row output on a
 /// separate line). In either case, each row is serialized as a JSON object whose keys are the column names and whose
@@ -118,12 +116,14 @@ pub struct JsonWriter<W: Write> {
     json_format: JsonFormat,
 }
 
-impl<W: Write> JsonWriter<W> where W: Write + 'static {
+impl<W: Write> JsonWriter<W>
+where
+    W: Write + 'static,
+{
     pub fn with_json_format(mut self, format: JsonFormat) -> Self {
         self.json_format = format;
         self
     }
-
 }
 
 impl<W> SerWriter<W> for JsonWriter<W>
@@ -168,21 +168,27 @@ pub trait BatchedWriter<W: Write> {
     fn finish(&mut self) -> PolarsResult<()>;
 }
 
-pub struct JsonBatchedWriter<W: Write>{
+pub struct JsonBatchedWriter<W: Write> {
     writer: W,
-    is_first_row: bool
+    is_first_row: bool,
 }
 
-impl <W> JsonBatchedWriter<W> where W: Write {
-    pub fn new(writer: W) -> Self{
+impl<W> JsonBatchedWriter<W>
+where
+    W: Write,
+{
+    pub fn new(writer: W) -> Self {
         JsonBatchedWriter {
             writer,
-            is_first_row: true
+            is_first_row: true,
         }
     }
 }
 
-impl <W> BatchedWriter<W> for JsonBatchedWriter<W> where W: Write  {
+impl<W> BatchedWriter<W> for JsonBatchedWriter<W>
+where
+    W: Write,
+{
     /// Write a batch to the json writer.
     ///
     /// # Panics
@@ -192,8 +198,7 @@ impl <W> BatchedWriter<W> for JsonBatchedWriter<W> where W: Write  {
         let batches = df
             .iter_chunks()
             .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
-        let mut serializer =
-            json::write::Serializer::new(batches, vec![]);
+        let mut serializer = json::write::Serializer::new(batches, vec![]);
 
         while let Some(block) = serializer.next()? {
             if self.is_first_row {
@@ -215,18 +220,22 @@ impl <W> BatchedWriter<W> for JsonBatchedWriter<W> where W: Write  {
 }
 
 pub struct JsonLinesBatchedWriter<W: Write> {
-    writer: W
+    writer: W,
 }
 
-impl <W> JsonLinesBatchedWriter<W> where W: Write {
-    pub fn new(writer: W) -> Self{
-        JsonLinesBatchedWriter {
-            writer
-        }
+impl<W> JsonLinesBatchedWriter<W>
+where
+    W: Write,
+{
+    pub fn new(writer: W) -> Self {
+        JsonLinesBatchedWriter { writer }
     }
 }
 
-impl <W> BatchedWriter<W> for JsonLinesBatchedWriter<W> where W: Write  {
+impl<W> BatchedWriter<W> for JsonLinesBatchedWriter<W>
+where
+    W: Write,
+{
     /// Write a batch to the json writer.
     ///
     /// # Panics

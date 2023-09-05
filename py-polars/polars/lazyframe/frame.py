@@ -95,7 +95,6 @@ if TYPE_CHECKING:
         ColumnNameOrSelector,
         CsvEncoding,
         CsvQuoteStyle,
-	    JsonFormat,
         FillNullStrategy,
         FrameInitTypes,
         IntoExpr,
@@ -103,6 +102,7 @@ if TYPE_CHECKING:
         JoinStrategy,
         JoinValidation,
         Label,
+        JsonFormat,
         Orientation,
         ParallelStrategy,
         PolarsDataType,
@@ -2246,17 +2246,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
     def sink_json(
-            self,
-            path: str | Path,
-            *,
-            json_format: JsonFormat | None = None,
-            maintain_order: bool = True,
-            type_coercion: bool = True,
-            predicate_pushdown: bool = True,
-            projection_pushdown: bool = True,
-            simplify_expression: bool = True,
-            no_optimization: bool = False,
-            slice_pushdown: bool = True,
+        self,
+        path: str | Path,
+        *,
+        json_format: JsonFormat | None = None,
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
     ) -> DataFrame:
         """
         Persists a LazyFrame at the provided path.
@@ -2268,7 +2268,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         path
             File path to which the file should be written.
         json_format : {'json', 'json_lines'}
-            Choose "json" for single JSON array containing each DataFrame row as an object.
+            Choose "json" for single JSON array containing each row as an object.
             Choose "json_lines" for each row output on a separate line.
         maintain_order
             Maintain the order in which data is processed.
@@ -2289,10 +2289,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Returns
         -------
         DataFrame
-
-        Notes
-        -----
-        json_format parameter is currently not supported.
 
         Examples
         --------

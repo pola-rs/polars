@@ -149,7 +149,9 @@ def test_sink_json_should_write_same_data(io_files_path: Path, tmp_path: Path) -
     assert_frame_equal(df, expected)
 
 
-def test_sink_json_should_write_same_data_with_json_argument(io_files_path: Path, tmp_path: Path) -> None:
+def test_sink_json_should_write_same_data_with_json_argument(
+    io_files_path: Path, tmp_path: Path
+) -> None:
     tmp_path.mkdir(exist_ok=True)
     # Arrange
     source_path = io_files_path / "foods1.csv"
@@ -161,13 +163,15 @@ def test_sink_json_should_write_same_data_with_json_argument(io_files_path: Path
     # df = pl.read_json(target_path)
     # # Assert
     # assert_frame_equal(df, expected)
-    lf.sink_json(target_path,  json_format="json")
+    lf.sink_json(target_path, json_format="json")
     df = pl.read_json(target_path)
     # Assert
     assert_frame_equal(df, expected)
 
 
-def test_sink_json_should_write_same_data_with_json_lines_argument(io_files_path: Path, tmp_path: Path) -> None:
+def test_sink_json_should_write_same_data_with_json_lines_argument(
+    io_files_path: Path, tmp_path: Path
+) -> None:
     tmp_path.mkdir(exist_ok=True)
     # Arrange
     source_path = io_files_path / "foods1.csv"
@@ -176,13 +180,15 @@ def test_sink_json_should_write_same_data_with_json_lines_argument(io_files_path
     expected = pl.read_csv(source_path)
     lf = pl.scan_csv(source_path)
     # Act
-    lf.sink_json(target_path,  json_format="json_lines")
+    lf.sink_json(target_path, json_format="json_lines")
     df = pl.read_ndjson(target_path)
     # Assert
     assert_frame_equal(df, expected)
 
 
-def test_sink_json_should_raise_exception_with_invalid_argument(io_files_path: Path, tmp_path: Path) -> None:
+def test_sink_json_should_raise_exception_with_invalid_argument(
+    io_files_path: Path, tmp_path: Path
+) -> None:
     tmp_path.mkdir(exist_ok=True)
     # Arrange
     source_path = io_files_path / "foods1.csv"
@@ -191,4 +197,4 @@ def test_sink_json_should_raise_exception_with_invalid_argument(io_files_path: P
     lf = pl.scan_csv(source_path)
     # Act & Assert
     with pytest.raises(ValueError):
-        lf.sink_json(target_path,  json_format="invalid_argument")
+        lf.sink_json(target_path, json_format="invalid_argument")  # type: ignore[arg-type]

@@ -637,10 +637,10 @@ impl PyLazyFrame {
         py: Python,
         path: PathBuf,
         json_format: Option<Wrap<JsonFormat>>,
-        maintain_order: bool
+        maintain_order: bool,
     ) -> PyResult<()> {
         let options = JsonWriterOptions {
-            json_format: json_format.map(|c| c.0).unwrap_or(JsonFormat::default()),
+            json_format: json_format.map(|c| c.0).unwrap_or_default(),
             maintain_order,
         };
 
