@@ -38,6 +38,25 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
     })
 }
 
+pub(crate) fn predicate_at_all_scans(q: LazyFrame) -> bool {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+
+    (&lp_arena).iter(lp).all(|(_, lp)| {
+        use ALogicalPlan::*;
+        matches!(
+            lp,
+            DataFrameScan {
+                selection: Some(_),
+                ..
+            } | Scan {
+                predicate: Some(_),
+                ..
+            }
+        )
+    })
+}
+
 pub(crate) fn is_pipeline(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
