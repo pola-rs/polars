@@ -54,27 +54,39 @@ def test_time_range_eager_explode() -> None:
     assert_series_equal(result, expected)
 
 
-def test_time_range_empty() -> None:
+def test_time_range_input_shape_empty() -> None:
     empty = pl.Series(dtype=pl.Time)
     single = pl.Series([time(12, 0)])
 
-    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+    with pytest.raises(
+        pl.ComputeError, match="`start` must contain exactly one value, got 0 values"
+    ):
         pl.time_range(empty, single, eager=True)
-    with pytest.raises(pl.ComputeError, match="`end` must contain a single value"):
+    with pytest.raises(
+        pl.ComputeError, match="`end` must contain exactly one value, got 0 values"
+    ):
         pl.time_range(single, empty, eager=True)
-    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+    with pytest.raises(
+        pl.ComputeError, match="`start` must contain exactly one value, got 0 values"
+    ):
         pl.time_range(empty, empty, eager=True)
 
 
-def test_time_range_multiple_values() -> None:
+def test_time_range_input_shape_multiple_values() -> None:
     single = pl.Series([time(12, 0)])
     multiple = pl.Series([time(11, 0), time(12, 0)])
 
-    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+    with pytest.raises(
+        pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
+    ):
         pl.time_range(multiple, single, eager=True)
-    with pytest.raises(pl.ComputeError, match="`end` must contain a single value"):
+    with pytest.raises(
+        pl.ComputeError, match="`end` must contain exactly one value, got 2 values"
+    ):
         pl.time_range(single, multiple, eager=True)
-    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+    with pytest.raises(
+        pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
+    ):
         pl.time_range(multiple, multiple, eager=True)
 
 

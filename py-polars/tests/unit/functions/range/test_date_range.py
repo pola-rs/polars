@@ -840,27 +840,39 @@ def test_date_range_no_alias_schema_9037() -> None:
     assert result.collect().schema == expected_schema
 
 
-def test_time_range_empty() -> None:
+def test_time_range_input_shape_empty() -> None:
     empty = pl.Series(dtype=pl.Datetime)
     single = pl.Series([datetime(2022, 1, 2)])
 
-    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+    with pytest.raises(
+        pl.ComputeError, match="`start` must contain exactly one value, got 0 values"
+    ):
         pl.date_range(empty, single, eager=True)
-    with pytest.raises(pl.ComputeError, match="`end` must contain a single value"):
+    with pytest.raises(
+        pl.ComputeError, match="`end` must contain exactly one value, got 0 values"
+    ):
         pl.date_range(single, empty, eager=True)
-    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+    with pytest.raises(
+        pl.ComputeError, match="`start` must contain exactly one value, got 0 values"
+    ):
         pl.date_range(empty, empty, eager=True)
 
 
-def test_time_range_multiple_values() -> None:
+def test_time_range_input_shape_multiple_values() -> None:
     single = pl.Series([datetime(2022, 1, 2)])
     multiple = pl.Series([datetime(2022, 1, 3), datetime(2022, 1, 4)])
 
-    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+    with pytest.raises(
+        pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
+    ):
         pl.date_range(multiple, single, eager=True)
-    with pytest.raises(pl.ComputeError, match="`end` must contain a single value"):
+    with pytest.raises(
+        pl.ComputeError, match="`end` must contain exactly one value, got 2 values"
+    ):
         pl.date_range(single, multiple, eager=True)
-    with pytest.raises(pl.ComputeError, match="`start` must contain a single value"):
+    with pytest.raises(
+        pl.ComputeError, match="`start` must contain exactly one value, got 2 values"
+    ):
         pl.date_range(multiple, multiple, eager=True)
 
 

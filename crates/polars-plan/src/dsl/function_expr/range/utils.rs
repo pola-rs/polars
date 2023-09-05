@@ -13,7 +13,13 @@ pub(super) fn ensure_range_bounds_contain_single_value(
     start: &Series,
     end: &Series,
 ) -> PolarsResult<()> {
-    polars_ensure!(start.len() == 1, ComputeError: "`start` must contain a single value");
-    polars_ensure!(end.len() == 1, ComputeError: "`end` must contain a single value");
+    polars_ensure!(
+        start.len() == 1,
+        ComputeError: "`start` must contain exactly one value, got {} values", start.len()
+    );
+    polars_ensure!(
+        end.len() == 1,
+        ComputeError: "`end` must contain exactly one value, got {} values", end.len()
+    );
     Ok(())
 }
