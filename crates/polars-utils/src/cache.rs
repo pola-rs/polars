@@ -45,6 +45,7 @@ where
 /// the older last access.
 const MIN_FAST_FIXED_CACHE_SIZE: usize = 16;
 
+#[derive(Clone)]
 pub struct FastFixedCache<K, V> {
     slots: Vec<CacheSlot<K, V>>,
     access_ctr: Cell<u32>,
@@ -208,6 +209,23 @@ impl<K, V> Drop for CacheSlot<K, V> {
             if self.last_access.get() != 0 {
                 self.key.assume_init_drop();
                 self.value.assume_init_drop();
+            }
+        }
+    }
+}
+
+impl<K: Clone, V: Clone> Clone for CacheSlot<K, V> {
+    fn clone(&self) -> Self {
+        unsafe {
+            if self.last_access.get() != 0 {
+                Self {
+                    last_access: self.last_access.clone(),
+                    hash_tag: self.hash_tag,
+                    key: MaybeUninit::new(self.key.assume_init_ref().clone()),
+                    value: MaybeUninit::new(self.value.assume_init_ref().clone()),
+                }
+            } else {
+                Self::zeroed()
             }
         }
     }

@@ -1550,6 +1550,7 @@ dependencies = [
  "polars-core",
  "polars-json",
  "polars-utils",
+ "regex",
  "serde",
  "serde_json",
  "smartstring",
