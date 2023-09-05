@@ -648,21 +648,26 @@ class Config(contextlib.ContextDecorator):
 
         Examples
         --------
+        >>> from datetime import date
         >>> df = pl.DataFrame(
-        ...     {"column_abc": [11, 2, 333], "column_xyz": [True, False, True]}
+        ...     {
+        ...         "abc": [11, 2, 333],
+        ...         "mno": [date.today(), None, date.today()],
+        ...         "xyz": [True, False, None],
+        ...     }
         ... )
         >>> pl.Config.set_tbl_cell_numeric_alignment("RIGHT")  # doctest: +SKIP
         # ...
-        # shape: (3, 2)
-        # ┌────────────┬────────────┐
-        # │ column_abc ┆ column_xyz │
-        # │        --- ┆        --- │
-        # │        i64 ┆       bool │
-        # ╞════════════╪════════════╡
-        # │         11 ┆ true       │
-        # │          2 ┆ false      │
-        # │        333 ┆ true       │
-        # └────────────┴────────────┘
+        # shape: (3, 3)
+        # ┌─────┬────────────┬───────┐
+        # │ abc ┆ mno        ┆ xyz   │
+        # │ --- ┆ ---        ┆ ---   │
+        # │ i64 ┆ date       ┆ bool  │
+        # ╞═════╪════════════╪═══════╡
+        # │  11 ┆ 2023-09-05 ┆ true  │
+        # │   2 ┆ null       ┆ false │
+        # │ 333 ┆ 2023-09-05 ┆ null  │
+        # └─────┴────────────┴───────┘
 
         Raises
         ------
