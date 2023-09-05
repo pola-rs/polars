@@ -10,7 +10,7 @@ deltalake >= 0.10.0
 numpy
 pandas
 pyarrow
-pydantic
+pydantic >= 2.0.0
 backports.zoneinfo; python_version < '3.9'
 tzdata; platform_system == 'Windows'
 SQLAlchemy
