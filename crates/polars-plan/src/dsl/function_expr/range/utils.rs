@@ -9,7 +9,7 @@ pub(super) fn temporal_series_to_i64_scalar(s: &Series) -> i64 {
         .unwrap()
 }
 
-pub(super) fn ensure_range_bounds_contain_single_value(
+pub(super) fn ensure_range_bounds_contain_exactly_one_value(
     start: &Series,
     end: &Series,
 ) -> PolarsResult<()> {

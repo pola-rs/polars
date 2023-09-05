@@ -1,13 +1,13 @@
 use polars_core::prelude::*;
 use polars_core::series::{IsSorted, Series};
 
-use super::utils::ensure_range_bounds_contain_single_value;
+use super::utils::ensure_range_bounds_contain_exactly_one_value;
 
 pub(super) fn int_range(s: &[Series], step: i64) -> PolarsResult<Series> {
     let start = &s[0];
     let end = &s[1];
 
-    ensure_range_bounds_contain_single_value(start, end)?;
+    ensure_range_bounds_contain_exactly_one_value(start, end)?;
 
     match start.dtype() {
         dt if dt == &IDX_DTYPE => {

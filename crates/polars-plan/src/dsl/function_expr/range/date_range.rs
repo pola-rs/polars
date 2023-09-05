@@ -3,7 +3,7 @@ use polars_core::series::Series;
 use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 use polars_time::{datetime_range_impl, ClosedWindow, Duration};
 
-use super::utils::{ensure_range_bounds_contain_single_value, temporal_series_to_i64_scalar};
+use super::utils::{ensure_range_bounds_contain_exactly_one_value, temporal_series_to_i64_scalar};
 use crate::dsl::function_expr::FieldsMapper;
 
 const CAPACITY_FACTOR: usize = 5;
@@ -40,7 +40,7 @@ fn date_range(s: &[Series], interval: Duration, closed: ClosedWindow) -> PolarsR
     let start = &s[0];
     let end = &s[1];
 
-    ensure_range_bounds_contain_single_value(start, end)?;
+    ensure_range_bounds_contain_exactly_one_value(start, end)?;
 
     let dtype = DataType::Date;
     let start = temporal_series_to_i64_scalar(start) * MILLISECONDS_IN_DAY;
@@ -120,7 +120,7 @@ fn datetime_range(
     let start = &s[0];
     let end = &s[1];
 
-    ensure_range_bounds_contain_single_value(start, end)?;
+    ensure_range_bounds_contain_exactly_one_value(start, end)?;
 
     // Note: `start` and `end` have already been cast to their supertype,
     // so only `start`'s dtype needs to be matched against.
