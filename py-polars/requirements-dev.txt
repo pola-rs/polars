@@ -29,9 +29,11 @@ patchelf; platform_system == 'Linux'  # Extra dependency for maturin, only for L
 pytest==7.4.0
 pytest-cov==4.1.0
 pytest-xdist==3.3.1
-moto[server]==4.1.14  # Need moto.server to mock s3fs - see aio-libs/aiobotocore#755
-flask!=2.2.0,!=2.2.1  # Required for moto.server w/o installing all moto[server] dependencies
-flask-cors  # Required for moto.server w/o installing all moto[server] dependencies
+
+# Need moto.server to mock s3fs - see: https://github.com/aio-libs/aiobotocore/issues/755
+moto[s3]==4.2.2
+flask
+flask-cors
 
 # Stub files
 pandas-stubs
