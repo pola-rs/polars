@@ -4840,6 +4840,15 @@ class DataFrame:
         """
         return self.lazy().drop_nulls(subset).collect(no_optimization=True)
 
+    @overload
+    def pipe(
+        self,
+        function: Callable[Concatenate[DataFrame, P], DataFrame],
+        *args: P.args,
+        **kwargs: P.kwargs,
+     ) -> T:
+        ...
+
     def pipe(
         self,
         function: Callable[Concatenate[DataFrame, P], T],
