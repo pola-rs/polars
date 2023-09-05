@@ -1648,6 +1648,7 @@ name = "polars-utils"
 version = "0.32.0"
 dependencies = [
  "ahash",
+ "bytemuck",
  "hashbrown 0.14.0",
  "num-traits",
  "once_cell",
