@@ -6,6 +6,7 @@ mod functions;
 pub mod keywords;
 mod sql_expr;
 mod table_functions;
+pub mod function_registry;
 
 pub use context::SQLContext;
 pub use sql_expr::sql_expr;
