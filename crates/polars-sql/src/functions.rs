@@ -520,7 +520,7 @@ impl PolarsSqlFunctions {
             "unnest" => Self::Explode,
 
             other => {
-                if { ctx.function_registry.contains(&other) } {
+                if ctx.function_registry.contains(&other) {
                     Self::Udf(other.to_string())
                 } else {
                     polars_bail!(InvalidOperation: "unsupported SQL function: {}", other);

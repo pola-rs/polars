@@ -15,7 +15,7 @@ use sqlparser::ast::{
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
-use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry, UserDefinedFunction};
+use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::sql_expr::{parse_sql_expr, process_join_constraint};
 use crate::table_functions::PolarsTableFunctions;
 
