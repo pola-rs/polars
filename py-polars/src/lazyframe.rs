@@ -345,7 +345,7 @@ impl PyLazyFrame {
         comm_subplan_elim: bool,
         comm_subexpr_elim: bool,
         streaming: bool,
-        eager: bool
+        eager: bool,
     ) -> Self {
         let ldf = self.ldf.clone();
         let mut ldf = ldf

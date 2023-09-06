@@ -3954,9 +3954,7 @@ class DataFrame:
             predicate = pl.Series(predicate)
 
         return (
-            self.lazy()
-            .filter(predicate)  # type: ignore[arg-type]
-            .collect(eager=True)
+            self.lazy().filter(predicate).collect(eager=True)  # type: ignore[arg-type]
         )
 
     @overload
@@ -7703,9 +7701,7 @@ class DataFrame:
         select
 
         """
-        return (
-            self.lazy().select_seq(*exprs, **named_exprs).collect(eager=True)
-        )
+        return self.lazy().select_seq(*exprs, **named_exprs).collect(eager=True)
 
     def with_columns(
         self,
@@ -7855,11 +7851,7 @@ class DataFrame:
         └─────┴──────┴─────────────┘
 
         """
-        return (
-            self.lazy()
-            .with_columns(*exprs, **named_exprs)
-            .collect(eager=True)
-        )
+        return self.lazy().with_columns(*exprs, **named_exprs).collect(eager=True)
 
     def with_columns_seq(
         self,
@@ -7894,11 +7886,7 @@ class DataFrame:
         with_columns
 
         """
-        return (
-            self.lazy()
-            .with_columns_seq(*exprs, **named_exprs)
-            .collect(eager=True)
-        )
+        return self.lazy().with_columns_seq(*exprs, **named_exprs).collect(eager=True)
 
     @overload
     def n_chunks(self, strategy: Literal["first"] = ...) -> int:
