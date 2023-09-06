@@ -24,6 +24,7 @@ hex = { version = "0.4", optional = true }
 indexmap = { workspace = true }
 jsonpath_lib = { version = "0.3", optional = true, git = "https://github.com/ritchie46/jsonpath", branch = "improve_compiled" }
 memchr = { workspace = true }
+regex = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
