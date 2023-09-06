@@ -1,12 +1,12 @@
 use std::borrow::Cow;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 
 use ahash::RandomState;
 
 use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::frame::groupby::*;
+use crate::frame::group_by::*;
 use crate::frame::hash_join::*;
 use crate::prelude::*;
 
@@ -35,8 +35,11 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
-    fn _clear_settings(&mut self) {
-        self.0.clear_settings()
+    fn _get_flags(&self) -> Settings {
+        self.0.get_flags()
+    }
+    fn _set_flags(&mut self, flags: Settings) {
+        self.0.set_flags(flags)
     }
 
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
@@ -62,10 +65,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
-        self.0.deref_mut().set_sorted_flag(is_sorted)
-    }
-
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
         let other = other.to_physical_repr().into_owned();
@@ -76,12 +75,12 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     }
 
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
-        self.0.vec_hash(random_state, buf);
+        self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
     fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
-        self.0.vec_hash_combine(build_hasher, hashes);
+        self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
 
@@ -125,7 +124,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.subtract(&rhs)?.into_duration(*tu).into_series())
-            }
+            },
             (DataType::Datetime(tu, tz), DataType::Duration(tur)) => {
                 assert_eq!(tu, tur);
                 let lhs = self.cast(&DataType::Int64).unwrap();
@@ -134,7 +133,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
                     .subtract(&rhs)?
                     .into_datetime(*tu, tz.clone())
                     .into_series())
-            }
+            },
             (dtl, dtr) => polars_bail!(opq = sub, dtl, dtr),
         }
     }
@@ -148,7 +147,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
                     .add_to(&rhs)?
                     .into_datetime(*tu, tz.clone())
                     .into_series())
-            }
+            },
             (dtl, dtr) => polars_bail!(opq = add, dtl, dtr),
         }
     }
@@ -171,16 +170,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DatetimeChunked> {
-    fn is_sorted_flag(&self) -> IsSorted {
-        if self.0.is_sorted_ascending_flag() {
-            IsSorted::Ascending
-        } else if self.0.is_sorted_descending_flag() {
-            IsSorted::Descending
-        } else {
-            IsSorted::Not
-        }
-    }
-
     fn rename(&mut self, name: &str) {
         self.0.rename(name);
     }
@@ -194,6 +183,9 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
 
     fn chunks(&self) -> &Vec<ArrayRef> {
         self.0.chunks()
+    }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.chunks_mut()
     }
 
     fn shrink_to_fit(&mut self) {
@@ -320,13 +312,13 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         match (data_type, self.0.time_unit()) {
             (DataType::Utf8, TimeUnit::Milliseconds) => {
                 Ok(self.0.to_string("%F %T%.3f")?.into_series())
-            }
+            },
             (DataType::Utf8, TimeUnit::Microseconds) => {
                 Ok(self.0.to_string("%F %T%.6f")?.into_series())
-            }
+            },
             (DataType::Utf8, TimeUnit::Nanoseconds) => {
                 Ok(self.0.to_string("%F %T%.9f")?.into_series())
-            }
+            },
             _ => self.0.cast(data_type),
         }
     }
@@ -450,10 +442,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
 
     fn peak_min(&self) -> BooleanChunked {
         self.0.peak_min()
-    }
-    #[cfg(feature = "is_in")]
-    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
-        self.0.is_in(other)
     }
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {

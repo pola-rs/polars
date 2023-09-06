@@ -102,7 +102,7 @@ def read_parquet(
 
     """
     if use_pyarrow and n_rows:
-        raise ValueError("``n_rows`` cannot be used with ``use_pyarrow=True``.")
+        raise ValueError("`n_rows` cannot be used with `use_pyarrow=True`")
 
     storage_options = storage_options or {}
     pyarrow_options = pyarrow_options or {}
@@ -112,9 +112,8 @@ def read_parquet(
     ) as source_prep:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
-                raise ImportError(
-                    "'pyarrow' is required when using"
-                    " 'read_parquet(..., use_pyarrow=True)'."
+                raise ModuleNotFoundError(
+                    "'pyarrow' is required when using `read_parquet(..., use_pyarrow=True)`"
                 )
 
             import pyarrow as pa
@@ -151,7 +150,9 @@ def read_parquet_schema(
     Parameters
     ----------
     source
-        Path to a file or a file-like object.
+        Path to a file or a file-like object (by file-like object, we refer to objects
+        that have a ``read()`` method, such as a file handler (e.g. via builtin ``open``
+        function) or ``BytesIO``).
 
     Returns
     -------

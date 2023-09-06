@@ -11,7 +11,7 @@ use crate::chunked_array::ops::compare_inner::{
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::frame::groupby::*;
+use crate::frame::group_by::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 #[cfg(feature = "checked_arithmetic")]
@@ -29,10 +29,13 @@ macro_rules! impl_dyn_series {
             fn _dtype(&self) -> &DataType {
                 self.0.ref_field().data_type()
             }
-            fn _clear_settings(&mut self) {
-                self.0.clear_settings()
-            }
 
+            fn _set_flags(&mut self, flags: Settings) {
+                self.0.set_flags(flags)
+            }
+            fn _get_flags(&self) -> Settings {
+                self.0.get_flags()
+            }
             fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
                 self.0.explode_by_offsets(offsets)
             }
@@ -45,10 +48,6 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "cum_agg")]
             fn _cummin(&self, reverse: bool) -> Series {
                 self.0.cummin(reverse).into_series()
-            }
-
-            fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
-                self.0.set_sorted_flag(is_sorted)
             }
 
             unsafe fn equal_element(
@@ -77,7 +76,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
-                self.0.vec_hash(random_state, buf);
+                self.0.vec_hash(random_state, buf)?;
                 Ok(())
             }
 
@@ -86,7 +85,7 @@ macro_rules! impl_dyn_series {
                 build_hasher: RandomState,
                 hashes: &mut [u64],
             ) -> PolarsResult<()> {
-                self.0.vec_hash_combine(build_hasher, hashes);
+                self.0.vec_hash_combine(build_hasher, hashes)?;
                 Ok(())
             }
 
@@ -146,23 +145,13 @@ macro_rules! impl_dyn_series {
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {
-            fn is_sorted_flag(&self) -> IsSorted {
-                if self.0.is_sorted_ascending_flag() {
-                    IsSorted::Ascending
-                } else if self.0.is_sorted_descending_flag() {
-                    IsSorted::Descending
-                } else {
-                    IsSorted::Not
-                }
-            }
-
             #[cfg(feature = "rolling_window")]
-            fn rolling_apply(
+            fn rolling_map(
                 &self,
                 _f: &dyn Fn(&Series) -> Series,
                 _options: RollingOptionsFixedWindow,
             ) -> PolarsResult<Series> {
-                ChunkRollApply::rolling_apply(&self.0, _f, _options).map(|ca| ca.into_series())
+                ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())
             }
 
             fn rename(&mut self, name: &str) {
@@ -178,6 +167,9 @@ macro_rules! impl_dyn_series {
 
             fn chunks(&self) -> &Vec<ArrayRef> {
                 self.0.chunks()
+            }
+            unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+                self.0.chunks_mut()
             }
             fn shrink_to_fit(&mut self) {
                 self.0.shrink_to_fit()
@@ -376,10 +368,6 @@ macro_rules! impl_dyn_series {
                 self.0.peak_min()
             }
 
-            #[cfg(feature = "is_in")]
-            fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
-                IsIn::is_in(&self.0, other)
-            }
             #[cfg(feature = "repeat_by")]
             fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
                 RepeatBy::repeat_by(&self.0, by)

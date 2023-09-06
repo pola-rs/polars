@@ -9,10 +9,10 @@ use utils::*;
 
 use super::*;
 use crate::dsl::function_expr::FunctionExpr;
-use crate::logical_plan::{optimizer, Context};
+use crate::logical_plan::optimizer;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::prelude::optimizer::predicate_pushdown::rename::process_rename;
-use crate::utils::{aexprs_to_schema, check_input_node, has_aexpr};
+use crate::utils::{check_input_node, has_aexpr};
 
 #[derive(Default)]
 pub struct PredicatePushDown {}
@@ -209,24 +209,6 @@ impl PredicatePushDown {
                     selection,
                 };
                 Ok(lp)
-            }
-
-            LocalProjection { expr, input, .. } => {
-                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-
-                let schema = lp_arena.get(input).schema(lp_arena);
-                // projection from a wildcard may be dropped if the schema changes due to the optimization
-                let expr: Vec<_> = expr
-                    .into_iter()
-                    .filter(|e| check_input_node(*e, &schema, expr_arena))
-                    .collect();
-
-                let schema = aexprs_to_schema(&expr, &schema, Context::Default, expr_arena);
-                Ok(ALogicalPlan::LocalProjection {
-                    expr,
-                    input,
-                    schema: Arc::new(schema),
-                })
             }
             Scan {
                 path,

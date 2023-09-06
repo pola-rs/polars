@@ -39,7 +39,7 @@ impl SlicePushDown {
                     len: state.len,
                 };
                 Ok(lp)
-            }
+            },
             None => Ok(lp),
         }
     }
@@ -171,7 +171,6 @@ impl SlicePushDown {
                 predicate,
                 scan_type
             }, Some(state)) if state.offset == 0 && predicate.is_none() => {
-
                 options.n_rows = Some(state.len as usize);
                 let lp = Scan {
                     path,
@@ -184,8 +183,15 @@ impl SlicePushDown {
 
                 Ok(lp)
             }
-            (Union {inputs, mut options }, Some(state)) => {
+            (Union {mut inputs, mut options }, Some(state)) => {
                 options.slice = Some((state.offset, state.len as usize));
+                if state.offset == 0 {
+                    for input in &mut inputs {
+                        let input_lp = lp_arena.take(*input);
+                        let input_lp = self.pushdown(input_lp, Some(state), lp_arena, expr_arena)?;
+                        lp_arena.replace(*input, input_lp);
+                    }
+                }
                 Ok(Union {inputs, options})
             },
             (Join {
@@ -268,9 +274,16 @@ impl SlicePushDown {
                 len
             }, Some(previous_state)) => {
                 let alp = lp_arena.take(input);
-                let state = Some(State {
-                    offset,
-                    len
+                let state = Some(if previous_state.offset == offset  {
+                    State {
+                        offset,
+                        len: std::cmp::min(len, previous_state.len)
+                    }
+                } else {
+                    State {
+                        offset,
+                        len
+                    }
                 });
                 let lp = self.pushdown(alp, state, lp_arena, expr_arena)?;
                 let input = lp_arena.add(lp);
@@ -296,9 +309,6 @@ impl SlicePushDown {
             // here we do not pushdown.
             // we reset the state and then start the optimization again
             m @ (Selection { .. }, _)
-            // let's be conservative. projections may do aggregations and a pushed down slice
-            // will lead to incorrect aggregations
-            | m @ (LocalProjection {..},_)
             // other blocking nodes
             | m @ (DataFrameScan {..}, _)
             | m @ (Sort {..}, _)
@@ -333,17 +343,17 @@ impl SlicePushDown {
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
             }
             // there is state, inspect the projection to determine how to deal with it
-            (Projection {input, expr, schema}, Some(_)) => {
+            (Projection {input, expr, schema, options}, Some(_)) => {
                 // The slice operation may only pass on simple projections. col("foo").alias("bar")
                 if expr.iter().all(|root|  {
                     aexpr_is_elementwise(*root, expr_arena)
                 }) {
-                    let lp = Projection {input, expr, schema};
+                    let lp = Projection {input, expr, schema, options};
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
                 }
                 // don't push down slice, but restart optimization
                 else {
-                    let lp = Projection {input, expr, schema};
+                    let lp = Projection {input, expr, schema, options};
                     self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
                 }
             }

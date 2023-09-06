@@ -7,6 +7,7 @@ import pandas as pd
 import pyarrow as pa
 
 import polars as pl
+import polars.selectors as cs
 from polars.testing import assert_frame_equal
 
 
@@ -22,7 +23,9 @@ def test_struct_to_list() -> None:
 def test_apply_unnest() -> None:
     df = (
         pl.Series([None, 2, 3, 4])
-        .apply(lambda x: {"a": x, "b": x * 2, "c": True, "d": [1, 2], "e": "foo"})
+        .map_elements(
+            lambda x: {"a": x, "b": x * 2, "c": True, "d": [1, 2], "e": "foo"}
+        )
         .struct.unnest()
     )
 
@@ -95,17 +98,16 @@ def test_struct_hashes() -> None:
 
 
 def test_struct_unnesting() -> None:
-    df = pl.DataFrame({"a": [1, 2]})
-    out = df.select(
+    df_base = pl.DataFrame({"a": [1, 2]})
+    df = df_base.select(
         [
             pl.all().alias("a_original"),
             pl.col("a")
-            .apply(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
+            .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
             .struct.rename_fields(["a", "a_squared", "mod2eq0"])
             .alias("foo"),
         ]
-    ).unnest("foo")
-
+    )
     expected = pl.DataFrame(
         {
             "a_original": [1, 2],
@@ -114,16 +116,17 @@ def test_struct_unnesting() -> None:
             "mod2eq0": [False, True],
         }
     )
-
-    assert_frame_equal(out, expected)
+    for cols in ("foo", cs.ends_with("oo")):
+        out = df.unnest(cols)  # type: ignore[arg-type]
+        assert_frame_equal(out, expected)
 
     out = (
-        df.lazy()
+        df_base.lazy()
         .select(
             [
                 pl.all().alias("a_original"),
                 pl.col("a")
-                .apply(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
+                .map_elements(lambda x: {"a": x, "b": x * 2, "c": x % 2 == 0})
                 .struct.rename_fields(["a", "a_squared", "mod2eq0"])
                 .alias("foo"),
             ]
@@ -158,48 +161,6 @@ def test_struct_function_expansion() -> None:
     assert isinstance(s, pl.Series)
     assert s.struct.fields == ["a", "b"]
     assert pl.Struct(struct_schema) == s.to_frame().schema["a"]
-
-
-def test_value_counts_expr() -> None:
-    df = pl.DataFrame(
-        {
-            "id": ["a", "b", "b", "c", "c", "c", "d", "d"],
-        }
-    )
-    out = (
-        df.select(
-            [
-                pl.col("id").value_counts(sort=True),
-            ]
-        )
-        .to_series()
-        .to_list()
-    )
-    assert out == [
-        {"id": "c", "counts": 3},
-        {"id": "b", "counts": 2},
-        {"id": "d", "counts": 2},
-        {"id": "a", "counts": 1},
-    ]
-
-    # nested value counts. Then the series needs the name
-    # 6200
-
-    df = pl.DataFrame({"session": [1, 1, 1], "id": [2, 2, 3]})
-
-    assert df.groupby("session").agg(
-        [pl.col("id").value_counts(sort=True).first()]
-    ).to_dict(False) == {"session": [1], "id": [{"id": 2, "counts": 2}]}
-
-
-def test_value_counts_logical_type() -> None:
-    # test logical type
-    df = pl.DataFrame({"a": ["b", "c"]}).with_columns(
-        pl.col("a").cast(pl.Categorical).alias("ac")
-    )
-    out = df.select([pl.all().value_counts()])
-    assert out["ac"].struct.field("ac").dtype == pl.Categorical
-    assert out["a"].struct.field("a").dtype == pl.Utf8
 
 
 def test_nested_struct() -> None:
@@ -374,7 +335,7 @@ def test_struct_agg_all() -> None:
         }
     )
 
-    assert df.groupby("group", maintain_order=True).all().to_dict(False) == {
+    assert df.group_by("group", maintain_order=True).all().to_dict(False) == {
         "group": ["a", "b"],
         "col1": [
             [{"x": 1, "y": 100}, {"x": 2, "y": 200}],
@@ -606,9 +567,9 @@ def test_nested_struct_sliced_append() -> None:
     ]
 
 
-def test_struct_groupby_field_agg_4216() -> None:
+def test_struct_group_by_field_agg_4216() -> None:
     df = pl.DataFrame([{"a": {"b": 1}, "c": 0}])
-    assert df.groupby("c").agg(pl.col("a").struct.field("b").count()).to_dict(
+    assert df.group_by("c").agg(pl.col("a").struct.field("b").count()).to_dict(
         False
     ) == {"c": [0], "b": [1]}
 
@@ -815,7 +776,7 @@ def test_struct_name_passed_in_agg_apply() -> None:
         ]
     ).alias("index")
 
-    assert pl.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6], "C": [1, 2, 2]}).groupby(
+    assert pl.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6], "C": [1, 2, 2]}).group_by(
         "C"
     ).agg(struct_expr).sort("C", descending=True).to_dict(False) == {
         "C": [2, 1],
@@ -827,7 +788,7 @@ def test_struct_name_passed_in_agg_apply() -> None:
 
     df = pl.DataFrame({"val": [-3, -2, -1, 0, 1, 2, 3], "k": [0] * 7})
 
-    assert df.groupby("k").agg(
+    assert df.group_by("k").agg(
         pl.struct(
             [
                 pl.col("val").value_counts(sort=True).struct.field("val").alias("val"),

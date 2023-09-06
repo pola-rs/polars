@@ -5,11 +5,11 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
-use crate::apply::lazy::binary_lambda;
 use crate::conversion::{get_lf, Wrap};
 use crate::expr::ToExprs;
+use crate::map::lazy::binary_lambda;
 use crate::prelude::{vec_extract_wrapped, DataType, DatetimeArgs, DurationArgs, ObjectValue};
-use crate::{apply, PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr, PySeries};
+use crate::{map, PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr, PySeries};
 
 macro_rules! set_unwrapped_or_0 {
     ($($var:ident),+ $(,)?) => {
@@ -105,6 +105,38 @@ pub fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFram
 }
 
 #[pyfunction]
+pub fn collect_all_with_callback(lfs: Vec<PyLazyFrame>, lambda: PyObject, py: Python) {
+    use polars_core::utils::rayon::prelude::*;
+
+    py.allow_threads(|| {
+        polars_core::POOL.install(move || {
+            polars_core::POOL.spawn(move || {
+                let result = lfs
+                    .par_iter()
+                    .map(|lf| {
+                        let df = lf.ldf.clone().collect()?;
+                        Ok(PyDataFrame::new(df))
+                    })
+                    .collect::<polars_core::error::PolarsResult<Vec<_>>>()
+                    .map_err(PyPolarsErr::from);
+
+                Python::with_gil(|py| match result {
+                    Ok(dfs) => {
+                        lambda.call1(py, (dfs,)).map_err(|err| err.restore(py)).ok();
+                    },
+                    Err(err) => {
+                        lambda
+                            .call1(py, (PyErr::from(err).to_object(py),))
+                            .map_err(|err| err.restore(py))
+                            .ok();
+                    },
+                })
+            })
+        });
+    });
+}
+
+#[pyfunction]
 pub fn cols(names: Vec<String>) -> PyExpr {
     dsl::cols(names).into()
 }
@@ -188,7 +220,7 @@ pub fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
-#[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=None, use_earliest=None))]
+#[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=None, ambiguous=None))]
 pub fn datetime(
     year: PyExpr,
     month: PyExpr,
@@ -199,14 +231,16 @@ pub fn datetime(
     microsecond: Option<PyExpr>,
     time_unit: Wrap<TimeUnit>,
     time_zone: Option<TimeZone>,
-    use_earliest: Option<bool>,
+    ambiguous: Option<PyExpr>,
 ) -> PyExpr {
     let year = year.inner;
     let month = month.inner;
     let day = day.inner;
     set_unwrapped_or_0!(hour, minute, second, microsecond);
+    let ambiguous = ambiguous
+        .map(|e| e.inner)
+        .unwrap_or(dsl::lit(String::from("raise")));
     let time_unit = time_unit.0;
-
     let args = DatetimeArgs {
         year,
         month,
@@ -217,7 +251,7 @@ pub fn datetime(
         microsecond,
         time_unit,
         time_zone,
-        use_earliest,
+        ambiguous,
     };
     dsl::datetime(args).into()
 }
@@ -316,11 +350,11 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
                 } else {
                     Ok(dsl::lit(val).into())
                 }
-            }
+            },
             _ => {
                 let val = int.extract::<u64>().unwrap();
                 Ok(dsl::lit(val).into())
-            }
+            },
         }
     } else if let Ok(float) = value.downcast::<PyFloat>() {
         let val = float.extract::<f64>().unwrap();
@@ -352,23 +386,16 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (pyexpr, lambda, output_type, apply_groups, returns_scalar))]
+#[pyo3(signature = (pyexpr, lambda, output_type, map_groups, returns_scalar))]
 pub fn map_mul(
     py: Python,
     pyexpr: Vec<PyExpr>,
     lambda: PyObject,
     output_type: Option<Wrap<DataType>>,
-    apply_groups: bool,
+    map_groups: bool,
     returns_scalar: bool,
 ) -> PyExpr {
-    apply::lazy::map_mul(
-        &pyexpr,
-        py,
-        lambda,
-        output_type,
-        apply_groups,
-        returns_scalar,
-    )
+    map::lazy::map_mul(&pyexpr, py, lambda, output_type, map_groups, returns_scalar)
 }
 
 #[pyfunction]

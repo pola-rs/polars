@@ -62,7 +62,7 @@ impl CsvSource {
         let reader = CsvReader::from_path(&path)
             .unwrap()
             .has_header(options.has_header)
-            .with_schema(self.schema.clone())
+            .with_dtypes(Some(self.schema.clone()))
             .with_delimiter(options.delimiter)
             .with_ignore_errors(options.ignore_errors)
             .with_skip_rows(options.skip_rows)
@@ -79,7 +79,9 @@ impl CsvSource {
             .with_rechunk(false)
             .with_chunk_size(chunk_size)
             .with_row_count(file_options.row_count)
-            .with_try_parse_dates(options.try_parse_dates);
+            .with_try_parse_dates(options.try_parse_dates)
+            .truncate_ragged_lines(options.truncate_ragged_lines)
+            .raise_if_empty(options.raise_if_empty);
 
         let reader = Box::new(reader);
         let reader = Box::leak(reader) as *mut CsvReader<'static, File>;
@@ -125,12 +127,12 @@ impl Drop for CsvSource {
             match self.batched_reader {
                 Some(Either::Left(ptr)) => {
                     let _to_drop = Box::from_raw(ptr);
-                }
+                },
                 Some(Either::Right(ptr)) => {
                     let _to_drop = Box::from_raw(ptr);
-                }
+                },
                 // nothing initialized, nothing to drop
-                _ => {}
+                _ => {},
             }
             if let Some(ptr) = self.reader {
                 let _to_drop = Box::from_raw(ptr);
@@ -153,12 +155,12 @@ impl Source for CsvSource {
                 let reader = unsafe { &mut *batched_reader };
 
                 reader.next_batches(self.n_threads)?
-            }
+            },
             Either::Right(batched_reader) => {
                 let reader = unsafe { &mut *batched_reader };
 
                 reader.next_batches(self.n_threads)?
-            }
+            },
         };
         Ok(match batches {
             None => SourceResult::Finished,

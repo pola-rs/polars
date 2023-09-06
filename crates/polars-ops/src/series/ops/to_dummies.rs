@@ -1,4 +1,4 @@
-use polars_core::frame::groupby::GroupsIndicator;
+use polars_core::frame::group_by::GroupsIndicator;
 
 use super::*;
 
@@ -39,10 +39,10 @@ impl ToDummies for Series {
                 let ca = match group {
                     GroupsIndicator::Idx((_, group)) => {
                         dummies_helper_idx(group, self.len(), &name)
-                    }
+                    },
                     GroupsIndicator::Slice([offset, len]) => {
                         dummies_helper_slice(offset, len, self.len(), &name)
-                    }
+                    },
                 };
                 ca.into_series()
             })

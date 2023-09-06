@@ -6,18 +6,15 @@ import sys
 import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
+import pyarrow as pa
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, NoDataError
-from polars.testing import (
-    assert_frame_equal,
-    assert_frame_equal_local_categoricals,
-    assert_series_equal,
-)
+from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
@@ -44,6 +41,47 @@ def test_quoted_date() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_date_pattern_with_datetime_override_10826() -> None:
+    result = pl.read_csv(
+        source=io.StringIO("col\n2023-01-01\n2023-02-01\n2023-03-01"),
+        dtypes={"col": pl.Datetime},
+    )
+    expected = pl.from_repr(
+        """
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ col                 │
+        │ ---                 │
+        │ datetime[μs]        │
+        ╞═════════════════════╡
+        │ 2023-01-01 00:00:00 │
+        │ 2023-02-01 00:00:00 │
+        │ 2023-03-01 00:00:00 │
+        └─────────────────────┘
+        """
+    )
+    assert_frame_equal(result, cast(pl.DataFrame, expected))
+    result = pl.read_csv(
+        source=io.StringIO("col\n2023-01-01T01:02:03\n2023-02-01\n2023-03-01"),
+        dtypes={"col": pl.Datetime},
+    )
+    expected = pl.from_repr(
+        """
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ col                 │
+        │ ---                 │
+        │ datetime[μs]        │
+        ╞═════════════════════╡
+        │ 2023-01-01 01:02:03 │
+        │ 2023-02-01 00:00:00 │
+        │ 2023-03-01 00:00:00 │
+        └─────────────────────┘
+        """
+    )
+    assert_frame_equal(result, cast(pl.DataFrame, expected))
+
+
 def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
     df = df_no_lists
     buf = io.BytesIO()
@@ -54,9 +92,9 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
     read_df = read_df.with_columns(
         [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
     )
-    assert_frame_equal_local_categoricals(df, read_df)
+    assert_frame_equal(df, read_df, categorical_as_str=True)
     with pytest.raises(AssertionError):
-        assert_frame_equal_local_categoricals(df.select(["time", "cat"]), read_df)
+        assert_frame_equal(df.select("time", "cat"), read_df, categorical_as_str=True)
 
 
 @pytest.mark.write_disk()
@@ -72,7 +110,7 @@ def test_to_from_file(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     read_df = read_df.with_columns(
         [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
     )
-    assert_frame_equal_local_categoricals(df, read_df)
+    assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
 def test_normalise_filepath(io_files_path: Path) -> None:
@@ -98,11 +136,15 @@ def test_csv_null_values() -> None:
 
     # note: after reading, the buffer position in StringIO will have been
     # advanced; reading again will raise NoDataError, so we provide a hint
-    # in the error string about this, suggesting "seek(0)" as a possible fix
+    # in the error string about this, suggesting "seek(0)" as a possible fix...
     with pytest.raises(
         NoDataError, match=r"empty CSV data .* position = 20; try seek\(0\)"
     ):
         pl.read_csv(f)
+
+    # ... unless we explicitly tell read_csv not to raise an
+    # exception, in which case we expect an empty dataframe
+    assert_frame_equal(pl.read_csv(f, raise_if_empty=False), pl.DataFrame())
 
     out = io.BytesIO()
     df.write_csv(out, null_value="na")
@@ -444,7 +486,7 @@ def test_compressed_csv(io_files_path: Path) -> None:
         """\
         a,b,c
         1,a,1.0
-        2,b,2.0,
+        2,b,2.0
         3,c,3.0
         """
     )
@@ -460,8 +502,8 @@ def test_compressed_csv(io_files_path: Path) -> None:
     assert_frame_equal(out, expected)
 
     # now from disk
-    csv_file = io_files_path / "gzipped.csv"
-    out = pl.read_csv(str(csv_file))
+    csv_file = io_files_path / "gzipped.csv.gz"
+    out = pl.read_csv(str(csv_file), truncate_ragged_lines=True)
     assert_frame_equal(out, expected)
 
     # now with column projection
@@ -497,8 +539,11 @@ def test_partial_decompression(foods_file_path: Path) -> None:
 
 def test_empty_bytes() -> None:
     b = b""
-    with pytest.raises(ValueError):
+    with pytest.raises(NoDataError):
         pl.read_csv(b)
+
+    df = pl.read_csv(b, raise_if_empty=False)
+    assert_frame_equal(df, pl.DataFrame())
 
 
 def test_csv_quote_char() -> None:
@@ -697,6 +742,14 @@ def test_write_csv_delimiter() -> None:
     df.write_csv(f, separator="\t")
     f.seek(0)
     assert f.read() == b"a\tb\n1\t1\n2\t2\n3\t3\n"
+
+
+def test_write_csv_line_terminator() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    f = io.BytesIO()
+    df.write_csv(f, line_terminator="\r\n")
+    f.seek(0)
+    assert f.read() == b"a,b\r\n1,1\r\n2,2\r\n3,3\r\n"
 
 
 def test_escaped_null_values() -> None:
@@ -1181,6 +1234,15 @@ def test_batched_csv_reader(foods_file_path: Path) -> None:
     assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))  # type: ignore[arg-type]
 
 
+def test_batched_csv_reader_empty(io_files_path: Path) -> None:
+    empty_csv = io_files_path / "empty.csv"
+    with pytest.raises(NoDataError, match="empty CSV"):
+        pl.read_csv_batched(source=empty_csv)
+
+    reader = pl.read_csv_batched(source=empty_csv, raise_if_empty=False)
+    assert reader.next_batches(1) is None
+
+
 def test_batched_csv_reader_all_batches(foods_file_path: Path) -> None:
     for new_columns in [None, ["Category", "Calories", "Fats_g", "Sugars_g"]]:
         out = pl.read_csv(foods_file_path, new_columns=new_columns)
@@ -1291,6 +1353,24 @@ def test_read_csv_chunked() -> None:
     assert df.filter(pl.col("count") < pl.col("count").shift(1)).is_empty()
 
 
+def test_read_empty_csv(io_files_path: Path) -> None:
+    with pytest.raises(NoDataError) as err:
+        pl.read_csv(io_files_path / "empty.csv")
+    assert "empty CSV" in str(err.value)
+
+    df = pl.read_csv(io_files_path / "empty.csv", raise_if_empty=False)
+    assert_frame_equal(df, pl.DataFrame())
+
+    with pytest.raises(pa.ArrowInvalid) as err:
+        pl.read_csv(io_files_path / "empty.csv", use_pyarrow=True)
+    assert "Empty CSV" in str(err.value)
+
+    df = pl.read_csv(
+        io_files_path / "empty.csv", raise_if_empty=False, use_pyarrow=True
+    )
+    assert_frame_equal(df, pl.DataFrame())
+
+
 @pytest.mark.slow()
 def test_read_web_file() -> None:
     url = "https://raw.githubusercontent.com/pola-rs/polars/main/examples/datasets/foods1.csv"
@@ -1377,3 +1457,94 @@ def test_csv_9929() -> None:
     f.seek(0)
     with pytest.raises(pl.NoDataError):
         pl.read_csv(f, skip_rows=10**6)
+
+
+def test_csv_quote_styles() -> None:
+    df = pl.DataFrame(
+        {
+            "float": [1.0, 2.0, None],
+            "string": ["a", "abc", '"hello'],
+            "int": [1, 2, 3],
+            "bool": [True, False, None],
+        }
+    )
+
+    assert (
+        df.write_csv(quote_style="necessary")
+        == 'float,string,int,bool\n1.0,a,1,true\n2.0,abc,2,false\n,"""hello",3,\n'
+    )
+    assert (
+        df.write_csv(quote_style="always")
+        == '"float","string","int","bool"\n"1.0","a","1","true"\n"2.0","abc","2","false"\n"","""hello","3",""\n'
+    )
+    assert (
+        df.write_csv(quote_style="non_numeric", quote="8")
+        == '8float8,8string8,8int8,8bool8\n1.0,8a8,1,8true8\n2.0,8abc8,2,8false8\n,8"hello8,3,\n'
+    )
+
+
+def test_ignore_errors_casting_dtypes() -> None:
+    csv = """inventory
+    10
+
+    400
+    90
+    """
+
+    assert pl.read_csv(
+        source=io.StringIO(csv),
+        dtypes={"inventory": pl.Int8},
+        ignore_errors=True,
+    ).to_dict(False) == {"inventory": [10, None, None, 90]}
+
+    with pytest.raises(pl.ComputeError):
+        pl.read_csv(
+            source=io.StringIO(csv),
+            dtypes={"inventory": pl.Int8},
+            ignore_errors=False,
+        )
+
+
+def test_ignore_errors_date_parser() -> None:
+    data_invalid_date = "int,float,date\n3,3.4,X"
+    with pytest.raises(pl.ComputeError):
+        pl.read_csv(
+            source=io.StringIO(data_invalid_date),
+            dtypes={"date": pl.Date},
+            ignore_errors=False,
+        )
+
+
+def test_csv_ragged_lines() -> None:
+    expected = {"column_1": ["A", "B", "C"]}
+    assert (
+        pl.read_csv(
+            io.StringIO("A\nB,ragged\nC"), has_header=False, truncate_ragged_lines=True
+        ).to_dict(False)
+        == expected
+    )
+    assert (
+        pl.read_csv(
+            io.StringIO("A\nB\nC,ragged"), has_header=False, truncate_ragged_lines=True
+        ).to_dict(False)
+        == expected
+    )
+
+    for s in ["A\nB,ragged\nC", "A\nB\nC,ragged"]:
+        with pytest.raises(pl.ComputeError, match=r"found more fields than defined"):
+            pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
+        with pytest.raises(pl.ComputeError, match=r"found more fields than defined"):
+            pl.read_csv(io.StringIO(s), has_header=False, truncate_ragged_lines=False)
+
+
+def test_provide_schema() -> None:
+    # can be used to overload schema with ragged csv files
+    assert pl.read_csv(
+        io.StringIO("A\nB,ragged\nC"),
+        has_header=False,
+        schema={"A": pl.Utf8, "B": pl.Utf8, "C": pl.Utf8},
+    ).to_dict(False) == {
+        "A": ["A", "B", "C"],
+        "B": [None, "ragged", None],
+        "C": [None, None, None],
+    }

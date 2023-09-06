@@ -56,7 +56,7 @@ impl NullValuesCompiled {
             Columns(v) => {
                 debug_assert!(index < v.len());
                 v.get_unchecked(index).as_bytes() == field
-            }
+            },
         }
     }
 }
@@ -73,7 +73,7 @@ impl NullValues {
                     null_values[i] = null_value;
                 }
                 NullValuesCompiled::Columns(null_values)
-            }
+            },
         })
     }
 }
@@ -100,8 +100,6 @@ where
 {
     /// File or Stream object
     reader: R,
-    /// Aggregates chunk afterwards to a single chunk.
-    rechunk: bool,
     /// Stop reading from the csv after this number of rows is reached
     n_rows: Option<usize>,
     // used by error ignore logic
@@ -112,8 +110,6 @@ where
     /// Optional column names to project/ select.
     columns: Option<Vec<String>>,
     delimiter: Option<u8>,
-    has_header: bool,
-    ignore_errors: bool,
     pub(crate) schema: Option<SchemaRef>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
@@ -122,16 +118,22 @@ where
     dtype_overwrite: Option<&'a [DataType]>,
     sample_size: usize,
     chunk_size: usize,
-    low_memory: bool,
     comment_char: Option<u8>,
-    eol_char: u8,
     null_values: Option<NullValues>,
-    missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     quote_char: Option<u8>,
     skip_rows_after_header: usize,
     try_parse_dates: bool,
     row_count: Option<RowCount>,
+    /// Aggregates chunk afterwards to a single chunk.
+    rechunk: bool,
+    raise_if_empty: bool,
+    truncate_ragged_lines: bool,
+    missing_is_null: bool,
+    low_memory: bool,
+    has_header: bool,
+    ignore_errors: bool,
+    eol_char: u8,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -179,8 +181,8 @@ where
     /// in the csv parser and expects a complete Schema.
     ///
     /// It is recommended to use [with_dtypes](Self::with_dtypes) instead.
-    pub fn with_schema(mut self, schema: SchemaRef) -> Self {
-        self.schema = Some(schema);
+    pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
+        self.schema = schema;
         self
     }
 
@@ -295,6 +297,12 @@ where
         self
     }
 
+    /// Raise an error if CSV is empty (otherwise return an empty frame)
+    pub fn raise_if_empty(mut self, toggle: bool) -> Self {
+        self.raise_if_empty = toggle;
+        self
+    }
+
     /// Reduce memory consumption at the expense of performance
     pub fn low_memory(mut self, toggle: bool) -> Self {
         self.low_memory = toggle;
@@ -315,6 +323,12 @@ where
 
     pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
         self.predicate = predicate;
+        self
+    }
+
+    /// Truncate lines that are longer than the schema.
+    pub fn truncate_ragged_lines(mut self, toggle: bool) -> Self {
+        self.truncate_ragged_lines = toggle;
         self
     }
 }
@@ -366,6 +380,8 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.skip_rows_after_header,
             std::mem::take(&mut self.row_count),
             self.try_parse_dates,
+            self.raise_if_empty,
+            self.truncate_ragged_lines,
         )
     }
 
@@ -389,31 +405,31 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
                         to_cast.push(fld);
                         // let inference decide the column type
                         None
-                    }
+                    },
                     Int8 | Int16 | UInt8 | UInt16 => {
                         // We have not compiled these buffers, so we cast them later.
                         to_cast.push(fld.clone());
                         fld.coerce(DataType::Int32);
                         Some(fld)
-                    }
+                    },
                     #[cfg(feature = "dtype-categorical")]
                     Categorical(_) => {
                         _has_categorical = true;
                         Some(fld)
-                    }
+                    },
                     #[cfg(feature = "dtype-decimal")]
                     Decimal(precision, scale) => match (precision, scale) {
                         (_, Some(_)) => {
                             to_cast.push(fld.clone());
                             fld.coerce(Utf8);
                             Some(fld)
-                        }
+                        },
                         _ => {
                             _err = Some(PolarsError::ComputeError(
                                 "'scale' must be set when reading csv column as Decimal".into(),
                             ));
                             None
-                        }
+                        },
                     },
                     _ => Some(fld),
                 }
@@ -476,10 +492,11 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     self.eol_char,
                     self.null_values.as_ref(),
                     self.try_parse_dates,
+                    self.raise_if_empty,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_mmap(self, schema))
-            }
+            },
         }
     }
     pub fn batched_read(
@@ -504,10 +521,11 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
                     self.eol_char,
                     self.null_values.as_ref(),
                     self.try_parse_dates,
+                    self.raise_if_empty,
                 )?;
                 let schema = Arc::new(inferred_schema);
                 Ok(to_batched_owned_read(self, schema))
-            }
+            },
         }
     }
 }
@@ -547,6 +565,8 @@ where
             skip_rows_after_header: 0,
             try_parse_dates: false,
             row_count: None,
+            raise_if_empty: true,
+            truncate_ragged_lines: false,
         }
     }
 
@@ -613,7 +633,7 @@ where
                         .collect::<Schema>();
 
                     Arc::new(schema)
-                }
+                },
                 _ => Arc::default(),
             };
             df = parse_dates(df, &fixed_schema)
@@ -640,7 +660,7 @@ fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
                         return ca.into_series();
                     }
                     s
-                }
+                },
                 _ => s,
             }
         })

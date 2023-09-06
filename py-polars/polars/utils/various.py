@@ -121,19 +121,18 @@ def handle_projection_columns(
         elif is_int_sequence(columns):
             projection = list(columns)
         elif not is_str_sequence(columns):
-            raise ValueError(
-                "'columns' arg should contain a list of all integers or all strings"
-                " values."
+            raise TypeError(
+                "'columns' arg should contain a list of all integers or all strings values"
             )
         else:
             new_columns = columns
         if columns and len(set(columns)) != len(columns):
             raise ValueError(
-                f"'columns' arg should only have unique values. Got '{columns}'."
+                f"`columns` arg should only have unique values. Got {columns!r}"
             )
         if projection and len(set(projection)) != len(projection):
             raise ValueError(
-                f"'columns' arg should only have unique values. Got '{projection}'."
+                f"`columns` arg should only have unique values. Got {projection!r}"
             )
     return projection, new_columns
 
@@ -190,7 +189,7 @@ def normalise_filepath(path: str | Path, check_not_directory: bool = True) -> st
         and os.path.exists(path)  # noqa: PTH110
         and os.path.isdir(path)  # noqa: PTH112
     ):
-        raise IsADirectoryError(f"Expected a file path; {path!r} is a directory")
+        raise IsADirectoryError(f"expected a file path; {path!r} is a directory")
     return path
 
 
@@ -250,7 +249,7 @@ def _cast_repr_strings_with_schema(
         for tp in df.schema.values():
             if tp != Utf8:
                 raise TypeError(
-                    f"DataFrame should contain only Utf8 string repr data; found {tp}"
+                    f"DataFrame should contain only Utf8 string repr data; found {tp!r}"
                 )
 
     # duration string scaling
@@ -368,13 +367,20 @@ def find_stacklevel() -> int:
     # https://stackoverflow.com/questions/17407119/python-inspect-stack-is-slow
     frame = inspect.currentframe()
     n = 0
-    while frame:
-        fname = inspect.getfile(frame)
-        if fname.startswith(str(pkg_dir)):
-            frame = frame.f_back
-            n += 1
-        else:
-            break
+    try:
+        while frame:
+            fname = inspect.getfile(frame)
+            if fname.startswith(str(pkg_dir)):
+                frame = frame.f_back
+                n += 1
+            else:
+                break
+    finally:
+        # https://docs.python.org/3/library/inspect.html
+        # > Though the cycle detector will catch these, destruction of the frames
+        # > (and local variables) can be made deterministic by removing the cycle
+        # > in a finally clause.
+        del frame
     return n
 
 
@@ -406,22 +412,30 @@ def _get_stack_locals(
     examined_frames = 0
     if n_frames is None:
         n_frames = sys.maxsize
-    stack_frame = getattr(inspect.currentframe(), "f_back", None)
+    stack_frame = inspect.currentframe()
+    stack_frame = getattr(stack_frame, "f_back", None)
 
-    while stack_frame and examined_frames < n_frames:
-        local_items = list(stack_frame.f_locals.items())
-        for nm, obj in reversed(local_items):
-            if (
-                nm not in objects
-                and (named is None or (nm in named))
-                and (of_type is None or isinstance(obj, of_type))
-            ):
-                objects[nm] = obj
-                if n_objects is not None and len(objects) >= n_objects:
-                    return objects
+    try:
+        while stack_frame and examined_frames < n_frames:
+            local_items = list(stack_frame.f_locals.items())
+            for nm, obj in reversed(local_items):
+                if (
+                    nm not in objects
+                    and (named is None or (nm in named))
+                    and (of_type is None or isinstance(obj, of_type))
+                ):
+                    objects[nm] = obj
+                    if n_objects is not None and len(objects) >= n_objects:
+                        return objects
 
-        stack_frame = stack_frame.f_back
-        examined_frames += 1
+            stack_frame = stack_frame.f_back
+            examined_frames += 1
+    finally:
+        # https://docs.python.org/3/library/inspect.html
+        # > Though the cycle detector will catch these, destruction of the frames
+        # > (and local variables) can be made deterministic by removing the cycle
+        # > in a finally clause.
+        del stack_frame
 
     return objects
 
@@ -453,3 +467,26 @@ def in_terminal_that_supports_colour() -> bool:
             )
         ) or os.environ.get("PYCHARM_HOSTED") == "1"
     return False
+
+
+def parse_percentiles(percentiles: Sequence[float] | float | None) -> Sequence[float]:
+    """
+    Transforms raw percentiles into our preferred format, adding the 50th percentile.
+
+    Raises a ValueError if the percentile sequence is invalid
+    (e.g. outside the range [0, 1])
+    """
+    if isinstance(percentiles, float):
+        percentiles = [percentiles]
+    elif percentiles is None:
+        percentiles = []
+    if not all((0 <= p <= 1) for p in percentiles):
+        raise ValueError("percentiles must all be in the range [0, 1]")
+
+    sub_50_percentiles = sorted(p for p in percentiles if p < 0.5)
+    at_or_above_50_percentiles = sorted(p for p in percentiles if p >= 0.5)
+
+    if not at_or_above_50_percentiles or at_or_above_50_percentiles[0] != 0.5:
+        at_or_above_50_percentiles = [0.5, *at_or_above_50_percentiles]
+
+    return [*sub_50_percentiles, *at_or_above_50_percentiles]

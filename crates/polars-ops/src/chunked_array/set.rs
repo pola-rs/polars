@@ -73,7 +73,7 @@ unsafe fn set_at_idx_impl<V, T: NativeType>(
                     Some(value) => {
                         mut_validity.set_unchecked(*idx as usize, true);
                         *new_values_slice.get_unchecked_mut(*idx as usize) = value
-                    }
+                    },
                     None => mut_validity.set_unchecked(*idx as usize, false),
                 }
             }
@@ -86,7 +86,7 @@ unsafe fn set_at_idx_impl<V, T: NativeType>(
                 Some(value) => *new_values_slice.get_unchecked_mut(*idx as usize) = value,
                 None => {
                     null_idx.push(*idx);
-                }
+                },
             }
         }
         // only make a validity bitmap when null values are set
@@ -129,14 +129,14 @@ where
                 // Safety:
                 // we checked bounds
                 unsafe { set_at_idx_impl(current_values, values, arr, idx, len) };
-            }
+            },
             None => {
                 let mut new_values = arr.values().as_slice().to_vec();
                 // Safety:
                 // we checked bounds
                 unsafe { set_at_idx_impl(&mut new_values, values, arr, idx, len) };
                 arr.set_values(new_values.into());
-            }
+            },
         };
         Ok(ca.into_series())
     }

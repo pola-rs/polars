@@ -14,7 +14,7 @@ impl Display for PolarsUtilsError {
             PolarsUtilsError::ComputeError(s) => {
                 let s = s.as_ref();
                 write!(f, "{s}")
-            }
+            },
         }
     }
 }

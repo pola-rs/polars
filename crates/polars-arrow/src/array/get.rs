@@ -3,8 +3,6 @@ use arrow::array::{
 };
 use arrow::types::NativeType;
 
-use crate::is_valid::IsValid;
-
 pub trait ArrowGetItem {
     type Item;
 

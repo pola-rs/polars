@@ -1,7 +1,6 @@
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use ahash::RandomState;
 use hashbrown::hash_map::RawEntryMut;
@@ -9,13 +8,14 @@ use once_cell::sync::Lazy;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::datatypes::PlIdHashMap;
-use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
+use crate::frame::group_by::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::InitHashMaps;
 
 /// We use atomic reference counting
 /// to determine how many threads use the string cache
 /// if the refcount is zero, we may clear the string cache.
 pub(crate) static USE_STRING_CACHE: AtomicU32 = AtomicU32::new(0);
+static STRING_CACHE_UUID_CTR: AtomicU32 = AtomicU32::new(0);
 
 /// RAII for the string cache
 /// If an operation creates categoricals and uses them in a join
@@ -110,7 +110,7 @@ impl Hash for Key {
 
 pub(crate) struct SCacheInner {
     map: PlIdHashMap<Key, ()>,
-    pub(crate) uuid: u128,
+    pub(crate) uuid: u32,
     payloads: Vec<StrHashGlobal>,
 }
 
@@ -140,7 +140,7 @@ impl SCacheInner {
         match entry {
             RawEntryMut::Occupied(entry) => {
                 global_idx = entry.key().idx;
-            }
+            },
             RawEntryMut::Vacant(entry) => {
                 let idx = self.payloads.len() as u32;
                 let key = Key::new(h, idx);
@@ -148,7 +148,7 @@ impl SCacheInner {
 
                 // only just now we allocate the string
                 self.payloads.push(s.into());
-            }
+            },
         }
         global_idx
     }
@@ -180,16 +180,7 @@ impl Default for SCacheInner {
     fn default() -> Self {
         Self {
             map: PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE),
-            #[cfg(not(target_family = "wasm"))]
-            uuid: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
-            #[cfg(target_family = "wasm")]
-            uuid: wasm_timer::SystemTime::now()
-                .duration_since(wasm_timer::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos(),
+            uuid: STRING_CACHE_UUID_CTR.fetch_add(1, Ordering::AcqRel),
             payloads: Vec::with_capacity(HASHMAP_INIT_SIZE),
         }
     }

@@ -123,6 +123,10 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
         let series_slice = s.as_ref();
         let list_cap = series_slice.len();
 
+        if series_slice.is_empty() {
+            return Series::new_empty(name, &DataType::Null);
+        }
+
         let dt = series_slice[0].dtype();
 
         // inner type is also list so we need the anonymous builder
@@ -460,5 +464,13 @@ mod test {
             "duration" => [ChronoDuration::from_std(std::time::Duration::from_secs(10)).unwrap()],
             "optional_duration" => [Some(ChronoDuration::from_std(std::time::Duration::from_secs(10)).unwrap())],
         ].unwrap();
+    }
+
+    #[test]
+    fn build_series_from_empty_series_vec() {
+        let empty_series = Series::new("test", Vec::<Series>::new());
+        assert_eq!(empty_series.len(), 0);
+        assert_eq!(*empty_series.dtype(), DataType::Null);
+        assert_eq!(empty_series.name(), "test");
     }
 }

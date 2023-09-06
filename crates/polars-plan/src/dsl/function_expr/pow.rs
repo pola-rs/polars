@@ -1,5 +1,5 @@
 use num::pow::Pow;
-use polars_arrow::utils::CustomIterTools;
+use polars_arrow::kernels::pow::pow as pow_kernel;
 use polars_core::export::num;
 use polars_core::export::num::{Float, ToPrimitive};
 
@@ -42,7 +42,7 @@ where
             a if a == 1.0 => base.clone().into_series(),
             // specialized sqrt will ensure (-inf)^0.5 = NaN
             // and will likely be faster as well.
-            a if a == 0.5 => base.apply(|v| v.sqrt()).into_series(),
+            a if a == 0.5 => base.apply_values(|v| v.sqrt()).into_series(),
             a if a.fract() == 0.0 && a < 10.0 && a > 1.0 => {
                 let mut out = base.clone();
 
@@ -50,8 +50,10 @@ where
                     out = out * base.clone()
                 }
                 out.into_series()
-            }
-            _ => base.apply(|v| Pow::pow(v, exponent_value)).into_series(),
+            },
+            _ => base
+                .apply_values(|v| Pow::pow(v, exponent_value))
+                .into_series(),
         };
         Ok(Some(s))
     } else if (base.len() == 1) && (exponent.len() != 1) {
@@ -60,17 +62,13 @@ where
             .ok_or_else(|| polars_err!(ComputeError: "base is null"))?;
 
         Ok(Some(
-            exponent.apply(|exp| Pow::pow(base, exp)).into_series(),
+            exponent
+                .apply_values(|exp| Pow::pow(base, exp))
+                .into_series(),
         ))
     } else {
         Ok(Some(
-            base.into_iter()
-                .zip(exponent)
-                .map(|(opt_base, opt_exponent)| match (opt_base, opt_exponent) {
-                    (Some(base), Some(exponent)) => Some(num::pow::Pow::pow(base, exponent)),
-                    _ => None,
-                })
-                .collect_trusted::<ChunkedArray<T>>()
+            polars_core::chunked_array::ops::arity::binary(base, exponent, pow_kernel)
                 .into_series(),
         ))
     }
@@ -82,15 +80,15 @@ fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Option<Series
         Float32 => {
             let ca = base.f32().unwrap();
             pow_on_floats(ca, exponent)
-        }
+        },
         Float64 => {
             let ca = base.f64().unwrap();
             pow_on_floats(ca, exponent)
-        }
+        },
         _ => {
             let base = base.cast(&DataType::Float64)?;
             pow_on_series(&base, exponent)
-        }
+        },
     }
 }
 
@@ -117,15 +115,15 @@ pub(super) fn sqrt(base: &Series) -> PolarsResult<Series> {
         Float32 => {
             let ca = base.f32().unwrap();
             sqrt_on_floats(ca)
-        }
+        },
         Float64 => {
             let ca = base.f64().unwrap();
             sqrt_on_floats(ca)
-        }
+        },
         _ => {
             let base = base.cast(&DataType::Float64)?;
             sqrt(&base)
-        }
+        },
     }
 }
 
@@ -135,7 +133,7 @@ where
     T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
     ChunkedArray<T>: IntoSeries,
 {
-    Ok(base.apply(|v| v.sqrt()).into_series())
+    Ok(base.apply_values(|v| v.sqrt()).into_series())
 }
 
 pub(super) fn cbrt(base: &Series) -> PolarsResult<Series> {
@@ -144,15 +142,15 @@ pub(super) fn cbrt(base: &Series) -> PolarsResult<Series> {
         Float32 => {
             let ca = base.f32().unwrap();
             cbrt_on_floats(ca)
-        }
+        },
         Float64 => {
             let ca = base.f64().unwrap();
             cbrt_on_floats(ca)
-        }
+        },
         _ => {
             let base = base.cast(&DataType::Float64)?;
             cbrt(&base)
-        }
+        },
     }
 }
 
@@ -162,5 +160,5 @@ where
     T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
     ChunkedArray<T>: IntoSeries,
 {
-    Ok(base.apply(|v| v.cbrt()).into_series())
+    Ok(base.apply_values(|v| v.cbrt()).into_series())
 }

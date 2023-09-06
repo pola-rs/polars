@@ -25,42 +25,32 @@ if TYPE_CHECKING:
     SeriesMethod = Callable[..., Series]
 
 
-class _EmptyBytecodeHelper:
-    def __init__(self) -> None:
-        # generate bytecode for empty functions with/without a docstring
-        def _empty_with_docstring() -> None:
-            """"""  # noqa: D419
-
-        def _empty_without_docstring() -> None:
-            pass
-
-        self.empty_bytecode = (
-            _empty_with_docstring.__code__.co_code,
-            _empty_without_docstring.__code__.co_code,
-        )
-
-    def __contains__(self, item: bytes) -> bool:
-        return item in self.empty_bytecode
-
-
-_EMPTY_BYTECODE = _EmptyBytecodeHelper()
-
-
-def _is_empty_method(func: SeriesMethod) -> bool:
+def expr_dispatch(cls: type[T]) -> type[T]:
     """
-    Confirm that the given function has no implementation.
+    Series/NameSpace class decorator that sets up expression dispatch.
 
-    Definitions of empty:
-
-    - only has a docstring (body is empty)
-    - has no docstring and just contains 'pass' (or equivalent)
+    * Applied to the Series class, and/or any Series 'NameSpace' classes.
+    * Walks the class attributes, looking for methods that have empty function
+      bodies, with signatures compatible with an existing Expr function.
+    * IIF both conditions are met, the empty method is decorated with @call_expr.
     """
-    fc = func.__code__
-    return (fc.co_code in _EMPTY_BYTECODE) and (
-        (len(fc.co_consts) == 2 and fc.co_consts[1] is None)
-        # account for optimized-out docstrings (eg: running 'python -OO')
-        or (sys.flags.optimize == 2 and fc.co_consts == (None,))
-    )
+    # create lookup of expression functions in this namespace
+    namespace = getattr(cls, "_accessor", None)
+    expr_lookup = _expr_lookup(namespace)
+
+    for name in dir(cls):
+        if not name.startswith("_"):
+            attr = getattr(cls, name)
+            if callable(attr):
+                attr = _undecorated(attr)
+                # note: `co_varnames` starts with the function args, but needs to be
+                # constrained by `co_argcount` as it also includes function-level consts
+                args = attr.__code__.co_varnames[: attr.__code__.co_argcount]
+                # if an expression method with compatible method exists, further check
+                # that the series implementation has an empty function body
+                if (namespace, name, args) in expr_lookup and _is_empty_method(attr):
+                    setattr(cls, name, call_expr(attr))
+    return cls
 
 
 def _expr_lookup(namespace: str | None) -> set[tuple[str | None, str, tuple[str, ...]]]:
@@ -83,9 +73,17 @@ def _expr_lookup(namespace: str | None) -> set[tuple[str | None, str, tuple[str,
             if callable(m):
                 # add function signature (argument names only) to the lookup
                 # as a _possible_ candidate for expression-dispatch
+                m = _undecorated(m)
                 args = m.__code__.co_varnames[: m.__code__.co_argcount]
                 lookup.add((namespace, name, args))
     return lookup
+
+
+def _undecorated(function: Callable[P, T]) -> Callable[P, T]:
+    """Return the given function without any decorators."""
+    while hasattr(function, "__wrapped__"):
+        function = function.__wrapped__
+    return function
 
 
 def call_expr(func: SeriesMethod) -> SeriesMethod:
@@ -107,31 +105,42 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
     return wrapper
 
 
-def expr_dispatch(cls: type[T]) -> type[T]:
+def _is_empty_method(func: SeriesMethod) -> bool:
     """
-    Series/NameSpace class decorator that sets up expression dispatch.
+    Confirm that the given function has no implementation.
 
-    * Applied to the Series class, and/or any Series 'NameSpace' classes.
-    * Walks the class attributes, looking for methods that have empty function
-      bodies, with signatures compatible with an existing Expr function.
-    * IIF both conditions are met, the empty method is decorated with @call_expr.
+    Definitions of empty:
+
+    - only has a docstring (body is empty)
+    - has no docstring and just contains 'pass' (or equivalent)
     """
-    # create lookup of expression functions in this namespace
-    namespace = getattr(cls, "_accessor", None)
-    expr_lookup = _expr_lookup(namespace)
+    fc = func.__code__
+    return (fc.co_code in _EMPTY_BYTECODE) and (
+        (len(fc.co_consts) == 2 and fc.co_consts[1] is None)
+        # account for optimized-out docstrings (eg: running 'python -OO')
+        or (sys.flags.optimize == 2 and fc.co_consts == (None,))
+    )
 
-    for name in dir(cls):
-        if not name.startswith("_"):
-            attr = getattr(cls, name)
-            if callable(attr):
-                # note: `co_varnames` starts with the function args, but needs to be
-                # constrained by `co_argcount` as it also includes function-level consts
-                args = attr.__code__.co_varnames[: attr.__code__.co_argcount]
-                # if an expression method with compatible method exists, further check
-                # that the series implementation has an empty function body
-                if (namespace, name, args) in expr_lookup and _is_empty_method(attr):
-                    setattr(cls, name, call_expr(attr))
-    return cls
+
+class _EmptyBytecodeHelper:
+    def __init__(self) -> None:
+        # generate bytecode for empty functions with/without a docstring
+        def _empty_with_docstring() -> None:
+            """"""  # noqa: D419
+
+        def _empty_without_docstring() -> None:
+            pass
+
+        self.empty_bytecode = (
+            _empty_with_docstring.__code__.co_code,
+            _empty_without_docstring.__code__.co_code,
+        )
+
+    def __contains__(self, item: bytes) -> bool:
+        return item in self.empty_bytecode
+
+
+_EMPTY_BYTECODE = _EmptyBytecodeHelper()
 
 
 def get_ffi_func(

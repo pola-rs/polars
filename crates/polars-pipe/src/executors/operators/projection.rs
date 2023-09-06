@@ -3,19 +3,19 @@ use std::sync::Arc;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
-use polars_plan::utils::rename_cse_tmp_series;
+use smartstring::alias::String as SmartString;
 
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
 #[derive(Clone)]
 pub(crate) struct FastProjectionOperator {
-    columns: Arc<[Arc<str>]>,
+    columns: Arc<[SmartString]>,
     input_schema: SchemaRef,
 }
 
 impl FastProjectionOperator {
-    pub(crate) fn new(columns: Arc<[Arc<str>]>, input_schema: SchemaRef) -> Self {
+    pub(crate) fn new(columns: Arc<[SmartString]>, input_schema: SchemaRef) -> Self {
         Self {
             columns,
             input_schema,
@@ -76,11 +76,6 @@ impl Operator for ProjectionOperator {
             .map(|e| {
                 #[allow(unused_mut)]
                 let mut s = e.evaluate(chunk, context.execution_state.as_any())?;
-
-                // correct the cse name
-                if self.cse_exprs.is_some() {
-                    rename_cse_tmp_series(&mut s);
-                }
 
                 has_literals |= s.len() == 1;
                 has_empty |= s.len() == 0;
@@ -151,18 +146,7 @@ impl Operator for HstackOperator {
         let projected = self
             .exprs
             .iter()
-            .map(|e| {
-                #[allow(unused_mut)]
-                let mut res = e.evaluate(chunk, context.execution_state.as_any());
-
-                if self.cse_exprs.is_some() {
-                    res = res.map(|mut s| {
-                        rename_cse_tmp_series(&mut s);
-                        s
-                    })
-                }
-                res
-            })
+            .map(|e| e.evaluate(chunk, context.execution_state.as_any()))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let mut df = DataFrame::new_no_checks(chunk.data.get_columns()[..width].to_vec());

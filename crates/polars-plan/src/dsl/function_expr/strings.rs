@@ -26,7 +26,7 @@ pub enum StringFunction {
         literal: bool,
         strict: bool,
     },
-    CountMatch(String),
+    CountMatch,
     EndsWith,
     Explode,
     Extract {
@@ -34,6 +34,11 @@ pub enum StringFunction {
         group_index: usize,
     },
     ExtractAll,
+    #[cfg(feature = "extract_groups")]
+    ExtractGroups {
+        dtype: DataType,
+        pat: String,
+    },
     #[cfg(feature = "string_from_radix")]
     FromRadix(u32, bool),
     NChars,
@@ -85,11 +90,13 @@ impl StringFunction {
             ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_same_dtype(),
             #[cfg(feature = "regex")]
             Contains { .. } => mapper.with_dtype(DataType::Boolean),
-            CountMatch(_) => mapper.with_dtype(DataType::UInt32),
+            CountMatch => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
             Explode => mapper.with_same_dtype(),
             Extract { .. } => mapper.with_same_dtype(),
             ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
+            #[cfg(feature = "extract_groups")]
+            ExtractGroups { dtype, .. } => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "string_from_radix")]
             FromRadix { .. } => mapper.with_dtype(DataType::Int32),
             #[cfg(feature = "extract_jsonpath")]
@@ -106,7 +113,7 @@ impl StringFunction {
             ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
             Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) | Slice(_, _) => {
                 mapper.with_same_dtype()
-            }
+            },
             #[cfg(feature = "string_justify")]
             Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
         }
@@ -118,7 +125,7 @@ impl Display for StringFunction {
         let s = match self {
             #[cfg(feature = "regex")]
             StringFunction::Contains { .. } => "contains",
-            StringFunction::CountMatch(_) => "count_match",
+            StringFunction::CountMatch => "count_match",
             StringFunction::EndsWith { .. } => "ends_with",
             StringFunction::Extract { .. } => "extract",
             #[cfg(feature = "concat_str")]
@@ -127,6 +134,8 @@ impl Display for StringFunction {
             StringFunction::ConcatVertical(_) => "concat_vertical",
             StringFunction::Explode => "explode",
             StringFunction::ExtractAll => "extract_all",
+            #[cfg(feature = "extract_groups")]
+            StringFunction::ExtractGroups { .. } => "extract_groups",
             #[cfg(feature = "string_from_radix")]
             StringFunction::FromRadix { .. } => "from_radix",
             #[cfg(feature = "extract_jsonpath")]
@@ -199,7 +208,7 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
                 } else {
                     ca.contains(pat, strict)?
                 }
-            }
+            },
             None => BooleanChunked::full(ca.name(), false, ca.len()),
         },
         _ => {
@@ -218,7 +227,7 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
                         (Some(src), Some(pat)) => {
                             let re = Regex::new(pat)?;
                             Ok(re.is_match(src))
-                        }
+                        },
                         _ => Ok(false),
                     })
                     .collect::<PolarsResult<_>>()?
@@ -231,7 +240,7 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
                     })
                     .collect_trusted()
             }
-        }
+        },
     };
 
     out.rename(ca.name());
@@ -292,6 +301,13 @@ pub(super) fn extract(s: &Series, pat: &str, group_index: usize) -> PolarsResult
     ca.extract(&pat, group_index).map(|ca| ca.into_series())
 }
 
+#[cfg(feature = "extract_groups")]
+/// Extract all capture groups from a regex pattern as a struct
+pub(super) fn extract_groups(s: &Series, pat: &str, dtype: &DataType) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.extract_groups(pat, dtype)
+}
+
 #[cfg(feature = "string_justify")]
 pub(super) fn zfill(s: &Series, alignment: usize) -> PolarsResult<Series> {
     let ca = s.utf8()?;
@@ -315,15 +331,15 @@ pub(super) fn strip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
         if matches.chars().count() == 1 {
             // Fast path for when a single character is passed
             Ok(ca
-                .apply(|s| Cow::Borrowed(s.trim_matches(matches.chars().next().unwrap())))
+                .apply_values(|s| Cow::Borrowed(s.trim_matches(matches.chars().next().unwrap())))
                 .into_series())
         } else {
             Ok(ca
-                .apply(|s| Cow::Borrowed(s.trim_matches(|c| matches.contains(c))))
+                .apply_values(|s| Cow::Borrowed(s.trim_matches(|c| matches.contains(c))))
                 .into_series())
         }
     } else {
-        Ok(ca.apply(|s| Cow::Borrowed(s.trim())).into_series())
+        Ok(ca.apply_values(|s| Cow::Borrowed(s.trim())).into_series())
     }
 }
 
@@ -334,15 +350,19 @@ pub(super) fn lstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> 
         if matches.chars().count() == 1 {
             // Fast path for when a single character is passed
             Ok(ca
-                .apply(|s| Cow::Borrowed(s.trim_start_matches(matches.chars().next().unwrap())))
+                .apply_values(|s| {
+                    Cow::Borrowed(s.trim_start_matches(matches.chars().next().unwrap()))
+                })
                 .into_series())
         } else {
             Ok(ca
-                .apply(|s| Cow::Borrowed(s.trim_start_matches(|c| matches.contains(c))))
+                .apply_values(|s| Cow::Borrowed(s.trim_start_matches(|c| matches.contains(c))))
                 .into_series())
         }
     } else {
-        Ok(ca.apply(|s| Cow::Borrowed(s.trim_start())).into_series())
+        Ok(ca
+            .apply_values(|s| Cow::Borrowed(s.trim_start()))
+            .into_series())
     }
 }
 
@@ -352,15 +372,19 @@ pub(super) fn rstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> 
         if matches.chars().count() == 1 {
             // Fast path for when a single character is passed
             Ok(ca
-                .apply(|s| Cow::Borrowed(s.trim_end_matches(matches.chars().next().unwrap())))
+                .apply_values(|s| {
+                    Cow::Borrowed(s.trim_end_matches(matches.chars().next().unwrap()))
+                })
                 .into_series())
         } else {
             Ok(ca
-                .apply(|s| Cow::Borrowed(s.trim_end_matches(|c| matches.contains(c))))
+                .apply_values(|s| Cow::Borrowed(s.trim_end_matches(|c| matches.contains(c))))
                 .into_series())
         }
     } else {
-        Ok(ca.apply(|s| Cow::Borrowed(s.trim_end())).into_series())
+        Ok(ca
+            .apply_values(|s| Cow::Borrowed(s.trim_end()))
+            .into_series())
     }
 }
 
@@ -381,27 +405,78 @@ pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
     }
 }
 
-pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
-    let pat = pat.to_string();
+pub(super) fn count_match(args: &[Series]) -> PolarsResult<Series> {
+    let s = &args[0];
+    let pat = &args[1];
 
     let ca = s.utf8()?;
-    ca.count_match(&pat).map(|ca| ca.into_series())
+    let pat = pat.utf8()?;
+    if pat.len() == 1 {
+        let pat = pat
+            .get(0)
+            .ok_or_else(|| polars_err!(ComputeError: "expected a pattern, got null"))?;
+        ca.count_match(pat).map(|ca| ca.into_series())
+    } else {
+        ca.count_match_many(pat).map(|ca| ca.into_series())
+    }
 }
 
 #[cfg(feature = "temporal")]
 pub(super) fn strptime(
-    s: &Series,
+    s: &[Series],
     dtype: DataType,
     options: &StrptimeOptions,
 ) -> PolarsResult<Series> {
     match dtype {
-        DataType::Date => to_date(s, options),
+        DataType::Date => to_date(&s[0], options),
         DataType::Datetime(time_unit, time_zone) => {
             to_datetime(s, &time_unit, time_zone.as_ref(), options)
-        }
-        DataType::Time => to_time(s, options),
+        },
+        DataType::Time => to_time(&s[0], options),
         dt => polars_bail!(ComputeError: "not implemented for dtype {}", dt),
     }
+}
+
+fn handle_temporal_parsing_error(
+    ca: &Utf8Chunked,
+    out: &Series,
+    format: Option<&str>,
+    has_non_exact_option: bool,
+) -> PolarsResult<()> {
+    let failure_mask = !ca.is_null() & out.is_null();
+    let all_failures = ca.filter(&failure_mask)?;
+    let first_failures = all_failures.unique()?.slice(0, 10).sort(false);
+    let n_failures = all_failures.len();
+    let n_failures_unique = all_failures.n_unique()?;
+    let exact_addendum = if has_non_exact_option {
+        "- setting `exact=False` (note: this is much slower!)\n"
+    } else {
+        ""
+    };
+    let format_addendum;
+    if let Some(format) = format {
+        format_addendum = format!(
+            "- checking whether the format provided ('{}') is correct",
+            format
+        );
+    } else {
+        format_addendum = String::from("- explicitly specifying `format`");
+    }
+    polars_bail!(
+        ComputeError:
+        "strict {} parsing failed for {} value(s) ({} unique): {}\n\
+        \n\
+        You might want to try:\n\
+        - setting `strict=False`\n\
+        {}\
+        {}",
+        out.dtype(),
+        n_failures,
+        n_failures_unique,
+        first_failures.into_series().fmt_list(),
+        exact_addendum,
+        format_addendum,
+    )
 }
 
 #[cfg(feature = "dtype-date")]
@@ -417,27 +492,21 @@ fn to_date(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
         }
     };
 
-    if options.strict {
-        polars_ensure!(
-            out.null_count() == ca.null_count(),
-            ComputeError:
-            "strict conversion to dates failed.\n\
-            \n\
-            You might want to try:\n\
-            - setting `strict=False`\n\
-            - explicitly specifying a `format`"
-        );
+    if options.strict && ca.null_count() != out.null_count() {
+        handle_temporal_parsing_error(ca, &out, options.format.as_deref(), true)?;
     }
     Ok(out.into_series())
 }
 
 #[cfg(feature = "dtype-datetime")]
 fn to_datetime(
-    s: &Series,
+    s: &[Series],
     time_unit: &TimeUnit,
     time_zone: Option<&TimeZone>,
     options: &StrptimeOptions,
 ) -> PolarsResult<Series> {
+    let datetime_strings = &s[0].utf8().unwrap();
+    let ambiguous = &s[1].utf8().unwrap();
     let tz_aware = match &options.format {
         #[cfg(feature = "timezones")]
         Some(format) => TZ_AWARE_RE.is_match(format),
@@ -453,31 +522,31 @@ fn to_datetime(
         }
     };
 
-    let ca = s.utf8()?;
     let out = if options.exact {
-        ca.as_datetime(
-            options.format.as_deref(),
-            *time_unit,
-            options.cache,
-            tz_aware,
-            time_zone,
-        )?
-        .into_series()
+        datetime_strings
+            .as_datetime(
+                options.format.as_deref(),
+                *time_unit,
+                options.cache,
+                tz_aware,
+                time_zone,
+                ambiguous,
+            )?
+            .into_series()
     } else {
-        ca.as_datetime_not_exact(options.format.as_deref(), *time_unit, tz_aware, time_zone)?
+        datetime_strings
+            .as_datetime_not_exact(
+                options.format.as_deref(),
+                *time_unit,
+                tz_aware,
+                time_zone,
+                ambiguous,
+            )?
             .into_series()
     };
 
-    if options.strict {
-        polars_ensure!(
-            out.null_count() == ca.null_count(),
-            ComputeError:
-            "strict conversion to datetimes failed.\n\
-            \n\
-            You might want to try:\n\
-            - setting `strict=False`\n\
-            - explicitly specifying a `format`"
-        );
+    if options.strict && datetime_strings.null_count() != out.null_count() {
+        handle_temporal_parsing_error(datetime_strings, &out, options.format.as_deref(), true)?;
     }
     Ok(out.into_series())
 }
@@ -493,16 +562,8 @@ fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
         .as_time(options.format.as_deref(), options.cache)?
         .into_series();
 
-    if options.strict {
-        polars_ensure!(
-            out.null_count() == ca.null_count(),
-            ComputeError:
-            "strict conversion to times failed.\n\
-            \n\
-            You might want to try:\n\
-            - setting `strict=False`\n\
-            - explicitly specifying a `format`"
-        );
+    if options.strict && ca.null_count() != out.null_count() {
+        handle_temporal_parsing_error(ca, &out, options.format.as_deref(), false)?;
     }
     Ok(out.into_series())
 }
@@ -577,9 +638,9 @@ fn replace_n<'a>(
                         polars_bail!(ComputeError: "regex replacement with 'n > 1' not yet supported")
                     }
                     ca.replace(pat, val)
-                }
+                },
             }
-        }
+        },
         (1, len_val) => {
             if n > 1 {
                 polars_bail!(ComputeError: "multivalue replacement with 'n > 1' not yet supported")
@@ -608,7 +669,7 @@ fn replace_n<'a>(
                 }
             };
             Ok(iter_and_replace(ca, val, f))
-        }
+        },
         _ => polars_bail!(
             ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
         ),
@@ -634,7 +695,7 @@ fn replace_all<'a>(
                 true => ca.replace_literal_all(pat, val),
                 false => ca.replace_all(pat, val),
             }
-        }
+        },
         (1, len_val) => {
             let mut pat = get_pat(pat)?.to_string();
             polars_ensure!(
@@ -653,7 +714,7 @@ fn replace_all<'a>(
 
             let f = |s: &'a str, val: &'a str| reg.replace_all(s, val);
             Ok(iter_and_replace(ca, val, f))
-        }
+        },
         _ => polars_bail!(
             ComputeError: "dynamic pattern length in 'str.replace' expressions is not supported yet"
         ),

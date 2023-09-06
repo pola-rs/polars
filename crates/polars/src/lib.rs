@@ -14,7 +14,7 @@
 //! # fn example() -> PolarsResult<()> {
 //!
 //! let lf1 = LazyFrame::scan_parquet("myfile_1.parquet", Default::default())?
-//!     .groupby([col("ham")])
+//!     .group_by([col("ham")])
 //!     .agg([
 //!         // expressions can be combined into powerful aggregations
 //!         col("foo")
@@ -201,7 +201,7 @@
 //!                         * gzip
 //!
 //! * `DataFrame` operations:
-//!     - `dynamic_groupby` - Groupby based on a time window instead of predefined keys.
+//!     - `dynamic_group_by` - Groupby based on a time window instead of predefined keys.
 //!                           Also activates rolling window group by operations.
 //!     - `sort_multiple` - Allow sorting a `DataFrame` on multiple columns
 //!     - `rows` - Create `DataFrame` from rows and extract rows from `DataFrames`.
@@ -209,15 +209,15 @@
 //!     - `asof_join` - Join ASOF, to join on nearest keys instead of exact equality match.
 //!     - `cross_join` - Create the cartesian product of two DataFrames.
 //!     - `semi_anti_join` - SEMI and ANTI joins.
-//!     - `groupby_list` - Allow groupby operation on keys of type List.
+//!     - `group_by_list` - Allow group_by operation on keys of type List.
 //!     - `row_hash` - Utility to hash DataFrame rows to UInt64Chunked
 //!     - `diagonal_concat` - Concat diagonally thereby combining different schemas.
 //!     - `horizontal_concat` - Concat horizontally and extend with null values if lengths don't match
 //!     - `dataframe_arithmetic` - Arithmetic on (Dataframe and DataFrames) and (DataFrame on Series)
 //!     - `partition_by` - Split into multiple DataFrames partitioned by groups.
 //! * `Series`/`Expression` operations:
-//!     - `is_in` - [Check for membership in `Series`](crate::chunked_array::ops::IsIn)
-//!     - `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip)
+//!     - `is_in` - Check for membership in `Series`.
+//!     - `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip).
 //!     - `round_series` - round underlying float types of `Series`.
 //!     - `repeat_by` - [Repeat element in an Array N times, where N is given by another array.
 //!     - `is_first` - Check if element is first unique value.
@@ -251,10 +251,11 @@
 //!     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
 //!     - `arg_where` - Get indices where condition holds.
 //!     - `search_sorted` - Find indices where elements should be inserted to maintain order.
-//!     - `date_offset` Add an offset to dates that take months and leap years into account.
-//!     - `trigonometry` Trigonometric functions.
-//!     - `sign` Compute the element-wise sign of a Series.
-//!     - `propagate_nans` NaN propagating min/max aggregations.
+//!     - `date_offset` - Add an offset to dates that take months and leap years into account.
+//!     - `trigonometry` - Trigonometric functions.
+//!     - `sign` - Compute the element-wise sign of a Series.
+//!     - `propagate_nans` - NaN propagating min/max aggregations.
+//!     - `extract_groups` - Extract multiple regex groups from strings.
 //! * `DataFrame` pretty printing
 //!     - `fmt` - Activate DataFrame formatting
 //!
@@ -316,7 +317,7 @@
 //!
 //! #### Notes
 //! [Benchmarks](https://github.com/pola-rs/polars/pull/3108) have shown that on Linux JeMalloc
-//! outperforms Mimalloc on all tasks and is therefor the default Linux allocator used for the Python bindings.
+//! outperforms Mimalloc on all tasks and is therefore the default Linux allocator used for the Python bindings.
 //!
 //! #### Cargo.toml
 //! ```toml
@@ -357,11 +358,11 @@
 //! * `POLARS_TABLE_WIDTH` -> width of the tables used during DataFrame formatting.
 //! * `POLARS_MAX_THREADS` -> maximum number of threads used to initialize thread pool (on startup).
 //! * `POLARS_VERBOSE` -> print logging info to stderr.
-//! * `POLARS_NO_PARTITION` -> polars may choose to partition the groupby operation, based on data
-//!                            cardinality. Setting this env var will turn partitioned groupby's off.
-//! * `POLARS_PARTITION_UNIQUE_COUNT` -> at which (estimated) key count a partitioned groupby should run.
-//!                                          defaults to `1000`, any higher cardinality will run default groupby.
-//! * `POLARS_FORCE_PARTITION` -> force partitioned groupby if the keys and aggregations allow it.
+//! * `POLARS_NO_PARTITION` -> polars may choose to partition the group_by operation, based on data
+//!                            cardinality. Setting this env var will turn partitioned group_by's off.
+//! * `POLARS_PARTITION_UNIQUE_COUNT` -> at which (estimated) key count a partitioned group_by should run.
+//!                                          defaults to `1000`, any higher cardinality will run default group_by.
+//! * `POLARS_FORCE_PARTITION` -> force partitioned group_by if the keys and aggregations allow it.
 //! * `POLARS_ALLOW_EXTENSION` -> allows for `[ObjectChunked<T>]` to be used in arrow, opening up possibilities like using
 //!                               `T` in complex lazy expressions. However this does require `unsafe` code allow this.
 //! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.

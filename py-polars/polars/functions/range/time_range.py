@@ -1,0 +1,266 @@
+from __future__ import annotations
+
+import contextlib
+from datetime import time
+from typing import TYPE_CHECKING, overload
+
+from polars import functions as F
+from polars.functions.range._utils import parse_interval_argument
+from polars.utils._parse_expr_input import parse_as_expression
+from polars.utils._wrap import wrap_expr
+from polars.utils.deprecation import issue_deprecation_warning
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    import polars.polars as plr
+
+if TYPE_CHECKING:
+    from datetime import timedelta
+    from typing import Literal
+
+    from polars import Expr, Series
+    from polars.type_aliases import ClosedInterval, IntoExpr
+
+
+@overload
+def time_range(
+    start: time | IntoExpr | None = ...,
+    end: time | IntoExpr | None = ...,
+    interval: str | timedelta = ...,
+    *,
+    closed: ClosedInterval = ...,
+    eager: Literal[False] = ...,
+    name: str | None = ...,
+) -> Expr:
+    ...
+
+
+@overload
+def time_range(
+    start: time | IntoExpr | None = ...,
+    end: time | IntoExpr | None = ...,
+    interval: str | timedelta = ...,
+    *,
+    closed: ClosedInterval = ...,
+    eager: Literal[True],
+    name: str | None = ...,
+) -> Series:
+    ...
+
+
+@overload
+def time_range(
+    start: time | IntoExpr | None = ...,
+    end: time | IntoExpr | None = ...,
+    interval: str | timedelta = ...,
+    *,
+    closed: ClosedInterval = ...,
+    eager: bool,
+    name: str | None = ...,
+) -> Series | Expr:
+    ...
+
+
+def time_range(
+    start: time | IntoExpr | None = None,
+    end: time | IntoExpr | None = None,
+    interval: str | timedelta = "1h",
+    *,
+    closed: ClosedInterval = "both",
+    eager: bool = False,
+    name: str | None = None,
+) -> Series | Expr:
+    """
+    Generate a time range.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the time range.
+        If omitted, defaults to ``time(0,0,0,0)``.
+    end
+        Upper bound of the time range.
+        If omitted, defaults to ``time(23,59,59,999999)``.
+    interval
+        Interval of the range periods, specified as a Python ``timedelta`` object
+        or a Polars duration string like ``1h30m25s``.
+    closed : {'both', 'left', 'right', 'none'}
+        Define which sides of the range are closed (inclusive).
+    eager
+        Evaluate immediately and return a ``Series``.
+        If set to ``False`` (default), return an expression instead.
+    name
+        Name of the output column.
+
+        .. deprecated:: 0.18.0
+            This argument is deprecated. Use the ``alias`` method instead.
+
+    Returns
+    -------
+    Expr or Series
+        Column of data type `:class:Time`.
+
+    See Also
+    --------
+    time_ranges : Create a column of time ranges.
+
+    Examples
+    --------
+    >>> from datetime import time, timedelta
+    >>> pl.time_range(
+    ...     start=time(14, 0),
+    ...     interval=timedelta(hours=3, minutes=15),
+    ...     eager=True,
+    ... )
+    shape: (4,)
+    Series: 'time' [time]
+    [
+        14:00:00
+        17:15:00
+        20:30:00
+        23:45:00
+    ]
+
+    """
+    if name is not None:
+        issue_deprecation_warning(
+            "the `name` argument is deprecated. Use the `alias` method instead.",
+            version="0.18.0",
+        )
+
+    interval = parse_interval_argument(interval)
+    for unit in ("y", "mo", "w", "d"):
+        if unit in interval:
+            raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
+
+    if start is None:
+        start = time(0, 0, 0)
+    if end is None:
+        end = time(23, 59, 59, 999999)
+
+    start_pyexpr = parse_as_expression(start)
+    end_pyexpr = parse_as_expression(end)
+
+    result = wrap_expr(plr.time_range(start_pyexpr, end_pyexpr, interval, closed))
+
+    if name is not None:
+        result = result.alias(name)
+
+    if eager:
+        return F.select(result).to_series()
+
+    return result
+
+
+@overload
+def time_ranges(
+    start: time | IntoExpr | None = ...,
+    end: time | IntoExpr | None = ...,
+    interval: str | timedelta = ...,
+    *,
+    closed: ClosedInterval = ...,
+    eager: Literal[False] = ...,
+) -> Expr:
+    ...
+
+
+@overload
+def time_ranges(
+    start: time | IntoExpr | None = ...,
+    end: time | IntoExpr | None = ...,
+    interval: str | timedelta = ...,
+    *,
+    closed: ClosedInterval = ...,
+    eager: Literal[True],
+) -> Series:
+    ...
+
+
+@overload
+def time_ranges(
+    start: time | IntoExpr | None = ...,
+    end: time | IntoExpr | None = ...,
+    interval: str | timedelta = ...,
+    *,
+    closed: ClosedInterval = ...,
+    eager: bool,
+) -> Series | Expr:
+    ...
+
+
+def time_ranges(
+    start: time | IntoExpr | None = None,
+    end: time | IntoExpr | None = None,
+    interval: str | timedelta = "1h",
+    *,
+    closed: ClosedInterval = "both",
+    eager: bool = False,
+) -> Series | Expr:
+    """
+    Create a column of time ranges.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the time range.
+        If omitted, defaults to ``time(0, 0, 0, 0)``.
+    end
+        Upper bound of the time range.
+        If omitted, defaults to ``time(23, 59, 59, 999999)``.
+    interval
+        Interval of the range periods, specified as a Python ``timedelta`` object
+        or a Polars duration string like ``1h30m25s``.
+    closed : {'both', 'left', 'right', 'none'}
+        Define which sides of the range are closed (inclusive).
+    eager
+        Evaluate immediately and return a ``Series``.
+        If set to ``False`` (default), return an expression instead.
+
+    Returns
+    -------
+    Expr or Series
+        Column of data type ``List(Time)``.
+
+    See Also
+    --------
+    time_range : Generate a single time range.
+
+    Examples
+    --------
+    >>> from datetime import time
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "start": [time(9, 0), time(10, 0)],
+    ...         "end": time(11, 0),
+    ...     }
+    ... )
+    >>> df.with_columns(pl.time_ranges("start", "end"))
+    shape: (2, 3)
+    ┌──────────┬──────────┬────────────────────────────────┐
+    │ start    ┆ end      ┆ time_range                     │
+    │ ---      ┆ ---      ┆ ---                            │
+    │ time     ┆ time     ┆ list[time]                     │
+    ╞══════════╪══════════╪════════════════════════════════╡
+    │ 09:00:00 ┆ 11:00:00 ┆ [09:00:00, 10:00:00, 11:00:00] │
+    │ 10:00:00 ┆ 11:00:00 ┆ [10:00:00, 11:00:00]           │
+    └──────────┴──────────┴────────────────────────────────┘
+
+    """
+    interval = parse_interval_argument(interval)
+    for unit in ("y", "mo", "w", "d"):
+        if unit in interval:
+            raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
+
+    if start is None:
+        start = time(0, 0, 0)
+    if end is None:
+        end = time(23, 59, 59, 999999)
+
+    start_pyexpr = parse_as_expression(start)
+    end_pyexpr = parse_as_expression(end)
+
+    result = wrap_expr(plr.time_ranges(start_pyexpr, end_pyexpr, interval, closed))
+
+    if eager:
+        return F.select(result).to_series()
+
+    return result

@@ -110,7 +110,7 @@ impl Operator for CrossJoinProbe {
                     None => {
                         self.in_process_left = None;
                         Ok(OperatorResult::NeedsNewData)
-                    }
+                    },
                     Some(offset) => {
                         self.in_process_left_df = self.df.slice(offset as i64, size);
                         self.in_process_right = Some((0..chunk.data.height()).step_by(size));
@@ -123,9 +123,9 @@ impl Operator for CrossJoinProbe {
                             None,
                         )?;
                         Ok(OperatorResult::HaveMoreOutPut(chunk.with_data(df)))
-                    }
+                    },
                 }
-            }
+            },
             // deplete the right chunks over the current left chunk
             Some(offset) => {
                 // this will be the branch of the first call
@@ -143,14 +143,14 @@ impl Operator for CrossJoinProbe {
                         )?;
                         self.output_names = Some(df.get_column_names_owned());
                         df
-                    }
+                    },
                     Some(names) => self
                         .in_process_left_df
                         ._cross_join_with_names(&right_df, names)?,
                 };
 
                 Ok(OperatorResult::HaveMoreOutPut(chunk.with_data(df)))
-            }
+            },
         }
     }
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {

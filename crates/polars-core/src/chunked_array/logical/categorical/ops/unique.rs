@@ -1,5 +1,5 @@
 use super::*;
-use crate::frame::groupby::IntoGroupsProxy;
+use crate::frame::group_by::IntoGroupsProxy;
 
 impl CategoricalChunked {
     pub fn unique(&self) -> PolarsResult<Self> {
@@ -8,10 +8,10 @@ impl CategoricalChunked {
             let ca = match &**cat_map {
                 RevMapping::Local(a) => {
                     UInt32Chunked::from_iter_values(self.logical().name(), 0..(a.len() as u32))
-                }
+                },
                 RevMapping::Global(map, _, _) => {
                     UInt32Chunked::from_iter_values(self.logical().name(), map.keys().copied())
-                }
+                },
             };
             // safety:
             // we only removed some indexes so we are still in bounds

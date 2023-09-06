@@ -35,7 +35,6 @@ impl<T: PolarsDataType> Default for ChunkedArray<T> {
 }
 
 /// FromIterator trait
-
 impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -60,12 +59,12 @@ where
                 #[cfg(not(feature = "performant"))]
                 iter.collect::<PrimitiveArray<T::Native>>()
                     .to(T::get_dtype().to_arrow())
-            }
+            },
             _ => iter
                 .collect::<PrimitiveArray<T::Native>>()
                 .to(T::get_dtype().to_arrow()),
         };
-        unsafe { ChunkedArray::from_chunks("", vec![Box::new(arr)]) }
+        arr.into()
     }
 }
 
@@ -85,16 +84,14 @@ where
 
 impl FromIterator<Option<bool>> for ChunkedArray<BooleanType> {
     fn from_iter<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
-        let arr = BooleanArray::from_iter(iter);
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        BooleanArray::from_iter(iter).into()
     }
 }
 
 impl FromIterator<bool> for BooleanChunked {
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
         // 2021-02-07: this was ~70% faster than with the builder, even with the extra Option<T> added.
-        let arr = BooleanArray::from_iter(iter.into_iter().map(Some));
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        BooleanArray::from_iter(iter.into_iter().map(Some)).into()
     }
 }
 
@@ -112,8 +109,7 @@ where
     Ptr: AsRef<str>,
 {
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        let arr = Utf8Array::<i64>::from_iter(iter);
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        Utf8Array::<i64>::from_iter(iter).into()
     }
 }
 
@@ -131,8 +127,7 @@ where
     Ptr: PolarsAsRef<str>,
 {
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        let arr = Utf8Array::<i64>::from_iter_values(iter.into_iter());
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        Utf8Array::<i64>::from_iter_values(iter.into_iter()).into()
     }
 }
 
@@ -142,8 +137,7 @@ where
     Ptr: AsRef<[u8]>,
 {
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        let arr = BinaryArray::<i64>::from_iter(iter);
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        BinaryArray::<i64>::from_iter(iter).into()
     }
 }
 
@@ -161,8 +155,7 @@ where
     Ptr: PolarsAsRef<[u8]>,
 {
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        let arr = BinaryArray::<i64>::from_iter_values(iter.into_iter());
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        BinaryArray::<i64>::from_iter_values(iter.into_iter()).into()
     }
 }
 
@@ -204,10 +197,10 @@ impl FromIterator<Option<Series>> for ListChunked {
                 Some(Some(s)) => {
                     first_value = Some(s);
                     break;
-                }
+                },
                 Some(None) => {
                     init_null_count += 1;
-                }
+                },
                 None => return ListChunked::full_null("", init_null_count),
             }
         }
@@ -216,7 +209,7 @@ impl FromIterator<Option<Series>> for ListChunked {
             None => {
                 // already returned full_null above
                 unreachable!()
-            }
+            },
             Some(ref first_s) => {
                 // AnyValues with empty lists in python can create
                 // Series of an unknown dtype.
@@ -249,7 +242,7 @@ impl FromIterator<Option<Series>> for ListChunked {
                                 builder.append_opt_series(opt_s.as_ref()).unwrap();
                             }
                             builder.finish()
-                        }
+                        },
                         _ => {
                             // We don't know the needed capacity. We arbitrarily choose an average of 5 elements per series.
                             let mut builder = get_list_builder(
@@ -269,10 +262,10 @@ impl FromIterator<Option<Series>> for ListChunked {
                                 builder.append_opt_series(opt_s.as_ref()).unwrap();
                             }
                             builder.finish()
-                        }
+                        },
                     }
                 }
-            }
+            },
         }
     }
 }
@@ -335,11 +328,11 @@ impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
                 Some(value) => {
                     null_mask_builder.push(true);
                     value
-                }
+                },
                 None => {
                     null_mask_builder.push(false);
                     T::default()
-                }
+                },
             })
             .collect();
 
@@ -472,14 +465,14 @@ where
                         match opt_v {
                             Some(v) => {
                                 std::ptr::write(values_buf_ptr.add(i), v);
-                            }
+                            },
                             None => {
                                 let validity = match &mut local_validity {
                                     None => {
                                         let validity = MutableBitmap::with_capacity(local_len);
                                         local_validity = Some(validity);
                                         local_validity.as_mut().unwrap_unchecked()
-                                    }
+                                    },
                                     Some(validity) => validity,
                                 };
                                 validity.extend_constant(i - latest_validy_written, true);
@@ -487,7 +480,7 @@ where
                                 validity.push_unchecked(false);
                                 // initialize value
                                 std::ptr::write(values_buf_ptr.add(i), T::Native::default());
-                            }
+                            },
                         }
                     }
                 }
@@ -502,7 +495,7 @@ where
         let validity = finish_validities(validities, capacity);
 
         let arr = PrimitiveArray::from_data_default(values_buf.into(), validity);
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        arr.into()
     }
 }
 
@@ -517,26 +510,20 @@ impl FromParallelIterator<bool> for BooleanChunked {
                 vectors.into_iter().flatten().trust_my_length(capacity),
             )
         };
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        arr.into()
     }
 }
 
 impl FromParallelIterator<Option<bool>> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<bool>>>(iter: I) -> Self {
-        // Get linkedlist filled with different vec result from different threads
+        // Get linkedlist filled with different vec result from different threads.
         let vectors = collect_into_linked_list(iter);
         let vectors = vectors.into_iter().collect::<Vec<_>>();
-
-        let chunks = vectors
+        let chunks: Vec<BooleanArray> = vectors
             .into_par_iter()
-            .map(|vector| {
-                Box::new(unsafe {
-                    BooleanArray::from_trusted_len_iter_unchecked(vector.into_iter())
-                }) as ArrayRef
-            })
-            .collect::<Vec<_>>();
-
-        unsafe { BooleanChunked::from_chunks("", chunks).rechunk() }
+            .map(|vector| vector.into())
+            .collect();
+        Self::from_chunk_iter("", chunks).rechunk()
     }
 }
 
@@ -554,7 +541,7 @@ where
             }
         }
         let arr: LargeStringArray = builder.into();
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        arr.into()
     }
 }
 
@@ -602,9 +589,9 @@ where
             len,
         );
 
-        // concat the offsets
-        // this is single threaded as the values depend on previous ones
-        // if this proves to slow we could try parallel reduce
+        // Concat the offsets.
+        // This is single threaded as the values depend on previous ones
+        // if this proves to slow we could try parallel reduce.
         let mut offsets = Vec::with_capacity(len + 1);
         let mut offsets_so_far = 0;
         let mut first = true;
@@ -614,29 +601,17 @@ where
                 offsets.extend_from_slice(local_offsets);
                 first = false;
             } else {
-                // offset lengths must be updated
-                unsafe {
-                    // safety: there is always a single offset
-                    offsets.extend(
-                        local_offsets
-                            .get_unchecked(1..)
-                            .iter()
-                            .map(|v| *v + offsets_so_far),
-                    )
-                }
+                // SAFETY: there is always a single offset.
+                let skip_first = unsafe { local_offsets.get_unchecked(1..) };
+                offsets.extend(skip_first.iter().map(|v| *v + offsets_so_far));
             }
             offsets_so_far = unsafe { *offsets.last().unwrap_unchecked() };
         }
 
-        unsafe {
-            offsets.set_len(len + 1);
-            let arr = Utf8Array::<i64>::from_data_unchecked_default(
-                offsets.into(),
-                values.into(),
-                validity,
-            );
-            Self::from_chunks("", vec![Box::new(arr)])
-        }
+        let arr = unsafe {
+            Utf8Array::<i64>::from_data_unchecked_default(offsets.into(), values.into(), validity)
+        };
+        arr.into()
     }
 }
 
@@ -720,7 +695,7 @@ impl FromParallelIterator<Option<Series>> for ListChunked {
                     }
                 }
                 builder.finish()
-            }
+            },
             Some(dtype) => {
                 let mut builder =
                     get_list_builder(dtype, value_capacity, list_capacity, "collected").unwrap();
@@ -730,7 +705,7 @@ impl FromParallelIterator<Option<Series>> for ListChunked {
                     }
                 }
                 builder.finish()
-            }
+            },
             None => ListChunked::full_null_with_dtype("collected", list_capacity, &DataType::Null),
         }
     }

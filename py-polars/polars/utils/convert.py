@@ -105,7 +105,7 @@ def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
         return _timestamp_in_seconds(dt) * 1_000 + millis
     else:
         raise ValueError(
-            f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
+            f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
         )
 
 
@@ -131,7 +131,7 @@ def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None = None)
         return int(td.total_seconds() * 1e6)
     else:
         raise ValueError(
-            f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
+            f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
         )
 
 
@@ -157,7 +157,7 @@ def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "ns") -> time
         return timedelta(milliseconds=value)
     else:
         raise ValueError(
-            f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
+            f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
         )
 
 
@@ -182,7 +182,7 @@ def _to_python_datetime(
             return EPOCH + timedelta(milliseconds=value)
         else:
             raise ValueError(
-                f"time_unit must be one of {{'ns','us','ms'}}, got {time_unit}"
+                f"time_unit must be one of {{'ns','us','ms'}}, got {time_unit!r}"
             )
     elif _ZONEINFO_AVAILABLE:
         if time_unit == "us":
@@ -193,12 +193,12 @@ def _to_python_datetime(
             dt = EPOCH_UTC + timedelta(milliseconds=value)
         else:
             raise ValueError(
-                f"time_unit must be one of {{'ns','us','ms'}}, got {time_unit}"
+                f"time_unit must be one of {{'ns','us','ms'}}, got {time_unit!r}"
             )
         return _localize(dt, time_zone)
     else:
         raise ImportError(
-            "Install polars[timezone] to handle datetimes with timezones."
+            "install polars[timezone] to handle datetimes with time zone information"
         )
 
 
@@ -245,7 +245,7 @@ def _parse_fixed_tz_offset(offset: str) -> tzinfo:
         # minutes, then we can construct:
         # tzinfo=timezone(timedelta(hours=..., minutes=...))
     except ValueError:
-        raise ValueError(f"Offset: {offset} not understood.") from None
+        raise ValueError(f"offset: {offset!r} not understood") from None
 
     return dt_offset.tzinfo  # type: ignore[return-value]
 

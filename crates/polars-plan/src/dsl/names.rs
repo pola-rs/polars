@@ -1,1 +1,1 @@
-pub(crate) const COUNT: &str = "count";
+pub const COUNT: &str = "count";

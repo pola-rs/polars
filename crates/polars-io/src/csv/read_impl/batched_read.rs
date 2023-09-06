@@ -36,7 +36,7 @@ pub(crate) fn get_offsets(
             Some(pos) => search_pos + pos,
             None => {
                 break;
-            }
+            },
         };
         offsets.push_back((start, end_pos));
         start = end_pos;
@@ -244,6 +244,7 @@ impl<'a> CoreReader<'a> {
             missing_is_null: self.missing_is_null,
             to_cast: self.to_cast,
             ignore_errors: self.ignore_errors,
+            truncate_ragged_lines: self.truncate_ragged_lines,
             n_rows: self.n_rows,
             encoding: self.encoding,
             delimiter: self.delimiter,
@@ -271,6 +272,7 @@ pub struct BatchedCsvReaderRead<'a> {
     missing_is_null: bool,
     to_cast: Vec<Field>,
     ignore_errors: bool,
+    truncate_ragged_lines: bool,
     n_rows: Option<usize>,
     encoding: CsvEncoding,
     delimiter: u8,
@@ -341,12 +343,13 @@ impl<'a> BatchedCsvReaderRead<'a> {
                         self.encoding,
                         self.null_values.as_ref(),
                         self.missing_is_null,
+                        self.truncate_ragged_lines,
                         self.chunk_size,
                         stop_at_n_bytes,
                         self.starting_point_offset,
                     )?;
 
-                    cast_columns(&mut df, &self.to_cast, false)?;
+                    cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
 
                     update_string_stats(&self.str_capacities, &self.str_columns, &df)?;
                     if let Some(rc) = &self.row_count {
@@ -402,7 +405,7 @@ pub fn to_batched_owned_read(
 ) -> OwnedBatchedCsvReader {
     // make sure that the schema is bound to the schema we have
     // we will keep ownership of the schema so that the lifetime remains bound to ourselves
-    let reader = reader.with_schema(schema.clone());
+    let reader = reader.with_schema(Some(schema.clone()));
     // extend the lifetime
     // the lifetime was bound to schema, which we own and will store on the heap
     let reader = unsafe {

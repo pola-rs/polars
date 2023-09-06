@@ -5,7 +5,7 @@ use std::sync::{Mutex, RwLock};
 use bitflags::bitflags;
 use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
-use polars_core::frame::groupby::GroupsProxy;
+use polars_core::frame::group_by::GroupsProxy;
 use polars_core::frame::hash_join::ChunkJoinOptIds;
 use polars_core::prelude::*;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
@@ -20,6 +20,7 @@ pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;
 
 bitflags! {
     #[repr(transparent)]
+    #[derive(Copy, Clone)]
     pub(super) struct StateFlags: u8 {
         /// More verbose logging
         const VERBOSE = 0x01;
@@ -101,7 +102,7 @@ impl ExecutionState {
 
                 timer.store(start, end, name.as_ref().to_string());
                 out
-            }
+            },
         }
     }
 

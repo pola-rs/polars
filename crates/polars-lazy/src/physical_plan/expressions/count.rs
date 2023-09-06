@@ -1,11 +1,10 @@
 use std::borrow::Cow;
 
 use polars_core::prelude::*;
+use polars_plan::dsl::names::COUNT;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-
-const COUNT_NAME: &str = "count";
 
 pub struct CountExpr {
     expr: Expr,
@@ -21,6 +20,7 @@ impl PhysicalExpr for CountExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
+
     fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
         Ok(Series::new("count", [df.height() as IdxSize]))
     }
@@ -31,14 +31,13 @@ impl PhysicalExpr for CountExpr {
         groups: &'a GroupsProxy,
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let mut ca = groups.group_count();
-        ca.rename(COUNT_NAME);
+        let ca = groups.group_count().with_name(COUNT);
         let s = ca.into_series();
-
         Ok(AggregationContext::new(s, Cow::Borrowed(groups), true))
     }
+
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
-        Ok(Field::new("count", IDX_DTYPE))
+        Ok(Field::new(COUNT, IDX_DTYPE))
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
@@ -70,10 +69,8 @@ impl PartitionedAggregation for CountExpr {
         groups: &GroupsProxy,
         _state: &ExecutionState,
     ) -> PolarsResult<Series> {
-        // safety:
-        // groups are in bounds
-        let mut agg = unsafe { partitioned.agg_sum(groups) };
-        agg.rename(COUNT_NAME);
-        Ok(agg)
+        // SAFETY: groups are in bounds.
+        let agg = unsafe { partitioned.agg_sum(groups) };
+        Ok(agg.with_name(COUNT))
     }
 }

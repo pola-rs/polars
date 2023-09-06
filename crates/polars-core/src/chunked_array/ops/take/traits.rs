@@ -1,5 +1,5 @@
 //! Traits that indicate the allowed arguments in a ChunkedArray::take operation.
-use crate::frame::groupby::GroupsProxyIter;
+use crate::frame::group_by::GroupsProxyIter;
 use crate::prelude::*;
 
 // Utility traits
@@ -123,14 +123,14 @@ where
                         match opt_v {
                             Some(&v) if v >= len => {
                                 inbounds = false;
-                            }
-                            _ => {}
+                            },
+                            _ => {},
                         }
                     }
                 }
                 polars_ensure!(inbounds, ComputeError: "take indices are out of bounds");
                 Ok(())
-            }
+            },
         }
     }
 }

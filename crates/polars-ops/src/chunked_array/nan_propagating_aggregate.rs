@@ -9,7 +9,7 @@ use polars_arrow::kernels::take_agg::{
 };
 use polars_arrow::utils::CustomIterTools;
 use polars_core::export::num::Bounded;
-use polars_core::frame::groupby::aggregations::{
+use polars_core::frame::group_by::aggregations::{
     _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window_no_nulls,
     _rolling_apply_agg_window_nulls, _slice_from_offsets, _use_rolling_kernels,
 };
@@ -66,11 +66,11 @@ pub fn nan_min_s(s: &Series, name: &str) -> Series {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             Series::new(name, [ca_nan_agg(ca, nan_min)])
-        }
+        },
         DataType::Float64 => {
             let ca = s.f64().unwrap();
             Series::new(name, [ca_nan_agg(ca, nan_min)])
-        }
+        },
         _ => panic!("expected float"),
     }
 }
@@ -79,11 +79,11 @@ pub fn nan_max_s(s: &Series, name: &str) -> Series {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             Series::new(name, [ca_nan_agg(ca, nan_max)])
-        }
+        },
         DataType::Float64 => {
             let ca = s.f64().unwrap();
             Series::new(name, [ca_nan_agg(ca, nan_max)])
-        }
+        },
         _ => panic!("expected float"),
     }
 }
@@ -120,7 +120,7 @@ where
                     _ => {
                         let take = { ca.take_unchecked(idx.into()) };
                         ca_nan_agg(&take, nan_max)
-                    }
+                    },
                 }
             }
         }),
@@ -144,7 +144,7 @@ where
                         _,
                     >(values, validity, offset_iter, None),
                 };
-                ChunkedArray::from_chunks("", vec![arr]).into_series()
+                ChunkedArray::from(arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);
@@ -154,11 +154,11 @@ where
                         _ => {
                             let arr_group = _slice_from_offsets(ca, first, len);
                             ca_nan_agg(&arr_group, nan_max)
-                        }
+                        },
                     }
                 })
             }
-        }
+        },
     }
 }
 
@@ -192,7 +192,7 @@ where
                     _ => {
                         let take = { ca.take_unchecked(idx.into()) };
                         ca_nan_agg(&take, nan_min)
-                    }
+                    },
                 }
             }
         }),
@@ -216,7 +216,7 @@ where
                         _,
                     >(values, validity, offset_iter, None),
                 };
-                ChunkedArray::from_chunks("", vec![arr]).into_series()
+                ChunkedArray::from(arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);
@@ -226,11 +226,11 @@ where
                         _ => {
                             let arr_group = _slice_from_offsets(ca, first, len);
                             ca_nan_agg(&arr_group, nan_min)
-                        }
+                        },
                     }
                 })
             }
-        }
+        },
     }
 }
 
@@ -241,11 +241,11 @@ pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsProxy) -> Series {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             group_nan_min(ca, groups)
-        }
+        },
         DataType::Float64 => {
             let ca = s.f64().unwrap();
             group_nan_min(ca, groups)
-        }
+        },
         _ => panic!("expected float"),
     }
 }
@@ -257,11 +257,11 @@ pub unsafe fn group_agg_nan_max_s(s: &Series, groups: &GroupsProxy) -> Series {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             group_nan_max(ca, groups)
-        }
+        },
         DataType::Float64 => {
             let ca = s.f64().unwrap();
             group_nan_max(ca, groups)
-        }
+        },
         _ => panic!("expected float"),
     }
 }

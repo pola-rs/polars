@@ -345,6 +345,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT unnest(column_1) from df;
     /// ```
     Explode,
+    /// SQL 'array_to_string' function
+    /// ```sql
+    /// SELECT ARRAY_TO_STRING(column_1, ', ') from df;
+    /// ```
+    ArrayToString,
     /// SQL 'array_get' function
     /// Returns the value at the given index in the array
     /// ```sql
@@ -509,6 +514,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "array_mean" => Self::ArrayMean,
             "array_reverse" => Self::ArrayReverse,
             "array_sum" => Self::ArraySum,
+            "array_to_string" => Self::ArrayToString,
             "array_unique" => Self::ArrayUnique,
             "array_upper" => Self::ArrayMax,
             "unnest" => Self::Explode,
@@ -675,6 +681,16 @@ impl SqlFunctionVisitor<'_> {
             ArrayMin => self.visit_unary(|e| e.list().min()),
             ArrayReverse => self.visit_unary(|e| e.list().reverse()),
             ArraySum => self.visit_unary(|e| e.list().sum()),
+            ArrayToString => self.try_visit_binary(|e, s| {
+                let sep = match s {
+                    Expr::Literal(LiteralValue::Utf8(ref sep)) => sep,
+                    _ => {
+                        polars_bail!(InvalidOperation: "Invalid 'separator' for ArrayToString: {}", function.args[1]);
+                    }
+                };
+
+                Ok(e.list().join(sep))
+            }),
             ArrayUnique => self.visit_unary(|e| e.list().unique()),
             Explode => self.visit_unary(|e| e.explode()),
         }
@@ -698,7 +714,7 @@ impl SqlFunctionVisitor<'_> {
         match self.func.over.as_ref() {
             Some(WindowType::WindowSpec(spec)) => {
                 self.apply_cumulative_window(f, cumulative_f, spec)
-            }
+            },
             Some(WindowType::NamedWindow(named_window)) => polars_bail!(
                 InvalidOperation: "Named windows are not supported yet. Got {:?}",
                 named_window
@@ -746,7 +762,7 @@ impl SqlFunctionVisitor<'_> {
                 let expr = parse_sql_expr(sql_expr, self.ctx)?;
                 // apply the function on the inner expr -- e.g. SUM(a) -> SUM
                 Ok(f(expr))
-            }
+            },
             _ => self.not_supported_error(),
         }
     }
@@ -766,7 +782,7 @@ impl SqlFunctionVisitor<'_> {
                 let expr1 = parse_sql_expr(sql_expr1, self.ctx)?;
                 let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
                 f(expr1, expr2)
-            }
+            },
             _ => self.not_supported_error(),
         }
     }
@@ -791,7 +807,7 @@ impl SqlFunctionVisitor<'_> {
                 let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
                 let expr3 = Arg::from_sql_expr(sql_expr3, self.ctx)?;
                 f(expr1, expr2, expr3)
-            }
+            },
             _ => self.not_supported_error(),
         }
     }
@@ -814,7 +830,7 @@ impl SqlFunctionVisitor<'_> {
                 let expr =
                     self.apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &self.func.over)?;
                 Ok(expr.count())
-            }
+            },
             // count(*)
             (false, [FunctionArgExpr::Wildcard]) => Ok(count()),
             // count(distinct column_name)
@@ -822,7 +838,7 @@ impl SqlFunctionVisitor<'_> {
                 let expr =
                     self.apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &self.func.over)?;
                 Ok(expr.n_unique())
-            }
+            },
             _ => self.not_supported_error(),
         }
     }
@@ -856,7 +872,7 @@ impl SqlFunctionVisitor<'_> {
                         .collect::<PolarsResult<Vec<_>>>()?;
                     expr.over(partition_by)
                 }
-            }
+            },
             Some(WindowType::NamedWindow(named_window)) => polars_bail!(
                 InvalidOperation: "Named windows are not supported yet. Got: {:?}",
                 named_window

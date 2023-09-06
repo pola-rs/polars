@@ -332,21 +332,21 @@ def test_abs_logical_type() -> None:
     assert s.abs().to_list() == [timedelta(hours=1), timedelta(hours=1)]
 
 
-def test_approx_unique() -> None:
+def test_approx_n_unique() -> None:
     df1 = pl.DataFrame({"a": [None, 1, 2], "b": [None, 2, 1]})
 
     assert_frame_equal(
-        df1.select(pl.approx_unique("b")),
+        df1.select(pl.approx_n_unique("b")),
         pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
     )
 
     assert_frame_equal(
-        df1.select(pl.approx_unique(pl.col("b"))),
+        df1.select(pl.approx_n_unique(pl.col("b"))),
         pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
     )
 
     assert_frame_equal(
-        df1.select(pl.col("b").approx_unique()),
+        df1.select(pl.col("b").approx_n_unique()),
         pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
     )
 
@@ -373,44 +373,43 @@ def test_lazy_functions() -> None:
     )
     expected = 1.0
     assert np.isclose(out.to_series(0), expected)
-    with pytest.deprecated_call():
-        assert np.isclose(pl.var(df["b"]), expected)  # type: ignore[arg-type]
+    assert np.isclose(df["b"].var(), expected)  # type: ignore[arg-type]
+
     expected = 1.0
     assert np.isclose(out.to_series(1), expected)
-    with pytest.deprecated_call():
-        assert np.isclose(pl.std(df["b"]), expected)  # type: ignore[arg-type]
+    assert np.isclose(df["b"].std(), expected)  # type: ignore[arg-type]
+
     expected = 3
     assert np.isclose(out.to_series(2), expected)
-    with pytest.deprecated_call():
-        assert np.isclose(pl.max(df["b"]), expected)  # type: ignore[arg-type]
+    assert np.isclose(df["b"].max(), expected)  # type: ignore[arg-type]
+
     expected = 1
     assert np.isclose(out.to_series(3), expected)
-    with pytest.deprecated_call():
-        assert np.isclose(pl.min(df["b"]), expected)  # type: ignore[arg-type]
+    assert np.isclose(df["b"].min(), expected)  # type: ignore[arg-type]
+
     expected = 6
     assert np.isclose(out.to_series(4), expected)
-    with pytest.deprecated_call():
-        assert np.isclose(pl.sum(df["b"]), expected)
+    assert np.isclose(df["b"].sum(), expected)
+
     expected = 2
     assert np.isclose(out.to_series(5), expected)
-    with pytest.deprecated_call():
-        assert np.isclose(pl.mean(df["b"]), expected)
+    assert np.isclose(df["b"].mean(), expected)  # type: ignore[arg-type]
+
     expected = 2
     assert np.isclose(out.to_series(6), expected)
-    with pytest.deprecated_call():
-        assert np.isclose(pl.median(df["b"]), expected)
+    assert np.isclose(df["b"].median(), expected)  # type: ignore[arg-type]
+
     expected = 3
     assert np.isclose(out.to_series(7), expected)
-    with pytest.deprecated_call():
-        assert np.isclose(pl.n_unique(df["b"]), expected)
+    assert np.isclose(df["b"].n_unique(), expected)
+
     expected = 1
     assert np.isclose(out.to_series(8), expected)
-    with pytest.deprecated_call():
-        assert np.isclose(pl.first(df["b"]), expected)
+    assert np.isclose(df["b"][0], expected)
+
     expected = 3
     assert np.isclose(out.to_series(9), expected)
-    with pytest.deprecated_call():
-        assert np.isclose(pl.last(df["b"]), expected)
+    assert np.isclose(df["b"][-1], expected)
 
     # regex selection
     out = df.select(

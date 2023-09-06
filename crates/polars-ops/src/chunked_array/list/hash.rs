@@ -32,10 +32,10 @@ where
                 Some(v) => {
                     let r = random_state.hash_one(v);
                     hash_agg = _boost_hash_combine(hash_agg, r);
-                }
+                },
                 None => {
                     hash_agg = _boost_hash_combine(hash_agg, null_hash);
-                }
+                },
             }
         }
     });
@@ -67,7 +67,7 @@ pub(crate) fn hash(ca: &mut ListChunked, build_hasher: ahash::RandomState) -> UI
                         let ca = s.bit_repr_small();
                         hash_agg(&ca, &build_hasher)
                     }
-                }
+                },
             })
             .collect()
     });

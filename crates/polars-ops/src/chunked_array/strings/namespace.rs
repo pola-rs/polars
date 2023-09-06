@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 #[cfg(feature = "string_encoding")]
 use base64::engine::general_purpose;
 #[cfg(feature = "string_encoding")]
@@ -10,15 +8,11 @@ use polars_arrow::kernels::string::*;
 #[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
 use polars_core::export::regex::{escape, Regex};
+use polars_core::prelude::arity::try_binary_elementwise;
 
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
-
-fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Option<Cow<'a, str>> {
-    reg.captures(input)
-        .and_then(|cap| cap.get(group_index).map(|m| Cow::Borrowed(m.as_str())))
-}
 
 pub trait Utf8NameSpaceImpl: AsUtf8 {
     #[cfg(not(feature = "binary_encoding"))]
@@ -36,7 +30,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     #[cfg(feature = "string_encoding")]
     fn hex_encode(&self) -> Utf8Chunked {
         let ca = self.as_utf8();
-        ca.apply(|s| hex::encode(s).into())
+        ca.apply_values(|s| hex::encode(s).into())
     }
 
     #[cfg(not(feature = "binary_encoding"))]
@@ -54,7 +48,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     #[cfg(feature = "string_encoding")]
     fn base64_encode(&self) -> Utf8Chunked {
         let ca = self.as_utf8();
-        ca.apply(|s| general_purpose::STANDARD.encode(s).into())
+        ca.apply_values(|s| general_purpose::STANDARD.encode(s).into())
     }
 
     #[cfg(feature = "string_from_radix")]
@@ -185,7 +179,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         let reg = Regex::new(pat)?;
         let f = |s: &'a str| reg.replace(s, val);
         let ca = self.as_utf8();
-        Ok(ca.apply(f))
+        Ok(ca.apply_values(f))
     }
 
     /// Replace the leftmost literal (sub)string with another string
@@ -242,7 +236,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     fn replace_all(&self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
-        Ok(ca.apply(|s| reg.replace_all(s, val)))
+        Ok(ca.apply_values(|s| reg.replace_all(s, val)))
     }
 
     /// Replace all matching literal (sub)strings with another string
@@ -265,14 +259,14 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             }));
         }
 
-        // amortize allocation
+        // Amortize allocation.
         let mut buf = String::new();
 
         let f = move |s: &'a str| {
             buf.clear();
             let mut changed = false;
 
-            // See: str.replace
+            // See: str.replace.
             let mut last_end = 0;
             for (start, part) in s.match_indices(pat) {
                 changed = true;
@@ -283,8 +277,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             buf.push_str(unsafe { s.get_unchecked(last_end..s.len()) });
 
             if changed {
-                // extend lifetime
-                // lifetime is bound to 'a
+                // Extend lifetime, lifetime is bound to 'a.
                 let slice = buf.as_str();
                 unsafe { std::mem::transmute::<&str, &'a str>(slice) }
             } else {
@@ -295,37 +288,28 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         Ok(ca.apply_mut(f))
     }
 
-    /// Extract the nth capture group from pattern
+    /// Extract the nth capture group from pattern.
     fn extract(&self, pat: &str, group_index: usize) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_utf8();
-        let reg = Regex::new(pat)?;
-        Ok(ca.apply_on_opt(|e| e.and_then(|input| f_regex_extract(&reg, input, group_index))))
+        super::extract::extract_group(ca, pat, group_index)
     }
 
-    /// Extract each successive non-overlapping regex match in an individual string as an array
+    /// Extract each successive non-overlapping regex match in an individual string as an array.
     fn extract_all(&self, pat: &str) -> PolarsResult<ListChunked> {
         let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
 
         let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
-
         for opt_s in ca.into_iter() {
             match opt_s {
                 None => builder.append_null(),
-                Some(s) => {
-                    let mut iter = reg.find_iter(s).map(|m| m.as_str()).peekable();
-                    if iter.peek().is_some() {
-                        builder.append_values_iter(iter);
-                    } else {
-                        builder.append_null()
-                    }
-                }
+                Some(s) => builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str())),
             }
         }
         Ok(builder.finish())
     }
 
-    /// Extract each successive non-overlapping regex match in an individual string as an array
+    /// Extract each successive non-overlapping regex match in an individual string as an array.
     fn extract_all_many(&self, pat: &Utf8Chunked) -> PolarsResult<ListChunked> {
         let ca = self.as_utf8();
         polars_ensure!(
@@ -334,23 +318,32 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             pat.len(), ca.len(),
         );
 
+        // Very simple cache: don't recompile the same regex for multiple values in a row.
+        // TODO: proper LRU cache with reasonable memory limit.
+        let mut reg = Regex::new("").unwrap();
+        let mut lastpat = "";
         let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
 
         for (opt_s, opt_pat) in ca.into_iter().zip(pat) {
             match (opt_s, opt_pat) {
                 (_, None) | (None, _) => builder.append_null(),
                 (Some(s), Some(pat)) => {
-                    let reg = Regex::new(pat)?;
-                    let mut iter = reg.find_iter(s).map(|m| m.as_str()).peekable();
-                    if iter.peek().is_some() {
-                        builder.append_values_iter(iter);
-                    } else {
-                        builder.append_null()
+                    if pat != lastpat {
+                        reg = Regex::new(pat)?;
+                        lastpat = pat;
                     }
-                }
+                    builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str()));
+                },
             }
         }
         Ok(builder.finish())
+    }
+
+    #[cfg(feature = "extract_groups")]
+    /// Extract all capture groups from pattern and return as a struct.
+    fn extract_groups(&self, pat: &str, dtype: &DataType) -> PolarsResult<Series> {
+        let ca = self.as_utf8();
+        super::extract::extract_groups(ca, pat, dtype)
     }
 
     /// Count all successive non-overlapping regex matches.
@@ -366,21 +359,51 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         Ok(out)
     }
 
-    /// Modify the strings to their lowercase equivalent
+    /// Count all successive non-overlapping regex matches.
+    fn count_match_many(&self, pat: &Utf8Chunked) -> PolarsResult<UInt32Chunked> {
+        let ca = self.as_utf8();
+        polars_ensure!(
+            ca.len() == pat.len(),
+            ComputeError: "pattern's length: {} does not match that of the argument series: {}",
+            pat.len(), ca.len(),
+        );
+
+        // Very simple cache: don't recompile the same regex for multiple values in a row.
+        // TODO: proper LRU cache with reasonable memory limit.
+        let mut reg = Regex::new("").unwrap();
+
+        let op = move |opt_s: Option<&str>, opt_pat: Option<&str>| -> PolarsResult<Option<u32>> {
+            match (opt_s, opt_pat) {
+                (Some(s), Some(pat)) => {
+                    if pat != reg.as_str() {
+                        reg = Regex::new(pat)?;
+                    }
+                    Ok(Some(reg.find_iter(s).count() as u32))
+                },
+                _ => Ok(None),
+            }
+        };
+
+        let out: UInt32Chunked = try_binary_elementwise(ca, pat, op)?;
+
+        Ok(out.with_name(ca.name()))
+    }
+
+    /// Modify the strings to their lowercase equivalent.
     #[must_use]
     fn to_lowercase(&self) -> Utf8Chunked {
         let ca = self.as_utf8();
         case::to_lowercase(ca)
     }
 
-    /// Modify the strings to their uppercase equivalent
+    /// Modify the strings to their uppercase equivalent.
     #[must_use]
     fn to_uppercase(&self) -> Utf8Chunked {
         let ca = self.as_utf8();
         case::to_uppercase(ca)
     }
 
-    /// Modify the strings to their titlecase equivalent
+    /// Modify the strings to their titlecase equivalent.
     #[must_use]
     #[cfg(feature = "nightly")]
     fn to_titlecase(&self) -> Utf8Chunked {
@@ -388,14 +411,15 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         case::to_titlecase(ca)
     }
 
-    /// Concat with the values from a second Utf8Chunked
+    /// Concat with the values from a second Utf8Chunked.
     #[must_use]
     fn concat(&self, other: &Utf8Chunked) -> Utf8Chunked {
         let ca = self.as_utf8();
         ca + other
     }
 
-    /// Slice the string values
+    /// Slice the string values.
+    ///
     /// Determines a substring starting from `start` and with optional length `length` of each of the elements in `array`.
     /// `start` can be negative, in which case the start counts from the end of the string.
     fn str_slice(&self, start: i64, length: Option<u64>) -> PolarsResult<Utf8Chunked> {
@@ -404,7 +428,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             .downcast_iter()
             .map(|c| substring(c, start, &length))
             .collect::<arrow::error::Result<_>>()?;
-
+        // SAFETY: these are all the same type.
         unsafe { Ok(Utf8Chunked::from_chunks(ca.name(), chunks)) }
     }
 }

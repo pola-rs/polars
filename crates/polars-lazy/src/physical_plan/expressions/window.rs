@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_core::export::arrow::bitmap::Bitmap;
-use polars_core::frame::groupby::{GroupBy, GroupsProxy};
+use polars_core::frame::group_by::{GroupBy, GroupsProxy};
 use polars_core::frame::hash_join::{
     default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
 };
@@ -70,12 +70,12 @@ impl WindowExpr {
                     for g in groups.all() {
                         idx_mapping.extend(g.iter().copied().zip(&mut iter));
                     }
-                }
+                },
                 GroupsProxy::Slice { groups, .. } => {
                     for &[first, len] in groups {
                         idx_mapping.extend((first..first + len).zip(&mut iter));
                     }
-                }
+                },
             }
         }
         // groups are changed, we use the new group indexes as arguments of the arg_sort
@@ -87,12 +87,12 @@ impl WindowExpr {
                     for g in groups.all() {
                         original_idx.extend_from_slice(g)
                     }
-                }
+                },
                 GroupsProxy::Slice { groups, .. } => {
                     for &[first, len] in groups {
                         original_idx.extend(first..first + len)
                     }
-                }
+                },
             };
 
             let mut original_idx_iter = original_idx.iter().copied();
@@ -102,12 +102,12 @@ impl WindowExpr {
                     for g in groups.all() {
                         idx_mapping.extend(g.iter().copied().zip(&mut original_idx_iter));
                     }
-                }
+                },
                 GroupsProxy::Slice { groups, .. } => {
                     for &[first, len] in groups {
                         idx_mapping.extend((first..first + len).zip(&mut original_idx_iter));
                     }
-                }
+                },
             }
             original_idx.clear();
             take_idx = original_idx;
@@ -130,7 +130,7 @@ impl WindowExpr {
         out_column: Series,
         flattened: Series,
         mut ac: AggregationContext,
-        groupby_columns: &[Series],
+        group_by_columns: &[Series],
         gb: GroupBy,
         state: &ExecutionState,
         cache_key: &str,
@@ -175,7 +175,7 @@ impl WindowExpr {
 
             if let Some((output, group)) = non_matching_group {
                 let first = group.first();
-                let group = groupby_columns
+                let group = group_by_columns
                     .iter()
                     .map(|s| format_smartstring!("{}", s.get(first as usize).unwrap()))
                     .collect::<Vec<_>>();
@@ -226,8 +226,8 @@ impl WindowExpr {
                     match e {
                         Expr::Agg(AggExpr::Implode(_)) => {
                             finishes_list = true;
-                        }
-                        Expr::Alias(_, _) => {}
+                        },
+                        Expr::Alias(_, _) => {},
                         _ => break,
                     }
                 }
@@ -249,8 +249,8 @@ impl WindowExpr {
                     match e {
                         Expr::Column(_) => {
                             simple_col = true;
-                        }
-                        Expr::Alias(_, _) => {}
+                        },
+                        Expr::Alias(_, _) => {},
                         _ => break,
                     }
                 }
@@ -270,8 +270,8 @@ impl WindowExpr {
                     match e {
                         Expr::Agg(_) => {
                             agg_col = true;
-                        }
-                        Expr::Alias(_, _) => {}
+                        },
+                        Expr::Alias(_, _) => {},
                         _ => break,
                     }
                 }
@@ -294,11 +294,11 @@ impl WindowExpr {
                     match e {
                         Expr::Ternary { .. } | Expr::BinaryExpr { .. } => {
                             has_arity = true;
-                        }
-                        Expr::Alias(_, _) => {}
+                        },
+                        Expr::Alias(_, _) => {},
                         Expr::Agg(_) => {
                             agg_col = true;
-                        }
+                        },
                         Expr::Function { options, .. }
                         | Expr::AnonymousFunction { options, .. } => {
                             if options.auto_explode
@@ -306,8 +306,8 @@ impl WindowExpr {
                             {
                                 agg_col = true;
                             }
-                        }
-                        _ => {}
+                        },
+                        _ => {},
                     }
                 }
             }
@@ -348,7 +348,7 @@ impl WindowExpr {
                 } else {
                     Ok(MapStrategy::Map)
                 }
-            }
+            },
             // no aggregations, just return column
             // or an aggregation that has been flattened
             // we have to check which one
@@ -361,7 +361,7 @@ impl WindowExpr {
                 } else {
                     Ok(MapStrategy::Map)
                 }
-            }
+            },
             (WindowMapping::Join, AggState::NotAggregated(_)) => Ok(MapStrategy::Join),
             // literals, do nothing and let broadcast
             (_, AggState::Literal(_)) => Ok(MapStrategy::Nothing),
@@ -371,13 +371,13 @@ impl WindowExpr {
 
 impl PhysicalExpr for WindowExpr {
     // Note: this was first implemented with expression evaluation but this performed really bad.
-    // Therefore we choose the groupby -> apply -> self join approach
+    // Therefore we choose the group_by -> apply -> self join approach
 
-    // This first cached the groupby and the join tuples, but rayon under a mutex leads to deadlocks:
+    // This first cached the group_by and the join tuples, but rayon under a mutex leads to deadlocks:
     // https://github.com/rayon-rs/rayon/issues/592
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         // This method does the following:
-        // 1. determine groupby tuples based on the group_column
+        // 1. determine group_by tuples based on the group_column
         // 2. apply an aggregation function
         // 3. join the results back to the original dataframe
         //    this stores all group values on the original df size
@@ -407,14 +407,14 @@ impl PhysicalExpr for WindowExpr {
             return Ok(Series::full_null(field.name(), 0, field.data_type()));
         }
 
-        let groupby_columns = self
+        let group_by_columns = self
             .group_by
             .iter()
             .map(|e| e.evaluate(df, state))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         // if the keys are sorted
-        let sorted_keys = groupby_columns.iter().all(|s| {
+        let sorted_keys = group_by_columns.iter().all(|s| {
             matches!(
                 s.is_sorted_flag(),
                 IsSorted::Ascending | IsSorted::Descending
@@ -441,16 +441,16 @@ impl PhysicalExpr for WindowExpr {
         }
 
         let create_groups = || {
-            let gb = df.groupby_with_series(groupby_columns.clone(), true, sort_groups)?;
+            let gb = df.group_by_with_series(group_by_columns.clone(), true, sort_groups)?;
             let out: PolarsResult<GroupsProxy> = Ok(gb.take_groups());
             out
         };
 
         // Try to get cached grouptuples
         let (mut groups, _, cache_key) = if state.cache_window() {
-            let mut cache_key = String::with_capacity(32 * groupby_columns.len());
+            let mut cache_key = String::with_capacity(32 * group_by_columns.len());
             write!(&mut cache_key, "{}", state.branch_idx).unwrap();
-            for s in &groupby_columns {
+            for s in &group_by_columns {
                 cache_key.push_str(s.name());
             }
 
@@ -488,7 +488,7 @@ impl PhysicalExpr for WindowExpr {
         if sort_groups || state.cache_window() {
             groups.sort()
         }
-        let gb = GroupBy::new(df, groupby_columns.clone(), groups, Some(apply_columns));
+        let gb = GroupBy::new(df, group_by_columns.clone(), groups, Some(apply_columns));
 
         // If the aggregation creates categoricals and `MapStrategy` is `Join`,
         // the string cache was needed. So we hold it for that case.
@@ -507,7 +507,7 @@ impl PhysicalExpr for WindowExpr {
                     out.rename(name.as_ref());
                 }
                 Ok(out)
-            }
+            },
             Explode => {
                 let mut out = ac.aggregated().explode()?;
                 cache_gb(gb, state, &cache_key);
@@ -515,7 +515,7 @@ impl PhysicalExpr for WindowExpr {
                     out.rename(name.as_ref());
                 }
                 Ok(out)
-            }
+            },
             Map => {
                 // TODO!
                 // investigate if sorted arrays can be return directly
@@ -531,12 +531,12 @@ impl PhysicalExpr for WindowExpr {
                     out_column,
                     flattened,
                     ac,
-                    &groupby_columns,
+                    &group_by_columns,
                     gb,
                     state,
                     &cache_key,
                 )
-            }
+            },
             Join => {
                 let out_column = ac.aggregated();
                 // we try to flatten/extend the array by repeating the aggregated value n times
@@ -552,22 +552,22 @@ impl PhysicalExpr for WindowExpr {
                     (UpdateGroups::No, Some(out)) => {
                         cache_gb(gb, state, &cache_key);
                         Ok(out)
-                    }
+                    },
                     (_, _) => {
                         let keys = gb.keys();
                         cache_gb(gb, state, &cache_key);
 
                         let get_join_tuples = || {
-                            if groupby_columns.len() == 1 {
+                            if group_by_columns.len() == 1 {
                                 // group key from right column
                                 let right = &keys[0];
-                                groupby_columns[0]
+                                group_by_columns[0]
                                     .hash_join_left(right, JoinValidation::ManyToMany)
                                     .unwrap()
                                     .1
                             } else {
                                 let df_right = DataFrame::new_no_checks(keys);
-                                let df_left = DataFrame::new_no_checks(groupby_columns);
+                                let df_left = DataFrame::new_no_checks(group_by_columns);
                                 private_left_join_multiple_keys(&df_left, &df_right, None, None).1
                             }
                         };
@@ -599,9 +599,9 @@ impl PhysicalExpr for WindowExpr {
                         }
 
                         Ok(out)
-                    }
+                    },
                 }
-            }
+            },
         }
     }
 
@@ -696,12 +696,12 @@ where
             for g in groups.all() {
                 idx_mapping.extend((&mut iter).take(g.len()).zip(g.iter().copied()));
             }
-        }
+        },
         GroupsProxy::Slice { groups, .. } => {
             for &[first, len] in groups {
                 idx_mapping.extend((&mut iter).take(len as usize).zip(first..first + len));
             }
-        }
+        },
     }
     let mut values = Vec::with_capacity(len);
     let ptr: *mut T::Native = values.as_mut_ptr();
@@ -726,7 +726,7 @@ where
                             }
                         })
                 })
-            }
+            },
             GroupsProxy::Slice { groups, .. } => {
                 // this should always succeed as we don't expect any chunks after an aggregation
                 let agg_vals = ca.cont_slice().ok()?;
@@ -744,7 +744,7 @@ where
                             }
                         })
                 });
-            }
+            },
         }
 
         // safety: we have written all slots
@@ -778,11 +778,11 @@ where
                                 Some(v) => {
                                     *values_ptr.add(idx) = v;
                                     *validity_ptr.add(idx) = true;
-                                }
+                                },
                                 None => {
                                     *values_ptr.add(idx) = T::Native::default();
                                     *validity_ptr.add(idx) = false;
-                                }
+                                },
                             };
                         }
                     }
@@ -807,17 +807,17 @@ where
                                     Some(v) => {
                                         *values_ptr.add(idx) = v;
                                         *validity_ptr.add(idx) = true;
-                                    }
+                                    },
                                     None => {
                                         *values_ptr.add(idx) = T::Native::default();
                                         *validity_ptr.add(idx) = false;
-                                    }
+                                    },
                                 };
                             }
                         }
                     }
                 })
-            }
+            },
         }
         // safety: we have written all slots
         unsafe { values.set_len(len) }

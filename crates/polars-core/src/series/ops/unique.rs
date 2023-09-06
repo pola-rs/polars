@@ -2,7 +2,7 @@
 use std::hash::Hash;
 
 #[cfg(feature = "unique_counts")]
-use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
+use crate::frame::group_by::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 #[cfg(feature = "unique_counts")]
 use crate::utils::NoNull;
@@ -42,7 +42,7 @@ impl Series {
                 DataType::Utf8 => unique_counts(self.utf8().unwrap().into_iter()),
                 dt => {
                     panic!("'unique_counts' not implemented for {dt} data types")
-                }
+                },
             }
         }
     }

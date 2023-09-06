@@ -25,15 +25,15 @@ fn quantile_idx(
     let mut base_idx = match interpol {
         QuantileInterpolOptions::Nearest => {
             (((length - null_count) as f64) * quantile + null_count as f64) as usize
-        }
+        },
         QuantileInterpolOptions::Lower
         | QuantileInterpolOptions::Midpoint
         | QuantileInterpolOptions::Linear => {
             (((length - null_count) as f64 - 1.0) * quantile + null_count as f64) as usize
-        }
+        },
         QuantileInterpolOptions::Higher => {
             (((length - null_count) as f64 - 1.0) * quantile + null_count as f64).ceil() as usize
-        }
+        },
     };
 
     base_idx = base_idx.clamp(0, length - 1);
@@ -114,7 +114,7 @@ fn quantile_slice<T: ToPrimitive + Ord>(
                     lower.to_f64().unwrap(),
                     upper.to_f64().unwrap(),
                 )))
-            }
+            },
             QuantileInterpolOptions::Linear => {
                 let upper = rhs.min_value().unwrap();
                 Ok(linear_interpol(
@@ -124,7 +124,7 @@ fn quantile_slice<T: ToPrimitive + Ord>(
                     float_idx,
                 )
                 .to_f64())
-            }
+            },
             _ => Ok(lower.to_f64()),
         }
     }
@@ -163,7 +163,7 @@ where
                 let upper = sorted.get(idx + 1).map(|v| v.to_f64().unwrap());
                 midpoint_interpol(lower.unwrap(), upper.unwrap()).to_f64()
             }
-        }
+        },
         QuantileInterpolOptions::Linear => {
             if top_idx == idx {
                 lower
@@ -172,7 +172,7 @@ where
 
                 linear_interpol(lower.unwrap(), upper.unwrap(), idx, float_idx).to_f64()
             }
-        }
+        },
         _ => lower,
     };
     Ok(opt)

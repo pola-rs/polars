@@ -29,8 +29,8 @@ pub use crate::chunked_array::ops::unique::rank::{RankMethod, RankOptions};
 pub use crate::chunked_array::ops::*;
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;
+pub(crate) use crate::chunked_array::ChunkIdIter;
 pub use crate::chunked_array::ChunkedArray;
-pub(crate) use crate::chunked_array::{to_array, ChunkIdIter};
 pub use crate::datatypes::*;
 pub use crate::error::{
     polars_bail, polars_ensure, polars_err, polars_warn, PolarsError, PolarsResult,
@@ -38,8 +38,8 @@ pub use crate::error::{
 #[cfg(feature = "asof_join")]
 pub use crate::frame::asof_join::*;
 pub use crate::frame::explode::MeltArgs;
-pub(crate) use crate::frame::groupby::aggregations::*;
-pub use crate::frame::groupby::{GroupsIdx, GroupsProxy, GroupsSlice, IntoGroupsProxy};
+pub(crate) use crate::frame::group_by::aggregations::*;
+pub use crate::frame::group_by::{GroupsIdx, GroupsProxy, GroupsSlice, IntoGroupsProxy};
 pub(crate) use crate::frame::hash_join::*;
 pub use crate::frame::hash_join::{JoinArgs, JoinType};
 pub use crate::frame::{DataFrame, UniqueKeepStrategy};

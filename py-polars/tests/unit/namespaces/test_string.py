@@ -316,7 +316,7 @@ def test_auto_explode() -> None:
     )
     pl.col("val").str.concat(delimiter=",")
     grouped = (
-        df.groupby("id")
+        df.group_by("id")
         .agg(pl.col("val").str.concat(delimiter=",").alias("grouped"))
         .get_column("grouped")
     )
@@ -518,7 +518,7 @@ def test_replace_expressions() -> None:
 
 
 def test_extract_all_count() -> None:
-    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
+    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xaz 678 910t", "boo", None]})
     assert (
         df.select(
             [
@@ -526,15 +526,92 @@ def test_extract_all_count() -> None:
                 pl.col("foo").str.count_match(r"a").alias("count"),
             ]
         ).to_dict(False)
-    ) == {"extract": [["a", "a"], None], "count": [2, 0]}
+    ) == {"extract": [["a", "a"], ["a"], [], None], "count": [2, 1, 0, None]}
 
     assert df["foo"].str.extract_all(r"a").dtype == pl.List
     assert df["foo"].str.count_match(r"a").dtype == pl.UInt32
 
 
+def test_count_match_many() -> None:
+    df = pl.DataFrame(
+        {"foo": ["123 bla 45 asd", "xyz 678 910t"], "bar": [r"\d", r"[a-z]"]}
+    )
+    assert (
+        df.select(
+            [pl.col("foo").str.count_match(pl.col("bar")).alias("count")]
+        ).to_dict(False)
+    ) == {"count": [5, 4]}
+
+    assert df["foo"].str.count_match(df["bar"]).dtype == pl.UInt32
+
+
 def test_extract_all_many() -> None:
-    df = pl.DataFrame({"foo": ["ab", "abc", "abcd"], "re": ["a", "bc", "a.c"]})
-    assert df["foo"].str.extract_all(df["re"]).to_list() == [["a"], ["bc"], ["abc"]]
+    df = pl.DataFrame(
+        {"foo": ["ab", "abc", "abcd", "foo", None], "re": ["a", "bc", "a.c", "a", "a"]}
+    )
+    assert df["foo"].str.extract_all(df["re"]).to_list() == [
+        ["a"],
+        ["bc"],
+        ["abc"],
+        [],
+        None,
+    ]
+
+
+def test_extract_groups() -> None:
+    def _named_groups_builder(pattern: str, groups: dict[str, str]) -> str:
+        return pattern.format(
+            **{name: f"(?<{name}>{value})" for name, value in groups.items()}
+        )
+
+    expected = {
+        "authority": ["ISO", "ISO/IEC/IEEE"],
+        "spec_num": ["80000", "29148"],
+        "part_num": ["1", None],
+        "revision_year": ["2009", "2018"],
+    }
+
+    pattern = _named_groups_builder(
+        r"{authority}\s{spec_num}(?:-{part_num})?(?::{revision_year})",
+        {
+            "authority": r"^ISO(?:/[A-Z]+)*",
+            "spec_num": r"\d+",
+            "part_num": r"\d+",
+            "revision_year": r"\d{4}",
+        },
+    )
+
+    df = pl.DataFrame({"iso_code": ["ISO 80000-1:2009", "ISO/IEC/IEEE 29148:2018"]})
+
+    assert (
+        df.select(pl.col("iso_code").str.extract_groups(pattern))
+        .unnest("iso_code")
+        .to_dict(False)
+        == expected
+    )
+
+    assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(False) == {
+        "iso_code": [{"iso_code": None}, {"iso_code": None}]
+    }
+
+    assert df.select(
+        pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(\d+)")
+    ).to_dict(False) == {
+        "iso_code": [{"1": "ISO", "2": "80000"}, {"1": "ISO/IEC/IEEE", "2": "29148"}]
+    }
+
+    assert df.select(
+        pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(?<year>\d+)\z")
+    ).to_dict(False) == {
+        "iso_code": [
+            {"1": "ISO", "year": "2009"},
+            {"1": "ISO/IEC/IEEE", "year": "2018"},
+        ]
+    }
+
+    assert pl.select(
+        pl.lit(r"foobar").str.extract_groups(r"(?<foo>.{3})|(?<bar>...)")
+    ).to_dict(False) == {"literal": [{"foo": "foo", "bar": None}]}
 
 
 def test_zfill() -> None:
@@ -737,3 +814,21 @@ def test_string_replace_with_nulls_10124() -> None:
         "n_1": ["O", "O", "O", None, "O", "O", "O", "O"],
         "n_3": ["O", "O", "O", None, "O", "O", "O", "O"],
     }
+
+
+def test_string_extract_groups_lazy_schema_10305() -> None:
+    df = pl.LazyFrame(
+        data={
+            "url": [
+                "http://vote.com/ballon_dor?candidate=messi&ref=python",
+                "http://vote.com/ballon_dor?candidate=weghorst&ref=polars",
+                "http://vote.com/ballon_dor?error=404&ref=rust",
+            ]
+        }
+    )
+    pattern = r"candidate=(?<candidate>\w+)&ref=(?<ref>\w+)"
+    df = df.select(captures=pl.col("url").str.extract_groups(pattern)).unnest(
+        "captures"
+    )
+
+    assert df.schema == {"candidate": pl.Utf8, "ref": pl.Utf8}

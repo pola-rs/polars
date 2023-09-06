@@ -15,23 +15,19 @@ fn cast_and_apply<
     func: F,
 ) -> ChunkedArray<T> {
     let dtype = ca.dtype().to_arrow();
-    let chunks = ca
-        .downcast_iter()
-        .map(|arr| {
-            let arr = cast(
-                arr,
-                &dtype,
-                CastOptions {
-                    wrapped: true,
-                    partial: false,
-                },
-            )
-            .unwrap();
-            Box::from(func(&*arr).unwrap()) as ArrayRef
-        })
-        .collect();
-
-    unsafe { ChunkedArray::from_chunks(ca.name(), chunks) }
+    let chunks = ca.downcast_iter().map(|arr| {
+        let arr = cast(
+            arr,
+            &dtype,
+            CastOptions {
+                wrapped: true,
+                partial: false,
+            },
+        )
+        .unwrap();
+        func(&*arr).unwrap()
+    });
+    ChunkedArray::from_chunk_iter(ca.name(), chunks)
 }
 
 pub trait DatetimeMethods: AsDatetime {

@@ -102,7 +102,7 @@ impl AsyncRead for CloudReader {
             Poll::Ready(Ok(bytes)) => {
                 buf.copy_from_slice(&bytes);
                 Poll::Ready(Ok(bytes.len()))
-            }
+            },
             Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
             Poll::Pending => Poll::Pending,
         }
@@ -123,7 +123,7 @@ impl AsyncSeek for CloudReader {
                     "Cannot seek from end of stream when length is unknown.",
                 ))?;
                 self.pos = (length as i64 + pos) as u64
-            }
+            },
             io::SeekFrom::Current(pos) => self.pos = (self.pos as i64 + pos) as u64,
         };
         std::task::Poll::Ready(Ok(self.pos))

@@ -89,11 +89,11 @@ macro_rules! iter_to_values {
                     $validity.push(true);
                     $offsets.push($length_so_far);
                     Some(it)
-                }
+                },
                 None => {
                     $validity.push(false);
                     None
-                }
+                },
             })
             .flatten()
             .collect()
@@ -102,7 +102,7 @@ macro_rules! iter_to_values {
 
 pub trait ListFromIter {
     /// Create a list-array from an iterator.
-    /// Used in groupby agg-list
+    /// Used in group_by agg-list
     ///
     /// # Safety
     /// Will produce incorrect arrays if size hint is incorrect.
@@ -136,7 +136,7 @@ pub trait ListFromIter {
     }
 
     /// Create a list-array from an iterator.
-    /// Used in groupby agg-list
+    /// Used in group_by agg-list
     ///
     /// # Safety
     /// Will produce incorrect arrays if size hint is incorrect.
@@ -166,7 +166,7 @@ pub trait ListFromIter {
     }
 
     /// Create a list-array from an iterator.
-    /// Used in groupby agg-list
+    /// Used in group_by agg-list
     ///
     /// # Safety
     /// Will produce incorrect arrays if size hint is incorrect.
@@ -191,11 +191,11 @@ pub trait ListFromIter {
                     validity.push(true);
                     offsets.push(length_so_far);
                     Some(it)
-                }
+                },
                 None => {
                     validity.push(false);
                     None
-                }
+                },
             })
             .flatten()
             .trust_my_length(n_elements)
@@ -212,7 +212,7 @@ pub trait ListFromIter {
     }
 
     /// Create a list-array from an iterator.
-    /// Used in groupby agg-list
+    /// Used in group_by agg-list
     ///
     /// # Safety
     /// Will produce incorrect arrays if size hint is incorrect.
@@ -237,11 +237,11 @@ pub trait ListFromIter {
                     validity.push(true);
                     offsets.push(length_so_far);
                     Some(it)
-                }
+                },
                 None => {
                     validity.push(false);
                     None
-                }
+                },
             })
             .flatten()
             .trust_my_length(n_elements)

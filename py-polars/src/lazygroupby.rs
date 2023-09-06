@@ -34,7 +34,11 @@ impl PyLazyGroupBy {
         lgb.tail(Some(n)).into()
     }
 
-    fn apply(&mut self, lambda: PyObject, schema: Option<Wrap<Schema>>) -> PyResult<PyLazyFrame> {
+    fn map_groups(
+        &mut self,
+        lambda: PyObject,
+        schema: Option<Wrap<Schema>>,
+    ) -> PyResult<PyLazyFrame> {
         let lgb = self.lgb.take().unwrap();
         let schema = match schema {
             Some(schema) => Arc::new(schema.0),

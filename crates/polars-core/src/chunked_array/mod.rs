@@ -6,6 +6,8 @@ use std::sync::Arc;
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
 use polars_arrow::prelude::ValueSize;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
@@ -66,30 +68,8 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 ///
 /// ```rust
 /// # use polars_core::prelude::*;
-/// fn apply_cosine(ca: &Float32Chunked) -> Float32Chunked {
-///     ca.apply(|v| v.cos())
-/// }
-/// ```
-///
-/// If we would like to cast the result we could use a Rust Iterator instead of an `apply` method.
-/// Note that Iterators are slightly slower as the null values aren't ignored implicitly.
-///
-/// ```rust
-/// # use polars_core::prelude::*;
 /// fn apply_cosine_and_cast(ca: &Float32Chunked) -> Float64Chunked {
-///     ca.into_iter()
-///         .map(|opt_v| {
-///         opt_v.map(|v| v.cos() as f64)
-///     }).collect()
-/// }
-/// ```
-///
-/// Another option is to first cast and then use an apply.
-///
-/// ```rust
-/// # use polars_core::prelude::*;
-/// fn apply_cosine_and_cast(ca: &Float32Chunked) -> Float64Chunked {
-///     ca.apply_cast_numeric(|v| v.cos() as f64)
+///     ca.apply_values_generic(|v| v.cos() as f64)
 /// }
 /// ```
 ///
@@ -145,6 +125,13 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 /// multiple append operations.
 ///
 /// See also [`ChunkedArray::extend`] for appends within a chunk.
+///
+/// # Invariants
+/// - A `ChunkedArray` should always have at least a single `ArrayRef`.
+/// - The [`PolarsDataType`] `T` should always map to the correct [`ArrowDataType`] in the `ArrayRef`
+///   chunks.
+/// - Nested datatypes such as `List` and `Array` store the physical types instead of the
+///   logical type given by the datatype.
 pub struct ChunkedArray<T: PolarsDataType> {
     pub(crate) field: Arc<Field>,
     pub(crate) chunks: Vec<ArrayRef>,
@@ -154,12 +141,42 @@ pub struct ChunkedArray<T: PolarsDataType> {
 }
 
 bitflags! {
-    #[derive(Default)]
-    pub(crate) struct Settings: u8 {
-    const SORTED_ASC = 0x01;
-    const SORTED_DSC = 0x02;
-    const FAST_EXPLODE_LIST = 0x04;
-}}
+    #[derive(Default, Debug, Clone, Copy,PartialEq)]
+    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(transparent))]
+    pub struct Settings: u8 {
+        const SORTED_ASC = 0x01;
+        const SORTED_DSC = 0x02;
+        const FAST_EXPLODE_LIST = 0x04;
+    }
+}
+
+impl Settings {
+    pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
+        match sorted {
+            IsSorted::Not => {
+                self.remove(Settings::SORTED_ASC | Settings::SORTED_DSC);
+            },
+            IsSorted::Ascending => {
+                self.remove(Settings::SORTED_DSC);
+                self.insert(Settings::SORTED_ASC)
+            },
+            IsSorted::Descending => {
+                self.remove(Settings::SORTED_ASC);
+                self.insert(Settings::SORTED_DSC)
+            },
+        }
+    }
+
+    pub fn get_sorted_flag(&self) -> IsSorted {
+        if self.contains(Settings::SORTED_ASC) {
+            IsSorted::Ascending
+        } else if self.contains(Settings::SORTED_DSC) {
+            IsSorted::Descending
+        } else {
+            IsSorted::Not
+        }
+    }
+}
 
 impl<T: PolarsDataType> ChunkedArray<T> {
     pub(crate) fn is_sorted_ascending_flag(&self) -> bool {
@@ -174,40 +191,22 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.bit_settings.remove(Settings::FAST_EXPLODE_LIST)
     }
 
-    pub(crate) fn clear_settings(&mut self) {
-        self.bit_settings.bits = 0;
+    pub fn get_flags(&self) -> Settings {
+        self.bit_settings
+    }
+
+    /// Set flags for the Chunked Array
+    pub(crate) fn set_flags(&mut self, flags: Settings) {
+        self.bit_settings = flags;
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
-        if self.is_sorted_ascending_flag() {
-            IsSorted::Ascending
-        } else if self.is_sorted_descending_flag() {
-            IsSorted::Descending
-        } else {
-            IsSorted::Not
-        }
+        self.bit_settings.get_sorted_flag()
     }
 
     /// Set the 'sorted' bit meta info.
     pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
-        match sorted {
-            IsSorted::Not => {
-                self.bit_settings
-                    .remove(Settings::SORTED_ASC | Settings::SORTED_DSC);
-            }
-            IsSorted::Ascending => {
-                // // unset descending sorted
-                self.bit_settings.remove(Settings::SORTED_DSC);
-                // set ascending sorted
-                self.bit_settings.insert(Settings::SORTED_ASC)
-            }
-            IsSorted::Descending => {
-                // unset ascending sorted
-                self.bit_settings.remove(Settings::SORTED_ASC);
-                // set descending sorted
-                self.bit_settings.insert(Settings::SORTED_DSC)
-            }
-        }
+        self.bit_settings.set_sorted_flag(sorted)
     }
 
     /// Get the index of the first non null value in this ChunkedArray.
@@ -264,7 +263,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             match (self.dtype(), series.dtype()) {
                 (Int64, Datetime(_, _)) | (Int64, Duration(_)) | (Int32, Date) => {
                     &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>)
-                }
+                },
                 _ => panic!(
                     "cannot unpack series {:?} into matching type {:?}",
                     series,
@@ -361,6 +360,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     pub fn rename(&mut self, name: &str) {
         self.field = Arc::new(Field::new(name, self.field.data_type().clone()))
     }
+
+    /// Return this ChunkedArray with a new name.
+    pub fn with_name(mut self, name: &str) -> Self {
+        self.rename(name);
+        self
+    }
 }
 
 impl<T> ChunkedArray<T>
@@ -375,15 +380,14 @@ where
         I: Iterator<Item = usize>,
     {
         debug_assert!(self.chunks.len() == 1);
-        // Takes a ChunkedArray containing a single chunk
+        // Takes a ChunkedArray containing a single chunk.
         let slice = |ca: &Self| {
             let array = &ca.chunks[0];
 
             let mut offset = 0;
             let chunks = chunk_id
                 .map(|len| {
-                    // safety:
-                    // within bounds
+                    // SAFETY: within bounds.
                     debug_assert!((offset + len) <= array.len());
                     let out = unsafe { array.sliced_unchecked(offset, len) };
                     offset += len;
@@ -555,12 +559,6 @@ pub(crate) fn to_array<T: PolarsNumericType>(
     Box::new(to_primitive::<T>(values, validity))
 }
 
-impl<T: PolarsNumericType> From<PrimitiveArray<T::Native>> for ChunkedArray<T> {
-    fn from(a: PrimitiveArray<T::Native>) -> Self {
-        unsafe { ChunkedArray::from_chunks("", vec![Box::new(a)]) }
-    }
-}
-
 #[cfg(test)]
 pub(crate) mod test {
     use crate::prelude::*;
@@ -590,7 +588,7 @@ pub(crate) mod test {
         let a = &Int32Chunked::new("a", &[1, 100, 6, 40]);
         let b = &Int32Chunked::new("b", &[-1, 2, 3, 4]);
 
-        // Not really asserting anything here but shill making sure the code is exercised
+        // Not really asserting anything here but still making sure the code is exercised
         // This (and more) is properly tested from the integration test suite and Python bindings.
         println!("{:?}", a + b);
         println!("{:?}", a - b);

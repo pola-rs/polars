@@ -26,12 +26,14 @@ pub struct LazyCsvReader<'a> {
     eol_char: u8,
     null_values: Option<NullValues>,
     missing_is_null: bool,
+    truncate_ragged_lines: bool,
     infer_schema_length: Option<usize>,
     rechunk: bool,
     skip_rows_after_header: usize,
     encoding: CsvEncoding,
     row_count: Option<RowCount>,
     try_parse_dates: bool,
+    raise_if_empty: bool,
 }
 
 #[cfg(feature = "csv")]
@@ -59,6 +61,8 @@ impl<'a> LazyCsvReader<'a> {
             encoding: CsvEncoding::Utf8,
             row_count: None,
             try_parse_dates: false,
+            raise_if_empty: true,
+            truncate_ragged_lines: false,
         }
     }
 
@@ -102,8 +106,8 @@ impl<'a> LazyCsvReader<'a> {
 
     /// Set the CSV file's schema
     #[must_use]
-    pub fn with_schema(mut self, schema: SchemaRef) -> Self {
-        self.schema = Some(schema);
+    pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
+        self.schema = schema;
         self
     }
 
@@ -191,10 +195,25 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
-    /// Automatically try to parse dates/ datetimes and time. If parsing fails, columns remain of dtype `[DataType::Utf8]`.
+    /// Automatically try to parse dates/datetimes and time.
+    /// If parsing fails, columns remain of dtype `[DataType::Utf8]`.
     #[cfg(feature = "temporal")]
     pub fn with_try_parse_dates(mut self, toggle: bool) -> Self {
         self.try_parse_dates = toggle;
+        self
+    }
+
+    /// Raise an error if CSV is empty (otherwise return an empty frame)
+    #[must_use]
+    pub fn raise_if_empty(mut self, toggle: bool) -> Self {
+        self.raise_if_empty = toggle;
+        self
+    }
+
+    /// Truncate lines that are longer than the schema.
+    #[must_use]
+    pub fn truncate_ragged_lines(mut self, toggle: bool) -> Self {
+        self.truncate_ragged_lines = toggle;
         self
     }
 
@@ -231,6 +250,7 @@ impl<'a> LazyCsvReader<'a> {
             self.eol_char,
             None,
             self.try_parse_dates,
+            self.raise_if_empty,
         )?;
         let mut schema = f(schema)?;
 
@@ -241,7 +261,7 @@ impl<'a> LazyCsvReader<'a> {
             }
         }
 
-        Ok(self.with_schema(Arc::new(schema)))
+        Ok(self.with_schema(Some(Arc::new(schema))))
     }
 }
 
@@ -268,6 +288,8 @@ impl LazyFileListReader for LazyCsvReader<'_> {
             self.encoding,
             self.row_count,
             self.try_parse_dates,
+            self.raise_if_empty,
+            self.truncate_ragged_lines,
         )?
         .build()
         .into();

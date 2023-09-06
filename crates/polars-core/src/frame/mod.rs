@@ -22,7 +22,7 @@ mod chunks;
 pub(crate) mod cross_join;
 pub mod explode;
 mod from;
-pub mod groupby;
+pub mod group_by;
 pub mod hash_join;
 #[cfg(feature = "rows")]
 pub mod row;
@@ -34,7 +34,7 @@ pub use chunks::*;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
-use crate::frame::groupby::GroupsIndicator;
+use crate::frame::group_by::GroupsIndicator;
 #[cfg(feature = "row_hash")]
 use crate::hashing::df_rows_to_hashes_threaded_vertical;
 #[cfg(feature = "zip_with")]
@@ -160,30 +160,30 @@ impl DataFrame {
         self.columns.iter().map(|s| s.estimated_size()).sum()
     }
 
-    // reduce monomorphization
+    // Reduce monomorphization.
     fn apply_columns(&self, func: &(dyn Fn(&Series) -> Series)) -> Vec<Series> {
-        self.columns.iter().map(|s| func(s)).collect()
+        self.columns.iter().map(func).collect()
     }
 
-    // reduce monomorphization
+    // Reduce monomorphization.
     fn apply_columns_par(&self, func: &(dyn Fn(&Series) -> Series + Send + Sync)) -> Vec<Series> {
-        POOL.install(|| self.columns.par_iter().map(|s| func(s)).collect())
+        POOL.install(|| self.columns.par_iter().map(func).collect())
     }
 
-    // reduce monomorphization
+    // Reduce monomorphization.
     fn try_apply_columns_par(
         &self,
         func: &(dyn Fn(&Series) -> PolarsResult<Series> + Send + Sync),
     ) -> PolarsResult<Vec<Series>> {
-        POOL.install(|| self.columns.par_iter().map(|s| func(s)).collect())
+        POOL.install(|| self.columns.par_iter().map(func).collect())
     }
 
-    // reduce monomorphization
+    // Reduce monomorphization.
     fn try_apply_columns(
         &self,
         func: &(dyn Fn(&Series) -> PolarsResult<Series> + Send + Sync),
     ) -> PolarsResult<Vec<Series>> {
-        self.columns.iter().map(|s| func(s)).collect()
+        self.columns.iter().map(func).collect()
     }
 
     /// Get the index of the column.
@@ -253,7 +253,7 @@ impl DataFrame {
                                 &s.len(),
                             );
                         }
-                    }
+                    },
                     None => first_len = Some(s.len()),
                 }
 
@@ -288,7 +288,7 @@ impl DataFrame {
                                 &series.len(),
                             );
                         }
-                    }
+                    },
                     None => first_len = Some(series.len()),
                 }
 
@@ -473,7 +473,7 @@ impl DataFrame {
                     }
                 }
                 false
-            }
+            },
         }
     }
 
@@ -1026,7 +1026,7 @@ impl DataFrame {
             Some(cols) => {
                 selected_series = self.select_series(cols)?;
                 selected_series.iter()
-            }
+            },
             None => self.columns.iter(),
         };
 
@@ -1241,7 +1241,7 @@ impl DataFrame {
                 if s.len() <= idx {
                     return None;
                 }
-            }
+            },
             None => return None,
         }
         // safety: we just checked bounds
@@ -1334,7 +1334,7 @@ impl DataFrame {
         let colnames = self.get_column_names_owned();
         let range = get_range(range, ..colnames.len());
 
-        self.select_impl(&colnames[range])
+        self._select_impl(&colnames[range])
     }
 
     /// Get column index of a `Series` by name.
@@ -1428,11 +1428,15 @@ impl DataFrame {
             .into_iter()
             .map(|s| SmartString::from(s.as_ref()))
             .collect::<Vec<_>>();
-        self.select_impl(&cols)
+        self._select_impl(&cols)
     }
 
-    fn select_impl(&self, cols: &[SmartString]) -> PolarsResult<Self> {
+    pub fn _select_impl(&self, cols: &[SmartString]) -> PolarsResult<Self> {
         self.select_check_duplicates(cols)?;
+        self._select_impl_unchecked(cols)
+    }
+
+    pub fn _select_impl_unchecked(&self, cols: &[SmartString]) -> PolarsResult<Self> {
         let selected = self.select_series_impl(cols)?;
         Ok(DataFrame::new_no_checks(selected))
     }
@@ -1928,7 +1932,7 @@ impl DataFrame {
                     return Ok(out.into_frame());
                 }
                 s.arg_sort(options)
-            }
+            },
             _ => {
                 if nulls_last || has_struct || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
                     argsort_multiple_row_fmt(&by_column, descending, nulls_last, parallel)?
@@ -1941,7 +1945,7 @@ impl DataFrame {
                     };
                     first.arg_sort_multiple(&options)?
                 }
-            }
+            },
         };
 
         if let Some((offset, len)) = slice {
@@ -2164,10 +2168,10 @@ impl DataFrame {
             1 => {
                 let new_col = new_col.new_from_index(0, df_height);
                 let _ = mem::replace(col, new_col);
-            }
+            },
             len if (len == df_height) => {
                 let _ = mem::replace(col, new_col);
-            }
+            },
             len => polars_bail!(
                 ShapeMismatch:
                 "resulting series has length {} while the dataframe has height {}",
@@ -2886,7 +2890,7 @@ impl DataFrame {
                         .unwrap()
                         .map(|cow| Some(cow.into_owned()))
                 })
-            }
+            },
         }
     }
 
@@ -2912,7 +2916,7 @@ impl DataFrame {
                         .unwrap()
                         .map(|cow| Some(cow.into_owned()))
                 })
-            }
+            },
         }
     }
 
@@ -2951,7 +2955,7 @@ impl DataFrame {
                         .unwrap()
                         .map(|cow| Some(cow.into_owned()))
                 })
-            }
+            },
         }
     }
 
@@ -3000,7 +3004,7 @@ impl DataFrame {
                     .cast(&DataType::Float64)?;
 
                 Ok(sum.map(|sum| &sum / &value_length))
-            }
+            },
         }
     }
 
@@ -3097,16 +3101,16 @@ impl DataFrame {
 
         let columns = match (keep, maintain_order) {
             (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, true) => {
-                let gb = df.groupby_stable(names)?;
+                let gb = df.group_by_stable(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
                 df.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
-            }
+            },
             (UniqueKeepStrategy::Last, true) => {
                 // maintain order by last values, so the sorted groups are not correct as they
                 // are sorted by the first value
-                let gb = df.groupby(names)?;
+                let gb = df.group_by(names)?;
                 let groups = gb.get_groups();
 
                 let func = |g: GroupsIndicator| match g {
@@ -3119,26 +3123,26 @@ impl DataFrame {
                     Some((offset, len)) => {
                         let (offset, len) = slice_offsets(offset, len, groups.len());
                         groups.iter().skip(offset).take(len).map(func).collect()
-                    }
+                    },
                 };
 
                 let last_idx = last_idx.sort(false);
                 return Ok(unsafe { df.take_unchecked(&last_idx) });
-            }
+            },
             (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, false) => {
-                let gb = df.groupby(names)?;
+                let gb = df.group_by(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
                 df.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
-            }
+            },
             (UniqueKeepStrategy::Last, false) => {
-                let gb = df.groupby(names)?;
+                let gb = df.group_by(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
                 df.apply_columns_par(&|s| unsafe { s.agg_last(&groups) })
-            }
+            },
             (UniqueKeepStrategy::None, _) => {
                 let df_part = df.select(names)?;
                 let mask = df_part.is_unique()?;
@@ -3147,7 +3151,7 @@ impl DataFrame {
                     Some((offset, len)) => mask.slice(offset, len),
                 };
                 return df.filter(&mask);
-            }
+            },
         };
         Ok(DataFrame::new_no_checks(columns))
     }
@@ -3166,7 +3170,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        let gb = self.groupby(self.get_column_names())?;
+        let gb = self.group_by(self.get_column_names())?;
         let groups = gb.take_groups();
         Ok(is_unique_helper(
             groups,
@@ -3190,7 +3194,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        let gb = self.groupby(self.get_column_names())?;
+        let gb = self.group_by(self.get_column_names())?;
         let groups = gb.take_groups();
         Ok(is_unique_helper(
             groups,
@@ -3310,11 +3314,11 @@ impl DataFrame {
                 match sorted {
                     IsSorted::Ascending => {
                         assert!(idx[0] <= idx[idx.len() - 1]);
-                    }
+                    },
                     IsSorted::Descending => {
                         assert!(idx[0] >= idx[idx.len() - 1]);
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
             }
         }
@@ -3332,9 +3336,9 @@ impl DataFrame {
         include_key: bool,
     ) -> PolarsResult<Vec<DataFrame>> {
         let groups = if stable {
-            self.groupby_stable(cols)?.take_groups()
+            self.group_by_stable(cols)?.take_groups()
         } else {
-            self.groupby(cols)?.take_groups()
+            self.group_by(cols)?.take_groups()
         };
 
         // drop key columns prior to calculation if requested
@@ -3358,7 +3362,7 @@ impl DataFrame {
                             }
                         })
                         .collect())
-                }
+                },
                 GroupsProxy::Slice { groups, .. } => Ok(groups
                     .into_par_iter()
                     .map(|[first, len]| df.slice(first as i64, len as usize))

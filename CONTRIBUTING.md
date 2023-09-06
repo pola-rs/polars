@@ -87,7 +87,7 @@ make test
 
 This will do a number of things:
 
-- Use Python to create a virtual environment in the `py-polars/.venv` folder.
+- Use Python to create a virtual environment in the `.venv` folder.
 - Use [pip](https://pip.pypa.io/) to install all Python dependencies for development, linting, and building documentation.
 - Use Rust to compile and install Polars in your virtual environment.
 - Use [pytest](https://docs.pytest.org/) to run the Python unittests in your virtual environment
@@ -157,7 +157,7 @@ For contributing to the user guide, please refer to the [contributing guide](htt
 
 ### API reference
 
-Polars has separate API references for [Rust](https://pola-rs.github.io/polars/polars/index.html), [Python](https://pola-rs.github.io/polars/py-polars/html/reference/index.html), and [Node.js](https://pola-rs.github.io/nodejs-polars/index.html).
+Polars has separate API references for [Rust](https://pola-rs.github.io/polars/docs/rust/dev/polars/) and [Python](https://pola-rs.github.io/polars/docs/python/dev/reference/index.html).
 These are generated directly from the codebase, so in order to contribute, you will have to follow the steps outlined in [this section](#contributing-to-the-codebase) above.
 
 #### Rust

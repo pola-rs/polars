@@ -17,12 +17,14 @@ The following methods are available under the `Series.list` attribute.
     Series.list.contains
     Series.list.count_match
     Series.list.diff
+    Series.list.difference
     Series.list.eval
     Series.list.explode
     Series.list.first
     Series.list.get
     Series.list.head
     Series.list.join
+    Series.list.intersection
     Series.list.last
     Series.list.lengths
     Series.list.max
@@ -37,7 +39,9 @@ The following methods are available under the `Series.list` attribute.
     Series.list.slice
     Series.list.sort
     Series.list.sum
+    Series.list.symmetric_difference
     Series.list.tail
     Series.list.take
     Series.list.to_struct
+    Series.list.union
     Series.list.unique

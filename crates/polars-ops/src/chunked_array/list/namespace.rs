@@ -10,7 +10,7 @@ use polars_core::export::num::ToPrimitive;
 use polars_core::export::num::{NumCast, Signed, Zero};
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::{try_get_supertype, CustomIterTools};
+use polars_core::utils::try_get_supertype;
 
 use super::*;
 #[cfg(feature = "list_any_all")]
@@ -89,25 +89,28 @@ pub trait ListNameSpaceImpl: AsList {
                     ca.get_values_size() + separator.len() * ca.len(),
                 );
 
-                ca.amortized_iter().for_each(|opt_s| {
-                    let opt_val = opt_s.map(|s| {
-                        // make sure that we don't write values of previous iteration
-                        buf.clear();
-                        let ca = s.as_ref().utf8().unwrap();
-                        let iter = ca.into_iter().map(|opt_v| opt_v.unwrap_or("null"));
+                // SAFETY: unstable series never lives longer than the iterator.
+                unsafe {
+                    ca.amortized_iter().for_each(|opt_s| {
+                        let opt_val = opt_s.map(|s| {
+                            // make sure that we don't write values of previous iteration
+                            buf.clear();
+                            let ca = s.as_ref().utf8().unwrap();
+                            let iter = ca.into_iter().map(|opt_v| opt_v.unwrap_or("null"));
 
-                        for val in iter {
-                            buf.write_str(val).unwrap();
-                            buf.write_str(separator).unwrap();
-                        }
-                        // last value should not have a separator, so slice that off
-                        // saturating sub because there might have been nothing written.
-                        &buf[..buf.len().saturating_sub(separator.len())]
-                    });
-                    builder.append_option(opt_val)
-                });
+                            for val in iter {
+                                buf.write_str(val).unwrap();
+                                buf.write_str(separator).unwrap();
+                            }
+                            // last value should not have a separator, so slice that off
+                            // saturating sub because there might have been nothing written.
+                            &buf[..buf.len().saturating_sub(separator.len())]
+                        });
+                        builder.append_option(opt_val)
+                    })
+                };
                 Ok(builder.finish())
-            }
+            },
             dt => polars_bail!(op = "`lst.join`", got = dt, expected = "Utf8"),
         }
     }
@@ -197,22 +200,18 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_arg_min(&self) -> IdxCa {
         let ca = self.as_list();
-        let mut out: IdxCa = ca
-            .amortized_iter()
-            .map(|opt_s| opt_s.and_then(|s| s.as_ref().arg_min().map(|idx| idx as IdxSize)))
-            .collect_trusted();
-        out.rename(ca.name());
-        out
+        ca.apply_amortized_generic(|opt_s| {
+            opt_s.and_then(|s| s.as_ref().arg_min().map(|idx| idx as IdxSize))
+        })
+        .with_name(ca.name())
     }
 
     fn lst_arg_max(&self) -> IdxCa {
         let ca = self.as_list();
-        let mut out: IdxCa = ca
-            .amortized_iter()
-            .map(|opt_s| opt_s.and_then(|s| s.as_ref().arg_max().map(|idx| idx as IdxSize)))
-            .collect_trusted();
-        out.rename(ca.name());
-        out
+        ca.apply_amortized_generic(|opt_s| {
+            opt_s.and_then(|s| s.as_ref().arg_max().map(|idx| idx as IdxSize))
+        })
+        .with_name(ca.name())
     }
 
     #[cfg(feature = "diff")]
@@ -268,66 +267,75 @@ pub trait ListNameSpaceImpl: AsList {
 
         let index_typed_index = |idx: &Series| {
             let idx = idx.cast(&IDX_DTYPE).unwrap();
-            list_ca
-                .amortized_iter()
-                .map(|s| {
-                    s.map(|s| {
-                        let s = s.as_ref();
-                        take_series(s, idx.clone(), null_on_oob)
+            // SAFETY: unstable series never lives longer than the iterator.
+            unsafe {
+                list_ca
+                    .amortized_iter()
+                    .map(|s| {
+                        s.map(|s| {
+                            let s = s.as_ref();
+                            take_series(s, idx.clone(), null_on_oob)
+                        })
+                        .transpose()
                     })
-                    .transpose()
-                })
-                .collect::<PolarsResult<ListChunked>>()
-                .map(|mut ca| {
-                    ca.rename(list_ca.name());
-                    ca.into_series()
-                })
+                    .collect::<PolarsResult<ListChunked>>()
+                    .map(|mut ca| {
+                        ca.rename(list_ca.name());
+                        ca.into_series()
+                    })
+            }
         };
 
         use DataType::*;
         match idx.dtype() {
             List(_) => {
                 let idx_ca = idx.list().unwrap();
-                let mut out = list_ca
-                    .amortized_iter()
-                    .zip(idx_ca)
-                    .map(|(opt_s, opt_idx)| {
-                        {
-                            match (opt_s, opt_idx) {
-                                (Some(s), Some(idx)) => {
-                                    Some(take_series(s.as_ref(), idx, null_on_oob))
+                // SAFETY: unstable series never lives longer than the iterator.
+                let mut out = unsafe {
+                    list_ca
+                        .amortized_iter()
+                        .zip(idx_ca)
+                        .map(|(opt_s, opt_idx)| {
+                            {
+                                match (opt_s, opt_idx) {
+                                    (Some(s), Some(idx)) => {
+                                        Some(take_series(s.as_ref(), idx, null_on_oob))
+                                    },
+                                    _ => None,
                                 }
-                                _ => None,
                             }
-                        }
-                        .transpose()
-                    })
-                    .collect::<PolarsResult<ListChunked>>()?;
+                            .transpose()
+                        })
+                        .collect::<PolarsResult<ListChunked>>()?
+                };
                 out.rename(list_ca.name());
 
                 Ok(out.into_series())
-            }
+            },
             UInt32 | UInt64 => index_typed_index(idx),
             dt if dt.is_signed() => {
                 if let Some(min) = idx.min::<i64>() {
                     if min >= 0 {
                         index_typed_index(idx)
                     } else {
-                        let mut out = list_ca
-                            .amortized_iter()
-                            .map(|opt_s| {
-                                opt_s
-                                    .map(|s| take_series(s.as_ref(), idx.clone(), null_on_oob))
-                                    .transpose()
-                            })
-                            .collect::<PolarsResult<ListChunked>>()?;
+                        // SAFETY: unstable series never lives longer than the iterator.
+                        let mut out = unsafe {
+                            list_ca
+                                .amortized_iter()
+                                .map(|opt_s| {
+                                    opt_s
+                                        .map(|s| take_series(s.as_ref(), idx.clone(), null_on_oob))
+                                        .transpose()
+                                })
+                                .collect::<PolarsResult<ListChunked>>()?
+                        };
                         out.rename(list_ca.name());
                         Ok(out.into_series())
                     }
                 } else {
                     polars_bail!(ComputeError: "all indices are null");
                 }
-            }
+            },
             dt => polars_bail!(ComputeError: "cannot use dtype `{}` as an index", dt),
         }
     }
@@ -347,14 +355,14 @@ pub trait ListNameSpaceImpl: AsList {
                     if let DataType::Categorical(_) = &inner_super_type {
                         inner_super_type = merge_dtypes(&inner_super_type, inner_type)?;
                     }
-                }
+                },
                 dt => {
                     inner_super_type = try_get_supertype(&inner_super_type, dt)?;
                     #[cfg(feature = "dtype-categorical")]
                     if let DataType::Categorical(_) = &inner_super_type {
                         inner_super_type = merge_dtypes(&inner_super_type, dt)?;
                     }
-                }
+                },
             }
         }
 
@@ -404,7 +412,7 @@ pub trait ListNameSpaceImpl: AsList {
                         #[cfg(feature = "dtype-struct")]
                         DataType::Struct(_) => s = s.rechunk(),
                         // nothing
-                        _ => {}
+                        _ => {},
                     }
                     s
                 });
@@ -422,7 +430,8 @@ pub trait ListNameSpaceImpl: AsList {
             let mut iters = Vec::with_capacity(other_len + 1);
 
             for s in other.iter_mut() {
-                iters.push(s.list()?.amortized_iter())
+                // SAFETY: unstable series never lives longer than the iterator.
+                iters.push(unsafe { s.list()?.amortized_iter() })
             }
             let mut first_iter = ca.into_iter();
             let mut builder = get_list_builder(
@@ -442,7 +451,7 @@ pub trait ListNameSpaceImpl: AsList {
                             it.next().unwrap();
                         }
                         continue;
-                    }
+                    },
                 };
 
                 let mut has_nulls = false;
@@ -452,10 +461,10 @@ pub trait ListNameSpaceImpl: AsList {
                             if !has_nulls {
                                 acc.append(s.as_ref())?;
                             }
-                        }
+                        },
                         None => {
                             has_nulls = true;
-                        }
+                        },
                     }
                 }
                 if has_nulls {
@@ -468,7 +477,7 @@ pub trait ListNameSpaceImpl: AsList {
                     #[cfg(feature = "dtype-struct")]
                     DataType::Struct(_) => acc = acc.rechunk(),
                     // nothing
-                    _ => {}
+                    _ => {},
                 }
                 builder.append_series(&acc).unwrap();
             }
@@ -532,7 +541,7 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
             } else {
                 idx.cast(&IDX_DTYPE).unwrap()
             }
-        }
+        },
         #[cfg(feature = "big_idx")]
         UInt64 => {
             if null_on_oob {
@@ -541,7 +550,7 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
             } else {
                 idx
             }
-        }
+        },
         #[cfg(not(feature = "big_idx"))]
         UInt64 => {
             if null_on_oob {
@@ -550,7 +559,7 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
             } else {
                 idx.cast(&IDX_DTYPE).unwrap()
             }
-        }
+        },
         #[cfg(not(feature = "big_idx"))]
         UInt32 => {
             if null_on_oob {
@@ -559,27 +568,27 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
             } else {
                 idx
             }
-        }
+        },
         dt if dt.is_unsigned() => idx.cast(&IDX_DTYPE).unwrap(),
         Int8 => {
             let a = idx.i8().unwrap();
             cast_signed_index_ca(a, len)
-        }
+        },
         Int16 => {
             let a = idx.i16().unwrap();
             cast_signed_index_ca(a, len)
-        }
+        },
         Int32 => {
             let a = idx.i32().unwrap();
             cast_signed_index_ca(a, len)
-        }
+        },
         Int64 => {
             let a = idx.i64().unwrap();
             cast_signed_index_ca(a, len)
-        }
+        },
         _ => {
             unreachable!()
-        }
+        },
     };
     polars_ensure!(
         out.null_count() == idx_null_count || null_on_oob,

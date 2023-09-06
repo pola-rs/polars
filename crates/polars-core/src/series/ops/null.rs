@@ -6,11 +6,11 @@ impl Series {
         match dtype {
             DataType::List(inner_dtype) => {
                 ListChunked::full_null_with_dtype(name, size, inner_dtype).into_series()
-            }
+            },
             #[cfg(feature = "dtype-array")]
             DataType::Array(inner_dtype, width) => {
                 ArrayChunked::full_null_with_dtype(name, size, inner_dtype, *width).into_series()
-            }
+            },
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(rev_map) => {
                 let mut ca = CategoricalChunked::full_null(name, size);
@@ -19,7 +19,7 @@ impl Series {
                     unsafe { ca.set_rev_map(rev_map.clone(), false) }
                 }
                 ca.into_series()
-            }
+            },
             #[cfg(feature = "dtype-date")]
             DataType::Date => Int32Chunked::full_null(name, size)
                 .into_date()
@@ -50,7 +50,7 @@ impl Series {
                     .map(|fld| Series::full_null(fld.name(), size, fld.data_type()))
                     .collect::<Vec<_>>();
                 StructChunked::new(name, &fields).unwrap().into_series()
-            }
+            },
             DataType::Null => Series::new_null(name, size),
             _ => {
                 macro_rules! primitive {
@@ -74,7 +74,7 @@ impl Series {
                     }};
                 }
                 match_dtype_to_logical_apply_macro!(dtype, primitive, utf8, binary, bool)
-            }
+            },
         }
     }
 }

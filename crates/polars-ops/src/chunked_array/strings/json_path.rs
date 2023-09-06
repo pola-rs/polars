@@ -45,7 +45,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
             .map_err(|e| polars_err!(ComputeError: "error compiling JSONpath expression {}", e))?;
         Ok(self
             .as_utf8()
-            .apply_on_opt(|opt_s| opt_s.and_then(|s| extract_json(&pat, s))))
+            .apply(|opt_s| opt_s.and_then(|s| extract_json(&pat, s))))
     }
 
     /// Returns the inferred DataType for JSON values for each row
@@ -93,7 +93,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
             .map_err(|e| polars_err!(ComputeError: "error compiling JSONpath expression: {}", e))?;
         Ok(self
             .as_utf8()
-            .apply_on_opt(|opt_s| opt_s.and_then(|s| select_json(&pat, s))))
+            .apply(|opt_s| opt_s.and_then(|s| select_json(&pat, s))))
     }
 
     fn json_path_extract(

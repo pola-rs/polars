@@ -20,7 +20,7 @@ pub mod functions;
 mod list;
 #[cfg(feature = "meta")]
 mod meta;
-pub(crate) mod names;
+pub mod names;
 mod options;
 #[cfg(feature = "python")]
 pub mod python_udf;
@@ -84,7 +84,7 @@ impl Expr {
                     output_type,
                     options,
                 }
-            }
+            },
             Self::Function {
                 input,
                 function,
@@ -96,10 +96,10 @@ impl Expr {
                     function,
                     options,
                 }
-            }
+            },
             _ => {
                 panic!("implementation error")
-            }
+            },
         }
     }
 
@@ -156,7 +156,7 @@ impl Expr {
     /// Negate `Expr`
     #[allow(clippy::should_implement_trait)]
     pub fn not(self) -> Expr {
-        self.map_private(BooleanFunction::IsNot.into())
+        self.map_private(BooleanFunction::Not.into())
     }
 
     /// Rename Column.
@@ -599,7 +599,7 @@ impl Expr {
         }
     }
 
-    /// Apply a function/closure over the groups. This should only be used in a groupby aggregation.
+    /// Apply a function/closure over the groups. This should only be used in a group_by aggregation.
     ///
     /// It is the responsibility of the caller that the schema is correct by giving
     /// the correct output_type. If None given the output type of the input expr is used.
@@ -637,7 +637,7 @@ impl Expr {
         }
     }
 
-    /// Apply a function/closure over the groups with many arguments. This should only be used in a groupby aggregation.
+    /// Apply a function/closure over the groups with many arguments. This should only be used in a group_by aggregation.
     ///
     /// See the [`Expr::apply`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
     pub fn apply_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
@@ -867,7 +867,7 @@ impl Expr {
     }
 
     /// Apply window function over a subgroup.
-    /// This is similar to a groupby + aggregation + self join.
+    /// This is similar to a group_by + aggregation + self join.
     /// Or similar to [window functions in Postgres](https://www.postgresql.org/docs/9.1/tutorial-window.html).
     ///
     /// # Example
@@ -1003,8 +1003,8 @@ impl Expr {
 
     /// Get the approximate count of unique values.
     #[cfg(feature = "approx_unique")]
-    pub fn approx_unique(self) -> Self {
-        self.apply_private(FunctionExpr::ApproxUnique)
+    pub fn approx_n_unique(self) -> Self {
+        self.apply_private(FunctionExpr::ApproxNUnique)
             .with_function_options(|mut options| {
                 options.auto_explode = true;
                 options
@@ -1057,7 +1057,7 @@ impl Expr {
     }
 
     /// Sort this column by the ordering of another column.
-    /// Can also be used in a groupby context to sort the groups.
+    /// Can also be used in a group_by context to sort the groups.
     pub fn sort_by<E: AsRef<[IE]>, IE: Into<Expr> + Clone, R: AsRef<[bool]>>(
         self,
         by: E,
@@ -1101,6 +1101,13 @@ impl Expr {
     /// Get a mask of the first unique value.
     pub fn is_first(self) -> Expr {
         self.apply_private(BooleanFunction::IsFirst.into())
+    }
+
+    #[cfg(feature = "is_last")]
+    #[allow(clippy::wrong_self_convention)]
+    /// Get a mask of the last unique value.
+    pub fn is_last(self) -> Expr {
+        self.apply_private(BooleanFunction::IsLast.into())
     }
 
     fn dot_impl(self, other: Expr) -> Expr {
@@ -1391,24 +1398,24 @@ impl Expr {
     #[cfg(feature = "rolling_window")]
     /// Apply a custom function over a rolling/ moving window of the array.
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
-    pub fn rolling_apply(
+    pub fn rolling_map(
         self,
         f: Arc<dyn Fn(&Series) -> Series + Send + Sync>,
         output_type: GetOutput,
         options: RollingOptionsFixedWindow,
     ) -> Expr {
         self.apply(
-            move |s| s.rolling_apply(f.as_ref(), options.clone()).map(Some),
+            move |s| s.rolling_map(f.as_ref(), options.clone()).map(Some),
             output_type,
         )
-        .with_fmt("rolling_apply")
+        .with_fmt("rolling_map")
     }
 
     #[cfg(feature = "rolling_window")]
     /// Apply a custom function over a rolling/ moving window of the array.
     /// Prefer this over rolling_apply in case of floating point numbers as this is faster.
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
-    pub fn rolling_apply_float<F>(self, window_size: usize, f: F) -> Expr
+    pub fn rolling_map_float<F>(self, window_size: usize, f: F) -> Expr
     where
         F: 'static + FnMut(&mut Float64Chunked) -> Option<f64> + Send + Sync + Copy,
     {
@@ -1418,13 +1425,13 @@ impl Expr {
                     DataType::Float64 => s
                         .f64()
                         .unwrap()
-                        .rolling_apply_float(window_size, f)
+                        .rolling_map_float(window_size, f)
                         .map(|ca| ca.into_series()),
                     _ => s
                         .cast(&DataType::Float64)?
                         .f64()
                         .unwrap()
-                        .rolling_apply_float(window_size, f)
+                        .rolling_map_float(window_size, f)
                         .map(|ca| ca.into_series()),
                 }?;
                 if let DataType::Float32 = s.dtype() {
@@ -1439,7 +1446,7 @@ impl Expr {
                 _ => Field::new(field.name(), DataType::Float64),
             }),
         )
-        .with_fmt("rolling_apply_float")
+        .with_fmt("rolling_map_float")
     }
 
     #[cfg(feature = "rank")]
@@ -1447,7 +1454,7 @@ impl Expr {
         self.apply(
             move |s| Ok(Some(s.rank(options, seed))),
             GetOutput::map_field(move |fld| match options.method {
-                RankMethod::Average => Field::new(fld.name(), DataType::Float32),
+                RankMethod::Average => Field::new(fld.name(), DataType::Float64),
                 _ => Field::new(fld.name(), IDX_DTYPE),
             }),
         )
@@ -1652,9 +1659,30 @@ impl Expr {
         .with_fmt("ewm_var")
     }
 
-    /// Check if any boolean value is `true`
-    pub fn any(self, drop_nulls: bool) -> Self {
-        self.apply_private(BooleanFunction::Any { drop_nulls }.into())
+    /// Returns whether any of the values in the column are `true`.
+    ///
+    /// If `ignore_nulls` is `False`, [Kleene logic] is used to deal with nulls:
+    /// if the column contains any null values and no `true` values, the output
+    /// is null.
+    ///
+    /// [Kleene logic]: https://en.wikipedia.org/wiki/Three-valued_logic
+    pub fn any(self, ignore_nulls: bool) -> Self {
+        self.apply_private(BooleanFunction::Any { ignore_nulls }.into())
+            .with_function_options(|mut opt| {
+                opt.auto_explode = true;
+                opt
+            })
+    }
+
+    /// Returns whether all values in the column are `true`.
+    ///
+    /// If `ignore_nulls` is `False`, [Kleene logic] is used to deal with nulls:
+    /// if the column contains any null values and no `true` values, the output
+    /// is null.
+    ///
+    /// [Kleene logic]: https://en.wikipedia.org/wiki/Three-valued_logic
+    pub fn all(self, ignore_nulls: bool) -> Self {
+        self.apply_private(BooleanFunction::All { ignore_nulls }.into())
             .with_function_options(|mut opt| {
                 opt.auto_explode = true;
                 opt
@@ -1668,22 +1696,13 @@ impl Expr {
         self.map_private(FunctionExpr::ShrinkType)
     }
 
-    /// Check if all boolean values are `true`
-    pub fn all(self, drop_nulls: bool) -> Self {
-        self.apply_private(BooleanFunction::All { drop_nulls }.into())
-            .with_function_options(|mut opt| {
-                opt.auto_explode = true;
-                opt
-            })
-    }
-
     #[cfg(feature = "dtype-struct")]
     /// Count all unique values and create a struct mapping value to count
-    /// Note that it is better to turn multithreaded off in the aggregation context
-    pub fn value_counts(self, multithreaded: bool, sorted: bool) -> Self {
+    /// Note that it is better to turn parallel off in the aggregation context
+    pub fn value_counts(self, sort: bool, parallel: bool) -> Self {
         self.apply(
             move |s| {
-                s.value_counts(multithreaded, sorted)
+                s.value_counts(sort, parallel)
                     .map(|df| Some(df.into_struct(s.name()).into_series()))
             },
             GetOutput::map_field(|fld| {
@@ -1866,7 +1885,7 @@ where
     }
 }
 
-/// Apply a function/closure over the groups of multiple columns. This should only be used in a groupby aggregation.
+/// Apply a function/closure over the groups of multiple columns. This should only be used in a group_by aggregation.
 ///
 /// It is the responsibility of the caller that the schema is correct by giving
 /// the correct output_type. If None given the output type of the input expr is used.

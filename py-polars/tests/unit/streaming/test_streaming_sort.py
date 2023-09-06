@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Any
 
@@ -5,7 +7,9 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
+
+pytestmark = pytest.mark.xdist_group("streaming")
 
 
 def test_streaming_sort_multiple_columns_logical_types() -> None:
@@ -31,6 +35,7 @@ def test_streaming_sort_multiple_columns_logical_types() -> None:
     }
 
 
+@pytest.mark.write_disk()
 @pytest.mark.slow()
 def test_ooc_sort(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_FORCE_OOC", "1")
@@ -117,3 +122,38 @@ def test_out_of_core_sort_9503(monkeypatch: Any) -> None:
             2124,
         ],
     }
+
+
+@pytest.mark.skip(
+    reason="This test is unreliable - it fails intermittently in our CI"
+    " with 'OSError: No such file or directory (os error 2)'."
+)
+@pytest.mark.write_disk()
+@pytest.mark.slow()
+def test_streaming_sort_multiple_columns(
+    str_ints_df: pl.DataFrame, monkeypatch: Any, capfd: Any
+) -> None:
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    df = str_ints_df
+
+    out = df.lazy().sort(["strs", "vals"]).collect(streaming=True)
+    assert_frame_equal(out, out.sort(["strs", "vals"]))
+    err = capfd.readouterr().err
+    assert "OOC sort forced" in err
+    assert "RUN STREAMING PIPELINE" in err
+    assert "df -> sort_multiple" in err
+    assert out.columns == ["vals", "strs"]
+
+
+def test_streaming_sort_sorted_flag() -> None:
+    # empty
+    q = pl.LazyFrame(
+        schema={
+            "store_id": pl.UInt16,
+            "item_id": pl.UInt32,
+            "timestamp": pl.Datetime,
+        }
+    ).sort("timestamp")
+
+    assert q.collect(streaming=True)["timestamp"].flags["SORTED_ASC"]

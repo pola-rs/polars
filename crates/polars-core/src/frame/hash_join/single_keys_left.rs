@@ -36,7 +36,7 @@ pub(super) fn finish_left_join_mappings(
         None => ChunkJoinOptIds::Left(result_idx_right),
         Some(mapping) => {
             ChunkJoinOptIds::Right(unsafe { apply_opt_mapping(result_idx_right, mapping) })
-        }
+        },
     };
     (left, right)
 }
@@ -159,12 +159,12 @@ where
                         Some(indexes_b) => {
                             result_idx_left.extend(std::iter::repeat(idx_a).take(indexes_b.len()));
                             result_idx_right.extend(indexes_b.iter().copied().map(Some))
-                        }
+                        },
                         // only left values, right = null
                         None => {
                             result_idx_left.push(idx_a);
                             result_idx_right.push(None);
-                        }
+                        },
                     }
                 });
                 finish_left_join_mappings(

@@ -73,24 +73,6 @@ def test_predicate_null_block_asof_join() -> None:
     }
 
 
-def test_streaming_empty_df() -> None:
-    df = pl.DataFrame(
-        [
-            pl.Series("a", ["a", "b", "c", "b", "a", "a"], dtype=pl.Categorical()),
-            pl.Series("b", ["b", "c", "c", "b", "a", "c"], dtype=pl.Categorical()),
-        ]
-    )
-
-    result = (
-        df.lazy()
-        .join(df.lazy(), on="a", how="inner")
-        .filter(False)
-        .collect(streaming=True)
-    )
-
-    assert result.to_dict(False) == {"a": [], "b": [], "b_right": []}
-
-
 def test_predicate_strptime_6558() -> None:
     assert (
         pl.DataFrame({"date": ["2022-01-03", "2020-01-04", "2021-02-03", "2019-01-04"]})

@@ -55,7 +55,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
                     .unwrap();
                 AnyValue::List(s)
             }
-        }
+        },
         #[cfg(feature = "dtype-array")]
         DataType::Array(dt, width) => {
             let v: ArrayRef = downcast!(FixedSizeListArray);
@@ -68,55 +68,55 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
                     .unwrap();
                 AnyValue::Array(s, *width)
             }
-        }
+        },
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(rev_map) => {
             let arr = &*(arr as *const dyn Array as *const UInt32Array);
             let v = arr.value_unchecked(idx);
             AnyValue::Categorical(v, rev_map.as_ref().unwrap().as_ref(), SyncPtr::new_null())
-        }
+        },
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(flds) => {
             let arr = &*(arr as *const dyn Array as *const StructArray);
             AnyValue::Struct(idx, arr, flds)
-        }
+        },
         #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(tu, tz) => {
             let arr = &*(arr as *const dyn Array as *const Int64Array);
             let v = arr.value_unchecked(idx);
             AnyValue::Datetime(v, *tu, tz)
-        }
+        },
         #[cfg(feature = "dtype-date")]
         DataType::Date => {
             let arr = &*(arr as *const dyn Array as *const Int32Array);
             let v = arr.value_unchecked(idx);
             AnyValue::Date(v)
-        }
+        },
         #[cfg(feature = "dtype-duration")]
         DataType::Duration(tu) => {
             let arr = &*(arr as *const dyn Array as *const Int64Array);
             let v = arr.value_unchecked(idx);
             AnyValue::Duration(v, *tu)
-        }
+        },
         #[cfg(feature = "dtype-time")]
         DataType::Time => {
             let arr = &*(arr as *const dyn Array as *const Int64Array);
             let v = arr.value_unchecked(idx);
             AnyValue::Time(v)
-        }
+        },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(precision, scale) => {
             let arr = &*(arr as *const dyn Array as *const Int128Array);
             let v = arr.value_unchecked(idx);
             AnyValue::Decimal(v, scale.unwrap_or_else(|| unreachable!()))
-        }
+        },
         #[cfg(feature = "object")]
         DataType::Object(_) => {
             // We should almost never hit this. The only known exception is when we put objects in
             // structs. Any other hit should be considered a bug.
             let arr = &*(arr as *const dyn Array as *const FixedSizeBinaryArray);
             PolarsExtension::arr_to_av(arr, idx)
-        }
+        },
         DataType::Null => AnyValue::Null,
         dt => panic!("not implemented for {dt:?}"),
     }
@@ -163,7 +163,7 @@ impl<'a> AnyValue<'a> {
                         }
                     })
                 }
-            }
+            },
             _ => unreachable!(),
         }
     }

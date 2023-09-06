@@ -144,11 +144,11 @@ where
                 let serializer = arrow_ndjson::write::Serializer::new(batches, vec![]);
                 let writer = arrow_ndjson::write::FileWriter::new(&mut self.buffer, serializer);
                 writer.collect::<ArrowResult<()>>()?;
-            }
+            },
             JsonFormat::Json => {
                 let serializer = json::write::Serializer::new(batches, vec![]);
                 json::write::write(&mut self.buffer, serializer)?;
-            }
+            },
         }
 
         Ok(())
@@ -267,7 +267,7 @@ where
                     || polars_err!(ComputeError: "can only deserialize json objects"),
                 )?;
                 DataFrame::try_from(arr.clone())
-            }
+            },
             JsonFormat::JsonLines => {
                 let mut json_reader = CoreJsonReader::new(
                     rb,
@@ -286,7 +286,7 @@ where
                     df.as_single_chunk_par();
                 }
                 Ok(df)
-            }
+            },
         }?;
 
         // TODO! Ensure we don't materialize the columns we don't need

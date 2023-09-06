@@ -1,6 +1,6 @@
-============
+======
 Config
-============
+======
 .. currentmodule:: polars
 
 Config options
@@ -36,6 +36,15 @@ Config load, save, and current state
     Config.save
     Config.state
     Config.restore_defaults
+
+While it is easy to restore *all* configuration options to their default
+value using ``restore_defaults``, it can also be useful to reset *individual*
+options. This can be done by setting the related value to ``None``, eg:
+
+.. code-block:: python
+
+    pl.Config.set_tbl_rows(None)
+
 
 Use as a context manager
 ------------------------

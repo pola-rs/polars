@@ -6,14 +6,14 @@ use hashbrown::hash_map::{Entry, RawEntryMut};
 use polars_arrow::trusted_len::TrustedLenPush;
 
 use crate::datatypes::PlHashMap;
-use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
+use crate::frame::group_by::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::{using_string_cache, StringCache, POOL};
 
 pub enum RevMappingBuilder {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
     /// Utf8Array: caches the string values
-    GlobalFinished(PlHashMap<u32, u32>, Utf8Array<i64>, u128),
+    GlobalFinished(PlHashMap<u32, u32>, Utf8Array<i64>, u32),
     /// Utf8Array: caches the string values
     Local(MutableUtf8Array<i64>),
 }
@@ -33,7 +33,7 @@ impl RevMappingBuilder {
                     use std::hint::unreachable_unchecked;
                     unsafe { unreachable_unchecked() }
                 }
-            }
+            },
         };
     }
 
@@ -50,7 +50,7 @@ impl RevMappingBuilder {
 pub enum RevMapping {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
     /// Utf8Array: caches the string values
-    Global(PlHashMap<u32, u32>, Utf8Array<i64>, u128),
+    Global(PlHashMap<u32, u32>, Utf8Array<i64>, u32),
     /// Utf8Array: caches the string values
     Local(Utf8Array<i64>),
 }
@@ -60,10 +60,10 @@ impl Debug for RevMapping {
         match self {
             RevMapping::Global(_, _, _) => {
                 write!(f, "global")
-            }
+            },
             RevMapping::Local(_) => {
                 write!(f, "local")
-            }
+            },
         }
     }
 }
@@ -111,7 +111,7 @@ impl RevMapping {
             Self::Global(map, a, _) => {
                 let idx = *map.get(&idx).unwrap();
                 a.value(idx as usize)
-            }
+            },
             Self::Local(a) => a.value(idx as usize),
         }
     }
@@ -121,7 +121,7 @@ impl RevMapping {
             Self::Global(map, a, _) => {
                 let idx = *map.get(&idx)?;
                 a.get(idx as usize)
-            }
+            },
             Self::Local(a) => a.get(idx as usize),
         }
     }
@@ -135,7 +135,7 @@ impl RevMapping {
             Self::Global(map, a, _) => {
                 let idx = *map.get(&idx).unwrap();
                 a.value_unchecked(idx as usize)
-            }
+            },
             Self::Local(a) => a.value_unchecked(idx as usize),
         }
     }
@@ -145,7 +145,7 @@ impl RevMapping {
             (RevMapping::Global(_, _, l), RevMapping::Global(_, _, r)) => *l == *r,
             (RevMapping::Local(l), RevMapping::Local(r)) => {
                 std::ptr::eq(l as *const Utf8Array<_>, r as *const Utf8Array<_>)
-            }
+            },
             _ => false,
         }
     }
@@ -167,12 +167,12 @@ impl RevMapping {
                     // value is always within bounds
                     .find(|(_k, &v)| (unsafe { a.value_unchecked(v as usize) } == value))
                     .map(|(k, _v)| *k)
-            }
+            },
             Self::Local(a) => {
                 // Safety: within bounds
                 unsafe { (0..a.len()).find(|idx| a.value_unchecked(*idx) == value) }
                     .map(|idx| idx as u32)
-            }
+            },
         }
     }
 }
@@ -247,7 +247,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
                 }
                 entry.insert_with_hasher(h, key, idx, |s| s.hash);
                 self.reverse_mapping.insert(s);
-            }
+            },
         };
         self.cat_builder.push(Some(idx));
     }
@@ -438,7 +438,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
 
         CategoricalChunked::from_chunks_original(
             &self.name,
-            vec![self.cat_builder.as_box()],
+            self.cat_builder.into(),
             self.reverse_mapping.finish(),
         )
     }

@@ -17,7 +17,7 @@ These functions are available from the polars module root and can be used as exp
    any
    any_horizontal
    apply
-   approx_unique
+   approx_n_unique
    arange
    arctan2
    arctan2d
@@ -53,6 +53,8 @@ These functions are available from the polars module root and can be used as exp
    last
    lit
    map
+   map_batches
+   map_groups
    max
    max_horizontal
    mean
@@ -89,7 +91,7 @@ These functions are available from the polars module root and can be used as exp
    Expr.all
    Expr.any
    Expr.apply
-   Expr.approx_unique
+   Expr.approx_n_unique
    Expr.count
    Expr.cumsum
    Expr.exclude
@@ -97,6 +99,8 @@ These functions are available from the polars module root and can be used as exp
    Expr.head
    Expr.implode
    Expr.map
+   Expr.map_batches
+   Expr.map_elements
    Expr.max
    Expr.mean
    Expr.median

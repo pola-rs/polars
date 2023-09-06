@@ -33,13 +33,15 @@ pub(super) fn process_rename(
 ) -> PolarsResult<()> {
     let mut processed = BTreeSet::new();
     if swapping {
+        // We clone otherwise we update a data structure whilst we rename it.
+        let mut new_projected_names = projected_names.clone();
         for (existing, new) in existing.iter().zip(new.iter()) {
             let has_existing = projected_names.contains(existing.as_str());
+            // Only if the new column name is projected by the upper node we must update the name.
             let has_new = projected_names.contains(new.as_str());
             let has_both = has_existing && has_new;
-            let has_any = has_existing || has_new;
 
-            if has_any {
+            if has_new {
                 // swapping path
                 // this must leave projected names intact, as we only swap
                 if has_both {
@@ -54,9 +56,9 @@ pub(super) fn process_rename(
                 // simple new name path
                 // this must add and remove names
                 else {
-                    projected_names.remove(new.as_str());
+                    new_projected_names.remove(new.as_str());
                     let name: Arc<str> = Arc::from(existing.as_str());
-                    projected_names.insert(name);
+                    new_projected_names.insert(name);
                     iter_and_update_nodes(
                         existing,
                         new,
@@ -67,6 +69,7 @@ pub(super) fn process_rename(
                 }
             }
         }
+        *projected_names = new_projected_names;
     } else {
         for (existing, new) in existing.iter().zip(new.iter()) {
             if projected_names.remove(new.as_str()) {

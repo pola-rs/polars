@@ -21,7 +21,7 @@ fn prepare_mask(mask: &BooleanArray) -> BooleanArray {
         Some(validity) if validity.unset_bits() != 0 => {
             let mask = mask.values() & validity;
             BooleanArray::from_data_default(mask, None)
-        }
+        },
         _ => mask.clone(),
     }
 }

@@ -34,7 +34,7 @@ pub(crate) fn get_file_chunks_iterator(
             Some(pos) => search_pos + pos,
             None => {
                 break;
-            }
+            },
         };
         offsets.push_back((*last_pos, end_pos));
         *last_pos = end_pos;
@@ -95,9 +95,9 @@ impl<'a> Iterator for ChunkOffsetIter<'a> {
                         let out = Some((self.last_offset, self.bytes.len()));
                         self.last_offset = self.bytes.len();
                         out
-                    }
+                    },
                 }
-            }
+            },
         }
     }
 }
@@ -161,6 +161,7 @@ impl<'a> CoreReader<'a> {
             missing_is_null: self.missing_is_null,
             to_cast: self.to_cast,
             ignore_errors: self.ignore_errors,
+            truncate_ragged_lines: self.truncate_ragged_lines,
             n_rows: self.n_rows,
             encoding: self.encoding,
             delimiter: self.delimiter,
@@ -186,6 +187,7 @@ pub struct BatchedCsvReaderMmap<'a> {
     eol_char: u8,
     null_values: Option<NullValuesCompiled>,
     missing_is_null: bool,
+    truncate_ragged_lines: bool,
     to_cast: Vec<Field>,
     ignore_errors: bool,
     n_rows: Option<usize>,
@@ -244,12 +246,13 @@ impl<'a> BatchedCsvReaderMmap<'a> {
                         self.encoding,
                         self.null_values.as_ref(),
                         self.missing_is_null,
+                        self.truncate_ragged_lines,
                         self.chunk_size,
                         stop_at_nbytes,
                         self.starting_point_offset,
                     )?;
 
-                    cast_columns(&mut df, &self.to_cast, false)?;
+                    cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
 
                     update_string_stats(&self.str_capacities, &self.str_columns, &df)?;
                     if let Some(rc) = &self.row_count {
@@ -305,7 +308,7 @@ pub fn to_batched_owned_mmap(
 ) -> OwnedBatchedCsvReaderMmap {
     // make sure that the schema is bound to the schema we have
     // we will keep ownership of the schema so that the lifetime remains bound to ourselves
-    let reader = reader.with_schema(schema.clone());
+    let reader = reader.with_schema(Some(schema.clone()));
     // extend the lifetime
     // the lifetime was bound to schema, which we own and will store on the heap
     let reader = unsafe {

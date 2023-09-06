@@ -24,7 +24,7 @@ fn execute_projection_cached_window_fns(
 ) -> PolarsResult<Vec<Series>> {
     // We partition by normal expression and window expression
     // - the normal expressions can run in parallel
-    // - the window expression take more memory and often use the same groupby keys and join tuples
+    // - the window expression take more memory and often use the same group_by keys and join tuples
     //   so they are cached and run sequential
 
     // the partitioning messes with column order, so we also store the idx
@@ -36,7 +36,7 @@ fn execute_projection_cached_window_fns(
     let mut other = Vec::with_capacity(exprs.len());
 
     // first we partition the window function by the values they group over.
-    // the groupby values should be cached
+    // the group_by values should be cached
     let mut index = 0u32;
     exprs.iter().for_each(|phys| {
         index += 1;
@@ -45,11 +45,11 @@ fn execute_projection_cached_window_fns(
         let mut is_window = false;
         for e in e.into_iter() {
             if let Expr::Window { partition_by, .. } = e {
-                let groupby = format!("{:?}", partition_by.as_slice());
-                if let Some(tpl) = windows.iter_mut().find(|tpl| tpl.0 == groupby) {
+                let group_by = format!("{:?}", partition_by.as_slice());
+                if let Some(tpl) = windows.iter_mut().find(|tpl| tpl.0 == group_by) {
                     tpl.1.push((index, phys.clone()))
                 } else {
-                    windows.push((groupby, vec![(index, phys.clone())]))
+                    windows.push((group_by, vec![(index, phys.clone())]))
                 }
                 is_window = true;
                 break;
@@ -119,45 +119,64 @@ fn run_exprs_par(
     })
 }
 
+fn run_exprs_seq(
+    df: &DataFrame,
+    exprs: &[Arc<dyn PhysicalExpr>],
+    state: &ExecutionState,
+) -> PolarsResult<Vec<Series>> {
+    exprs.iter().map(|expr| expr.evaluate(df, state)).collect()
+}
+
 pub(super) fn evaluate_physical_expressions(
     df: &mut DataFrame,
     cse_exprs: &[Arc<dyn PhysicalExpr>],
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &ExecutionState,
     has_windows: bool,
+    run_parallel: bool,
 ) -> PolarsResult<Vec<Series>> {
-    let runner = if has_windows {
+    let expr_runner = if has_windows {
         execute_projection_cached_window_fns
-    } else {
+    } else if run_parallel && exprs.len() > 1 {
         run_exprs_par
+    } else {
+        run_exprs_seq
+    };
+
+    let cse_expr_runner = if has_windows {
+        execute_projection_cached_window_fns
+    } else if run_parallel && cse_exprs.len() > 1 {
+        run_exprs_par
+    } else {
+        run_exprs_seq
     };
 
     let selected_columns = if !cse_exprs.is_empty() {
-        let tmp_cols = runner(df, cse_exprs, state)?;
+        let tmp_cols = cse_expr_runner(df, cse_exprs, state)?;
+        if has_windows {
+            state.clear_window_expr_cache();
+        }
+
         let width = df.width();
 
         // put the cse expressions at the end
         unsafe {
             df.hstack_mut_unchecked(&tmp_cols);
         }
-        let mut result = run_exprs_par(df, exprs, state)?;
+        let result = expr_runner(df, exprs, state)?;
         // restore original df
         unsafe {
             df.get_columns_mut().truncate(width);
         }
 
-        // the replace CSE has a temporary name
-        // we don't want this name in the result
-        for s in result.iter_mut() {
-            rename_cse_tmp_series(s);
-        }
-
         result
     } else {
-        runner(df, exprs, state)?
+        expr_runner(df, exprs, state)?
     };
 
-    state.clear_window_expr_cache();
+    if has_windows {
+        state.clear_window_expr_cache();
+    }
 
     Ok(selected_columns)
 }
@@ -166,7 +185,9 @@ pub(super) fn check_expand_literals(
     mut selected_columns: Vec<Series>,
     zero_length: bool,
 ) -> PolarsResult<DataFrame> {
-    let first_len = selected_columns[0].len();
+    let Some(first_len) = selected_columns.get(0).map(|s| s.len()) else {
+        return Ok(DataFrame::empty());
+    };
     let mut df_height = 0;
     let mut all_equal_len = true;
     {

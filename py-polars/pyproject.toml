@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.1,<1.2"]
+requires = ["maturin~=1.2.1"]
 build-backend = "maturin"
 
 [project]
@@ -38,8 +38,8 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
-pyarrow = ["pyarrow>=7.0.0"]
-pandas = ["pyarrow>=7.0.0", "pandas"]
+pyarrow = ["pyarrow >= 7.0.0"]
+pandas = ["pyarrow >= 7.0.0", "pandas"]
 numpy = ["numpy >= 1.16.0"]
 fsspec = ["fsspec"]
 connectorx = ["connectorx"]
@@ -48,7 +48,7 @@ deltalake = ["deltalake >= 0.10.0"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 matplotlib = ["matplotlib"]
 pydantic = ["pydantic"]
-pyiceberg = ["pyiceberg >= 0.4.0"]
+pyiceberg = ["pyiceberg >= 0.5.0rc1"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 xlsxwriter = ["xlsxwriter"]
 adbc = ["adbc_driver_sqlite"]
@@ -79,11 +79,11 @@ module = [
   "deltalake.*",
   "fsspec.*",
   "matplotlib.*",
+  "moto.server",
   "polars.polars",
   "pyarrow.*",
   "pydantic",
-  "pyiceberg.*",
-  "sqlalchemy",
+  "sqlalchemy.*",
   "xlsx2csv",
   "xlsxwriter.*",
   "zoneinfo",
@@ -141,6 +141,7 @@ ignore = [
   "PT011", # pytest.raises({exception}) is too broad, set the match parameter or use a more specific exception
   # flake8-simplify
   "SIM102", # Use a single `if` statement instead of nested `if` statements
+  "SIM108", # Use ternary operator
   # ruff
   "RUF005", # unpack-instead-of-concatenating-to-collection-literal
   # pycodestyle
@@ -154,6 +155,9 @@ ignore = [
 [tool.ruff.pycodestyle]
 max-doc-length = 88
 
+[tool.ruff.isort]
+split-on-trailing-comma = false
+
 [tool.ruff.flake8-tidy-imports]
 ban-relative-imports = "all"
 
@@ -161,10 +165,7 @@ ban-relative-imports = "all"
 strict = true
 
 [tool.ruff.per-file-ignores]
-"polars/datatypes.py" = ["B019"]
 "tests/**/*.py" = ["D100", "D103", "B018"]
-"polars/utils/show_versions.py" = ["D301"]
-"polars/utils/udfs.py" = ["RUF012"]
 
 [tool.pytest.ini_options]
 addopts = [

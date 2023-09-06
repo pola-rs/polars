@@ -10,6 +10,6 @@ def test_show_graph() -> None:
             "c": [6, 5, 4, 3, 2, 1],
         }
     )
-    query = ldf.groupby("a", maintain_order=True).agg(pl.all().sum()).sort("a")
+    query = ldf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort("a")
     out = query.show_graph(raw_output=True)
     assert isinstance(out, str)

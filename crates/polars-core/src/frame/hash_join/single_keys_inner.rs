@@ -38,7 +38,7 @@ pub(super) fn hash_join_tuples_inner<T, IntoSlice>(
     probe: Vec<IntoSlice>,
     build: Vec<IntoSlice>,
     // Because b should be the shorter relation we could need to swap to keep left left and right right.
-    swap: bool,
+    swapped: bool,
     validate: JoinValidation,
 ) -> PolarsResult<(Vec<IdxSize>, Vec<IdxSize>)>
 where
@@ -52,7 +52,7 @@ where
         let expected_size = build.iter().map(|v| v.as_ref().len()).sum();
         let hash_tbls = build_tables(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
-        validate.validate_build(build_size, expected_size, !swap)?;
+        validate.validate_build(build_size, expected_size, swapped)?;
         hash_tbls
     } else {
         build_tables(build)
@@ -75,7 +75,7 @@ where
                 let local_offset = offset as IdxSize;
 
                 // branch is to hoist swap out of the inner loop.
-                if swap {
+                if swapped {
                     probe_inner(
                         probe,
                         hash_tbls,

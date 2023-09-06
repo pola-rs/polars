@@ -6,6 +6,7 @@ from decimal import Decimal as D
 from typing import Any, NamedTuple
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def permutations_int_dec_none() -> list[tuple[D | int | None, ...]]:
@@ -84,18 +85,37 @@ def test_init_decimal_dtype() -> None:
     assert df["a"].is_numeric()
 
 
+def test_decimal_convert_to_float_by_schema() -> None:
+    # Column Based
+    df = pl.DataFrame(
+        {"a": [D("1"), D("2.55"), D("45.000"), D("10.0")]}, schema={"a": pl.Float64}
+    )
+    expected = pl.DataFrame({"a": [1.0, 2.55, 45.0, 10.0]})
+    assert_frame_equal(df, expected)
+
+    # Row Based
+    df = pl.DataFrame(
+        [[D("1"), D("2.55"), D("45.000"), D("10.0")]], schema={"a": pl.Float64}
+    )
+    expected = pl.DataFrame({"a": [1.0, 2.55, 45.0, 10.0]})
+    assert_frame_equal(df, expected)
+
+
+def test_df_constructor_convert_decimal_to_float_9873() -> None:
+    result = pl.DataFrame([[D("45.0000")], [D("45.0000")]], schema={"a": pl.Float64})
+    expected = pl.DataFrame({"a": [45.0, 45.0]})
+    assert_frame_equal(result, expected)
+
+
 def test_decimal_cast() -> None:
     df = pl.DataFrame(
         {
-            "decimals": [
-                D("2"),
-                D("2"),
-            ],
+            "decimals": [D("2"), D("2"), D("-1.5")],
         }
     )
     assert df.with_columns(pl.col("decimals").cast(pl.Float32).alias("b2")).to_dict(
         False
-    ) == {"decimals": [D("2"), D("2")], "b2": [2.0, 2.0]}
+    ) == {"decimals": [D("2"), D("2"), D("-1.5")], "b2": [2.0, 2.0, -1.5]}
 
 
 def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
@@ -105,7 +125,16 @@ def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
 
 def test_utf8_to_decimal() -> None:
     s = pl.Series(
-        ["40.12", "3420.13", "120134.19", "3212.98", "12.90", "143.09", "143.9"]
+        [
+            "40.12",
+            "3420.13",
+            "120134.19",
+            "3212.98",
+            "12.90",
+            "143.09",
+            "143.9",
+            "-62.44",
+        ]
     ).str.to_decimal()
     assert s.dtype == pl.Decimal(2)
 
@@ -117,6 +146,7 @@ def test_utf8_to_decimal() -> None:
         D("12.90"),
         D("143.09"),
         D("143.90"),
+        D("-62.44"),
     ]
 
 
@@ -173,7 +203,7 @@ def test_decimal_aggregations() -> None:
         }
     )
 
-    assert df.groupby("g", maintain_order=True).agg(
+    assert df.group_by("g", maintain_order=True).agg(
         sum=pl.sum("a"),
         min=pl.min("a"),
         max=pl.max("a"),

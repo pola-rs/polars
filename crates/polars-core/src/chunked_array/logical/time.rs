@@ -37,7 +37,7 @@ impl LogicalType for TimeChunked {
                 } else {
                     out
                 }
-            }
+            },
             _ => self.0.cast(dtype),
         }
     }

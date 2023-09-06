@@ -9,46 +9,43 @@ repository = { workspace = true }
 description = "Core of the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { version = "0.31.1", path = "../polars-arrow", features = ["compute"] }
-polars-error = { version = "0.31.1", path = "../polars-error" }
-polars-row = { version = "0.31.1", path = "../polars-row" }
-polars-utils = { version = "0.31.1", path = "../polars-utils" }
+polars-arrow = { version = "0.32.0", path = "../polars-arrow", features = ["compute"] }
+polars-error = { version = "0.32.0", path = "../polars-error" }
+polars-row = { version = "0.32.0", path = "../polars-row" }
+polars-utils = { version = "0.32.0", path = "../polars-utils" }
 
-ahash.workspace = true
-arrow.workspace = true
-bitflags.workspace = true
-chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
-chrono-tz = { version = "0.8", optional = true }
-comfy-table = { version = "7.0.1", optional = true, default_features = false }
-either.workspace = true
-hashbrown.workspace = true
-indexmap.workspace = true
+ahash = { workspace = true }
+arrow = { workspace = true }
+bitflags = { workspace = true }
+chrono = { workspace = true, optional = true }
+chrono-tz = { workspace = true, optional = true }
+comfy-table = { version = "7.0.1", default_features = false, optional = true }
+either = { workspace = true }
+hashbrown = { workspace = true }
+indexmap = { workspace = true }
 itoap = { version = "1", optional = true, features = ["simd"] }
 ndarray = { version = "0.15", optional = true, default_features = false }
-num-traits.workspace = true
-object_store = { version = "0.6.0", default-features = false, optional = true }
-once_cell.workspace = true
-rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
+num-traits = { workspace = true }
+object_store = { workspace = true, optional = true }
+once_cell = { workspace = true }
+rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
-rayon.workspace = true
-regex = { version = "1.6", optional = true }
+rayon = { workspace = true }
+regex = { workspace = true, optional = true }
 # activate if you want serde support for Series and DataFrames
-serde = { version = "1", features = ["derive"], optional = true }
-serde_json = { version = "1", optional = true }
-smartstring.workspace = true
-thiserror.workspace = true
-url = { version = "2.3.1", optional = true }
-xxhash-rust.workspace = true
+serde = { workspace = true, features = ["derive"], optional = true }
+serde_json = { workspace = true, optional = true }
+smartstring = { workspace = true }
+thiserror = { workspace = true }
+url = { workspace = true, optional = true }
+xxhash-rust = { workspace = true }
 
 [dev-dependencies]
-bincode = "1"
-serde_json = "1"
+bincode = { version = "1" }
+serde_json = { workspace = true }
 
 [build-dependencies]
 version_check = { workspace = true }
-
-[target.'cfg(target_family = "wasm")'.dependencies]
-wasm-timer = "0.2.5"
 
 [features]
 simd = ["arrow/simd", "polars-arrow/simd"]
@@ -62,7 +59,7 @@ lazy = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
 # more fast paths, slower compilation
-performant = ["polars-arrow/performant"]
+performant = ["polars-arrow/performant", "reinterpret"]
 
 # extra utilities for Utf8Chunked
 strings = ["regex", "polars-arrow/strings", "arrow/compute_substring", "polars-error/regex"]
@@ -80,7 +77,6 @@ sort_multiple = []
 rows = []
 
 # operations
-is_in = []
 zip_with = []
 round_series = []
 checked_arithmetic = []
@@ -95,8 +91,8 @@ row_hash = []
 reinterpret = []
 take_opt_iter = []
 mode = []
-# allow groupby operation on list type
-groupby_list = []
+# allow group_by operation on list type
+group_by_list = []
 # cumsum, cummin, etc.
 cum_agg = []
 # rolling window functions
@@ -117,7 +113,7 @@ semi_anti_join = []
 chunked_ids = []
 describe = []
 timezones = ["chrono-tz", "arrow/chrono-tz", "polars-arrow/timezones"]
-dynamic_groupby = ["dtype-datetime", "dtype-date"]
+dynamic_group_by = ["dtype-datetime", "dtype-date"]
 
 # opt-in datatypes for Series
 dtype-date = ["temporal"]
@@ -139,12 +135,11 @@ parquet = ["arrow/io_parquet"]
 bigidx = ["polars-arrow/bigidx"]
 python = []
 
-serde = ["dep:serde", "smartstring/serde"]
+serde = ["dep:serde", "smartstring/serde", "bitflags/serde"]
 serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde", "smartstring/serde", "chrono/serde"]
 
 docs-selection = [
   "ndarray",
-  "is_in",
   "rows",
   "docs",
   "strings",

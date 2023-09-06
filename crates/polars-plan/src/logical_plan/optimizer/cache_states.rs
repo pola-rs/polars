@@ -19,7 +19,7 @@ fn get_upper_projections(
                 out.extend(aexpr_to_leaf_names_iter(*node, expr_arena));
             }
             Some(out)
-        }
+        },
         // other
         _ => None,
     }
@@ -77,14 +77,14 @@ pub(super) fn set_cache_states(
                         let options = Arc::make_mut(options);
                         options.allow_parallel = false;
                     }
-                }
+                },
                 // don't allow parallelism as caches need each others work
                 // also self-referencing plans can deadlock on the files they lock
                 Union { options, .. } if has_caches && options.parallel => {
                     if let Union { options, .. } = lp_arena.get_mut(current_node) {
                         options.parallel = false;
                     }
-                }
+                },
                 Cache { input, id, .. } => {
                     caches_seen += 1;
 
@@ -124,8 +124,8 @@ pub(super) fn set_cache_states(
                         }
                     }
                     cache_id = Some(*id);
-                }
-                _ => {}
+                },
+                _ => {},
             }
 
             parent = Some(current_node);
@@ -164,14 +164,12 @@ pub(super) fn set_cache_states(
 
                         let new_child = lp_arena.add(child_lp);
                         let lp = ALogicalPlanBuilder::new(new_child, expr_arena, lp_arena)
-                            .project(projection.clone())
+                            .project(projection.clone(), Default::default())
                             .build();
 
                         let lp = pd.optimize(lp, lp_arena, expr_arena).unwrap();
                         // remove the projection added by the optimization
-                        let lp = if let ALogicalPlan::Projection { input, .. }
-                        | ALogicalPlan::LocalProjection { input, .. } = lp
-                        {
+                        let lp = if let ALogicalPlan::Projection { input, .. } = lp {
                             lp_arena.take(input)
                         } else {
                             lp

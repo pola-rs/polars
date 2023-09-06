@@ -32,12 +32,12 @@ impl DateLikeNameSpace {
                 DataType::Datetime(_, _) => {
                     let ca = s.datetime().unwrap();
                     Ok(Some(ca.cast_time_unit(tu).into_series()))
-                }
+                },
                 #[cfg(feature = "dtype-duration")]
                 DataType::Duration(_) => {
                     let ca = s.duration().unwrap();
                     Ok(Some(ca.cast_time_unit(tu).into_series()))
-                }
+                },
                 dt => polars_bail!(ComputeError: "dtype `{}` has no time unit", dt),
             },
             GetOutput::map_dtype(move |dtype| match dtype {
@@ -56,13 +56,13 @@ impl DateLikeNameSpace {
                     let mut ca = s.datetime().unwrap().clone();
                     ca.set_time_unit(tu);
                     Ok(Some(ca.into_series()))
-                }
+                },
                 #[cfg(feature = "dtype-duration")]
                 DataType::Duration(_) => {
                     let mut ca = s.duration().unwrap().clone();
                     ca.set_time_unit(tu);
                     Ok(Some(ca.into_series()))
-                }
+                },
                 dt => polars_bail!(ComputeError: "dtype `{}` has no time unit", dt),
             },
             GetOutput::same_type(),
@@ -79,7 +79,7 @@ impl DateLikeNameSpace {
                     let mut ca = s.datetime().unwrap().clone();
                     ca.set_time_zone(time_zone.clone())?;
                     Ok(Some(ca.into_series()))
-                }
+                },
                 _ => polars_bail!(
                     ComputeError:
                     "cannot call `convert_time_zone` on tz-naive; set a time zone first \
@@ -215,11 +215,12 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TimeStamp(tu)))
     }
 
-    pub fn truncate(self, options: TruncateOptions) -> Expr {
-        self.0
-            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Truncate(
-                options,
-            )))
+    pub fn truncate(self, options: TruncateOptions, ambiguous: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::Truncate(options)),
+            &[ambiguous],
+            false,
+        )
     }
 
     // roll backward to the first day of the month
@@ -262,19 +263,18 @@ impl DateLikeNameSpace {
     /// Offset this `Date/Datetime` by a given offset [`Duration`].
     /// This will take leap years/ months into account.
     #[cfg(feature = "date_offset")]
-    pub fn offset_by(self, by: Duration) -> Expr {
-        self.0.map_private(FunctionExpr::DateOffset(by))
+    pub fn offset_by(self, by: Expr) -> Expr {
+        self.0
+            .map_many_private(FunctionExpr::DateOffset, &[by], false)
     }
 
     #[cfg(feature = "timezones")]
-    pub fn replace_time_zone(
-        self,
-        time_zone: Option<TimeZone>,
-        use_earliest: Option<bool>,
-    ) -> Expr {
-        self.0.map_private(FunctionExpr::TemporalExpr(
-            TemporalFunction::ReplaceTimeZone(time_zone, use_earliest),
-        ))
+    pub fn replace_time_zone(self, time_zone: Option<TimeZone>, ambiguous: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::ReplaceTimeZone(time_zone)),
+            &[ambiguous],
+            false,
+        )
     }
 
     pub fn combine(self, time: Expr, tu: TimeUnit) -> Expr {

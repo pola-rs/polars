@@ -155,10 +155,10 @@ impl Duration {
                         Some((i, ch_)) => {
                             ch = ch_;
                             start = i
-                        }
+                        },
                         None => {
                             break;
-                        }
+                        },
                     }
                 }
                 if unit.is_empty() {
@@ -218,7 +218,7 @@ impl Duration {
 
             match (self.negative, interval.negative) {
                 (true, true) | (true, false) => months = -months + interval.months(),
-                _ => {}
+                _ => {},
             }
             Duration::from_months(months)
         } else if self.weeks_only() && interval.weeks_only() {
@@ -226,7 +226,7 @@ impl Duration {
 
             match (self.negative, interval.negative) {
                 (true, true) | (true, false) => weeks = -weeks + interval.weeks(),
-                _ => {}
+                _ => {},
             }
             Duration::from_weeks(weeks)
         } else if self.days_only() && interval.days_only() {
@@ -234,7 +234,7 @@ impl Duration {
 
             match (self.negative, interval.negative) {
                 (true, true) | (true, false) => days = -days + interval.days(),
-                _ => {}
+                _ => {},
             }
             Duration::from_days(days)
         } else {
@@ -338,6 +338,14 @@ impl Duration {
         self.days
     }
 
+    /// Returns whether the duration consists of full days.
+    ///
+    /// Note that 24 hours is not considered a full day due to possible
+    /// daylight savings time transitions.
+    pub fn is_full_days(&self) -> bool {
+        self.nsecs == 0
+    }
+
     pub fn is_constant_duration(&self) -> bool {
         self.months == 0 && self.weeks == 0 && self.days == 0
     }
@@ -438,7 +446,7 @@ impl Duration {
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
-        _use_earliest: Option<bool>,
+        _ambiguous: &str,
     ) -> PolarsResult<i64>
     where
         F: Fn(i64) -> i64,
@@ -453,7 +461,7 @@ impl Duration {
                     #[cfg(feature = "timezones")]
                     Some(tz) => {
                         datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz))
-                    }
+                    },
                     _ => t,
                 };
                 let duration = nsecs_to_unit(self.nsecs);
@@ -466,11 +474,11 @@ impl Duration {
                     Some(tz) => Ok(datetime_to_timestamp(localize_datetime(
                         timestamp_to_datetime(t - remainder),
                         tz,
-                        _use_earliest,
+                        _ambiguous,
                     )?)),
                     _ => Ok(t - remainder),
                 }
-            }
+            },
             // truncate by weeks
             (0, _, 0, 0) => {
                 let dt = match tz {
@@ -486,20 +494,20 @@ impl Duration {
                     Some(tz) => Ok(datetime_to_timestamp(localize_datetime(
                         first_day_of_week.and_time(NaiveTime::default()),
                         tz,
-                        _use_earliest,
+                        _ambiguous,
                     )?)),
                     _ => Ok(datetime_to_timestamp(
                         first_day_of_week.and_time(NaiveTime::default()),
                     )),
                 }
-            }
+            },
             // truncate by days
             (0, 0, _, 0) => {
                 let t = match tz {
                     #[cfg(feature = "timezones")]
                     Some(tz) => {
                         datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz))
-                    }
+                    },
                     _ => t,
                 };
                 let duration = self.days * nsecs_to_unit(NS_DAY);
@@ -512,11 +520,11 @@ impl Duration {
                     Some(tz) => Ok(datetime_to_timestamp(localize_datetime(
                         timestamp_to_datetime(t - remainder),
                         tz,
-                        _use_earliest,
+                        _ambiguous,
                     )?)),
                     _ => Ok(t - remainder),
                 }
-            }
+            },
             // truncate by months
             (_, 0, 0, 0) => {
                 let ts = match tz {
@@ -541,70 +549,53 @@ impl Duration {
                 match tz {
                     #[cfg(feature = "timezones")]
                     Some(tz) => Ok(datetime_to_timestamp(localize_datetime(
-                        dt,
-                        tz,
-                        _use_earliest,
+                        dt, tz, _ambiguous,
                     )?)),
                     _ => Ok(datetime_to_timestamp(dt)),
                 }
-            }
+            },
             _ => {
                 polars_bail!(ComputeError: "duration may not mix month, weeks and nanosecond units")
-            }
+            },
         }
     }
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ns(
-        &self,
-        t: i64,
-        tz: Option<&Tz>,
-        use_earliest: Option<bool>,
-    ) -> PolarsResult<i64> {
+    pub fn truncate_ns(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
             |nsecs| nsecs,
             timestamp_ns_to_datetime,
             datetime_to_timestamp_ns,
-            use_earliest,
+            ambiguous,
         )
     }
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_us(
-        &self,
-        t: i64,
-        tz: Option<&Tz>,
-        use_earliest: Option<bool>,
-    ) -> PolarsResult<i64> {
+    pub fn truncate_us(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
             |nsecs| nsecs / 1000,
             timestamp_us_to_datetime,
             datetime_to_timestamp_us,
-            use_earliest,
+            ambiguous,
         )
     }
 
     // Truncate the given ms timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ms(
-        &self,
-        t: i64,
-        tz: Option<&Tz>,
-        use_earliest: Option<bool>,
-    ) -> PolarsResult<i64> {
+    pub fn truncate_ms(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
             |nsecs| nsecs / 1_000_000,
             timestamp_ms_to_datetime,
             datetime_to_timestamp_ms,
-            use_earliest,
+            ambiguous,
         )
     }
 
@@ -633,7 +624,7 @@ impl Duration {
             let dt = Self::add_month(ts, d.months, d.negative, d.saturating)?;
             new_t = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz, None)?),
+                Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz, "raise")?),
                 _ => datetime_to_timestamp(dt),
             };
         }
@@ -649,9 +640,9 @@ impl Duration {
                     new_t = datetime_to_timestamp(localize_datetime(
                         timestamp_to_datetime(new_t),
                         tz,
-                        None,
+                        "raise",
                     )?);
-                }
+                },
                 _ => new_t += if d.negative { -t_weeks } else { t_weeks },
             };
         }
@@ -667,9 +658,9 @@ impl Duration {
                     new_t = datetime_to_timestamp(localize_datetime(
                         timestamp_to_datetime(new_t),
                         tz,
-                        None,
+                        "raise",
                     )?);
-                }
+                },
                 _ => new_t += if d.negative { -t_days } else { t_days },
             };
         }

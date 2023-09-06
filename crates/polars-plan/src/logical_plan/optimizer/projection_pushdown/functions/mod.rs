@@ -44,7 +44,7 @@ pub(super) fn process_functions(
                 function: function.clone(),
             };
             Ok(lp)
-        }
+        },
         Explode { columns, .. } => {
             columns.iter().for_each(|name| {
                 add_str_to_accumulated(name, &mut acc_projections, &mut projected_names, expr_arena)
@@ -60,7 +60,7 @@ pub(super) fn process_functions(
             Ok(ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
                 .explode(columns.clone())
                 .build())
-        }
+        },
         Melt { args, .. } => {
             let lp = ALogicalPlan::MapFunction {
                 input,
@@ -77,7 +77,7 @@ pub(super) fn process_functions(
                 lp_arena,
                 expr_arena,
             )
-        }
+        },
         _ => {
             let lp = ALogicalPlan::MapFunction {
                 input,
@@ -112,12 +112,12 @@ pub(super) fn process_functions(
                     // if we would project, we would remove pushed down predicates
                     if local_projections.len() < original_acc_projection_len {
                         Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
-                            .with_columns(local_projections)
+                            .with_columns(local_projections, Default::default())
                             .build())
                         // all projections are local
                     } else {
                         Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
-                            .project(local_projections)
+                            .project(local_projections, Default::default())
                             .build())
                     }
                 }
@@ -131,6 +131,6 @@ pub(super) fn process_functions(
                     expr_arena,
                 )
             }
-        }
+        },
     }
 }

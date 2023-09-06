@@ -109,11 +109,11 @@ impl DataFrame {
                         DataType::Float32 => {
                             let ca = s.f32().unwrap();
                             ca.none_to_nan().into_series()
-                        }
+                        },
                         DataType::Float64 => {
                             let ca = s.f64().unwrap();
                             ca.none_to_nan().into_series()
-                        }
+                        },
                         _ => s,
                     };
                     Ok(s.rechunk())
@@ -182,7 +182,7 @@ impl DataFrame {
             IndexOrder::Fortran => {
                 let ndarr = Array2::from_shape_vec((shape.1, shape.0), membuf).unwrap();
                 Ok(ndarr.reversed_axes())
-            }
+            },
         }
     }
 }

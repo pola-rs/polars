@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_frame_equal_local_categoricals
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -18,7 +18,7 @@ def test_to_from_buffer(df: pl.DataFrame, buf: io.IOBase) -> None:
     df.write_json(buf)
     buf.seek(0)
     read_df = pl.read_json(buf)
-    assert_frame_equal_local_categoricals(df, read_df)
+    assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
 @pytest.mark.write_disk()
@@ -29,13 +29,13 @@ def test_to_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
     df.write_json(file_path)
     out = pl.read_json(file_path)
 
-    assert_frame_equal_local_categoricals(df, out)
+    assert_frame_equal(df, out, categorical_as_str=True)
 
 
 def test_write_json_to_string() -> None:
     # Tests if it runs if no arg given
     df = pl.DataFrame({"a": [1, 2, 3]})
-    expected_str = '{"columns":[{"name":"a","datatype":"Int64","values":[1,2,3]}]}'
+    expected_str = '{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]}'
     assert df.write_json() == expected_str
 
 
@@ -138,6 +138,13 @@ def test_json_sliced_list_serialization() -> None:
     sliced_df = df[1, :]
     sliced_df.write_ndjson(f)
     assert f.getvalue() == b'{"col1":2,"col2":[6,7,8]}\n'
+
+
+def test_json_deserialize_empty_list_10458() -> None:
+    schema = {"LIST_OF_STRINGS": pl.List(pl.Utf8)}
+    serialized_schema = pl.DataFrame(schema=schema).write_json()
+    df = pl.read_json(io.StringIO(serialized_schema))
+    assert df.schema == schema
 
 
 def test_json_deserialize_9687() -> None:

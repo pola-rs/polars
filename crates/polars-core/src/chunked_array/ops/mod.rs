@@ -13,6 +13,7 @@ pub(crate) mod aggregate;
 pub(crate) mod any_value;
 pub(crate) mod append;
 mod apply;
+pub mod arity;
 mod bit_repr;
 pub(crate) mod chunkops;
 pub(crate) mod compare_inner;
@@ -31,8 +32,6 @@ mod filter;
 pub mod full;
 #[cfg(feature = "interpolate")]
 mod interpolate;
-#[cfg(feature = "is_in")]
-mod is_in;
 mod len;
 #[cfg(feature = "zip_with")]
 pub(crate) mod min_max_binary;
@@ -133,7 +132,7 @@ pub trait ChunkBytes {
 /// This likely is a bit slower than ChunkWindow
 #[cfg(feature = "rolling_window")]
 pub trait ChunkRollApply: AsRefDataType {
-    fn rolling_apply(
+    fn rolling_map(
         &self,
         _f: &dyn Fn(&Series) -> Series,
         _options: RollingOptionsFixedWindow,
@@ -141,7 +140,7 @@ pub trait ChunkRollApply: AsRefDataType {
     where
         Self: Sized,
     {
-        polars_bail!(opq = rolling_apply, self.as_ref_dtype());
+        polars_bail!(opq = rolling_map, self.as_ref_dtype());
     }
 }
 
@@ -296,22 +295,9 @@ pub trait ChunkCast {
 }
 
 /// Fastest way to do elementwise operations on a [`ChunkedArray<T>`] when the operation is cheaper than
-/// branching due to null checking
-pub trait ChunkApply<'a, A, B> {
-    /// Apply a closure elementwise and cast to a Numeric [`ChunkedArray`]. This is fastest when the null check branching is more expensive
-    /// than the closure application.
-    ///
-    /// Null values remain null.
-    fn apply_cast_numeric<F, S>(&'a self, f: F) -> ChunkedArray<S>
-    where
-        F: Fn(A) -> S::Native + Copy,
-        S: PolarsNumericType;
-
-    /// Apply a closure on optional values and cast to Numeric ChunkedArray without null values.
-    fn branch_apply_cast_numeric_no_null<F, S>(&'a self, f: F) -> ChunkedArray<S>
-    where
-        F: Fn(Option<A>) -> S::Native + Copy,
-        S: PolarsNumericType;
+/// branching due to null checking.
+pub trait ChunkApply<'a, T> {
+    type FuncRet;
 
     /// Apply a closure elementwise. This is fastest when the null check branching is more expensive
     /// than the closure application. Often it is.
@@ -323,45 +309,33 @@ pub trait ChunkApply<'a, A, B> {
     /// ```
     /// use polars_core::prelude::*;
     /// fn double(ca: &UInt32Chunked) -> UInt32Chunked {
-    ///     ca.apply(|v| v * 2)
+    ///     ca.apply_values(|v| v * 2)
     /// }
     /// ```
     #[must_use]
-    fn apply<F>(&'a self, f: F) -> Self
+    fn apply_values<F>(&'a self, f: F) -> Self
     where
-        F: Fn(A) -> B + Copy;
+        F: Fn(T) -> Self::FuncRet + Copy;
 
     fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
     where
-        F: Fn(A) -> PolarsResult<B> + Copy,
+        F: Fn(T) -> PolarsResult<Self::FuncRet> + Copy,
         Self: Sized;
 
     /// Apply a closure elementwise including null values.
     #[must_use]
-    fn apply_on_opt<F>(&'a self, f: F) -> Self
+    fn apply<F>(&'a self, f: F) -> Self
     where
-        F: Fn(Option<A>) -> Option<B> + Copy;
-
-    /// Apply a closure elementwise. The closure gets the index of the element as first argument.
-    #[must_use]
-    fn apply_with_idx<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, A)) -> B + Copy;
-
-    /// Apply a closure elementwise. The closure gets the index of the element as first argument.
-    #[must_use]
-    fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
-    where
-        F: Fn((usize, Option<A>)) -> Option<B> + Copy;
+        F: Fn(Option<T>) -> Option<Self::FuncRet> + Copy;
 
     /// Apply a closure elementwise and write results to a mutable slice.
-    fn apply_to_slice<F, T>(&'a self, f: F, slice: &mut [T])
+    fn apply_to_slice<F, S>(&'a self, f: F, slice: &mut [S])
     // (value of chunkedarray, value of slice) -> value of slice
     where
-        F: Fn(Option<A>, &T) -> T;
+        F: Fn(Option<T>, &S) -> S;
 }
 
-/// Aggregation operations
+/// Aggregation operations.
 pub trait ChunkAgg<T> {
     /// Aggregate the sum of the ChunkedArray.
     /// Returns `None` if not implemented for `T`.
@@ -373,6 +347,7 @@ pub trait ChunkAgg<T> {
     fn min(&self) -> Option<T> {
         None
     }
+
     /// Returns the maximum value in the array, according to the natural order.
     /// Returns `None` if the array is empty or only contains null values.
     fn max(&self) -> Option<T> {
@@ -386,7 +361,7 @@ pub trait ChunkAgg<T> {
     }
 }
 
-/// Quantile and median aggregation
+/// Quantile and median aggregation.
 pub trait ChunkQuantile<T> {
     /// Returns the mean value in the array.
     /// Returns `None` if the array is empty or only contains null values.
@@ -405,14 +380,14 @@ pub trait ChunkQuantile<T> {
 }
 
 /// Variance and standard deviation aggregation.
-pub trait ChunkVar<T> {
+pub trait ChunkVar {
     /// Compute the variance of this ChunkedArray/Series.
-    fn var(&self, _ddof: u8) -> Option<T> {
+    fn var(&self, _ddof: u8) -> Option<f64> {
         None
     }
 
     /// Compute the standard deviation of this ChunkedArray/Series.
-    fn std(&self, _ddof: u8) -> Option<T> {
+    fn std(&self, _ddof: u8) -> Option<f64> {
         None
     }
 }
@@ -656,9 +631,9 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
         match opt_val {
             Some(val) => {
                 let mut ca = ListChunked::full(self.name(), &val, length);
-                ca.to_physical(self.inner_dtype());
+                ca.to_logical(self.inner_dtype());
                 ca
-            }
+            },
             None => ListChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype()),
         }
     }
@@ -673,7 +648,7 @@ impl ChunkExpandAtIndex<FixedSizeListType> for ArrayChunked {
                 let mut ca = ArrayChunked::full(self.name(), &val, length);
                 ca.to_physical(self.inner_dtype());
                 ca
-            }
+            },
             None => ArrayChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype(), 0),
         }
     }
@@ -733,15 +708,6 @@ pub trait ChunkPeaks {
 
     /// Get a boolean mask of the local minimum peaks.
     fn peak_min(&self) -> BooleanChunked {
-        unimplemented!()
-    }
-}
-
-/// Check if element is member of list array
-#[cfg(feature = "is_in")]
-pub trait IsIn {
-    /// Check if elements of this array are in the right Series, or List values of the right Series.
-    fn is_in(&self, _other: &Series) -> PolarsResult<BooleanChunked> {
         unimplemented!()
     }
 }

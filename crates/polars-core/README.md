@@ -1,5 +1,5 @@
 # polars-core
 
-`polars-core` is a sub-crate that provides core functionality for the Polars dataframe library.
+`polars-core` is an **internal sub-crate** of the [Polars](https://crates.io/crates/polars) library, providing its core functionalities.
 
-Not intended for external usage
+**Important Note**: This crate is **not intended for external usage**. Please refer to the main [Polars crate](https://crates.io/crates/polars) for intended usage.

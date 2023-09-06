@@ -9,13 +9,13 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.deprecation import deprecate_renamed_parameter
+from polars.utils.deprecation import rename_use_earliest_to_ambiguous
 
 if TYPE_CHECKING:
     from datetime import timedelta
 
     from polars import Expr
-    from polars.type_aliases import EpochTimeUnit, TimeUnit
+    from polars.type_aliases import Ambiguous, EpochTimeUnit, TimeUnit
 
 
 class ExprDateTimeNameSpace:
@@ -32,6 +32,7 @@ class ExprDateTimeNameSpace:
         offset: str | timedelta | None = None,
         *,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Divide the date/datetime range into buckets.
@@ -52,22 +53,31 @@ class ExprDateTimeNameSpace:
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
 
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
+
         Notes
         -----
         The ``every`` and ``offset`` argument are created with the
         the following string language:
 
-        - 1ns # 1 nanosecond
-        - 1us # 1 microsecond
-        - 1ms # 1 millisecond
-        - 1s  # 1 second
-        - 1m  # 1 minute
-        - 1h  # 1 hour
-        - 1d  # 1 calendar day
-        - 1w  # 1 calendar week
-        - 1mo # 1 calendar month
-        - 1q  # 1 calendar quarter
-        - 1y  # 1 calendar year
+        - 1ns   (1 nanosecond)
+        - 1us   (1 microsecond)
+        - 1ms   (1 millisecond)
+        - 1s    (1 second)
+        - 1m    (1 minute)
+        - 1h    (1 hour)
+        - 1d    (1 calendar day)
+        - 1w    (1 calendar week)
+        - 1mo   (1 calendar month)
+        - 1q    (1 calendar quarter)
+        - 1y    (1 calendar year)
 
         These strings can be combined:
 
@@ -149,8 +159,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────────┘
 
         If crossing daylight savings time boundaries, you may want to use
-        `use_earliest` and combine with :func:`~polars.Series.dt.dst_offset`
-        and :func:`~polars.when`:
+        `use_earliest` and combine with :func:`~polars.Series.dt.dst_offset`:
 
         >>> df = (
         ...     pl.date_range(
@@ -179,10 +188,17 @@ class ExprDateTimeNameSpace:
         │ 2020-10-25 02:15:00 GMT     │
         └─────────────────────────────┘
 
+        >>> ambiguous_mapping = {
+        ...     timedelta(hours=1): "earliest",
+        ...     timedelta(hours=0): "latest",
+        ... }
         >>> df.select(
-        ...     pl.when(pl.col("date").dt.dst_offset() == pl.duration(hours=1))
-        ...     .then(pl.col("date").dt.truncate("30m", use_earliest=True))
-        ...     .otherwise(pl.col("date").dt.truncate("30m", use_earliest=False))
+        ...     pl.col("date").dt.truncate(
+        ...         "30m",
+        ...         ambiguous=(
+        ...             pl.col("date").dt.dst_offset().map_dict(ambiguous_mapping)
+        ...         ),
+        ...     )
         ... )
         shape: (7, 1)
         ┌─────────────────────────────┐
@@ -199,6 +215,9 @@ class ExprDateTimeNameSpace:
         │ 2020-10-25 02:00:00 GMT     │
         └─────────────────────────────┘
         """
+        ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
+        if not isinstance(ambiguous, pl.Expr):
+            ambiguous = F.lit(ambiguous)
         if offset is None:
             offset = "0ns"
 
@@ -206,7 +225,7 @@ class ExprDateTimeNameSpace:
             self._pyexpr.dt_truncate(
                 _timedelta_to_pl_duration(every),
                 _timedelta_to_pl_duration(offset),
-                use_earliest,
+                ambiguous._pyexpr,
             )
         )
 
@@ -235,17 +254,17 @@ class ExprDateTimeNameSpace:
         The `every` and `offset` argument are created with the
         the following small string formatting language:
 
-        1ns  # 1 nanosecond
-        1us  # 1 microsecond
-        1ms  # 1 millisecond
-        1s   # 1 second
-        1m   # 1 minute
-        1h   # 1 hour
-        1d   # 1 calendar day
-        1w   # 1 calendar week
-        1mo  # 1 calendar month
-        1q   # 1 calendar quarter
-        1y   # 1 calendar year
+        - 1ns   (1 nanosecond)
+        - 1us   (1 microsecond)
+        - 1ms   (1 millisecond)
+        - 1s    (1 second)
+        - 1m    (1 minute)
+        - 1h    (1 hour)
+        - 1d    (1 calendar day)
+        - 1w    (1 calendar week)
+        - 1mo   (1 calendar month)
+        - 1q    (1 calendar quarter)
+        - 1y    (1 calendar year)
 
         eg: 3d12h4m25s  # 3 days, 12 hours, 4 minutes, and 25 seconds
 
@@ -396,7 +415,7 @@ class ExprDateTimeNameSpace:
         """
         if not isinstance(time, (dt.time, pl.Expr)):
             raise TypeError(
-                f"expected 'time' to be a python time or polars expression, found {time!r}"
+                f"expected 'time' to be a Python time or Polars expression, found {type(time).__name__!r}"
             )
         time = parse_as_expression(time)
         return wrap_expr(self._pyexpr.dt_combine(time, time_unit))
@@ -446,7 +465,6 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_to_string(format))
 
-    @deprecate_renamed_parameter("fmt", "format", version="0.17.3")
     def strftime(self, format: str) -> Expr:
         """
         Convert a Date/Time/Datetime column into a Utf8 column with the given format.
@@ -462,6 +480,10 @@ class ExprDateTimeNameSpace:
             Format to use, refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
+
+        See Also
+        --------
+        to_string : The identical expression for which ``strftime`` is an alias.
 
         Examples
         --------
@@ -490,10 +512,6 @@ class ExprDateTimeNameSpace:
         │ 2020-04-01 00:00:00 ┆ 2020/04/01 00:00:00 │
         │ 2020-05-01 00:00:00 ┆ 2020/05/01 00:00:00 │
         └─────────────────────┴─────────────────────┘
-
-        See Also
-        --------
-        to_string : The identical expression for which ``strftime`` is an alias.
 
         """
         return self.to_string(format)
@@ -1322,7 +1340,7 @@ class ExprDateTimeNameSpace:
             return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
         else:
             raise ValueError(
-                f"time_unit must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit}"
+                f"time_unit must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
             )
 
     def timestamp(self, time_unit: TimeUnit = "us") -> Expr:
@@ -1494,7 +1512,11 @@ class ExprDateTimeNameSpace:
         return wrap_expr(self._pyexpr.dt_convert_time_zone(time_zone))
 
     def replace_time_zone(
-        self, time_zone: str | None, *, use_earliest: bool | None = None
+        self,
+        time_zone: str | None,
+        *,
+        use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Replace time zone for an expression of type Datetime.
@@ -1512,6 +1534,15 @@ class ExprDateTimeNameSpace:
             - ``None`` (default): raise
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
+
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Examples
         --------
@@ -1555,42 +1586,37 @@ class ExprDateTimeNameSpace:
         ...     "2018-10-28 02:00",
         ...     "2018-10-28 02:30",
         ...     "2018-10-28 02:00",
-        ...     "2018-10-28 02:30",
         ... ]
         >>> df = pl.DataFrame(
         ...     {
         ...         "ts": pl.Series(dates).str.strptime(pl.Datetime),
-        ...         "DST": [True, True, True, False, False],
+        ...         "ambiguous": ["earliest", "earliest", "latest", "latest"],
         ...     }
         ... )
         >>> df.with_columns(
-        ...     ts_localized=pl.when(pl.col("DST"))
-        ...     .then(
-        ...         pl.col("ts").dt.replace_time_zone(
-        ...             "Europe/Brussels", use_earliest=True
-        ...         )
-        ...     )
-        ...     .otherwise(
-        ...         pl.col("ts").dt.replace_time_zone(
-        ...             "Europe/Brussels", use_earliest=False
-        ...         )
+        ...     ts_localized=pl.col("ts").dt.replace_time_zone(
+        ...         "Europe/Brussels", ambiguous=pl.col("ambiguous")
         ...     )
         ... )
-        shape: (5, 3)
-        ┌─────────────────────┬───────┬───────────────────────────────┐
-        │ ts                  ┆ DST   ┆ ts_localized                  │
-        │ ---                 ┆ ---   ┆ ---                           │
-        │ datetime[μs]        ┆ bool  ┆ datetime[μs, Europe/Brussels] │
-        ╞═════════════════════╪═══════╪═══════════════════════════════╡
-        │ 2018-10-28 01:30:00 ┆ true  ┆ 2018-10-28 01:30:00 CEST      │
-        │ 2018-10-28 02:00:00 ┆ true  ┆ 2018-10-28 02:00:00 CEST      │
-        │ 2018-10-28 02:30:00 ┆ true  ┆ 2018-10-28 02:30:00 CEST      │
-        │ 2018-10-28 02:00:00 ┆ false ┆ 2018-10-28 02:00:00 CET       │
-        │ 2018-10-28 02:30:00 ┆ false ┆ 2018-10-28 02:30:00 CET       │
-        └─────────────────────┴───────┴───────────────────────────────┘
+        shape: (4, 3)
+        ┌─────────────────────┬───────────┬───────────────────────────────┐
+        │ ts                  ┆ ambiguous ┆ ts_localized                  │
+        │ ---                 ┆ ---       ┆ ---                           │
+        │ datetime[μs]        ┆ str       ┆ datetime[μs, Europe/Brussels] │
+        ╞═════════════════════╪═══════════╪═══════════════════════════════╡
+        │ 2018-10-28 01:30:00 ┆ earliest  ┆ 2018-10-28 01:30:00 CEST      │
+        │ 2018-10-28 02:00:00 ┆ earliest  ┆ 2018-10-28 02:00:00 CEST      │
+        │ 2018-10-28 02:30:00 ┆ latest    ┆ 2018-10-28 02:30:00 CET       │
+        │ 2018-10-28 02:00:00 ┆ latest    ┆ 2018-10-28 02:00:00 CET       │
+        └─────────────────────┴───────────┴───────────────────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.dt_replace_time_zone(time_zone, use_earliest))
+        ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
+        if not isinstance(ambiguous, pl.Expr):
+            ambiguous = F.lit(ambiguous)
+        return wrap_expr(
+            self._pyexpr.dt_replace_time_zone(time_zone, ambiguous._pyexpr)
+        )
 
     def days(self) -> Expr:
         """
@@ -1899,7 +1925,7 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.duration_nanoseconds())
 
-    def offset_by(self, by: str) -> Expr:
+    def offset_by(self, by: str | Expr) -> Expr:
         """
         Offset this date by a relative time offset.
 
@@ -1925,13 +1951,13 @@ class ExprDateTimeNameSpace:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
-        Suffix with `"_saturating"` to indicate that dates too large for
-        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-        instead of erroring.
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
-        By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, due to daylight savings). Similarly for "calendar week",
-        "calendar month", "calendar quarter", and "calendar year".
+            By "calendar day", we mean the corresponding time on the next day (which may
+            not be 24 hours, due to daylight savings). Similarly for "calendar week",
+            "calendar month", "calendar quarter", and "calendar year".
 
         Returns
         -------
@@ -1945,7 +1971,8 @@ class ExprDateTimeNameSpace:
         ...     {
         ...         "dates": pl.date_range(
         ...             datetime(2000, 1, 1), datetime(2005, 1, 1), "1y", eager=True
-        ...         )
+        ...         ),
+        ...         "offset": ["1d", "2d", "-1d", "1mo", None, "1y"],
         ...     }
         ... )
         >>> df.select(
@@ -1968,28 +1995,24 @@ class ExprDateTimeNameSpace:
         │ 2006-01-01 00:00:00 ┆ 2003-11-01 00:00:00 │
         └─────────────────────┴─────────────────────┘
 
-        To get to the end of each month, combine with `truncate`:
+        You can also pass the relative offset as an expression:
 
-        >>> df.select(
-        ...     pl.col("dates")
-        ...     .dt.truncate("1mo")
-        ...     .dt.offset_by("1mo")
-        ...     .dt.offset_by("-1d")
-        ... )
-        shape: (6, 1)
-        ┌─────────────────────┐
-        │ dates               │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2000-01-31 00:00:00 │
-        │ 2001-01-31 00:00:00 │
-        │ 2002-01-31 00:00:00 │
-        │ 2003-01-31 00:00:00 │
-        │ 2004-01-31 00:00:00 │
-        │ 2005-01-31 00:00:00 │
-        └─────────────────────┘
+        >>> df.with_columns(new_dates=pl.col("dates").dt.offset_by(pl.col("offset")))
+        shape: (6, 3)
+        ┌─────────────────────┬────────┬─────────────────────┐
+        │ dates               ┆ offset ┆ new_dates           │
+        │ ---                 ┆ ---    ┆ ---                 │
+        │ datetime[μs]        ┆ str    ┆ datetime[μs]        │
+        ╞═════════════════════╪════════╪═════════════════════╡
+        │ 2000-01-01 00:00:00 ┆ 1d     ┆ 2000-01-02 00:00:00 │
+        │ 2001-01-01 00:00:00 ┆ 2d     ┆ 2001-01-03 00:00:00 │
+        │ 2002-01-01 00:00:00 ┆ -1d    ┆ 2001-12-31 00:00:00 │
+        │ 2003-01-01 00:00:00 ┆ 1mo    ┆ 2003-02-01 00:00:00 │
+        │ 2004-01-01 00:00:00 ┆ null   ┆ null                │
+        │ 2005-01-01 00:00:00 ┆ 1y     ┆ 2006-01-01 00:00:00 │
+        └─────────────────────┴────────┴─────────────────────┘
         """
+        by = parse_as_expression(by, str_as_lit=True)
         return wrap_expr(self._pyexpr.dt_offset_by(by))
 
     def month_start(self) -> Expr:

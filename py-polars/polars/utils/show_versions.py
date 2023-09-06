@@ -7,7 +7,7 @@ from polars.utils.polars_version import get_polars_version
 
 
 def show_versions() -> None:
-    """
+    r"""
     Print out version of Polars and dependencies to stdout.
 
     Examples

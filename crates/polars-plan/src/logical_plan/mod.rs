@@ -79,7 +79,7 @@ impl std::fmt::Display for ErrorState {
             ErrorState::NotYetEncountered { err } => write!(f, "NotYetEncountered({err})")?,
             ErrorState::AlreadyEncountered { prev_err_msg } => {
                 write!(f, "AlreadyEncountered({prev_err_msg})")?
-            }
+            },
         };
 
         Ok(())
@@ -121,12 +121,12 @@ impl ErrorStateSync {
                     ErrorState::NotYetEncountered { err } => err,
                     ErrorState::AlreadyEncountered { .. } => unreachable!(),
                 }
-            }
+            },
             ErrorState::AlreadyEncountered { prev_err_msg } => {
                 polars_err!(
                     ComputeError: "LogicalPlan already failed with error: '{}'", prev_err_msg,
                 )
-            }
+            },
         }
     }
 }
@@ -178,18 +178,12 @@ pub enum LogicalPlan {
         projection: Option<Arc<Vec<String>>>,
         selection: Option<Expr>,
     },
-    // a projection that doesn't have to be optimized
-    // or may drop projected columns if they aren't in current schema (after optimization)
-    LocalProjection {
-        expr: Vec<Expr>,
-        input: Box<LogicalPlan>,
-        schema: SchemaRef,
-    },
     /// Column selection
     Projection {
         expr: Vec<Expr>,
         input: Box<LogicalPlan>,
         schema: SchemaRef,
+        options: ProjectionOptions,
     },
     /// Groupby aggregation
     Aggregate {
@@ -216,6 +210,7 @@ pub enum LogicalPlan {
         input: Box<LogicalPlan>,
         exprs: Vec<Expr>,
         schema: SchemaRef,
+        options: ProjectionOptions,
     },
     /// Remove duplicates from the table
     Distinct {

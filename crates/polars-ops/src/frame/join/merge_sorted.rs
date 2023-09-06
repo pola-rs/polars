@@ -47,7 +47,7 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> Series 
             let rhs = rhs.bool().unwrap();
 
             merge_ca(lhs, rhs, merge_indicator).into_series()
-        }
+        },
         Utf8 => {
             // dispatch via binary
             let lhs = lhs.cast(&Binary).unwrap();
@@ -56,12 +56,12 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> Series 
             let rhs = rhs.binary().unwrap();
             let out = merge_ca(lhs, rhs, merge_indicator);
             unsafe { out.cast_unchecked(&Utf8).unwrap() }
-        }
+        },
         Binary => {
             let lhs = lhs.binary().unwrap();
             let rhs = rhs.binary().unwrap();
             merge_ca(lhs, rhs, merge_indicator).into_series()
-        }
+        },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => {
             let lhs = lhs.struct_().unwrap();
@@ -74,19 +74,19 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> Series 
                 .map(|(lhs, rhs)| merge_series(lhs, rhs, merge_indicator))
                 .collect::<Vec<_>>();
             StructChunked::new("", &new_fields).unwrap().into_series()
-        }
+        },
         List(_) => {
             let lhs = lhs.list().unwrap();
             let rhs = rhs.list().unwrap();
             merge_ca(lhs, rhs, merge_indicator).into_series()
-        }
+        },
         dt => {
             with_match_physical_numeric_polars_type!(dt, |$T| {
                     let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
                     let rhs: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
                     merge_ca(lhs, rhs, merge_indicator).into_series()
             })
-        }
+        },
     }
 }
 
@@ -126,13 +126,13 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> Vec<bool> {
             let lhs = lhs_s.bool().unwrap();
             let rhs = rhs_s.bool().unwrap();
             get_merge_indicator(lhs.into_iter(), rhs.into_iter())
-        }
+        },
         DataType::Utf8 => {
             let lhs = lhs_s.utf8().unwrap();
             let rhs = rhs_s.utf8().unwrap();
 
             get_merge_indicator(lhs.into_iter(), rhs.into_iter())
-        }
+        },
         _ => {
             with_match_physical_numeric_polars_type!(lhs_s.dtype(), |$T| {
                     let lhs: &ChunkedArray<$T> = lhs_s.as_ref().as_ref().as_ref();
@@ -141,7 +141,7 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> Vec<bool> {
                     get_merge_indicator(lhs.into_iter(), rhs.into_iter())
 
             })
-        }
+        },
     }
 }
 

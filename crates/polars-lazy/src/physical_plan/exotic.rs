@@ -9,11 +9,11 @@ pub(crate) fn prepare_eval_expr(mut expr: Expr) -> Expr {
         Expr::Column(name) => {
             *name = Arc::from("");
             true
-        }
+        },
         Expr::Nth(_) => {
             *e = Expr::Column(Arc::from(""));
             true
-        }
+        },
         _ => true,
     });
     expr

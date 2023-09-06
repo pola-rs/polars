@@ -53,7 +53,7 @@ fn _mmap_single_column<'a>(
                 )
             });
             entry.as_slice()
-        }
+        },
     };
     (meta, chunk)
 }

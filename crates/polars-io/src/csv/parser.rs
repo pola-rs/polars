@@ -115,7 +115,7 @@ pub(crate) fn next_line_position(
                     }
                     total_pos += pos + 1;
                 }
-            }
+            },
             // don't count the fields
             (Some(_), None) => return Some(total_pos + pos),
             // // no new line found, check latest line (without eol) for number of fields
@@ -282,12 +282,12 @@ impl<'a> Iterator for SplitLines<'a> {
                     else if c == self.end_line_char && !in_field {
                         break;
                     }
-                }
+                },
                 None => {
                     // no new line found we are done
                     // the rest will be done by last line specific code.
                     return None;
-                }
+                },
             }
         }
 
@@ -354,11 +354,12 @@ pub(super) fn parse_lines<'a>(
     comment_char: Option<u8>,
     quote_char: Option<u8>,
     eol_char: u8,
-    null_values: Option<&NullValuesCompiled>,
     missing_is_null: bool,
+    ignore_errors: bool,
+    mut truncate_ragged_lines: bool,
+    null_values: Option<&NullValuesCompiled>,
     projection: &[usize],
     buffers: &mut [Buffer<'a>],
-    ignore_errors: bool,
     n_lines: usize,
     // length of original schema
     schema_len: usize,
@@ -368,6 +369,12 @@ pub(super) fn parse_lines<'a>(
         !projection.is_empty(),
         "at least one column should be projected"
     );
+    // During projection pushdown we are not checking other csv fields.
+    // This would be very expensive and we don't care as we only want
+    // the projected columns.
+    if projection.len() != schema_len {
+        truncate_ragged_lines = true
+    }
 
     // we use the pointers to track the no of bytes read.
     let start = bytes.as_ptr() as usize;
@@ -418,7 +425,7 @@ pub(super) fn parse_lines<'a>(
                 None => {
                     bytes = &bytes[std::cmp::min(read_sol, bytes.len())..];
                     break;
-                }
+                },
                 Some((mut field, needs_escaping)) => {
                     let field_len = field.len();
 
@@ -487,6 +494,11 @@ pub(super) fn parse_lines<'a>(
                                 if bytes.get(read_sol - 1) == Some(&eol_char) {
                                     bytes = &bytes[read_sol..];
                                 } else {
+                                    if !truncate_ragged_lines && read_sol < bytes.len() {
+                                        polars_bail!(ComputeError: r#"found more fields than defined in 'Schema'
+
+Consider setting 'truncate_ragged_lines={}'."#, polars_error::constants::TRUE)
+                                    }
                                     let bytes_rem = skip_this_line(
                                         &bytes[read_sol - 1..],
                                         quote_char,
@@ -495,11 +507,11 @@ pub(super) fn parse_lines<'a>(
                                     bytes = bytes_rem;
                                 }
                                 break;
-                            }
+                            },
                         }
                     }
                     idx += 1;
-                }
+                },
             }
         }
 

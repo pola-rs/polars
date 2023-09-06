@@ -190,7 +190,7 @@ def test_from_pandas_include_indexes() -> None:
 
 def test_from_pandas_duplicated_columns() -> None:
     df = pd.DataFrame([[1, 2, 3, 4], [5, 6, 7, 8]], columns=["a", "b", "c", "b"])
-    with pytest.raises(ValueError, match="Duplicate column names found: "):
+    with pytest.raises(ValueError, match="duplicate column names found: "):
         pl.from_pandas(df)
 
 
@@ -459,8 +459,8 @@ def test_from_arrow() -> None:
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]  # type: ignore[union-attr]
 
-    # if not a PyArrow type, raise a ValueError
-    with pytest.raises(ValueError):
+    # if not a PyArrow type, raise a TypeError
+    with pytest.raises(TypeError):
         _ = pl.from_arrow([1, 2])
 
     df = pl.from_arrow(
@@ -477,7 +477,7 @@ def test_from_pandas_dataframe() -> None:
     assert df.rows() == [(1, 2, 3), (4, 5, 6)]
 
     # if not a pandas dataframe, raise a ValueError
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         _ = pl.from_pandas([1, 2])  # type: ignore[call-overload]
 
 
@@ -569,13 +569,13 @@ def test_to_pandas() -> None:
     )
     pd_out = df.to_pandas()
     pd_out_dtypes_expected = [
-        np.uint8,
-        np.float64,
-        np.float64,
-        np.dtype("datetime64[ns]"),
-        np.object_,
-        np.object_,
-        np.dtype("datetime64[ns]"),
+        np.dtype(np.uint8),
+        np.dtype(np.float64),
+        np.dtype(np.float64),
+        np.dtype("datetime64[ms]"),
+        np.dtype(np.object_),
+        np.dtype(np.object_),
+        np.dtype("datetime64[us]"),
         pd.CategoricalDtype(categories=["a", "b", "c"], ordered=False),
         pd.CategoricalDtype(categories=["e", "f"], ordered=False),
     ]
@@ -1074,7 +1074,7 @@ def test_to_init_repr() -> None:
 
 def test_untrusted_categorical_input() -> None:
     df = pd.DataFrame({"x": pd.Categorical(["x"], ["x", "y"])})
-    assert pl.from_pandas(df).groupby("x").count().to_dict(False) == {
+    assert pl.from_pandas(df).group_by("x").count().to_dict(False) == {
         "x": ["x"],
         "count": [1],
     }

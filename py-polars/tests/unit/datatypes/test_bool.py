@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 import pytest
 
@@ -41,7 +43,21 @@ def test_bool_min_max() -> None:
     assert not pl.Series([False, False]).max()
 
 
-def test_all_empty() -> None:
-    s = pl.Series([], dtype=pl.Boolean)
-    assert s.all()
-    assert not s.any()
+def test_bool_literal_expressions() -> None:
+    df = pl.DataFrame({"x": [False, True]})
+
+    def val(expr: pl.Expr) -> dict[str, list[bool]]:
+        return df.select(expr).to_dict(as_series=False)
+
+    assert val(pl.col("x") & False) == {"x": [False, False]}
+    assert val(pl.col("x") & True) == {"x": [False, True]}
+    assert val(pl.col("x") | False) == {"x": [False, True]}
+    assert val(pl.col("x") | True) == {"x": [True, True]}
+    assert val(pl.col("x") ^ False) == {"x": [False, True]}
+    assert val(pl.col("x") ^ True) == {"x": [True, False]}
+    assert val(False & pl.col("x")) == {"literal": [False, False]}
+    assert val(True & pl.col("x")) == {"literal": [False, True]}
+    assert val(False | pl.col("x")) == {"literal": [False, True]}
+    assert val(True | pl.col("x")) == {"literal": [True, True]}
+    assert val(False ^ pl.col("x")) == {"literal": [False, True]}
+    assert val(True ^ pl.col("x")) == {"literal": [True, False]}

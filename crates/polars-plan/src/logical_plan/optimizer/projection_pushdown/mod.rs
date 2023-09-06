@@ -1,6 +1,6 @@
 mod functions;
 mod generic;
-mod groupby;
+mod group_by;
 mod hstack;
 mod joins;
 mod projection;
@@ -17,7 +17,7 @@ use semi_anti_join::process_semi_anti_join;
 use crate::logical_plan::Context;
 use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
-use crate::prelude::optimizer::projection_pushdown::groupby::process_groupby;
+use crate::prelude::optimizer::projection_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
@@ -202,7 +202,9 @@ impl ProjectionPushDown {
         builder: ALogicalPlanBuilder,
     ) -> ALogicalPlan {
         if !local_projections.is_empty() {
-            builder.project(local_projections).build()
+            builder
+                .project(local_projections, Default::default())
+                .build()
         } else {
             builder.build()
         }
@@ -335,27 +337,6 @@ impl ProjectionPushDown {
                 lp_arena,
                 expr_arena,
             ),
-            LocalProjection { expr, input, .. } => {
-                self.pushdown_and_assign(
-                    input,
-                    acc_projections,
-                    projected_names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )?;
-                let lp = lp_arena.get(input);
-                let schema = lp.schema(lp_arena);
-
-                // projection from a wildcard may be dropped if the schema changes due to the optimization
-                let proj = expr
-                    .into_iter()
-                    .filter(|e| check_input_node(*e, &schema, expr_arena))
-                    .collect();
-                Ok(ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
-                    .project_local(proj)
-                    .build())
-            }
             AnonymousScan {
                 function,
                 file_info,
@@ -398,7 +379,7 @@ impl ProjectionPushDown {
                     };
                     Ok(lp)
                 }
-            }
+            },
             DataFrameScan {
                 df,
                 schema,
@@ -424,7 +405,7 @@ impl ProjectionPushDown {
                     selection,
                 };
                 Ok(lp)
-            }
+            },
             #[cfg(feature = "python")]
             PythonScan {
                 mut options,
@@ -443,7 +424,7 @@ impl ProjectionPushDown {
                     )?))
                 };
                 Ok(PythonScan { options, predicate })
-            }
+            },
             Scan {
                 path,
                 file_info,
@@ -478,7 +459,7 @@ impl ProjectionPushDown {
                     file_options,
                 };
                 Ok(lp)
-            }
+            },
             Sort {
                 input,
                 by_column,
@@ -513,7 +494,7 @@ impl ProjectionPushDown {
                     by_column,
                     args,
                 })
-            }
+            },
             Distinct { input, options } => {
                 // make sure that the set of unique columns is projected
                 if !acc_projections.is_empty() {
@@ -549,7 +530,7 @@ impl ProjectionPushDown {
                     expr_arena,
                 )?;
                 Ok(Distinct { input, options })
-            }
+            },
             Selection { predicate, input } => {
                 if !acc_projections.is_empty() {
                     // make sure that the filter column is projected
@@ -569,7 +550,7 @@ impl ProjectionPushDown {
                     expr_arena,
                 )?;
                 Ok(Selection { predicate, input })
-            }
+            },
             Aggregate {
                 input,
                 keys,
@@ -578,7 +559,7 @@ impl ProjectionPushDown {
                 schema,
                 maintain_order,
                 options,
-            } => process_groupby(
+            } => process_group_by(
                 self,
                 input,
                 keys,
@@ -629,10 +610,16 @@ impl ProjectionPushDown {
                     expr_arena,
                 ),
             },
-            HStack { input, exprs, .. } => process_hstack(
+            HStack {
+                input,
+                exprs,
+                options,
+                ..
+            } => process_hstack(
                 self,
                 input,
                 exprs.exprs(),
+                options,
                 acc_projections,
                 projected_names,
                 projections_seen,
@@ -674,7 +661,7 @@ impl ProjectionPushDown {
                     contexts,
                     schema: Arc::new(new_schema),
                 })
-            }
+            },
             MapFunction {
                 input,
                 ref function,
@@ -699,7 +686,7 @@ impl ProjectionPushDown {
                     lp_arena,
                     expr_arena,
                 )
-            }
+            },
             // These nodes only have inputs and exprs, so we can use same logic.
             lp @ Slice { .. } | lp @ FileSink { .. } => process_generic(
                 self,
@@ -721,11 +708,11 @@ impl ProjectionPushDown {
                 } else {
                     Ok(
                         ALogicalPlanBuilder::from_lp(logical_plan, expr_arena, lp_arena)
-                            .project(acc_projections)
+                            .project(acc_projections, Default::default())
                             .build(),
                     )
                 }
-            }
+            },
         }
     }
 
