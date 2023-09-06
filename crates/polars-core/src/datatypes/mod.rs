@@ -160,7 +160,6 @@ unsafe impl PolarsDataType for FixedSizeListType {
         DataType::Array(Box::new(DataType::Null), 0)
     }
 }
-#[cfg(feature = "dtype-array")]
 #[cfg(feature = "dtype-decimal")]
 pub struct Int128Type {}
 #[cfg(feature = "dtype-decimal")]
@@ -179,7 +178,6 @@ impl PolarsNumericType for Int128Type {
 }
 #[cfg(feature = "dtype-decimal")]
 impl PolarsIntegerType for Int128Type {}
-#[cfg(feature = "dtype-decimal")]
 #[cfg(feature = "object")]
 pub struct ObjectType<T>(T);
 #[cfg(feature = "object")]
