@@ -2406,6 +2406,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Filter the rows in the LazyFrame based on a predicate expression.
 
+        The original order of the remaining rows is preserved.
+
         Parameters
         ----------
         predicate
@@ -3424,6 +3426,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             None.
         how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
             Join strategy.
+
+            .. note::
+                A left join preserves the row order of the left DataFrame.
         left_on
             Join column of the left DataFrame.
         right_on
@@ -4970,7 +4975,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Drop all rows that contain null values.
 
-        Returns a new LazyFrame.
+        The original order of the remaining rows is preserved.
 
         Parameters
         ----------
