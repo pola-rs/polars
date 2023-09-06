@@ -51,11 +51,11 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     #[inline]
     pub fn downcast_iter(
         &self,
-    ) -> impl Iterator<Item = &<T as HasArrayT>::ArrayT> + DoubleEndedIterator {
+    ) -> impl Iterator<Item = &ArrayT<T>> + DoubleEndedIterator {
         self.chunks.iter().map(|arr| {
-            // SAFETY: HasArrayT guarantees this is correct.
+            // SAFETY: ArrayT guarantees this is correct.
             let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const <T as HasArrayT>::ArrayT) }
+            unsafe { &*(arr as *const dyn Array as *const ArrayT<T>) }
         })
     }
 
@@ -66,16 +66,16 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     #[inline]
     pub unsafe fn downcast_iter_mut(
         &mut self,
-    ) -> impl Iterator<Item = &mut <T as HasArrayT>::ArrayT> + DoubleEndedIterator {
+    ) -> impl Iterator<Item = &mut ArrayT<T>> + DoubleEndedIterator {
         self.chunks.iter_mut().map(|arr| {
-            // SAFETY: HasArrayT guarantees this is correct.
+            // SAFETY: ArrayT guarantees this is correct.
             let arr = &mut **arr;
-            &mut *(arr as *mut dyn Array as *mut <T as HasArrayT>::ArrayT)
+            &mut *(arr as *mut dyn Array as *mut ArrayT<T>)
         })
     }
 
     #[inline]
-    pub fn downcast_chunks(&self) -> Chunks<'_, <T as HasArrayT>::ArrayT> {
+    pub fn downcast_chunks(&self) -> Chunks<'_, ArrayT<T>> {
         Chunks::new(&self.chunks)
     }
 

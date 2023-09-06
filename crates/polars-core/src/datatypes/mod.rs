@@ -80,8 +80,8 @@ pub unsafe trait HasArrayT {
 
 /// Gets the physical type associated with a PolarsDataType. Same as T::Native for
 /// PolarsNumericTypes.
+pub type ArrayT<T> = <T as HasArrayT>::ArrayT;
 pub type PhysicalT<'a, T> = <<T as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>;
-
 
 pub trait PolarsIntegerType: PolarsNumericType {}
 pub trait PolarsFloatType: PolarsNumericType {}
