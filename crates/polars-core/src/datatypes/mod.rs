@@ -207,16 +207,6 @@ unsafe impl<T: PolarsObject> HasArrayT for ObjectType<T> {
     type ArrayT = crate::chunked_array::object::ObjectArray<T>;
 }
 
-
-/// Any type that is not nested.
-pub trait PolarsSingleType: PolarsDataType {}
-
-impl<T> PolarsSingleType for T where T: NativeType + PolarsDataType {}
-
-impl PolarsSingleType for Utf8Type {}
-
-impl PolarsSingleType for BinaryType {}
-
 #[cfg(feature = "dtype-array")]
 pub type ArrayChunked = ChunkedArray<FixedSizeListType>;
 pub type ListChunked = ChunkedArray<ListType>;
