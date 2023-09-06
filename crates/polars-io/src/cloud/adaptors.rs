@@ -1,5 +1,7 @@
 //! Interface with the object_store crate and define AsyncSeek, AsyncRead.
-//! This is used, for example, by the parquet2 crate.
+//! This is used, for example, by the [parquet2] crate.
+//!
+//! [parquet2]: https://crates.io/crates/parquet2
 use std::io::{self};
 use std::pin::Pin;
 use std::sync::Arc;

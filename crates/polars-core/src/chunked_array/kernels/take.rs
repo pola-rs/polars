@@ -6,7 +6,7 @@ use polars_arrow::utils::combine_validities_and;
 
 use crate::prelude::*;
 
-/// Take kernel for multiple chunks. We directly return a ChunkedArray because that path chooses the fastest collection path.
+/// Take kernel for multiple chunks. We directly return a [`ChunkedArray`] because that path chooses the fastest collection path.
 pub(crate) fn take_primitive_iter_n_chunks<T: PolarsNumericType, I: IntoIterator<Item = usize>>(
     ca: &ChunkedArray<T>,
     indices: I,
@@ -16,7 +16,7 @@ pub(crate) fn take_primitive_iter_n_chunks<T: PolarsNumericType, I: IntoIterator
 }
 
 /// Take kernel for multiple chunks where an iterator can produce None values.
-/// Used in join operations. We directly return a ChunkedArray because that path chooses the fastest collection path.
+/// Used in join operations. We directly return a [`ChunkedArray`] because that path chooses the fastest collection path.
 pub(crate) fn take_primitive_opt_iter_n_chunks<
     T: PolarsNumericType,
     I: IntoIterator<Item = Option<usize>>,

@@ -41,7 +41,7 @@ impl ArrayChunked {
         }
     }
 
-    /// Ignore the list indices and apply `func` to the inner type as `Series`.
+    /// Ignore the list indices and apply `func` to the inner type as [`Series`].
     pub fn apply_to_inner(
         &self,
         func: &dyn Fn(Series) -> PolarsResult<Series>,

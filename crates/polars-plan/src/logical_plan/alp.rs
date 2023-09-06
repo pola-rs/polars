@@ -12,7 +12,7 @@ use crate::logical_plan::FileScan;
 use crate::prelude::*;
 use crate::utils::PushNode;
 
-/// ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
+/// [`ALogicalPlan`] is a representation of [`LogicalPlan`] with [`Node`]s which are allocated in an [`Arena`]
 #[derive(Clone, Debug)]
 pub enum ALogicalPlan {
     AnonymousScan {
