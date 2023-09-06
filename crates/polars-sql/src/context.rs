@@ -127,6 +127,11 @@ impl SQLContext {
     pub fn registry(&self) -> &Arc<dyn FunctionRegistry> {
         &self.function_registry
     }
+
+    /// Get a mutable reference to the function registry of the SQLContext
+    pub fn registry_mut(&mut self) -> &mut dyn FunctionRegistry {
+        Arc::get_mut(&mut self.function_registry).unwrap()
+    }
 }
 
 impl SQLContext {
