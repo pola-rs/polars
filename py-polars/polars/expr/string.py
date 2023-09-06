@@ -594,14 +594,14 @@ class ExprStringNameSpace:
         >>> df = pl.DataFrame({"baz": ["foo:bar", "foofoo:bar"]})
         >>> df
         shape: (2, 1)
-        ┌─────────────┐
-        │ baz         │
-        │ ---         │
-        │ str         │
-        ╞═════════════╡
-        │ foo:bar     │
-        │ foofoo:bar  │
-        └─────────────┘
+        ┌────────────┐
+        │ baz        │
+        │ ---        │
+        │ str        │
+        ╞════════════╡
+        │ foo:bar    │
+        │ foofoo:bar │
+        └────────────┘
 
         >>> df.select(pl.col("baz").str.strip_prefix("foo"))
         shape: (2, 1)
@@ -632,14 +632,14 @@ class ExprStringNameSpace:
         >>> df = pl.DataFrame({"baz": ["foo:bar", "foo:barbar"]})
         >>> df
         shape: (2, 1)
-        ┌─────────────┐
-        │ baz         │
-        │ ---         │
-        │ str         │
-        ╞═════════════╡
-        │ foo:bar     │
-        │ foo:barbar  │
-        └─────────────┘
+        ┌────────────┐
+        │ baz        │
+        │ ---        │
+        │ str        │
+        ╞════════════╡
+        │ foo:bar    │
+        │ foo:barbar │
+        └────────────┘
 
         >>> df.select(pl.col("baz").str.strip_suffix("bar"))
         shape: (2, 1)
