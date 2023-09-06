@@ -17,6 +17,7 @@ _PANDAS_AVAILABLE = True
 _PYARROW_AVAILABLE = True
 _PYDANTIC_AVAILABLE = True
 _ZONEINFO_AVAILABLE = True
+_GEVENT_AVAILABLE = True
 
 
 class _LazyModule(ModuleType):
@@ -155,6 +156,7 @@ if TYPE_CHECKING:
     import dataframe_api_compat
     import deltalake
     import fsspec
+    import gevent
     import hypothesis
     import numpy
     import pandas
@@ -189,6 +191,7 @@ else:
         if sys.version_info >= (3, 9)
         else _lazy_import("backports.zoneinfo")
     )
+    gevent, _GEVENT_AVAILABLE = _lazy_import("gevent")
 
 
 @lru_cache(maxsize=None)
@@ -233,6 +236,7 @@ __all__ = [
     "pydantic",
     "pyarrow",
     "zoneinfo",
+    "gevent",
     # lazy utilities
     "_check_for_numpy",
     "_check_for_pandas",
@@ -247,4 +251,5 @@ __all__ = [
     "_PANDAS_AVAILABLE",
     "_PYARROW_AVAILABLE",
     "_ZONEINFO_AVAILABLE",
+    "_GEVENT_AVAILABLE",
 ]

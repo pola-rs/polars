@@ -5,10 +5,10 @@ import time
 from functools import partial
 from typing import Any, Callable
 
-import gevent  # type: ignore[import]
 import pytest
 
 import polars as pl
+from polars.dependencies import gevent
 
 
 async def _aio_collect_async(raises: bool = False) -> pl.DataFrame:

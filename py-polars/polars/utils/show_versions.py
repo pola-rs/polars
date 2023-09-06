@@ -71,6 +71,7 @@ def _get_dependency_info() -> dict[str, str]:
         "sqlalchemy",
         "xlsx2csv",
         "xlsxwriter",
+        "gevent",
     ]
     return {f"{name}:": _get_dependency_version(name) for name in opt_deps}
 

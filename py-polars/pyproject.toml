@@ -89,6 +89,7 @@ module = [
   "xlsx2csv",
   "xlsxwriter.*",
   "zoneinfo",
+  "gevent",
 ]
 ignore_missing_imports = true
 

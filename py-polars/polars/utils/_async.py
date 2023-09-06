@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Awaitable, Generator, Generic, TypeVar
 
+from polars.dependencies import _GEVENT_AVAILABLE
 from polars.utils._wrap import wrap_df
 
 if TYPE_CHECKING:
@@ -17,6 +18,12 @@ class _GeventDataFrameResult(Generic[T]):
     __slots__ = ("_watcher", "_value", "_result")
 
     def __init__(self) -> None:
+        if not _GEVENT_AVAILABLE:
+            raise ImportError(
+                "gevent is required for using LazyFrame.collect_async(gevent=True) or"
+                "polars.collect_all_async(gevent=True)"
+            )
+
         from gevent.event import AsyncResult  # type: ignore[import]
         from gevent.hub import get_hub  # type: ignore[import]
 
