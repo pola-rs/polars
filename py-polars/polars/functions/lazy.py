@@ -1640,6 +1640,7 @@ def collect_all(
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
+            eager=False,
         )
         prepared.append(ldf)
 
@@ -1726,6 +1727,7 @@ def collect_all_async(
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
+            eager=False,
         )
         prepared.append(ldf)
 

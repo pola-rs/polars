@@ -324,10 +324,14 @@ pub enum FileType {
 #[derive(Clone, Copy, Debug)]
 pub struct ProjectionOptions {
     pub run_parallel: bool,
+    pub duplicate_check: bool,
 }
 
 impl Default for ProjectionOptions {
     fn default() -> Self {
-        Self { run_parallel: true }
+        Self {
+            run_parallel: true,
+            duplicate_check: true,
+        }
     }
 }

@@ -495,7 +495,7 @@ where
             Box::new(op) as Box<dyn Operator>
         },
         MapFunction {
-            function: FunctionNode::FastProjection { columns },
+            function: FunctionNode::FastProjection { columns, .. },
             input,
         } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);

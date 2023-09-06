@@ -365,6 +365,44 @@ impl LogicalPlanBuilder {
         .into()
     }
 
+    pub fn drop_columns(self, to_drop: PlHashSet<String>) -> Self {
+        let schema = try_delayed!(self.0.schema(), &self.0, into);
+
+        let mut output_schema = Schema::with_capacity(schema.len() - to_drop.len());
+        let columns = schema
+            .iter()
+            .filter_map(|(col_name, dtype)| {
+                if to_drop.contains(col_name.as_str()) {
+                    None
+                } else {
+                    let out = Some(col(col_name));
+                    output_schema.with_column(col_name.clone(), dtype.clone());
+                    out
+                }
+            })
+            .collect::<Vec<_>>();
+
+        if columns.is_empty() {
+            self.map(
+                |_| Ok(DataFrame::new_no_checks(vec![])),
+                AllowedOptimizations::default(),
+                Some(Arc::new(|_: &Schema| Ok(Arc::new(Schema::default())))),
+                "EMPTY PROJECTION",
+            )
+        } else {
+            LogicalPlan::Projection {
+                expr: columns,
+                input: Box::new(self.0),
+                schema: Arc::new(output_schema),
+                options: ProjectionOptions {
+                    run_parallel: false,
+                    duplicate_check: false,
+                },
+            }
+            .into()
+        }
+    }
+
     pub fn project(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let (exprs, schema) = try_delayed!(prepare_projection(exprs, &schema), &self.0, into);
@@ -412,6 +450,7 @@ impl LogicalPlanBuilder {
             exprs,
             ProjectionOptions {
                 run_parallel: false,
+                duplicate_check: false,
             },
         )
     }

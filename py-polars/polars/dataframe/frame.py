@@ -3833,7 +3833,7 @@ class DataFrame:
         └───────┴─────┴─────┘
 
         """
-        return self.lazy().rename(mapping).collect(no_optimization=True)
+        return self.lazy().rename(mapping).collect(eager=True)
 
     def insert_at_idx(self, index: int, series: Series) -> Self:
         """
@@ -3954,9 +3954,7 @@ class DataFrame:
             predicate = pl.Series(predicate)
 
         return (
-            self.lazy()
-            .filter(predicate)  # type: ignore[arg-type]
-            .collect(no_optimization=True)
+            self.lazy().filter(predicate).collect(eager=True)  # type: ignore[arg-type]
         )
 
     @overload
@@ -4310,7 +4308,7 @@ class DataFrame:
         return (
             self.lazy()
             .sort(by, *more_by, descending=descending, nulls_last=nulls_last)
-            .collect(no_optimization=True)
+            .collect(eager=True)
         )
 
     def top_k(
@@ -4838,7 +4836,7 @@ class DataFrame:
         └──────┴──────┘
 
         """
-        return self.lazy().drop_nulls(subset).collect(no_optimization=True)
+        return self.lazy().drop_nulls(subset).collect(eager=True)
 
     def pipe(
         self,
@@ -5840,7 +5838,7 @@ class DataFrame:
                 allow_parallel=allow_parallel,
                 force_parallel=force_parallel,
             )
-            .collect(no_optimization=True)
+            .collect(eager=True)
         )
 
     def join(
@@ -5989,7 +5987,7 @@ class DataFrame:
                 suffix=suffix,
                 validate=validate,
             )
-            .collect(no_optimization=True)
+            .collect(eager=True)
         )
 
     def map_rows(
@@ -6344,7 +6342,7 @@ class DataFrame:
         └─────┘
 
         """
-        return self.lazy().drop(columns, *more_columns).collect(no_optimization=True)
+        return self.lazy().drop(columns, *more_columns).collect(eager=True)
 
     def drop_in_place(self, name: str) -> Series:
         """
@@ -6447,7 +6445,7 @@ class DataFrame:
         └─────┴─────┴────────────┘
 
         """
-        return self.lazy().cast(dtypes, strict=strict).collect(no_optimization=True)
+        return self.lazy().cast(dtypes, strict=strict).collect(eager=True)
 
     def clear(self, n: int = 0) -> Self:
         """
@@ -6724,7 +6722,7 @@ class DataFrame:
         return (
             self.lazy()
             .fill_null(value, strategy, limit, matches_supertype=matches_supertype)
-            .collect(no_optimization=True)
+            .collect(eager=True)
         )
 
     def fill_nan(self, value: Expr | int | float | None) -> DataFrame:
@@ -6772,7 +6770,7 @@ class DataFrame:
         └──────┴──────┘
 
         """
-        return self.lazy().fill_nan(value).collect(no_optimization=True)
+        return self.lazy().fill_nan(value).collect(eager=True)
 
     def explode(
         self,
@@ -6832,7 +6830,7 @@ class DataFrame:
         └─────────┴─────────┘
 
         """
-        return self.lazy().explode(columns, *more_columns).collect(no_optimization=True)
+        return self.lazy().explode(columns, *more_columns).collect(eager=True)
 
     def pivot(
         self,
@@ -7458,7 +7456,7 @@ class DataFrame:
         return (
             self.lazy()
             .shift_and_fill(fill_value=fill_value, periods=periods)
-            .collect(no_optimization=True)
+            .collect(eager=True)
         )
 
     def is_duplicated(self) -> Series:
@@ -7677,7 +7675,7 @@ class DataFrame:
         └───────────┘
 
         """
-        return self.lazy().select(*exprs, **named_exprs).collect(no_optimization=True)
+        return self.lazy().select(*exprs, **named_exprs).collect(eager=True)
 
     def select_seq(
         self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
@@ -7703,9 +7701,7 @@ class DataFrame:
         select
 
         """
-        return (
-            self.lazy().select_seq(*exprs, **named_exprs).collect(no_optimization=True)
-        )
+        return self.lazy().select_seq(*exprs, **named_exprs).collect(eager=True)
 
     def with_columns(
         self,
@@ -7855,11 +7851,7 @@ class DataFrame:
         └─────┴──────┴─────────────┘
 
         """
-        return (
-            self.lazy()
-            .with_columns(*exprs, **named_exprs)
-            .collect(no_optimization=True)
-        )
+        return self.lazy().with_columns(*exprs, **named_exprs).collect(eager=True)
 
     def with_columns_seq(
         self,
@@ -7894,11 +7886,7 @@ class DataFrame:
         with_columns
 
         """
-        return (
-            self.lazy()
-            .with_columns_seq(*exprs, **named_exprs)
-            .collect(no_optimization=True)
-        )
+        return self.lazy().with_columns_seq(*exprs, **named_exprs).collect(eager=True)
 
     @overload
     def n_chunks(self, strategy: Literal["first"] = ...) -> int:
@@ -8518,7 +8506,7 @@ class DataFrame:
         return (
             self.lazy()
             .unique(subset=subset, keep=keep, maintain_order=maintain_order)
-            .collect(no_optimization=True)
+            .collect(eager=True)
         )
 
     def n_unique(self, subset: str | Expr | Sequence[str | Expr] | None = None) -> int:
@@ -8587,7 +8575,7 @@ class DataFrame:
             struct_fields = F.all() if (subset is None) else subset
             expr = F.struct(struct_fields)  # type: ignore[call-overload]
 
-        df = self.lazy().select(expr.n_unique()).collect(no_optimization=True)
+        df = self.lazy().select(expr.n_unique()).collect(eager=True)
         return 0 if df.is_empty() else df.row(0)[0]
 
     def approx_n_unique(self) -> DataFrame:
@@ -8615,7 +8603,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        return self.lazy().approx_n_unique().collect(no_optimization=True)
+        return self.lazy().approx_n_unique().collect(eager=True)
 
     @deprecate_renamed_function("approx_n_unique", version="0.18.12")
     def approx_unique(self) -> DataFrame:
@@ -9640,7 +9628,7 @@ class DataFrame:
         │ elise  ┆ 44  │
         └────────┴─────┘
         """
-        return self.lazy().merge_sorted(other.lazy(), key).collect(no_optimization=True)
+        return self.lazy().merge_sorted(other.lazy(), key).collect(eager=True)
 
     def set_sorted(
         self,
@@ -9663,7 +9651,7 @@ class DataFrame:
         return (
             self.lazy()
             .set_sorted(column, *more_columns, descending=descending)
-            .collect(no_optimization=True)
+            .collect(eager=True)
         )
 
     def update(
@@ -9746,7 +9734,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        return self.lazy().update(other.lazy(), on, how).collect(no_optimization=True)
+        return self.lazy().update(other.lazy(), on, how).collect(eager=True)
 
     @deprecate_renamed_function("group_by", version="0.19.0")
     def groupby(
