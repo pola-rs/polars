@@ -329,3 +329,23 @@ def test_utf8_list_agg_explode() -> None:
 
     assert_frame_equal(df, df2)
     assert_frame_equal(df.explode("a"), df2.explode("a"))
+
+
+def test_explode_null_struct() -> None:
+    df = [
+        {"col1": None},
+        {
+            "col1": [
+                {"field1": None, "field2": None, "field3": None},
+                {"field1": None, "field2": "some", "field3": "value"},
+            ]
+        },
+    ]
+
+    assert pl.DataFrame(df).explode("col1").to_dict(False) == {
+        "col1": [
+            {"field1": None, "field2": None, "field3": None},
+            {"field1": None, "field2": None, "field3": None},
+            {"field1": None, "field2": "some", "field3": "value"},
+        ]
+    }
