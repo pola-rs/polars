@@ -3417,10 +3417,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Add a join operation to the Logical Plan.
 
-            .. note::
-
-                - A left join preserves the row order of the left DataFrame.
-
         Parameters
         ----------
         other
@@ -3430,6 +3426,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             None.
         how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
             Join strategy.
+
+            .. note::
+                A left join preserves the row order of the left DataFrame.
         left_on
             Join column of the left DataFrame.
         right_on

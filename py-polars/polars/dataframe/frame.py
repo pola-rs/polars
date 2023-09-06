@@ -5867,9 +5867,7 @@ class DataFrame:
             Join strategy.
 
             .. note::
-
-                - A left join preserves the row order of the left DataFrame.
-
+                A left join preserves the row order of the left DataFrame.
         left_on
             Name(s) of the left join column(s).
         right_on
