@@ -396,10 +396,15 @@ pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
     let pat = pat.utf8()?;
 
     if pat.len() == 1 {
-        let pat = pat
-            .get(0)
-            .ok_or_else(|| polars_err!(ComputeError: "expected a pattern, got null"))?;
-        ca.extract_all(pat).map(|ca| ca.into_series())
+        if let Some(pat) = pat.get(0) {
+            ca.extract_all(pat).map(|ca| ca.into_series())
+        } else {
+            Ok(Series::full_null(
+                ca.name(),
+                ca.len(),
+                &DataType::List(Box::new(DataType::Utf8)),
+            ))
+        }
     } else {
         ca.extract_all_many(pat).map(|ca| ca.into_series())
     }
@@ -412,10 +417,11 @@ pub(super) fn count_match(args: &[Series]) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     let pat = pat.utf8()?;
     if pat.len() == 1 {
-        let pat = pat
-            .get(0)
-            .ok_or_else(|| polars_err!(ComputeError: "expected a pattern, got null"))?;
-        ca.count_match(pat).map(|ca| ca.into_series())
+        if let Some(pat) = pat.get(0) {
+            ca.count_match(pat).map(|ca| ca.into_series())
+        } else {
+            Ok(Series::full_null(ca.name(), ca.len(), &DataType::UInt32))
+        }
     } else {
         ca.count_match_many(pat).map(|ca| ca.into_series())
     }
