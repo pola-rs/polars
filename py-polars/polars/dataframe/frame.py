@@ -4738,7 +4738,6 @@ class DataFrame:
         """
         Drop all rows that contain null values.
 
-        Returns a new DataFrame.
         The original order of the remaining rows is preserved.
 
         Parameters
