@@ -99,7 +99,7 @@ impl FunctionRegistry for MyFunctionRegistry {
                 output_type: f.output_type(),
                 options: f.options(),
             };
-            Ok(expr)
+            Ok(expr.alias(&f.output_field.name))
         } else {
             todo!()
         }
@@ -127,6 +127,7 @@ fn main() -> PolarsResult<()> {
 
     let mut ctx = polars::sql::SQLContext::new()
         .with_function_registry(Arc::new(MyFunctionRegistry::new(vec![my_custom_sum])));
+
     let df = df! {
         "a" => &[1, 2, 3],
         "b" => &[1, 2, 3],
@@ -136,12 +137,38 @@ fn main() -> PolarsResult<()> {
     .lazy();
 
     ctx.register("foo", df);
-    let ok_res = ctx.execute("SELECT a, b, my_custom_sum(a, b) as a_plus_b FROM foo");
-    assert!(ok_res.is_ok());
-    println!("{:?}", ok_res.unwrap().collect()?);
+    let res = ctx.execute("SELECT a, b, my_custom_sum(a, b) FROM foo");
+
+    assert!(res.is_ok());
+    println!("{:?}", res.unwrap().collect()?);
+
+    // schema is invalid so it will fail
     assert!(ctx
         .execute("SELECT a, b, my_custom_sum(c) as invalid FROM foo")
         .is_err());
+
+    // create a new UDF to be registered on the context
+    let my_custom_divide = MyUdf::new(
+        "my_custom_divide",
+        vec![
+            Field::new("a", DataType::Int32),
+            Field::new("b", DataType::Int32),
+        ],
+        Field::new("a_div_b", DataType::Int32),
+        move |s: &mut [Series]| {
+            let first = s[0].clone();
+            let second = s[1].clone();
+            Ok(Some(first / second))
+        },
+    );
+
+    // register a new UDF on an existing context
+    ctx.registry_mut().register("my_div", &my_custom_divide)?;
+
+    // execute the query
+    let res = ctx.execute("SELECT a, b, my_div(a, b) as my_div FROM foo")?;
+
+    println!("{:?}", res.collect()?);
 
     Ok(())
 }
