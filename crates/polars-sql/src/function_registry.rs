@@ -8,7 +8,7 @@ use polars_core::series::Series;
 pub use polars_plan::prelude::{Context, FunctionOptions};
 use polars_plan::prelude::{Expr, FunctionOutputField, GetOutput, SeriesUdf};
 /// A registry that holds user defined functions.
-pub trait FunctionRegistry {
+pub trait FunctionRegistry: Send + Sync {
     /// Register a function.
     fn register(&mut self, name: &str, fun: UserDefinedFunction) -> PolarsResult<()>;
     /// Call a function.

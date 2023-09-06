@@ -520,7 +520,7 @@ impl PolarsSqlFunctions {
             "unnest" => Self::Explode,
 
             other => {
-                if ctx.function_registry.contains(&other) {
+                if ctx.function_registry.contains(other) {
                     Self::Udf(other.to_string())
                 } else {
                     polars_bail!(InvalidOperation: "unsupported SQL function: {}", other);
@@ -704,7 +704,7 @@ impl SqlFunctionVisitor<'_> {
             .into_iter()
             .map(|arg| {
                 if let FunctionArgExpr::Expr(e) = arg {
-                    parse_sql_expr(&e, self.ctx)
+                    parse_sql_expr(e, self.ctx)
                 } else {
                     polars_bail!(ComputeError: "Only expressions are supported in UDFs")
                 }
