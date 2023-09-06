@@ -6,7 +6,7 @@ use polars_core::series::Series;
 pub use polars_plan::prelude::{Context, FunctionOptions};
 use polars_plan::prelude::{Expr, FunctionOutputField, GetOutput, SeriesUdf};
 /// A registry that holds user defined functions.
-pub trait FunctionRegistry {
+pub trait FunctionRegistry: Send + Sync {
     /// Register a function.
     fn register(&mut self, name: &str, fun: &dyn UserDefinedFunction) -> PolarsResult<()>;
     /// Call a user defined function.
@@ -35,7 +35,7 @@ impl FunctionRegistry for DefaultFunctionRegistry {
 ///
 /// This trait provides several methods to describe and manipulate the user-defined function.
 /// This is to be used with the [`FunctionRegistry`].
-pub trait UserDefinedFunction {
+pub trait UserDefinedFunction: Send + Sync {
     /// Casts the function to a generic `Any` type.
     ///
     /// This method allows for dynamic type checking at runtime.

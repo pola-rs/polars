@@ -136,10 +136,12 @@ fn main() -> PolarsResult<()> {
     .lazy();
 
     ctx.register("foo", df);
-    let res = ctx
-        .execute("SELECT a, b, my_custom_sum(c, b) as a_plus_b FROM foo")?
-        .collect()?;
+    let ok_res = ctx.execute("SELECT a, b, my_custom_sum(a, b) as a_plus_b FROM foo");
+    assert!(ok_res.is_ok());
+    println!("{:?}", ok_res.unwrap().collect()?);
+    assert!(ctx
+        .execute("SELECT a, b, my_custom_sum(c) as invalid FROM foo")
+        .is_err());
 
-    println!("{res}");
     Ok(())
 }

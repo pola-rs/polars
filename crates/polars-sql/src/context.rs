@@ -23,9 +23,8 @@ use crate::table_functions::PolarsTableFunctions;
 #[derive(Clone)]
 pub struct SQLContext {
     pub(crate) table_map: PlHashMap<String, LazyFrame>,
-    cte_map: RefCell<PlHashMap<String, LazyFrame>>,
-
     pub(crate) function_registry: Arc<dyn FunctionRegistry>,
+    cte_map: RefCell<PlHashMap<String, LazyFrame>>,
 }
 
 impl Default for SQLContext {
