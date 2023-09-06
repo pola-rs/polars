@@ -30,7 +30,7 @@ import polars._reexport as pl
 from polars.dependencies import _PYICEBERG_AVAILABLE
 
 if _PYICEBERG_AVAILABLE:
-    from polars.dependencies.pyiceberg.expressions import (  # type: ignore
+    from pyiceberg.expressions import (
         AlwaysFalse,
         AlwaysTrue,
         And,
