@@ -140,6 +140,8 @@ impl LazyFrame {
             #[cfg(feature = "cse")]
             comm_subexpr_elim: false,
             streaming: false,
+            eager: false,
+            fast_projection: false,
         })
     }
 
@@ -190,6 +192,11 @@ impl LazyFrame {
     /// Allow (partial) streaming engine.
     pub fn with_streaming(mut self, toggle: bool) -> Self {
         self.opt_state.streaming = toggle;
+        self
+    }
+
+    pub fn _with_eager(mut self, toggle: bool) -> Self {
+        self.opt_state.eager = toggle;
         self
     }
 
@@ -431,7 +438,14 @@ impl LazyFrame {
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
     {
-        self.select(vec![col("*").exclude(columns)])
+        let to_drop = columns
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<PlHashSet<_>>();
+
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().drop_columns(to_drop).build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -762,7 +776,13 @@ impl LazyFrame {
     /// ```
     pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
         let exprs = exprs.as_ref().to_vec();
-        self.select_impl(exprs, ProjectionOptions { run_parallel: true })
+        self.select_impl(
+            exprs,
+            ProjectionOptions {
+                run_parallel: true,
+                duplicate_check: true,
+            },
+        )
     }
 
     pub fn select_seq<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
@@ -771,6 +791,7 @@ impl LazyFrame {
             exprs,
             ProjectionOptions {
                 run_parallel: false,
+                duplicate_check: true,
             },
         )
     }
@@ -1097,6 +1118,7 @@ impl LazyFrame {
                 vec![expr],
                 ProjectionOptions {
                     run_parallel: false,
+                    duplicate_check: true,
                 },
             )
             .build();
@@ -1119,7 +1141,13 @@ impl LazyFrame {
     /// ```
     pub fn with_columns<E: AsRef<[Expr]>>(self, exprs: E) -> LazyFrame {
         let exprs = exprs.as_ref().to_vec();
-        self.with_columns_impl(exprs, ProjectionOptions { run_parallel: true })
+        self.with_columns_impl(
+            exprs,
+            ProjectionOptions {
+                run_parallel: true,
+                duplicate_check: true,
+            },
+        )
     }
 
     /// Add multiple columns to a DataFrame, but evaluate them sequentially.
@@ -1129,6 +1157,7 @@ impl LazyFrame {
             exprs,
             ProjectionOptions {
                 run_parallel: false,
+                duplicate_check: true,
             },
         )
     }

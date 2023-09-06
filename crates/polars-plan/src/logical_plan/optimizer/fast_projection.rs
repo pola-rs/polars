@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use polars_core::prelude::*;
+use smartstring::SmartString;
 
 use super::*;
 use crate::logical_plan::alp::ALogicalPlan;
@@ -19,12 +20,14 @@ pub(super) struct FastProjectionAndCollapse {
     /// keep track of nodes that are already processed when they
     /// can be expensive. Schema materialization can be for instance.
     processed: BTreeSet<Node>,
+    eager: bool,
 }
 
 impl FastProjectionAndCollapse {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(eager: bool) -> Self {
         Self {
             processed: Default::default(),
+            eager,
         }
     }
 }
@@ -33,11 +36,12 @@ fn impl_fast_projection(
     input: Node,
     expr: &[Node],
     expr_arena: &Arena<AExpr>,
+    duplicate_check: bool,
 ) -> Option<ALogicalPlan> {
     let mut columns = Vec::with_capacity(expr.len());
     for node in expr.iter() {
         if let AExpr::Column(name) = expr_arena.get(*node) {
-            columns.push(name.clone())
+            columns.push(SmartString::from(name.as_ref()))
         } else {
             break;
         }
@@ -47,6 +51,7 @@ fn impl_fast_projection(
             input,
             function: FunctionNode::FastProjection {
                 columns: Arc::from(columns),
+                duplicate_check,
             },
         };
 
@@ -67,17 +72,22 @@ impl OptimizationRule for FastProjectionAndCollapse {
         let lp = lp_arena.get(node);
 
         match lp {
-            Projection { input, expr, .. } => {
+            Projection {
+                input,
+                expr,
+                options,
+                ..
+            } => {
                 if !matches!(lp_arena.get(*input), ExtContext { .. }) {
-                    impl_fast_projection(*input, expr, expr_arena)
+                    impl_fast_projection(*input, expr, expr_arena, options.duplicate_check)
                 } else {
                     None
                 }
             },
             MapFunction {
                 input,
-                function: FunctionNode::FastProjection { columns },
-            } => {
+                function: FunctionNode::FastProjection { columns, .. },
+            } if !self.eager => {
                 // if there are 2 subsequent fast projections, flatten them and only take the last
                 match lp_arena.get(*input) {
                     MapFunction {
@@ -87,6 +97,7 @@ impl OptimizationRule for FastProjectionAndCollapse {
                         input: *prev_input,
                         function: FunctionNode::FastProjection {
                             columns: columns.clone(),
+                            duplicate_check: true,
                         },
                     }),
                     // cleanup projections set in projection pushdown just above caches
@@ -95,7 +106,7 @@ impl OptimizationRule for FastProjectionAndCollapse {
                         let cache_schema = cache_lp.schema(lp_arena);
                         if cache_schema.len() == columns.len()
                             && cache_schema.iter_names().zip(columns.iter()).all(
-                                |(left_name, right_name)| left_name.as_str() == right_name.as_ref(),
+                                |(left_name, right_name)| left_name.as_str() == right_name.as_str(),
                             )
                         {
                             Some(cache_lp.clone())
@@ -111,7 +122,7 @@ impl OptimizationRule for FastProjectionAndCollapse {
                 input,
                 count: outer_count,
                 ..
-            } => {
+            } if !self.eager => {
                 if let Cache {
                     input: prev_input,
                     id,

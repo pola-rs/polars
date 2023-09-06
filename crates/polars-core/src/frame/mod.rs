@@ -1334,7 +1334,7 @@ impl DataFrame {
         let colnames = self.get_column_names_owned();
         let range = get_range(range, ..colnames.len());
 
-        self.select_impl(&colnames[range])
+        self._select_impl(&colnames[range])
     }
 
     /// Get column index of a `Series` by name.
@@ -1428,11 +1428,15 @@ impl DataFrame {
             .into_iter()
             .map(|s| SmartString::from(s.as_ref()))
             .collect::<Vec<_>>();
-        self.select_impl(&cols)
+        self._select_impl(&cols)
     }
 
-    fn select_impl(&self, cols: &[SmartString]) -> PolarsResult<Self> {
+    pub fn _select_impl(&self, cols: &[SmartString]) -> PolarsResult<Self> {
         self.select_check_duplicates(cols)?;
+        self._select_impl_unchecked(cols)
+    }
+
+    pub fn _select_impl_unchecked(&self, cols: &[SmartString]) -> PolarsResult<Self> {
         let selected = self.select_series_impl(cols)?;
         Ok(DataFrame::new_no_checks(selected))
     }
