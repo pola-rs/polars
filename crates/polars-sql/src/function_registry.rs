@@ -66,13 +66,13 @@ pub trait UserDefinedFunction: Send + Sync {
     }
 }
 
-impl FunctionOutputField for dyn UserDefinedFunction + Send + Sync {
+impl FunctionOutputField for dyn UserDefinedFunction {
     fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field {
         self.output_type().get_field(input_schema, cntxt, fields)
     }
 }
 
-impl SeriesUdf for dyn UserDefinedFunction + Send + Sync {
+impl SeriesUdf for dyn UserDefinedFunction {
     fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>> {
         self.call_udf(s)
     }
