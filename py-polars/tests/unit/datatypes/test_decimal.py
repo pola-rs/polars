@@ -16,7 +16,7 @@ def permutations_int_dec_none() -> list[tuple[D | int | None, ...]]:
                 D("-0.01"),
                 D("1.2345678"),
                 D("500"),
-                -1,
+                D(-1),
                 None,
             ]
         )

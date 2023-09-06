@@ -955,14 +955,29 @@ def test_from_dicts_missing_columns() -> None:
         {"b": 2},
     ]
     assert pl.from_dicts(data).to_dict(False) == {"a": [1, None], "b": [None, 2]}
+    assert pl.from_dicts(data, schema=["b", "a"]).to_dict(False) == {
+        "a": [1, None],
+        "b": [None, 2],
+    }
+    assert pl.from_dicts(data, schema=["b", "c"]).to_dict(False) == {
+        "b": [1, None],
+        "c": [None, 2],
+    }
 
     # missing columns in the schema; only load the declared keys
-    data = [{"a": 1, "b": 2}]
+    data = [
+        {"a": 1, "b": 2},
+    ]
     assert pl.from_dicts(data, schema=["a"]).to_dict(False) == {"a": [1]}
+    assert pl.from_dicts(data, schema=["b"]).to_dict(False) == {"b": [2]}
+    assert pl.from_dicts(data, schema=["b", "a"]).to_dict(False) == {"a": [1], "b": [2]}
+    assert pl.from_dicts(data, schema=["b", "c"]).to_dict(False) == {"b": [1], "c": [2]}
 
     # invalid
     with pytest.raises(ShapeError):
         pl.from_dicts([{"a": 1, "b": 2}], schema=["xyz"])
+    with pytest.raises(ShapeError):
+        pl.from_dicts([{"a": 1, "b": 2}], schema=["a", "b", "c"])
 
 
 def test_from_rows_dtype() -> None:

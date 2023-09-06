@@ -622,11 +622,15 @@ def _post_apply_columns(
         (columns or pydf_columns), schema_overrides=schema_overrides
     )
     column_subset: list[str] = []
-    if columns != pydf_columns:
-        if len(columns) < len(pydf_columns) and columns == pydf_columns[: len(columns)]:
-            column_subset = columns
-        else:
-            pydf.set_column_names(columns)
+    if set(pydf_columns).issuperset(columns):
+        column_subset = columns
+    elif len(columns) == len(pydf_columns):
+        pydf.set_column_names(columns)
+    else:
+        raise ShapeError(
+            f"{len(columns)} column names provided "
+            f"for a dataframe of width {len(pydf_columns)}"
+        )
 
     column_casts = []
     for i, col in enumerate(columns):
