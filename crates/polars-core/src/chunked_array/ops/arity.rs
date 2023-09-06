@@ -4,8 +4,7 @@ use arrow::array::Array;
 use polars_arrow::utils::combine_validities_and;
 
 use crate::datatypes::{
-    ArrayFromElementIter, PolarsNumericType, StaticArray,
-    StaticallyMatchesPolarsType, HasArrayT,
+    ArrayFromElementIter, PolarsNumericType, StaticArray, HasArrayT,
 };
 use crate::prelude::{ChunkedArray, PolarsDataType};
 use crate::utils::align_chunks_binary;
@@ -24,8 +23,7 @@ where
         Option<<<T as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>>,
         Option<<<U as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>>,
     ) -> Option<K>,
-    K: ArrayFromElementIter,
-    K::ArrayType: StaticallyMatchesPolarsType<V>,
+    K: ArrayFromElementIter<ArrayType=<V as HasArrayT>::ArrayT>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -55,8 +53,7 @@ where
         Option<<<T as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>>,
         Option<<<U as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>>,
     ) -> Result<Option<K>, E>,
-    K: ArrayFromElementIter,
-    K::ArrayType: StaticallyMatchesPolarsType<V>,
+    K: ArrayFromElementIter<ArrayType=<V as HasArrayT>::ArrayT>,
     E: Error,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
@@ -87,8 +84,7 @@ where
         <<T as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>,
         <<U as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>,
     ) -> K,
-    K: ArrayFromElementIter,
-    K::ArrayType: StaticallyMatchesPolarsType<V>,
+    K: ArrayFromElementIter<ArrayType=<V as HasArrayT>::ArrayT>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -122,8 +118,7 @@ where
         <<T as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>,
         <<U as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>,
     ) -> Result<K, E>,
-    K: ArrayFromElementIter,
-    K::ArrayType: StaticallyMatchesPolarsType<V>,
+    K: ArrayFromElementIter<ArrayType=<V as HasArrayT>::ArrayT>,
     E: Error,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
@@ -155,8 +150,8 @@ pub fn binary_mut_with_options<T, U, V, F, Arr>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsDataType,
-    Arr: Array + StaticallyMatchesPolarsType<V>,
+    V: PolarsDataType + HasArrayT<ArrayT=Arr>,
+    Arr: Array,
     F: FnMut(
         &<T as HasArrayT>::ArrayT,
         &<U as HasArrayT>::ArrayT,
@@ -179,8 +174,8 @@ pub fn binary<T, U, V, F, Arr>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsDataType,
-    Arr: Array + StaticallyMatchesPolarsType<V>,
+    V: PolarsDataType + HasArrayT<ArrayT=Arr>,
+    Arr: Array,
     F: FnMut(
         &<T as HasArrayT>::ArrayT,
         &<U as HasArrayT>::ArrayT,
@@ -198,8 +193,8 @@ pub fn try_binary<T, U, V, F, Arr, E>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsDataType,
-    Arr: Array + StaticallyMatchesPolarsType<V>,
+    V: PolarsDataType + HasArrayT<ArrayT=Arr>,
+    Arr: Array,
     F: FnMut(
         &<T as HasArrayT>::ArrayT,
         &<U as HasArrayT>::ArrayT,

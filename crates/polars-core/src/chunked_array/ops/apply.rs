@@ -22,8 +22,7 @@ where
     where
         U: PolarsDataType,
         F: FnMut(PhysicalT<'a, T>) -> K + Copy,
-        K: ArrayFromElementIter,
-        K::ArrayType: StaticallyMatchesPolarsType<U>,
+        K: ArrayFromElementIter<ArrayType=<U as HasArrayT>::ArrayT>,
     {
         let iter = self.downcast_iter().map(|arr| {
             let element_iter = arr.values_iter().map(op);
@@ -39,8 +38,7 @@ where
         U: PolarsDataType,
         F: FnMut(PhysicalT<'a, T>) -> Result<K, E>
             + Copy,
-        K: ArrayFromElementIter,
-        K::ArrayType: StaticallyMatchesPolarsType<U>,
+        K: ArrayFromElementIter<ArrayType=<U as HasArrayT>::ArrayT>,
         E: Error,
     {
         let iter = self.downcast_iter().map(|arr| {
@@ -59,8 +57,7 @@ where
                 Option<PhysicalT<'a, T>>,
             ) -> Result<Option<K>, E>
             + Copy,
-        K: ArrayFromElementIter,
-        K::ArrayType: StaticallyMatchesPolarsType<U>,
+        K: ArrayFromElementIter<ArrayType=<U as HasArrayT>::ArrayT>,
         E: Error,
     {
         let iter = self.downcast_iter().map(|arr| {
@@ -78,8 +75,7 @@ where
         F: FnMut(
             Option<PhysicalT<'a, T>>,
         ) -> Option<K>,
-        K: ArrayFromElementIter,
-        K::ArrayType: StaticallyMatchesPolarsType<U>,
+        K: ArrayFromElementIter<ArrayType=<U as HasArrayT>::ArrayT>,
     {
         if self.null_count() == 0 {
             let iter = self.downcast_iter().map(|arr| {
