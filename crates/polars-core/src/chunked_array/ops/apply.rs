@@ -17,12 +17,11 @@ use crate::utils::CustomIterTools;
 impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
-    Self: HasUnderlyingArray,
 {
     pub fn apply_values_generic<'a, U, K, F>(&'a self, op: F) -> ChunkedArray<U>
     where
         U: PolarsDataType,
-        F: FnMut(<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>) -> K + Copy,
+        F: FnMut(<<T as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>) -> K + Copy,
         K: ArrayFromElementIter,
         K::ArrayType: StaticallyMatchesPolarsType<U>,
     {
@@ -38,7 +37,7 @@ where
     pub fn try_apply_values_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
     where
         U: PolarsDataType,
-        F: FnMut(<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>) -> Result<K, E>
+        F: FnMut(<<T as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>) -> Result<K, E>
             + Copy,
         K: ArrayFromElementIter,
         K::ArrayType: StaticallyMatchesPolarsType<U>,
@@ -57,7 +56,7 @@ where
     where
         U: PolarsDataType,
         F: FnMut(
-                Option<<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
+                Option<<<T as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>>,
             ) -> Result<Option<K>, E>
             + Copy,
         K: ArrayFromElementIter,
@@ -77,7 +76,7 @@ where
     where
         U: PolarsDataType,
         F: FnMut(
-            Option<<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
+            Option<<<T as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>>,
         ) -> Option<K>,
         K: ArrayFromElementIter,
         K::ArrayType: StaticallyMatchesPolarsType<U>,

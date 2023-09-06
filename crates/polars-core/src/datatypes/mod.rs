@@ -61,47 +61,55 @@ pub struct FixedSizeListType {}
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}
 
-pub trait PolarsDataType: Send + Sync {
+
+
+// pub type ArrayOf<'a, T> = <T as ArrayType<'a, <T as PolarsDataType>::Native<'a>>>::ArrayT;
+
+pub trait PolarsDataType: Send + Sync + Sized + HasArrayT
+{
     fn get_dtype() -> DataType
     where
         Self: Sized;
     
     type Native<'a>;
-    type ArrayT: for<'a> StaticArray<ValueT<'a>=Self::Native<'a>>;
+    // type ArrayT: for<'a> StaticArray<ValueT<'a>=Self::Native<'a>>;
 }
 
-pub trait PolarsNumericType: Send + Sync + 'static {
+pub trait PolarsNumericType: Send + Sync + Sized + 'static
+{
     fn get_dtype() -> DataType
     where
         Self: Sized;
     
     type Native: NumericNative;
-    type ArrayT: for<'a> StaticArray<ValueT<'a>=Self::Native>;
+    // type ArrayT: for<'a> StaticArray<ValueT<'a>=Self::Native>;
 }
 
-pub trait PolarsIntegerType: Send + Sync + 'static {
+pub trait PolarsIntegerType: Send + Sync + Sized + 'static
+{
     fn get_dtype() -> DataType
     where
         Self: Sized;
     
     type Native: NumericNative;
-    type ArrayT: for<'a> StaticArray<ValueT<'a>=Self::Native>;
+    // type ArrayT: for<'a> StaticArray<ValueT<'a>=Self::Native>;
 }
+
 
 impl<T: PolarsIntegerType> PolarsNumericType for T {
     fn get_dtype() -> DataType { <Self as PolarsIntegerType>::get_dtype() }
     type Native = <Self as PolarsIntegerType>::Native;
-    type ArrayT = <Self as PolarsIntegerType>::ArrayT;
+    // type ArrayT = <Self as PolarsIntegerType>::ArrayT;
 }
 
 impl<T: PolarsNumericType> PolarsDataType for T {
     fn get_dtype() -> DataType { <Self as PolarsNumericType>::get_dtype() }
     type Native<'a> = <Self as PolarsNumericType>::Native;
-    type ArrayT = <Self as PolarsNumericType>::ArrayT;
+    // type ArrayT = <Self as PolarsNumericType>::ArrayT;
 }
 
 macro_rules! impl_polars_datatype {
-    ($trait: ident, $ca:ident, $variant:ident, $physical:ty, $arr:ty) => {
+    ($trait: ident, $ca:ident, $variant:ident, $physical:ty) => {
         #[derive(Clone, Copy)]
         pub struct $ca {}
 
@@ -112,7 +120,7 @@ macro_rules! impl_polars_datatype {
             }
             
             type Native = $physical;
-            type ArrayT = $arr;
+            // type ArrayT = $arr;
         }
     };
 
@@ -127,21 +135,25 @@ macro_rules! impl_polars_datatype {
             }
             
             type Native<$lt> = $physical;
+            // type ArrayT = $arr;
+        }
+        
+        unsafe impl HasArrayT for $ca {
             type ArrayT = $arr;
         }
     };
 }
 
-impl_polars_datatype!(PolarsIntegerType, UInt8Type, UInt8, u8, PrimitiveArray<u8>);
-impl_polars_datatype!(PolarsIntegerType, UInt16Type, UInt16, u16, PrimitiveArray<u16>);
-impl_polars_datatype!(PolarsIntegerType, UInt32Type, UInt32, u32, PrimitiveArray<u32>);
-impl_polars_datatype!(PolarsIntegerType, UInt64Type, UInt64, u64, PrimitiveArray<u64>);
-impl_polars_datatype!(PolarsIntegerType, Int8Type, Int8, i8, PrimitiveArray<i8>);
-impl_polars_datatype!(PolarsIntegerType, Int16Type, Int16, i16, PrimitiveArray<i16>);
-impl_polars_datatype!(PolarsIntegerType, Int32Type, Int32, i32, PrimitiveArray<i32>);
-impl_polars_datatype!(PolarsIntegerType, Int64Type, Int64, i64, PrimitiveArray<i64>);
-impl_polars_datatype!(PolarsNumericType, Float32Type, Float32, f32, PrimitiveArray<f32>);
-impl_polars_datatype!(PolarsNumericType, Float64Type, Float64, f64, PrimitiveArray<f64>);
+impl_polars_datatype!(PolarsIntegerType, UInt8Type, UInt8, u8);
+impl_polars_datatype!(PolarsIntegerType, UInt16Type, UInt16, u16);
+impl_polars_datatype!(PolarsIntegerType, UInt32Type, UInt32, u32);
+impl_polars_datatype!(PolarsIntegerType, UInt64Type, UInt64, u64);
+impl_polars_datatype!(PolarsIntegerType, Int8Type, Int8, i8);
+impl_polars_datatype!(PolarsIntegerType, Int16Type, Int16, i16);
+impl_polars_datatype!(PolarsIntegerType, Int32Type, Int32, i32);
+impl_polars_datatype!(PolarsIntegerType, Int64Type, Int64, i64);
+impl_polars_datatype!(PolarsNumericType, Float32Type, Float32, f32);
+impl_polars_datatype!(PolarsNumericType, Float64Type, Float64, f64);
 impl_polars_datatype!(PolarsDataType, 'a, DateType, Date, i32, PrimitiveArray<i32>);
 #[cfg(feature = "dtype-decimal")]
 impl_polars_datatype!(PolarsDataType, 'a, DecimalType, Unknown, i128, PrimitiveArray<i128>);
@@ -156,7 +168,7 @@ impl PolarsDataType for Utf8Type {
     }
     
     type Native<'a> = &'a str;
-    type ArrayT = Utf8Array<i64>;
+    // type ArrayT = Utf8Array<i64>;
 }
 
 impl PolarsDataType for BinaryType {
@@ -165,7 +177,7 @@ impl PolarsDataType for BinaryType {
     }
 
     type Native<'a> = &'a [u8];
-    type ArrayT = BinaryArray<i64>;
+    // type ArrayT = BinaryArray<i64>;
 }
 
 pub struct BooleanType {}
@@ -176,7 +188,7 @@ impl PolarsDataType for BooleanType {
     }
     
     type Native<'a> = bool;
-    type ArrayT = BooleanArray;
+    // type ArrayT = BooleanArray;
 }
 
 impl PolarsDataType for ListType {
@@ -186,8 +198,9 @@ impl PolarsDataType for ListType {
     }
     
     type Native<'a> = Box<dyn Array>;
-    type ArrayT = ListArray<i64>;
+    // type ArrayT = ListArray<i64>;
 }
+
 
 #[cfg(feature = "dtype-array")]
 impl PolarsDataType for FixedSizeListType {
@@ -197,7 +210,7 @@ impl PolarsDataType for FixedSizeListType {
     }
 
     type Native<'a> = Box<dyn Array>;
-    type ArrayT = FixedSizeListArray;
+    // type ArrayT = FixedSizeListArray;
 }
 
 #[cfg(feature = "dtype-decimal")]
@@ -210,7 +223,7 @@ impl PolarsIntegerType for Int128Type {
     }
 
     type Native = i128;
-    type ArrayT = PrimitiveArray<i128>;
+    // type ArrayT = PrimitiveArray<i128>;
 }
 
 #[cfg(feature = "object")]
@@ -225,7 +238,7 @@ impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     }
 
     type Native<'a> = &'a ();
-    type ArrayT = crate::chunked_array::object::ObjectArray<T>;
+    // type ArrayT = crate::chunked_array::object::ObjectArray<T>;
 }
 
 /// Any type that is not nested
@@ -423,5 +436,45 @@ unsafe impl HasUnderlyingArray for ArrayChunked {
 
 #[cfg(feature = "object")]
 unsafe impl<T: PolarsObject> HasUnderlyingArray for ObjectChunked<T> {
+    type ArrayT = crate::chunked_array::object::ObjectArray<T>;
+}
+
+
+
+
+
+
+#[doc(hidden)]
+pub unsafe trait HasArrayT {
+    type ArrayT: StaticArray;
+}
+
+unsafe impl<T: PolarsNumericType> HasArrayT for T {
+    type ArrayT = PrimitiveArray<T::Native>;
+}
+
+unsafe impl HasArrayT for BooleanType {
+    type ArrayT = BooleanArray;
+}
+
+unsafe impl HasArrayT for Utf8Type {
+    type ArrayT = Utf8Array<i64>;
+}
+
+unsafe impl HasArrayT for BinaryType {
+    type ArrayT = BinaryArray<i64>;
+}
+
+unsafe impl HasArrayT for ListType {
+    type ArrayT = ListArray<i64>;
+}
+
+#[cfg(feature = "dtype-array")]
+unsafe impl HasArrayT for FixedSizeListType {
+    type ArrayT = FixedSizeListArray;
+}
+
+#[cfg(feature = "object")]
+unsafe impl<T: PolarsObject> HasArrayT for ObjectType<T> {
     type ArrayT = crate::chunked_array::object::ObjectArray<T>;
 }
