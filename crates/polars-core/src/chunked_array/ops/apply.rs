@@ -21,7 +21,7 @@ where
     pub fn apply_values_generic<'a, U, K, F>(&'a self, op: F) -> ChunkedArray<U>
     where
         U: PolarsDataType,
-        F: FnMut(<<T as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>) -> K + Copy,
+        F: FnMut(PhysicalT<'a, T>) -> K + Copy,
         K: ArrayFromElementIter,
         K::ArrayType: StaticallyMatchesPolarsType<U>,
     {
@@ -37,7 +37,7 @@ where
     pub fn try_apply_values_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
     where
         U: PolarsDataType,
-        F: FnMut(<<T as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>) -> Result<K, E>
+        F: FnMut(PhysicalT<'a, T>) -> Result<K, E>
             + Copy,
         K: ArrayFromElementIter,
         K::ArrayType: StaticallyMatchesPolarsType<U>,
@@ -56,7 +56,7 @@ where
     where
         U: PolarsDataType,
         F: FnMut(
-                Option<<<T as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>>,
+                Option<PhysicalT<'a, T>>,
             ) -> Result<Option<K>, E>
             + Copy,
         K: ArrayFromElementIter,
@@ -76,7 +76,7 @@ where
     where
         U: PolarsDataType,
         F: FnMut(
-            Option<<<T as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>>,
+            Option<PhysicalT<'a, T>>,
         ) -> Option<K>,
         K: ArrayFromElementIter,
         K::ArrayType: StaticallyMatchesPolarsType<U>,
