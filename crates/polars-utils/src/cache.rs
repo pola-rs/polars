@@ -167,6 +167,11 @@ impl<K: Hash + Eq, V> FastFixedCache<K, V> {
             (0, _) => i1,
             (_, 0) => i2,
             // This takes into account the wrap-around of our access_ctr.
+            // We assume that the smaller value between age1.wrapping_sub(age2)
+            // and age2.wrapping_sub(age1) is the true delta. Thus if
+            // age1.wrapping_sub(age2) is >= 1 << 31, we know that
+            // age2.wrapping_sub(age1) is smaller than it, and we also
+            // immediately know that age1 is older.
             _ if age1.wrapping_sub(age2) >= (1 << 31) => i1,
             _ => i2,
         }
@@ -180,7 +185,9 @@ impl<K: Hash + Eq, V> FastFixedCache<K, V> {
 
     /// Computes the hash tag and two slot indexes for a given key.
     fn hash<Q: Hash + ?Sized>(&self, key: &Q) -> HashResult {
-        // These are just two randomly chosen odd 64-bit numbers.
+        // An instantiation of Dietzfelbinger's multiply-shift, see 2.3 of
+        // https://arxiv.org/pdf/1504.06804.pdf.
+        // The magic constants are just two randomly chosen odd 64-bit numbers.
         let h = self.hash_builder.hash_one(key);
         let tag = h as u32;
         let i1 = (h.wrapping_mul(0x2e623b55bc0c9073) >> self.shift) as usize;
