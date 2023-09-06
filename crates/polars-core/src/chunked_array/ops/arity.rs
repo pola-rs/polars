@@ -3,9 +3,7 @@ use std::error::Error;
 use arrow::array::Array;
 use polars_arrow::utils::combine_validities_and;
 
-use crate::datatypes::{
-    ArrayFromElementIter, ArrayT, HasArrayType, PhysicalT, PolarsNumericType, StaticArray,
-};
+use crate::datatypes::{ArrayFromElementIter, PolarsNumericType, StaticArray};
 use crate::prelude::{ChunkedArray, PolarsDataType};
 use crate::utils::align_chunks_binary;
 
@@ -19,8 +17,8 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType,
-    F: for<'a> FnMut(Option<PhysicalT<'a, T>>, Option<PhysicalT<'a, U>>) -> Option<K>,
-    K: ArrayFromElementIter<ArrayType = ArrayT<V>>,
+    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> Option<K>,
+    K: ArrayFromElementIter<ArrayType = V::Array>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -46,8 +44,8 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType,
-    F: for<'a> FnMut(Option<PhysicalT<'a, T>>, Option<PhysicalT<'a, U>>) -> Result<Option<K>, E>,
-    K: ArrayFromElementIter<ArrayType = ArrayT<V>>,
+    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> Result<Option<K>, E>,
+    K: ArrayFromElementIter<ArrayType = V::Array>,
     E: Error,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
@@ -74,8 +72,8 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsNumericType,
-    F: for<'a> FnMut(PhysicalT<'a, T>, PhysicalT<'a, U>) -> K,
-    K: ArrayFromElementIter<ArrayType = ArrayT<V>>,
+    F: for<'a> FnMut(T::Physical<'a>, U::Physical<'a>) -> K,
+    K: ArrayFromElementIter<ArrayType = V::Array>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -105,8 +103,8 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsNumericType,
-    F: for<'a> FnMut(PhysicalT<'a, T>, PhysicalT<'a, U>) -> Result<K, E>,
-    K: ArrayFromElementIter<ArrayType = ArrayT<V>>,
+    F: for<'a> FnMut(T::Physical<'a>, U::Physical<'a>) -> Result<K, E>,
+    K: ArrayFromElementIter<ArrayType = V::Array>,
     E: Error,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
@@ -138,9 +136,9 @@ pub fn binary_mut_with_options<T, U, V, F, Arr>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsDataType + HasArrayType<Array = Arr>,
+    V: PolarsDataType<Array = Arr>,
     Arr: Array,
-    F: FnMut(&ArrayT<T>, &ArrayT<U>) -> Arr,
+    F: FnMut(&T::Array, &U::Array) -> Arr,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -159,9 +157,9 @@ pub fn binary<T, U, V, F, Arr>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsDataType + HasArrayType<Array = Arr>,
+    V: PolarsDataType<Array = Arr>,
     Arr: Array,
-    F: FnMut(&ArrayT<T>, &ArrayT<U>) -> Arr,
+    F: FnMut(&T::Array, &U::Array) -> Arr,
 {
     binary_mut_with_options(lhs, rhs, op, lhs.name())
 }
@@ -175,9 +173,9 @@ pub fn try_binary<T, U, V, F, Arr, E>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsDataType + HasArrayType<Array = Arr>,
+    V: PolarsDataType<Array = Arr>,
     Arr: Array,
-    F: FnMut(&ArrayT<T>, &ArrayT<U>) -> Result<Arr, E>,
+    F: FnMut(&T::Array, &U::Array) -> Result<Arr, E>,
     E: Error,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
@@ -203,7 +201,7 @@ pub unsafe fn binary_unchecked_same_type<T, U, F>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    F: FnMut(&ArrayT<T>, &ArrayT<U>) -> Box<dyn Array>,
+    F: FnMut(&T::Array, &U::Array) -> Box<dyn Array>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let chunks = lhs
@@ -229,7 +227,7 @@ pub unsafe fn try_binary_unchecked_same_type<T, U, F, E>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    F: FnMut(&ArrayT<T>, &ArrayT<U>) -> Result<Box<dyn Array>, E>,
+    F: FnMut(&T::Array, &U::Array) -> Result<Box<dyn Array>, E>,
     E: Error,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
