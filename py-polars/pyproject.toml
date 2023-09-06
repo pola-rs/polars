@@ -52,9 +52,9 @@ pydantic = ["pydantic"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 xlsxwriter = ["xlsxwriter"]
 adbc = ["adbc_driver_sqlite"]
-cloudpickle = ["cloudpickle"]
+gevent = ["gevent"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,sqlalchemy,xlsxwriter,adbc,cloudpickle]",
+  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
 ]
 
 [tool.mypy]
