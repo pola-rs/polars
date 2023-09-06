@@ -3607,6 +3607,8 @@ class Expr:
         """
         Filter a single column.
 
+        The original order of the remaining elements is preserved.
+
         Mostly useful in an aggregation context. If you want to filter on a DataFrame
         level, use `LazyFrame.filter`.
 
