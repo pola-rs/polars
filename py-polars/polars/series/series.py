@@ -1397,6 +1397,7 @@ class Series:
         Drop all null values.
 
         Creates a new Series that copies data from this Series without null values.
+        The original order of the remaining elements is preserved.
         """
 
     def drop_nans(self) -> Series:
@@ -2815,6 +2816,8 @@ class Series:
     def filter(self, predicate: Series | list[bool]) -> Self:
         """
         Filter elements by a boolean mask.
+
+        The original order of the remaining elements is preserved.
 
         Parameters
         ----------

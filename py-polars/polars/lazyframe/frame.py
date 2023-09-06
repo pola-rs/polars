@@ -2406,6 +2406,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Filter the rows in the LazyFrame based on a predicate expression.
 
+        The original order of the remaining rows is preserved.
+
         Parameters
         ----------
         predicate
@@ -4971,6 +4973,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Drop all rows that contain null values.
 
         Returns a new LazyFrame.
+        The original order of the remaining rows is preserved.
 
         Parameters
         ----------

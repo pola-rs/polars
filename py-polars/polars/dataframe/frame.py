@@ -3896,6 +3896,8 @@ class DataFrame:
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
+        The original order of the remaining rows is preserved.
+
         Parameters
         ----------
         predicate
@@ -4737,6 +4739,7 @@ class DataFrame:
         Drop all rows that contain null values.
 
         Returns a new DataFrame.
+        The original order of the remaining rows is preserved.
 
         Parameters
         ----------
