@@ -15,7 +15,7 @@ use sqlparser::ast::{
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
-use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
+use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry, UserDefinedFunction};
 use crate::sql_expr::{parse_sql_expr, process_join_constraint};
 use crate::table_functions::PolarsTableFunctions;
 
@@ -24,8 +24,8 @@ use crate::table_functions::PolarsTableFunctions;
 pub struct SQLContext {
     pub(crate) table_map: PlHashMap<String, LazyFrame>,
     cte_map: RefCell<PlHashMap<String, LazyFrame>>,
-    /// todo docs
-    pub function_registry: Arc<dyn FunctionRegistry>,
+
+    pub(crate) function_registry: Arc<dyn FunctionRegistry>,
 }
 
 impl Default for SQLContext {
@@ -49,12 +49,6 @@ impl SQLContext {
     pub fn new() -> Self {
         Self::default()
     }
-    /// add a function registry to the SQLContext
-    pub fn with_function_registry(mut self, function_registry: Arc<dyn FunctionRegistry>) -> Self {
-        self.function_registry = function_registry;
-        self
-    }
-
     /// Get the names of all registered tables, in sorted order.
     pub fn get_tables(&self) -> Vec<String> {
         let mut tables = Vec::from_iter(self.table_map.keys().cloned());
@@ -121,6 +115,18 @@ impl SQLContext {
         // Every execution should clear the CTE map.
         self.cte_map.borrow_mut().clear();
         res
+    }
+
+    /// add a function registry to the SQLContext
+    /// the registry provides the ability to add custom functions to the SQLContext
+    pub fn with_function_registry(mut self, function_registry: Arc<dyn FunctionRegistry>) -> Self {
+        self.function_registry = function_registry;
+        self
+    }
+
+    /// Get the function registry of the SQLContext
+    pub fn registry(&self) -> &Arc<dyn FunctionRegistry> {
+        &self.function_registry
     }
 }
 

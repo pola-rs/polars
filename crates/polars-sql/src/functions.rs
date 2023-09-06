@@ -520,14 +520,11 @@ impl PolarsSqlFunctions {
             "unnest" => Self::Explode,
 
             other => {
-                if {
-                    ctx.function_registry.contains(&other)
-                } {
+                if { ctx.function_registry.contains(&other) } {
                     Self::Udf(other.to_string())
                 } else {
                     polars_bail!(InvalidOperation: "unsupported SQL function: {}", other);
                 }
-                
             },
         })
     }
@@ -696,8 +693,6 @@ impl SqlFunctionVisitor<'_> {
             ArrayUnique => self.visit_unary(|e| e.list().unique()),
             Explode => self.visit_unary(|e| e.explode()),
             Udf(func_name) => self.visit_udf(&func_name)
- 
-        
         }
     }
 
@@ -713,11 +708,11 @@ impl SqlFunctionVisitor<'_> {
                 } else {
                     polars_bail!(ComputeError: "Only expressions are supported in UDFs")
                 }
-    })
+            })
             .collect::<PolarsResult<Vec<_>>>()?;
         self.ctx.function_registry.call_udf(func_name, args)
     }
-    
+
     fn visit_unary(&self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
         self.visit_unary_no_window(f)
             .and_then(|e| self.apply_window_spec(e, &self.func.over))
