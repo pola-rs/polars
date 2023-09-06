@@ -1410,7 +1410,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series([1.0, None, 3.0, float("nan")])
-        >>> s.drop_nans()
+        >>> s.drop_nulls()
         shape: (3,)
         Series: '' [f64]
         [
