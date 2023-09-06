@@ -710,7 +710,7 @@ impl SqlFunctionVisitor<'_> {
                 }
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        self.ctx.function_registry.call_udf(func_name, args)
+        self.ctx.function_registry.call(func_name, args)
     }
 
     fn visit_unary(&self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
