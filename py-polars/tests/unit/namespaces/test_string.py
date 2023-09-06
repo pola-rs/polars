@@ -521,10 +521,8 @@ def test_extract_all_count() -> None:
     df = pl.DataFrame({"foo": ["123 bla 45 asd", "xaz 678 910t", "boo", None]})
     assert (
         df.select(
-            [
-                pl.col("foo").str.extract_all(r"a").alias("extract"),
-                pl.col("foo").str.count_match(r"a").alias("count"),
-            ]
+            pl.col("foo").str.extract_all(r"a").alias("extract"),
+            pl.col("foo").str.count_match(r"a").alias("count"),
         ).to_dict(False)
     ) == {"extract": [["a", "a"], ["a"], [], None], "count": [2, 1, 0, None]}
 
@@ -534,20 +532,37 @@ def test_extract_all_count() -> None:
 
 def test_count_match_many() -> None:
     df = pl.DataFrame(
-        {"foo": ["123 bla 45 asd", "xyz 678 910t"], "bar": [r"\d", r"[a-z]"]}
+        {
+            "foo": ["123 bla 45 asd", "xyz 678 910t", None, "boo"],
+            "bar": [r"\d", r"[a-z]", r"\d", None],
+        }
     )
     assert (
-        df.select(
-            [pl.col("foo").str.count_match(pl.col("bar")).alias("count")]
-        ).to_dict(False)
-    ) == {"count": [5, 4]}
+        df.select(pl.col("foo").str.count_match(pl.col("bar")).alias("count")).to_dict(
+            False
+        )
+    ) == {"count": [5, 4, None, None]}
 
     assert df["foo"].str.count_match(df["bar"]).dtype == pl.UInt32
+
+    # Test broadcast.
+    broad = df.select(
+        pl.col("foo").str.count_match(pl.col("bar").first()).alias("count"),
+        pl.col("foo").str.count_match(pl.col("bar").last()).alias("count_null"),
+    )
+    assert broad.to_dict(False) == {
+        "count": [5, 6, None, 0],
+        "count_null": [None, None, None, None],
+    }
+    assert broad.schema == {"count": pl.UInt32, "count_null": pl.UInt32}
 
 
 def test_extract_all_many() -> None:
     df = pl.DataFrame(
-        {"foo": ["ab", "abc", "abcd", "foo", None], "re": ["a", "bc", "a.c", "a", "a"]}
+        {
+            "foo": ["ab", "abc", "abcd", "foo", None, "boo"],
+            "re": ["a", "bc", "a.c", "a", "a", None],
+        }
     )
     assert df["foo"].str.extract_all(df["re"]).to_list() == [
         ["a"],
@@ -555,7 +570,19 @@ def test_extract_all_many() -> None:
         ["abc"],
         [],
         None,
+        None,
     ]
+
+    # Test broadcast.
+    broad = df.select(
+        pl.col("foo").str.extract_all(pl.col("re").first()).alias("a"),
+        pl.col("foo").str.extract_all(pl.col("re").last()).alias("null"),
+    )
+    assert broad.to_dict(False) == {
+        "a": [["a"], ["a"], ["a"], [], None, []],
+        "null": [None] * 6,
+    }
+    assert broad.schema == {"a": pl.List(pl.Utf8), "null": pl.List(pl.Utf8)}
 
 
 def test_extract_groups() -> None:
