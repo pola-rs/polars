@@ -99,15 +99,16 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 2)
         >>> df = pl.datetime_range(
-        ...     start, stop, timedelta(minutes=225), eager=True
+        ...     datetime(2001, 1, 1),
+        ...     datetime(2001, 1, 2),
+        ...     timedelta(minutes=225),
+        ...     eager=True,
         ... ).to_frame()
         >>> df
         shape: (7, 1)
         ┌─────────────────────┐
-        │ date                │
+        │ datetime            │
         │ ---                 │
         │ datetime[μs]        │
         ╞═════════════════════╡
@@ -119,10 +120,10 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 18:45:00 │
         │ 2001-01-01 22:30:00 │
         └─────────────────────┘
-        >>> df.select(pl.col("date").dt.truncate("1h"))
+        >>> df.select(pl.col("datetime").dt.truncate("1h"))
         shape: (7, 1)
         ┌─────────────────────┐
-        │ date                │
+        │ datetime            │
         │ ---                 │
         │ datetime[μs]        │
         ╞═════════════════════╡
@@ -134,18 +135,20 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 18:00:00 │
         │ 2001-01-01 22:00:00 │
         └─────────────────────┘
-        >>> df.select(pl.col("date").dt.truncate("1h")).frame_equal(
-        ...     df.select(pl.col("date").dt.truncate(timedelta(hours=1)))
+        >>> df.select(pl.col("datetime").dt.truncate("1h")).frame_equal(
+        ...     df.select(pl.col("datetime").dt.truncate(timedelta(hours=1)))
         ... )
         True
 
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 1, 1)
-        >>> df = pl.datetime_range(start, stop, "10m", eager=True).to_frame()
-        >>> df.select(["date", pl.col("date").dt.truncate("30m").alias("truncate")])
+        >>> df = pl.datetime_range(
+        ...     datetime(2001, 1, 1), datetime(2001, 1, 1, 1), "10m", eager=True
+        ... ).to_frame()
+        >>> df.select(
+        ...     "datetime", pl.col("datetime").dt.truncate("30m").alias("truncate")
+        ... )
         shape: (7, 2)
         ┌─────────────────────┬─────────────────────┐
-        │ date                ┆ truncate            │
+        │ datetime            ┆ truncate            │
         │ ---                 ┆ ---                 │
         │ datetime[μs]        ┆ datetime[μs]        │
         ╞═════════════════════╪═════════════════════╡
@@ -289,53 +292,35 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 2)
         >>> df = pl.datetime_range(
-        ...     start, stop, timedelta(minutes=225), eager=True
+        ...     datetime(2001, 1, 1),
+        ...     datetime(2001, 1, 2),
+        ...     timedelta(minutes=225),
+        ...     eager=True,
         ... ).to_frame()
-        >>> df
-        shape: (7, 1)
-        ┌─────────────────────┐
-        │ date                │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2001-01-01 00:00:00 │
-        │ 2001-01-01 03:45:00 │
-        │ 2001-01-01 07:30:00 │
-        │ 2001-01-01 11:15:00 │
-        │ 2001-01-01 15:00:00 │
-        │ 2001-01-01 18:45:00 │
-        │ 2001-01-01 22:30:00 │
-        └─────────────────────┘
-        >>> df.select(pl.col("date").dt.round("1h"))
-        shape: (7, 1)
-        ┌─────────────────────┐
-        │ date                │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2001-01-01 00:00:00 │
-        │ 2001-01-01 04:00:00 │
-        │ 2001-01-01 08:00:00 │
-        │ 2001-01-01 11:00:00 │
-        │ 2001-01-01 15:00:00 │
-        │ 2001-01-01 19:00:00 │
-        │ 2001-01-01 23:00:00 │
-        └─────────────────────┘
-        >>> df.select(pl.col("date").dt.round("1h")).frame_equal(
-        ...     df.select(pl.col("date").dt.round(timedelta(hours=1)))
-        ... )
-        True
-
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 1, 1)
-        >>> df = pl.datetime_range(start, stop, "10m", eager=True).to_frame()
-        >>> df.select(["date", pl.col("date").dt.round("30m").alias("round")])
+        >>> df.with_columns(pl.col("datetime").dt.round("1h").alias("round"))
         shape: (7, 2)
         ┌─────────────────────┬─────────────────────┐
-        │ date                ┆ round               │
+        │ datetime            ┆ round               │
+        │ ---                 ┆ ---                 │
+        │ datetime[μs]        ┆ datetime[μs]        │
+        ╞═════════════════════╪═════════════════════╡
+        │ 2001-01-01 00:00:00 ┆ 2001-01-01 00:00:00 │
+        │ 2001-01-01 03:45:00 ┆ 2001-01-01 04:00:00 │
+        │ 2001-01-01 07:30:00 ┆ 2001-01-01 08:00:00 │
+        │ 2001-01-01 11:15:00 ┆ 2001-01-01 11:00:00 │
+        │ 2001-01-01 15:00:00 ┆ 2001-01-01 15:00:00 │
+        │ 2001-01-01 18:45:00 ┆ 2001-01-01 19:00:00 │
+        │ 2001-01-01 22:30:00 ┆ 2001-01-01 23:00:00 │
+        └─────────────────────┴─────────────────────┘
+
+        >>> df = pl.datetime_range(
+        ...     datetime(2001, 1, 1), datetime(2001, 1, 1, 1), "10m", eager=True
+        ... ).to_frame()
+        >>> df.with_columns(pl.col("datetime").dt.round("30m").alias("round"))
+        shape: (7, 2)
+        ┌─────────────────────┬─────────────────────┐
+        │ datetime            ┆ round               │
         │ ---                 ┆ ---                 │
         │ datetime[μs]        ┆ datetime[μs]        │
         ╞═════════════════════╪═════════════════════╡
@@ -531,40 +516,25 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2002, 7, 1)
+        >>> from datetime import date
         >>> df = pl.DataFrame(
-        ...     {
-        ...         "date": pl.datetime_range(
-        ...             start, stop, timedelta(days=180), eager=True
-        ...         )
-        ...     }
+        ...     {"date": [date(1977, 1, 1), date(1978, 1, 1), date(1979, 1, 1)]}
         ... )
-        >>> df
-        shape: (4, 1)
-        ┌─────────────────────┐
-        │ datetime            │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2001-01-01 00:00:00 │
-        │ 2001-06-30 00:00:00 │
-        │ 2001-12-27 00:00:00 │
-        │ 2002-06-25 00:00:00 │
-        └─────────────────────┘
-        >>> df.select(pl.col("datetime").dt.year())
-        shape: (4, 1)
-        ┌──────┐
-        │ date │
-        │ ---  │
-        │ i32  │
-        ╞══════╡
-        │ 2001 │
-        │ 2001 │
-        │ 2001 │
-        │ 2002 │
-        └──────┘
+        >>> df.select(
+        ...     "date",
+        ...     pl.col("date").dt.year().alias("calendar_year"),
+        ...     pl.col("date").dt.iso_year().alias("iso_year"),
+        ... )
+        shape: (3, 3)
+        ┌────────────┬───────────────┬──────────┐
+        │ date       ┆ calendar_year ┆ iso_year │
+        │ ---        ┆ ---           ┆ ---      │
+        │ date       ┆ i32           ┆ i32      │
+        ╞════════════╪═══════════════╪══════════╡
+        │ 1977-01-01 ┆ 1977          ┆ 1976     │
+        │ 1978-01-01 ┆ 1978          ┆ 1977     │
+        │ 1979-01-01 ┆ 1979          ┆ 1979     │
+        └────────────┴───────────────┴──────────┘
 
         """
         return wrap_expr(self._pyexpr.dt_year())
@@ -582,23 +552,10 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import datetime
-        >>> start = datetime(2000, 1, 1)
-        >>> stop = datetime(2002, 1, 1)
+        >>> from datetime import date
         >>> df = pl.DataFrame(
-        ...     {"date": pl.datetime_range(start, stop, interval="1y", eager=True)}
+        ...     {"date": [date(2000, 1, 1), date(2001, 1, 1), date(2002, 1, 1)]}
         ... )
-        >>> df
-        shape: (3, 1)
-        ┌─────────────────────┐
-        │ date                │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2000-01-01 00:00:00 │
-        │ 2001-01-01 00:00:00 │
-        │ 2002-01-01 00:00:00 │
-        └─────────────────────┘
         >>> df.select(pl.col("date").dt.is_leap_year())
         shape: (3, 1)
         ┌───────┐
@@ -630,38 +587,25 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2006, 1, 1)
+        >>> from datetime import date
         >>> df = pl.DataFrame(
-        ...     {
-        ...         "date": pl.datetime_range(
-        ...             start, stop, timedelta(days=180), eager=True
-        ...         )
-        ...     }
+        ...     {"date": [date(1977, 1, 1), date(1978, 1, 1), date(1979, 1, 1)]}
         ... )
         >>> df.select(
-        ...     [
-        ...         pl.col("date"),
-        ...         pl.col("date").dt.iso_year().alias("iso_year"),
-        ...     ]
+        ...     "date",
+        ...     pl.col("date").dt.year().alias("calendar_year"),
+        ...     pl.col("date").dt.iso_year().alias("iso_year"),
         ... )
-        shape: (11, 2)
-        ┌─────────────────────┬──────────┐
-        │ date                ┆ iso_year │
-        │ ---                 ┆ ---      │
-        │ datetime[μs]        ┆ i32      │
-        ╞═════════════════════╪══════════╡
-        │ 2001-01-01 00:00:00 ┆ 2001     │
-        │ 2001-06-30 00:00:00 ┆ 2001     │
-        │ 2001-12-27 00:00:00 ┆ 2001     │
-        │ 2002-06-25 00:00:00 ┆ 2002     │
-        │ …                   ┆ …        │
-        │ 2004-06-14 00:00:00 ┆ 2004     │
-        │ 2004-12-11 00:00:00 ┆ 2004     │
-        │ 2005-06-09 00:00:00 ┆ 2005     │
-        │ 2005-12-06 00:00:00 ┆ 2005     │
-        └─────────────────────┴──────────┘
+        shape: (3, 3)
+        ┌────────────┬───────────────┬──────────┐
+        │ date       ┆ calendar_year ┆ iso_year │
+        │ ---        ┆ ---           ┆ ---      │
+        │ date       ┆ i32           ┆ i32      │
+        ╞════════════╪═══════════════╪══════════╡
+        │ 1977-01-01 ┆ 1977          ┆ 1976     │
+        │ 1978-01-01 ┆ 1978          ┆ 1977     │
+        │ 1979-01-01 ┆ 1979          ┆ 1979     │
+        └────────────┴───────────────┴──────────┘
 
         """
         return wrap_expr(self._pyexpr.dt_iso_year())
@@ -681,38 +625,21 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2002, 6, 1)
+        >>> from datetime import date
         >>> df = pl.DataFrame(
-        ...     {
-        ...         "date": pl.datetime_range(
-        ...             start, stop, timedelta(days=180), eager=True
-        ...         )
-        ...     }
+        ...     {"date": [date(2001, 1, 1), date(2001, 6, 30), date(2001, 12, 27)]}
         ... )
-        >>> df
-        shape: (3, 1)
-        ┌─────────────────────┐
-        │ date                │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2001-01-01 00:00:00 │
-        │ 2001-06-30 00:00:00 │
-        │ 2001-12-27 00:00:00 │
-        └─────────────────────┘
-        >>> df.select(pl.col("date").dt.quarter())
-        shape: (3, 1)
-        ┌──────┐
-        │ date │
-        │ ---  │
-        │ u32  │
-        ╞══════╡
-        │ 1    │
-        │ 2    │
-        │ 4    │
-        └──────┘
+        >>> df.with_columns(pl.col("date").dt.quarter().alias("quarter"))
+        shape: (3, 2)
+        ┌────────────┬─────────┐
+        │ date       ┆ quarter │
+        │ ---        ┆ ---     │
+        │ date       ┆ u32     │
+        ╞════════════╪═════════╡
+        │ 2001-01-01 ┆ 1       │
+        │ 2001-06-30 ┆ 2       │
+        │ 2001-12-27 ┆ 4       │
+        └────────────┴─────────┘
 
         """
         return wrap_expr(self._pyexpr.dt_quarter())
@@ -733,34 +660,21 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 4, 1)
+        >>> from datetime import date
         >>> df = pl.DataFrame(
-        ...     {"date": pl.datetime_range(start, stop, timedelta(days=31), eager=True)}
+        ...     {"date": [date(2001, 1, 1), date(2001, 6, 30), date(2001, 12, 27)]}
         ... )
-        >>> df
-        shape: (3, 1)
-        ┌─────────────────────┐
-        │ date                │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2001-01-01 00:00:00 │
-        │ 2001-02-01 00:00:00 │
-        │ 2001-03-04 00:00:00 │
-        └─────────────────────┘
-        >>> df.select(pl.col("date").dt.month())
-        shape: (3, 1)
-        ┌──────┐
-        │ date │
-        │ ---  │
-        │ u32  │
-        ╞══════╡
-        │ 1    │
-        │ 2    │
-        │ 3    │
-        └──────┘
+        >>> df.with_columns(pl.col("date").dt.month().alias("month"))
+        shape: (3, 2)
+        ┌────────────┬───────┐
+        │ date       ┆ month │
+        │ ---        ┆ ---   │
+        │ date       ┆ u32   │
+        ╞════════════╪═══════╡
+        │ 2001-01-01 ┆ 1     │
+        │ 2001-06-30 ┆ 6     │
+        │ 2001-12-27 ┆ 12    │
+        └────────────┴───────┘
 
         """
         return wrap_expr(self._pyexpr.dt_month())
@@ -781,34 +695,21 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 4, 1)
+        >>> from datetime import date
         >>> df = pl.DataFrame(
-        ...     {"date": pl.datetime_range(start, stop, timedelta(days=31), eager=True)}
+        ...     {"date": [date(2001, 1, 1), date(2001, 6, 30), date(2001, 12, 27)]}
         ... )
-        >>> df
-        shape: (3, 1)
-        ┌─────────────────────┐
-        │ date                │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2001-01-01 00:00:00 │
-        │ 2001-02-01 00:00:00 │
-        │ 2001-03-04 00:00:00 │
-        └─────────────────────┘
-        >>> df.select(pl.col("date").dt.week())
-        shape: (3, 1)
-        ┌──────┐
-        │ date │
-        │ ---  │
-        │ u32  │
-        ╞══════╡
-        │ 1    │
-        │ 5    │
-        │ 9    │
-        └──────┘
+        >>> df.with_columns(pl.col("date").dt.week().alias("week"))
+        shape: (3, 2)
+        ┌────────────┬──────┐
+        │ date       ┆ week │
+        │ ---        ┆ ---  │
+        │ date       ┆ u32  │
+        ╞════════════╪══════╡
+        │ 2001-01-01 ┆ 1    │
+        │ 2001-06-30 ┆ 26   │
+        │ 2001-12-27 ┆ 52   │
+        └────────────┴──────┘
 
         """
         return wrap_expr(self._pyexpr.dt_week())
@@ -833,40 +734,30 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 12, 22)
-        >>> stop = datetime(2001, 12, 25)
+        >>> from datetime import timedelta, date
         >>> df = pl.DataFrame(
-        ...     {"date": pl.datetime_range(start, stop, timedelta(days=1), eager=True)}
+        ...     {
+        ...         "date": pl.date_range(
+        ...             date(2001, 12, 22), date(2001, 12, 25), eager=True
+        ...         )
+        ...     }
         ... )
-        >>> df
-        shape: (4, 1)
-        ┌─────────────────────┐
-        │ date                │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2001-12-22 00:00:00 │
-        │ 2001-12-23 00:00:00 │
-        │ 2001-12-24 00:00:00 │
-        │ 2001-12-25 00:00:00 │
-        └─────────────────────┘
         >>> df.with_columns(
         ...     pl.col("date").dt.weekday().alias("weekday"),
         ...     pl.col("date").dt.day().alias("day_of_month"),
         ...     pl.col("date").dt.ordinal_day().alias("day_of_year"),
         ... )
         shape: (4, 4)
-        ┌─────────────────────┬─────────┬──────────────┬─────────────┐
-        │ date                ┆ weekday ┆ day_of_month ┆ day_of_year │
-        │ ---                 ┆ ---     ┆ ---          ┆ ---         │
-        │ datetime[μs]        ┆ u32     ┆ u32          ┆ u32         │
-        ╞═════════════════════╪═════════╪══════════════╪═════════════╡
-        │ 2001-12-22 00:00:00 ┆ 6       ┆ 22           ┆ 356         │
-        │ 2001-12-23 00:00:00 ┆ 7       ┆ 23           ┆ 357         │
-        │ 2001-12-24 00:00:00 ┆ 1       ┆ 24           ┆ 358         │
-        │ 2001-12-25 00:00:00 ┆ 2       ┆ 25           ┆ 359         │
-        └─────────────────────┴─────────┴──────────────┴─────────────┘
+        ┌────────────┬─────────┬──────────────┬─────────────┐
+        │ date       ┆ weekday ┆ day_of_month ┆ day_of_year │
+        │ ---        ┆ ---     ┆ ---          ┆ ---         │
+        │ date       ┆ u32     ┆ u32          ┆ u32         │
+        ╞════════════╪═════════╪══════════════╪═════════════╡
+        │ 2001-12-22 ┆ 6       ┆ 22           ┆ 356         │
+        │ 2001-12-23 ┆ 7       ┆ 23           ┆ 357         │
+        │ 2001-12-24 ┆ 1       ┆ 24           ┆ 358         │
+        │ 2001-12-25 ┆ 2       ┆ 25           ┆ 359         │
+        └────────────┴─────────┴──────────────┴─────────────┘
 
         """
         return wrap_expr(self._pyexpr.dt_weekday())
@@ -892,40 +783,30 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 12, 22)
-        >>> stop = datetime(2001, 12, 25)
+        >>> from datetime import timedelta, date
         >>> df = pl.DataFrame(
-        ...     {"date": pl.datetime_range(start, stop, timedelta(days=1), eager=True)}
+        ...     {
+        ...         "date": pl.date_range(
+        ...             date(2001, 12, 22), date(2001, 12, 25), eager=True
+        ...         )
+        ...     }
         ... )
-        >>> df
-        shape: (4, 1)
-        ┌─────────────────────┐
-        │ date                │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2001-12-22 00:00:00 │
-        │ 2001-12-23 00:00:00 │
-        │ 2001-12-24 00:00:00 │
-        │ 2001-12-25 00:00:00 │
-        └─────────────────────┘
         >>> df.with_columns(
         ...     pl.col("date").dt.weekday().alias("weekday"),
         ...     pl.col("date").dt.day().alias("day_of_month"),
         ...     pl.col("date").dt.ordinal_day().alias("day_of_year"),
         ... )
         shape: (4, 4)
-        ┌─────────────────────┬─────────┬──────────────┬─────────────┐
-        │ date                ┆ weekday ┆ day_of_month ┆ day_of_year │
-        │ ---                 ┆ ---     ┆ ---          ┆ ---         │
-        │ datetime[μs]        ┆ u32     ┆ u32          ┆ u32         │
-        ╞═════════════════════╪═════════╪══════════════╪═════════════╡
-        │ 2001-12-22 00:00:00 ┆ 6       ┆ 22           ┆ 356         │
-        │ 2001-12-23 00:00:00 ┆ 7       ┆ 23           ┆ 357         │
-        │ 2001-12-24 00:00:00 ┆ 1       ┆ 24           ┆ 358         │
-        │ 2001-12-25 00:00:00 ┆ 2       ┆ 25           ┆ 359         │
-        └─────────────────────┴─────────┴──────────────┴─────────────┘
+        ┌────────────┬─────────┬──────────────┬─────────────┐
+        │ date       ┆ weekday ┆ day_of_month ┆ day_of_year │
+        │ ---        ┆ ---     ┆ ---          ┆ ---         │
+        │ date       ┆ u32     ┆ u32          ┆ u32         │
+        ╞════════════╪═════════╪══════════════╪═════════════╡
+        │ 2001-12-22 ┆ 6       ┆ 22           ┆ 356         │
+        │ 2001-12-23 ┆ 7       ┆ 23           ┆ 357         │
+        │ 2001-12-24 ┆ 1       ┆ 24           ┆ 358         │
+        │ 2001-12-25 ┆ 2       ┆ 25           ┆ 359         │
+        └────────────┴─────────┴──────────────┴─────────────┘
 
         """
         return wrap_expr(self._pyexpr.dt_day())
@@ -951,40 +832,30 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 12, 22)
-        >>> stop = datetime(2001, 12, 25)
+        >>> from datetime import timedelta, date
         >>> df = pl.DataFrame(
-        ...     {"date": pl.datetime_range(start, stop, timedelta(days=1), eager=True)}
+        ...     {
+        ...         "date": pl.date_range(
+        ...             date(2001, 12, 22), date(2001, 12, 25), eager=True
+        ...         )
+        ...     }
         ... )
-        >>> df
-        shape: (4, 1)
-        ┌─────────────────────┐
-        │ date                │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2001-12-22 00:00:00 │
-        │ 2001-12-23 00:00:00 │
-        │ 2001-12-24 00:00:00 │
-        │ 2001-12-25 00:00:00 │
-        └─────────────────────┘
         >>> df.with_columns(
         ...     pl.col("date").dt.weekday().alias("weekday"),
         ...     pl.col("date").dt.day().alias("day_of_month"),
         ...     pl.col("date").dt.ordinal_day().alias("day_of_year"),
         ... )
         shape: (4, 4)
-        ┌─────────────────────┬─────────┬──────────────┬─────────────┐
-        │ date                ┆ weekday ┆ day_of_month ┆ day_of_year │
-        │ ---                 ┆ ---     ┆ ---          ┆ ---         │
-        │ datetime[μs]        ┆ u32     ┆ u32          ┆ u32         │
-        ╞═════════════════════╪═════════╪══════════════╪═════════════╡
-        │ 2001-12-22 00:00:00 ┆ 6       ┆ 22           ┆ 356         │
-        │ 2001-12-23 00:00:00 ┆ 7       ┆ 23           ┆ 357         │
-        │ 2001-12-24 00:00:00 ┆ 1       ┆ 24           ┆ 358         │
-        │ 2001-12-25 00:00:00 ┆ 2       ┆ 25           ┆ 359         │
-        └─────────────────────┴─────────┴──────────────┴─────────────┘
+        ┌────────────┬─────────┬──────────────┬─────────────┐
+        │ date       ┆ weekday ┆ day_of_month ┆ day_of_year │
+        │ ---        ┆ ---     ┆ ---          ┆ ---         │
+        │ date       ┆ u32     ┆ u32          ┆ u32         │
+        ╞════════════╪═════════╪══════════════╪═════════════╡
+        │ 2001-12-22 ┆ 6       ┆ 22           ┆ 356         │
+        │ 2001-12-23 ┆ 7       ┆ 23           ┆ 357         │
+        │ 2001-12-24 ┆ 1       ┆ 24           ┆ 358         │
+        │ 2001-12-25 ┆ 2       ┆ 25           ┆ 359         │
+        └────────────┴─────────┴──────────────┴─────────────┘
 
         """
         return wrap_expr(self._pyexpr.dt_ordinal_day())
@@ -1046,38 +917,27 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 2)
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
-        ...         "date": pl.datetime_range(
-        ...             start, stop, timedelta(hours=12), eager=True
-        ...         )
+        ...         "datetime": [
+        ...             datetime(2001, 1, 1, 0, 0, 0),
+        ...             datetime(2010, 1, 1, 15, 30, 45),
+        ...             datetime(2022, 12, 31, 23, 59, 59),
+        ...         ]
         ...     }
         ... )
-        >>> df
-        shape: (3, 1)
-        ┌─────────────────────┐
-        │ date                │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2001-01-01 00:00:00 │
-        │ 2001-01-01 12:00:00 │
-        │ 2001-01-02 00:00:00 │
-        └─────────────────────┘
-        >>> df.select(pl.col("date").dt.hour())
-        shape: (3, 1)
-        ┌──────┐
-        │ date │
-        │ ---  │
-        │ u32  │
-        ╞══════╡
-        │ 0    │
-        │ 12   │
-        │ 0    │
-        └──────┘
+        >>> df.with_columns(pl.col("datetime").dt.hour().alias("hour"))
+        shape: (3, 2)
+        ┌─────────────────────┬──────┐
+        │ datetime            ┆ hour │
+        │ ---                 ┆ ---  │
+        │ datetime[μs]        ┆ u32  │
+        ╞═════════════════════╪══════╡
+        │ 2001-01-01 00:00:00 ┆ 0    │
+        │ 2010-01-01 15:30:45 ┆ 15   │
+        │ 2022-12-31 23:59:59 ┆ 23   │
+        └─────────────────────┴──────┘
 
         """
         return wrap_expr(self._pyexpr.dt_hour())
@@ -1097,38 +957,27 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 1, 0, 4, 0)
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
-        ...         "date": pl.datetime_range(
-        ...             start, stop, timedelta(minutes=2), eager=True
-        ...         )
+        ...         "datetime": [
+        ...             datetime(2001, 1, 1, 0, 0, 0),
+        ...             datetime(2010, 1, 1, 15, 30, 45),
+        ...             datetime(2022, 12, 31, 23, 59, 59),
+        ...         ]
         ...     }
         ... )
-        >>> df
-        shape: (3, 1)
-        ┌─────────────────────┐
-        │ date                │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2001-01-01 00:00:00 │
-        │ 2001-01-01 00:02:00 │
-        │ 2001-01-01 00:04:00 │
-        └─────────────────────┘
-        >>> df.select(pl.col("date").dt.minute())
-        shape: (3, 1)
-        ┌──────┐
-        │ date │
-        │ ---  │
-        │ u32  │
-        ╞══════╡
-        │ 0    │
-        │ 2    │
-        │ 4    │
-        └──────┘
+        >>> df.with_columns(pl.col("datetime").dt.minute().alias("minute"))
+        shape: (3, 2)
+        ┌─────────────────────┬────────┐
+        │ datetime            ┆ minute │
+        │ ---                 ┆ ---    │
+        │ datetime[μs]        ┆ u32    │
+        ╞═════════════════════╪════════╡
+        │ 2001-01-01 00:00:00 ┆ 0      │
+        │ 2010-01-01 15:30:45 ┆ 30     │
+        │ 2022-12-31 23:59:59 ┆ 59     │
+        └─────────────────────┴────────┘
 
         """
         return wrap_expr(self._pyexpr.dt_minute())
@@ -1155,84 +1004,40 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, datetime
-        >>> df = pl.DataFrame(
-        ...     data={
-        ...         "date": pl.datetime_range(
-        ...             start=datetime(2001, 1, 1, 0, 0, 0, 456789),
-        ...             end=datetime(2001, 1, 1, 0, 0, 6),
-        ...             interval=timedelta(seconds=2, microseconds=654321),
-        ...             eager=True,
-        ...         )
-        ...     }
-        ... )
-        >>> df
-        shape: (3, 1)
-        ┌────────────────────────────┐
-        │ date                       │
-        │ ---                        │
-        │ datetime[μs]               │
-        ╞════════════════════════════╡
-        │ 2001-01-01 00:00:00.456789 │
-        │ 2001-01-01 00:00:03.111110 │
-        │ 2001-01-01 00:00:05.765431 │
-        └────────────────────────────┘
-        >>> df.select(pl.col("date").dt.second().alias("secs"))
-        shape: (3, 1)
-        ┌──────┐
-        │ secs │
-        │ ---  │
-        │ u32  │
-        ╞══════╡
-        │ 0    │
-        │ 3    │
-        │ 5    │
-        └──────┘
-
-        >>> df.select(pl.col("date").dt.second(fractional=True).alias("secs"))
-        shape: (3, 1)
-        ┌──────────┐
-        │ secs     │
-        │ ---      │
-        │ f64      │
-        ╞══════════╡
-        │ 0.456789 │
-        │ 3.11111  │
-        │ 5.765431 │
-        └──────────┘
-
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 1, 0, 0, 4)
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
-        ...         "date": pl.datetime_range(
-        ...             start, stop, timedelta(seconds=2), eager=True
-        ...         )
+        ...         "datetime": [
+        ...             datetime(2000, 1, 1, 0, 0, 0, 456789),
+        ...             datetime(2000, 1, 1, 0, 0, 3, 111110),
+        ...             datetime(2000, 1, 1, 0, 0, 5, 765431),
+        ...         ]
         ...     }
         ... )
-        >>> df
-        shape: (3, 1)
-        ┌─────────────────────┐
-        │ date                │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2001-01-01 00:00:00 │
-        │ 2001-01-01 00:00:02 │
-        │ 2001-01-01 00:00:04 │
-        └─────────────────────┘
-        >>> df.select(pl.col("date").dt.second())
-        shape: (3, 1)
-        ┌──────┐
-        │ date │
-        │ ---  │
-        │ u32  │
-        ╞══════╡
-        │ 0    │
-        │ 2    │
-        │ 4    │
-        └──────┘
+        >>> df.with_columns(pl.col("datetime").dt.second().alias("second"))
+        shape: (3, 2)
+        ┌────────────────────────────┬────────┐
+        │ datetime                   ┆ second │
+        │ ---                        ┆ ---    │
+        │ datetime[μs]               ┆ u32    │
+        ╞════════════════════════════╪════════╡
+        │ 2000-01-01 00:00:00.456789 ┆ 0      │
+        │ 2000-01-01 00:00:03.111110 ┆ 3      │
+        │ 2000-01-01 00:00:05.765431 ┆ 5      │
+        └────────────────────────────┴────────┘
+        >>> df.with_columns(
+        ...     pl.col("datetime").dt.second(fractional=True).alias("second")
+        ... )
+        shape: (3, 2)
+        ┌────────────────────────────┬──────────┐
+        │ datetime                   ┆ second   │
+        │ ---                        ┆ ---      │
+        │ datetime[μs]               ┆ f64      │
+        ╞════════════════════════════╪══════════╡
+        │ 2000-01-01 00:00:00.456789 ┆ 0.456789 │
+        │ 2000-01-01 00:00:03.111110 ┆ 3.11111  │
+        │ 2000-01-01 00:00:05.765431 ┆ 5.765431 │
+        └────────────────────────────┴──────────┘
 
         """
         sec = wrap_expr(self._pyexpr.dt_second())
@@ -1331,29 +1136,24 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 3)
-        >>> df = pl.DataFrame(
-        ...     {"date": pl.datetime_range(start, stop, timedelta(days=1), eager=True)}
-        ... )
-        >>> df.select(
-        ...     [
-        ...         pl.col("date"),
-        ...         pl.col("date").dt.epoch().alias("epoch_ns"),
-        ...         pl.col("date").dt.epoch(time_unit="s").alias("epoch_s"),
-        ...     ]
+        >>> from datetime import date
+        >>> df = pl.date_range(
+        ...     date(2001, 1, 1), date(2001, 1, 3), eager=True
+        ... ).to_frame()
+        >>> df.with_columns(
+        ...     pl.col("date").dt.epoch().alias("epoch_ns"),
+        ...     pl.col("date").dt.epoch(time_unit="s").alias("epoch_s"),
         ... )
         shape: (3, 3)
-        ┌─────────────────────┬─────────────────┬───────────┐
-        │ date                ┆ epoch_ns        ┆ epoch_s   │
-        │ ---                 ┆ ---             ┆ ---       │
-        │ datetime[μs]        ┆ i64             ┆ i64       │
-        ╞═════════════════════╪═════════════════╪═══════════╡
-        │ 2001-01-01 00:00:00 ┆ 978307200000000 ┆ 978307200 │
-        │ 2001-01-02 00:00:00 ┆ 978393600000000 ┆ 978393600 │
-        │ 2001-01-03 00:00:00 ┆ 978480000000000 ┆ 978480000 │
-        └─────────────────────┴─────────────────┴───────────┘
+        ┌────────────┬─────────────────┬───────────┐
+        │ date       ┆ epoch_ns        ┆ epoch_s   │
+        │ ---        ┆ ---             ┆ ---       │
+        │ date       ┆ i64             ┆ i64       │
+        ╞════════════╪═════════════════╪═══════════╡
+        │ 2001-01-01 ┆ 978307200000000 ┆ 978307200 │
+        │ 2001-01-02 ┆ 978393600000000 ┆ 978393600 │
+        │ 2001-01-03 ┆ 978480000000000 ┆ 978480000 │
+        └────────────┴─────────────────┴───────────┘
 
         """
         if time_unit in DTYPE_TEMPORAL_UNITS:
@@ -1378,29 +1178,24 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 3)
-        >>> df = pl.DataFrame(
-        ...     {"date": pl.datetime_range(start, stop, timedelta(days=1), eager=True)}
-        ... )
-        >>> df.select(
-        ...     [
-        ...         pl.col("date"),
-        ...         pl.col("date").dt.timestamp().alias("timestamp_ns"),
-        ...         pl.col("date").dt.timestamp("ms").alias("timestamp_ms"),
-        ...     ]
+        >>> from datetime import date
+        >>> df = pl.date_range(
+        ...     date(2001, 1, 1), date(2001, 1, 3), eager=True
+        ... ).to_frame()
+        >>> df.with_columns(
+        ...     pl.col("date").dt.timestamp().alias("timestamp_ns"),
+        ...     pl.col("date").dt.timestamp("ms").alias("timestamp_ms"),
         ... )
         shape: (3, 3)
-        ┌─────────────────────┬─────────────────┬──────────────┐
-        │ date                ┆ timestamp_ns    ┆ timestamp_ms │
-        │ ---                 ┆ ---             ┆ ---          │
-        │ datetime[μs]        ┆ i64             ┆ i64          │
-        ╞═════════════════════╪═════════════════╪══════════════╡
-        │ 2001-01-01 00:00:00 ┆ 978307200000000 ┆ 978307200000 │
-        │ 2001-01-02 00:00:00 ┆ 978393600000000 ┆ 978393600000 │
-        │ 2001-01-03 00:00:00 ┆ 978480000000000 ┆ 978480000000 │
-        └─────────────────────┴─────────────────┴──────────────┘
+        ┌────────────┬─────────────────┬──────────────┐
+        │ date       ┆ timestamp_ns    ┆ timestamp_ms │
+        │ ---        ┆ ---             ┆ ---          │
+        │ date       ┆ i64             ┆ i64          │
+        ╞════════════╪═════════════════╪══════════════╡
+        │ 2001-01-01 ┆ 978307200000000 ┆ 978307200000 │
+        │ 2001-01-02 ┆ 978393600000000 ┆ 978393600000 │
+        │ 2001-01-03 ┆ 978480000000000 ┆ 978480000000 │
+        └────────────┴─────────────────┴──────────────┘
 
         """
         return wrap_expr(self._pyexpr.dt_timestamp(time_unit))

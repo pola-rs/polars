@@ -179,54 +179,34 @@ def date_range(
 
     Using ``timedelta`` object to specify the interval:
 
-    >>> from datetime import datetime, timedelta
-    >>> pl.datetime_range(
-    ...     datetime(1985, 1, 1),
-    ...     datetime(1985, 1, 10),
-    ...     timedelta(days=1, hours=12),
-    ...     time_unit="ms",
+    >>> from datetime import timedelta
+    >>> pl.date_range(
+    ...     date(1985, 1, 1),
+    ...     date(1985, 1, 10),
+    ...     timedelta(days=2),
     ...     eager=True,
     ... )
-    shape: (7,)
-    Series: 'date' [datetime[ms]]
+    shape: (5,)
+    Series: 'date' [date]
     [
-        1985-01-01 00:00:00
-        1985-01-02 12:00:00
-        1985-01-04 00:00:00
-        1985-01-05 12:00:00
-        1985-01-07 00:00:00
-        1985-01-08 12:00:00
-        1985-01-10 00:00:00
-    ]
-
-    Specifying a time zone:
-
-    >>> pl.datetime_range(
-    ...     datetime(2022, 1, 1),
-    ...     datetime(2022, 3, 1),
-    ...     "1mo",
-    ...     time_zone="America/New_York",
-    ...     eager=True,
-    ... )
-    shape: (3,)
-    Series: 'date' [datetime[μs, America/New_York]]
-    [
-        2022-01-01 00:00:00 EST
-        2022-02-01 00:00:00 EST
-        2022-03-01 00:00:00 EST
+        1985-01-01
+        1985-01-03
+        1985-01-05
+        1985-01-07
+        1985-01-09
     ]
 
     Combine with ``month_end`` to get the last day of the month:
 
-    >>> pl.datetime_range(
-    ...     datetime(2022, 1, 1), datetime(2022, 3, 1), "1mo", eager=True
+    >>> pl.date_range(
+    ...     date(2022, 1, 1), date(2022, 3, 1), "1mo", eager=True
     ... ).dt.month_end()
     shape: (3,)
-    Series: 'date' [datetime[μs]]
+    Series: 'date' [date]
     [
-        2022-01-31 00:00:00
-        2022-02-28 00:00:00
-        2022-03-31 00:00:00
+        2022-01-31
+        2022-02-28
+        2022-03-31
     ]
 
     """

@@ -101,6 +101,59 @@ def datetime_range(
     Expr or Series
         Column of data type :class:`Datetime`.
 
+    Examples
+    --------
+    Using Polars duration string to specify the interval:
+
+    >>> from datetime import datetime
+    >>> pl.datetime_range(datetime(2022, 1, 1), datetime(2022, 3, 1), "1mo", eager=True)
+    shape: (3,)
+    Series: 'datetime' [datetime[μs]]
+    [
+        2022-01-01 00:00:00
+        2022-02-01 00:00:00
+        2022-03-01 00:00:00
+    ]
+
+    Using ``timedelta`` object to specify the interval:
+
+    >>> from datetime import date, timedelta
+    >>> pl.datetime_range(
+    ...     date(1985, 1, 1),
+    ...     date(1985, 1, 10),
+    ...     timedelta(days=1, hours=12),
+    ...     time_unit="ms",
+    ...     eager=True,
+    ... )
+    shape: (7,)
+    Series: 'datetime' [datetime[ms]]
+    [
+        1985-01-01 00:00:00
+        1985-01-02 12:00:00
+        1985-01-04 00:00:00
+        1985-01-05 12:00:00
+        1985-01-07 00:00:00
+        1985-01-08 12:00:00
+        1985-01-10 00:00:00
+    ]
+
+    Specifying a time zone:
+
+    >>> pl.datetime_range(
+    ...     datetime(2022, 1, 1),
+    ...     datetime(2022, 3, 1),
+    ...     "1mo",
+    ...     time_zone="America/New_York",
+    ...     eager=True,
+    ... )
+    shape: (3,)
+    Series: 'datetime' [datetime[μs, America/New_York]]
+    [
+        2022-01-01 00:00:00 EST
+        2022-02-01 00:00:00 EST
+        2022-03-01 00:00:00 EST
+    ]
+
     """
     interval = parse_interval_argument(interval)
     if time_unit is None and "ns" in interval:
