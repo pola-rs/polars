@@ -5362,7 +5362,7 @@ class DataFrame:
         >>> # create an example dataframe
         >>> df = pl.DataFrame(
         ...     {
-        ...         "time": pl.date_range(
+        ...         "time": pl.datetime_range(
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
@@ -5467,7 +5467,7 @@ class DataFrame:
 
         >>> df = pl.DataFrame(
         ...     {
-        ...         "time": pl.date_range(
+        ...         "time": pl.datetime_range(
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",

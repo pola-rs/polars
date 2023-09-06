@@ -1080,7 +1080,7 @@ def test_datetime_format_inferred_precision(
 
 
 def test_inferred_datetime_format_mixed() -> None:
-    ts = pl.date_range(datetime(2000, 1, 1), datetime(2000, 1, 2), eager=True)
+    ts = pl.datetime_range(datetime(2000, 1, 1), datetime(2000, 1, 2), eager=True)
     df = pl.DataFrame({"naive": ts, "aware": ts.dt.replace_time_zone("UTC")})
     result = df.write_csv()
     expected = (
