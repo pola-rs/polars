@@ -3,11 +3,15 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.io.iceberg import _convert_predicate, _to_ast
+
+if TYPE_CHECKING:
+    from pyiceberg.expressions import BooleanExpression
 
 
 @pytest.fixture()
@@ -15,9 +19,15 @@ def iceberg_path() -> str:
     # Iceberg requires absolute paths, so we'll symlink
     # the test table into /tmp/iceberg/t1/
     Path("/tmp/iceberg").mkdir(parents=True, exist_ok=True)
-    current_path = Path.cwd()
+    current_path = os.path.dirname(__file__)
+    print("path:")
+    print(f"{current_path}/files/iceberg-table")
+    print("dir:")
+    print(os.listdir(f"{current_path}/files/iceberg-table"))
     with contextlib.suppress(FileExistsError):
         os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")
+    print("linked:")
+    print(os.listdir("/tmp/iceberg/t1"))
 
     return "file:///tmp/iceberg/t1/metadata/00001-55cdf97b-255c-4983-b9f3-0e468fadfe9e.metadata.json"
 
@@ -37,20 +47,6 @@ def test_scan_iceberg_filter_on_column(iceberg_path: str) -> None:
     df = pl.scan_iceberg(iceberg_path)
     df = df.filter(pl.col("fare_amount") < 0.0)
     assert len(df.collect()) == 1192
-
-
-def test_true_expression() -> None:
-    from pyiceberg.expressions import AlwaysTrue
-
-    expr = _to_ast("pa.compute.scalar(True)")
-    assert _convert_predicate(expr) == AlwaysTrue()
-
-
-def test_false_expression() -> None:
-    from pyiceberg.expressions import AlwaysFalse
-
-    expr = _to_ast("pa.compute.scalar(False)")
-    assert _convert_predicate(expr) == AlwaysFalse()
 
 
 def test_is_null_expression() -> None:
@@ -82,7 +78,7 @@ def test_is_not_nan_expression() -> None:
 
 
 def test_isin_expression() -> None:
-    from pyiceberg.expressions import In, literal
+    from pyiceberg.expressions import In, literal  # type: ignore[attr-defined]
 
     expr = _to_ast("(pa.compute.field('location_id')).isin([1,2,3])")
     assert _convert_predicate(expr) == In(
@@ -91,7 +87,7 @@ def test_isin_expression() -> None:
 
 
 def test_parse_combined_expression() -> None:
-    from pyiceberg.expressions import (
+    from pyiceberg.expressions import (  # type: ignore[attr-defined]
         And,
         EqualTo,
         GreaterThan,

@@ -223,8 +223,6 @@ def _(a: Call) -> Any:
             return IsNull(ref)
         elif f == "is_nan":
             return IsNaN(ref)
-        elif f == "scalar":
-            return AlwaysTrue() if args[0] else AlwaysFalse()
 
     raise ValueError(f"Unknown call: {f}")
 
