@@ -1159,7 +1159,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series(["foo:bar", "foo:barbar"])
-        >>> s.str.strip_suffix("foo")
+        >>> s.str.strip_suffix("bar")
         shape: (2,)
         Series: '' [str]
         [

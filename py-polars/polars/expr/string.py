@@ -603,7 +603,7 @@ class ExprStringNameSpace:
         │ foofoo:bar  │
         └─────────────┘
 
-        >>> df.select(pl.col("baz").str.strip_prefix())
+        >>> df.select(pl.col("baz").str.strip_prefix("foo"))
         shape: (2, 1)
         ┌─────────┐
         │ baz     │
@@ -641,7 +641,7 @@ class ExprStringNameSpace:
         │ foo:barbar  │
         └─────────────┘
 
-        >>> df.select(pl.col("baz").str.strip_suffix())
+        >>> df.select(pl.col("baz").str.strip_suffix("bar"))
         shape: (2, 1)
         ┌─────────┐
         │ baz     │
