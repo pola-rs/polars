@@ -587,7 +587,7 @@ class ExprStringNameSpace:
         r"""
         Remove leading and trailing characters.
 
-        .. deprecated:: 0.20.0
+        .. deprecated:: 0.19.2
             This method has been renamed to :func:`Expr.strip_chars`.
 
         Parameters

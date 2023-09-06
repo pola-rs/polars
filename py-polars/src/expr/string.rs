@@ -75,11 +75,6 @@ impl PyExpr {
         self.inner.clone().str().strip_suffix(suffix).into()
     }
 
-    fn str_strip(&self, matches: Option<String>) -> Self {
-        #[allow(deprecated)]
-        self.inner.clone().str().strip(matches).into()
-    }
-
     fn str_rstrip(&self, matches: Option<String>) -> Self {
         self.inner.clone().str().rstrip(matches).into()
     }

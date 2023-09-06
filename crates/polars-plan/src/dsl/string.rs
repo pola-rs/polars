@@ -478,12 +478,6 @@ impl StringNameSpace {
             )))
     }
 
-    /// Remove leading and trailing characters, or whitespace if matches is None.
-    #[deprecated(since = "0.32.1", note = "use polars strip_chars")]
-    pub fn strip(self, matches: Option<String>) -> Expr {
-        self.strip_chars(matches)
-    }
-
     /// Remove leading characters, or whitespace if matches is None.
     pub fn lstrip(self, matches: Option<String>) -> Expr {
         self.0

@@ -694,7 +694,6 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             StripPrefix(prefix) => map!(strings::strip_prefix, &prefix),
             StripSuffix(suffix) => map!(strings::strip_suffix, &suffix),
             #[allow(deprecated)]
-            Strip(matches) => map!(strings::strip, matches.as_deref()),
             LStrip(matches) => map!(strings::lstrip, matches.as_deref()),
             RStrip(matches) => map!(strings::rstrip, matches.as_deref()),
             #[cfg(feature = "string_from_radix")]
