@@ -579,6 +579,82 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_strip(characters))
 
+    def strip_prefix(self, prefix: str) -> Expr:
+        r"""
+        Remove prefix.
+
+        Parameters
+        ----------
+        prefix
+            The prefix to be removed. The prefix will be removed exactly once from the
+            string if found.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"baz": ["foo:bar", "foofoo:bar"]})
+        >>> df
+        shape: (2, 1)
+        ┌─────────────┐
+        │ baz         │
+        │ ---         │
+        │ str         │
+        ╞═════════════╡
+        │ foo:bar     │
+        │ foofoo:bar  │
+        └─────────────┘
+
+        >>> df.select(pl.col("baz").str.strip_prefix())
+        shape: (2, 1)
+        ┌─────────┐
+        │ baz     │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ :bar    │
+        │ foo:bar │
+        └─────────┘
+
+        """
+        return wrap_expr(self._pyexpr.str_strip_prefix(prefix))
+
+    def strip_suffix(self, suffix: str) -> Expr:
+        r"""
+        Remove suffix.
+
+        Parameters
+        ----------
+        suffix
+            The suffix to be removed. The suffix will be removed exactly once from the
+            string if found.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"baz": ["foo:bar", "foo:barbar"]})
+        >>> df
+        shape: (2, 1)
+        ┌─────────────┐
+        │ baz         │
+        │ ---         │
+        │ str         │
+        ╞═════════════╡
+        │ foo:bar     │
+        │ foo:barbar  │
+        └─────────────┘
+
+        >>> df.select(pl.col("baz").str.strip_suffix())
+        shape: (2, 1)
+        ┌─────────┐
+        │ baz     │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ foo:    │
+        │ foo:bar │
+        └─────────┘
+
+        """
+        return wrap_expr(self._pyexpr.str_strip_suffix(suffix))
+
     def lstrip(self, characters: str | None = None) -> Expr:
         r"""
         Remove leading characters.

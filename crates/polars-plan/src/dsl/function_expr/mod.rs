@@ -691,6 +691,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "nightly")]
             Titlecase => map!(strings::titlecase),
             Strip(matches) => map!(strings::strip, matches.as_deref()),
+            StripPrefix(prefix) => map!(strings::strip_prefix, &prefix),
+            StripSuffix(suffix) => map!(strings::strip_suffix, &suffix),
             LStrip(matches) => map!(strings::lstrip, matches.as_deref()),
             RStrip(matches) => map!(strings::rstrip, matches.as_deref()),
             #[cfg(feature = "string_from_radix")]

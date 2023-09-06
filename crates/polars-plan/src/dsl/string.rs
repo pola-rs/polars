@@ -460,6 +460,22 @@ impl StringNameSpace {
             .map_private(FunctionExpr::StringExpr(StringFunction::Strip(matches)))
     }
 
+    /// Remove prefix.
+    pub fn strip_prefix(self, prefix: String) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::StripPrefix(
+                prefix,
+            )))
+    }
+
+    /// Remove suffix.
+    pub fn strip_suffix(self, suffix: String) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::StripSuffix(
+                suffix,
+            )))
+    }
+
     /// Remove leading characters, or whitespace if matches is None.
     pub fn lstrip(self, matches: Option<String>) -> Expr {
         self.0

@@ -67,6 +67,14 @@ impl PyExpr {
         self.inner.clone().str().strip(matches).into()
     }
 
+    fn str_strip_prefix(&self, prefix: String) -> Self {
+        self.inner.clone().str().strip_prefix(prefix).into()
+    }
+
+    fn str_strip_suffix(&self, suffix: String) -> Self {
+        self.inner.clone().str().strip_suffix(suffix).into()
+    }
+
     fn str_rstrip(&self, matches: Option<String>) -> Self {
         self.inner.clone().str().rstrip(matches).into()
     }

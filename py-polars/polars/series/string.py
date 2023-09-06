@@ -1123,6 +1123,52 @@ class StringNameSpace:
 
         """
 
+    def strip_prefix(self, prefix: str) -> Series:
+        r"""
+        Remove prefix.
+
+        Parameters
+        ----------
+        prefix
+            The prefix to be removed. The prefix will be removed exactly once from the
+            string if found.
+
+        Examples
+        --------
+        >>> s = pl.Series(["foo:bar", "foofoo:bar"])
+        >>> s.str.strip_prefix("foo")
+        shape: (2,)
+        Series: '' [str]
+        [
+                ":bar"
+                "foo:bar"
+        ]
+
+        """
+
+    def strip_suffix(self, suffix: str) -> Series:
+        r"""
+        Remove postfix.
+
+        Parameters
+        ----------
+        suffix
+            The suffix to be removed. The suffix will be removed exactly once from the
+            string if found.
+
+        Examples
+        --------
+        >>> s = pl.Series(["foo:bar", "foo:barbar"])
+        >>> s.str.strip_suffix("foo")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "foo:"
+                "foo:bar"
+        ]
+
+        """
+
     def lstrip(self, characters: str | None = None) -> Series:
         r"""
         Remove leading characters.
