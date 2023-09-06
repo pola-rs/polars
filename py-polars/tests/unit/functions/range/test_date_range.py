@@ -10,7 +10,6 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.datatypes import PolarsDataType
     from polars.type_aliases import TimeUnit
 
 
@@ -23,8 +22,8 @@ def test_date_range() -> None:
 def test_date_range_invalid_time_unit() -> None:
     with pytest.raises(pl.PolarsPanicError, match="'x' not supported"):
         pl.date_range(
-            start=datetime(2021, 12, 16),
-            end=datetime(2021, 12, 16, 3),
+            start=date(2021, 12, 16),
+            end=date(2021, 12, 18),
             interval="1X",
             eager=True,
         )
@@ -202,36 +201,20 @@ def test_deprecated_name_arg() -> None:
     (
         "input_time_unit",
         "input_time_zone",
-        "output_dtype",
-        "interval",
         "expected_date_range",
     ),
     [
-        (None, None, pl.Date, "1d", ["2020-01-01", "2020-01-02", "2020-01-03"]),
-        ("ms", None, pl.Date, "1d", ["2020-01-01", "2020-01-02", "2020-01-03"]),
-        (
-            None,
-            "Asia/Kathmandu",
-            pl.Date,
-            "1d",
-            ["2020-01-01", "2020-01-02", "2020-01-03"],
-        ),
-        (
-            "ms",
-            "Asia/Kathmandu",
-            pl.Date,
-            "1d",
-            ["2020-01-01", "2020-01-02", "2020-01-03"],
-        ),
+        (None, None, ["2020-01-01", "2020-01-02", "2020-01-03"]),
     ],
 )
 def test_date_range_schema_no_upcast(
     input_time_unit: TimeUnit | None,
     input_time_zone: str | None,
-    output_dtype: PolarsDataType,
-    interval: str,
     expected_date_range: list[str],
 ) -> None:
+    output_dtype = pl.Date
+    interval = "1d"
+
     df = pl.DataFrame({"start": [date(2020, 1, 1)], "end": [date(2020, 1, 3)]}).lazy()
     result = df.with_columns(
         pl.date_ranges(
@@ -242,6 +225,59 @@ def test_date_range_schema_no_upcast(
             time_zone=input_time_zone,
         ).alias("date_range")
     )
+    expected_schema = {
+        "start": pl.Date,
+        "end": pl.Date,
+        "date_range": pl.List(output_dtype),
+    }
+    assert result.schema == expected_schema
+    assert result.collect().schema == expected_schema
+
+    expected = pl.DataFrame(
+        {
+            "start": [date(2020, 1, 1)],
+            "end": [date(2020, 1, 3)],
+            "date_range": pl.Series(expected_date_range)
+            .str.to_datetime(time_unit="ns")
+            .implode(),
+        }
+    ).with_columns(
+        pl.col("date_range").explode().cast(output_dtype).implode(),
+    )
+    assert_frame_equal(result.collect(), expected)
+
+
+@pytest.mark.parametrize(
+    (
+        "input_time_unit",
+        "input_time_zone",
+        "expected_date_range",
+    ),
+    [
+        ("ms", None, ["2020-01-01", "2020-01-02", "2020-01-03"]),
+        (None, "Asia/Kathmandu", ["2020-01-01", "2020-01-02", "2020-01-03"]),
+        ("ms", "Asia/Kathmandu", ["2020-01-01", "2020-01-02", "2020-01-03"]),
+    ],
+)
+def test_date_range_schema_no_upcast2(
+    input_time_unit: TimeUnit | None,
+    input_time_zone: str | None,
+    expected_date_range: list[str],
+) -> None:
+    output_dtype = pl.Date
+    interval = "1d"
+
+    df = pl.DataFrame({"start": [date(2020, 1, 1)], "end": [date(2020, 1, 3)]}).lazy()
+    with pytest.deprecated_call():
+        result = df.with_columns(
+            pl.date_ranges(
+                pl.col("start"),
+                pl.col("end"),
+                interval=interval,
+                time_unit=input_time_unit,
+                time_zone=input_time_zone,
+            ).alias("date_range")
+        )
     expected_schema = {
         "start": pl.Date,
         "end": pl.Date,
@@ -304,15 +340,14 @@ def test_date_range_invalid_start_end() -> None:
     with pytest.raises(
         pl.ComputeError, match="`end` must be equal to or greater than `start`"
     ):
-        pl.date_range(
-            datetime(2000, 3, 20), datetime(2000, 3, 5), interval="1h", eager=True
-        )
+        pl.date_range(date(2000, 3, 20), date(2000, 3, 5), eager=True)
 
 
 def test_date_range_24h_interval_results_in_datetime() -> None:
-    result = pl.LazyFrame().select(
-        pl.date_range(date(2022, 1, 1), date(2022, 1, 3), interval="24h")
-    )
+    with pytest.deprecated_call():
+        result = pl.LazyFrame().select(
+            pl.date_range(date(2022, 1, 1), date(2022, 1, 3), interval="24h")
+        )
 
     assert result.schema == {"date": pl.Datetime}
     expected = pl.Series(

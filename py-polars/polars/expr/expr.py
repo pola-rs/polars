@@ -5424,7 +5424,7 @@ class Expr:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
         ... ).with_row_count()
         >>> df_temporal
         shape: (25, 2)
@@ -5630,7 +5630,7 @@ class Expr:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
         ... ).with_row_count()
         >>> df_temporal
         shape: (25, 2)
@@ -5863,7 +5863,7 @@ class Expr:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
         ... ).with_row_count()
         >>> df_temporal
         shape: (25, 2)
@@ -6096,7 +6096,7 @@ class Expr:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
         ... ).with_row_count()
         >>> df_temporal
         shape: (25, 2)
@@ -6328,7 +6328,7 @@ class Expr:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
         ... ).with_row_count()
         >>> df_temporal
         shape: (25, 2)
@@ -6560,7 +6560,7 @@ class Expr:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
         ... ).with_row_count()
         >>> df_temporal
         shape: (25, 2)
