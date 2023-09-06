@@ -52,7 +52,7 @@ use crate::prelude::*;
 use crate::utils::Wrap;
 
 
-pub trait PolarsDataType: Send + Sync + Sized + HasArrayT + HasLogicalType {}
+pub trait PolarsDataType: Send + Sync + Sized + HasArrayType + HasLogicalType {}
 
 // Important: PolarsNumericType implements PolarsDataType and HasArrayT
 // using a blanket implementation. If we added the bounds to the trait itself
@@ -62,8 +62,8 @@ pub trait PolarsNumericType: Send + Sync + Sized + HasLogicalType + 'static {
     type Native: NumericNative;
 }
 impl<T: PolarsNumericType> PolarsDataType for T {}
-unsafe impl<T: PolarsNumericType> HasArrayT for T {
-    type ArrayT = PrimitiveArray<T::Native>;
+unsafe impl<T: PolarsNumericType> HasArrayType for T {
+    type Array = PrimitiveArray<T::Native>;
 }
 
 pub trait HasLogicalType {
@@ -74,14 +74,14 @@ pub trait HasLogicalType {
 
 /// Gives the underlying array type for a particular data type.
 #[doc(hidden)]
-pub unsafe trait HasArrayT {
-    type ArrayT: StaticArray;
+pub unsafe trait HasArrayType {
+    type Array: StaticArray;
 }
 
 /// Gets the physical type associated with a PolarsDataType. Same as T::Native for
 /// PolarsNumericTypes.
-pub type ArrayT<T> = <T as HasArrayT>::ArrayT;
-pub type PhysicalT<'a, T> = <<T as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>;
+pub type ArrayT<T> = <T as HasArrayType>::Array;
+pub type PhysicalT<'a, T> = <<T as HasArrayType>::Array as StaticArray>::ValueT<'a>;
 
 pub trait PolarsIntegerType: PolarsNumericType {}
 pub trait PolarsFloatType: PolarsNumericType {}
@@ -91,18 +91,18 @@ macro_rules! impl_polars_num_datatype {
         #[derive(Clone, Copy)]
         pub struct $ca {}
 
-        impl PolarsNumericType for $ca {
-            type Native = $physical;
-        }
-
-        impl $trait for $ca {}
-
         impl HasLogicalType for $ca {
             #[inline]
             fn get_dtype() -> DataType {
                 DataType::$variant
             }
         }
+
+        impl PolarsNumericType for $ca {
+            type Native = $physical;
+        }
+
+        impl $trait for $ca {}
     };
 }
 
@@ -120,8 +120,8 @@ macro_rules! impl_polars_datatype {
 
         impl PolarsDataType for $ca {}
 
-        unsafe impl HasArrayT for $ca {
-            type ArrayT = $arr;
+        unsafe impl HasArrayType for $ca {
+            type Array = $arr;
         }
     };
 }
@@ -157,8 +157,8 @@ impl HasLogicalType for ListType {
         DataType::List(Box::new(DataType::Null))
     }
 }
-unsafe impl HasArrayT for ListType {
-    type ArrayT = ListArray<i64>;
+unsafe impl HasArrayType for ListType {
+    type Array = ListArray<i64>;
 }
 
 #[cfg(feature = "dtype-array")]
@@ -173,8 +173,8 @@ impl HasLogicalType for FixedSizeListType {
 #[cfg(feature = "dtype-array")]
 impl PolarsDataType for FixedSizeListType {}
 #[cfg(feature = "dtype-array")]
-unsafe impl HasArrayT for FixedSizeListType {
-    type ArrayT = FixedSizeListArray;
+unsafe impl HasArrayType for FixedSizeListType {
+    type Array = FixedSizeListArray;
 }
 
 #[cfg(feature = "dtype-decimal")]
@@ -203,8 +203,8 @@ impl<T: PolarsObject> HasLogicalType for ObjectType<T> {
     }
 }
 #[cfg(feature = "object")]
-unsafe impl<T: PolarsObject> HasArrayT for ObjectType<T> {
-    type ArrayT = crate::chunked_array::object::ObjectArray<T>;
+unsafe impl<T: PolarsObject> HasArrayType for ObjectType<T> {
+    type Array = crate::chunked_array::object::ObjectArray<T>;
 }
 
 #[cfg(feature = "dtype-array")]

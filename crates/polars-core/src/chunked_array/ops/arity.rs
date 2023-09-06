@@ -4,7 +4,7 @@ use arrow::array::Array;
 use polars_arrow::utils::combine_validities_and;
 
 use crate::datatypes::{
-    ArrayFromElementIter, HasArrayT, PhysicalT, PolarsNumericType, StaticArray, ArrayT,
+    ArrayFromElementIter, HasArrayType, PhysicalT, PolarsNumericType, StaticArray, ArrayT,
 };
 use crate::prelude::{ChunkedArray, PolarsDataType};
 use crate::utils::align_chunks_binary;
@@ -138,7 +138,7 @@ pub fn binary_mut_with_options<T, U, V, F, Arr>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsDataType + HasArrayT<ArrayT = Arr>,
+    V: PolarsDataType + HasArrayType<Array = Arr>,
     Arr: Array,
     F: FnMut(&ArrayT<T>, &ArrayT<U>) -> Arr,
 {
@@ -159,7 +159,7 @@ pub fn binary<T, U, V, F, Arr>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsDataType + HasArrayT<ArrayT = Arr>,
+    V: PolarsDataType + HasArrayType<Array = Arr>,
     Arr: Array,
     F: FnMut(&ArrayT<T>, &ArrayT<U>) -> Arr,
 {
@@ -175,7 +175,7 @@ pub fn try_binary<T, U, V, F, Arr, E>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsDataType + HasArrayT<ArrayT = Arr>,
+    V: PolarsDataType + HasArrayType<Array = Arr>,
     Arr: Array,
     F: FnMut(&ArrayT<T>, &ArrayT<U>) -> Result<Arr, E>,
     E: Error,
