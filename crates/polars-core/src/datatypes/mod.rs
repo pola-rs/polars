@@ -52,13 +52,19 @@ use crate::prelude::*;
 use crate::utils::Wrap;
 
 
-pub struct BinaryType {}
+pub trait PolarsDataType: Send + Sync + Sized + HasArrayT + HasLogicalType {}
 
-#[cfg(feature = "dtype-array")]
-pub struct FixedSizeListType {}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct ListType {}
+// Important: PolarsNumericType implements PolarsDataType and HasArrayT
+// using a blanket implementation. If we added the bounds to the trait itself
+// Rust ignores the blanket implementation for type checking and will complain
+// about a generic ArrayT given by HasArrayT instead of PrimitiveArray<Native>.
+pub trait PolarsNumericType: Send + Sync + Sized + HasLogicalType + 'static {
+    type Native: NumericNative;
+}
+impl<T: PolarsNumericType> PolarsDataType for T {}
+unsafe impl<T: PolarsNumericType> HasArrayT for T {
+    type ArrayT = PrimitiveArray<T::Native>;
+}
 
 pub trait HasLogicalType {
     fn get_dtype() -> DataType
@@ -66,49 +72,42 @@ pub trait HasLogicalType {
         Self: Sized;
 }
 
-pub type PhysicalT<'a, DT> = <<DT as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>;
-pub trait PolarsDataType: Send + Sync + Sized + HasArrayT + HasLogicalType { }
-
-// Important: PolarsNumericType implements PolarsDataType and HasArrayT
-// using a blanket implementation. If we added the bounds to the trait itself
-// Rust ignores the blanket implementation for type checking and will complain
-// about a generic ArrayT given by HasArrayT instead of PrimitiveArray<Native>.
-pub trait PolarsNumericType: Send + Sync + Sized + 'static + HasLogicalType {
-    type Native: NumericNative;
+/// Gives the underlying array type for a particular data type.
+#[doc(hidden)]
+pub unsafe trait HasArrayT {
+    type ArrayT: StaticArray;
 }
 
-impl<T: PolarsNumericType> PolarsDataType for T { }
+/// Gets the physical type associated with a PolarsDataType. Same as T::Native for
+/// PolarsNumericTypes.
+pub type PhysicalT<'a, T> = <<T as HasArrayT>::ArrayT as StaticArray>::ValueT<'a>;
 
-unsafe impl<T: PolarsNumericType> HasArrayT for T {
-    type ArrayT = PrimitiveArray<T::Native>;
-}
 
-pub trait PolarsIntegerType: PolarsNumericType { }
-pub trait PolarsFloatType: PolarsNumericType { }
-
+pub trait PolarsIntegerType: PolarsNumericType {}
+pub trait PolarsFloatType: PolarsNumericType {}
 
 macro_rules! impl_polars_num_datatype {
     ($trait: ident, $ca:ident, $variant:ident, $physical:ty) => {
         #[derive(Clone, Copy)]
         pub struct $ca {}
 
+        impl PolarsNumericType for $ca {
+            type Native = $physical;
+        }
+
+        impl $trait for $ca {}
+
         impl HasLogicalType for $ca {
             #[inline]
             fn get_dtype() -> DataType {
                 DataType::$variant
             }
         }
-
-        impl PolarsNumericType for $ca {
-            type Native = $physical;
-        }
-        
-        impl $trait for $ca { }
     };
 }
 
 macro_rules! impl_polars_datatype {
-    ($ca:ident, $variant:ident, $physical:ty, $arr:ty) => {
+    ($ca:ident, $variant:ident, $arr:ty) => {
         #[derive(Clone, Copy)]
         pub struct $ca {}
 
@@ -119,8 +118,8 @@ macro_rules! impl_polars_datatype {
             }
         }
 
-        impl PolarsDataType for $ca { }
-        
+        impl PolarsDataType for $ca {}
+
         unsafe impl HasArrayT for $ca {
             type ArrayT = $arr;
         }
@@ -137,63 +136,55 @@ impl_polars_num_datatype!(PolarsIntegerType, Int32Type, Int32, i32);
 impl_polars_num_datatype!(PolarsIntegerType, Int64Type, Int64, i64);
 impl_polars_num_datatype!(PolarsFloatType, Float32Type, Float32, f32);
 impl_polars_num_datatype!(PolarsFloatType, Float64Type, Float64, f64);
-impl_polars_datatype!(DateType, Date, i32, PrimitiveArray<i32>);
+impl_polars_datatype!(DateType, Date, PrimitiveArray<i32>);
 #[cfg(feature = "dtype-decimal")]
-impl_polars_datatype!(DecimalType, Unknown, i128, PrimitiveArray<i128>);
-impl_polars_datatype!(DatetimeType, Unknown, i64, PrimitiveArray<i64>);
-impl_polars_datatype!(DurationType, Unknown, i64, PrimitiveArray<i64>);
-impl_polars_datatype!(CategoricalType, Unknown, u32, PrimitiveArray<u32>);
-impl_polars_datatype!(TimeType, Time, i64, PrimitiveArray<i64>);
-
-pub struct Utf8Type {}
-impl PolarsDataType for Utf8Type { }
-impl HasLogicalType for Utf8Type {
-    fn get_dtype() -> DataType {
-        DataType::Utf8
-    }
-}
-
-impl PolarsDataType for BinaryType { }
-impl HasLogicalType for BinaryType {
-    fn get_dtype() -> DataType {
-        DataType::Binary
-    }
-}
+impl_polars_datatype!(DecimalType, Unknown, PrimitiveArray<i128>);
+impl_polars_datatype!(DatetimeType, Unknown, PrimitiveArray<i64>);
+impl_polars_datatype!(DurationType, Unknown, PrimitiveArray<i64>);
+impl_polars_datatype!(CategoricalType, Unknown, PrimitiveArray<u32>);
+impl_polars_datatype!(TimeType, Time, PrimitiveArray<i64>);
+impl_polars_datatype!(Utf8Type, Utf8, Utf8Array<i64>);
+impl_polars_datatype!(BinaryType, Binary, BinaryArray<i64>);
+impl_polars_datatype!(BooleanType, Boolean, BooleanArray);
 
 
-pub struct BooleanType {}
-
-impl HasLogicalType for BooleanType {
-    fn get_dtype() -> DataType {
-        DataType::Boolean
-    }
-}
-
-impl PolarsDataType for BooleanType { }
-
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ListType {}
+impl PolarsDataType for ListType {}
 impl HasLogicalType for ListType {
     fn get_dtype() -> DataType {
-        // null as we cannot know anything without self.
+        // Mull as we cannot know anything without self.
         DataType::List(Box::new(DataType::Null))
     }
 }
-
-impl PolarsDataType for ListType { }
-
-#[cfg(feature = "dtype-array")]
-impl HasLogicalType for FixedSizeListType {
-    fn get_dtype() -> DataType {
-        // null as we cannot know anything without self.
-        DataType::Array(Box::new(DataType::Null), 0)
-    }
+unsafe impl HasArrayT for ListType {
+    type ArrayT = ListArray<i64>;
 }
 
 #[cfg(feature = "dtype-array")]
-impl PolarsDataType for FixedSizeListType { }
+pub struct FixedSizeListType {}
+#[cfg(feature = "dtype-array")]
+impl HasLogicalType for FixedSizeListType {
+    fn get_dtype() -> DataType {
+        // Null as we cannot know anything without self.
+        DataType::Array(Box::new(DataType::Null), 0)
+    }
+}
+#[cfg(feature = "dtype-array")]
+impl PolarsDataType for FixedSizeListType {}
+#[cfg(feature = "dtype-array")]
+unsafe impl HasArrayT for FixedSizeListType {
+    type ArrayT = FixedSizeListArray;
+}
 
 #[cfg(feature = "dtype-decimal")]
 pub struct Int128Type {}
-
+#[cfg(feature = "dtype-decimal")]
+impl PolarsNumericType for Int128Type {
+    type Native = i128;
+}
+#[cfg(feature = "dtype-decimal")]
+impl PolarsIntegerType for Int128Type {}
 #[cfg(feature = "dtype-decimal")]
 impl HasLogicalType for Int128Type {
     fn get_dtype() -> DataType {
@@ -201,30 +192,23 @@ impl HasLogicalType for Int128Type {
     }
 }
 
-#[cfg(feature = "dtype-decimal")]
-impl PolarsNumericType for Int128Type {
-    type Native = i128;
-    // type ArrayT = PrimitiveArray<i128>;
-}
-#[cfg(feature = "dtype-decimal")]
-impl PolarsIntegerType for Int128Type { }
-
 #[cfg(feature = "object")]
 pub struct ObjectType<T>(T);
 #[cfg(feature = "object")]
-pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
-
+impl<T: PolarsObject> PolarsDataType for ObjectType<T> {}
 #[cfg(feature = "object")]
 impl<T: PolarsObject> HasLogicalType for ObjectType<T> {
     fn get_dtype() -> DataType {
         DataType::Object(T::type_name())
     }
 }
-
 #[cfg(feature = "object")]
-impl<T: PolarsObject> PolarsDataType for ObjectType<T> { }
+unsafe impl<T: PolarsObject> HasArrayT for ObjectType<T> {
+    type ArrayT = crate::chunked_array::object::ObjectArray<T>;
+}
 
-/// Any type that is not nested
+
+/// Any type that is not nested.
 pub trait PolarsSingleType: PolarsDataType {}
 
 impl<T> PolarsSingleType for T where T: NativeType + PolarsDataType {}
@@ -251,6 +235,8 @@ pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type Utf8Chunked = ChunkedArray<Utf8Type>;
 pub type BinaryChunked = ChunkedArray<BinaryType>;
+#[cfg(feature = "object")]
+pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 
 pub trait NumericNative:
     PartialOrd
@@ -312,91 +298,5 @@ impl NumericNative for f64 {
     type POLARSTYPE = Float64Type;
 }
 
-/*
-pub trait PolarsNumericType: Send + Sync + PolarsDataType + 'static {
-    type Native: NumericNative;
-}
-impl PolarsNumericType for UInt8Type {
-    type Native = u8;
-}
-impl PolarsNumericType for UInt16Type {
-    type Native = u16;
-}
-impl PolarsNumericType for UInt32Type {
-    type Native = u32;
-}
-impl PolarsNumericType for UInt64Type {
-    type Native = u64;
-}
-impl PolarsNumericType for Int8Type {
-    type Native = i8;
-}
-impl PolarsNumericType for Int16Type {
-    type Native = i16;
-}
-impl PolarsNumericType for Int32Type {
-    type Native = i32;
-}
-impl PolarsNumericType for Int64Type {
-    type Native = i64;
-}
-#[cfg(feature = "dtype-decimal")]
-impl PolarsNumericType for Int128Type {
-    type Native = i128;
-}
-impl PolarsNumericType for Float32Type {
-    type Native = f32;
-}
-impl PolarsNumericType for Float64Type {
-    type Native = f64;
-}
-
-pub trait PolarsIntegerType: PolarsNumericType {}
-impl PolarsIntegerType for UInt8Type {}
-impl PolarsIntegerType for UInt16Type {}
-impl PolarsIntegerType for UInt32Type {}
-impl PolarsIntegerType for UInt64Type {}
-impl PolarsIntegerType for Int8Type {}
-impl PolarsIntegerType for Int16Type {}
-impl PolarsIntegerType for Int32Type {}
-impl PolarsIntegerType for Int64Type {}
-
-*/
-
-//pub trait PolarsFloatType: PolarsNumericType {}
-//impl PolarsFloatType for Float32Type {}
-//impl PolarsFloatType for Float64Type {}
-
 // Provide options to cloud providers (credentials, region).
 pub type CloudOptions = PlHashMap<String, String>;
-
-#[doc(hidden)]
-pub unsafe trait HasArrayT {
-    type ArrayT: StaticArray;
-}
-
-unsafe impl HasArrayT for BooleanType {
-    type ArrayT = BooleanArray;
-}
-
-unsafe impl HasArrayT for Utf8Type {
-    type ArrayT = Utf8Array<i64>;
-}
-
-unsafe impl HasArrayT for BinaryType {
-    type ArrayT = BinaryArray<i64>;
-}
-
-unsafe impl HasArrayT for ListType {
-    type ArrayT = ListArray<i64>;
-}
-
-#[cfg(feature = "dtype-array")]
-unsafe impl HasArrayT for FixedSizeListType {
-    type ArrayT = FixedSizeListArray;
-}
-
-#[cfg(feature = "object")]
-unsafe impl<T: PolarsObject> HasArrayT for ObjectType<T> {
-    type ArrayT = crate::chunked_array::object::ObjectArray<T>;
-}
