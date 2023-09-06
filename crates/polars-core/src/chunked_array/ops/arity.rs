@@ -4,7 +4,7 @@ use arrow::array::Array;
 use polars_arrow::utils::combine_validities_and;
 
 use crate::datatypes::{
-    ArrayFromElementIter, HasArrayType, PhysicalT, PolarsNumericType, StaticArray, ArrayT,
+    ArrayFromElementIter, ArrayT, HasArrayType, PhysicalT, PolarsNumericType, StaticArray,
 };
 use crate::prelude::{ChunkedArray, PolarsDataType};
 use crate::utils::align_chunks_binary;

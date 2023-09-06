@@ -173,7 +173,7 @@ impl ListChunked {
     where
         V: PolarsDataType,
         F: FnMut(Option<UnstableSeries<'a>>) -> Option<K> + Copy,
-        K: ArrayFromElementIter<ArrayType=ArrayT<V>>,
+        K: ArrayFromElementIter<ArrayType = ArrayT<V>>,
     {
         // TODO! make an amortized iter that does not flatten
 

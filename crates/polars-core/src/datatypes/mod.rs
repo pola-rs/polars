@@ -51,7 +51,6 @@ use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
 use crate::utils::Wrap;
 
-
 pub trait PolarsDataType: Send + Sync + Sized + HasArrayType + HasLogicalType {}
 
 // Important: PolarsNumericType implements PolarsDataType and HasArrayT
@@ -146,7 +145,6 @@ impl_polars_datatype!(TimeType, Time, PrimitiveArray<i64>);
 impl_polars_datatype!(Utf8Type, Utf8, Utf8Array<i64>);
 impl_polars_datatype!(BinaryType, Binary, BinaryArray<i64>);
 impl_polars_datatype!(BooleanType, Boolean, BooleanArray);
-
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}

@@ -49,9 +49,7 @@ impl<'a, T> Chunks<'a, T> {
 #[doc(hidden)]
 impl<T: PolarsDataType> ChunkedArray<T> {
     #[inline]
-    pub fn downcast_iter(
-        &self,
-    ) -> impl Iterator<Item = &ArrayT<T>> + DoubleEndedIterator {
+    pub fn downcast_iter(&self) -> impl Iterator<Item = &ArrayT<T>> + DoubleEndedIterator {
         self.chunks.iter().map(|arr| {
             // SAFETY: ArrayT guarantees this is correct.
             let arr = &**arr;

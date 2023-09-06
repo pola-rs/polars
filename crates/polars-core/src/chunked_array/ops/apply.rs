@@ -22,7 +22,7 @@ where
     where
         U: PolarsDataType,
         F: FnMut(PhysicalT<'a, T>) -> K + Copy,
-        K: ArrayFromElementIter<ArrayType=ArrayT<U>>,
+        K: ArrayFromElementIter<ArrayType = ArrayT<U>>,
     {
         let iter = self.downcast_iter().map(|arr| {
             let element_iter = arr.values_iter().map(op);
@@ -36,9 +36,8 @@ where
     pub fn try_apply_values_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
     where
         U: PolarsDataType,
-        F: FnMut(PhysicalT<'a, T>) -> Result<K, E>
-            + Copy,
-        K: ArrayFromElementIter<ArrayType=ArrayT<U>>,
+        F: FnMut(PhysicalT<'a, T>) -> Result<K, E> + Copy,
+        K: ArrayFromElementIter<ArrayType = ArrayT<U>>,
         E: Error,
     {
         let iter = self.downcast_iter().map(|arr| {
@@ -53,11 +52,8 @@ where
     pub fn try_apply_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
     where
         U: PolarsDataType,
-        F: FnMut(
-                Option<PhysicalT<'a, T>>,
-            ) -> Result<Option<K>, E>
-            + Copy,
-        K: ArrayFromElementIter<ArrayType=ArrayT<U>>,
+        F: FnMut(Option<PhysicalT<'a, T>>) -> Result<Option<K>, E> + Copy,
+        K: ArrayFromElementIter<ArrayType = ArrayT<U>>,
         E: Error,
     {
         let iter = self.downcast_iter().map(|arr| {
@@ -72,10 +68,8 @@ where
     pub fn apply_generic<'a, U, K, F>(&'a self, mut op: F) -> ChunkedArray<U>
     where
         U: PolarsDataType,
-        F: FnMut(
-            Option<PhysicalT<'a, T>>,
-        ) -> Option<K>,
-        K: ArrayFromElementIter<ArrayType=ArrayT<U>>,
+        F: FnMut(Option<PhysicalT<'a, T>>) -> Option<K>,
+        K: ArrayFromElementIter<ArrayType = ArrayT<U>>,
     {
         if self.null_count() == 0 {
             let iter = self.downcast_iter().map(|arr| {
