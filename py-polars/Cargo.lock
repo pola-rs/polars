@@ -1883,6 +1883,7 @@ dependencies = [
  "polars-core",
  "polars-lazy",
  "polars-plan",
+ "rand",
  "serde",
  "serde_json",
  "sqlparser",

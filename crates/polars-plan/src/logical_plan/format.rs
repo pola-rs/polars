@@ -293,7 +293,7 @@ impl Debug for Expr {
             Take { expr, idx } => {
                 write!(f, "{expr:?}.take({idx:?})")
             },
-            SubPlan(plan) => {write!(f, ".subplan({plan:?})")}
+            SubPlan(lf, _) => {write!(f, ".subplan({lf:?})")},
             Agg(agg) => {
                 use AggExpr::*;
                 match agg {

@@ -272,18 +272,21 @@ impl SQLContext {
                 let (join_tbl_name, join_tbl) = self.get_table(&tbl.relation)?;
                 match &tbl.join_operator {
                     JoinOperator::Inner(constraint) => {
-                        let (left_on, right_on) =
+                        let (mut left_on, mut right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
+                        lf = self.process_subqueries(lf, vec![&mut left_on, &mut right_on]);
                         lf = lf.inner_join(join_tbl, left_on, right_on)
                     },
                     JoinOperator::LeftOuter(constraint) => {
-                        let (left_on, right_on) =
+                        let (mut left_on, mut right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
+                        lf = self.process_subqueries(lf, vec![&mut left_on, &mut right_on]);
                         lf = lf.left_join(join_tbl, left_on, right_on)
                     },
                     JoinOperator::FullOuter(constraint) => {
-                        let (left_on, right_on) =
+                        let (mut left_on, mut right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
+                        lf = self.process_subqueries(lf, vec![&mut left_on, &mut right_on]);
                         lf = lf.outer_join(join_tbl, left_on, right_on)
                     },
                     JoinOperator::CrossJoin => lf = lf.cross_join(join_tbl),
@@ -314,10 +317,14 @@ impl SQLContext {
         let mut contains_wildcard_exclude = false;
 
         // Filter expression.
-        if let Some(expr) = select_stmt.selection.as_ref() {
-            let filter_expression = parse_sql_expr(expr, self)?;
-            lf = lf.filter(filter_expression)
-        }
+        lf = match select_stmt.selection.as_ref() {
+            Some(expr) => {
+                let mut filter_expression = parse_sql_expr(expr, self)?;
+                lf = self.process_subqueries(lf, vec![&mut filter_expression]);
+                lf.filter(filter_expression)
+            }
+            None => lf,
+        };
 
         // Column projections.
         let projections: Vec<_> = select_stmt
@@ -488,6 +495,73 @@ impl SQLContext {
         } else {
             self.process_order_by(lf, &query.order_by)
         }
+    }
+
+    fn process_subqueries(&self, lf: LazyFrame, exprs: Vec<&mut Expr>) -> LazyFrame
+    {
+        let mut contexts = vec![];
+        for expr in exprs
+        {
+            expr.mutate().apply(|e| {
+                if let Expr::SubPlan(lp, names) = e {
+                    contexts.push(<LazyFrame>::from((**lp).clone()));
+                    *e = Expr::Columns(names.clone());
+                };
+            true
+            })
+
+            // expr.mutate().apply(|e| {
+            //     for down_expr in e.into_iter()
+            //     {
+            //         if let Expr::SubPlan(lp, names) = down_expr {
+            //             contexts.push(<LazyFrame>::from((**lp).clone()));
+            //             *down_expr = Expr::Columns(names.clone());
+            //         };
+            //     }
+            // true
+            // })
+
+            // // let mut subplans : Vec<> = vec![];
+            // for down_expr in expr.into_iter() {
+            // //     |e| *e = match e {
+            // //     Expr::SubPlan(lp, names) => {
+            // //         contexts.push(lp);
+            // //         Expr::Columns(*names)
+            // //     }
+            // //     _ => {e}
+            // // }
+
+            //     // if let Expr::SubPlan(lp, names) = down_expr {
+            //     //     contexts.push(<LazyFrame>::from((**lp).clone()));
+            //     //     // *down_expr = Expr::Columns(*names);
+            //     //     down_expr.mutate().apply(|e| {
+            //     //         *e = Expr::Columns(*names);
+            //     //         true })
+            //     // };
+
+            //     down_expr.mutate().apply(|e| {
+            //         if let Expr::SubPlan(lp, names) = down_expr {
+            //             contexts.push(<LazyFrame>::from((**lp).clone()));
+            //             *e = Expr::Columns(names.clone());
+            //         };
+            //     true
+            //     })
+            // };
+
+            // expr.into_iter().for_each(|down_expr: &mut Expr| {
+            //     if let Expr::SubPlan(lp, names) = down_expr {
+            //         contexts.push(<LazyFrame>::from((**lp).clone()));
+            //         *down_expr = Expr::Columns(*names);
+            //     };
+            // })
+        };
+
+        if contexts.is_empty() {lf}
+        // else {lf.with_context(contexts
+        //                       .iter()
+        //                       .map(|lp| <LazyFrame>::from(***lp)))
+        //                       .collect::<Vec<LazyFrame>>()}
+        else {lf.with_context(contexts)}
     }
 
     fn execute_create_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
