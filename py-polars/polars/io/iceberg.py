@@ -66,7 +66,7 @@ def scan_iceberg(
         Extra options for the storage backends supported by `pyiceberg`.
         For cloud storages, this may include configurations for authentication etc.
 
-        More info is available `here<https://py.iceberg.apache.org/configuration/>`__.
+        More info is available `here <https://py.iceberg.apache.org/configuration/>`__.
 
     Returns
     -------
