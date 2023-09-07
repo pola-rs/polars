@@ -3,7 +3,7 @@
 use std::cmp::{Ordering, PartialEq};
 
 use crate::chunked_array::ops::take::take_random::{
-    TakeRandomChunked, TakeRandomArrayValues, TakeRandomArray,
+    TakeRandomArray, TakeRandomArrayValues, TakeRandomChunked,
 };
 use crate::prelude::*;
 
@@ -22,7 +22,7 @@ pub trait PartialOrdInner: Send + Sync {
 impl<T> PartialEqInner for T
 where
     T: TakeRandom + Send + Sync,
-    T::Item: PartialEq
+    T::Item: PartialEq,
 {
     #[inline]
     unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
@@ -80,7 +80,7 @@ fn fallback<T: PartialEq>(a: T) -> Ordering {
 impl<T> PartialOrdInner for T
 where
     T: TakeRandom + Send + Sync,
-    T::Item: PartialOrd
+    T::Item: PartialOrd,
 {
     #[inline]
     unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {

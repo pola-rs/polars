@@ -5,8 +5,8 @@ use arrow::array::Utf8Array;
 use crate::datatypes::UInt32Type;
 use crate::prelude::compare_inner::PartialOrdInner;
 use crate::prelude::{
-    CategoricalChunked, IntoTakeRandom, TakeRandomChunked, TakeRandomArrayValues,
-    TakeRandomArray, PlHashMap, RevMapping, TakeRandBranch3, TakeRandom,
+    CategoricalChunked, IntoTakeRandom, PlHashMap, RevMapping, TakeRandBranch3, TakeRandom,
+    TakeRandomArray, TakeRandomArrayValues, TakeRandomChunked,
 };
 
 type TakeCats<'a> = TakeRandBranch3<
