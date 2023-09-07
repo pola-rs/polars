@@ -1,97 +1,31 @@
-//!
 //! Used to speed up PartialEq and PartialOrd of elements within an array
-//!
 
 use std::cmp::{Ordering, PartialEq};
 
 use crate::chunked_array::ops::take::take_random::{
-    BinaryTakeRandom, BinaryTakeRandomSingleChunk, BoolTakeRandom, BoolTakeRandomSingleChunk,
-    NumTakeRandomChunked, NumTakeRandomCont, NumTakeRandomSingleChunk, Utf8TakeRandom,
-    Utf8TakeRandomSingleChunk,
+    NumTakeRandomChunked,
+    NumTakeRandomCont,
+    NumTakeRandomSingleChunk,
 };
-#[cfg(feature = "object")]
-use crate::chunked_array::ops::take::take_random::{ObjectTakeRandom, ObjectTakeRandomSingleChunk};
 use crate::prelude::*;
-use crate::utils::Wrap;
 
 pub trait PartialEqInner: Send + Sync {
-    /// Safety:
-    /// Does not do any bound checks
+    /// # Safety
+    /// Does not do any bound checks.
     unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool;
 }
 
 pub trait PartialOrdInner: Send + Sync {
-    /// Safety:
-    /// Does not do any bound checks
+    /// # Safety
+    /// Does not do any bound checks.
     unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering;
-}
-
-macro_rules! impl_traits {
-    ($struct:ty) => {
-        impl PartialEqInner for $struct {
-            #[inline]
-            unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
-                self.get(idx_a) == self.get(idx_b)
-            }
-        }
-        impl PartialOrdInner for $struct {
-            #[inline]
-            unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
-                let a = self.get(idx_a);
-                let b = self.get(idx_b);
-                a.partial_cmp(&b).unwrap_or_else(|| fallback(a))
-            }
-        }
-    };
-    ($struct:ty, $T:tt) => {
-        impl<$T> PartialEqInner for $struct
-        where
-            $T: NumericNative + Sync,
-        {
-            #[inline]
-            unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
-                self.get(idx_a) == self.get(idx_b)
-            }
-        }
-
-        impl<$T> PartialOrdInner for $struct
-        where
-            $T: NumericNative + Sync,
-        {
-            #[inline]
-            unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
-                // nulls so we can not do unchecked
-                let a = self.get(idx_a);
-                let b = self.get(idx_b);
-                a.partial_cmp(&b).unwrap_or_else(|| fallback(a))
-            }
-        }
-    };
-}
-
-impl_traits!(Utf8TakeRandom<'_>);
-impl_traits!(Utf8TakeRandomSingleChunk<'_>);
-impl_traits!(BinaryTakeRandom<'_>);
-impl_traits!(BinaryTakeRandomSingleChunk<'_>);
-impl_traits!(BoolTakeRandom<'_>);
-impl_traits!(BoolTakeRandomSingleChunk<'_>);
-
-impl<'a> PartialEqInner for ListTakeRandomSingleChunk<'a> {
-    unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
-        self.get_unchecked(idx_a).map(Wrap) == self.get_unchecked(idx_b).map(Wrap)
-    }
-}
-
-impl<'a> PartialEqInner for ListTakeRandom<'a> {
-    unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
-        self.get_unchecked(idx_a).map(Wrap) == self.get_unchecked(idx_b).map(Wrap)
-    }
 }
 
 impl<'a, T: PolarsDataType> PartialEqInner for NumTakeRandomCont<'a, T>
 where
     T::Physical<'a>: PartialEq,
 {
+    #[inline]
     unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
         self.get_unchecked(idx_a) == self.get_unchecked(idx_b)
     }
@@ -101,6 +35,7 @@ impl<'a, T: PolarsDataType> PartialEqInner for NumTakeRandomSingleChunk<'a, T>
 where
     T::Physical<'a>: PartialEq,
 {
+    #[inline]
     unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
         self.get_unchecked(idx_a) == self.get_unchecked(idx_b)
     }
@@ -110,12 +45,13 @@ impl<'a, T: PolarsDataType> PartialEqInner for NumTakeRandomChunked<'a, T>
 where
     T::Physical<'a>: PartialEq,
 {
+    #[inline]
     unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
         self.get_unchecked(idx_a) == self.get_unchecked(idx_b)
     }
 }
 
-/// Create a type that implements PartialEqInner
+/// Create a type that implements PartialEqInner.
 pub(crate) trait IntoPartialEqInner<'a> {
     /// Create a type that implements `TakeRandom`.
     fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner + 'a>;
@@ -124,7 +60,8 @@ pub(crate) trait IntoPartialEqInner<'a> {
 /// We use a trait object because we want to call this from Series and cannot use a typed enum.
 impl<'a, T> IntoPartialEqInner<'a> for &'a ChunkedArray<T>
 where
-    T: PolarsNumericType,
+    T: PolarsDataType,
+    T::Physical<'a>: PartialEq,
 {
     fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner + 'a> {
         let mut chunks = self.downcast_iter();
@@ -147,94 +84,8 @@ where
     }
 }
 
-impl<'a> IntoPartialEqInner<'a> for &'a ListChunked {
-    fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner + 'a> {
-        match self.chunks.len() {
-            1 => {
-                let arr = self.downcast_iter().next().unwrap();
-                let t = ListTakeRandomSingleChunk {
-                    arr,
-                    name: self.name(),
-                };
-                Box::new(t)
-            },
-            _ => {
-                let name = self.name();
-                let inner_type = self.inner_dtype().to_physical();
-                let t = ListTakeRandom {
-                    inner_type,
-                    name,
-                    chunks: self.downcast_iter().collect(),
-                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
-                };
-                Box::new(t)
-            },
-        }
-    }
-}
-
-impl<'a> IntoPartialEqInner<'a> for &'a Utf8Chunked {
-    fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner + 'a> {
-        match self.chunks.len() {
-            1 => {
-                let arr = self.downcast_iter().next().unwrap();
-                let t = Utf8TakeRandomSingleChunk { arr };
-                Box::new(t)
-            },
-            _ => {
-                let chunks = self.downcast_chunks();
-                let t = Utf8TakeRandom {
-                    chunks,
-                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
-                };
-                Box::new(t)
-            },
-        }
-    }
-}
-
-impl<'a> IntoPartialEqInner<'a> for &'a BinaryChunked {
-    fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner + 'a> {
-        match self.chunks.len() {
-            1 => {
-                let arr = self.downcast_iter().next().unwrap();
-                let t = BinaryTakeRandomSingleChunk { arr };
-                Box::new(t)
-            },
-            _ => {
-                let chunks = self.downcast_chunks();
-                let t = BinaryTakeRandom {
-                    chunks,
-                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
-                };
-                Box::new(t)
-            },
-        }
-    }
-}
-
-impl<'a> IntoPartialEqInner<'a> for &'a BooleanChunked {
-    fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner + 'a> {
-        match self.chunks.len() {
-            1 => {
-                let arr = self.downcast_iter().next().unwrap();
-                let t = BoolTakeRandomSingleChunk { arr };
-                Box::new(t)
-            },
-            _ => {
-                let chunks = self.downcast_chunks();
-                let t = BoolTakeRandom {
-                    chunks,
-                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
-                };
-                Box::new(t)
-            },
-        }
-    }
-}
-
-// Partial ordering implementations
-
+// Partial ordering implementations.
+#[inline]
 fn fallback<T: PartialEq>(a: T) -> Ordering {
     // nan != nan
     // this is a simple way to check if it is nan
@@ -251,6 +102,7 @@ impl<'a, T: PolarsDataType> PartialOrdInner for NumTakeRandomCont<'a, T>
 where
     T::Physical<'a>: PartialOrd,
 {
+    #[inline]
     unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
         let a = self.get_unchecked(idx_a);
         let b = self.get_unchecked(idx_b);
@@ -262,6 +114,7 @@ impl<'a, T: PolarsDataType> PartialOrdInner for NumTakeRandomSingleChunk<'a, T>
 where
     T::Physical<'a>: PartialOrd,
 {
+    #[inline]
     unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
         let a = self.get_unchecked(idx_a);
         let b = self.get_unchecked(idx_b);
@@ -273,6 +126,7 @@ impl<'a, T: PolarsDataType> PartialOrdInner for NumTakeRandomChunked<'a, T>
 where
     T::Physical<'a>: PartialOrd,
 {
+    #[inline]
     unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
         let a = self.get_unchecked(idx_a);
         let b = self.get_unchecked(idx_b);
@@ -280,15 +134,17 @@ where
     }
 }
 
-/// Create a type that implements PartialOrdInner
+/// Create a type that implements PartialOrdInner.
 pub(crate) trait IntoPartialOrdInner<'a> {
     /// Create a type that implements `TakeRandom`.
     fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner + 'a>;
 }
+
 /// We use a trait object because we want to call this from Series and cannot use a typed enum.
 impl<'a, T> IntoPartialOrdInner<'a> for &'a ChunkedArray<T>
 where
-    T: PolarsNumericType,
+    T: PolarsDataType,
+    T::Physical<'a>: PartialOrd,
 {
     fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner + 'a> {
         let mut chunks = self.downcast_iter();
@@ -311,115 +167,12 @@ where
     }
 }
 
-impl<'a> IntoPartialOrdInner<'a> for &'a Utf8Chunked {
-    fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner + 'a> {
-        match self.chunks.len() {
-            1 => {
-                let arr = self.downcast_iter().next().unwrap();
-                let t = Utf8TakeRandomSingleChunk { arr };
-                Box::new(t)
-            },
-            _ => {
-                let chunks = self.downcast_chunks();
-                let t = Utf8TakeRandom {
-                    chunks,
-                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
-                };
-                Box::new(t)
-            },
-        }
-    }
-}
-
-impl<'a> IntoPartialOrdInner<'a> for &'a BinaryChunked {
-    fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner + 'a> {
-        match self.chunks.len() {
-            1 => {
-                let arr = self.downcast_iter().next().unwrap();
-                let t = BinaryTakeRandomSingleChunk { arr };
-                Box::new(t)
-            },
-            _ => {
-                let chunks = self.downcast_chunks();
-                let t = BinaryTakeRandom {
-                    chunks,
-                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
-                };
-                Box::new(t)
-            },
-        }
-    }
-}
-
-impl<'a> IntoPartialOrdInner<'a> for &'a BooleanChunked {
-    fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner + 'a> {
-        match self.chunks.len() {
-            1 => {
-                let arr = self.downcast_iter().next().unwrap();
-                let t = BoolTakeRandomSingleChunk { arr };
-                Box::new(t)
-            },
-            _ => {
-                let chunks = self.downcast_chunks();
-                let t = BoolTakeRandom {
-                    chunks,
-                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
-                };
-                Box::new(t)
-            },
-        }
-    }
-}
-
 #[cfg(feature = "dtype-categorical")]
 impl<'a> IntoPartialOrdInner<'a> for &'a CategoricalChunked {
     fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner + 'a> {
         match &**self.get_rev_map() {
             RevMapping::Local(_) => Box::new(CategoricalTakeRandomLocal::new(self)),
             RevMapping::Global(_, _, _) => Box::new(CategoricalTakeRandomGlobal::new(self)),
-        }
-    }
-}
-
-#[cfg(feature = "object")]
-impl<'a, T> PartialEqInner for ObjectTakeRandom<'a, T>
-where
-    T: PolarsObject,
-{
-    #[inline]
-    unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
-        self.get(idx_a) == self.get(idx_b)
-    }
-}
-
-#[cfg(feature = "object")]
-impl<'a, T> PartialEqInner for ObjectTakeRandomSingleChunk<'a, T>
-where
-    T: PolarsObject,
-{
-    #[inline]
-    unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
-        self.get(idx_a) == self.get(idx_b)
-    }
-}
-
-#[cfg(feature = "object")]
-impl<'a, T: PolarsObject> IntoPartialEqInner<'a> for &'a ObjectChunked<T> {
-    fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner + 'a> {
-        match self.chunks.len() {
-            1 => {
-                let arr = self.downcast_iter().next().unwrap();
-                let t = ObjectTakeRandomSingleChunk { arr };
-                Box::new(t)
-            },
-            _ => {
-                let chunks = self.downcast_chunks();
-                let t = ObjectTakeRandom {
-                    chunks,
-                    chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
-                };
-                Box::new(t)
-            },
         }
     }
 }
