@@ -66,6 +66,7 @@ def scan_ndjson(
     rechunk: bool = True,
     row_count_name: str | None = None,
     row_count_offset: int = 0,
+    schema: SchemaDefinition | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a newline delimited JSON file or multiple files via glob patterns.
@@ -92,6 +93,16 @@ def scan_ndjson(
         DataFrame
     row_count_offset
         Offset to start the row_count column (only use if the name is set)
+    schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
+        The DataFrame schema may be declared in several ways:
+
+        * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
+        * As a list of column names; in this case types are automatically inferred.
+        * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        If you supply a list of column names that does not match the names in the
+        underlying data, the names given here will overwrite them. The number
+        of names given in the schema should match the underlying data dimensions.
 
     """
     if isinstance(source, (str, Path)):
@@ -100,6 +111,7 @@ def scan_ndjson(
     return pl.LazyFrame._scan_ndjson(
         source,
         infer_schema_length=infer_schema_length,
+        schema=schema,
         batch_size=batch_size,
         n_rows=n_rows,
         low_memory=low_memory,

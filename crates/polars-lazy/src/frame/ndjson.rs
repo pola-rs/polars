@@ -45,6 +45,7 @@ impl LazyJsonLineReader {
     }
     /// Set the number of rows to use when inferring the json schema.
     /// the default is 100 rows.
+    /// Ignored when the schema is specified explicitly using [`Self::with_schema`].
     /// Setting to `None` will do a full table scan, very slow.
     #[must_use]
     pub fn with_infer_schema_length(mut self, num_rows: Option<usize>) -> Self {

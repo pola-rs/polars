@@ -20,6 +20,11 @@ impl AnonymousScan for LazyJsonLineReader {
     }
 
     fn schema(&self, infer_schema_length: Option<usize>) -> PolarsResult<Schema> {
+        // Short-circuit schema inference if the schema has been explicitly provided.
+        if let Some(schema) = &self.schema {
+            return Ok(schema.clone());
+        }
+
         let f = polars_utils::open_file(&self.path)?;
         let mut reader = std::io::BufReader::new(f);
 

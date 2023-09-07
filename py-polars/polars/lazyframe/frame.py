@@ -482,6 +482,7 @@ class LazyFrame:
         source: str,
         *,
         infer_schema_length: int | None = None,
+        schema: SchemaDefinition | None = None,
         batch_size: int | None = None,
         n_rows: int | None = None,
         low_memory: bool = False,
@@ -503,6 +504,7 @@ class LazyFrame:
         self._ldf = PyLazyFrame.new_from_ndjson(
             source,
             infer_schema_length,
+            schema,
             batch_size,
             n_rows,
             low_memory,
