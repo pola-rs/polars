@@ -116,10 +116,7 @@ pub struct JsonWriter<W: Write> {
     json_format: JsonFormat,
 }
 
-impl<W: Write> JsonWriter<W>
-where
-    W: Write + 'static,
-{
+impl<W: Write> JsonWriter<W> {
     pub fn with_json_format(mut self, format: JsonFormat) -> Self {
         self.json_format = format;
         self
