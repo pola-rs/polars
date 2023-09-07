@@ -200,6 +200,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_duration(self.0.time_unit())
             .into_series())
     }
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         self.0.group_tuples(multithreaded, sorted)
     }

@@ -178,7 +178,7 @@ docs-selection = [
   "chunked_ids",
   "semi_anti_join",
   "partition_by",
-  "algorithm_join"
+  "algorithm_join",
 ]
 
 # Cloud support.

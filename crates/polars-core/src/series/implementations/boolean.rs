@@ -96,6 +96,7 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
             .agg_var(groups, _ddof)
     }
 
+    #[cfg(feature = "algorithm_join")]
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
@@ -103,6 +104,7 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     ) -> Series {
         ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
     }
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }

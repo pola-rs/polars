@@ -1,7 +1,6 @@
-use super::*;
-
 pub use polars_arrow::index::{IdxArr, IdxSize};
 
+use super::*;
 use crate::hashing::IdBuildHasher;
 
 /// [ChunkIdx, DfIdx]
