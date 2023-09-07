@@ -40,6 +40,12 @@ pub trait StaticArray: Array {
         unsafe { self.get_unchecked(self.len().checked_sub(1)?) }
     }
 
+    #[inline]
+    fn value(&self, idx: usize) -> Self::ValueT<'_> {
+        assert!(idx < self.len());
+        unsafe { self.value_unchecked(idx) }
+    }
+
     /// # Safety
     /// It is the callers responsibility that the `idx < self.len()`.
     unsafe fn value_unchecked(&self, idx: usize) -> Self::ValueT<'_>;

@@ -415,12 +415,12 @@ where
 
     #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
-        self.arr.get(index)
+        Some(self.arr.value(index))
     }
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
-        self.arr.get_unchecked(index)
+        Some(self.arr.value_unchecked(index))
     }
 
     fn last(&self) -> Option<Self::Item> {
