@@ -75,7 +75,6 @@ impl_traits!(BinaryTakeRandom<'_>);
 impl_traits!(BinaryTakeRandomSingleChunk<'_>);
 impl_traits!(BoolTakeRandom<'_>);
 impl_traits!(BoolTakeRandomSingleChunk<'_>);
-impl_traits!(NumTakeRandomSingleChunk<'_, T>, T);
 impl_traits!(NumTakeRandomChunked<'_, T>, T);
 
 impl<'a> PartialEqInner for ListTakeRandomSingleChunk<'a> {
@@ -95,7 +94,15 @@ where
     T::Physical<'a>: PartialEq,
 {
     unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
-        // no nulls so we can do unchecked
+        self.get_unchecked(idx_a) == self.get_unchecked(idx_b)
+    }
+}
+
+impl<'a, T: PolarsDataType> PartialEqInner for NumTakeRandomSingleChunk<'a, T>
+where
+    T::Physical<'a>: PartialEq,
+{
+    unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
         self.get_unchecked(idx_a) == self.get_unchecked(idx_b)
     }
 }
@@ -120,8 +127,7 @@ where
             if !self.has_validity() {
                 Box::new(NumTakeRandomCont::<T> { arr })
             } else {
-                let t = NumTakeRandomSingleChunk::<'_, T::Native>::new(arr);
-                Box::new(t)
+                Box::new(NumTakeRandomSingleChunk::<T> { arr })
             }
         } else {
             let t = NumTakeRandomChunked::<'_, T::Native> {
@@ -238,12 +244,23 @@ where
     T::Physical<'a>: PartialOrd,
 {
     unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
-        // no nulls so we can do unchecked
         let a = self.get_unchecked(idx_a);
         let b = self.get_unchecked(idx_b);
         a.partial_cmp(&b).unwrap_or_else(|| fallback(a))
     }
 }
+
+impl<'a, T: PolarsDataType> PartialOrdInner for NumTakeRandomSingleChunk<'a, T>
+where
+    T::Physical<'a>: PartialOrd,
+{
+    unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
+        let a = self.get_unchecked(idx_a);
+        let b = self.get_unchecked(idx_b);
+        a.partial_cmp(&b).unwrap_or_else(|| fallback(a))
+    }
+}
+
 /// Create a type that implements PartialOrdInner
 pub(crate) trait IntoPartialOrdInner<'a> {
     /// Create a type that implements `TakeRandom`.
@@ -263,8 +280,7 @@ where
             if !self.has_validity() {
                 Box::new(NumTakeRandomCont::<T> { arr })
             } else {
-                let t = NumTakeRandomSingleChunk::<'_, T::Native>::new(arr);
-                Box::new(t)
+                Box::new(NumTakeRandomSingleChunk::<T> { arr })
             }
         } else {
             let t = NumTakeRandomChunked::<'_, T::Native> {

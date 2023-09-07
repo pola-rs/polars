@@ -11,7 +11,7 @@ use crate::prelude::{
 
 type TakeCats<'a> = TakeRandBranch3<
     NumTakeRandomCont<'a, UInt32Type>,
-    NumTakeRandomSingleChunk<'a, u32>,
+    NumTakeRandomSingleChunk<'a, UInt32Type>,
     NumTakeRandomChunked<'a, u32>,
 >;
 

@@ -1,6 +1,4 @@
 use arrow::array::{Array, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
-use arrow::bitmap::utils::get_bit_unchecked;
-use arrow::bitmap::Bitmap;
 use polars_arrow::is_valid::*;
 
 #[cfg(feature = "object")]
@@ -152,7 +150,7 @@ where
     type Item = T::Native;
     type TakeRandom = TakeRandBranch3<
         NumTakeRandomCont<'a, T>,
-        NumTakeRandomSingleChunk<'a, T::Native>,
+        NumTakeRandomSingleChunk<'a, T>,
         NumTakeRandomChunked<'a, T::Native>,
     >;
 
@@ -167,7 +165,7 @@ where
                 let t = NumTakeRandomCont { arr };
                 TakeRandBranch3::SingleNoNull(t)
             } else {
-                let t = NumTakeRandomSingleChunk::new(arr);
+                let t = NumTakeRandomSingleChunk { arr };
                 TakeRandBranch3::Single(t)
             }
         } else {
@@ -428,63 +426,28 @@ where
     }
 }
 
-pub struct TakeRandomBitmap<'a> {
-    bytes: &'a [u8],
-    offset: usize,
-}
-
-impl<'a> TakeRandomBitmap<'a> {
-    pub(crate) fn new(bitmap: &'a Bitmap) -> Self {
-        let (bytes, offset, _) = bitmap.as_slice();
-        Self { bytes, offset }
-    }
-
-    unsafe fn get_unchecked(&self, index: usize) -> bool {
-        get_bit_unchecked(self.bytes, self.offset + index)
-    }
-}
-
-pub struct NumTakeRandomSingleChunk<'a, T>
-where
-    T: NumericNative,
-{
-    pub(crate) vals: &'a [T],
-    pub(crate) validity: TakeRandomBitmap<'a>,
-}
-
-impl<'a, T: NumericNative> NumTakeRandomSingleChunk<'a, T> {
-    pub(crate) fn new(arr: &'a PrimitiveArray<T>) -> Self {
-        let validity = TakeRandomBitmap::new(arr.validity().unwrap());
-        let vals = arr.values();
-        NumTakeRandomSingleChunk { vals, validity }
-    }
+pub struct NumTakeRandomSingleChunk<'a, T: PolarsDataType> {
+    pub(crate) arr: &'a T::Array,
 }
 
 impl<'a, T> TakeRandom for NumTakeRandomSingleChunk<'a, T>
 where
-    T: NumericNative,
+    T: PolarsDataType,
 {
-    type Item = T;
+    type Item = T::Physical<'a>;
 
     #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
-        if index < self.vals.len() {
-            unsafe { self.get_unchecked(index) }
-        } else {
-            None
-        }
+        self.arr.get(index)
     }
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
-        if self.validity.get_unchecked(index) {
-            Some(*self.vals.get_unchecked(index))
-        } else {
-            None
-        }
+        self.arr.get_unchecked(index)
     }
+
     fn last(&self) -> Option<Self::Item> {
-        self.get(self.vals.len().saturating_sub(1))
+        self.arr.last()
     }
 }
 
