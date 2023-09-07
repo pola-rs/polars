@@ -47,18 +47,13 @@ impl<'a, T> Chunks<'a, T> {
 }
 
 #[doc(hidden)]
-impl<T: PolarsDataType> ChunkedArray<T>
-where
-    Self: HasUnderlyingArray,
-{
+impl<T: PolarsDataType> ChunkedArray<T> {
     #[inline]
-    pub fn downcast_iter(
-        &self,
-    ) -> impl Iterator<Item = &<Self as HasUnderlyingArray>::ArrayT> + DoubleEndedIterator {
+    pub fn downcast_iter(&self) -> impl Iterator<Item = &T::Array> + DoubleEndedIterator {
         self.chunks.iter().map(|arr| {
-            // SAFETY: HasUnderlyingArray guarantees this is correct.
+            // SAFETY: T::Array guarantees this is correct.
             let arr = &**arr;
-            unsafe { &*(arr as *const dyn Array as *const <Self as HasUnderlyingArray>::ArrayT) }
+            unsafe { &*(arr as *const dyn Array as *const T::Array) }
         })
     }
 
@@ -69,16 +64,16 @@ where
     #[inline]
     pub unsafe fn downcast_iter_mut(
         &mut self,
-    ) -> impl Iterator<Item = &mut <Self as HasUnderlyingArray>::ArrayT> + DoubleEndedIterator {
+    ) -> impl Iterator<Item = &mut T::Array> + DoubleEndedIterator {
         self.chunks.iter_mut().map(|arr| {
-            // SAFETY: HasUnderlyingArray guarantees this is correct.
+            // SAFETY: T::Array guarantees this is correct.
             let arr = &mut **arr;
-            &mut *(arr as *mut dyn Array as *mut <Self as HasUnderlyingArray>::ArrayT)
+            &mut *(arr as *mut dyn Array as *mut T::Array)
         })
     }
 
     #[inline]
-    pub fn downcast_chunks(&self) -> Chunks<'_, <Self as HasUnderlyingArray>::ArrayT> {
+    pub fn downcast_chunks(&self) -> Chunks<'_, T::Array> {
         Chunks::new(&self.chunks)
     }
 
