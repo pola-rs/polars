@@ -3,7 +3,7 @@
 use std::cmp::{Ordering, PartialEq};
 
 use crate::chunked_array::ops::take::take_random::{
-    NumTakeRandomChunked, NumTakeRandomCont, NumTakeRandomSingleChunk,
+    TakeRandomChunked, TakeRandomArrayValues, TakeRandomArray,
 };
 use crate::prelude::*;
 
@@ -19,7 +19,7 @@ pub trait PartialOrdInner: Send + Sync {
     unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering;
 }
 
-impl<'a, T: PolarsDataType> PartialEqInner for NumTakeRandomCont<'a, T>
+impl<'a, T: PolarsDataType> PartialEqInner for TakeRandomArrayValues<'a, T>
 where
     T::Physical<'a>: PartialEq,
 {
@@ -29,7 +29,7 @@ where
     }
 }
 
-impl<'a, T: PolarsDataType> PartialEqInner for NumTakeRandomSingleChunk<'a, T>
+impl<'a, T: PolarsDataType> PartialEqInner for TakeRandomArray<'a, T>
 where
     T::Physical<'a>: PartialEq,
 {
@@ -39,7 +39,7 @@ where
     }
 }
 
-impl<'a, T: PolarsDataType> PartialEqInner for NumTakeRandomChunked<'a, T>
+impl<'a, T: PolarsDataType> PartialEqInner for TakeRandomChunked<'a, T>
 where
     T::Physical<'a>: PartialEq,
 {
@@ -68,12 +68,12 @@ where
             let arr = chunks.next().unwrap();
 
             if !self.has_validity() {
-                Box::new(NumTakeRandomCont::<T> { arr })
+                Box::new(TakeRandomArrayValues::<T> { arr })
             } else {
-                Box::new(NumTakeRandomSingleChunk::<T> { arr })
+                Box::new(TakeRandomArray::<T> { arr })
             }
         } else {
-            let t = NumTakeRandomChunked::<T> {
+            let t = TakeRandomChunked::<T> {
                 chunks: chunks.collect(),
                 chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
             };
@@ -96,7 +96,7 @@ fn fallback<T: PartialEq>(a: T) -> Ordering {
     }
 }
 
-impl<'a, T: PolarsDataType> PartialOrdInner for NumTakeRandomCont<'a, T>
+impl<'a, T: PolarsDataType> PartialOrdInner for TakeRandomArrayValues<'a, T>
 where
     T::Physical<'a>: PartialOrd,
 {
@@ -108,7 +108,7 @@ where
     }
 }
 
-impl<'a, T: PolarsDataType> PartialOrdInner for NumTakeRandomSingleChunk<'a, T>
+impl<'a, T: PolarsDataType> PartialOrdInner for TakeRandomArray<'a, T>
 where
     T::Physical<'a>: PartialOrd,
 {
@@ -120,7 +120,7 @@ where
     }
 }
 
-impl<'a, T: PolarsDataType> PartialOrdInner for NumTakeRandomChunked<'a, T>
+impl<'a, T: PolarsDataType> PartialOrdInner for TakeRandomChunked<'a, T>
 where
     T::Physical<'a>: PartialOrd,
 {
@@ -151,12 +151,12 @@ where
             let arr = chunks.next().unwrap();
 
             if !self.has_validity() {
-                Box::new(NumTakeRandomCont::<T> { arr })
+                Box::new(TakeRandomArrayValues::<T> { arr })
             } else {
-                Box::new(NumTakeRandomSingleChunk::<T> { arr })
+                Box::new(TakeRandomArray::<T> { arr })
             }
         } else {
-            let t = NumTakeRandomChunked::<T> {
+            let t = TakeRandomChunked::<T> {
                 chunks: chunks.collect(),
                 chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
             };

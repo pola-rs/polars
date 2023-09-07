@@ -5,14 +5,14 @@ use arrow::array::Utf8Array;
 use crate::datatypes::UInt32Type;
 use crate::prelude::compare_inner::PartialOrdInner;
 use crate::prelude::{
-    CategoricalChunked, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont,
-    NumTakeRandomSingleChunk, PlHashMap, RevMapping, TakeRandBranch3, TakeRandom,
+    CategoricalChunked, IntoTakeRandom, TakeRandomChunked, TakeRandomArrayValues,
+    TakeRandomArray, PlHashMap, RevMapping, TakeRandBranch3, TakeRandom,
 };
 
 type TakeCats<'a> = TakeRandBranch3<
-    NumTakeRandomCont<'a, UInt32Type>,
-    NumTakeRandomSingleChunk<'a, UInt32Type>,
-    NumTakeRandomChunked<'a, UInt32Type>,
+    TakeRandomArrayValues<'a, UInt32Type>,
+    TakeRandomArray<'a, UInt32Type>,
+    TakeRandomChunked<'a, UInt32Type>,
 >;
 
 pub(crate) struct CategoricalTakeRandomLocal<'a> {

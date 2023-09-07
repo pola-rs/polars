@@ -59,27 +59,26 @@ where
 {
     type Item = T::Physical<'a>;
     type TakeRandom = TakeRandBranch3<
-        NumTakeRandomCont<'a, T>,
-        NumTakeRandomSingleChunk<'a, T>,
-        NumTakeRandomChunked<'a, T>,
+        TakeRandomArrayValues<'a, T>,
+        TakeRandomArray<'a, T>,
+        TakeRandomChunked<'a, T>,
     >;
 
     #[inline]
     fn take_rand(&self) -> Self::TakeRandom {
         let mut chunks = self.downcast_iter();
-
         if self.chunks.len() == 1 {
             let arr = chunks.next().unwrap();
 
             if !self.has_validity() {
-                let t = NumTakeRandomCont { arr };
+                let t = TakeRandomArrayValues { arr };
                 TakeRandBranch3::SingleNoNull(t)
             } else {
-                let t = NumTakeRandomSingleChunk { arr };
+                let t = TakeRandomArray { arr };
                 TakeRandBranch3::Single(t)
             }
         } else {
-            let t = NumTakeRandomChunked {
+            let t = TakeRandomChunked {
                 chunks: chunks.collect(),
                 chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
             };
@@ -88,7 +87,7 @@ where
     }
 }
 
-pub struct NumTakeRandomChunked<'a, T>
+pub struct TakeRandomChunked<'a, T>
 where
     T: PolarsDataType,
 {
@@ -96,7 +95,7 @@ where
     pub(crate) chunk_lens: Vec<IdxSize>,
 }
 
-impl<'a, T> TakeRandom for NumTakeRandomChunked<'a, T>
+impl<'a, T> TakeRandom for TakeRandomChunked<'a, T>
 where
     T: PolarsDataType,
 {
@@ -106,7 +105,6 @@ where
     fn get(&self, index: usize) -> Option<Self::Item> {
         let (chunk_idx, arr_idx) =
             index_to_chunked_index(self.chunk_lens.iter().copied(), index as IdxSize);
-
         let arr = self.chunks.get(chunk_idx as usize)?;
 
         // SAFETY: if index_to_chunked_index returns a valid chunk_idx, we know
@@ -134,11 +132,11 @@ where
     }
 }
 
-pub struct NumTakeRandomCont<'a, T: PolarsDataType> {
+pub struct TakeRandomArrayValues<'a, T: PolarsDataType> {
     pub(crate) arr: &'a T::Array,
 }
 
-impl<'a, T> TakeRandom for NumTakeRandomCont<'a, T>
+impl<'a, T> TakeRandom for TakeRandomArrayValues<'a, T>
 where
     T: PolarsDataType,
 {
@@ -159,11 +157,11 @@ where
     }
 }
 
-pub struct NumTakeRandomSingleChunk<'a, T: PolarsDataType> {
+pub struct TakeRandomArray<'a, T: PolarsDataType> {
     pub(crate) arr: &'a T::Array,
 }
 
-impl<'a, T> TakeRandom for NumTakeRandomSingleChunk<'a, T>
+impl<'a, T> TakeRandom for TakeRandomArray<'a, T>
 where
     T: PolarsDataType,
 {
