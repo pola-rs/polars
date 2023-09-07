@@ -3,9 +3,7 @@
 use std::cmp::{Ordering, PartialEq};
 
 use crate::chunked_array::ops::take::take_random::{
-    NumTakeRandomChunked,
-    NumTakeRandomCont,
-    NumTakeRandomSingleChunk,
+    NumTakeRandomChunked, NumTakeRandomCont, NumTakeRandomSingleChunk,
 };
 use crate::prelude::*;
 
