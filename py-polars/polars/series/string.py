@@ -1242,28 +1242,6 @@ class StringNameSpace:
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
 
-        Examples
-        --------
-        >>> s = pl.Series([" hello ", "\tworld"])
-        >>> s.str.lstrip()
-        shape: (2,)
-        Series: '' [str]
-        [
-                "hello "
-                "world"
-        ]
-
-        Characters can be stripped by passing a string as argument. Note that whitespace
-        will not be stripped automatically when doing so.
-
-        >>> s.str.lstrip("wod\t")
-        shape: (2,)
-        Series: '' [str]
-        [
-                " hello "
-                "rld"
-        ]
-
         """
 
     def strip_chars_end(self, characters: str | None = None) -> Series:
@@ -1315,28 +1293,6 @@ class StringNameSpace:
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
-
-        Examples
-        --------
-        >>> s = pl.Series([" hello ", "world\t"])
-        >>> s.str.rstrip()
-        shape: (2,)
-        Series: '' [str]
-        [
-                " hello"
-                "world"
-        ]
-
-        Characters can be stripped by passing a string as argument. Note that whitespace
-        will not be stripped automatically when doing so.
-
-        >>> s.str.rstrip("orld\t")
-        shape: (2,)
-        Series: '' [str]
-        [
-            " hello "
-            "w"
-        ]
 
         """
 
