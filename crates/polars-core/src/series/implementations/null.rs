@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_arrow::prelude::ArrayRef;
+use polars_error::constants::LENGTH_LIMIT_MSG;
 use polars_utils::IdxSize;
 
 use crate::datatypes::IdxCa;
@@ -43,19 +44,14 @@ impl PrivateSeriesNumeric for NullChunked {}
 
 impl PrivateSeries for NullChunked {
     fn compute_len(&mut self) {
-        // NullChunked only has one chunk.
-        self.length = self.chunks[0].len() as IdxSize;
-
-        #[cfg(feature = "python")]
-        assert!(
-            self.length < IdxSize::MAX,
-            "Polars' maximum length reached. Consider installing 'polars-u64-idx'."
-        );
-        #[cfg(not(feature = "python"))]
-        assert!(
-            self.length < IdxSize::MAX,
-            "Polars' maximum length reached. Consider compiling with 'bigidx' feature."
-        );
+        fn inner(chunks: &[ArrayRef]) -> usize {
+            match chunks.len() {
+                // fast path
+                1 => chunks[0].len(),
+                _ => chunks.iter().fold(0, |acc, arr| acc + arr.len()),
+            }
+        }
+        self.length = IdxSize::try_from(inner(&self.chunks)).expect(LENGTH_LIMIT_MSG);
     }
     fn _field(&self) -> Cow<Field> {
         Cow::Owned(Field::new(self.name(), DataType::Null))
