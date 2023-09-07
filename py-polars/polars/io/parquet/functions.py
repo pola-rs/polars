@@ -80,7 +80,8 @@ def read_parquet(
     row_count_offset
         Offset to start the row_count column (only use if the name is set).
     low_memory
-        Reduce memory pressure at the expense of performance.
+        Reduce memory usage at expense of performance when rechunking into
+        a single array. To work with larger than-memory datasets use streaming mode.
     pyarrow_options
         Keyword arguments for `pyarrow.parquet.read_table
         <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html>`_.
@@ -215,7 +216,8 @@ def scan_parquet(
         particular storage connection.
         e.g. host, port, username, password, etc.
     low_memory
-        Reduce memory pressure at the expense of performance.
+        Reduce memory usage at expense of performance when rechunking into
+        a single array. To work with larger than-memory datasets use streaming mode.
     use_statistics
         Use statistics in the parquet to determine if pages
         can be skipped from reading.

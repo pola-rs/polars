@@ -1624,10 +1624,28 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         **kwargs: Any,
     ) -> DataFrame:
         """
-        Collect into a DataFrame.
+        Collect a LazyFrame into a DataFrame.
 
-        Note: use :func:`fetch` if you want to run your query on the first `n` rows
+        Use :func:`fetch` if you want to run your query on the first `n` rows
         only. This can be a huge time saver in debugging queries.
+
+        By default all query optimizations are applied. Use the arguments to collect to turn off
+        particular optimizations.
+
+        If streaming is False the entire query is processed in a single batch.
+        If streaming is True Polars tries to process the query in batches for
+        larger than memory datasets. Use :func:`explain` to see if Polars can process the query
+        in streaming mode. Use :func:`polars.set_streaming_chunk_size` to set the size of the
+        batches.
+
+        See Also
+        --------
+        polars.collect_all : Collect multiple LazyFrames at the same time.
+        polars.collect_all_async: Collect multiple LazyFrames at the same time lazily.
+        polars.explain : Print the query plan that is evaluated with collect.
+        polars.set_streaming_chunk_size : Set the size of batches when streaming is used.
+        profile : Collect the LazyFrame and time each node in the computation graph.
+
 
         Parameters
         ----------
@@ -1666,6 +1684,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).collect()
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 4   ┆ 10  │
+        │ b   ┆ 11  ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
+        Collect in streaming mode
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).collect(streaming=True)
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -1830,7 +1860,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
     ) -> DataFrame:
         """
-        Persists a LazyFrame at the provided path.
+        Collect a LazyFrame and write the output in streaming mode to a Parquet file at the provided path.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -1926,7 +1956,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
     ) -> DataFrame:
         """
-        Persists a LazyFrame at the provided path.
+        Collect a LazyFrame and write the output in streaming mode to an IPC file at the provided path.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -2009,7 +2039,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
     ) -> DataFrame:
         """
-        Persists a LazyFrame at the provided path.
+        Collect a LazyFrame and write the output in streaming mode to a CSV file at the provided path.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -2629,7 +2659,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
-            Settings this to ``True`` blocks the possibility
+            Setting this to ``True`` blocks the possibility
             to run on the streaming engine.
 
         Examples
