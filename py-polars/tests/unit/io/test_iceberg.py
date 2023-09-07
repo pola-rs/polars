@@ -3,15 +3,11 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.io.iceberg import _convert_predicate, _to_ast
-
-if TYPE_CHECKING:
-    from pyiceberg.expressions import BooleanExpression
 
 
 @pytest.fixture()
@@ -19,7 +15,11 @@ def iceberg_path() -> str:
     # Iceberg requires absolute paths, so we'll symlink
     # the test table into /tmp/iceberg/t1/
     Path("/tmp/iceberg").mkdir(parents=True, exist_ok=True)
-    current_path = Path.parent
+    current_path = os.path.abspath(os.path.dirname(__file__))
+
+    print(os.listdir(f"{current_path}/files/iceberg-table"))
+    print(os.listdir(f"{current_path}/files/iceberg-table/metadata"))
+
     with contextlib.suppress(FileExistsError):
         os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")
 

@@ -31,8 +31,6 @@ from polars.dependencies import _PYICEBERG_AVAILABLE
 
 if _PYICEBERG_AVAILABLE:
     from pyiceberg.expressions import (
-        AlwaysFalse,
-        AlwaysTrue,
         And,
         EqualTo,
         GreaterThan,
