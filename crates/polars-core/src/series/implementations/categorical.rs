@@ -8,7 +8,9 @@ use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{IntoPartialOrdInner, PartialOrdInner};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
+#[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
+#[cfg(feature = "algorithm_join")]
 use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;

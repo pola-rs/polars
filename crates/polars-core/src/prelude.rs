@@ -38,9 +38,13 @@ pub use crate::error::{
 #[cfg(feature = "asof_join")]
 pub use crate::frame::asof_join::*;
 pub use crate::frame::explode::MeltArgs;
+#[cfg(feature = "algorithm_group_by")]
 pub(crate) use crate::frame::group_by::aggregations::*;
+#[cfg(feature = "algorithm_group_by")]
 pub use crate::frame::group_by::{GroupsIdx, GroupsProxy, GroupsSlice, IntoGroupsProxy};
+#[cfg(feature = "algorithm_join")]
 pub(crate) use crate::frame::hash_join::*;
+#[cfg(feature = "algorithm_join")]
 pub use crate::frame::hash_join::{JoinArgs, JoinType};
 pub use crate::frame::{DataFrame, UniqueKeepStrategy};
 pub use crate::hashing::{FxHash, VecHash};

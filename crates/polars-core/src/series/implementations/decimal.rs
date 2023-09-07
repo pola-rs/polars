@@ -67,18 +67,22 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
             .into_series())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
         self.agg_helper(|ca| ca.agg_sum(groups))
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         self.agg_helper(|ca| ca.agg_min(groups))
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
         self.agg_helper(|ca| ca.agg_max(groups))
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }

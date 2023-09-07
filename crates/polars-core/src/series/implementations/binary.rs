@@ -9,7 +9,9 @@ use crate::chunked_array::ops::compare_inner::{
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
+#[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
+#[cfg(feature = "algorithm_join")]
 use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
@@ -232,14 +234,17 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         self.0.has_validity()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
         ChunkUnique::unique(&self.0).map(|ca| ca.into_series())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
         ChunkUnique::n_unique(&self.0)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         ChunkUnique::arg_unique(&self.0)
     }
