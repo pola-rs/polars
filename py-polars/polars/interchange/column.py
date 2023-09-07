@@ -157,11 +157,7 @@ class PolarsColumn(Column):
     def _get_data_buffer(self) -> tuple[PolarsBuffer, Dtype]:
         s = self._col._get_buffer(0)
         buffer = PolarsBuffer(s, allow_copy=self._allow_copy)
-
-        dtype = self.dtype
-        if dtype[0] == DtypeKind.CATEGORICAL:
-            dtype = (DtypeKind.UINT, 32, "I", Endianness.NATIVE)
-
+        dtype = polars_dtype_to_dtype(s.dtype)
         return buffer, dtype
 
     def _get_validity_buffer(self) -> tuple[PolarsBuffer, Dtype] | None:
