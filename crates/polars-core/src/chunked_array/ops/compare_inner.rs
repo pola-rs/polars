@@ -19,29 +19,10 @@ pub trait PartialOrdInner: Send + Sync {
     unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering;
 }
 
-impl<'a, T: PolarsDataType> PartialEqInner for TakeRandomArrayValues<'a, T>
+impl<T> PartialEqInner for T
 where
-    T::Physical<'a>: PartialEq,
-{
-    #[inline]
-    unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
-        self.get_unchecked(idx_a) == self.get_unchecked(idx_b)
-    }
-}
-
-impl<'a, T: PolarsDataType> PartialEqInner for TakeRandomArray<'a, T>
-where
-    T::Physical<'a>: PartialEq,
-{
-    #[inline]
-    unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
-        self.get_unchecked(idx_a) == self.get_unchecked(idx_b)
-    }
-}
-
-impl<'a, T: PolarsDataType> PartialEqInner for TakeRandomChunked<'a, T>
-where
-    T::Physical<'a>: PartialEq,
+    T: TakeRandom + Send + Sync,
+    T::Item: PartialEq
 {
     #[inline]
     unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
@@ -96,33 +77,10 @@ fn fallback<T: PartialEq>(a: T) -> Ordering {
     }
 }
 
-impl<'a, T: PolarsDataType> PartialOrdInner for TakeRandomArrayValues<'a, T>
+impl<T> PartialOrdInner for T
 where
-    T::Physical<'a>: PartialOrd,
-{
-    #[inline]
-    unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
-        let a = self.get_unchecked(idx_a);
-        let b = self.get_unchecked(idx_b);
-        a.partial_cmp(&b).unwrap_or_else(|| fallback(a))
-    }
-}
-
-impl<'a, T: PolarsDataType> PartialOrdInner for TakeRandomArray<'a, T>
-where
-    T::Physical<'a>: PartialOrd,
-{
-    #[inline]
-    unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
-        let a = self.get_unchecked(idx_a);
-        let b = self.get_unchecked(idx_b);
-        a.partial_cmp(&b).unwrap_or_else(|| fallback(a))
-    }
-}
-
-impl<'a, T: PolarsDataType> PartialOrdInner for TakeRandomChunked<'a, T>
-where
-    T::Physical<'a>: PartialOrd,
+    T: TakeRandom + Send + Sync,
+    T::Item: PartialOrd
 {
     #[inline]
     unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
