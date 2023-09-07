@@ -45,13 +45,13 @@ def test_boolean_aggs() -> None:
 def test_duration_aggs() -> None:
     df = pl.DataFrame(
         {
-            "time1": pl.date_range(
+            "time1": pl.datetime_range(
                 start=datetime(2022, 12, 12),
                 end=datetime(2022, 12, 18),
                 interval="1d",
                 eager=True,
             ),
-            "time2": pl.date_range(
+            "time2": pl.datetime_range(
                 start=datetime(2023, 1, 12),
                 end=datetime(2023, 1, 18),
                 interval="1d",

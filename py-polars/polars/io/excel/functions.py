@@ -22,6 +22,7 @@ def read_excel(
     sheet_name: str,
     xlsx2csv_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame:
     ...
@@ -35,6 +36,7 @@ def read_excel(
     sheet_name: None = ...,
     xlsx2csv_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame:
     ...
@@ -48,6 +50,7 @@ def read_excel(
     sheet_name: str,
     xlsx2csv_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = ...,
     raise_if_empty: bool = ...,
 ) -> NoReturn:
     ...
@@ -63,6 +66,7 @@ def read_excel(
     sheet_name: None = ...,
     xlsx2csv_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = ...,
     raise_if_empty: bool = ...,
 ) -> dict[str, pl.DataFrame]:
     ...
@@ -76,6 +80,7 @@ def read_excel(
     sheet_name: None = ...,
     xlsx2csv_options: dict[str, Any] | None = ...,
     read_csv_options: dict[str, Any] | None = ...,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame:
     ...
@@ -88,13 +93,18 @@ def read_excel(
     sheet_name: str | None = None,
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = None,
     raise_if_empty: bool = True,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
     """
     Read Excel (XLSX) sheet into a DataFrame.
 
-    Converts an Excel sheet with ``xlsx2csv.Xlsx2csv().convert()`` to CSV and parses the
-    CSV output with :func:`read_csv`.
+    If using the ``xlsx2csv`` engine, converts an Excel sheet with
+    ``xlsx2csv.Xlsx2csv().convert()`` to CSV and parses the CSV output with
+    :func:`read_csv`.
+
+    When using the ``openpyxl`` engine, reads an Excel sheet with
+    ``openpyxl.load_workbook(source)``.
 
     Parameters
     ----------
@@ -116,6 +126,11 @@ def read_excel(
         ``xlsx2csv.Xlsx2csv().convert()``
         e.g.: ``{"has_header": False, "new_columns": ["a", "b", "c"],
         "infer_schema_length": None}``
+    engine
+        Library used to parse Excel, either openpyxl or xlsx2csv (default is xlsx2csv).
+        Please note that xlsx2csv converts first to csv, making type inference worse
+        than openpyxl. To remedy that, you can use the extra options defined on
+        `xlsx2csv_options` and `read_csv_options`
     raise_if_empty
         When there is no data in the sheet,``NoDataError`` is raised. If this parameter
         is set to False, an empty DataFrame (with no columns) is returned instead.
@@ -155,6 +170,15 @@ def read_excel(
     ...     read_csv_options={"infer_schema_length": None},
     ... )  # doctest: +SKIP
 
+    The ``openpyxl`` engine can also be used to provide automatic type inference.
+    To do so, specify the right engine (`xlsx2csv_options` and `read_csv_options`
+    will be ignored):
+
+    >>> pl.read_excel(
+    ...     source="test.xlsx",
+    ...     engine="openpyxl",
+    ... )  # doctest: +SKIP
+
     If :func:`read_excel` does not work or you need to read other types of
     spreadsheet files, you can try pandas ``pd.read_excel()``
     (supports `xls`, `xlsx`, `xlsm`, `xlsb`, `odf`, `ods` and `odt`).
@@ -162,13 +186,6 @@ def read_excel(
     >>> pl.from_pandas(pd.read_excel("test.xlsx"))  # doctest: +SKIP
 
     """
-    try:
-        import xlsx2csv
-    except ImportError:
-        raise ModuleNotFoundError(
-            "xlsx2csv is not installed\n\nPlease run: `pip install xlsx2csv`"
-        ) from None
-
     if sheet_id is not None and sheet_name is not None:
         raise ValueError(
             f"cannot specify both `sheet_name` ({sheet_name!r}) and `sheet_id` ({sheet_id!r})"
@@ -182,27 +199,50 @@ def read_excel(
     if read_csv_options is None:
         read_csv_options = {}
 
-    # convert sheets to csv
-    parser = xlsx2csv.Xlsx2csv(source, **xlsx2csv_options)
+    reader_fn: Any  # make mypy happy
+    # do conditions imports
+    if engine == "openpyxl":
+        try:
+            import openpyxl
+        except ImportError:
+            raise ImportError(
+                "openpyxl is not installed\n\nPlease run `pip install openpyxl`"
+            ) from None
+        parser = openpyxl.load_workbook(source)
+        sheets = [
+            {"index": i + 1, "name": sheet.title} for i, sheet in enumerate(parser)
+        ]
+        reader_fn = _read_excel_sheet_openpyxl
+    elif engine == "xlsx2csv" or engine is None:  # default
+        try:
+            import xlsx2csv
+        except ImportError:
+            raise ModuleNotFoundError(
+                "xlsx2csv is not installed\n\nPlease run: `pip install xlsx2csv`"
+            ) from None
+        # convert sheets to csv
+        parser = xlsx2csv.Xlsx2csv(source, **xlsx2csv_options)
+        sheets = parser.workbook.sheets
+        reader_fn = _read_excel_sheet_xlsx2csv
+    else:
+        raise NotImplementedError(f"Cannot find the engine `{engine}`")
 
     if sheet_id == 0:
-        # read ALL sheets
         return {
-            sheet["name"]: _read_excel_sheet(
+            sheet["name"]: reader_fn(
                 parser=parser,
                 sheet_id=sheet["index"],
                 sheet_name=None,
                 read_csv_options=read_csv_options,
                 raise_if_empty=raise_if_empty,
             )
-            for sheet in parser.workbook.sheets
+            for sheet in sheets
         }
     else:
         # read a specific sheet by id or name
         if sheet_name is None:
             sheet_id = sheet_id or 1
-
-        return _read_excel_sheet(
+        return reader_fn(
             parser=parser,
             sheet_id=sheet_id,
             sheet_name=sheet_name,
@@ -211,7 +251,38 @@ def read_excel(
         )
 
 
-def _read_excel_sheet(
+def _read_excel_sheet_openpyxl(
+    parser: Any,
+    sheet_id: int | None,
+    sheet_name: str | None,
+    read_csv_options: dict[str, Any] | None,
+    raise_if_empty: bool,
+) -> pl.DataFrame:
+    # read requested sheet if provided on kwargs, otherwise read active sheet
+    if sheet_name is not None:
+        ws = parser[sheet_name]
+    elif sheet_id is not None:
+        ws = parser.worksheets[sheet_id - 1]
+    else:
+        ws = parser.active
+
+    rows_iter = iter(ws.rows)
+
+    # check whether to include or omit the header
+    header = [str(cell.value) for cell in next(rows_iter)]
+
+    df = pl.DataFrame(
+        {key: cell.value for key, cell in zip(header, row)} for row in rows_iter
+    )
+    if raise_if_empty and len(df) == 0:
+        raise NoDataError(
+            "Empty Excel sheet; if you want to read this as "
+            "an empty DataFrame, set `raise_if_empty=False`"
+        )
+    return df
+
+
+def _read_excel_sheet_xlsx2csv(
     parser: Any,
     sheet_id: int | None,
     sheet_name: str | None,

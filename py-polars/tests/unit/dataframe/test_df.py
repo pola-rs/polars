@@ -1763,7 +1763,7 @@ def test_repeat_by(
 
 
 def test_join_dates() -> None:
-    dts_in = pl.date_range(
+    dts_in = pl.datetime_range(
         datetime(2021, 6, 24),
         datetime(2021, 6, 24, 10, 0, 0),
         interval=timedelta(hours=1),
@@ -3335,21 +3335,21 @@ def test_glimpse(capsys: Any) -> None:
             "c": [True, False, True],
             "d": [None, "b", "c"],
             "e": ["usd", "eur", None],
-            "f": pl.date_range(
+            "f": pl.datetime_range(
                 datetime(2023, 1, 1),
                 datetime(2023, 1, 3),
                 "1d",
                 time_unit="us",
                 eager=True,
             ),
-            "g": pl.date_range(
+            "g": pl.datetime_range(
                 datetime(2023, 1, 1),
                 datetime(2023, 1, 3),
                 "1d",
                 time_unit="ms",
                 eager=True,
             ),
-            "h": pl.date_range(
+            "h": pl.datetime_range(
                 datetime(2023, 1, 1),
                 datetime(2023, 1, 3),
                 "1d",
@@ -3370,8 +3370,8 @@ def test_glimpse(capsys: Any) -> None:
         $ a          <f64> 1.0, 2.8, 3.0
         $ b          <i64> 4, 5, None
         $ c         <bool> True, False, True
-        $ d          <str> None, b, c
-        $ e          <str> usd, eur, None
+        $ d          <str> None, 'b', 'c'
+        $ e          <str> 'usd', 'eur', None
         $ f <datetime[μs]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
         $ g <datetime[ms]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
         $ h <datetime[ns]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
@@ -3388,13 +3388,15 @@ def test_glimpse(capsys: Any) -> None:
     assert capsys.readouterr().out[:-1] == expected
 
     colc = "a" * 96
-    df = pl.DataFrame({colc: [11, 22, 33]})
-    result = df.glimpse(return_as_string=True)
+    df = pl.DataFrame({colc: [11, 22, 33, 44, 55, 66]})
+    result = df.glimpse(
+        return_as_string=True, max_colname_length=20, max_items_per_column=4
+    )
     expected = textwrap.dedent(
         """\
-        Rows: 3
+        Rows: 6
         Columns: 1
-        $ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa... <i64> 11, 22, 33
+        $ aaaaaaaaaaaaaaaaaaa… <i64> 11, 22, 33, 44
         """
     )
     assert result == expected

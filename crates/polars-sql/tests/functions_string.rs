@@ -80,3 +80,46 @@ fn test_string_functions() {
         .unwrap();
     assert!(df_sql.frame_equal_missing(&df_pl));
 }
+
+#[test]
+fn array_to_string() {
+    let df = df! {
+        "a" => &["first", "first", "third"],
+        "b" => &[1, 1, 42],
+    }
+    .unwrap();
+    let mut context = SQLContext::new();
+    context.register("df", df.clone().lazy());
+    let sql = context
+        .execute(
+            r#"
+        SELECT
+            b,
+            a
+        FROM df
+        GROUP BY
+            b"#,
+        )
+        .unwrap();
+    context.register("df_1", sql.clone());
+    let sql = r#"
+        SELECT
+            b,
+            array_to_string(a, ', ') as as,
+        FROM df_1
+        ORDER BY
+            b,
+            as"#;
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+
+    let df_pl = df
+        .lazy()
+        .group_by([col("b")])
+        .agg([col("a")])
+        .select(&[col("b"), col("a").list().join(", ").alias("as")])
+        .sort_by_exprs(vec![col("b"), col("as")], vec![false, false], false, true)
+        .collect()
+        .unwrap();
+
+    assert!(df_sql.frame_equal_missing(&df_pl));
+}

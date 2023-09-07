@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.19.1"
+version = "0.19.2"
 edition = "2021"
 
 [lib]
@@ -12,6 +12,7 @@ polars-algo = { path = "../crates/polars-algo", default-features = false }
 polars-core = { path = "../crates/polars-core", default-features = false, features = ["python"] }
 polars-error = { path = "../crates/polars-error" }
 polars-lazy = { path = "../crates/polars-lazy", default-features = false, features = ["python"] }
+polars-ops = { path = "../crates/polars-ops", default-features = false }
 
 ahash = "0.8"
 ciborium = "0.2"
@@ -183,6 +184,7 @@ all = [
   "cutqcut",
   "rle",
   "extract_groups",
+  "polars-ops/convert_index",
 ]
 
 # we cannot conditionally activate simd

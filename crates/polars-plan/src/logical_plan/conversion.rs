@@ -245,19 +245,6 @@ pub fn to_alp(
                 options,
             }
         },
-        LogicalPlan::LocalProjection {
-            expr,
-            input,
-            schema,
-        } => {
-            let exp = expr.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
-            let i = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::LocalProjection {
-                expr: exp,
-                input: i,
-                schema,
-            }
-        },
         LogicalPlan::Sort {
             input,
             by_column,
@@ -702,19 +689,6 @@ impl ALogicalPlan {
                     input: Box::new(i),
                     schema,
                     options,
-                }
-            },
-            ALogicalPlan::LocalProjection {
-                expr,
-                input,
-                schema,
-            } => {
-                let i = convert_to_lp(input, lp_arena);
-
-                LogicalPlan::LocalProjection {
-                    expr: nodes_to_exprs(&expr, expr_arena),
-                    input: Box::new(i),
-                    schema,
                 }
             },
             ALogicalPlan::Sort {

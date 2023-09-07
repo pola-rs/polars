@@ -640,13 +640,6 @@ def test_cast_frame() -> None:
     ]
 
 
-def test_col_series_selection() -> None:
-    ldf = pl.LazyFrame({"a": [1], "b": [1], "c": [1]})
-    srs = pl.Series(["b", "c"])
-
-    assert ldf.select(pl.col(srs)).columns == ["b", "c"]
-
-
 def test_interpolate() -> None:
     df = pl.DataFrame({"a": [1, None, 3]})
     assert df.select(pl.col("a").interpolate())["a"].to_list() == [1, 2, 3]

@@ -29,27 +29,6 @@ protocol_dtypes = [
 
 
 @given(dataframes(allowed_dtypes=protocol_dtypes, excluded_dtypes=[pl.Boolean]))
-def test_roundtrip_polars_parametric(df: pl.DataFrame) -> None:
-    dfi = df.__dataframe__()
-    with pl.StringCache():
-        result = pl.from_dataframe(dfi)
-    assert_frame_equal(result, df, categorical_as_str=True)
-
-
-@given(
-    dataframes(
-        allowed_dtypes=protocol_dtypes,
-        excluded_dtypes=[pl.Boolean, pl.Categorical],
-        chunked=False,
-    )
-)
-def test_roundtrip_polars_zero_copy_parametric(df: pl.DataFrame) -> None:
-    dfi = df.__dataframe__(allow_copy=False)
-    result = pl.from_dataframe(dfi, allow_copy=False)
-    assert_frame_equal(result, df, categorical_as_str=True)
-
-
-@given(dataframes(allowed_dtypes=protocol_dtypes, excluded_dtypes=[pl.Boolean]))
 def test_roundtrip_pyarrow_parametric(df: pl.DataFrame) -> None:
     dfi = df.__dataframe__()
     note(f"n_chunks: {dfi.num_chunks()}")

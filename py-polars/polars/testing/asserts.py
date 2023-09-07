@@ -42,9 +42,9 @@ def assert_frame_equal(
     Parameters
     ----------
     left
-        the dataframe to compare.
+        the DataFrame to compare.
     right
-        the dataframe to compare with.
+        the DataFrame to compare with.
     check_row_order
         if False, frames will compare equal if the required rows are present,
         irrespective of the order in which they appear; as this requires
@@ -65,7 +65,7 @@ def assert_frame_equal(
         if your assert/test requires float NaN != NaN, set this to False.
     categorical_as_str
         Cast categorical columns to string before comparing. Enabling this helps
-        compare dataframes that do not share the same string cache.
+        compare DataFrames that do not share the same string cache.
 
     Examples
     --------
@@ -148,9 +148,9 @@ def assert_frame_not_equal(
     Parameters
     ----------
     left
-        the dataframe to compare.
+        the DataFrame to compare.
     right
-        the dataframe to compare with.
+        the DataFrame to compare with.
     check_row_order
         if False, frames will compare equal if the required rows are present,
         irrespective of the order in which they appear; as this requires
@@ -171,7 +171,7 @@ def assert_frame_not_equal(
         if your assert/test requires float NaN != NaN, set this to False.
     categorical_as_str
         Cast categorical columns to string before comparing. Enabling this helps
-        compare dataframes that do not share the same string cache.
+        compare DataFrames that do not share the same string cache.
 
     Examples
     --------
@@ -236,7 +236,7 @@ def assert_series_equal(
         if your assert/test requires float NaN != NaN, set this to False.
     categorical_as_str
         Cast categorical columns to string before comparing. Enabling this helps
-        compare dataframes that do not share the same string cache.
+        compare DataFrames that do not share the same string cache.
 
     Examples
     --------
@@ -306,7 +306,7 @@ def assert_series_not_equal(
         if your assert/test requires float NaN != NaN, set this to False.
     categorical_as_str
         Cast categorical columns to string before comparing. Enabling this helps
-        compare dataframes that do not share the same string cache.
+        compare DataFrames that do not share the same string cache.
 
     Examples
     --------

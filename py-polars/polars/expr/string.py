@@ -1356,7 +1356,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 
-    def count_match(self, pattern: str) -> Expr:
+    def count_match(self, pattern: str | Expr) -> Expr:
         r"""
         Count all successive non-overlapping regex matches.
 
@@ -1391,6 +1391,7 @@ class ExprStringNameSpace:
         └──────────────┘
 
         """
+        pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_count_match(pattern))
 
     def split(self, by: str, *, inclusive: bool = False) -> Expr:

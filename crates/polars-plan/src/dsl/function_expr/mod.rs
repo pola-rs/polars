@@ -110,7 +110,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "range")]
     Range(RangeFunction),
     #[cfg(feature = "date_offset")]
-    DateOffset(polars_time::Duration),
+    DateOffset,
     #[cfg(feature = "trigonometry")]
     Trigonometry(TrigonometricFunction),
     #[cfg(feature = "trigonometry")]
@@ -282,7 +282,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "range")]
             Range(func) => return write!(f, "{func}"),
             #[cfg(feature = "date_offset")]
-            DateOffset(_) => "dt.offset_by",
+            DateOffset => "dt.offset_by",
             #[cfg(feature = "trigonometry")]
             Trigonometry(func) => return write!(f, "{func}"),
             #[cfg(feature = "trigonometry")]
@@ -380,6 +380,7 @@ macro_rules! wrap {
 // Fn(&[Series], args)
 // all expression arguments are in the slice.
 // the first element is the root expression.
+#[macro_export]
 macro_rules! map_as_slice {
     ($func:path) => {{
         let f = move |s: &mut [Series]| {
@@ -482,8 +483,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Range(func) => func.into(),
 
             #[cfg(feature = "date_offset")]
-            DateOffset(offset) => {
-                map_owned!(temporal::date_offset, offset)
+            DateOffset => {
+                map_as_slice!(temporal::date_offset)
             },
 
             #[cfg(feature = "trigonometry")]
@@ -646,8 +647,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         match func {
             #[cfg(feature = "regex")]
             Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
-            CountMatch(pat) => {
-                map!(strings::count_match, &pat)
+            CountMatch => {
+                map_as_slice!(strings::count_match)
             },
             EndsWith { .. } => map_as_slice!(strings::ends_with),
             StartsWith { .. } => map_as_slice!(strings::starts_with),
@@ -765,60 +766,11 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(dispatch::replace_time_zone, tz.as_deref())
             },
             Combine(tu) => map_as_slice!(temporal::combine, tu),
-            DateRange {
-                every,
-                closed,
-                time_unit,
-                time_zone,
-            } => {
-                map_as_slice!(
-                    temporal::temporal_range,
-                    every,
-                    closed,
-                    time_unit,
-                    time_zone.clone()
-                )
-            },
-            DateRanges {
-                every,
-                closed,
-                time_unit,
-                time_zone,
-            } => {
-                map_as_slice!(
-                    temporal::temporal_ranges,
-                    every,
-                    closed,
-                    time_unit,
-                    time_zone.clone()
-                )
-            },
-            TimeRange { every, closed } => {
-                map_as_slice!(temporal::time_range, every, closed)
-            },
-            TimeRanges { every, closed } => {
-                map_as_slice!(temporal::time_ranges, every, closed)
-            },
             DatetimeFunction {
                 time_unit,
                 time_zone,
             } => {
                 map_as_slice!(temporal::datetime, &time_unit, time_zone.as_deref())
-            },
-        }
-    }
-}
-
-#[cfg(feature = "range")]
-impl From<RangeFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
-    fn from(func: RangeFunction) -> Self {
-        use RangeFunction::*;
-        match func {
-            IntRange { step } => {
-                map_as_slice!(range::int_range, step)
-            },
-            IntRanges { step } => {
-                map_as_slice!(range::int_ranges, step)
             },
         }
     }

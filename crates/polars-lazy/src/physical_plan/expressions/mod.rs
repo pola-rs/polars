@@ -265,23 +265,25 @@ impl<'a> AggregationContext<'a> {
                 });
             },
             _ => {
-                let groups = self
-                    .series()
-                    .list()
-                    .expect("impl error, should be a list at this point")
-                    .amortized_iter()
-                    .map(|s| {
-                        if let Some(s) = s {
-                            let len = s.as_ref().len() as IdxSize;
-                            let new_offset = offset + len;
-                            let out = [offset, len];
-                            offset = new_offset;
-                            out
-                        } else {
-                            [offset, 0]
-                        }
-                    })
-                    .collect_trusted();
+                // SAFETY: unstable series never lives longer than the iterator.
+                let groups = unsafe {
+                    self.series()
+                        .list()
+                        .expect("impl error, should be a list at this point")
+                        .amortized_iter()
+                        .map(|s| {
+                            if let Some(s) = s {
+                                let len = s.as_ref().len() as IdxSize;
+                                let new_offset = offset + len;
+                                let out = [offset, len];
+                                offset = new_offset;
+                                out
+                            } else {
+                                [offset, 0]
+                            }
+                        })
+                        .collect_trusted()
+                };
                 self.groups = Cow::Owned(GroupsProxy::Slice {
                     groups,
                     rolling: false,

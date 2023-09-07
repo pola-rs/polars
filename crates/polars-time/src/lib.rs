@@ -26,7 +26,6 @@ pub use month_start::*;
 pub use round::*;
 pub use truncate::*;
 pub use upsample::*;
-pub use windows::calendar::datetime_range_i64;
 pub use windows::duration::Duration;
 pub use windows::group_by::ClosedWindow;
 pub use windows::window::Window;

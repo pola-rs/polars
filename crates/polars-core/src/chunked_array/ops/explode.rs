@@ -176,7 +176,16 @@ impl ExplodeByOffsets for Float64Chunked {
 
 impl ExplodeByOffsets for NullChunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        NullChunked::new(self.name.clone(), offsets.len() - 1).into_series()
+        let mut last_offset = offsets[0];
+
+        let mut len = 0;
+        for &offset in &offsets[1..] {
+            // If offset == last_offset we have an empty list and a new row is inserted,
+            // therefore we always increase at least 1.
+            len += std::cmp::max(offset - last_offset, 1) as usize;
+            last_offset = offset;
+        }
+        NullChunked::new(self.name.clone(), len).into_series()
     }
 }
 

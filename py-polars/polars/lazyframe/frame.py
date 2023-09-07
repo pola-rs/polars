@@ -826,7 +826,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
         >>> json = lf.serialize()
         >>> json
-        '{"LocalProjection":{"expr":[{"Agg":{"Sum":{"Column":"a"}}}],"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"projection":null,"selection":null}},"schema":{"inner":{"a":"Int64"}}}}'
+        '{"Projection":{"expr":[{"Agg":{"Sum":{"Column":"a"}}}],"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"projection":null,"selection":null}},"schema":{"inner":{"a":"Int64"}},"options":{"run_parallel":true,"duplicate_check":true}}}'
 
         The logical plan can later be deserialized back into a LazyFrame.
 
@@ -1024,6 +1024,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 comm_subplan_elim,
                 comm_subexpr_elim,
                 streaming,
+                eager=False,
             )
             return ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
@@ -1103,6 +1104,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
+            eager=False,
         )
 
         dot = _ldf.to_dot(optimized)
@@ -1180,7 +1182,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order: bool = False,
     ) -> Self:
         """
-        Sort the dataframe by the given columns.
+        Sort the DataFrame by the given columns.
 
         Parameters
         ----------
@@ -1556,6 +1558,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
+            eager=False,
         )
         df, timings = ldf.profile()
         (df, timings) = wrap_df(df), wrap_df(timings)
@@ -1618,6 +1621,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = False,
+        **kwargs: Any,
     ) -> DataFrame:
         """
         Collect into a DataFrame.
@@ -1645,6 +1649,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
+        **kwargs
+            For internal use.
 
         Returns
         -------
@@ -1672,7 +1678,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
 
         """
-        if no_optimization:
+        eager = kwargs.get("eager", False)
+        if no_optimization or eager:
             predicate_pushdown = False
             projection_pushdown = False
             slice_pushdown = False
@@ -1691,6 +1698,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
+            eager,
         )
         return wrap_df(ldf.collect())
 
@@ -1709,10 +1717,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
     ) -> _AsyncDataFrameResult[DataFrame]:
         """
-        Collect dataframe asynchronously in thread pool.
+        Collect DataFrame asynchronously in thread pool.
 
         Collects into a DataFrame, like :func:`collect`
-        but instead of returning dataframe directly its collected inside thread pool
+        but instead of returning DataFrame directly its collected inside thread pool
         and gets put into `queue` with `put_nowait` method,
         while this method returns almost instantly.
 
@@ -1797,6 +1805,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
+            eager=False,
         )
 
         result = _AsyncDataFrameResult(queue)
@@ -1891,6 +1900,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim=False,
             comm_subexpr_elim=False,
             streaming=True,
+            eager=False,
         )
         return lf.sink_parquet(
             path=path,
@@ -1967,6 +1977,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim=False,
             comm_subexpr_elim=False,
             streaming=True,
+            eager=False,
         )
         return lf.sink_ipc(
             path=path,
@@ -2095,6 +2106,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim=False,
             comm_subexpr_elim=False,
             streaming=True,
+            eager=False,
         )
 
         return lf.sink_csv(
@@ -2205,6 +2217,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
+            eager=False,
         )
         return wrap_df(lf.fetch(n_rows))
 
@@ -2392,6 +2405,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def filter(self, predicate: IntoExpr) -> Self:
         """
         Filter the rows in the LazyFrame based on a predicate expression.
+
+        The original order of the remaining rows is preserved.
 
         Parameters
         ----------
@@ -2991,7 +3006,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> # create an example dataframe
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "time": pl.date_range(
+        ...         "time": pl.datetime_range(
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
@@ -3096,7 +3111,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "time": pl.date_range(
+        ...         "time": pl.datetime_range(
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
@@ -3411,6 +3426,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             None.
         how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
             Join strategy.
+
+            .. note::
+                A left join preserves the row order of the left DataFrame.
         left_on
             Join column of the left DataFrame.
         right_on
@@ -4957,7 +4975,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Drop all rows that contain null values.
 
-        Returns a new LazyFrame.
+        The original order of the remaining rows is preserved.
 
         Parameters
         ----------

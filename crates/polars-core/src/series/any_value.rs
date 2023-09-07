@@ -76,33 +76,33 @@ fn any_values_to_decimal(
             ComputeError:
             "unable to losslessly convert any-value of scale {s_max} to scale {}", scale,
         );
-    } else if s_min == s_max && s_max == scale {
-        // no conversions needed; will potentially check values for precision though
-        any_values_to_primitive::<Int128Type>(avs).into_decimal(precision, scale)
-    } else {
-        // rescaling is needed
-        let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", avs.len());
-        for av in avs {
-            let (v, s_av) = if av.is_signed() || av.is_unsigned() {
-                (
-                    av.try_extract::<i128>().unwrap_or_else(|_| unreachable!()),
-                    0,
-                )
-            } else if let AnyValue::Decimal(v, scale) = av {
-                (*v, *scale)
-            } else {
-                // it has to be a null because we've already checked it
-                builder.append_null();
-                continue;
-            };
+    }
+    let mut builder = PrimitiveChunkedBuilder::<Int128Type>::new("", avs.len());
+    let is_equally_scaled = s_min == s_max && s_max == scale;
+    for av in avs {
+        let (v, s_av) = if av.is_signed() || av.is_unsigned() {
+            (
+                av.try_extract::<i128>().unwrap_or_else(|_| unreachable!()),
+                0,
+            )
+        } else if let AnyValue::Decimal(v, scale) = av {
+            (*v, *scale)
+        } else {
+            // it has to be a null because we've already checked it
+            builder.append_null();
+            continue;
+        };
+        if is_equally_scaled {
+            builder.append_value(v);
+        } else {
             let factor = 10_i128.pow((scale - s_av) as _); // this cast is safe
             builder.append_value(v.checked_mul(factor).ok_or_else(|| {
                 polars_err!(ComputeError: "overflow while converting to decimal scale {}", scale)
             })?);
         }
-        // build the array and do a precision check if needed
-        builder.finish().into_decimal(precision, scale)
     }
+    // build the array and do a precision check if needed
+    builder.finish().into_decimal(precision, scale)
 }
 
 fn any_values_to_binary(avs: &[AnyValue]) -> BinaryChunked {

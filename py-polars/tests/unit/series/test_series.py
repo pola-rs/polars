@@ -288,6 +288,9 @@ def test_equality() -> None:
     a = pl.Series("name", ["ham", "foo", "bar"])
     assert_series_equal((a == "ham"), pl.Series("name", [True, False, False]))
 
+    a = pl.Series("name", [[1], [1, 2], [2, 3]])
+    assert_series_equal((a == [1]), pl.Series("name", [True, False, False]))
+
 
 def test_agg() -> None:
     series = pl.Series("a", [1, 2])
@@ -2437,6 +2440,15 @@ def test_set_at_idx() -> None:
     assert s.set_at_idx([0, 1], ["a", "b"]).to_list() == ["a", "b", "z"]
     s = pl.Series([True, False, True])
     assert s.set_at_idx([0, 1], [False, True]).to_list() == [False, True, True]
+
+    # set negative indices
+    a = pl.Series(range(5))
+    a[-2] = None
+    a[-5] = None
+    assert a.to_list() == [None, 1, 2, None, 4]
+
+    with pytest.raises(pl.ComputeError):
+        a[-100] = None
 
 
 def test_repr() -> None:
