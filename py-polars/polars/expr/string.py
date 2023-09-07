@@ -582,12 +582,12 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_strip_chars(characters))
 
-    @deprecate_renamed_function("strip_chars", version="0.19.2")
+    @deprecate_renamed_function("strip_chars", version="0.19.3")
     def strip(self, characters: str | None = None) -> Expr:
         r"""
         Remove leading and trailing characters.
 
-        .. deprecated:: 0.19.2
+        .. deprecated:: 0.19.3
             This method has been renamed to :func:`Expr.strip_chars`.
 
         Parameters
@@ -660,9 +660,55 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_strip_suffix(suffix))
 
+    def strip_chars_start(self, characters: str | None = None) -> Expr:
+        r"""
+        Remove leading characters.
+
+        Parameters
+        ----------
+        characters
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [" hello ", "\tworld"]})
+        >>> df.select(pl.col("foo").str.strip_chars_start())
+        shape: (2, 1)
+        ┌────────┐
+        │ foo    │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │ hello  │
+        │ world  │
+        └────────┘
+
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so.
+
+        >>> df.select(pl.col("foo").str.strip_chars_start("wod\t"))
+        shape: (2, 1)
+        ┌─────────┐
+        │ foo     │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │  hello  │
+        │ rld     │
+        └─────────┘
+
+        """
+        return wrap_expr(self._pyexpr.str_strip_chars_start(characters))
+
+    @deprecate_renamed_function("strip_chars_start", version="0.19.3")
     def lstrip(self, characters: str | None = None) -> Expr:
         r"""
         Remove leading characters.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`Expr.strip_chars_start`.
 
         Parameters
         ----------
@@ -700,11 +746,70 @@ class ExprStringNameSpace:
         └─────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_lstrip(characters))
+        return wrap_expr(self._pyexpr.str_strip_chars_start(characters))
 
+    def strip_chars_end(self, characters: str | None = None) -> Expr:
+        r"""
+        Remove trailing characters.
+
+        Parameters
+        ----------
+        characters
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [" hello", "world\n"]})
+        >>> df
+        shape: (2, 1)
+        ┌────────┐
+        │ foo    │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │  hello │
+        │ world  │
+        │        │
+        └────────┘
+        >>> df.select(pl.col("foo").str.strip_chars_end())
+        shape: (2, 1)
+        ┌────────┐
+        │ foo    │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │  hello │
+        │ world  │
+        └────────┘
+
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so, unless that whitespace is
+        also included in the string.
+
+        >>> df.select(pl.col("foo").str.strip_chars_end("oldw "))
+        shape: (2, 1)
+        ┌───────┐
+        │ foo   │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │  he   │
+        │ world │
+        │       │
+        └───────┘
+
+        """
+        return wrap_expr(self._pyexpr.str_strip_chars_end(characters))
+
+    @deprecate_renamed_function("strip_chars_end", version="0.19.3")
     def rstrip(self, characters: str | None = None) -> Expr:
         r"""
         Remove trailing characters.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`Expr.strip_chars_end`.
 
         Parameters
         ----------
@@ -755,7 +860,7 @@ class ExprStringNameSpace:
         └───────┘
 
         """
-        return wrap_expr(self._pyexpr.str_rstrip(characters))
+        return wrap_expr(self._pyexpr.str_strip_chars_end(characters))
 
     def zfill(self, alignment: int) -> Expr:
         """

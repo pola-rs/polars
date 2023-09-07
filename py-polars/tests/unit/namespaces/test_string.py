@@ -208,38 +208,38 @@ def test_str_strip_suffix() -> None:
     assert_series_equal(s.str.strip_suffix("bar"), expected)
 
 
-def test_str_lstrip() -> None:
+def test_str_strip_chars_start() -> None:
     s = pl.Series([" hello ", "\t world"])
     expected = pl.Series(["hello ", "world"])
-    assert_series_equal(s.str.lstrip(), expected)
+    assert_series_equal(s.str.strip_chars_start(), expected)
 
     expected = pl.Series(["ello ", "world"])
-    assert_series_equal(s.str.lstrip().str.lstrip("h"), expected)
+    assert_series_equal(s.str.strip_chars_start().str.strip_chars_start("h"), expected)
 
     expected = pl.Series(["ello ", "\t world"])
-    assert_series_equal(s.str.lstrip("hw "), expected)
+    assert_series_equal(s.str.strip_chars_start("hw "), expected)
 
 
-def test_str_rstrip() -> None:
+def test_str_strip_chars_end() -> None:
     s = pl.Series([" hello ", "world\t "])
     expected = pl.Series([" hello", "world"])
-    assert_series_equal(s.str.rstrip(), expected)
+    assert_series_equal(s.str.strip_chars_end(), expected)
 
     expected = pl.Series([" hell", "world"])
-    assert_series_equal(s.str.rstrip().str.rstrip("o"), expected)
+    assert_series_equal(s.str.strip_chars_end().str.strip_chars_end("o"), expected)
 
     expected = pl.Series([" he", "wor"])
-    assert_series_equal(s.str.rstrip("odl \t"), expected)
+    assert_series_equal(s.str.strip_chars_end("odl \t"), expected)
 
 
 def test_str_strip_whitespace() -> None:
     s = pl.Series("a", ["trailing  ", "  leading", "  both  "])
 
     expected = pl.Series("a", ["trailing", "  leading", "  both"])
-    assert_series_equal(s.str.rstrip(), expected)
+    assert_series_equal(s.str.strip_chars_end(), expected)
 
     expected = pl.Series("a", ["trailing  ", "leading", "both  "])
-    assert_series_equal(s.str.lstrip(), expected)
+    assert_series_equal(s.str.strip_chars_start(), expected)
 
     expected = pl.Series("a", ["trailing", "leading", "both"])
     assert_series_equal(s.str.strip_chars(), expected)
@@ -873,8 +873,17 @@ def test_string_extract_groups_lazy_schema_10305() -> None:
     assert df.schema == {"candidate": pl.Utf8, "ref": pl.Utf8}
 
 
-def test_strip_deprecated() -> None:
+def test_strip_functions_deprecated() -> None:
     with pytest.deprecated_call():
         pl.col("a").str.strip()
     with pytest.deprecated_call():
+        pl.col("a").str.lstrip()
+    with pytest.deprecated_call():
+        pl.col("a").str.rstrip()
+
+    with pytest.deprecated_call():
         pl.Series(["a", "b", "c"]).str.strip()
+    with pytest.deprecated_call():
+        pl.Series(["a", "b", "c"]).str.lstrip()
+    with pytest.deprecated_call():
+        pl.Series(["a", "b", "c"]).str.rstrip()

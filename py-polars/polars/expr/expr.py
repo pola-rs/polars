@@ -643,7 +643,7 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     pl.all().reverse().map_alias(lambda c: c.rstrip("_reverse").lower())
+        ...     pl.all().reverse().map_alias(lambda c: c.strip_chars_end("_reverse").lower())
         ... )
         shape: (3, 4)
         ┌───────────┬───────────┬─────┬─────┐

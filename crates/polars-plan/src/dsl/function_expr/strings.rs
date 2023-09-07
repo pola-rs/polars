@@ -49,7 +49,6 @@ pub enum StringFunction {
         fillchar: char,
     },
     Lowercase,
-    LStrip(Option<String>),
     #[cfg(feature = "extract_jsonpath")]
     JsonExtract {
         dtype: Option<DataType>,
@@ -67,12 +66,14 @@ pub enum StringFunction {
         width: usize,
         fillchar: char,
     },
-    RStrip(Option<String>),
     Slice(i64, Option<u64>),
     StartsWith,
     StripChars(Option<String>),
+    StripCharsStart(Option<String>),
+    StripCharsEnd(Option<String>),
     StripPrefix(String),
     StripSuffix(String),
+    #[cfg(feature = "temporal")]
     Strptime(DataType, StrptimeOptions),
     #[cfg(feature = "dtype-decimal")]
     ToDecimal(usize),
@@ -115,10 +116,10 @@ impl StringFunction {
             Uppercase
             | Lowercase
             | StripChars(_)
+            | StripCharsStart(_)
+            | StripCharsEnd(_)
             | StripPrefix(_)
             | StripSuffix(_)
-            | LStrip(_)
-            | RStrip(_)
             | Slice(_, _) => mapper.with_same_dtype(),
             #[cfg(feature = "string_justify")]
             Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
@@ -148,20 +149,21 @@ impl Display for StringFunction {
             StringFunction::JsonExtract { .. } => "json_extract",
             #[cfg(feature = "string_justify")]
             StringFunction::LJust { .. } => "str.ljust",
-            StringFunction::LStrip(_) => "lstrip",
             StringFunction::Length => "str_lengths",
             StringFunction::Lowercase => "lowercase",
             StringFunction::NChars => "n_chars",
             #[cfg(feature = "string_justify")]
             StringFunction::RJust { .. } => "rjust",
-            StringFunction::RStrip(_) => "rstrip",
             #[cfg(feature = "regex")]
             StringFunction::Replace { .. } => "replace",
             StringFunction::Slice(_, _) => "str_slice",
             StringFunction::StartsWith { .. } => "starts_with",
             StringFunction::StripChars(_) => "strip_chars",
+            StringFunction::StripCharsStart(_) => "strip_chars_start",
+            StringFunction::StripCharsEnd(_) => "strip_chars_end",
             StringFunction::StripPrefix(_) => "strip_prefix",
             StringFunction::StripSuffix(_) => "strip_suffix",
+            #[cfg(feature = "temporal")]
             StringFunction::Strptime(_, _) => "strptime",
             #[cfg(feature = "nightly")]
             StringFunction::Titlecase => "titlecase",
@@ -364,7 +366,7 @@ pub(super) fn strip_suffix(s: &Series, suffix: &str) -> PolarsResult<Series> {
         .into_series())
 }
 
-pub(super) fn lstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
+pub(super) fn strip_chars_start(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
 
     if let Some(matches) = matches {
@@ -387,7 +389,7 @@ pub(super) fn lstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> 
     }
 }
 
-pub(super) fn rstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
+pub(super) fn strip_chars_end(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     if let Some(matches) = matches {
         if matches.chars().count() == 1 {

@@ -479,15 +479,19 @@ impl StringNameSpace {
     }
 
     /// Remove leading characters, or whitespace if matches is None.
-    pub fn lstrip(self, matches: Option<String>) -> Expr {
+    pub fn strip_chars_start(self, matches: Option<String>) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::LStrip(matches)))
+            .map_private(FunctionExpr::StringExpr(StringFunction::StripCharsStart(
+                matches,
+            )))
     }
 
-    /// Remove trailing characters, or whitespace if matches is None..
-    pub fn rstrip(self, matches: Option<String>) -> Expr {
+    /// Remove trailing characters, or whitespace if matches is None.
+    pub fn strip_chars_end(self, matches: Option<String>) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::RStrip(matches)))
+            .map_private(FunctionExpr::StringExpr(StringFunction::StripCharsEnd(
+                matches,
+            )))
     }
 
     /// Convert all characters to lowercase.

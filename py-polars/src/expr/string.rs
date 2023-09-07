@@ -67,20 +67,20 @@ impl PyExpr {
         self.inner.clone().str().strip_chars(matches).into()
     }
 
+    fn str_strip_chars_start(&self, matches: Option<String>) -> Self {
+        self.inner.clone().str().rstrip(matches).into()
+    }
+
+    fn str_strip_chars_end(&self, matches: Option<String>) -> Self {
+        self.inner.clone().str().strip_chars_end(matches).into()
+    }
+
     fn str_strip_prefix(&self, prefix: String) -> Self {
         self.inner.clone().str().strip_prefix(prefix).into()
     }
 
     fn str_strip_suffix(&self, suffix: String) -> Self {
         self.inner.clone().str().strip_suffix(suffix).into()
-    }
-
-    fn str_rstrip(&self, matches: Option<String>) -> Self {
-        self.inner.clone().str().rstrip(matches).into()
-    }
-
-    fn str_lstrip(&self, matches: Option<String>) -> Self {
-        self.inner.clone().str().lstrip(matches).into()
     }
 
     fn str_slice(&self, start: i64, length: Option<u64>) -> Self {
