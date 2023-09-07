@@ -3896,6 +3896,8 @@ class DataFrame:
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
+        The original order of the remaining rows is preserved.
+
         Parameters
         ----------
         predicate
@@ -4736,7 +4738,7 @@ class DataFrame:
         """
         Drop all rows that contain null values.
 
-        Returns a new DataFrame.
+        The original order of the remaining rows is preserved.
 
         Parameters
         ----------
@@ -5362,7 +5364,7 @@ class DataFrame:
         >>> # create an example dataframe
         >>> df = pl.DataFrame(
         ...     {
-        ...         "time": pl.date_range(
+        ...         "time": pl.datetime_range(
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
@@ -5467,7 +5469,7 @@ class DataFrame:
 
         >>> df = pl.DataFrame(
         ...     {
-        ...         "time": pl.date_range(
+        ...         "time": pl.datetime_range(
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
@@ -5863,6 +5865,9 @@ class DataFrame:
             Name(s) of the join columns in both DataFrames.
         how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
             Join strategy.
+
+            .. note::
+                A left join preserves the row order of the left DataFrame.
         left_on
             Name(s) of the left join column(s).
         right_on

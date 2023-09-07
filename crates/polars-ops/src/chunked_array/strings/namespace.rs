@@ -7,8 +7,9 @@ use polars_arrow::export::arrow::{self};
 use polars_arrow::kernels::string::*;
 #[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
-use polars_core::export::regex::{escape, Regex};
+use polars_core::export::regex::Regex;
 use polars_core::prelude::arity::try_binary_elementwise;
+use polars_utils::cache::FastFixedCache;
 
 use super::*;
 #[cfg(feature = "binary_encoding")]
@@ -153,7 +154,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         // note: benchmarking shows that the regex engine is actually
         // faster at finding literal matches than str::contains.
         // ref: https://github.com/pola-rs/polars/pull/6811
-        self.contains(escape(lit).as_str(), true)
+        self.contains(regex::escape(lit).as_str(), true)
     }
 
     /// Check if strings ends with a substring
@@ -318,20 +319,14 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             pat.len(), ca.len(),
         );
 
-        // Very simple cache: don't recompile the same regex for multiple values in a row.
-        // TODO: proper LRU cache with reasonable memory limit.
-        let mut reg = Regex::new("").unwrap();
-        let mut lastpat = "";
+        // A sqrt(n) regex cache is not too small, not too large.
+        let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
         let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
-
         for (opt_s, opt_pat) in ca.into_iter().zip(pat) {
             match (opt_s, opt_pat) {
                 (_, None) | (None, _) => builder.append_null(),
                 (Some(s), Some(pat)) => {
-                    if pat != lastpat {
-                        reg = Regex::new(pat)?;
-                        lastpat = pat;
-                    }
+                    let reg = reg_cache.get_or_insert_with(pat, |p| Regex::new(p).unwrap());
                     builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str()));
                 },
             }
@@ -368,16 +363,12 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             pat.len(), ca.len(),
         );
 
-        // Very simple cache: don't recompile the same regex for multiple values in a row.
-        // TODO: proper LRU cache with reasonable memory limit.
-        let mut reg = Regex::new("").unwrap();
-
+        // A sqrt(n) regex cache is not too small, not too large.
+        let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
         let op = move |opt_s: Option<&str>, opt_pat: Option<&str>| -> PolarsResult<Option<u32>> {
             match (opt_s, opt_pat) {
                 (Some(s), Some(pat)) => {
-                    if pat != reg.as_str() {
-                        reg = Regex::new(pat)?;
-                    }
+                    let reg = reg_cache.get_or_insert_with(pat, |p| Regex::new(p).unwrap());
                     Ok(Some(reg.find_iter(s).count() as u32))
                 },
                 _ => Ok(None),

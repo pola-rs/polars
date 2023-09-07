@@ -1396,11 +1396,59 @@ class Series:
         """
         Drop all null values.
 
-        Creates a new Series that copies data from this Series without null values.
+        The original order of the remaining elements is preserved.
+
+        See Also
+        --------
+        drop_nans
+
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To drop NaN values, use :func:`drop_nans`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1.0, None, 3.0, float("nan")])
+        >>> s.drop_nulls()
+        shape: (3,)
+        Series: '' [f64]
+        [
+                1.0
+                3.0
+                NaN
+        ]
+
         """
 
     def drop_nans(self) -> Series:
-        """Drop NaN values."""
+        """
+        Drop all floating point NaN values.
+
+        The original order of the remaining elements is preserved.
+
+        See Also
+        --------
+        drop_nulls
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To drop null values, use :func:`drop_nulls`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1.0, None, 3.0, float("nan")])
+        >>> s.drop_nans()
+        shape: (3,)
+        Series: '' [f64]
+        [
+                1.0
+                null
+                3.0
+        ]
+
+        """
 
     def to_frame(self, name: str | None = None) -> DataFrame:
         """
@@ -2815,6 +2863,8 @@ class Series:
     def filter(self, predicate: Series | list[bool]) -> Self:
         """
         Filter elements by a boolean mask.
+
+        The original order of the remaining elements is preserved.
 
         Parameters
         ----------

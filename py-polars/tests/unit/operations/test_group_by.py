@@ -499,7 +499,7 @@ def test_group_by_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) 
 def test_group_by_dynamic_lazy(every: str | timedelta, tzinfo: ZoneInfo | None) -> None:
     ldf = pl.LazyFrame(
         {
-            "time": pl.date_range(
+            "time": pl.datetime_range(
                 start=datetime(2021, 12, 16, tzinfo=tzinfo),
                 end=datetime(2021, 12, 16, 2, tzinfo=tzinfo),
                 interval="30m",
@@ -855,7 +855,7 @@ def test_groupby_deprecated() -> None:
 def test_groupby_rolling_deprecated() -> None:
     df = pl.DataFrame(
         {
-            "date": pl.date_range(
+            "date": pl.datetime_range(
                 datetime(2020, 1, 1), datetime(2020, 1, 5), eager=True
             ),
             "value": [1, 2, 3, 4, 5],
@@ -880,7 +880,7 @@ def test_groupby_rolling_deprecated() -> None:
 def test_groupby_dynamic_deprecated() -> None:
     df = pl.DataFrame(
         {
-            "date": pl.date_range(
+            "date": pl.datetime_range(
                 datetime(2020, 1, 1), datetime(2020, 1, 5), eager=True
             ),
             "value": [1, 2, 3, 4, 5],

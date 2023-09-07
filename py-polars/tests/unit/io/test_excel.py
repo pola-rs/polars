@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
 
@@ -40,6 +40,56 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
 
     assert_frame_equal(df["Sheet1"], expected1)
     assert_frame_equal(df["Sheet2"], expected2)
+
+
+def test_read_excel_all_sheets_openpyxl(excel_file_path: Path) -> None:
+    df = pl.read_excel(excel_file_path, sheet_id=0, engine="openpyxl")
+
+    expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
+    expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
+
+    assert_frame_equal(df["Sheet1"], expected1)
+    assert_frame_equal(df["Sheet2"], expected2)
+
+
+def test_basic_datatypes_openpyxl_read_excel() -> None:
+    df = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4, 5],
+            "fruits": ["banana", "banana", "apple", "apple", "banana"],
+            "floats": [1.1, 1.2, 1.3, 1.4, 1.5],
+            "datetime": [datetime(2023, 1, x) for x in range(1, 6)],
+            "nulls": [1, None, None, None, 1],
+        }
+    )
+    xls = BytesIO()
+    df.write_excel(xls)
+    # check if can be read as it was written
+    # we use openpyxl because type inference is better
+    df_by_default = pl.read_excel(xls, engine="openpyxl")
+    df_by_sheet_id = pl.read_excel(xls, sheet_id=1, engine="openpyxl")
+    df_by_sheet_name = pl.read_excel(xls, sheet_name="Sheet1", engine="openpyxl")
+
+    assert_frame_equal(df, df_by_default)
+    assert_frame_equal(df, df_by_sheet_id)
+    assert_frame_equal(df, df_by_sheet_name)
+
+
+def test_write_excel_bytes() -> None:
+    df = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4, 5],
+        }
+    )
+    excel_bytes = BytesIO()
+    df.write_excel(excel_bytes)
+    df_read = pl.read_excel(excel_bytes)
+    assert_frame_equal(df, df_read)
+
+
+def test_unsupported_engine() -> None:
+    with pytest.raises(NotImplementedError):
+        pl.read_excel(None, engine="foo")  # type: ignore[call-overload]
 
 
 def test_read_excel_all_sheets_with_sheet_name(excel_file_path: Path) -> None:

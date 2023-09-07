@@ -669,11 +669,17 @@ def _unpack_schema(
     ]
     if not column_names and n_expected:
         column_names = [f"column_{i}" for i in range(n_expected)]
-    lookup = {
-        col: name for col, name in zip_longest(column_names, lookup_names or []) if name
-    }
+    lookup = (
+        {
+            col: name
+            for col, name in zip_longest(column_names, lookup_names or [])
+            if name
+        }
+        if lookup_names
+        else None
+    )
     column_dtypes = {
-        lookup.get(col[0], col[0]): col[1]
+        lookup.get(col[0], col[0]) if lookup else col[0]: col[1]
         for col in (schema or [])
         if not isinstance(col, str) and col[1] is not None
     }

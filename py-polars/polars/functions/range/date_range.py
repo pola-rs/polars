@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import datetime
 from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
@@ -16,7 +17,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    from datetime import date, datetime, timedelta
+    from datetime import date, timedelta
     from typing import Literal
 
     from polars import Expr, Series
@@ -178,54 +179,34 @@ def date_range(
 
     Using ``timedelta`` object to specify the interval:
 
-    >>> from datetime import datetime, timedelta
+    >>> from datetime import timedelta
     >>> pl.date_range(
-    ...     datetime(1985, 1, 1),
-    ...     datetime(1985, 1, 10),
-    ...     timedelta(days=1, hours=12),
-    ...     time_unit="ms",
+    ...     date(1985, 1, 1),
+    ...     date(1985, 1, 10),
+    ...     timedelta(days=2),
     ...     eager=True,
     ... )
-    shape: (7,)
-    Series: 'date' [datetime[ms]]
+    shape: (5,)
+    Series: 'date' [date]
     [
-        1985-01-01 00:00:00
-        1985-01-02 12:00:00
-        1985-01-04 00:00:00
-        1985-01-05 12:00:00
-        1985-01-07 00:00:00
-        1985-01-08 12:00:00
-        1985-01-10 00:00:00
-    ]
-
-    Specifying a time zone:
-
-    >>> pl.date_range(
-    ...     datetime(2022, 1, 1),
-    ...     datetime(2022, 3, 1),
-    ...     "1mo",
-    ...     time_zone="America/New_York",
-    ...     eager=True,
-    ... )
-    shape: (3,)
-    Series: 'date' [datetime[μs, America/New_York]]
-    [
-        2022-01-01 00:00:00 EST
-        2022-02-01 00:00:00 EST
-        2022-03-01 00:00:00 EST
+        1985-01-01
+        1985-01-03
+        1985-01-05
+        1985-01-07
+        1985-01-09
     ]
 
     Combine with ``month_end`` to get the last day of the month:
 
     >>> pl.date_range(
-    ...     datetime(2022, 1, 1), datetime(2022, 3, 1), "1mo", eager=True
+    ...     date(2022, 1, 1), date(2022, 3, 1), "1mo", eager=True
     ... ).dt.month_end()
     shape: (3,)
-    Series: 'date' [datetime[μs]]
+    Series: 'date' [date]
     [
-        2022-01-31 00:00:00
-        2022-02-28 00:00:00
-        2022-03-31 00:00:00
+        2022-01-31
+        2022-02-28
+        2022-03-31
     ]
 
     """
@@ -238,6 +219,8 @@ def date_range(
     interval = parse_interval_argument(interval)
     if time_unit is None and "ns" in interval:
         time_unit = "ns"
+
+    _warn_for_deprecated_date_range_use(start, end, interval, time_unit, time_zone)
 
     start_pyexpr = parse_as_expression(start)
     end_pyexpr = parse_as_expression(end)
@@ -367,6 +350,8 @@ def date_ranges(
     if time_unit is None and "ns" in interval:
         time_unit = "ns"
 
+    _warn_for_deprecated_date_range_use(start, end, interval, time_unit, time_zone)
+
     start_pyexpr = parse_as_expression(start)
     end_pyexpr = parse_as_expression(end)
 
@@ -380,3 +365,27 @@ def date_ranges(
         return F.select(result).to_series()
 
     return result
+
+
+def _warn_for_deprecated_date_range_use(
+    start: date | datetime | IntoExpr,
+    end: date | datetime | IntoExpr,
+    interval: str,
+    time_unit: TimeUnit | None,
+    time_zone: str | None,
+) -> None:
+    # This check is not foolproof, but should catch most cases
+    if (
+        isinstance(start, datetime)
+        or isinstance(end, datetime)
+        or "s" in interval
+        or "h" in interval
+        or ("m" in interval and "mo" not in interval)
+        or time_unit is not None
+        or time_zone is not None
+    ):
+        issue_deprecation_warning(
+            "Creating Datetime ranges using `date_range(s)` is deprecated."
+            " Use `datetime_range(s)` instead.",
+            version="0.19.3",
+        )

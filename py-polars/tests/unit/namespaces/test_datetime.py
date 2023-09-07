@@ -288,7 +288,7 @@ def test_month_start_end_invalid() -> None:
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_base_utc_offset(time_unit: TimeUnit) -> None:
-    ser = pl.date_range(
+    ser = pl.datetime_range(
         datetime(2011, 12, 29),
         datetime(2012, 1, 1),
         "2d",
@@ -305,7 +305,7 @@ def test_base_utc_offset(time_unit: TimeUnit) -> None:
 
 
 def test_base_utc_offset_lazy_schema() -> None:
-    ser = pl.date_range(
+    ser = pl.datetime_range(
         datetime(2020, 10, 25),
         datetime(2020, 10, 26),
         time_zone="Europe/London",
@@ -321,7 +321,7 @@ def test_base_utc_offset_lazy_schema() -> None:
 
 
 def test_base_utc_offset_invalid() -> None:
-    ser = pl.date_range(datetime(2020, 10, 25), datetime(2020, 10, 26), eager=True)
+    ser = pl.datetime_range(datetime(2020, 10, 25), datetime(2020, 10, 26), eager=True)
     with pytest.raises(
         InvalidOperationError,
         match=r"`base_utc_offset` operation not supported for dtype `datetime\[μs\]` \(expected: time-zone-aware datetime\)",
@@ -331,7 +331,7 @@ def test_base_utc_offset_invalid() -> None:
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_dst_offset(time_unit: TimeUnit) -> None:
-    ser = pl.date_range(
+    ser = pl.datetime_range(
         datetime(2020, 10, 25),
         datetime(2020, 10, 26),
         time_zone="Europe/London",
@@ -343,7 +343,7 @@ def test_dst_offset(time_unit: TimeUnit) -> None:
 
 
 def test_dst_offset_lazy_schema() -> None:
-    ser = pl.date_range(
+    ser = pl.datetime_range(
         datetime(2020, 10, 25),
         datetime(2020, 10, 26),
         time_zone="Europe/London",
@@ -359,7 +359,7 @@ def test_dst_offset_lazy_schema() -> None:
 
 
 def test_dst_offset_invalid() -> None:
-    ser = pl.date_range(datetime(2020, 10, 25), datetime(2020, 10, 26), eager=True)
+    ser = pl.datetime_range(datetime(2020, 10, 25), datetime(2020, 10, 26), eager=True)
     with pytest.raises(
         InvalidOperationError,
         match=r"`dst_offset` operation not supported for dtype `datetime\[μs\]` \(expected: time-zone-aware datetime\)",
@@ -432,7 +432,7 @@ def test_truncate(
     every: str | timedelta,
 ) -> None:
     start, stop = datetime(2022, 1, 1), datetime(2022, 1, 2)
-    s = pl.date_range(
+    s = pl.datetime_range(
         start,
         stop,
         timedelta(minutes=30),
@@ -466,7 +466,7 @@ def test_round(
     every: str | timedelta,
 ) -> None:
     start, stop = datetime(2022, 1, 1), datetime(2022, 1, 2)
-    s = pl.date_range(
+    s = pl.datetime_range(
         start,
         stop,
         timedelta(minutes=30),
@@ -610,7 +610,7 @@ def test_combine_lazy_schema_date(time_unit: TimeUnit) -> None:
 
 
 def test_is_leap_year() -> None:
-    assert pl.date_range(
+    assert pl.datetime_range(
         datetime(1990, 1, 1), datetime(2004, 1, 1), "1y", eager=True
     ).dt.is_leap_year().to_list() == [
         False,
@@ -632,7 +632,7 @@ def test_is_leap_year() -> None:
 
 
 def test_quarter() -> None:
-    assert pl.date_range(
+    assert pl.datetime_range(
         datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo", eager=True
     ).dt.quarter().to_list() == [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]
 
@@ -640,7 +640,7 @@ def test_quarter() -> None:
 def test_date_offset() -> None:
     df = pl.DataFrame(
         {
-            "dates": pl.date_range(
+            "dates": pl.datetime_range(
                 datetime(2000, 1, 1), datetime(2020, 1, 1), "1y", eager=True
             )
         }

@@ -72,8 +72,8 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
 
 impl<T, A> From<A> for ChunkedArray<T>
 where
-    T: PolarsDataType,
-    A: StaticallyMatchesPolarsType<T> + Array,
+    T: PolarsDataType<Array = A>,
+    A: Array,
 {
     fn from(arr: A) -> Self {
         Self::with_chunk("", arr)
@@ -86,7 +86,8 @@ where
 {
     pub fn with_chunk<A>(name: &str, arr: A) -> Self
     where
-        A: StaticallyMatchesPolarsType<T> + Array,
+        A: Array,
+        T: PolarsDataType<Array = A>,
     {
         unsafe { Self::from_chunks(name, vec![Box::new(arr)]) }
     }
@@ -94,7 +95,8 @@ where
     pub fn from_chunk_iter<I>(name: &str, iter: I) -> Self
     where
         I: IntoIterator,
-        <I as IntoIterator>::Item: StaticallyMatchesPolarsType<T> + Array,
+        T: PolarsDataType<Array = <I as IntoIterator>::Item>,
+        <I as IntoIterator>::Item: Array,
     {
         let chunks = iter
             .into_iter()
@@ -106,7 +108,8 @@ where
     pub fn try_from_chunk_iter<I, A, E>(name: &str, iter: I) -> Result<Self, E>
     where
         I: IntoIterator<Item = Result<A, E>>,
-        A: StaticallyMatchesPolarsType<T> + Array,
+        T: PolarsDataType<Array = A>,
+        A: Array,
     {
         let chunks: Result<_, _> = iter
             .into_iter()

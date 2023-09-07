@@ -1763,7 +1763,7 @@ def test_repeat_by(
 
 
 def test_join_dates() -> None:
-    dts_in = pl.date_range(
+    dts_in = pl.datetime_range(
         datetime(2021, 6, 24),
         datetime(2021, 6, 24, 10, 0, 0),
         interval=timedelta(hours=1),
@@ -3335,21 +3335,21 @@ def test_glimpse(capsys: Any) -> None:
             "c": [True, False, True],
             "d": [None, "b", "c"],
             "e": ["usd", "eur", None],
-            "f": pl.date_range(
+            "f": pl.datetime_range(
                 datetime(2023, 1, 1),
                 datetime(2023, 1, 3),
                 "1d",
                 time_unit="us",
                 eager=True,
             ),
-            "g": pl.date_range(
+            "g": pl.datetime_range(
                 datetime(2023, 1, 1),
                 datetime(2023, 1, 3),
                 "1d",
                 time_unit="ms",
                 eager=True,
             ),
-            "h": pl.date_range(
+            "h": pl.datetime_range(
                 datetime(2023, 1, 1),
                 datetime(2023, 1, 3),
                 "1d",
