@@ -20,14 +20,8 @@ def iceberg_path() -> str:
     # the test table into /tmp/iceberg/t1/
     Path("/tmp/iceberg").mkdir(parents=True, exist_ok=True)
     current_path = os.path.dirname(__file__)
-    print("path:")
-    print(f"{current_path}/files/iceberg-table")
-    print("dir:")
-    print(os.listdir(f"{current_path}/files/iceberg-table"))
     with contextlib.suppress(FileExistsError):
         os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")
-    print("linked:")
-    print(os.listdir("/tmp/iceberg/t1"))
 
     return "file:///tmp/iceberg/t1/metadata/00001-55cdf97b-255c-4983-b9f3-0e468fadfe9e.metadata.json"
 
