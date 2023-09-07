@@ -580,7 +580,7 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_strip(characters))
 
     def strip_prefix(self, prefix: str) -> Expr:
-        r"""
+        """
         Remove prefix.
 
         Parameters
@@ -618,7 +618,7 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_strip_prefix(prefix))
 
     def strip_suffix(self, suffix: str) -> Expr:
-        r"""
+        """
         Remove suffix.
 
         Parameters
