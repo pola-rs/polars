@@ -1274,7 +1274,7 @@ class DataFrame:
         self, nan_as_null: bool = False, allow_copy: bool = True
     ) -> PolarsDataFrame:
         """
-        Convert to a DataFrame object implementing the DataFrame interchange protocol.
+        Convert to a dataframe object implementing the dataframe interchange protocol.
 
         Parameters
         ----------
