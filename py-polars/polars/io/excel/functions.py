@@ -269,7 +269,7 @@ def _initialise_excel_parser(
             raise ImportError(
                 "openpyxl is not installed\n\nPlease run `pip install openpyxl`"
             ) from None
-        parser: openpyxl.Workbook = openpyxl.load_workbook(source)
+        parser: openpyxl.Workbook = openpyxl.load_workbook(source, data_only=True)
         sheets = [
             {"index": i + 1, "name": sheet.title} for i, sheet in enumerate(parser)
         ]

@@ -65,7 +65,7 @@ def test_read_excel_all_sheets_openpyxl(excel_file_path: Path) -> None:
         {
             "cardinality": [1, 3, 15, 30, 150, 300],
             "rows_by_key": [0.05059, 0.04478, 0.04414, 0.05245, 0.05395, 0.05677],
-            "iter groups": [0.04806, 0.04223, 0.04774, 0.04864, 0.0572, 0.06945],
+            "iter_groups": [0.04806, 0.04223, 0.04774, 0.04864, 0.0572, 0.06945],
         }
     )
     assert_frame_equal(frames["test1"], expected1)
