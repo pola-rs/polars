@@ -179,6 +179,7 @@ docs-selection = [
   "semi_anti_join",
   "partition_by",
   "algorithm_join",
+  "algorithm_group_by",
 ]
 
 # Cloud support.
