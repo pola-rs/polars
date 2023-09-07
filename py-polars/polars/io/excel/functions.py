@@ -208,48 +208,19 @@ def read_excel(
             f"cannot specify both `sheet_name` ({sheet_name!r}) and `sheet_id` ({sheet_id!r})"
         )
 
-    if isinstance(source, (str, Path)):
-        source = normalise_filepath(source)
-
     if xlsx2csv_options is None:
         xlsx2csv_options = {}
-
     if read_csv_options is None:
         read_csv_options = {"truncate_ragged_lines": True}
     elif "truncate_ragged_lines" not in read_csv_options:
         read_csv_options["truncate_ragged_lines"] = True
 
-    # make mypy happy
-    reader_fn: Any
+    # establish the reading function, parser, and available worksheets
+    reader_fn, parser, worksheets = _initialise_excel_parser(
+        engine, source, xlsx2csv_options
+    )
 
-    # do conditions imports
-    if engine == "openpyxl":
-        try:
-            import openpyxl
-        except ImportError:
-            raise ImportError(
-                "openpyxl is not installed\n\nPlease run `pip install openpyxl`"
-            ) from None
-        parser: openpyxl.Workbook = openpyxl.load_workbook(source)
-        sheets = [
-            {"index": i + 1, "name": sheet.title} for i, sheet in enumerate(parser)
-        ]
-        reader_fn = _read_excel_sheet_openpyxl
-
-    elif engine == "xlsx2csv" or engine is None:  # default
-        try:
-            import xlsx2csv
-        except ImportError:
-            raise ModuleNotFoundError(
-                "xlsx2csv is not installed\n\nPlease run: `pip install xlsx2csv`"
-            ) from None
-        # convert sheets to csv
-        parser: xlsx2csv.Xlsx2csv = xlsx2csv.Xlsx2csv(source, **xlsx2csv_options)  # type: ignore[no-redef]
-        sheets = parser.workbook.sheets
-        reader_fn = _read_excel_sheet_xlsx2csv
-    else:
-        raise NotImplementedError(f"Cannot find the engine `{engine}`")
-
+    # use the parser to read data from one or more sheets
     if (
         sheet_id == 0
         or isinstance(sheet_id, Sequence)
@@ -266,7 +237,7 @@ def read_excel(
                 read_csv_options=read_csv_options,
                 raise_if_empty=raise_if_empty,
             )
-            for sheet in sheets
+            for sheet in worksheets
             if sheet_id == 0 or sheet["index"] in sheet_ids or sheet["name"] in sheet_names  # type: ignore[operator]
         }
     else:
@@ -282,11 +253,49 @@ def read_excel(
         )
 
 
-def _drop_null_columns(df: pl.DataFrame) -> pl.DataFrame:
-    # drop all-null cols with no name
+def _initialise_excel_parser(
+    engine: str | None,
+    source: str | BytesIO | Path | BinaryIO | bytes,
+    xlsx2csv_options: dict[str, Any],
+) -> tuple[Any, Any, list[dict[str, Any]]]:
+    """Instantiate the indicated Excel parser and establish related properties."""
+    if isinstance(source, (str, Path)):
+        source = normalise_filepath(source)
+
+    if engine == "openpyxl":
+        try:
+            import openpyxl
+        except ImportError:
+            raise ImportError(
+                "openpyxl is not installed\n\nPlease run `pip install openpyxl`"
+            ) from None
+        parser: openpyxl.Workbook = openpyxl.load_workbook(source)
+        sheets = [
+            {"index": i + 1, "name": sheet.title} for i, sheet in enumerate(parser)
+        ]
+        return _read_excel_sheet_openpyxl, parser, sheets
+
+    elif engine == "xlsx2csv" or engine is None:  # default
+        try:
+            import xlsx2csv
+        except ImportError:
+            raise ModuleNotFoundError(
+                "xlsx2csv is not installed\n\nPlease run: `pip install xlsx2csv`"
+            ) from None
+        parser: xlsx2csv.Xlsx2csv = xlsx2csv.Xlsx2csv(source, **xlsx2csv_options)  # type: ignore[no-redef]
+        sheets = parser.workbook.sheets
+        return _read_excel_sheet_xlsx2csv, parser, sheets
+
+    raise NotImplementedError(f"Unrecognised engine: {engine!r}")
+
+
+def _drop_unnamed_null_columns(df: pl.DataFrame) -> pl.DataFrame:
+    """If DataFrame contains unnamed columns that contain only nulls, drop them."""
     if "" in df.columns:
         null_cols = []
         for col_name in df.columns:
+            # note that if multiple unnamed columns are found then all but
+            # the first one will be ones will be named as "_duplicated_{n}"
             if col_name == "" or re.match(r"_duplicated_\d+$", col_name):
                 if df[col_name].null_count() == len(df):
                     null_cols.append(col_name)
@@ -302,6 +311,7 @@ def _read_excel_sheet_openpyxl(
     read_csv_options: dict[str, Any] | None,
     raise_if_empty: bool,
 ) -> pl.DataFrame:
+    """Use the 'openpyxl' library to read data from the given worksheet."""
     # read requested sheet if provided on kwargs, otherwise read active sheet
     if sheet_name is not None:
         ws = parser[sheet_name]
@@ -333,12 +343,12 @@ def _read_excel_sheet_openpyxl(
         for name, column_data in zip(header, zip(*rows_iter))
     ]
     df = pl.DataFrame({s.name: s for s in series_data if s.name})
-    if raise_if_empty and len(df) == 0:
+    if raise_if_empty and len(df) == 0 and len(df.columns) == 0:
         raise NoDataError(
             "Empty Excel sheet; if you want to read this as "
             "an empty DataFrame, set `raise_if_empty=False`"
         )
-    return _drop_null_columns(df)
+    return _drop_unnamed_null_columns(df)
 
 
 def _read_excel_sheet_xlsx2csv(
@@ -348,6 +358,7 @@ def _read_excel_sheet_xlsx2csv(
     read_csv_options: dict[str, Any],
     raise_if_empty: bool,
 ) -> pl.DataFrame:
+    """Use the 'xlsx2csv' library to read data from the given worksheet."""
     # parse sheet data into the given buffer
     csv_buffer = StringIO()
     parser.convert(outfile=csv_buffer, sheetid=sheet_id, sheetname=sheet_name)
@@ -364,4 +375,4 @@ def _read_excel_sheet_xlsx2csv(
     # otherwise rewind the buffer and parse as csv
     csv_buffer.seek(0)
     df = read_csv(csv_buffer, **read_csv_options)
-    return _drop_null_columns(df)
+    return _drop_unnamed_null_columns(df)
