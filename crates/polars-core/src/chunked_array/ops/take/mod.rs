@@ -21,40 +21,23 @@ mod traits;
 #[cfg(feature = "chunked_ids")]
 pub(crate) use take_chunked::*;
 
-macro_rules! take_iter_n_chunks {
-    ($ca:expr, $indices:expr) => {{
-        let taker = $ca.take_rand();
-        $indices.into_iter().map(|idx| taker.get(idx)).collect()
-    }};
-}
-
-macro_rules! take_opt_iter_n_chunks {
-    ($ca:expr, $indices:expr) => {{
-        let taker = $ca.take_rand();
-        $indices
-            .into_iter()
-            .map(|opt_idx| opt_idx.and_then(|idx| taker.get(idx)))
-            .collect()
-    }};
-}
-
 macro_rules! take_iter_n_chunks_unchecked {
-    ($ca:expr, $indices:expr) => {{
+    ($cat:ty, $ca:expr, $indices:expr) => {{
         let taker = $ca.take_rand();
         $indices
             .into_iter()
             .map(|idx| taker.get_unchecked(idx))
-            .collect()
+            .collect::<$cat>()
     }};
 }
 
 macro_rules! take_opt_iter_n_chunks_unchecked {
-    ($ca:expr, $indices:expr) => {{
+    ($cat:ty, $ca:expr, $indices:expr) => {{
         let taker = $ca.take_rand();
         $indices
             .into_iter()
-            .map(|opt_idx| opt_idx.and_then(|idx| taker.get_unchecked(idx)))
-            .collect()
+            .map(|opt_idx| taker.get_unchecked(opt_idx?))
+            .collect::<$cat>()
     }};
 }
 
@@ -69,7 +52,8 @@ where
 }
 
 impl<T: PolarsDataType> ChunkTake for ChunkedArray<T>
-where ChunkedArray<T>: ChunkTakeUnchecked
+where
+    ChunkedArray<T>: ChunkTakeUnchecked,
 {
     fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
     where
@@ -168,7 +152,6 @@ where
             },
         }
     }
-
 }
 
 impl ChunkTakeUnchecked for BooleanChunked {
@@ -188,17 +171,19 @@ impl ChunkTakeUnchecked for BooleanChunked {
                     1 => take::take_unchecked(chunks.next().unwrap(), array),
                     _ => {
                         return if !array.has_validity() {
-                            let iter = array.values().iter().map(|i| *i as usize);
-                            let mut ca: BooleanChunked = take_iter_n_chunks!(self, iter);
-                            ca.rename(self.name());
-                            ca
+                            let taker = self.take_rand();
+                            array
+                                .values_iter()
+                                .map(|i| taker.get(*i as usize))
+                                .collect::<Self>()
+                                .with_name(self.name())
                         } else {
-                            let iter = array
+                            let taker = self.take_rand();
+                            array
                                 .into_iter()
-                                .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
-                            let mut ca: BooleanChunked = take_opt_iter_n_chunks!(self, iter);
-                            ca.rename(self.name());
-                            ca
+                                .map(|opt_idx| taker.get(*(opt_idx?) as usize))
+                                .collect::<Self>()
+                                .with_name(self.name())
                         }
                     },
                 };
@@ -214,9 +199,8 @@ impl ChunkTakeUnchecked for BooleanChunked {
                     },
                     (_, 1) => take_bool_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef,
                     _ => {
-                        let mut ca: BooleanChunked = take_iter_n_chunks_unchecked!(self, iter);
-                        ca.rename(self.name());
-                        return ca;
+                        return take_iter_n_chunks_unchecked!(Self, self, iter)
+                            .with_name(self.name());
                     },
                 };
                 self.finish_from_array(array)
@@ -234,7 +218,8 @@ impl ChunkTakeUnchecked for BooleanChunked {
                         take_bool_opt_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
                     },
                     _ => {
-                        let mut ca: BooleanChunked = take_opt_iter_n_chunks_unchecked!(self, iter);
+                        let mut ca: BooleanChunked =
+                            take_opt_iter_n_chunks_unchecked!(Self, self, iter);
                         ca.rename(self.name());
                         return ca;
                     },
@@ -274,17 +259,13 @@ impl ChunkTakeUnchecked for BinaryChunked {
                     _ => {
                         return if !array.has_validity() {
                             let iter = array.values().iter().map(|i| *i as usize);
-                            let mut ca: BinaryChunked = take_iter_n_chunks_unchecked!(self, iter);
-                            ca.rename(self.name());
-                            ca
+                            take_iter_n_chunks_unchecked!(Self, self, iter).with_name(self.name())
                         } else {
                             let iter = array
                                 .into_iter()
                                 .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
-                            let mut ca: BinaryChunked =
-                                take_opt_iter_n_chunks_unchecked!(self, iter);
-                            ca.rename(self.name());
-                            ca
+                            take_opt_iter_n_chunks_unchecked!(Self, self, iter)
+                                .with_name(self.name())
                         }
                     },
                 };
@@ -297,9 +278,8 @@ impl ChunkTakeUnchecked for BinaryChunked {
                     },
                     (_, 1) => take_binary_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef,
                     _ => {
-                        let mut ca: BinaryChunked = take_iter_n_chunks_unchecked!(self, iter);
-                        ca.rename(self.name());
-                        return ca;
+                        return take_iter_n_chunks_unchecked!(Self, self, iter)
+                            .with_name(self.name());
                     },
                 };
                 self.finish_from_array(array)
@@ -314,9 +294,8 @@ impl ChunkTakeUnchecked for BinaryChunked {
                         take_binary_opt_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
                     },
                     _ => {
-                        let mut ca: BinaryChunked = take_opt_iter_n_chunks_unchecked!(self, iter);
-                        ca.rename(self.name());
-                        return ca;
+                        return take_opt_iter_n_chunks_unchecked!(Self, self, iter)
+                            .with_name(self.name());
                     },
                 };
                 self.finish_from_array(array)
@@ -352,15 +331,15 @@ impl ChunkTakeUnchecked for ListChunked {
                     _ => {
                         if !array.has_validity() {
                             let iter = array.values().iter().map(|i| *i as usize);
-                            let mut ca: ListChunked =
-                                take_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
+                            let mut ca =
+                                take_iter_n_chunks_unchecked!(Self, ca_self.as_ref(), iter);
                             ca.chunks.pop().unwrap()
                         } else {
                             let iter = array
                                 .into_iter()
                                 .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
-                            let mut ca: ListChunked =
-                                take_opt_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
+                            let mut ca =
+                                take_opt_iter_n_chunks_unchecked!(Self, ca_self.as_ref(), iter);
                             ca.chunks.pop().unwrap()
                         }
                     },
@@ -373,7 +352,7 @@ impl ChunkTakeUnchecked for ListChunked {
                     let idx: NoNull<IdxCa> = iter.map(|v| v as IdxSize).collect();
                     ca_self.take_unchecked((&idx.into_inner()).into())
                 } else {
-                    let mut ca: ListChunked = take_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
+                    let mut ca = take_iter_n_chunks_unchecked!(Self, ca_self.as_ref(), iter);
                     self.finish_from_array(ca.chunks.pop().unwrap())
                 }
             },
@@ -382,8 +361,7 @@ impl ChunkTakeUnchecked for ListChunked {
                     let idx: IdxCa = iter.map(|v| v.map(|v| v as IdxSize)).collect();
                     ca_self.take_unchecked((&idx).into())
                 } else {
-                    let mut ca: ListChunked =
-                        take_opt_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
+                    let mut ca = take_opt_iter_n_chunks_unchecked!(Self, ca_self.as_ref(), iter);
                     self.finish_from_array(ca.chunks.pop().unwrap())
                 }
             },
