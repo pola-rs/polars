@@ -75,7 +75,6 @@ impl_traits!(BinaryTakeRandom<'_>);
 impl_traits!(BinaryTakeRandomSingleChunk<'_>);
 impl_traits!(BoolTakeRandom<'_>);
 impl_traits!(BoolTakeRandomSingleChunk<'_>);
-impl_traits!(NumTakeRandomChunked<'_, T>, T);
 
 impl<'a> PartialEqInner for ListTakeRandomSingleChunk<'a> {
     unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
@@ -107,6 +106,15 @@ where
     }
 }
 
+impl<'a, T: PolarsDataType> PartialEqInner for NumTakeRandomChunked<'a, T>
+where
+    T::Physical<'a>: PartialEq,
+{
+    unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
+        self.get_unchecked(idx_a) == self.get_unchecked(idx_b)
+    }
+}
+
 /// Create a type that implements PartialEqInner
 pub(crate) trait IntoPartialEqInner<'a> {
     /// Create a type that implements `TakeRandom`.
@@ -130,7 +138,7 @@ where
                 Box::new(NumTakeRandomSingleChunk::<T> { arr })
             }
         } else {
-            let t = NumTakeRandomChunked::<'_, T::Native> {
+            let t = NumTakeRandomChunked::<T> {
                 chunks: chunks.collect(),
                 chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
             };
@@ -261,6 +269,17 @@ where
     }
 }
 
+impl<'a, T: PolarsDataType> PartialOrdInner for NumTakeRandomChunked<'a, T>
+where
+    T::Physical<'a>: PartialOrd,
+{
+    unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
+        let a = self.get_unchecked(idx_a);
+        let b = self.get_unchecked(idx_b);
+        a.partial_cmp(&b).unwrap_or_else(|| fallback(a))
+    }
+}
+
 /// Create a type that implements PartialOrdInner
 pub(crate) trait IntoPartialOrdInner<'a> {
     /// Create a type that implements `TakeRandom`.
@@ -283,7 +302,7 @@ where
                 Box::new(NumTakeRandomSingleChunk::<T> { arr })
             }
         } else {
-            let t = NumTakeRandomChunked::<'_, T::Native> {
+            let t = NumTakeRandomChunked::<T> {
                 chunks: chunks.collect(),
                 chunk_lens: self.chunks.iter().map(|a| a.len() as IdxSize).collect(),
             };

@@ -151,7 +151,7 @@ where
     type TakeRandom = TakeRandBranch3<
         NumTakeRandomCont<'a, T>,
         NumTakeRandomSingleChunk<'a, T>,
-        NumTakeRandomChunked<'a, T::Native>,
+        NumTakeRandomChunked<'a, T>,
     >;
 
     #[inline]
@@ -373,17 +373,17 @@ impl<'a> IntoTakeRandom<'a> for &'a ListChunked {
 
 pub struct NumTakeRandomChunked<'a, T>
 where
-    T: NumericNative,
+    T: PolarsDataType,
 {
-    pub(crate) chunks: Vec<&'a PrimitiveArray<T>>,
+    pub(crate) chunks: Vec<&'a T::Array>,
     pub(crate) chunk_lens: Vec<IdxSize>,
 }
 
 impl<'a, T> TakeRandom for NumTakeRandomChunked<'a, T>
 where
-    T: NumericNative,
+    T: PolarsDataType,
 {
-    type Item = T;
+    type Item = T::Physical<'a>;
 
     #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {

@@ -12,7 +12,7 @@ use crate::prelude::{
 type TakeCats<'a> = TakeRandBranch3<
     NumTakeRandomCont<'a, UInt32Type>,
     NumTakeRandomSingleChunk<'a, UInt32Type>,
-    NumTakeRandomChunked<'a, u32>,
+    NumTakeRandomChunked<'a, UInt32Type>,
 >;
 
 pub(crate) struct CategoricalTakeRandomLocal<'a> {
