@@ -82,7 +82,7 @@ def time_range(
         If omitted, defaults to ``time(23,59,59,999999)``.
     interval
         Interval of the range periods, specified as a Python ``timedelta`` object
-        or a Polars duration string language (see "Notes" section below).
+        or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     eager
@@ -235,7 +235,7 @@ def time_ranges(
         If omitted, defaults to ``time(23, 59, 59, 999999)``.
     interval
         Interval of the range periods, specified as a Python ``timedelta`` object
-        or a Polars duration string language (see "Notes" section below).
+        or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     eager

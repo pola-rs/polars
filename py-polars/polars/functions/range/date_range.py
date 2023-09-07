@@ -93,7 +93,7 @@ def date_range(
         Upper bound of the date range.
     interval
         Interval of the range periods, specified as a Python ``timedelta`` object
-        or a Polars duration string language (see "Notes" section below).
+        or using the Polars duration string language (see "Notes" section below).
 
         To create a month-end date series, combine with :meth:`Expr.dt.month_end` (see
         "Examples" section below).
@@ -292,7 +292,7 @@ def date_ranges(
         Upper bound of the date range.
     interval
         Interval of the range periods, specified as a Python ``timedelta`` object
-        or a Polars duration string language (see "Notes" section below).
+        or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}

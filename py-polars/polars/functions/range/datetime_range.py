@@ -82,7 +82,7 @@ def datetime_range(
         Upper bound of the datetime range.
     interval
         Interval of the range periods, specified as a Python ``timedelta`` object
-        or a Polars duration string language (see "Notes" section below).
+        or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
@@ -260,7 +260,7 @@ def datetime_ranges(
         Upper bound of the datetime range.
     interval
         Interval of the range periods, specified as a Python ``timedelta`` object
-        or a Polars duration string language (see "Notes" section below).
+        or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
