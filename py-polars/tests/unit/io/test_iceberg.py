@@ -15,10 +15,7 @@ def iceberg_path() -> str:
     # Iceberg requires absolute paths, so we'll symlink
     # the test table into /tmp/iceberg/t1/
     Path("/tmp/iceberg").mkdir(parents=True, exist_ok=True)
-    current_path = os.path.abspath(os.path.dirname(__file__))
-
-    print(os.listdir(f"{current_path}/files/iceberg-table"))
-    print(os.listdir(f"{current_path}/files/iceberg-table/metadata"))
+    current_path = Path(__file__).parent.resolve()
 
     with contextlib.suppress(FileExistsError):
         os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")
