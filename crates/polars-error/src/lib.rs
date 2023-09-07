@@ -55,6 +55,8 @@ pub enum PolarsError {
     Io(#[from] io::Error),
     #[error("no data: {0}")]
     NoData(ErrString),
+    #[error("out of bounds: {0}")]
+    OutOfBounds(ErrString),
     #[error("field not found: {0}")]
     SchemaFieldNotFound(ErrString),
     #[error("data types don't match: {0}")]
@@ -95,6 +97,7 @@ impl PolarsError {
             InvalidOperation(msg) => InvalidOperation(func(msg).into()),
             Io(err) => ComputeError(func(&format!("IO: {err}")).into()),
             NoData(msg) => NoData(func(msg).into()),
+            OutOfBounds(msg) => OutOfBounds(func(msg).into()),
             SchemaFieldNotFound(msg) => SchemaFieldNotFound(func(msg).into()),
             SchemaMismatch(msg) => SchemaMismatch(func(msg).into()),
             ShapeMismatch(msg) => ShapeMismatch(func(msg).into()),

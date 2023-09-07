@@ -4,7 +4,7 @@ use std::io::Error;
 use polars::prelude::PolarsError;
 use polars_core::error::ArrowError;
 use pyo3::create_exception;
-use pyo3::exceptions::{PyException, PyIOError, PyRuntimeError};
+use pyo3::exceptions::{PyException, PyIOError, PyIndexError, PyRuntimeError};
 use pyo3::prelude::*;
 use thiserror::Error;
 
@@ -40,6 +40,7 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                 },
                 PolarsError::Io(err) => PyIOError::new_err(err.to_string()),
                 PolarsError::NoData(err) => NoDataError::new_err(err.to_string()),
+                PolarsError::OutOfBounds(err) => PyIndexError::new_err(err.to_string()),
                 PolarsError::SchemaFieldNotFound(name) => {
                     SchemaFieldNotFoundError::new_err(name.to_string())
                 },

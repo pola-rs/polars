@@ -188,7 +188,11 @@ macro_rules! get_any_value {
     ($self:ident, $index:expr) => {{
         let (chunk_idx, idx) = $self.index_to_chunked_index($index);
         let arr = &*$self.chunks[chunk_idx];
-        polars_ensure!(idx < arr.len(), oob = idx, arr.len());
+        if !(idx < arr.len()) {
+            return Err(PolarsError::OutOfBounds(
+                format!("index out of bounds: index: {}, len: {}", idx, arr.len()).into(),
+            ));
+        }
         // SAFETY
         // bounds are checked
         Ok(unsafe { arr_to_any_value(arr, idx, $self.dtype()) })

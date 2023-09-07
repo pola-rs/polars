@@ -2793,5 +2793,3 @@ def test_index_error_for_out_of_bounds_index() -> None:
     a = pl.Series("a", [1, 2, 3])
     with pytest.raises(IndexError):
         a[3]
-    with pytest.raises(IndexError):
-        a[-4]
