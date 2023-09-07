@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from io import BytesIO
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import pytest
 
@@ -25,31 +25,55 @@ def empty_excel_file_path(io_files_path: Path) -> Path:
     return io_files_path / "empty.xlsx"
 
 
-def test_read_excel(excel_file_path: Path) -> None:
-    df = pl.read_excel(excel_file_path, sheet_name="Sheet1", sheet_id=None)
+@pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl"])
+def test_read_excel(
+    excel_file_path: Path, engine: Literal["xlsx2csv", "openpyxl"]
+) -> None:
+    df = pl.read_excel(excel_file_path, sheet_name="test1", sheet_id=None)
 
     expected = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
     assert_frame_equal(df, expected)
 
 
-def test_read_excel_all_sheets(excel_file_path: Path) -> None:
-    df = pl.read_excel(excel_file_path, sheet_id=0)
+@pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl"])
+def test_read_excel_multi_sheets(
+    excel_file_path: Path, engine: Literal["xlsx2csv", "openpyxl"]
+) -> None:
+    frames_by_id = pl.read_excel(
+        excel_file_path, sheet_id=[1, 2], sheet_name=None, engine=engine
+    )
+    frames_by_name = pl.read_excel(
+        excel_file_path, sheet_id=None, sheet_name=["test1", "test2"], engine=engine
+    )
+    for frames in (frames_by_id, frames_by_name):
+        assert len(frames) == 2
 
-    expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
-    expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
+        expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
+        expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
 
-    assert_frame_equal(df["Sheet1"], expected1)
-    assert_frame_equal(df["Sheet2"], expected2)
+        assert_frame_equal(frames["test1"], expected1)
+        assert_frame_equal(frames["test2"], expected2)
 
 
 def test_read_excel_all_sheets_openpyxl(excel_file_path: Path) -> None:
-    df = pl.read_excel(excel_file_path, sheet_id=0, engine="openpyxl")
+    frames = pl.read_excel(excel_file_path, sheet_id=0, engine="openpyxl")
+    assert len(frames) == 4
 
     expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
     expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
+    expected3 = pl.DataFrame(
+        {
+            "cardinality": [1, 3, 15, 30, 150, 300],
+            "rows_by_key": [0.05059, 0.04478, 0.04414, 0.05245, 0.05395, 0.05677],
+            "iter_groups": [0.04806, 0.04223, 0.04774, 0.04864, 0.0572, 0.06945],
+        }
+    )
+    assert_frame_equal(frames["test1"], expected1)
+    assert_frame_equal(frames["test2"], expected2)
+    assert_frame_equal(frames["test3"], expected3)
 
-    assert_frame_equal(df["Sheet1"], expected1)
-    assert_frame_equal(df["Sheet2"], expected2)
+    # TODO: trim trailing all-null rows?
+    assert_frame_equal(frames["test4"].drop_nulls(), expected3)
 
 
 def test_basic_datatypes_openpyxl_read_excel() -> None:
@@ -63,7 +87,8 @@ def test_basic_datatypes_openpyxl_read_excel() -> None:
         }
     )
     xls = BytesIO()
-    df.write_excel(xls)
+    df.write_excel(xls, position="C5")
+
     # check if can be read as it was written
     # we use openpyxl because type inference is better
     df_by_default = pl.read_excel(xls, engine="openpyxl")
