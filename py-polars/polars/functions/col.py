@@ -28,7 +28,8 @@ class ColumnFactory:
     through attribute lookup. For example ``col.foo`` creates an expression equal to
     ``col("foo")``.
     See the :func:`__getattr__` method for further documentation.
-
+    Similarly, ``col[foo]`` creates an expression equal to ``col("foo")``.
+    See the :func:`__getitem__` method for further documentation.
     Notes
     -----
     The function call syntax is considered the idiomatic way of constructing a column
@@ -256,6 +257,41 @@ class ColumnFactory:
 
         """
         return wrap_expr(plr.col(name))
+
+    def __getitem__(self, name: str) -> Expr:
+        """
+        Create a column expression using item syntax.
+
+        Note that this syntax does not support passing data types or multiple column
+        names.
+
+        Parameters
+        ----------
+        name
+            The name of the column to represent.
+
+        Examples
+        --------
+        >>> from polars import col as c
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2],
+        ...         "bar": [3, 4],
+        ...     }
+        ... )
+        >>> df.select(c[foo] + c[bar])
+        shape: (2, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 4   │
+        │ 6   │
+        └─────┘
+
+        """
+        return wrap_expr(plr.col[name])
 
 
 # Set up a single instance of the class and use it as a column factory
