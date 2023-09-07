@@ -2,8 +2,8 @@ use std::any::Any;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
+use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::bitmap::Bitmap;
-use arrow::bitmap::utils::{ZipValidity, BitmapIter};
 
 use crate::prelude::*;
 
@@ -66,7 +66,7 @@ where
     pub fn values(&self) -> &Arc<Vec<T>> {
         &self.values
     }
-    
+
     pub fn values_iter(&self) -> ObjectValueIter<'_, T> {
         self.values.iter()
     }

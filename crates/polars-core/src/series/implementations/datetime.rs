@@ -257,8 +257,8 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        self.0.deref().take_unchecked(iter.into())
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+        let ca = self.0.deref().take_unchecked(iter.into());
+        ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
     }
 
@@ -277,8 +277,8 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        self.0.deref().take_unchecked(iter.into())
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+        let ca = self.0.deref().take_unchecked(iter.into());
+        ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
     }
 

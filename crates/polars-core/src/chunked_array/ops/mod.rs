@@ -200,7 +200,7 @@ pub trait TakeRandomUtf8 {
 }
 
 /// Fast access by index.
-pub trait ChunkTake : ChunkTakeUnchecked {
+pub trait ChunkTake: ChunkTakeUnchecked {
     /// Take values from ChunkedArray by index.
     /// Note that the iterator will be cloned, so prefer an iterator that takes the owned memory
     /// by reference.

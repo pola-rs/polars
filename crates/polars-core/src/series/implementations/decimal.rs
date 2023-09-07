@@ -166,8 +166,8 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        self.0.deref().take_unchecked(iter.into())
-            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+        let ca = self.0.deref().take_unchecked(iter.into());
+        ca.into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
     }
 
@@ -186,7 +186,9 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        self.0.deref().take_unchecked(iter.into())
+        self.0
+            .deref()
+            .take_unchecked(iter.into())
             .into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
     }

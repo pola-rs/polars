@@ -90,9 +90,9 @@ impl<'a> PartialEqInner for ListTakeRandom<'a> {
     }
 }
 
-impl<T> PartialEqInner for NumTakeRandomCont<'_, T>
+impl<'a, T: PolarsDataType> PartialEqInner for NumTakeRandomCont<'a, T>
 where
-    T: Copy + PartialEq + Sync,
+    T::Physical<'a>: PartialEq,
 {
     unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
         // no nulls so we can do unchecked
@@ -118,10 +118,7 @@ where
             let arr = chunks.next().unwrap();
 
             if !self.has_validity() {
-                let t = NumTakeRandomCont {
-                    slice: arr.values(),
-                };
-                Box::new(t)
+                Box::new(NumTakeRandomCont::<T> { arr })
             } else {
                 let t = NumTakeRandomSingleChunk::<'_, T::Native>::new(arr);
                 Box::new(t)
@@ -236,9 +233,9 @@ fn fallback<T: PartialEq>(a: T) -> Ordering {
     }
 }
 
-impl<T> PartialOrdInner for NumTakeRandomCont<'_, T>
+impl<'a, T: PolarsDataType> PartialOrdInner for NumTakeRandomCont<'a, T>
 where
-    T: Copy + PartialOrd + Sync,
+    T::Physical<'a>: PartialOrd,
 {
     unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
         // no nulls so we can do unchecked
@@ -264,10 +261,7 @@ where
             let arr = chunks.next().unwrap();
 
             if !self.has_validity() {
-                let t = NumTakeRandomCont {
-                    slice: arr.values(),
-                };
-                Box::new(t)
+                Box::new(NumTakeRandomCont::<T> { arr })
             } else {
                 let t = NumTakeRandomSingleChunk::<'_, T::Native>::new(arr);
                 Box::new(t)

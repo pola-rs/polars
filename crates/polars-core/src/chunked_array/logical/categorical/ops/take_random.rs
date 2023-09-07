@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 
 use arrow::array::Utf8Array;
 
+use crate::datatypes::UInt32Type;
 use crate::prelude::compare_inner::PartialOrdInner;
 use crate::prelude::{
     CategoricalChunked, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont,
@@ -9,7 +10,7 @@ use crate::prelude::{
 };
 
 type TakeCats<'a> = TakeRandBranch3<
-    NumTakeRandomCont<'a, u32>,
+    NumTakeRandomCont<'a, UInt32Type>,
     NumTakeRandomSingleChunk<'a, u32>,
     NumTakeRandomChunked<'a, u32>,
 >;

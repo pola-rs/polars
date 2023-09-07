@@ -151,7 +151,7 @@ where
 {
     type Item = T::Native;
     type TakeRandom = TakeRandBranch3<
-        NumTakeRandomCont<'a, T::Native>,
+        NumTakeRandomCont<'a, T>,
         NumTakeRandomSingleChunk<'a, T::Native>,
         NumTakeRandomChunked<'a, T::Native>,
     >;
@@ -164,9 +164,7 @@ where
             let arr = chunks.next().unwrap();
 
             if !self.has_validity() {
-                let t = NumTakeRandomCont {
-                    slice: arr.values(),
-                };
+                let t = NumTakeRandomCont { arr };
                 TakeRandBranch3::SingleNoNull(t)
             } else {
                 let t = NumTakeRandomSingleChunk::new(arr);
@@ -405,27 +403,28 @@ where
     }
 }
 
-pub struct NumTakeRandomCont<'a, T> {
-    pub(crate) slice: &'a [T],
+pub struct NumTakeRandomCont<'a, T: PolarsDataType> {
+    pub(crate) arr: &'a T::Array,
 }
 
 impl<'a, T> TakeRandom for NumTakeRandomCont<'a, T>
 where
-    T: Copy,
+    T: PolarsDataType,
 {
-    type Item = T;
+    type Item = T::Physical<'a>;
 
     #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
-        self.slice.get(index).copied()
+        self.arr.get(index)
     }
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
-        Some(*self.slice.get_unchecked(index))
+        self.arr.get_unchecked(index)
     }
+
     fn last(&self) -> Option<Self::Item> {
-        self.slice.last().copied()
+        self.arr.last()
     }
 }
 

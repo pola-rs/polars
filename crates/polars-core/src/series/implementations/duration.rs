@@ -277,19 +277,18 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        self.0.deref().take(indices.into())
-            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
+        let ca = self.0.deref().take(indices.into())?;
+        Ok(ca.into_duration(self.0.time_unit()).into_series())
     }
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        self.0.deref().take(iter.into())
-            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
+        let ca = self.0.deref().take(iter.into())?;
+        Ok(ca.into_duration(self.0.time_unit()).into_series())
     }
 
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        self.0.deref().take_unchecked(iter.into())
-            .into_duration(self.0.time_unit())
-            .into_series()
+        let ca = self.0.deref().take_unchecked(iter.into());
+        ca.into_duration(self.0.time_unit()).into_series()
     }
 
     unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
@@ -305,15 +304,14 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        self.0.deref().take_unchecked(iter.into())
-            .into_duration(self.0.time_unit())
-            .into_series()
+        let ca = self.0.deref().take_unchecked(iter.into());
+        ca.into_duration(self.0.time_unit()).into_series()
     }
 
     #[cfg(feature = "take_opt_iter")]
     fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-        self.0.deref().take(iter.into())
-            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
+        let ca = self.0.deref().take(iter.into())?;
+        Ok(ca.into_duration(self.0.time_unit()).into_series())
     }
 
     fn len(&self) -> usize {

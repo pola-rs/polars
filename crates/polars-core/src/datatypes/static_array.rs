@@ -34,7 +34,14 @@ pub trait StaticArray: Array {
             Some(self.value_unchecked(idx))
         }
     }
-    
+
+    #[inline]
+    fn last(&self) -> Option<Self::ValueT<'_>> {
+        unsafe { self.get_unchecked(self.len().checked_sub(1)?) }
+    }
+
+    /// # Safety
+    /// It is the callers responsibility that the `idx < self.len()`.
     unsafe fn value_unchecked(&self, idx: usize) -> Self::ValueT<'_>;
 
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter>;
