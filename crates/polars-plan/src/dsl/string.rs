@@ -455,9 +455,27 @@ impl StringNameSpace {
     }
 
     /// Remove leading and trailing characters, or whitespace if matches is None.
-    pub fn strip(self, matches: Option<String>) -> Expr {
+    pub fn strip_chars(self, matches: Option<String>) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::Strip(matches)))
+            .map_private(FunctionExpr::StringExpr(StringFunction::StripChars(
+                matches,
+            )))
+    }
+
+    /// Remove leading characters, or whitespace if matches is None.
+    pub fn strip_chars_start(self, matches: Option<String>) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::StripCharsStart(
+                matches,
+            )))
+    }
+
+    /// Remove trailing characters, or whitespace if matches is None.
+    pub fn strip_chars_end(self, matches: Option<String>) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::StripCharsEnd(
+                matches,
+            )))
     }
 
     /// Remove prefix.
@@ -474,18 +492,6 @@ impl StringNameSpace {
             .map_private(FunctionExpr::StringExpr(StringFunction::StripSuffix(
                 suffix,
             )))
-    }
-
-    /// Remove leading characters, or whitespace if matches is None.
-    pub fn lstrip(self, matches: Option<String>) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::LStrip(matches)))
-    }
-
-    /// Remove trailing characters, or whitespace if matches is None..
-    pub fn rstrip(self, matches: Option<String>) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::RStrip(matches)))
     }
 
     /// Convert all characters to lowercase.

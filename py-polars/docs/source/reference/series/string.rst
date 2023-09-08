@@ -35,6 +35,9 @@ The following methods are available under the `Series.str` attribute.
     Series.str.splitn
     Series.str.starts_with
     Series.str.strip
+    Series.str.strip_chars
+    Series.str.strip_chars_start
+    Series.str.strip_chars_end
     Series.str.strip_prefix
     Series.str.strip_suffix
     Series.str.strptime

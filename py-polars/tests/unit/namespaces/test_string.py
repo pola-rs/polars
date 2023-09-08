@@ -184,16 +184,69 @@ def test_str_parse_int_df() -> None:
         )
 
 
-def test_str_strip() -> None:
+def test_str_strip_chars() -> None:
     s = pl.Series([" hello ", "world\t "])
     expected = pl.Series(["hello", "world"])
-    assert_series_equal(s.str.strip(), expected)
+    assert_series_equal(s.str.strip_chars(), expected)
 
     expected = pl.Series(["hell", "world"])
-    assert_series_equal(s.str.strip().str.strip("o"), expected)
+    assert_series_equal(s.str.strip_chars().str.strip_chars("o"), expected)
 
     expected = pl.Series(["ell", "rld\t"])
-    assert_series_equal(s.str.strip(" hwo"), expected)
+    assert_series_equal(s.str.strip_chars(" hwo"), expected)
+
+
+def test_str_strip_chars_start() -> None:
+    s = pl.Series([" hello ", "\t world"])
+    expected = pl.Series(["hello ", "world"])
+    assert_series_equal(s.str.strip_chars_start(), expected)
+
+    expected = pl.Series(["ello ", "world"])
+    assert_series_equal(s.str.strip_chars_start().str.strip_chars_start("h"), expected)
+
+    expected = pl.Series(["ello ", "\t world"])
+    assert_series_equal(s.str.strip_chars_start("hw "), expected)
+
+
+def test_str_strip_chars_end() -> None:
+    s = pl.Series([" hello ", "world\t "])
+    expected = pl.Series([" hello", "world"])
+    assert_series_equal(s.str.strip_chars_end(), expected)
+
+    expected = pl.Series([" hell", "world"])
+    assert_series_equal(s.str.strip_chars_end().str.strip_chars_end("o"), expected)
+
+    expected = pl.Series([" he", "wor"])
+    assert_series_equal(s.str.strip_chars_end("odl \t"), expected)
+
+
+def test_str_strip_whitespace() -> None:
+    s = pl.Series("a", ["trailing  ", "  leading", "  both  "])
+
+    expected = pl.Series("a", ["trailing", "  leading", "  both"])
+    assert_series_equal(s.str.strip_chars_end(), expected)
+
+    expected = pl.Series("a", ["trailing  ", "leading", "both  "])
+    assert_series_equal(s.str.strip_chars_start(), expected)
+
+    expected = pl.Series("a", ["trailing", "leading", "both"])
+    assert_series_equal(s.str.strip_chars(), expected)
+
+
+def test_str_strip_deprecated() -> None:
+    with pytest.deprecated_call():
+        pl.col("a").str.strip()
+    with pytest.deprecated_call():
+        pl.col("a").str.lstrip()
+    with pytest.deprecated_call():
+        pl.col("a").str.rstrip()
+
+    with pytest.deprecated_call():
+        pl.Series(["a", "b", "c"]).str.strip()
+    with pytest.deprecated_call():
+        pl.Series(["a", "b", "c"]).str.lstrip()
+    with pytest.deprecated_call():
+        pl.Series(["a", "b", "c"]).str.rstrip()
 
 
 def test_str_strip_prefix() -> None:
@@ -206,43 +259,6 @@ def test_str_strip_suffix() -> None:
     s = pl.Series(["foo:bar", "foo:barbar", "foo:foo", "bar", ""])
     expected = pl.Series(["foo:", "foo:bar", "foo:foo", "", ""])
     assert_series_equal(s.str.strip_suffix("bar"), expected)
-
-
-def test_str_lstrip() -> None:
-    s = pl.Series([" hello ", "\t world"])
-    expected = pl.Series(["hello ", "world"])
-    assert_series_equal(s.str.lstrip(), expected)
-
-    expected = pl.Series(["ello ", "world"])
-    assert_series_equal(s.str.lstrip().str.lstrip("h"), expected)
-
-    expected = pl.Series(["ello ", "\t world"])
-    assert_series_equal(s.str.lstrip("hw "), expected)
-
-
-def test_str_rstrip() -> None:
-    s = pl.Series([" hello ", "world\t "])
-    expected = pl.Series([" hello", "world"])
-    assert_series_equal(s.str.rstrip(), expected)
-
-    expected = pl.Series([" hell", "world"])
-    assert_series_equal(s.str.rstrip().str.rstrip("o"), expected)
-
-    expected = pl.Series([" he", "wor"])
-    assert_series_equal(s.str.rstrip("odl \t"), expected)
-
-
-def test_str_strip_whitespace() -> None:
-    s = pl.Series("a", ["trailing  ", "  leading", "  both  "])
-
-    expected = pl.Series("a", ["trailing", "  leading", "  both"])
-    assert_series_equal(s.str.rstrip(), expected)
-
-    expected = pl.Series("a", ["trailing  ", "leading", "both  "])
-    assert_series_equal(s.str.lstrip(), expected)
-
-    expected = pl.Series("a", ["trailing", "leading", "both"])
-    assert_series_equal(s.str.strip(), expected)
 
 
 def test_str_split() -> None:

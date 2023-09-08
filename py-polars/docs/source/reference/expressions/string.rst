@@ -35,6 +35,9 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.splitn
     Expr.str.starts_with
     Expr.str.strip
+    Expr.str.strip_chars
+    Expr.str.strip_chars_start
+    Expr.str.strip_chars_end
     Expr.str.strip_prefix
     Expr.str.strip_suffix
     Expr.str.strptime
