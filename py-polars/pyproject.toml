@@ -77,16 +77,17 @@ module = [
   "backports",
   "connectorx",
   "deltalake.*",
+  "ezodf.*",
   "fsspec.*",
   "matplotlib.*",
   "moto.server",
+  "openpyxl",
   "polars.polars",
   "pyarrow.*",
   "pydantic",
   "sqlalchemy.*",
   "xlsx2csv",
   "xlsxwriter.*",
-  "openpyxl",
   "zoneinfo",
 ]
 ignore_missing_imports = true
