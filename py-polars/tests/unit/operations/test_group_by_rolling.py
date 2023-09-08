@@ -87,7 +87,7 @@ def test_group_by_rolling_negative_offset_3914() -> None:
 
     df = pl.DataFrame(
         {
-            "ints": range(0, 20),
+            "ints": range(20),
         }
     )
 

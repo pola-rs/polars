@@ -4142,7 +4142,7 @@ class DataFrame:
         # reshape wide result
         n_cols = len(self.columns)
         described = [
-            df_metrics[(n * n_cols) : (n + 1) * n_cols] for n in range(0, len(metrics))
+            df_metrics[(n * n_cols) : (n + 1) * n_cols] for n in range(len(metrics))
         ]
 
         # cast by column type (numeric/bool -> float), (other -> string)
@@ -7172,7 +7172,7 @@ class DataFrame:
 
         if n_fill:
             if not isinstance(fill_values, list):
-                fill_values = [fill_values for _ in range(0, df.width)]
+                fill_values = [fill_values for _ in range(df.width)]
 
             df = df.select(
                 [
@@ -7198,7 +7198,7 @@ class DataFrame:
                 s.name + "_" + str(slice_nbr).zfill(zfill_val)
             )
             for s in df
-            for slice_nbr in range(0, n_cols)
+            for slice_nbr in range(n_cols)
         ]
 
         return DataFrame(slices)

@@ -934,7 +934,7 @@ class Series:
             #  a faster way to return nested/List series; sequential 'get_idx' calls
             #  make this path a lot slower (~10x) than it needs to be.
             get_idx = self._s.get_idx
-            for idx in range(0, self.len()):
+            for idx in range(self.len()):
                 yield get_idx(idx)
         else:
             buffer_size = 25_000

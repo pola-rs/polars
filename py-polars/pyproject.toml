@@ -125,6 +125,7 @@ select = [
   "RUF", # Ruff-specific rules
   "PTH", # flake8-use-pathlib
   "FA", # flake8-future-annotations
+  "PIE",  # flake8-pie
 ]
 
 ignore = [
