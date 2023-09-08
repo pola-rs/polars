@@ -82,7 +82,7 @@ def time_range(
         If omitted, defaults to ``time(23,59,59,999999)``.
     interval
         Interval of the range periods, specified as a Python ``timedelta`` object
-        or a Polars duration string like ``1h30m25s``.
+        or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     eager
@@ -98,6 +98,33 @@ def time_range(
     -------
     Expr or Series
         Column of data type `:class:Time`.
+
+    Notes
+    -----
+    `interval` is created according to the following string language:
+
+    - 1ns   (1 nanosecond)
+    - 1us   (1 microsecond)
+    - 1ms   (1 millisecond)
+    - 1s    (1 second)
+    - 1m    (1 minute)
+    - 1h    (1 hour)
+    - 1d    (1 calendar day)
+    - 1w    (1 calendar week)
+    - 1mo   (1 calendar month)
+    - 1q    (1 calendar quarter)
+    - 1y    (1 calendar year)
+
+    Or combine them:
+    "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+    Suffix with `"_saturating"` to indicate that dates too large for
+    their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+    instead of erroring.
+
+    By "calendar day", we mean the corresponding time on the next day (which may
+    not be 24 hours, due to daylight savings). Similarly for "calendar week",
+    "calendar month", "calendar quarter", and "calendar year".
 
     See Also
     --------
@@ -208,7 +235,7 @@ def time_ranges(
         If omitted, defaults to ``time(23, 59, 59, 999999)``.
     interval
         Interval of the range periods, specified as a Python ``timedelta`` object
-        or a Polars duration string like ``1h30m25s``.
+        or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     eager
@@ -219,6 +246,33 @@ def time_ranges(
     -------
     Expr or Series
         Column of data type ``List(Time)``.
+
+    Notes
+    -----
+    `interval` is created according to the following string language:
+
+    - 1ns   (1 nanosecond)
+    - 1us   (1 microsecond)
+    - 1ms   (1 millisecond)
+    - 1s    (1 second)
+    - 1m    (1 minute)
+    - 1h    (1 hour)
+    - 1d    (1 calendar day)
+    - 1w    (1 calendar week)
+    - 1mo   (1 calendar month)
+    - 1q    (1 calendar quarter)
+    - 1y    (1 calendar year)
+
+    Or combine them:
+    "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+    Suffix with `"_saturating"` to indicate that dates too large for
+    their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+    instead of erroring.
+
+    By "calendar day", we mean the corresponding time on the next day (which may
+    not be 24 hours, due to daylight savings). Similarly for "calendar week",
+    "calendar month", "calendar quarter", and "calendar year".
 
     See Also
     --------
