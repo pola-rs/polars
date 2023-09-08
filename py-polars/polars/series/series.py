@@ -922,7 +922,7 @@ class Series:
         return self.clone()
 
     def __contains__(self, item: Any) -> bool:
-        # TODO! optimize via `is_in` and `SORTED` flags
+        # TODO: optimize via `is_in` and `SORTED` flags
         try:
             return (self == item).any()
         except ValueError:

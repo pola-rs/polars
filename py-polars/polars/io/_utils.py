@@ -166,7 +166,7 @@ def _prepare_file_arg(
             kwargs["encoding"] = encoding
             return fsspec.open(file, **kwargs)
 
-        # todo! add azure/ gcp/ ?
+        # TODO: add azure/ gcp/ ?
         if file.startswith("s3://"):
             raise ModuleNotFoundError(
                 "fsspec needs to be installed to read files from S3"

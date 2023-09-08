@@ -126,6 +126,7 @@ select = [
   "PTH", # flake8-use-pathlib
   "FA", # flake8-future-annotations
   "PIE",  # flake8-pie
+  "TD", # flake8-todos
 ]
 
 ignore = [
@@ -153,6 +154,9 @@ ignore = [
   "D105", # Missing docstring in magic method
   "D100", # Missing docstring in public module
   "D104", # Missing docstring in public package
+  # flake8-todos
+  "TD002", # Missing author in TODO
+  "TD003", # Missing issue link on the line following this TODO
 ]
 
 [tool.ruff.pycodestyle]
