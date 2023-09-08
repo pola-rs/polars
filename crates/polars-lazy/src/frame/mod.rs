@@ -739,9 +739,9 @@ impl LazyFrame {
     #[cfg(feature = "csv")]
     pub fn sink_csv(mut self, path: PathBuf, options: CsvWriterOptions) -> PolarsResult<()> {
         self.opt_state.streaming = true;
-        self.logical_plan = LogicalPlan::FileSink {
+        self.logical_plan = LogicalPlan::Sink {
             input: Box::new(self.logical_plan),
-            payload: FileSinkOptions {
+            payload: SinkType::File {
                 path: Arc::new(path),
                 file_type: FileType::Csv(options),
             },

@@ -129,6 +129,7 @@ where
     use ALogicalPlan::*;
     let out = match lp_arena.get(node) {
         Sink { input, payload } => {
+            let input_schema = lp_arena.get(*input).schema(lp_arena);
             match payload {
                 SinkType::Memory => {
                     Box::new(OrderedSink::new(input_schema.into_owned())) as Box<dyn SinkTrait>
@@ -137,7 +138,6 @@ where
                     path, file_type, ..
                 } => {
                     let path = path.as_ref().as_path();
-                    let input_schema = lp_arena.get(*input).schema(lp_arena);
                     match &file_type {
                         #[cfg(feature = "parquet")]
                         FileType::Parquet(options) => {
@@ -151,7 +151,7 @@ where
                         },
                         #[cfg(feature = "csv")]
                         FileType::Csv(options) => {
-                            Box::new(CsvSink::new(path, *options, input_schema.as_ref())?)
+                            Box::new(CsvSink::new(path, options.clone(), input_schema.as_ref())?)
                                 as Box<dyn SinkTrait>
                         },
                         #[allow(unreachable_patterns)]
