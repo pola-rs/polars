@@ -164,7 +164,7 @@
 //! Unlock full potential with lazy computation. This allows query optimizations and provides Polars
 //! the full query context so that the fastest algorithm can be chosen.
 //!
-//! **[Read more in the lazy module.](crate::lazy)**
+//! **[Read more in the lazy module.](polars_lazy)**
 //!
 //! ## Compile times
 //! A DataFrame library typically consists of
@@ -180,7 +180,7 @@
 //!
 //! * `performant` - Longer compile times more fast paths.
 //! * `lazy` - Lazy API
-//!     - `lazy_regex` - Use regexes in [column selection](crate::lazy::dsl::col)
+//!     - `lazy_regex` - Use regexes in [column selection]
 //!     - `dot_diagram` - Create dot diagrams from lazy logical plans.
 //! * `sql` - Pass SQL queries to polars.
 //! * `streaming` - Be able to process datasets that are larger than RAM.
@@ -190,7 +190,7 @@
 //! * `timezones` - Activate timezone support.
 //! * `strings` - Extra string utilities for [`Utf8Chunked`] //!     - `string_justify` - `zfill`, `ljust`, `rjust`
 //!     - `string_from_radix` - `parse_int`
-//! * `object` - Support for generic ChunkedArrays called `ObjectChunked<T>` (generic over `T`).
+//! * `object` - Support for generic ChunkedArrays called [`ObjectChunked<T>`] (generic over `T`).
 //!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //! * Performance related:
 //!     - `nightly` - Several nightly only features such as SIMD and specialization.
@@ -214,6 +214,9 @@
 //!                         * gzip
 //!
 //! [`Utf8Chunked`]: crate::datatypes::Utf8Chunked
+//! [column selection]: polars_lazy::dsl::col
+//! [`ObjectChunked<T>`]: polars_core::datatypes::ObjectChunked
+//!
 //!
 //! * [`DataFrame`] operations:
 //!     - `dynamic_group_by` - Groupby based on a time window instead of predefined keys.
@@ -392,8 +395,6 @@
 //! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.
 //! * `POLARS_PANIC_ON_ERR` -> panic instead of returning an Error.
 //! * `POLARS_NO_CHUNKED_JOIN` -> force rechunk before joins.
-//!
-//! [`ObjectChunked<T>`]: crate::datatypes::ObjectChunked
 //!
 //! ## User Guide
 //! If you want to read more, [check the User Guide](https://pola-rs.github.io/polars-book/).

@@ -124,7 +124,7 @@
 //! let multiplied = ca_int * 2.0;
 //! let multiplied = s_flt * 2.0;
 //!
-//! // or broadcast ['Series'] to match the operands type
+//! // or broadcast Series to match the operands type
 //! let added = &s_int * &Series::new("broadcast_me", &[10]);
 //!
 //! # Ok(())
