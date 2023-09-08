@@ -130,7 +130,9 @@ where
     let out = match lp_arena.get(node) {
         Sink { input, payload } => {
             match payload {
-                SinkType::Memory => Box::new(OrderedSink::new(input_schema.into_owned())) as Box<dyn SinkTrait>,
+                SinkType::Memory => {
+                    Box::new(OrderedSink::new(input_schema.into_owned())) as Box<dyn SinkTrait>
+                },
                 SinkType::File {
                     path, file_type, ..
                 } => {
