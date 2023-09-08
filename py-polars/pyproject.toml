@@ -125,7 +125,7 @@ select = [
   "RUF", # Ruff-specific rules
   "PTH", # flake8-use-pathlib
   "FA", # flake8-future-annotations
-  "PIE",  # flake8-pie
+  "PIE", # flake8-pie
   "TD", # flake8-todos
   "TRY", # tryceratops
 ]
@@ -159,7 +159,7 @@ ignore = [
   "TD002", # Missing author in TODO
   "TD003", # Missing issue link on the line following this TODO
   # tryceratops
-  "TRY003",
+  "TRY003", # Avoid specifying long messages outside the exception class
 ]
 
 [tool.ruff.pycodestyle]
