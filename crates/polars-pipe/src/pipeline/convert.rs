@@ -185,7 +185,7 @@ where
                             )?)
                             as Box<dyn SinkTrait>,
                         #[allow(unreachable_patterns)]
-                        _ => unreachable!(),
+                        other_file_type => todo!("Cloud-sinking of the file type {other_file_type:?} is not (yet) supported."),
                     }
                 },
             }
