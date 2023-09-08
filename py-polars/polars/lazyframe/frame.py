@@ -1812,33 +1812,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ldf.collect_with_callback(result._callback)
         return result
 
-    def _sink_generic(
-        self,
-        *,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        no_optimization: bool = False,
-        slice_pushdown: bool = True,
-    ) -> PyLazyFrame:
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
-
-        return self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim=False,
-            comm_subexpr_elim=False,
-            streaming=True,
-            eager=False,
-        )
-
     def sink_parquet(
         self,
         path: str | Path,
@@ -1913,7 +1886,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_parquet("out.parquet")  # doctest: +SKIP
 
         """
-        lf = self._sink_generic(
+        lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
@@ -1983,7 +1956,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_ipc("out.arrow")  # doctest: +SKIP
 
         """
-        lf = self._sink_generic(
+        lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
@@ -2105,7 +2078,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if not null_value:
             null_value = None
 
-        lf = self._sink_generic(
+        lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
@@ -2128,6 +2101,33 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             null_value=null_value,
             quote_style=quote_style,
             maintain_order=maintain_order,
+        )
+
+    def _set_sink_optimizations(
+            self,
+            *,
+            type_coercion: bool = True,
+            predicate_pushdown: bool = True,
+            projection_pushdown: bool = True,
+            simplify_expression: bool = True,
+            no_optimization: bool = False,
+            slice_pushdown: bool = True,
+    ) -> PyLazyFrame:
+        if no_optimization:
+            predicate_pushdown = False
+            projection_pushdown = False
+            slice_pushdown = False
+
+        return self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            comm_subplan_elim=False,
+            comm_subexpr_elim=False,
+            streaming=True,
+            eager=False,
         )
 
     @deprecate_renamed_parameter(
