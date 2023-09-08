@@ -22,6 +22,7 @@ from polars.exceptions import DuplicateError
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 
 if TYPE_CHECKING:
+    import os
     from typing import Literal
 
     from xlsxwriter import Workbook
@@ -504,7 +505,7 @@ def _xl_setup_table_options(
 
 
 def _xl_setup_workbook(
-    workbook: Workbook | BytesIO | Path | str | None, worksheet: str | None = None
+    workbook: Workbook | BytesIO | os.PathLike | str | None, worksheet: str | None = None
 ) -> tuple[Workbook, Worksheet, bool]:
     """Establish the target excel workbook and worksheet."""
     from xlsxwriter import Workbook

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
+import os
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 import polars._reexport as pl
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 def read_parquet(
-    source: str | Path | BinaryIO | BytesIO | bytes,
+    source: str | os.PathLike | BinaryIO | BytesIO | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
@@ -142,7 +142,7 @@ def read_parquet(
 
 
 def read_parquet_schema(
-    source: str | BinaryIO | Path | bytes,
+    source: str | BinaryIO | os.PathLike | bytes,
 ) -> dict[str, PolarsDataType]:
     """
     Get the schema of a Parquet file without reading data.
@@ -160,14 +160,14 @@ def read_parquet_schema(
         Dictionary mapping column names to datatypes
 
     """
-    if isinstance(source, (str, Path)):
+    if isinstance(source, (str, os.PathLike)):
         source = normalise_filepath(source)
 
     return _read_parquet_schema(source)
 
 
 def scan_parquet(
-    source: str | Path,
+    source: str | os.PathLike,
     *,
     n_rows: int | None = None,
     cache: bool = True,
@@ -226,7 +226,7 @@ def scan_parquet(
     scan_pyarrow_dataset
 
     """
-    if isinstance(source, (str, Path)):
+    if isinstance(source, (str, os.PathLike)):
         source = normalise_filepath(source)
 
     return pl.LazyFrame._scan_parquet(

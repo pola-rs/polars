@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import os
 import re
 from io import StringIO
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, NoReturn, Sequence, overload
 
 import polars._reexport as pl
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | BytesIO | os.PathLike | BinaryIO | bytes,
     *,
     sheet_id: None = ...,
     sheet_name: str,
@@ -31,7 +31,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | BytesIO | os.PathLike | BinaryIO | bytes,
     *,
     sheet_id: None = ...,
     sheet_name: None = ...,
@@ -45,7 +45,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | BytesIO | os.PathLike | BinaryIO | bytes,
     *,
     sheet_id: int,
     sheet_name: str,
@@ -61,7 +61,7 @@ def read_excel(
 # Literal[0] overlaps with the return value for other integers
 @overload  # type: ignore[misc]
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | BytesIO | os.PathLike | BinaryIO | bytes,
     *,
     sheet_id: Literal[0] | Sequence[int],
     sheet_name: None = ...,
@@ -75,7 +75,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | BytesIO | os.PathLike | BinaryIO | bytes,
     *,
     sheet_id: None,
     sheet_name: list[str] | tuple[str],
@@ -89,7 +89,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | BytesIO | os.PathLike | BinaryIO | bytes,
     *,
     sheet_id: int,
     sheet_name: None = ...,
@@ -102,7 +102,7 @@ def read_excel(
 
 
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | BytesIO | os.PathLike | BinaryIO | bytes,
     *,
     sheet_id: int | Sequence[int] | None = None,
     sheet_name: str | list[str] | tuple[str] | None = None,
@@ -255,11 +255,11 @@ def read_excel(
 
 def _initialise_excel_parser(
     engine: str | None,
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | BytesIO | os.PathLike | BinaryIO | bytes,
     xlsx2csv_options: dict[str, Any],
 ) -> tuple[Any, Any, list[dict[str, Any]]]:
     """Instantiate the indicated Excel parser and establish related properties."""
-    if isinstance(source, (str, Path)):
+    if isinstance(source, (str, os.PathLike)):
         source = normalise_filepath(source)
 
     if engine == "openpyxl":

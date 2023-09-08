@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+import os
 from typing import TYPE_CHECKING
 
 import polars._reexport as pl
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 def read_ndjson(
-    source: str | Path | IOBase | bytes,
+    source: str | os.PathLike | IOBase | bytes,
     *,
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDefinition | None = None,
@@ -57,7 +57,7 @@ def read_ndjson(
 
 
 def scan_ndjson(
-    source: str | Path,
+    source: str | os.PathLike,
     *,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int | None = 1024,
@@ -94,7 +94,7 @@ def scan_ndjson(
         Offset to start the row_count column (only use if the name is set)
 
     """
-    if isinstance(source, (str, Path)):
+    if isinstance(source, (str, os.PathLike)):
         source = normalise_filepath(source)
 
     return pl.LazyFrame._scan_ndjson(

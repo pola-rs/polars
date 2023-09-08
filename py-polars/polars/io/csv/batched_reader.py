@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
+import os
 from typing import TYPE_CHECKING, Sequence
 
 from polars.datatypes import N_INFER_DEFAULT, py_type_to_dtype
@@ -18,6 +18,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyBatchedCsv
 
 if TYPE_CHECKING:
+
     from polars import DataFrame
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
@@ -27,7 +28,7 @@ class BatchedCsvReader:
 
     def __init__(
         self,
-        source: str | Path,
+        source: str | os.PathLike,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
         separator: str = ",",
@@ -56,7 +57,7 @@ class BatchedCsvReader:
         truncate_ragged_lines: bool = False,
     ):
         path: str | None
-        if isinstance(source, (str, Path)):
+        if isinstance(source, (str, os.PathLike)):
             path = normalise_filepath(source)
 
         dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None

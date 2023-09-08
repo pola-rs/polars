@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from pathlib import Path
+import os
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 import polars._reexport as pl
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 def read_ipc(
-    source: str | BinaryIO | BytesIO | Path | bytes,
+    source: str | BinaryIO | BytesIO | os.PathLike | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
@@ -112,7 +112,7 @@ def read_ipc(
 
 
 def read_ipc_stream(
-    source: str | BinaryIO | BytesIO | Path | bytes,
+    source: str | BinaryIO | BytesIO | os.PathLike | bytes,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
@@ -186,7 +186,7 @@ def read_ipc_stream(
         )
 
 
-def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDataType]:
+def read_ipc_schema(source: str | BinaryIO | os.PathLike | bytes) -> dict[str, PolarsDataType]:
     """
     Get the schema of an IPC file without reading data.
 
@@ -203,14 +203,14 @@ def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDa
         Dictionary mapping column names to datatypes
 
     """
-    if isinstance(source, (str, Path)):
+    if isinstance(source, (str, os.PathLike)):
         source = normalise_filepath(source)
 
     return _read_ipc_schema(source)
 
 
 def scan_ipc(
-    source: str | Path,
+    source: str | os.PathLike,
     *,
     n_rows: int | None = None,
     cache: bool = True,

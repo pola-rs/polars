@@ -433,7 +433,7 @@ class LazyFrame:
     @classmethod
     def _scan_ipc(
         cls,
-        source: str | Path,
+        source: str | os.PathLike,
         *,
         n_rows: int | None = None,
         cache: bool = True,
@@ -453,7 +453,7 @@ class LazyFrame:
         polars.io.scan_ipc
 
         """
-        if isinstance(source, (str, Path)):
+        if isinstance(source, (str, os.PathLike)):
             source = normalise_filepath(source)
 
         # try fsspec scanner
@@ -557,7 +557,7 @@ class LazyFrame:
     @classmethod
     @deprecate_renamed_function("deserialize", version="0.18.12")
     @deprecate_renamed_parameter("file", "source", version="0.18.12")
-    def read_json(cls, source: str | Path | IOBase) -> Self:
+    def read_json(cls, source: str | os.PathLike | IOBase) -> Self:
         """
         Read a logical plan from a JSON file to construct a LazyFrame.
 
@@ -579,7 +579,7 @@ class LazyFrame:
         return cls.deserialize(source)
 
     @classmethod
-    def deserialize(cls, source: str | Path | IOBase) -> Self:
+    def deserialize(cls, source: str | os.PathLike | IOBase) -> Self:
         """
         Read a logical plan from a JSON file to construct a LazyFrame.
 
@@ -612,7 +612,7 @@ class LazyFrame:
         """
         if isinstance(source, StringIO):
             source = BytesIO(source.getvalue().encode())
-        elif isinstance(source, (str, Path)):
+        elif isinstance(source, (str, os.PathLike)):
             source = normalise_filepath(source)
 
         return cls._from_pyldf(PyLazyFrame.deserialize(source))
@@ -802,10 +802,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...
 
     @overload
-    def serialize(self, file: IOBase | str | Path) -> None:
+    def serialize(self, file: IOBase | str | os.PathLike) -> None:
         ...
 
-    def serialize(self, file: IOBase | str | Path | None = None) -> str | None:
+    def serialize(self, file: IOBase | str | os.PathLike | None = None) -> str | None:
         """
         Serialize the logical plan of this LazyFrame to a file or string in JSON format.
 
@@ -842,7 +842,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┘
 
         """
-        if isinstance(file, (str, Path)):
+        if isinstance(file, (str, os.PathLike)):
             file = normalise_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
@@ -864,11 +864,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...
 
     @overload
-    def write_json(self, file: IOBase | str | Path) -> None:
+    def write_json(self, file: IOBase | str | os.PathLike) -> None:
         ...
 
     @deprecate_renamed_function("serialize", version="0.18.12")
-    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
+    def write_json(self, file: IOBase | str | os.PathLike | None = None) -> str | None:
         """
         Serialize the logical plan of this LazyFrame to a file or string in JSON format.
 
@@ -1037,7 +1037,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         optimized: bool = True,
         show: bool = True,
-        output_path: str | Path | None = None,
+        output_path: str | os.PathLike | None = None,
         raw_output: bool = False,
         figsize: tuple[float, float] = (16.0, 12.0),
         type_coercion: bool = True,
@@ -1814,7 +1814,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_parquet(
         self,
-        path: str | Path,
+        path: str | os.PathLike,
         *,
         compression: str = "zstd",
         compression_level: int | None = None,
@@ -1907,7 +1907,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_ipc(
         self,
-        path: str | Path,
+        path: str | os.PathLike,
         *,
         compression: str | None = "zstd",
         maintain_order: bool = True,
@@ -1973,7 +1973,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sink_csv(
         self,
-        path: str | Path,
+        path: str | os.PathLike,
         *,
         has_header: bool = True,
         separator: str = ",",

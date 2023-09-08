@@ -177,7 +177,7 @@ class Config(contextlib.ContextDecorator):
         self._original_state = ""
 
     @classmethod
-    def load(cls, cfg: Path | str) -> type[Config]:
+    def load(cls, cfg: os.PathLike | str) -> type[Config]:
         """
         Load and set previously saved (or shared) Config options from json/file.
 
@@ -189,7 +189,7 @@ class Config(contextlib.ContextDecorator):
         """
         options = json.loads(
             Path(normalise_filepath(cfg)).read_text()
-            if isinstance(cfg, Path) or Path(cfg).exists()
+            if isinstance(cfg, os.PathLike) or Path(cfg).exists()
             else cfg
         )
         os.environ.update(options.get("environment", {}))
@@ -222,7 +222,7 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
-    def save(cls, file: Path | str | None = None) -> str:
+    def save(cls, file: os.PathLike | str | None = None) -> str:
         """
         Save the current set of Config options as a json string or file.
 
@@ -255,7 +255,7 @@ class Config(contextlib.ContextDecorator):
             {"environment": environment_vars, "direct": direct_vars},
             separators=(",", ":"),
         )
-        if isinstance(file, (str, Path)):
+        if isinstance(file, (str, os.PathLike)):
             file = Path(normalise_filepath(file)).resolve()
             file.write_text(options)
             return str(file)

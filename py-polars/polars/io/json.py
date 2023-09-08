@@ -5,15 +5,15 @@ from typing import TYPE_CHECKING
 import polars._reexport as pl
 
 if TYPE_CHECKING:
+    import os
     from io import IOBase
-    from pathlib import Path
 
     from polars import DataFrame
     from polars.type_aliases import SchemaDefinition
 
 
 def read_json(
-    source: str | Path | IOBase | bytes,
+    source: str | os.PathLike | IOBase | bytes,
     *,
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDefinition | None = None,

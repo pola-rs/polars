@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import glob
+import os
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -26,27 +27,27 @@ def _is_local_file(file: str) -> bool:
 
 @overload
 def _prepare_file_arg(
-    file: str | list[str] | Path | BinaryIO | bytes, **kwargs: Any
+    file: str | list[str] | os.PathLike | BinaryIO | bytes, **kwargs: Any
 ) -> ContextManager[str | BinaryIO]:
     ...
 
 
 @overload
 def _prepare_file_arg(
-    file: str | TextIO | Path | BinaryIO | bytes, **kwargs: Any
+    file: str | TextIO | os.PathLike | BinaryIO | bytes, **kwargs: Any
 ) -> ContextManager[str | BinaryIO]:
     ...
 
 
 @overload
 def _prepare_file_arg(
-    file: str | list[str] | TextIO | Path | BinaryIO | bytes, **kwargs: Any
+    file: str | list[str] | TextIO | os.PathLike | BinaryIO | bytes, **kwargs: Any
 ) -> ContextManager[str | list[str] | BinaryIO | list[BinaryIO]]:
     ...
 
 
 def _prepare_file_arg(
-    file: str | list[str] | TextIO | Path | BinaryIO | bytes,
+    file: str | list[str] | TextIO | os.PathLike | BinaryIO | bytes,
     encoding: str | None = None,
     use_pyarrow: bool | None = None,
     raise_if_empty: bool = True,
@@ -129,7 +130,7 @@ def _prepare_file_arg(
             )
         )
 
-    if isinstance(file, Path):
+    if isinstance(file, os.PathLike):
         if not has_utf8_utf8_lossy_encoding:
             return _check_empty(
                 BytesIO(file.read_bytes().decode(encoding_str).encode("utf8")),

@@ -8,7 +8,6 @@ from collections import defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO, TextIOWrapper
 from operator import itemgetter
-from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -649,7 +648,7 @@ class DataFrame:
     @classmethod
     def _read_csv(
         cls,
-        source: str | Path | BinaryIO | bytes,
+        source: str | os.PathLike | BinaryIO | bytes,
         *,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
@@ -691,7 +690,7 @@ class DataFrame:
         self = cls.__new__(cls)
 
         path: str | None
-        if isinstance(source, (str, Path)):
+        if isinstance(source, (str, os.PathLike)):
             path = normalise_filepath(source)
         else:
             path = None
@@ -800,7 +799,7 @@ class DataFrame:
     @classmethod
     def _read_parquet(
         cls,
-        source: str | Path | BinaryIO | bytes,
+        source: str | os.PathLike | BinaryIO | bytes,
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
@@ -821,7 +820,7 @@ class DataFrame:
         polars.io.read_parquet
 
         """
-        if isinstance(source, (str, Path)):
+        if isinstance(source, (str, os.PathLike)):
             source = normalise_filepath(source)
         if isinstance(columns, str):
             columns = [columns]
@@ -871,7 +870,7 @@ class DataFrame:
     @classmethod
     def _read_avro(
         cls,
-        source: str | Path | BinaryIO | bytes,
+        source: str | os.PathLike | BinaryIO | bytes,
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
@@ -891,7 +890,7 @@ class DataFrame:
             Stop reading from Apache Avro file after reading ``n_rows``.
 
         """
-        if isinstance(source, (str, Path)):
+        if isinstance(source, (str, os.PathLike)):
             source = normalise_filepath(source)
         projection, columns = handle_projection_columns(columns)
         self = cls.__new__(cls)
@@ -901,7 +900,7 @@ class DataFrame:
     @classmethod
     def _read_ipc(
         cls,
-        source: str | Path | BinaryIO | bytes,
+        source: str | os.PathLike | BinaryIO | bytes,
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
@@ -937,7 +936,7 @@ class DataFrame:
             Memory map the file
 
         """
-        if isinstance(source, (str, Path)):
+        if isinstance(source, (str, os.PathLike)):
             source = normalise_filepath(source)
         if isinstance(columns, str):
             columns = [columns]
@@ -983,7 +982,7 @@ class DataFrame:
     @classmethod
     def _read_ipc_stream(
         cls,
-        source: str | Path | BinaryIO | bytes,
+        source: str | os.PathLike | BinaryIO | bytes,
         *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
@@ -1015,7 +1014,7 @@ class DataFrame:
             Make sure that all data is contiguous.
 
         """
-        if isinstance(source, (str, Path)):
+        if isinstance(source, (str, os.PathLike)):
             source = normalise_filepath(source)
         if isinstance(columns, str):
             columns = [columns]
@@ -1035,7 +1034,7 @@ class DataFrame:
     @classmethod
     def _read_json(
         cls,
-        source: str | Path | IOBase | bytes,
+        source: str | os.PathLike | IOBase | bytes,
         *,
         schema: SchemaDefinition | None = None,
         schema_overrides: SchemaDefinition | None = None,
@@ -1052,7 +1051,7 @@ class DataFrame:
         """
         if isinstance(source, StringIO):
             source = BytesIO(source.getvalue().encode())
-        elif isinstance(source, (str, Path)):
+        elif isinstance(source, (str, os.PathLike)):
             source = normalise_filepath(source)
 
         self = cls.__new__(cls)
@@ -1064,7 +1063,7 @@ class DataFrame:
     @classmethod
     def _read_ndjson(
         cls,
-        source: str | Path | IOBase | bytes,
+        source: str | os.PathLike | IOBase | bytes,
         *,
         schema: SchemaDefinition | None = None,
         schema_overrides: SchemaDefinition | None = None,
@@ -1082,7 +1081,7 @@ class DataFrame:
         """
         if isinstance(source, StringIO):
             source = BytesIO(source.getvalue().encode())
-        elif isinstance(source, (str, Path)):
+        elif isinstance(source, (str, os.PathLike)):
             source = normalise_filepath(source)
 
         self = cls.__new__(cls)
@@ -2325,7 +2324,7 @@ class DataFrame:
     @overload
     def write_json(
         self,
-        file: IOBase | str | Path,
+        file: IOBase | str | os.PathLike,
         *,
         pretty: bool = ...,
         row_oriented: bool = ...,
@@ -2334,7 +2333,7 @@ class DataFrame:
 
     def write_json(
         self,
-        file: IOBase | str | Path | None = None,
+        file: IOBase | str | os.PathLike | None = None,
         *,
         pretty: bool = False,
         row_oriented: bool = False,
@@ -2370,7 +2369,7 @@ class DataFrame:
         '[{"foo":1,"bar":6},{"foo":2,"bar":7},{"foo":3,"bar":8}]'
 
         """
-        if isinstance(file, (str, Path)):
+        if isinstance(file, (str, os.PathLike)):
             file = normalise_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
@@ -2392,10 +2391,10 @@ class DataFrame:
         ...
 
     @overload
-    def write_ndjson(self, file: IOBase | str | Path) -> None:
+    def write_ndjson(self, file: IOBase | str | os.PathLike) -> None:
         ...
 
-    def write_ndjson(self, file: IOBase | str | Path | None = None) -> str | None:
+    def write_ndjson(self, file: IOBase | str | os.PathLike | None = None) -> str | None:
         r"""
         Serialize to newline delimited JSON representation.
 
@@ -2417,7 +2416,7 @@ class DataFrame:
         '{"foo":1,"bar":6}\n{"foo":2,"bar":7}\n{"foo":3,"bar":8}\n'
 
         """
-        if isinstance(file, (str, Path)):
+        if isinstance(file, (str, os.PathLike)):
             file = normalise_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
@@ -2456,7 +2455,7 @@ class DataFrame:
     @overload
     def write_csv(
         self,
-        file: BytesIO | TextIOWrapper | str | Path,
+        file: BytesIO | TextIOWrapper | str | os.PathLike,
         *,
         has_header: bool = ...,
         separator: str = ...,
@@ -2474,7 +2473,7 @@ class DataFrame:
 
     def write_csv(
         self,
-        file: BytesIO | TextIOWrapper | str | Path | None = None,
+        file: BytesIO | TextIOWrapper | str | os.PathLike | None = None,
         *,
         has_header: bool = True,
         separator: str = ",",
@@ -2593,7 +2592,7 @@ class DataFrame:
 
     def write_avro(
         self,
-        file: BinaryIO | BytesIO | str | Path,
+        file: BinaryIO | BytesIO | str | os.PathLike,
         compression: AvroCompression = "uncompressed",
     ) -> None:
         """
@@ -2623,14 +2622,14 @@ class DataFrame:
         """
         if compression is None:
             compression = "uncompressed"
-        if isinstance(file, (str, Path)):
+        if isinstance(file, (str, os.PathLike)):
             file = normalise_filepath(file)
 
         self._df.write_avro(file, compression)
 
     def write_excel(
         self,
-        workbook: Workbook | BytesIO | Path | str | None = None,
+        workbook: Workbook | BytesIO | os.PathLike | str | None = None,
         worksheet: str | None = None,
         *,
         position: tuple[int, int] | str = "A1",
@@ -3140,14 +3139,14 @@ class DataFrame:
     @overload
     def write_ipc(
         self,
-        file: BinaryIO | BytesIO | str | Path,
+        file: BinaryIO | BytesIO | str | os.PathLike,
         compression: IpcCompression = "uncompressed",
     ) -> None:
         ...
 
     def write_ipc(
         self,
-        file: BinaryIO | BytesIO | str | Path | None,
+        file: BinaryIO | BytesIO | str | os.PathLike | None,
         compression: IpcCompression = "uncompressed",
     ) -> BytesIO | None:
         """
@@ -3181,7 +3180,7 @@ class DataFrame:
         return_bytes = file is None
         if return_bytes:
             file = BytesIO()
-        elif isinstance(file, (str, Path)):
+        elif isinstance(file, (str, os.PathLike)):
             file = normalise_filepath(file)
 
         if compression is None:
@@ -3201,14 +3200,14 @@ class DataFrame:
     @overload
     def write_ipc_stream(
         self,
-        file: BinaryIO | BytesIO | str | Path,
+        file: BinaryIO | BytesIO | str | os.PathLike,
         compression: IpcCompression = "uncompressed",
     ) -> None:
         ...
 
     def write_ipc_stream(
         self,
-        file: BinaryIO | BytesIO | str | Path | None,
+        file: BinaryIO | BytesIO | str | os.PathLike | None,
         compression: IpcCompression = "uncompressed",
     ) -> BytesIO | None:
         """
@@ -3242,7 +3241,7 @@ class DataFrame:
         return_bytes = file is None
         if return_bytes:
             file = BytesIO()
-        elif isinstance(file, (str, Path)):
+        elif isinstance(file, (str, os.PathLike)):
             file = normalise_filepath(file)
 
         if compression is None:
@@ -3253,7 +3252,7 @@ class DataFrame:
 
     def write_parquet(
         self,
-        file: str | Path | BytesIO,
+        file: str | os.PathLike | BytesIO,
         *,
         compression: ParquetCompression = "zstd",
         compression_level: int | None = None,
@@ -3327,7 +3326,7 @@ class DataFrame:
         """
         if compression is None:
             compression = "uncompressed"
-        if isinstance(file, (str, Path)):
+        if isinstance(file, (str, os.PathLike)):
             if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
                 file = normalise_filepath(file, check_not_directory=False)
             else:
@@ -3469,7 +3468,7 @@ class DataFrame:
 
     def write_delta(
         self,
-        target: str | Path | deltalake.DeltaTable,
+        target: str | os.PathLike | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore"] = "error",
         overwrite_schema: bool = False,
@@ -3597,7 +3596,7 @@ class DataFrame:
         if delta_write_options is None:
             delta_write_options = {}
 
-        if isinstance(target, (str, Path)):
+        if isinstance(target, (str, os.PathLike)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
 
         _check_for_unsupported_types(self.dtypes)

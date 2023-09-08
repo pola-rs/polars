@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+import os
 from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping, Sequence, TextIO
 
 import polars._reexport as pl
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 def read_csv(
-    source: str | TextIO | BytesIO | Path | BinaryIO | bytes,
+    source: str | TextIO | BytesIO | os.PathLike | BinaryIO | bytes,
     *,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
@@ -397,7 +397,7 @@ def read_csv(
 
 
 def read_csv_batched(
-    source: str | Path,
+    source: str | os.PathLike,
     *,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
@@ -689,7 +689,7 @@ def read_csv_batched(
 
 
 def scan_csv(
-    source: str | Path,
+    source: str | os.PathLike,
     *,
     has_header: bool = True,
     separator: str = ",",
@@ -892,7 +892,7 @@ def scan_csv(
     _check_arg_is_1byte("comment_char", comment_char, False)
     _check_arg_is_1byte("quote_char", quote_char, True)
 
-    if isinstance(source, (str, Path)):
+    if isinstance(source, (str, os.PathLike)):
         source = normalise_filepath(source)
 
     return pl.LazyFrame._scan_csv(
