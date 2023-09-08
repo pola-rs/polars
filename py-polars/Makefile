@@ -64,7 +64,7 @@ fmt: .venv  ## Run autoformatting and linting
 
 .PHONY: clippy
 clippy:  ## Run clippy
-	cargo clippy --locked -- -D warnings
+	cargo clippy --all-features --locked -- -D warnings
 
 .PHONY: pre-commit
 pre-commit: fmt clippy  ## Run all code quality checks
