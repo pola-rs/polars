@@ -71,6 +71,8 @@ pub enum StringFunction {
     Slice(i64, Option<u64>),
     StartsWith,
     Strip(Option<String>),
+    StripPrefix(String),
+    StripSuffix(String),
     #[cfg(feature = "temporal")]
     Strptime(DataType, StrptimeOptions),
     #[cfg(feature = "dtype-decimal")]
@@ -111,9 +113,14 @@ impl StringFunction {
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
-            Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) | Slice(_, _) => {
-                mapper.with_same_dtype()
-            },
+            Uppercase
+            | Lowercase
+            | Strip(_)
+            | StripPrefix(_)
+            | StripSuffix(_)
+            | LStrip(_)
+            | RStrip(_)
+            | Slice(_, _) => mapper.with_same_dtype(),
             #[cfg(feature = "string_justify")]
             Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
         }
@@ -154,6 +161,8 @@ impl Display for StringFunction {
             StringFunction::Slice(_, _) => "str_slice",
             StringFunction::StartsWith { .. } => "starts_with",
             StringFunction::Strip(_) => "strip",
+            StringFunction::StripPrefix(_) => "strip_prefix",
+            StringFunction::StripSuffix(_) => "strip_suffix",
             #[cfg(feature = "temporal")]
             StringFunction::Strptime(_, _) => "strptime",
             #[cfg(feature = "nightly")]
@@ -341,6 +350,20 @@ pub(super) fn strip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     } else {
         Ok(ca.apply_values(|s| Cow::Borrowed(s.trim())).into_series())
     }
+}
+
+pub(super) fn strip_prefix(s: &Series, prefix: &str) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    Ok(ca
+        .apply_values(|s| Cow::Borrowed(s.strip_prefix(prefix).unwrap_or(s)))
+        .into_series())
+}
+
+pub(super) fn strip_suffix(s: &Series, suffix: &str) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    Ok(ca
+        .apply_values(|s| Cow::Borrowed(s.strip_suffix(suffix).unwrap_or(s)))
+        .into_series())
 }
 
 pub(super) fn lstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {

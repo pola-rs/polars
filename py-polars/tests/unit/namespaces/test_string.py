@@ -196,6 +196,18 @@ def test_str_strip() -> None:
     assert_series_equal(s.str.strip(" hwo"), expected)
 
 
+def test_str_strip_prefix() -> None:
+    s = pl.Series(["foo:bar", "foofoo:bar", "bar:bar", "foo", ""])
+    expected = pl.Series([":bar", "foo:bar", "bar:bar", "", ""])
+    assert_series_equal(s.str.strip_prefix("foo"), expected)
+
+
+def test_str_strip_suffix() -> None:
+    s = pl.Series(["foo:bar", "foo:barbar", "foo:foo", "bar", ""])
+    expected = pl.Series(["foo:", "foo:bar", "foo:foo", "", ""])
+    assert_series_equal(s.str.strip_suffix("bar"), expected)
+
+
 def test_str_lstrip() -> None:
     s = pl.Series([" hello ", "\t world"])
     expected = pl.Series(["hello ", "world"])
