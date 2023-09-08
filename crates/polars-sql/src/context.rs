@@ -326,6 +326,9 @@ impl SQLContext {
             None => lf,
         };
 
+        print!("\n\n First:{}", lf.explain(false)?);
+        print!("\n\n Second:{}", lf.explain(true)?);
+
         // Column projections.
         let projections: Vec<_> = select_stmt
             .projection
@@ -460,6 +463,9 @@ impl SQLContext {
                 None => lf,
             }
         };
+
+        print!("\n\n Third:{}", lf.explain(false)?);
+        print!("\n\n Forth:{}", lf.explain(true)?);
 
         // Apply optional 'distinct' clause.
         lf = match &select_stmt.distinct {

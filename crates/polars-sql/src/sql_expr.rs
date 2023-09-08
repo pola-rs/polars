@@ -152,15 +152,16 @@ impl SqlExprVisitor<'_> {
             let mut old_names: Vec<String> = vec![];
             let mut new_names: Vec<String> = vec![];
             schema.iter_names().for_each(|name| {
-                let mut tmpStr: String = Default::default();
+                let mut tmp_str: String = Default::default();
                 // tmpStr = rand_string + &name.to_string();
-                tmpStr.push_str(name);
-                tmpStr.push_str(&rand_string.clone());
-                old_names.push(tmpStr);
-                new_names.push((*name).to_string());
+                tmp_str.push_str(name);
+                tmp_str.push_str(&rand_string.clone());
+                old_names.push((*name).to_string());
+                new_names.push(tmp_str);
             });
-            lf = lf.rename(old_names, new_names.clone());
-            // lf.map()
+            lf = lf.rename(old_names, new_names.clone()).cache();
+
+            print!("\n\n SubQuery:{}", lf.explain(false)?);
 
             return Ok(Expr::SubPlan(Box::new(lf.logical_plan), new_names));
         };
