@@ -1238,7 +1238,11 @@ impl Expr {
                             by.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?,
                             tz,
                         ),
-                        _ => (by.clone(), &None),
+                        DataType::Date => (
+                            by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
+                            &None,
+                        ),
+                        dt => polars_bail!(opq = expr_name, got = dt, expected = "date/datetime"),
                     };
                     let by = by.datetime().unwrap();
                     let by_values = by.cont_slice().map_err(|_| {

@@ -900,3 +900,18 @@ def test_rolling() -> None:
         a.rolling_sum(3),
         pl.Series("a", [None, None, 22.0, nan, nan]),
     )
+
+
+def test_rolling_by_date() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)],
+            "val": [1, 2, 3],
+        }
+    ).sort("dt")
+
+    result = df.with_columns(
+        roll=pl.col("val").rolling_sum("2d", by="dt", closed="right")
+    )
+    expected = df.with_columns(roll=pl.Series([1, 3, 5]))
+    assert_frame_equal(result, expected)
