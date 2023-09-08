@@ -68,7 +68,7 @@ impl PyExpr {
     }
 
     fn str_strip_chars_start(&self, matches: Option<String>) -> Self {
-        self.inner.clone().str().rstrip(matches).into()
+        self.inner.clone().str().strip_chars_start(matches).into()
     }
 
     fn str_strip_chars_end(&self, matches: Option<String>) -> Self {
