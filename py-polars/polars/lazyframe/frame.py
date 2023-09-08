@@ -1821,13 +1821,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         simplify_expression: bool = True,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
-    ):
+    ) -> PyLazyFrame:
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
             slice_pushdown = False
 
-        tmp = self._ldf.optimization_toggle(
+        return self._ldf.optimization_toggle(
             type_coercion,
             predicate_pushdown,
             projection_pushdown,
@@ -1838,7 +1838,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             streaming=True,
             eager=False,
         )
-        raise ValueError(f"type: {type(tmp)}")
 
     def sink_parquet(
         self,
