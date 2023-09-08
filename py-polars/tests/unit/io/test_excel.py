@@ -14,6 +14,8 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from polars.type_aliases import SelectorType
+
 
 @pytest.fixture()
 def excel_file_path(io_files_path: Path) -> Path:
@@ -414,3 +416,12 @@ def test_excel_empty_sheet(empty_excel_file_path: Path) -> None:
 
     df = pl.read_excel(empty_excel_file_path, raise_if_empty=False)
     assert_frame_equal(df, pl.DataFrame())
+
+
+@pytest.mark.parametrize("hidden_columns", [["a"], ["a", "b"], cs.numeric(), cs.last()])
+def test_excel_hidden_columns(hidden_columns: list[str] | SelectorType) -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": ["x", "y"]})
+    xls = BytesIO()
+    df.write_excel(xls, hidden_columns=hidden_columns)
+    read_df = pl.read_excel(xls)
+    assert_frame_equal(df, read_df)
