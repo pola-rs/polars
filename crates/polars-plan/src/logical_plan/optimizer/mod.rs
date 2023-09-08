@@ -13,7 +13,13 @@ mod collect_members;
 #[cfg(feature = "cse")]
 mod cse_expr;
 mod fast_projection;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "csv",
+    feature = "cse",
+    feature = "json"
+))]
 pub(crate) mod file_caching;
 mod flatten_union;
 #[cfg(feature = "fused")]

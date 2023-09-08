@@ -163,7 +163,12 @@ impl ExecutionState {
         }
     }
 
-    #[cfg(not(any(feature = "parquet", feature = "csv", feature = "ipc")))]
+    #[cfg(not(any(
+        feature = "parquet",
+        feature = "csv",
+        feature = "ipc",
+        feature = "json"
+    )))]
     pub(crate) fn with_finger_prints(_finger_prints: Option<usize>) -> Self {
         Self::new()
     }
