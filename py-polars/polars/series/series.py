@@ -1081,7 +1081,7 @@ class Series:
                 self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s
             else:
                 s = self._from_pyseries(
-                    PySeries.new_u32("", np.array(key, np.uint32), True)
+                    PySeries.new_u32("", np.array(key, np.uint32), _strict=True)
                 )
                 self.__setitem__(s, value)
         elif isinstance(key, (list, tuple)):

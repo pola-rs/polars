@@ -226,7 +226,7 @@ def numpy_to_pyseries(
                     "", values[row, :], strict=strict, nan_to_null=nan_to_null
                 )
             )
-        return PySeries.new_series_list(name, pyseries_container, False)
+        return PySeries.new_series_list(name, pyseries_container, _strict=False)
     else:
         return PySeries.new_object(name, values, strict)
 
@@ -253,10 +253,10 @@ def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> PySeri
         return PySeries.new_from_anyvalues(name, values, strict=True)
     # raised if we cannot convert to Wrap<AnyValue>
     except RuntimeError:
-        return PySeries.new_object(name, values, False)
+        return PySeries.new_object(name, values, _strict=False)
     except ComputeError as exc:
         if "mixed dtypes" in str(exc):
-            return PySeries.new_object(name, values, False)
+            return PySeries.new_object(name, values, _strict=False)
         raise
 
 
@@ -413,7 +413,7 @@ def sequence_to_pyseries(
         )
         if dtype in (Date, Datetime, Duration, Time, Categorical, Boolean):
             if pyseries.dtype() != dtype:
-                pyseries = pyseries.cast(dtype, True)
+                pyseries = pyseries.cast(dtype, strict=True)
         return pyseries
 
     elif dtype == Struct:
@@ -1449,7 +1449,7 @@ def series_to_pydf(
     if schema_overrides:
         new_dtype = next(iter(schema_overrides.values()))
         if new_dtype != data.dtype:
-            data_series[0] = data_series[0].cast(new_dtype, True)
+            data_series[0] = data_series[0].cast(new_dtype, strict=True)
 
     data_series = _handle_columns_arg(data_series, columns=column_names)
     return PyDataFrame(data_series)
