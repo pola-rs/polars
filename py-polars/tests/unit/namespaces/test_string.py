@@ -196,18 +196,6 @@ def test_str_strip_chars() -> None:
     assert_series_equal(s.str.strip_chars(" hwo"), expected)
 
 
-def test_str_strip_prefix() -> None:
-    s = pl.Series(["foo:bar", "foofoo:bar", "bar:bar", "foo", ""])
-    expected = pl.Series([":bar", "foo:bar", "bar:bar", "", ""])
-    assert_series_equal(s.str.strip_prefix("foo"), expected)
-
-
-def test_str_strip_suffix() -> None:
-    s = pl.Series(["foo:bar", "foo:barbar", "foo:foo", "bar", ""])
-    expected = pl.Series(["foo:", "foo:bar", "foo:foo", "", ""])
-    assert_series_equal(s.str.strip_suffix("bar"), expected)
-
-
 def test_str_strip_chars_start() -> None:
     s = pl.Series([" hello ", "\t world"])
     expected = pl.Series(["hello ", "world"])
@@ -243,6 +231,34 @@ def test_str_strip_whitespace() -> None:
 
     expected = pl.Series("a", ["trailing", "leading", "both"])
     assert_series_equal(s.str.strip_chars(), expected)
+
+
+def test_str_strip_deprecated() -> None:
+    with pytest.deprecated_call():
+        pl.col("a").str.strip()
+    with pytest.deprecated_call():
+        pl.col("a").str.lstrip()
+    with pytest.deprecated_call():
+        pl.col("a").str.rstrip()
+
+    with pytest.deprecated_call():
+        pl.Series(["a", "b", "c"]).str.strip()
+    with pytest.deprecated_call():
+        pl.Series(["a", "b", "c"]).str.lstrip()
+    with pytest.deprecated_call():
+        pl.Series(["a", "b", "c"]).str.rstrip()
+
+
+def test_str_strip_prefix() -> None:
+    s = pl.Series(["foo:bar", "foofoo:bar", "bar:bar", "foo", ""])
+    expected = pl.Series([":bar", "foo:bar", "bar:bar", "", ""])
+    assert_series_equal(s.str.strip_prefix("foo"), expected)
+
+
+def test_str_strip_suffix() -> None:
+    s = pl.Series(["foo:bar", "foo:barbar", "foo:foo", "bar", ""])
+    expected = pl.Series(["foo:", "foo:bar", "foo:foo", "", ""])
+    assert_series_equal(s.str.strip_suffix("bar"), expected)
 
 
 def test_str_split() -> None:
@@ -871,19 +887,3 @@ def test_string_extract_groups_lazy_schema_10305() -> None:
     )
 
     assert df.schema == {"candidate": pl.Utf8, "ref": pl.Utf8}
-
-
-def test_strip_functions_deprecated() -> None:
-    with pytest.deprecated_call():
-        pl.col("a").str.strip()
-    with pytest.deprecated_call():
-        pl.col("a").str.lstrip()
-    with pytest.deprecated_call():
-        pl.col("a").str.rstrip()
-
-    with pytest.deprecated_call():
-        pl.Series(["a", "b", "c"]).str.strip()
-    with pytest.deprecated_call():
-        pl.Series(["a", "b", "c"]).str.lstrip()
-    with pytest.deprecated_call():
-        pl.Series(["a", "b", "c"]).str.rstrip()

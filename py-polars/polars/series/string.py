@@ -1124,6 +1124,76 @@ class StringNameSpace:
 
         """
 
+    def strip_chars_start(self, characters: str | None = None) -> Series:
+        r"""
+        Remove leading characters.
+
+        Parameters
+        ----------
+        characters
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
+
+        Examples
+        --------
+        >>> s = pl.Series([" hello ", "\tworld"])
+        >>> s.str.strip_chars_start()
+        shape: (2,)
+        Series: '' [str]
+        [
+                "hello "
+                "world"
+        ]
+
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so.
+
+        >>> s.str.strip_chars_start("wod\t")
+        shape: (2,)
+        Series: '' [str]
+        [
+                " hello "
+                "rld"
+        ]
+
+        """
+
+    def strip_chars_end(self, characters: str | None = None) -> Series:
+        r"""
+        Remove trailing characters.
+
+        Parameters
+        ----------
+        characters
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
+
+        Examples
+        --------
+        >>> s = pl.Series([" hello ", "world\t"])
+        >>> s.str.strip_chars_end()
+        shape: (2,)
+        Series: '' [str]
+        [
+                " hello"
+                "world"
+        ]
+
+        Characters can be stripped by passing a string as argument. Note that whitespace
+        will not be stripped automatically when doing so.
+
+        >>> s.str.strip_chars_end("orld\t")
+        shape: (2,)
+        Series: '' [str]
+        [
+            " hello "
+            "w"
+        ]
+
+        """
+
     def strip_prefix(self, prefix: str) -> Series:
         """
         Remove prefix.
@@ -1173,127 +1243,6 @@ class StringNameSpace:
                 "foo"
                 ""
         ]
-        """
-
-    @deprecate_renamed_function("strip_chars", version="0.19.3")
-    def strip(self, characters: str | None = None) -> Series:
-        r"""
-        Remove leading and trailing characters.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`Series.strip_chars`.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-
-        """
-
-    def strip_chars_start(self, characters: str | None = None) -> Series:
-        r"""
-        Remove leading characters.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-
-        Examples
-        --------
-        >>> s = pl.Series([" hello ", "\tworld"])
-        >>> s.str.strip_chars_start()
-        shape: (2,)
-        Series: '' [str]
-        [
-                "hello "
-                "world"
-        ]
-
-        Characters can be stripped by passing a string as argument. Note that whitespace
-        will not be stripped automatically when doing so.
-
-        >>> s.str.strip_chars_start("wod\t")
-        shape: (2,)
-        Series: '' [str]
-        [
-                " hello "
-                "rld"
-        ]
-
-        """
-
-    @deprecate_renamed_function("strip_chars_start", version="0.19.3")
-    def lstrip(self, characters: str | None = None) -> Series:
-        r"""
-        Remove leading characters.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`Series.strip_chars_start`.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-
-        """
-
-    def strip_chars_end(self, characters: str | None = None) -> Series:
-        r"""
-        Remove trailing characters.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-
-        Examples
-        --------
-        >>> s = pl.Series([" hello ", "world\t"])
-        >>> s.str.strip_chars_end()
-        shape: (2,)
-        Series: '' [str]
-        [
-                " hello"
-                "world"
-        ]
-
-        Characters can be stripped by passing a string as argument. Note that whitespace
-        will not be stripped automatically when doing so.
-
-        >>> s.str.strip_chars_end("orld\t")
-        shape: (2,)
-        Series: '' [str]
-        [
-            " hello "
-            "w"
-        ]
-
-        """
-
-    @deprecate_renamed_function("strip_chars_end", version="0.19.3")
-    def rstrip(self, characters: str | None = None) -> Series:
-        r"""
-        Remove trailing characters.
-
-        .. deprecated:: 0.19.3
-            This method has been renamed to :func:`Series.strip_chars_end`.
-
-        Parameters
-        ----------
-        characters
-            The set of characters to be removed. All combinations of this set of
-            characters will be stripped. If set to None (default), all whitespace is
-            removed instead.
-
         """
 
     def zfill(self, alignment: int) -> Series:
@@ -1537,5 +1486,56 @@ class StringNameSpace:
                 51966
                 null
         ]
+
+        """
+
+    @deprecate_renamed_function("strip_chars", version="0.19.3")
+    def strip(self, characters: str | None = None) -> Series:
+        """
+        Remove leading and trailing characters.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`strip_chars`.
+
+        Parameters
+        ----------
+        characters
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
+
+        """
+
+    @deprecate_renamed_function("strip_chars_start", version="0.19.3")
+    def lstrip(self, characters: str | None = None) -> Series:
+        """
+        Remove leading characters.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`strip_chars_start`.
+
+        Parameters
+        ----------
+        characters
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
+
+        """
+
+    @deprecate_renamed_function("strip_chars_end", version="0.19.3")
+    def rstrip(self, characters: str | None = None) -> Series:
+        """
+        Remove trailing characters.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`Series.strip_chars_end`.
+
+        Parameters
+        ----------
+        characters
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
 
         """

@@ -352,20 +352,6 @@ pub(super) fn strip_chars(s: &Series, matches: Option<&str>) -> PolarsResult<Ser
     }
 }
 
-pub(super) fn strip_prefix(s: &Series, prefix: &str) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    Ok(ca
-        .apply_values(|s| Cow::Borrowed(s.strip_prefix(prefix).unwrap_or(s)))
-        .into_series())
-}
-
-pub(super) fn strip_suffix(s: &Series, suffix: &str) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    Ok(ca
-        .apply_values(|s| Cow::Borrowed(s.strip_suffix(suffix).unwrap_or(s)))
-        .into_series())
-}
-
 pub(super) fn strip_chars_start(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
 
@@ -409,6 +395,20 @@ pub(super) fn strip_chars_end(s: &Series, matches: Option<&str>) -> PolarsResult
             .apply_values(|s| Cow::Borrowed(s.trim_end()))
             .into_series())
     }
+}
+
+pub(super) fn strip_prefix(s: &Series, prefix: &str) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    Ok(ca
+        .apply_values(|s| Cow::Borrowed(s.strip_prefix(prefix).unwrap_or(s)))
+        .into_series())
+}
+
+pub(super) fn strip_suffix(s: &Series, suffix: &str) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    Ok(ca
+        .apply_values(|s| Cow::Borrowed(s.strip_suffix(suffix).unwrap_or(s)))
+        .into_series())
 }
 
 pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
