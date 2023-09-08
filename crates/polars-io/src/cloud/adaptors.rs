@@ -248,8 +248,6 @@ mod tests {
         .unwrap()
     }
 
-    // Skip this tests on Windows since it does not have a convenient /tmp/ location.
-    #[cfg_attr(target_os = "windows", ignore)]
     #[test]
     fn csv_to_local_objectstore_cloudwriter() {
         use crate::csv::CsvWriter;
@@ -258,7 +256,7 @@ mod tests {
         let mut df = example_dataframe();
 
         let object_store: Box<dyn ObjectStore> = Box::new(
-            object_store::local::LocalFileSystem::new_with_prefix("/tmp/")
+            object_store::local::LocalFileSystem::new_with_prefix(std::env::temp_dir())
                 .expect("Could not initialize connection"),
         );
         let object_store: Arc<dyn ObjectStore> = Arc::from(object_store);
