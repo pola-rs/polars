@@ -2306,9 +2306,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
         return lf.sink_json(
-            path=path,
-            json_format=json_format,
-            maintain_order=maintain_order
+            path=path, json_format=json_format, maintain_order=maintain_order
         )
 
     def _set_sink_optimizations(

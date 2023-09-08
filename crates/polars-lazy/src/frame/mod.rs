@@ -684,12 +684,14 @@ impl LazyFrame {
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "parquet")]
-    pub fn sink_parquet(mut self, path: PathBuf, options: ParquetWriteOptions) -> PolarsResult<()> {
-        self.sink(  SinkType::File {
-            path: Arc::new(path),
-            file_type: FileType::Parquet(options),
-        },
-                    "collect().write_parquet()")
+    pub fn sink_parquet(self, path: PathBuf, options: ParquetWriteOptions) -> PolarsResult<()> {
+        self.sink(
+            SinkType::File {
+                path: Arc::new(path),
+                file_type: FileType::Parquet(options),
+            },
+            "collect().write_parquet()",
+        )
     }
 
     /// Stream a query result into a parquet file on an ObjectStore-compatible cloud service. This is useful if the final result doesn't fit
@@ -703,12 +705,14 @@ impl LazyFrame {
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         parquet_options: ParquetWriteOptions,
     ) -> PolarsResult<()> {
-        self.sink(  SinkType::Cloud {
-            uri: Arc::new(uri),
-            cloud_options,
-            file_type: FileType::Parquet(parquet_options),
-        },
-        "collect().write_parquet()")
+        self.sink(
+            SinkType::Cloud {
+                uri: Arc::new(uri),
+                cloud_options,
+                file_type: FileType::Parquet(parquet_options),
+            },
+            "collect().write_parquet()",
+        )
     }
 
     /// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
@@ -716,11 +720,13 @@ impl LazyFrame {
     /// streaming fashion.
     #[cfg(feature = "ipc")]
     pub fn sink_ipc(self, path: PathBuf, options: IpcWriterOptions) -> PolarsResult<()> {
-        self.sink(  SinkType::File {
-            path: Arc::new(path),
-            file_type: FileType::Ipc(options),
-        },
-                    "collect().write_ipc()")
+        self.sink(
+            SinkType::File {
+                path: Arc::new(path),
+                file_type: FileType::Ipc(options),
+            },
+            "collect().write_ipc()",
+        )
     }
 
     /// Stream a query result into an csv file. This is useful if the final result doesn't fit
@@ -728,11 +734,13 @@ impl LazyFrame {
     /// streaming fashion.
     #[cfg(feature = "csv")]
     pub fn sink_csv(self, path: PathBuf, options: CsvWriterOptions) -> PolarsResult<()> {
-        self.sink(  SinkType::File {
-            path: Arc::new(path),
-            file_type: FileType::Csv(options)
-        },
-        "collect().write_csv()")
+        self.sink(
+            SinkType::File {
+                path: Arc::new(path),
+                file_type: FileType::Csv(options),
+            },
+            "collect().write_csv()",
+        )
     }
 
     /// Stream a query result into a json file. This is useful if the final result doesn't fit
@@ -740,11 +748,13 @@ impl LazyFrame {
     /// streaming fashion.
     #[cfg(feature = "json")]
     pub fn sink_json(self, path: PathBuf, options: JsonWriterOptions) -> PolarsResult<()> {
-        self.sink(  SinkType::File {
-                        path: Arc::new(path),
-                        file_type: FileType::Json(options)
-                    },
-                    "collect().write_ndjson()` or `collect().write_json()")
+        self.sink(
+            SinkType::File {
+                path: Arc::new(path),
+                file_type: FileType::Json(options),
+            },
+            "collect().write_ndjson()` or `collect().write_json()",
+        )
     }
 
     fn sink(mut self, payload: SinkType, msg_alternative: &str) -> Result<(), PolarsError> {
