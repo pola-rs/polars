@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, overload
 
 from polars.utils._wrap import wrap_expr
-from polars.utils.various import normalise_filepath
+from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from io import IOBase
@@ -203,7 +203,7 @@ class ExprMetaNameSpace:
     def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
         """Write expression to json."""
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:

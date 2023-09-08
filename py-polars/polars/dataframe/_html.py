@@ -49,6 +49,7 @@ class HTMLFormatter:
     def __init__(
         self,
         df: DataFrame,
+        *,
         max_cols: int = 75,
         max_rows: int = 40,
         from_series: bool = False,

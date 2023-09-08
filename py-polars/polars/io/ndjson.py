@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars.datatypes import N_INFER_DEFAULT
-from polars.utils.various import normalise_filepath
+from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from io import IOBase
@@ -95,7 +95,7 @@ def scan_ndjson(
 
     """
     if isinstance(source, (str, Path)):
-        source = normalise_filepath(source)
+        source = normalize_filepath(source)
 
     return pl.LazyFrame._scan_ndjson(
         source,

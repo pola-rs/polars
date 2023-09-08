@@ -11,7 +11,7 @@ from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
     handle_projection_columns,
-    normalise_filepath,
+    normalize_filepath,
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -57,7 +57,7 @@ class BatchedCsvReader:
     ):
         path: str | None
         if isinstance(source, (str, Path)):
-            path = normalise_filepath(source)
+            path = normalize_filepath(source)
 
         dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
         dtype_slice: Sequence[PolarsDataType] | None = None

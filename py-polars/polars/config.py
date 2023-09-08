@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from polars.dependencies import json
-from polars.utils.various import normalise_filepath
+from polars.utils.various import normalize_filepath
 
 
 # dummy func required (so docs build)
@@ -188,7 +188,7 @@ class Config(contextlib.ContextDecorator):
 
         """
         options = json.loads(
-            Path(normalise_filepath(cfg)).read_text()
+            Path(normalize_filepath(cfg)).read_text()
             if isinstance(cfg, Path) or Path(cfg).exists()
             else cfg
         )
@@ -256,7 +256,7 @@ class Config(contextlib.ContextDecorator):
             separators=(",", ":"),
         )
         if isinstance(file, (str, Path)):
-            file = Path(normalise_filepath(file)).resolve()
+            file = Path(normalize_filepath(file)).resolve()
             file.write_text(options)
             return str(file)
 

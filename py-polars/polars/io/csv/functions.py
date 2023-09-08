@@ -8,7 +8,7 @@ from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
-from polars.utils.various import handle_projection_columns, normalise_filepath
+from polars.utils.various import handle_projection_columns, normalize_filepath
 
 if TYPE_CHECKING:
     from io import BytesIO
@@ -893,7 +893,7 @@ def scan_csv(
     _check_arg_is_1byte("quote_char", quote_char, True)
 
     if isinstance(source, (str, Path)):
-        source = normalise_filepath(source)
+        source = normalize_filepath(source)
 
     return pl.LazyFrame._scan_csv(
         source,
