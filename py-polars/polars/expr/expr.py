@@ -230,13 +230,11 @@ class Expr:
     def __rxor__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other)._xor(self._pyexpr))
 
-    # state
-    def __getstate__(self) -> Any:
+    def __getstate__(self) -> bytes:
         return self._pyexpr.__getstate__()
 
-    def __setstate__(self, state: Any) -> None:
-        # init with a dummy
-        self._pyexpr = F.lit(0)._pyexpr
+    def __setstate__(self, state: bytes) -> None:
+        self._pyexpr = F.lit(0)._pyexpr  # Initialize with a dummy
         self._pyexpr.__setstate__(state)
 
     def __array_ufunc__(

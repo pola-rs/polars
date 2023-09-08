@@ -35,7 +35,6 @@ from polars.datatypes import (
     Datetime,
     Decimal,
     Duration,
-    Float32,
     Float64,
     Int8,
     Int16,
@@ -423,11 +422,11 @@ class Series:
             " To check if a Series contains any values, use `is_empty()`."
         )
 
-    def __getstate__(self) -> Any:
+    def __getstate__(self) -> bytes:
         return self._s.__getstate__()
 
-    def __setstate__(self, state: Any) -> None:
-        self._s = sequence_to_pyseries("", [], Float32)
+    def __setstate__(self, state: bytes) -> None:
+        self._s = Series()._s  # Initialize with a dummy
         self._s.__setstate__(state)
 
     def __str__(self) -> str:
@@ -923,7 +922,7 @@ class Series:
         return self.clone()
 
     def __contains__(self, item: Any) -> bool:
-        # TODO! optimize via `is_in` and `SORTED` flags
+        # TODO: optimize via `is_in` and `SORTED` flags
         try:
             return (self == item).any()
         except ValueError:
@@ -935,7 +934,7 @@ class Series:
             #  a faster way to return nested/List series; sequential 'get_idx' calls
             #  make this path a lot slower (~10x) than it needs to be.
             get_idx = self._s.get_idx
-            for idx in range(0, self.len()):
+            for idx in range(self.len()):
                 yield get_idx(idx)
         else:
             buffer_size = 25_000
@@ -2793,7 +2792,7 @@ class Series:
             if str(exc) == "Already mutably borrowed":
                 self._s.append(other._s.clone())
             else:
-                raise exc
+                raise
         return self
 
     def extend(self, other: Series) -> Self:
@@ -2857,7 +2856,7 @@ class Series:
             if str(exc) == "Already mutably borrowed":
                 self._s.extend(other._s.clone())
             else:
-                raise exc
+                raise
         return self
 
     def filter(self, predicate: Series | list[bool]) -> Self:

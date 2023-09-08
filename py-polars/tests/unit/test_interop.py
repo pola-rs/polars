@@ -508,18 +508,17 @@ def test_from_optional_not_available() -> None:
 
 
 def test_upcast_pyarrow_dicts() -> None:
-    # 1752
-    tbls = []
-    for i in range(128):
-        tbls.append(
-            pa.table(
-                {
-                    "col_name": pa.array(
-                        ["value_" + str(i)], pa.dictionary(pa.int8(), pa.string())
-                    ),
-                }
-            )
+    # https://github.com/pola-rs/polars/issues/1752
+    tbls = [
+        pa.table(
+            {
+                "col_name": pa.array(
+                    [f"value_{i}"], pa.dictionary(pa.int8(), pa.string())
+                )
+            }
         )
+        for i in range(128)
+    ]
 
     tbl = pa.concat_tables(tbls, promote=True)
     out = cast(pl.DataFrame, pl.from_arrow(tbl))
