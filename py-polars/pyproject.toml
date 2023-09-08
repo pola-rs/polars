@@ -124,6 +124,7 @@ select = [
   "PT", # flake8-pytest-style
   "RUF", # Ruff-specific rules
   "PTH", # flake8-use-pathlib
+  "FA", # flake8-future-annotations
 ]
 
 ignore = [
