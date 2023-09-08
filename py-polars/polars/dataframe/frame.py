@@ -148,6 +148,7 @@ if TYPE_CHECKING:
         RowTotalsDefinition,
         SchemaDefinition,
         SchemaDict,
+        SelectorType,
         SizeUnit,
         StartBy,
         UniqueKeepStrategy,
@@ -2649,7 +2650,7 @@ class DataFrame:
         has_header: bool = True,
         autofilter: bool = True,
         autofit: bool = False,
-        hidden_columns: Sequence[str] | None = None,
+        hidden_columns: Sequence[str] | SelectorType | None = None,
         hide_gridlines: bool = False,
         sheet_zoom: int | None = None,
         freeze_panes: (
@@ -3069,9 +3070,10 @@ class DataFrame:
                     has_header=has_header,
                     format_cache=fmt_cache,
                 )
-
         # additional column-level properties
-        hidden_columns = _expand_selectors(df, hidden_columns or ())
+        if hidden_columns is None:
+            hidden_columns = ()
+        hidden_columns = _expand_selectors(df, hidden_columns)
         if isinstance(column_widths, int):
             column_widths = {column: column_widths for column in df.columns}
         else:
