@@ -603,9 +603,9 @@ impl LazyFrame {
             None
         };
 
-        // file sink should be replaced
+        // sink should be replaced
         let no_file_sink = if check_sink {
-            !matches!(lp_arena.get(lp_top), ALogicalPlan::FileSink { .. })
+            !matches!(lp_arena.get(lp_top), ALogicalPlan::Sink { .. })
         } else {
             true
         };
@@ -664,9 +664,9 @@ impl LazyFrame {
     #[cfg(feature = "parquet")]
     pub fn sink_parquet(mut self, path: PathBuf, options: ParquetWriteOptions) -> PolarsResult<()> {
         self.opt_state.streaming = true;
-        self.logical_plan = LogicalPlan::FileSink {
+        self.logical_plan = LogicalPlan::Sink {
             input: Box::new(self.logical_plan),
-            payload: FileSinkOptions {
+            payload: SinkType::File {
                 path: Arc::new(path),
                 file_type: FileType::Parquet(options),
             },
@@ -681,15 +681,44 @@ impl LazyFrame {
         Ok(())
     }
 
+    /// Stream a query result into a parquet file on an ObjectStore-compatible cloud service. This is useful if the final result doesn't fit
+    /// into memory, and where you do not want to write to a local file but to a location in the cloud.
+    /// This method will return an error if the query cannot be completely done in a
+    /// streaming fashion.
+    #[cfg(all(feature = "cloud_write", feature = "parquet"))]
+    pub fn sink_parquet_cloud(
+        mut self,
+        uri: String,
+        cloud_options: Option<polars_core::cloud::CloudOptions>,
+        parquet_options: ParquetWriteOptions,
+    ) -> PolarsResult<()> {
+        self.opt_state.streaming = true;
+        self.logical_plan = LogicalPlan::Sink {
+            input: Box::new(self.logical_plan),
+            payload: SinkType::Cloud {
+                uri: Arc::new(uri),
+                cloud_options,
+                file_type: FileType::Parquet(parquet_options),
+            },
+        };
+        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
+        polars_ensure!(
+            is_streaming,
+            ComputeError: "cannot run the whole query in a streaming order"
+        );
+        let _ = physical_plan.execute(&mut state)?;
+        Ok(())
+    }
+
     /// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "ipc")]
     pub fn sink_ipc(mut self, path: PathBuf, options: IpcWriterOptions) -> PolarsResult<()> {
         self.opt_state.streaming = true;
-        self.logical_plan = LogicalPlan::FileSink {
+        self.logical_plan = LogicalPlan::Sink {
             input: Box::new(self.logical_plan),
-            payload: FileSinkOptions {
+            payload: SinkType::File {
                 path: Arc::new(path),
                 file_type: FileType::Ipc(options),
             },
@@ -710,9 +739,9 @@ impl LazyFrame {
     #[cfg(feature = "csv")]
     pub fn sink_csv(mut self, path: PathBuf, options: CsvWriterOptions) -> PolarsResult<()> {
         self.opt_state.streaming = true;
-        self.logical_plan = LogicalPlan::FileSink {
+        self.logical_plan = LogicalPlan::Sink {
             input: Box::new(self.logical_plan),
-            payload: FileSinkOptions {
+            payload: SinkType::File {
                 path: Arc::new(path),
                 file_type: FileType::Csv(options),
             },

@@ -110,9 +110,9 @@ pub enum ALogicalPlan {
         contexts: Vec<Node>,
         schema: SchemaRef,
     },
-    FileSink {
+    Sink {
         input: Node,
-        payload: FileSinkOptions,
+        payload: SinkType,
     },
 }
 
@@ -161,7 +161,12 @@ impl ALogicalPlan {
             MapFunction { .. } => "map_function",
             Union { .. } => "union",
             ExtContext { .. } => "ext_context",
-            FileSink { .. } => "file_sink",
+            Sink { payload, .. } => match payload {
+                SinkType::Memory => "sink (memory)",
+                SinkType::File { .. } => "sink (file)",
+                #[cfg(feature = "cloud")]
+                SinkType::Cloud { .. } => "sink (cloud)",
+            },
         }
     }
 
@@ -194,9 +199,7 @@ impl ALogicalPlan {
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
-            Distinct { input, .. } | FileSink { input, .. } => {
-                return arena.get(*input).schema(arena)
-            },
+            Distinct { input, .. } | Sink { input, .. } => return arena.get(*input).schema(arena),
             Slice { input, .. } => return arena.get(*input).schema(arena),
             MapFunction { input, function } => {
                 let input_schema = arena.get(*input).schema(arena);
@@ -373,7 +376,7 @@ impl ALogicalPlan {
                 contexts: inputs,
                 schema: schema.clone(),
             },
-            FileSink { payload, .. } => FileSink {
+            Sink { payload, .. } => Sink {
                 input: inputs.pop().unwrap(),
                 payload: payload.clone(),
             },
@@ -416,7 +419,7 @@ impl ALogicalPlan {
                     container.push(*node)
                 }
             },
-            ExtContext { .. } | FileSink { .. } => {},
+            ExtContext { .. } | Sink { .. } => {},
         }
     }
 
@@ -460,7 +463,7 @@ impl ALogicalPlan {
             HStack { input, .. } => *input,
             Distinct { input, .. } => *input,
             MapFunction { input, .. } => *input,
-            FileSink { input, .. } => *input,
+            Sink { input, .. } => *input,
             ExtContext {
                 input, contexts, ..
             } => {
