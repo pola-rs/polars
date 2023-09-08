@@ -182,10 +182,10 @@ def read_csv(
     an expensive operation.
 
     """
-    _check_arg_is_1byte("separator", separator, False)
-    _check_arg_is_1byte("comment_char", comment_char, False)
-    _check_arg_is_1byte("quote_char", quote_char, True)
-    _check_arg_is_1byte("eol_char", eol_char, False)
+    _check_arg_is_1byte("separator", separator, can_be_empty=False)
+    _check_arg_is_1byte("comment_char", comment_char, can_be_empty=False)
+    _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
+    _check_arg_is_1byte("eol_char", eol_char, can_be_empty=False)
 
     projection, columns = handle_projection_columns(columns)
     storage_options = storage_options or {}
@@ -888,9 +888,9 @@ def scan_csv(
         def with_column_names(_cols: list[str]) -> list[str]:
             return new_columns  # type: ignore[return-value]
 
-    _check_arg_is_1byte("separator", separator, False)
-    _check_arg_is_1byte("comment_char", comment_char, False)
-    _check_arg_is_1byte("quote_char", quote_char, True)
+    _check_arg_is_1byte("separator", separator, can_be_empty=False)
+    _check_arg_is_1byte("comment_char", comment_char, can_be_empty=False)
+    _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from polars.dependencies import json
+from polars.utils.deprecation import deprecate_nonkeyword_arguments
 from polars.utils.various import normalize_filepath
 
 
@@ -263,8 +264,9 @@ class Config(contextlib.ContextDecorator):
         return options
 
     @classmethod
+    @deprecate_nonkeyword_arguments(version="0.19.3")
     def state(
-        cls, if_set: bool = False, env_only: bool = False
+        cls, if_set: bool = False, env_only: bool = False  # noqa: FBT001
     ) -> dict[str, str | None]:
         """
         Show the current state of all Config variables as a dict.

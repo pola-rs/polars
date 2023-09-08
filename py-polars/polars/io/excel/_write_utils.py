@@ -107,6 +107,7 @@ def _unpack_multi_column_dict(
 def _xl_apply_conditional_formats(
     df: DataFrame,
     ws: Worksheet,
+    *,
     conditional_formats: ConditionalFormatDict,
     table_start: tuple[int, int],
     has_header: bool,
@@ -127,13 +128,19 @@ def _xl_apply_conditional_formats(
             if not isinstance(fmt, dict):
                 fmt = {"type": fmt}
             if isinstance(cols, str):
-                col_range = _xl_column_range(df, table_start, cols, has_header)
+                col_range = _xl_column_range(
+                    df, table_start, cols, has_header=has_header
+                )
             else:
-                col_range = _xl_column_multi_range(df, table_start, cols, has_header)
+                col_range = _xl_column_multi_range(
+                    df, table_start, cols, has_header=has_header
+                )
                 if " " in col_range:
                     col = next(iter(cols))
                     fmt["multi_range"] = col_range
-                    col_range = _xl_column_range(df, table_start, col, has_header)
+                    col_range = _xl_column_range(
+                        df, table_start, col, has_header=has_header
+                    )
 
             if "format" in fmt:
                 f = fmt["format"]
@@ -148,10 +155,11 @@ def _xl_apply_conditional_formats(
 
 
 @overload
-def _xl_column_range(  # type: ignore[misc]
+def _xl_column_range(
     df: DataFrame,
     table_start: tuple[int, int],
     col: str | tuple[int, int],
+    *,
     has_header: bool,
     as_range: Literal[True] = ...,
 ) -> str:
@@ -163,8 +171,9 @@ def _xl_column_range(
     df: DataFrame,
     table_start: tuple[int, int],
     col: str | tuple[int, int],
+    *,
     has_header: bool,
-    as_range: Literal[False] = ...,
+    as_range: Literal[False],
 ) -> tuple[int, int, int, int]:
     ...
 
@@ -173,6 +182,7 @@ def _xl_column_range(
     df: DataFrame,
     table_start: tuple[int, int],
     col: str | tuple[int, int],
+    *,
     has_header: bool,
     as_range: bool = True,
 ) -> tuple[int, int, int, int] | str:
@@ -195,15 +205,18 @@ def _xl_column_multi_range(
     df: DataFrame,
     table_start: tuple[int, int],
     cols: Iterable[str],
+    *,
     has_header: bool,
 ) -> str:
     """Return column ranges as an xlsxwriter 'multi_range' string, or spanning range."""
     m: dict[str, Any] = {}
     if _adjacent_cols(df, cols, min_max=m):
         return _xl_column_range(
-            df, table_start, (m["min"]["idx"], m["max"]["idx"]), has_header
+            df, table_start, (m["min"]["idx"], m["max"]["idx"]), has_header=has_header
         )
-    return " ".join(_xl_column_range(df, table_start, col, has_header) for col in cols)
+    return " ".join(
+        _xl_column_range(df, table_start, col, has_header=has_header) for col in cols
+    )
 
 
 def _xl_inject_dummy_table_columns(
@@ -258,6 +271,7 @@ def _xl_inject_sparklines(
     df: DataFrame,
     table_start: tuple[int, int],
     col: str,
+    *,
     has_header: bool,
     params: Sequence[str] | dict[str, Any],
 ) -> None:
@@ -272,7 +286,7 @@ def _xl_inject_sparklines(
         raise RuntimeError("sparkline data range/cols must all be adjacent")
 
     spk_row, spk_col, _, _ = _xl_column_range(
-        df, table_start, col, has_header, as_range=False
+        df, table_start, col, has_header=has_header, as_range=False
     )
     data_start_col = table_start[1] + m["min"]["idx"]
     data_end_col = table_start[1] + m["max"]["idx"]

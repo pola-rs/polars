@@ -516,6 +516,7 @@ class LazyFrame:
         cls,
         schema: pa.schema | dict[str, PolarsDataType],
         scan_fn: Any,
+        *,
         pyarrow: bool = False,
     ) -> Self:
         self = cls.__new__(cls)

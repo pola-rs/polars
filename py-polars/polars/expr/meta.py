@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, overload
 
 from polars.utils._wrap import wrap_expr
+from polars.utils.deprecation import deprecate_nonkeyword_arguments
 from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
@@ -227,7 +228,8 @@ class ExprMetaNameSpace:
     def tree_format(self, *, return_as_string: Literal[True]) -> str:
         ...
 
-    def tree_format(self, return_as_string: bool = False) -> str | None:
+    @deprecate_nonkeyword_arguments(version="0.19.3")
+    def tree_format(self, return_as_string: bool = False) -> str | None:  # noqa: FBT001
         """
         Format the expression as a tree.
 

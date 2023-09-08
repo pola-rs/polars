@@ -3354,8 +3354,8 @@ class Expr:
         self,
         breaks: Sequence[float],
         labels: Sequence[str] | None = None,
-        left_closed: bool = False,
-        include_breaks: bool = False,
+        left_closed: bool = False,  # noqa: FBT001
+        include_breaks: bool = False,  # noqa: FBT001
     ) -> Self:
         """
         Bin continuous values into discrete categories.
@@ -3435,9 +3435,9 @@ class Expr:
         self,
         quantiles: Sequence[float] | int,
         labels: Sequence[str] | None = None,
-        left_closed: bool = False,
-        allow_duplicates: bool = False,
-        include_breaks: bool = False,
+        left_closed: bool = False,  # noqa: FBT001
+        allow_duplicates: bool = False,  # noqa: FBT001
+        include_breaks: bool = False,  # noqa: FBT001
     ) -> Self:
         """
         Bin continuous values into discrete categories based on their quantiles.
@@ -8868,6 +8868,7 @@ class Expr:
             dtype: PolarsDataType | None,
             dtype_if_empty: PolarsDataType | None,
             dtype_keys: PolarsDataType | None,
+            *,
             is_keys: bool,
         ) -> Series:
             """

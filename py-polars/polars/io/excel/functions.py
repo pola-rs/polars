@@ -309,6 +309,7 @@ def _read_excel_sheet_openpyxl(
     sheet_id: int | None,
     sheet_name: str | None,
     read_csv_options: dict[str, Any] | None,
+    *,
     raise_if_empty: bool,
 ) -> pl.DataFrame:
     """Use the 'openpyxl' library to read data from the given worksheet."""
@@ -356,6 +357,7 @@ def _read_excel_sheet_xlsx2csv(
     sheet_id: int | None,
     sheet_name: str | None,
     read_csv_options: dict[str, Any],
+    *,
     raise_if_empty: bool,
 ) -> pl.DataFrame:
     """Use the 'xlsx2csv' library to read data from the given worksheet."""

@@ -443,6 +443,7 @@ def _assert_series_inner(
 def _assert_series_nested(
     left: Series,
     right: Series,
+    *,
     check_dtype: bool,
     check_exact: bool,
     atol: float,

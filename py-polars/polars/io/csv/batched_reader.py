@@ -28,6 +28,7 @@ class BatchedCsvReader:
     def __init__(
         self,
         source: str | Path,
+        *,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
         separator: str = ",",

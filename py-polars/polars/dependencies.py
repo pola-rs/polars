@@ -42,6 +42,7 @@ class _LazyModule(ModuleType):
     def __init__(
         self,
         module_name: str,
+        *,
         module_available: bool,
     ) -> None:
         """
