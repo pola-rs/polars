@@ -299,11 +299,11 @@ class LazyFrame:
         self._ldf = ldf
         return self
 
-    def __getstate__(self) -> Any:
+    def __getstate__(self) -> bytes:
         return self._ldf.__getstate__()
 
-    def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
-        self._ldf = LazyFrame("", [])._ldf
+    def __setstate__(self, state: bytes) -> None:
+        self._ldf = LazyFrame()._ldf  # Initialize with a dummy
         self._ldf.__setstate__(state)
 
     @classmethod

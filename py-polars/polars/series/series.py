@@ -35,7 +35,6 @@ from polars.datatypes import (
     Datetime,
     Decimal,
     Duration,
-    Float32,
     Float64,
     Int8,
     Int16,
@@ -423,11 +422,11 @@ class Series:
             " To check if a Series contains any values, use `is_empty()`."
         )
 
-    def __getstate__(self) -> Any:
+    def __getstate__(self) -> bytes:
         return self._s.__getstate__()
 
-    def __setstate__(self, state: Any) -> None:
-        self._s = sequence_to_pyseries("", [], Float32)
+    def __setstate__(self, state: bytes) -> None:
+        self._s = Series()._s  # Initialize with a dummy
         self._s.__setstate__(state)
 
     def __str__(self) -> str:

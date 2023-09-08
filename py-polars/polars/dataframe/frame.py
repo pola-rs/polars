@@ -1460,7 +1460,7 @@ class DataFrame:
     def __getstate__(self) -> list[Series]:
         return self.get_columns()
 
-    def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
+    def __setstate__(self, state: list[Series]) -> None:
         self._df = DataFrame(state)._df
 
     def __mul__(self, other: DataFrame | Series | int | float) -> Self:
