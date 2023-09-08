@@ -583,36 +583,28 @@ class ExprStringNameSpace:
         """
         Remove prefix.
 
+        The prefix will be removed from the string exactly once, if found.
+
         Parameters
         ----------
         prefix
-            The prefix to be removed. The prefix will be removed exactly once from the
-            string if found.
+            The prefix to be removed.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"baz": ["foo:bar", "foofoo:bar"]})
-        >>> df
-        shape: (2, 1)
-        ┌────────────┐
-        │ baz        │
-        │ ---        │
-        │ str        │
-        ╞════════════╡
-        │ foo:bar    │
-        │ foofoo:bar │
-        └────────────┘
-
-        >>> df.select(pl.col("baz").str.strip_prefix("foo"))
-        shape: (2, 1)
-        ┌─────────┐
-        │ baz     │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ :bar    │
-        │ foo:bar │
-        └─────────┘
+        >>> df = pl.DataFrame({"a": ["foobar", "foofoobar", "foo", "bar"]})
+        >>> df.with_columns(pl.col("a").str.strip_prefix("foo").alias("stripped"))
+        shape: (4, 2)
+        ┌───────────┬──────────┐
+        │ a         ┆ stripped │
+        │ ---       ┆ ---      │
+        │ str       ┆ str      │
+        ╞═══════════╪══════════╡
+        │ foobar    ┆ bar      │
+        │ foofoobar ┆ foobar   │
+        │ foo       ┆          │
+        │ bar       ┆ bar      │
+        └───────────┴──────────┘
 
         """
         return wrap_expr(self._pyexpr.str_strip_prefix(prefix))
@@ -621,36 +613,28 @@ class ExprStringNameSpace:
         """
         Remove suffix.
 
+        The suffix will be removed from the string exactly once, if found.
+
         Parameters
         ----------
         suffix
-            The suffix to be removed. The suffix will be removed exactly once from the
-            string if found.
+            The suffix to be removed.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"baz": ["foo:bar", "foo:barbar"]})
-        >>> df
-        shape: (2, 1)
-        ┌────────────┐
-        │ baz        │
-        │ ---        │
-        │ str        │
-        ╞════════════╡
-        │ foo:bar    │
-        │ foo:barbar │
-        └────────────┘
-
-        >>> df.select(pl.col("baz").str.strip_suffix("bar"))
-        shape: (2, 1)
-        ┌─────────┐
-        │ baz     │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ foo:    │
-        │ foo:bar │
-        └─────────┘
+        >>> df = pl.DataFrame({"a": ["foobar", "foobarbar", "foo", "bar"]})
+        >>> df.with_columns(pl.col("a").str.strip_suffix("bar").alias("stripped"))
+        shape: (4, 2)
+        ┌───────────┬──────────┐
+        │ a         ┆ stripped │
+        │ ---       ┆ ---      │
+        │ str       ┆ str      │
+        ╞═══════════╪══════════╡
+        │ foobar    ┆ foo      │
+        │ foobarbar ┆ foobar   │
+        │ foo       ┆ foo      │
+        │ bar       ┆          │
+        └───────────┴──────────┘
 
         """
         return wrap_expr(self._pyexpr.str_strip_suffix(suffix))
