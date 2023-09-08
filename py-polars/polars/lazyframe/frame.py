@@ -2104,14 +2104,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
     def _set_sink_optimizations(
-            self,
-            *,
-            type_coercion: bool = True,
-            predicate_pushdown: bool = True,
-            projection_pushdown: bool = True,
-            simplify_expression: bool = True,
-            no_optimization: bool = False,
-            slice_pushdown: bool = True,
+        self,
+        *,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
     ) -> PyLazyFrame:
         if no_optimization:
             predicate_pushdown = False
