@@ -251,10 +251,10 @@ def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> PySeri
     # raised if we cannot convert to Wrap<AnyValue>
     except RuntimeError:
         return PySeries.new_object(name, values, False)
-    except ComputeError as e:
-        if "mixed dtypes" in str(e):
+    except ComputeError as exc:
+        if "mixed dtypes" in str(exc):
             return PySeries.new_object(name, values, False)
-        raise e
+        raise
 
 
 def iterable_to_pyseries(
@@ -341,7 +341,7 @@ def _construct_series_with_fallbacks(
             elif "decimal.Decimal" in str_exc:
                 constructor = py_type_to_constructor(PyDecimal)
             else:
-                raise exc
+                raise
 
 
 def sequence_to_pyseries(

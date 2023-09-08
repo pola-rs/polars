@@ -127,6 +127,7 @@ select = [
   "FA", # flake8-future-annotations
   "PIE",  # flake8-pie
   "TD", # flake8-todos
+  "TRY", # tryceratops
 ]
 
 ignore = [
@@ -157,6 +158,8 @@ ignore = [
   # flake8-todos
   "TD002", # Missing author in TODO
   "TD003", # Missing issue link on the line following this TODO
+  # tryceratops
+  "TRY003",
 ]
 
 [tool.ruff.pycodestyle]

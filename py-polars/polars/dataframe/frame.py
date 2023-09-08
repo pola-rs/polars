@@ -6193,13 +6193,14 @@ class DataFrame:
         if in_place:
             try:
                 self._df.vstack_mut(other._df)
-                return self
             except RuntimeError as exc:
                 if str(exc) == "Already mutably borrowed":
                     self._df.vstack_mut(other._df.clone())
                     return self
                 else:
-                    raise exc
+                    raise
+            else:
+                return self
 
         return self._from_pydf(self._df.vstack(other._df))
 
@@ -6263,7 +6264,7 @@ class DataFrame:
             if str(exc) == "Already mutably borrowed":
                 self._df.extend(other._df.clone())
             else:
-                raise exc
+                raise
         return self
 
     def drop(

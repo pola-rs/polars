@@ -2792,7 +2792,7 @@ class Series:
             if str(exc) == "Already mutably borrowed":
                 self._s.append(other._s.clone())
             else:
-                raise exc
+                raise
         return self
 
     def extend(self, other: Series) -> Self:
@@ -2856,7 +2856,7 @@ class Series:
             if str(exc) == "Already mutably borrowed":
                 self._s.extend(other._s.clone())
             else:
-                raise exc
+                raise
         return self
 
     def filter(self, predicate: Series | list[bool]) -> Self:
