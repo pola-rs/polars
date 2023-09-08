@@ -700,7 +700,7 @@ impl LazyFrame {
     /// streaming fashion.
     #[cfg(all(feature = "cloud_write", feature = "parquet"))]
     pub fn sink_parquet_cloud(
-        mut self,
+        self,
         uri: String,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         parquet_options: ParquetWriteOptions,
