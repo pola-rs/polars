@@ -168,6 +168,9 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     fn chunks(&self) -> &Vec<ArrayRef> {
         self.0.logical().chunks()
     }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.logical_mut().chunks_mut()
+    }
     fn shrink_to_fit(&mut self) {
         self.0.logical_mut().shrink_to_fit()
     }

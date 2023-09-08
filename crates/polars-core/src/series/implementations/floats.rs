@@ -146,12 +146,12 @@ macro_rules! impl_dyn_series {
 
         impl SeriesTrait for SeriesWrap<$ca> {
             #[cfg(feature = "rolling_window")]
-            fn rolling_apply(
+            fn rolling_map(
                 &self,
                 _f: &dyn Fn(&Series) -> Series,
                 _options: RollingOptionsFixedWindow,
             ) -> PolarsResult<Series> {
-                ChunkRollApply::rolling_apply(&self.0, _f, _options).map(|ca| ca.into_series())
+                ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())
             }
 
             fn rename(&mut self, name: &str) {
@@ -167,6 +167,9 @@ macro_rules! impl_dyn_series {
 
             fn chunks(&self) -> &Vec<ArrayRef> {
                 self.0.chunks()
+            }
+            unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+                self.0.chunks_mut()
             }
             fn shrink_to_fit(&mut self) {
                 self.0.shrink_to_fit()

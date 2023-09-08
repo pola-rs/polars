@@ -4,7 +4,7 @@ use polars_core::utils::{accumulate_dataframes_vertical_unchecked, slice_offsets
 
 use crate::executors::sinks::group_by::ooc::GroupBySource;
 use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
-use crate::operators::{FinalizedSink, Sink};
+use crate::operators::{DataChunk, FinalizedSink, Sink};
 
 pub(super) fn default_slices<K, V, HB>(
     pre_agg_partitions: &[HashMap<K, V, HB>],
@@ -74,5 +74,13 @@ pub(super) fn finalize_group_by(
                 iot, df, sink, slice,
             )?)))
         },
+    }
+}
+
+pub(super) fn prepare_key(s: &Series, chunk: &DataChunk) -> Series {
+    if s.len() == 1 && chunk.data.height() > 1 {
+        s.new_from_index(0, chunk.data.height())
+    } else {
+        s.rechunk()
     }
 }

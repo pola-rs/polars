@@ -38,12 +38,13 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
-pyarrow = ["pyarrow>=7.0.0"]
-pandas = ["pyarrow>=7.0.0", "pandas"]
+pyarrow = ["pyarrow >= 7.0.0"]
+pandas = ["pyarrow >= 7.0.0", "pandas"]
 numpy = ["numpy >= 1.16.0"]
 fsspec = ["fsspec"]
 connectorx = ["connectorx"]
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
+openpyxl = ["openpyxl >= 3.0.0"]
 deltalake = ["deltalake >= 0.10.0"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 matplotlib = ["matplotlib"]
@@ -78,12 +79,14 @@ module = [
   "deltalake.*",
   "fsspec.*",
   "matplotlib.*",
+  "moto.server",
   "polars.polars",
   "pyarrow.*",
   "pydantic",
   "sqlalchemy.*",
   "xlsx2csv",
   "xlsxwriter.*",
+  "openpyxl",
   "zoneinfo",
 ]
 ignore_missing_imports = true

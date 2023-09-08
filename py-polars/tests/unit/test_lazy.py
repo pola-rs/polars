@@ -14,7 +14,7 @@ import polars as pl
 import polars.selectors as cs
 from polars import lit, when
 from polars.datatypes import FLOAT_DTYPES
-from polars.exceptions import ComputeError, PolarsInefficientApplyWarning
+from polars.exceptions import ComputeError, PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal
 from polars.testing.asserts import assert_series_equal
 
@@ -69,19 +69,19 @@ def test_lazyframe_membership_operator() -> None:
 
 def test_apply() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    new = ldf.with_columns_seq(pl.col("a").map(lambda s: s * 2).alias("foo"))
+    new = ldf.with_columns_seq(pl.col("a").map_batches(lambda s: s * 2).alias("foo"))
 
     expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
     assert_frame_equal(new, expected)
     assert_frame_equal(new.collect(), expected.collect())
 
     with pytest.warns(
-        PolarsInefficientApplyWarning, match="In this case, you can replace"
+        PolarsInefficientMapWarning, match="In this case, you can replace"
     ):
         for strategy in ["thread_local", "threading"]:
             ldf = pl.LazyFrame({"a": [1, 2, 3] * 20, "b": [1.0, 2.0, 3.0] * 20})
             new = ldf.with_columns(
-                pl.col("a").apply(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
+                pl.col("a").map_elements(lambda s: s * 2, strategy=strategy).alias("foo")  # type: ignore[arg-type]
             )
             expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
             assert_frame_equal(new.collect(), expected.collect())
@@ -146,21 +146,24 @@ def test_agg() -> None:
     assert res.row(0) == (1, 1.0)
 
 
+def test_count_suffix_10783() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [["a", "c", "b"], ["a", "b", "c"], ["a", "d", "c"], ["c", "a", "b"]],
+            "b": [["a", "c", "b"], ["a", "b", "c"], ["a", "d", "c"], ["c", "a", "b"]],
+        }
+    )
+    df_with_cnt = df.with_columns(
+        pl.count().over(pl.col("a").list.sort().list.join("").hash()).suffix("_suffix")
+    )
+    df_expect = df.with_columns(pl.Series("count_suffix", [3, 3, 1, 3]))
+    assert_frame_equal(df_with_cnt, df_expect, check_dtype=False)
+
+
 def test_or() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = ldf.filter((pl.col("a") == 1) | (pl.col("b") > 2)).collect()
     assert out.rows() == [(1, 1.0), (3, 3.0)]
-
-
-def test_group_by_apply() -> None:
-    ldf = (
-        pl.LazyFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 3.0]})
-        .group_by("a")
-        .apply(lambda df: df * 2.0, schema={"a": pl.Float64, "b": pl.Float64})
-    )
-    out = ldf.collect()
-    assert out.schema == ldf.schema
-    assert out.shape == (3, 2)
 
 
 def test_filter_str() -> None:
@@ -198,10 +201,10 @@ def test_apply_custom_function() -> None:
         .agg(
             [
                 pl.col("cars")
-                .apply(lambda groups: groups.len(), return_dtype=pl.Int64)
+                .map_elements(lambda groups: groups.len(), return_dtype=pl.Int64)
                 .alias("custom_1"),
                 pl.col("cars")
-                .apply(lambda groups: groups.len(), return_dtype=pl.Int64)
+                .map_elements(lambda groups: groups.len(), return_dtype=pl.Int64)
                 .alias("custom_2"),
                 pl.count("cars").alias("cars_count"),
             ]
@@ -294,6 +297,11 @@ def test_is_first() -> None:
 
     assert ldf.select(pl.struct(["a", "b"]).is_first()).collect().to_dict(False) == {
         "a": [True, True, True, False, True, False, False]
+    }
+
+    ldf = pl.LazyFrame({"a": [[1, 2], [3], [1, 2], [4, 5], [4, 5]]})
+    assert ldf.select(pl.col("a").is_first()).collect().to_dict(False) == {
+        "a": [True, True, False, True, False]
     }
 
 
@@ -559,7 +567,7 @@ def test_custom_group_by() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     out = (
         ldf.group_by("b", maintain_order=True)
-        .agg([pl.col("a").apply(lambda x: x.sum(), return_dtype=pl.Int64)])
+        .agg([pl.col("a").map_elements(lambda x: x.sum(), return_dtype=pl.Int64)])
         .collect()
     )
     assert out.rows() == [("a", 1), ("b", 2), ("c", 2)]
@@ -630,13 +638,6 @@ def test_cast_frame() -> None:
         (None,),
         (None,),
     ]
-
-
-def test_col_series_selection() -> None:
-    ldf = pl.LazyFrame({"a": [1], "b": [1], "c": [1]})
-    srs = pl.Series(["b", "c"])
-
-    assert ldf.select(pl.col(srs)).columns == ["b", "c"]
 
 
 def test_interpolate() -> None:
@@ -1011,9 +1012,9 @@ def test_spearman_corr_ties() -> None:
     )
     expected = pl.DataFrame(
         [
-            pl.Series("a1", [-0.19048483669757843], dtype=pl.Float32),
+            pl.Series("a1", [-0.19048482943986483], dtype=pl.Float64),
             pl.Series("a2", [-0.17223653586587362], dtype=pl.Float64),
-            pl.Series("a3", [-0.19048483669757843], dtype=pl.Float32),
+            pl.Series("a3", [-0.19048482943986483], dtype=pl.Float64),
         ]
     )
     assert_frame_equal(result, expected)
@@ -1313,7 +1314,7 @@ def test_lazy_cache_parallel() -> None:
         df_evaluated += 1
         return df
 
-    df = pl.LazyFrame({"a": [1]}).map(map_df).cache()
+    df = pl.LazyFrame({"a": [1]}).map_batches(map_df).cache()
 
     df = pl.concat(
         [
@@ -1344,8 +1345,8 @@ def test_lazy_cache_nested_parallel() -> None:
         df_outer_evaluated += 1
         return df
 
-    df_inner = pl.LazyFrame({"a": [1]}).map(map_df_inner).cache()
-    df_outer = df_inner.select(pl.col("a") + 1).map(map_df_outer).cache()
+    df_inner = pl.LazyFrame({"a": [1]}).map_batches(map_df_inner).cache()
+    df_outer = df_inner.select(pl.col("a") + 1).map_batches(map_df_outer).cache()
 
     df = pl.concat(
         [

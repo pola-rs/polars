@@ -337,27 +337,6 @@ impl ProjectionPushDown {
                 lp_arena,
                 expr_arena,
             ),
-            LocalProjection { expr, input, .. } => {
-                self.pushdown_and_assign(
-                    input,
-                    acc_projections,
-                    projected_names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )?;
-                let lp = lp_arena.get(input);
-                let schema = lp.schema(lp_arena);
-
-                // projection from a wildcard may be dropped if the schema changes due to the optimization
-                let proj = expr
-                    .into_iter()
-                    .filter(|e| check_input_node(*e, &schema, expr_arena))
-                    .collect();
-                Ok(ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
-                    .project_local(proj)
-                    .build())
-            },
             AnonymousScan {
                 function,
                 file_info,

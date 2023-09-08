@@ -10,9 +10,8 @@ impl PyExpr {
         self.inner.clone().dt().to_string(format).into()
     }
 
-    fn dt_offset_by(&self, by: &str) -> Self {
-        let by = Duration::parse(by);
-        self.inner.clone().dt().offset_by(by).into()
+    fn dt_offset_by(&self, by: PyExpr) -> Self {
+        self.inner.clone().dt().offset_by(by.inner).into()
     }
 
     fn dt_epoch_seconds(&self) -> Self {
@@ -42,23 +41,20 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
-    fn dt_replace_time_zone(&self, time_zone: Option<String>, use_earliest: Option<bool>) -> Self {
+    #[pyo3(signature = (time_zone, ambiguous))]
+    fn dt_replace_time_zone(&self, time_zone: Option<String>, ambiguous: Self) -> Self {
         self.inner
             .clone()
             .dt()
-            .replace_time_zone(time_zone, use_earliest)
+            .replace_time_zone(time_zone, ambiguous.inner)
             .into()
     }
 
-    fn dt_truncate(&self, every: String, offset: String, use_earliest: Option<bool>) -> Self {
+    fn dt_truncate(&self, every: String, offset: String, ambiguous: Self) -> Self {
         self.inner
             .clone()
             .dt()
-            .truncate(TruncateOptions {
-                every,
-                offset,
-                use_earliest,
-            })
+            .truncate(TruncateOptions { every, offset }, ambiguous.inner)
             .into()
     }
 

@@ -20,7 +20,7 @@ Notes
   not interesting for us to check. To allow for this behaviour, a custom output checker
   has been created, see below.
 * The doctests depend on the exact string representation staying the same. This may not
-  be true in the future. For instance, in the past, the printout of dataframes has
+  be true in the future. For instance, in the past, the printout of DataFrames has
   changed from rounded corners to less rounded corners. To facilitate such a change,
   whilst not immediately having to add IGNORE_RESULT directives everywhere or changing
   all outputs, set `IGNORE_RESULT_ALL=True` below. Do note that this does mean no output

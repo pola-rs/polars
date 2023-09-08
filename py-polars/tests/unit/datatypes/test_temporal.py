@@ -22,7 +22,7 @@ from polars.testing import (
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import PolarsTemporalType, StartBy, TimeUnit
+    from polars.type_aliases import Ambiguous, PolarsTemporalType, StartBy, TimeUnit
 else:
     from polars.utils.convert import get_zoneinfo as ZoneInfo
 
@@ -468,7 +468,7 @@ def test_series_to_numpy() -> None:
     s1 = pl.Series(
         "datetime", [datetime(2021, 1, 2, 3, 4, 5), datetime(2021, 2, 3, 4, 5, 6)]
     )
-    s2 = pl.date_range(
+    s2 = pl.datetime_range(
         datetime(2021, 1, 1, 0),
         datetime(2021, 1, 1, 1),
         interval="1h",
@@ -637,6 +637,37 @@ def test_explode_date() -> None:
         ]
 
 
+def test_groupy_by_dynamic_median_10695() -> None:
+    df = pl.DataFrame(
+        {
+            "timestamp": pl.datetime_range(
+                datetime(2023, 8, 22, 15, 44, 30),
+                datetime(2023, 8, 22, 15, 48, 50),
+                "20s",
+                eager=True,
+            ),
+            "foo": [2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        }
+    )
+
+    assert df.group_by_dynamic(
+        index_column="timestamp",
+        every="60s",
+        period="3m",
+    ).agg(
+        pl.col("foo").median()
+    ).to_dict(False) == {
+        "timestamp": [
+            datetime(2023, 8, 22, 15, 44),
+            datetime(2023, 8, 22, 15, 45),
+            datetime(2023, 8, 22, 15, 46),
+            datetime(2023, 8, 22, 15, 47),
+            datetime(2023, 8, 22, 15, 48),
+        ],
+        "foo": [1.0, 1.0, 1.0, 1.0, 1.0],
+    }
+
+
 def test_group_by_dynamic_when_conversion_crosses_dates_7274() -> None:
     df = (
         pl.DataFrame(
@@ -788,7 +819,7 @@ def test_upsample_crossing_dst(
 ) -> None:
     df = pl.DataFrame(
         {
-            "time": pl.date_range(
+            "time": pl.datetime_range(
                 datetime(2021, 11, 6),
                 datetime(2021, 11, 8),
                 time_zone=time_zone,
@@ -819,7 +850,7 @@ def test_upsample_time_zones(
 ) -> None:
     df = pl.DataFrame(
         {
-            "time": pl.date_range(
+            "time": pl.datetime_range(
                 start=datetime(2021, 12, 16),
                 end=datetime(2021, 12, 16, 3),
                 interval="30m",
@@ -921,7 +952,7 @@ def test_default_negative_every_offset_dynamic_group_by(time_zone: str | None) -
 def test_group_by_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
     start_dt = datetime(2021, 11, 7)
     end_dt = start_dt + offset
-    date_range = pl.date_range(
+    date_range = pl.datetime_range(
         start_dt, end_dt, rule, time_zone="US/Central", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
@@ -1001,7 +1032,7 @@ def test_group_by_dynamic_startby_monday_crossing_dst(
 ) -> None:
     start_dt = datetime(2021, 11, 7)
     end_dt = datetime(2021, 11, 14)
-    date_range = pl.date_range(
+    date_range = pl.datetime_range(
         start_dt, end_dt, "1d", time_zone="US/Central", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
@@ -1018,7 +1049,7 @@ def test_group_by_dynamic_startby_monday_crossing_dst(
 def test_group_by_dynamic_startby_monday_dst_8737() -> None:
     start_dt = datetime(2021, 11, 6, 20)
     stop_dt = datetime(2021, 11, 7, 20)
-    date_range = pl.date_range(
+    date_range = pl.datetime_range(
         start_dt, stop_dt, "1d", time_zone="US/Central", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
@@ -1040,7 +1071,7 @@ def test_group_by_dynamic_startby_monday_dst_8737() -> None:
 def test_group_by_dynamic_monthly_crossing_dst() -> None:
     start_dt = datetime(2021, 11, 1)
     end_dt = datetime(2021, 12, 1)
-    date_range = pl.date_range(
+    date_range = pl.datetime_range(
         start_dt, end_dt, "1mo", time_zone="US/Central", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
@@ -1385,7 +1416,7 @@ def test_asof_join() -> None:
         (False, datetime(2010, 9, 12)),
     ],
 )
-def test_temporal_dtypes_apply(
+def test_temporal_dtypes_map_elements(
     skip_nulls: bool, expected_value: datetime | None
 ) -> None:
     df = pl.DataFrame(
@@ -1399,13 +1430,13 @@ def test_temporal_dtypes_apply(
             [
                 # don't actually do any of this; native expressions are MUCH faster ;)
                 pl.col("timestamp")
-                .apply(lambda x: const_dtm, skip_nulls=skip_nulls)
+                .map_elements(lambda x: const_dtm, skip_nulls=skip_nulls)
                 .alias("const_dtm"),
                 pl.col("timestamp")
-                .apply(lambda x: x and x.date(), skip_nulls=skip_nulls)
+                .map_elements(lambda x: x and x.date(), skip_nulls=skip_nulls)
                 .alias("date"),
                 pl.col("timestamp")
-                .apply(lambda x: x and x.time(), skip_nulls=skip_nulls)
+                .map_elements(lambda x: x and x.time(), skip_nulls=skip_nulls)
                 .alias("time"),
             ]
         ),
@@ -1567,21 +1598,21 @@ def test_duration_aggregations() -> None:
 def test_datetime_units() -> None:
     df = pl.DataFrame(
         {
-            "ns": pl.date_range(
+            "ns": pl.datetime_range(
                 datetime(2020, 1, 1),
                 datetime(2020, 5, 1),
                 "1mo",
                 time_unit="ns",
                 eager=True,
             ),
-            "us": pl.date_range(
+            "us": pl.datetime_range(
                 datetime(2020, 1, 1),
                 datetime(2020, 5, 1),
                 "1mo",
                 time_unit="us",
                 eager=True,
             ),
-            "ms": pl.date_range(
+            "ms": pl.datetime_range(
                 datetime(2020, 1, 1),
                 datetime(2020, 5, 1),
                 "1mo",
@@ -1626,7 +1657,7 @@ def test_datetime_instance_selection() -> None:
 def test_unique_counts_on_dates() -> None:
     assert pl.DataFrame(
         {
-            "dt_ns": pl.date_range(
+            "dt_ns": pl.datetime_range(
                 datetime(2020, 1, 1), datetime(2020, 3, 1), "1mo", eager=True
             ),
         }
@@ -1698,7 +1729,7 @@ def test_group_by_rolling_by_() -> None:
     df = pl.DataFrame({"group": pl.arange(0, 3, eager=True)}).join(
         pl.DataFrame(
             {
-                "datetime": pl.date_range(
+                "datetime": pl.datetime_range(
                     datetime(2020, 1, 1), datetime(2020, 1, 5), "1d", eager=True
                 ),
             }
@@ -1786,7 +1817,7 @@ def test_sum_duration() -> None:
 def test_supertype_timezones_4174() -> None:
     df = pl.DataFrame(
         {
-            "dt": pl.date_range(
+            "dt": pl.datetime_range(
                 datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo", eager=True
             ),
         }
@@ -2081,34 +2112,246 @@ def test_replace_time_zone_from_naive() -> None:
 
 
 @pytest.mark.parametrize(
-    ("use_earliest", "expected"),
+    ("ambiguous", "expected"),
     [
         (
-            False,
+            "latest",
             datetime(2018, 10, 28, 2, 30, fold=0, tzinfo=ZoneInfo("Europe/Brussels")),
         ),
         (
-            True,
+            "earliest",
             datetime(2018, 10, 28, 2, 30, fold=1, tzinfo=ZoneInfo("Europe/Brussels")),
         ),
     ],
 )
 def test_replace_time_zone_ambiguous_with_use_earliest(
-    use_earliest: bool, expected: datetime
+    ambiguous: Ambiguous, expected: datetime
 ) -> None:
     ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
-    result = ts.dt.replace_time_zone(
-        "Europe/Brussels", use_earliest=use_earliest
-    ).item()
+    result = ts.dt.replace_time_zone("Europe/Brussels", ambiguous=ambiguous).item()
     assert result == expected
 
 
 def test_replace_time_zone_ambiguous_raises() -> None:
     ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
     with pytest.raises(
-        ArrowError, match="Please use `use_earliest` to tell how it should be localized"
+        ArrowError, match="Please use `ambiguous` to tell how it should be localized"
     ):
         ts.dt.replace_time_zone("Europe/Brussels")
+
+
+@pytest.mark.parametrize(
+    ("from_tz", "expected_sortedness", "ambiguous"),
+    [
+        ("Europe/London", False, "earliest"),
+        ("Europe/London", False, "raise"),
+        ("UTC", False, "earliest"),
+        ("UTC", True, "raise"),
+        (None, False, "earliest"),
+        (None, True, "raise"),
+    ],
+)
+def test_replace_time_zone_sortedness_series(
+    from_tz: str | None, expected_sortedness: bool, ambiguous: Ambiguous
+) -> None:
+    ser = (
+        pl.Series("ts", [1603584000000000, 1603587600000000])
+        .cast(pl.Datetime("us", from_tz))
+        .sort()
+    )
+    assert ser.flags["SORTED_ASC"]
+    result = ser.dt.replace_time_zone("UTC", ambiguous=ambiguous)
+    assert result.flags["SORTED_ASC"] == expected_sortedness
+
+
+@pytest.mark.parametrize(
+    ("from_tz", "ambiguous"),
+    [
+        ("Europe/London", "earliest"),
+        ("Europe/London", "raise"),
+        ("UTC", "earliest"),
+        ("UTC", "raise"),
+        (None, "earliest"),
+        (None, "raise"),
+    ],
+)
+def test_replace_time_zone_sortedness_expressions(
+    from_tz: str | None, ambiguous: str
+) -> None:
+    df = (
+        pl.Series("ts", [1603584000000000, 1603587600000000])
+        .cast(pl.Datetime("us", from_tz))
+        .sort()
+        .to_frame()
+    )
+    df = df.with_columns(ambiguous=pl.Series([ambiguous] * 2))
+    assert df["ts"].flags["SORTED_ASC"]
+    result = df.select(
+        pl.col("ts").dt.replace_time_zone("UTC", ambiguous=pl.col("ambiguous"))
+    )
+    assert not result["ts"].flags["SORTED_ASC"]
+
+
+def test_use_earliest_deprecation() -> None:
+    # strptime
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=True` with `ambiguous='earliest'`",
+    ):
+        result = pl.Series(["2020-10-25 01:00"]).str.strptime(
+            pl.Datetime("us", "Europe/London"), use_earliest=True
+        )
+    expected = pl.Series(["2020-10-25 01:00"]).str.strptime(
+        pl.Datetime("us", "Europe/London"), ambiguous="earliest"
+    )
+    assert_series_equal(result, expected)
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=False` with `ambiguous='latest'`",
+    ):
+        result = pl.Series(["2020-10-25 01:00"]).str.strptime(
+            pl.Datetime("us", "Europe/London"), use_earliest=False
+        )
+    expected = pl.Series(["2020-10-25 01:00"]).str.strptime(
+        pl.Datetime("us", "Europe/London"), ambiguous="latest"
+    )
+    assert_series_equal(result, expected)
+
+    # truncate
+    ser = pl.Series(["2020-10-25 01:00"]).str.to_datetime(
+        time_zone="Europe/London", ambiguous="latest"
+    )
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=True` with `ambiguous='earliest'`",
+    ):
+        result = ser.dt.truncate("1h", use_earliest=True)
+    expected = ser.dt.truncate("1h", ambiguous="earliest")
+    assert_series_equal(result, expected)
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=True` with `ambiguous='earliest'`",
+    ):
+        result = ser.dt.truncate("1h", use_earliest=True)
+    expected = ser.dt.truncate("1h", ambiguous="earliest")
+    assert_series_equal(result, expected)
+
+    # replace_time_zone
+    ser = pl.Series([datetime(2020, 10, 25, 1)])
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=True` with `ambiguous='earliest'`",
+    ):
+        result = ser.dt.replace_time_zone("Europe/London", use_earliest=True)
+    expected = ser.dt.replace_time_zone("Europe/London", ambiguous="earliest")
+    assert_series_equal(result, expected)
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=False` with `ambiguous='latest'`",
+    ):
+        result = ser.dt.replace_time_zone("Europe/London", use_earliest=False)
+    expected = ser.dt.replace_time_zone("Europe/London", ambiguous="latest")
+    assert_series_equal(result, expected)
+
+    # pl.datetime
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=True` with `ambiguous='earliest'`",
+    ):
+        result = pl.select(pl.datetime(2020, 10, 25, 1, use_earliest=True))["datetime"]
+    expected = pl.select(pl.datetime(2020, 10, 25, 1, ambiguous="earliest"))["datetime"]
+    assert_series_equal(result, expected)
+    with pytest.warns(
+        DeprecationWarning,
+        match="Please replace `use_earliest=False` with `ambiguous='latest'`",
+    ):
+        result = pl.select(pl.datetime(2020, 10, 25, 1, use_earliest=False))["datetime"]
+    expected = pl.select(pl.datetime(2020, 10, 25, 1, ambiguous="latest"))["datetime"]
+    assert_series_equal(result, expected)
+
+
+def test_ambiguous_expressions() -> None:
+    # strptime
+    df = pl.DataFrame(
+        {
+            "ts": ["2020-10-25 01:00"] * 2,
+            "ambiguous": ["earliest", "latest"],
+        }
+    )
+    result = df.select(
+        pl.col("ts").str.strptime(
+            pl.Datetime("us", "Europe/London"), ambiguous=pl.col("ambiguous")
+        )
+    )["ts"]
+    expected = pl.Series("ts", [1603584000000000, 1603587600000000]).cast(
+        pl.Datetime("us", "Europe/London")
+    )
+    assert_series_equal(result, expected)
+
+    # truncate
+    df = pl.DataFrame(
+        {
+            "ts": [datetime(2020, 10, 25, 1), datetime(2020, 10, 25, 1)],
+            "ambiguous": ["earliest", "latest"],
+        }
+    )
+    df = df.with_columns(
+        pl.col("ts").dt.replace_time_zone(
+            "Europe/London", ambiguous=pl.col("ambiguous")
+        )
+    )
+    result = df.select(pl.col("ts").dt.truncate("1h", ambiguous=pl.col("ambiguous")))[
+        "ts"
+    ]
+    expected = pl.Series("ts", [1603584000000000, 1603587600000000]).cast(
+        pl.Datetime("us", "Europe/London")
+    )
+    assert_series_equal(result, expected)
+
+    # replace_time_zone
+    df = pl.DataFrame(
+        {
+            "ts": [datetime(2020, 10, 25, 1), datetime(2020, 10, 25, 1)],
+            "ambiguous": ["earliest", "latest"],
+        }
+    )
+    result = df.select(
+        pl.col("ts").dt.replace_time_zone(
+            "Europe/London", ambiguous=pl.col("ambiguous")
+        )
+    )["ts"]
+    expected = pl.Series("ts", [1603584000000000, 1603587600000000]).cast(
+        pl.Datetime("us", "Europe/London")
+    )
+    assert_series_equal(result, expected)
+
+    # pl.datetime
+    df = pl.DataFrame(
+        {
+            "year": [2020] * 2,
+            "month": [10] * 2,
+            "day": [25] * 2,
+            "hour": [1] * 2,
+            "minute": [0] * 2,
+            "ambiguous": ["earliest", "latest"],
+        }
+    )
+    result = df.select(
+        pl.datetime(
+            "year",
+            "month",
+            "day",
+            "hour",
+            "minute",
+            time_zone="Europe/London",
+            ambiguous=pl.col("ambiguous"),
+        )
+    )["datetime"]
+    expected = pl.DataFrame(
+        {"datetime": [1603584000000000, 1603587600000000]},
+        schema={"datetime": pl.Datetime("us", "Europe/London")},
+    )["datetime"]
+    assert_series_equal(result, expected)
 
 
 def test_unlocalize() -> None:
@@ -2123,7 +2366,7 @@ def test_unlocalize() -> None:
 def test_tz_aware_truncate() -> None:
     test = pl.DataFrame(
         {
-            "dt": pl.date_range(
+            "dt": pl.datetime_range(
                 start=datetime(2022, 11, 1),
                 end=datetime(2022, 11, 4),
                 interval="12h",
@@ -2157,7 +2400,7 @@ def test_tz_aware_truncate() -> None:
     # 5507
     lf = pl.DataFrame(
         {
-            "naive": pl.date_range(
+            "naive": pl.datetime_range(
                 start=datetime(2021, 12, 31, 23),
                 end=datetime(2022, 1, 1, 6),
                 interval="1h",
@@ -2225,7 +2468,7 @@ def test_to_string_invalid_format() -> None:
 def test_tz_aware_to_string() -> None:
     df = pl.DataFrame(
         {
-            "dt": pl.date_range(
+            "dt": pl.datetime_range(
                 start=datetime(2022, 11, 1),
                 end=datetime(2022, 11, 4),
                 interval="24h",
@@ -2282,7 +2525,7 @@ def test_tz_aware_filter_lit() -> None:
     dt = datetime(1970, 1, 1, 6, tzinfo=ZoneInfo("America/New_York"))
 
     assert (
-        pl.DataFrame({"date": pl.date_range(start, stop, "1h", eager=True)})
+        pl.DataFrame({"date": pl.datetime_range(start, stop, "1h", eager=True)})
         .with_columns(
             pl.col("date").dt.replace_time_zone("America/New_York").alias("nyc")
         )
@@ -2333,7 +2576,7 @@ def test_truncate_by_calendar_weeks() -> None:
     end = datetime(2022, 11, 20, 0, 0, 0)
 
     assert (
-        pl.date_range(start, end, timedelta(days=1), eager=True)
+        pl.datetime_range(start, end, timedelta(days=1), eager=True)
         .alias("date")
         .to_frame()
         .select([pl.col("date").dt.truncate("1w")])
@@ -2398,7 +2641,7 @@ def test_truncate_by_multiple_weeks() -> None:
 
 
 def test_truncate_use_earliest() -> None:
-    ser = pl.date_range(
+    ser = pl.datetime_range(
         date(2020, 10, 25),
         datetime(2020, 10, 25, 2),
         "30m",
@@ -2407,14 +2650,14 @@ def test_truncate_use_earliest() -> None:
     ).dt.offset_by("15m")
     df = ser.to_frame()
     df = df.with_columns(
-        use_earliest=pl.col("date").dt.dst_offset() == pl.duration(hours=1)
+        use_earliest=pl.col("datetime").dt.dst_offset() == pl.duration(hours=1)
     )
     result = df.select(
         pl.when(pl.col("use_earliest"))
-        .then(pl.col("date").dt.truncate("30m", use_earliest=True))
-        .otherwise(pl.col("date").dt.truncate("30m", use_earliest=False))
+        .then(pl.col("datetime").dt.truncate("30m", ambiguous="earliest"))
+        .otherwise(pl.col("datetime").dt.truncate("30m", ambiguous="latest"))
     )
-    expected = pl.date_range(
+    expected = pl.datetime_range(
         date(2020, 10, 25),
         datetime(2020, 10, 25, 2),
         "30m",
@@ -2425,7 +2668,7 @@ def test_truncate_use_earliest() -> None:
 
 
 def test_truncate_ambiguous() -> None:
-    ser = pl.date_range(
+    ser = pl.datetime_range(
         date(2020, 10, 25),
         datetime(2020, 10, 25, 2),
         "30m",
@@ -2484,7 +2727,7 @@ def test_tz_aware_day_weekday() -> None:
     stop = datetime(2001, 1, 9)
     df = pl.DataFrame(
         {
-            "date": pl.date_range(
+            "date": pl.datetime_range(
                 start, stop, timedelta(days=3), time_zone="UTC", eager=True
             )
         }

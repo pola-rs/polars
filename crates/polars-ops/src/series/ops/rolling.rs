@@ -20,7 +20,7 @@ where
     T::Native: Float + IsFloat + SubAssign + num::pow::Pow<T::Native, Output = T::Native>,
 {
     with_unstable_series(ca.dtype(), |us| {
-        ca.rolling_apply_float(window_size, |arr| {
+        ca.rolling_map_float(window_size, |arr| {
             let arr = unsafe { arr.chunks_mut().get_mut(0).unwrap() };
 
             us.with_array(arr, |us| {

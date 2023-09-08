@@ -16,6 +16,8 @@ use polars_core::series::SeriesIter;
 use polars_core::POOL;
 use polars_utils::contention_pool::LowContentionPool;
 use rayon::prelude::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use super::write::QuoteStyle;
 
@@ -193,6 +195,7 @@ unsafe fn write_anyvalue(
 ///
 /// The default is to format times and dates as `chrono` crate formats them.
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SerializeOptions {
     /// Used for [`DataType::Date`].
     pub date_format: Option<String>,

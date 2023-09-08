@@ -460,24 +460,32 @@ def sequence_to_pyseries(
                 s = wrap_s(py_series)
             else:
                 s = wrap_s(py_series).dt.cast_time_unit(time_unit)
-            if dtype == Datetime and value.tzinfo is not None:
-                tz = str(value.tzinfo)
+            time_zone = getattr(dtype, "time_zone", None)
+            if dtype == Datetime and (
+                value.tzinfo is not None or time_zone is not None
+            ):
+                values_tz = str(value.tzinfo) if value.tzinfo is not None else None
                 dtype_tz = dtype.time_zone  # type: ignore[union-attr]
-                if dtype_tz is not None and tz != dtype_tz:
+                if values_tz is not None and (
+                    dtype_tz is not None and dtype_tz != "UTC"
+                ):
                     raise ValueError(
-                        "given time_zone is different from that of timezone aware datetimes."
-                        f" Given: '{dtype_tz!r}', got: '{tz!r}'"
+                        "time-zone-aware datetimes are converted to UTC. "
+                        "Please either drop the time zone from the dtype, "
+                        "or set it to 'UTC'. To convert to a different time zone, "
+                        "please use `.dt.convert_time_zone`"
                     )
-                if tz != "UTC":
+                if values_tz != "UTC" and dtype_tz is None:
                     warnings.warn(
                         "Constructing a Series with time-zone-aware "
                         "datetimes results in a Series with UTC time zone. "
                         "To silence this warning, you can filter "
-                        "warnings of class TimeZoneAwareConstructorWarning.",
+                        "warnings of class TimeZoneAwareConstructorWarning, or "
+                        "set 'UTC' as the time zone of your datatype.",
                         TimeZoneAwareConstructorWarning,
                         stacklevel=find_stacklevel(),
                     )
-                return s.dt.replace_time_zone("UTC")._s
+                return s.dt.replace_time_zone(dtype_tz or "UTC")._s
             return s._s
 
         elif (
@@ -661,11 +669,17 @@ def _unpack_schema(
     ]
     if not column_names and n_expected:
         column_names = [f"column_{i}" for i in range(n_expected)]
-    lookup = {
-        col: name for col, name in zip_longest(column_names, lookup_names or []) if name
-    }
+    lookup = (
+        {
+            col: name
+            for col, name in zip_longest(column_names, lookup_names or [])
+            if name
+        }
+        if lookup_names
+        else None
+    )
     column_dtypes = {
-        lookup.get(col[0], col[0]): col[1]
+        lookup.get(col[0], col[0]) if lookup else col[0]: col[1]
         for col in (schema or [])
         if not isinstance(col, str) and col[1] is not None
     }

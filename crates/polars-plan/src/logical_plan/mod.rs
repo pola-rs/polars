@@ -178,13 +178,6 @@ pub enum LogicalPlan {
         projection: Option<Arc<Vec<String>>>,
         selection: Option<Expr>,
     },
-    // a projection that doesn't have to be optimized
-    // or may drop projected columns if they aren't in current schema (after optimization)
-    LocalProjection {
-        expr: Vec<Expr>,
-        input: Box<LogicalPlan>,
-        schema: SchemaRef,
-    },
     /// Column selection
     Projection {
         expr: Vec<Expr>,

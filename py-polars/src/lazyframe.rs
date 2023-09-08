@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::io::BufWriter;
 use std::path::PathBuf;
 
+#[cfg(feature = "csv")]
+use polars::io::csv::SerializeOptions;
 use polars::io::RowCount;
 #[cfg(feature = "csv")]
 use polars::lazy::frame::LazyCsvReader;
@@ -147,7 +149,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (path, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_char, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
-        encoding, row_count, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines
+        encoding, row_count, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, schema
     )
     )]
     fn new_from_csv(
@@ -174,6 +176,7 @@ impl PyLazyFrame {
         eol_char: &str,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
+        schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -197,6 +200,7 @@ impl PyLazyFrame {
             .with_n_rows(n_rows)
             .with_cache(cache)
             .with_dtype_overwrite(overwrite_dtype.as_ref())
+            .with_schema(schema.map(|schema| Arc::new(schema.0)))
             .low_memory(low_memory)
             .with_comment_char(comment_char)
             .with_quote_char(quote_char)
@@ -341,6 +345,7 @@ impl PyLazyFrame {
         comm_subplan_elim: bool,
         comm_subexpr_elim: bool,
         streaming: bool,
+        eager: bool,
     ) -> Self {
         let ldf = self.ldf.clone();
         let mut ldf = ldf
@@ -349,6 +354,7 @@ impl PyLazyFrame {
             .with_simplify_expr(simplify_expr)
             .with_slice_pushdown(slice_pushdown)
             .with_streaming(streaming)
+            ._with_eager(eager)
             .with_projection_pushdown(projection_pushdown);
 
         #[cfg(feature = "cse")]
@@ -525,6 +531,57 @@ impl PyLazyFrame {
         py.allow_threads(|| {
             let ldf = self.ldf.clone();
             ldf.sink_ipc(path, options).map_err(PyPolarsErr::from)
+        })?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[cfg(all(feature = "streaming", feature = "csv"))]
+    #[pyo3(signature = (path, has_header, separator, line_terminator, quote, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style, maintain_order))]
+    fn sink_csv(
+        &self,
+        py: Python,
+        path: PathBuf,
+        has_header: bool,
+        separator: u8,
+        line_terminator: String,
+        quote: u8,
+        batch_size: usize,
+        datetime_format: Option<String>,
+        date_format: Option<String>,
+        time_format: Option<String>,
+        float_precision: Option<usize>,
+        null_value: Option<String>,
+        quote_style: Option<Wrap<QuoteStyle>>,
+        maintain_order: bool,
+    ) -> PyResult<()> {
+        let quote_style = quote_style.map_or(QuoteStyle::default(), |wrap| wrap.0);
+        let null_value = null_value.unwrap_or(SerializeOptions::default().null);
+
+        let serialize_options = SerializeOptions {
+            date_format,
+            time_format,
+            datetime_format,
+            float_precision,
+            delimiter: separator,
+            quote,
+            null: null_value,
+            line_terminator,
+            quote_style,
+        };
+
+        let options = CsvWriterOptions {
+            has_header,
+            maintain_order,
+            batch_size,
+            serialize_options,
+        };
+
+        // if we don't allow threads and we have udfs trying to acquire the gil from different
+        // threads we deadlock.
+        py.allow_threads(|| {
+            let ldf = self.ldf.clone();
+            ldf.sink_csv(path, options).map_err(PyPolarsErr::from)
         })?;
         Ok(())
     }
@@ -865,7 +922,7 @@ impl PyLazyFrame {
 
     #[pyo3(signature = (lambda, predicate_pushdown, projection_pushdown, slice_pushdown, streamable, schema, validate_output))]
     #[allow(clippy::too_many_arguments)]
-    fn map(
+    fn map_batches(
         &self,
         lambda: PyObject,
         predicate_pushdown: bool,

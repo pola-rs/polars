@@ -92,6 +92,7 @@ from polars.utils.convert import (
 )
 from polars.utils.deprecation import (
     deprecate_nonkeyword_arguments,
+    deprecate_renamed_function,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -469,7 +470,7 @@ class Series:
             other = Series([other])
         return other ^ self
 
-    def _comp(self, other: Any, op: ComparisonOperator) -> Self:
+    def _comp(self, other: Any, op: ComparisonOperator) -> Series:
         # special edge-case; boolean broadcast series (eq/neq) is its own result
         if self.dtype == Boolean and isinstance(other, bool) and op in ("eq", "neq"):
             if (other is True and op == "eq") or (other is False and op == "neq"):
@@ -513,10 +514,10 @@ class Series:
         ...
 
     @overload
-    def __eq__(self, other: Any) -> Self:
+    def __eq__(self, other: Any) -> Series:
         ...
 
-    def __eq__(self, other: Any) -> Self | Expr:
+    def __eq__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
@@ -526,10 +527,10 @@ class Series:
         ...
 
     @overload
-    def __ne__(self, other: Any) -> Self:
+    def __ne__(self, other: Any) -> Series:
         ...
 
-    def __ne__(self, other: Any) -> Self | Expr:
+    def __ne__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__ne__(other)
         return self._comp(other, "neq")
@@ -539,10 +540,10 @@ class Series:
         ...
 
     @overload
-    def __gt__(self, other: Any) -> Self:
+    def __gt__(self, other: Any) -> Series:
         ...
 
-    def __gt__(self, other: Any) -> Self | Expr:
+    def __gt__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__gt__(other)
         return self._comp(other, "gt")
@@ -552,10 +553,10 @@ class Series:
         ...
 
     @overload
-    def __lt__(self, other: Any) -> Self:
+    def __lt__(self, other: Any) -> Series:
         ...
 
-    def __lt__(self, other: Any) -> Self | Expr:
+    def __lt__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__lt__(other)
         return self._comp(other, "lt")
@@ -565,10 +566,10 @@ class Series:
         ...
 
     @overload
-    def __ge__(self, other: Any) -> Self:
+    def __ge__(self, other: Any) -> Series:
         ...
 
-    def __ge__(self, other: Any) -> Self | Expr:
+    def __ge__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__ge__(other)
         return self._comp(other, "gt_eq")
@@ -578,10 +579,10 @@ class Series:
         ...
 
     @overload
-    def __le__(self, other: Any) -> Self:
+    def __le__(self, other: Any) -> Series:
         ...
 
-    def __le__(self, other: Any) -> Self | Expr:
+    def __le__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__le__(other)
         return self._comp(other, "lt_eq")
@@ -608,16 +609,42 @@ class Series:
 
     def eq_missing(self, other: Any) -> Self | Expr:
         """
-        Method equivalent of equality operator ``expr == other`` where `None` == None`.
+        Method equivalent of equality operator ``series == other`` where `None` == None`.
 
-        This differs from default ``ne`` where null values are propagated.
+        This differs from the standard ``ne`` where null values are propagated.
 
         Parameters
         ----------
         other
             A literal or expression value to compare with.
 
-        """
+        See Also
+        --------
+        ne_missing
+        eq
+
+        Examples
+        --------
+        >>> s1 = pl.Series("a", [333, 200, None])
+        >>> s2 = pl.Series("a", [100, 200, None])
+        >>> s1.eq(s2)
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+            false
+            true
+            null
+        ]
+        >>> s1.eq_missing(s2)
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+            false
+            true
+            true
+        ]
+
+        """  # noqa: W505
 
     def ne(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series != other``."""
@@ -633,16 +660,42 @@ class Series:
 
     def ne_missing(self, other: Any) -> Self | Expr:
         """
-        Method equivalent of equality operator ``expr != other`` where `None` == None`.
+        Method equivalent of equality operator ``series != other`` where `None` == None`.
 
-        This differs from default ``ne`` where null values are propagated.
+        This differs from the standard ``ne`` where null values are propagated.
 
         Parameters
         ----------
         other
             A literal or expression value to compare with.
 
-        """
+        See Also
+        --------
+        eq_missing
+        ne
+
+        Examples
+        --------
+        >>> s1 = pl.Series("a", [333, 200, None])
+        >>> s2 = pl.Series("a", [100, 200, None])
+        >>> s1.ne(s2)
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+            true
+            false
+            null
+        ]
+        >>> s1.ne_missing(s2)
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+            true
+            false
+            false
+        ]
+
+        """  # noqa: W505
 
     def ge(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series >= other``."""
@@ -751,10 +804,8 @@ class Series:
             other = F.lit(other)
         return self.to_frame().select(F.col(self.name) // other).to_series()
 
-    def __invert__(self) -> Self:
-        if self.dtype == Boolean:
-            return self._from_pyseries(self._s._not())
-        return NotImplemented
+    def __invert__(self) -> Series:
+        return self.not_()
 
     @overload
     def __mul__(self, other: Expr) -> Expr:  # type: ignore[misc]
@@ -1345,11 +1396,59 @@ class Series:
         """
         Drop all null values.
 
-        Creates a new Series that copies data from this Series without null values.
+        The original order of the remaining elements is preserved.
+
+        See Also
+        --------
+        drop_nans
+
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To drop NaN values, use :func:`drop_nans`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1.0, None, 3.0, float("nan")])
+        >>> s.drop_nulls()
+        shape: (3,)
+        Series: '' [f64]
+        [
+                1.0
+                3.0
+                NaN
+        ]
+
         """
 
     def drop_nans(self) -> Series:
-        """Drop NaN values."""
+        """
+        Drop all floating point NaN values.
+
+        The original order of the remaining elements is preserved.
+
+        See Also
+        --------
+        drop_nulls
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To drop null values, use :func:`drop_nulls`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1.0, None, 3.0, float("nan")])
+        >>> s.drop_nans()
+        shape: (3,)
+        Series: '' [f64]
+        [
+                1.0
+                null
+                3.0
+        ]
+
+        """
 
     def to_frame(self, name: str | None = None) -> DataFrame:
         """
@@ -2238,32 +2337,61 @@ class Series:
             bins = Series(bins, dtype=Float64)._s
         return wrap_df(self._s.hist(bins, bin_count))
 
-    def value_counts(self, *, sort: bool = False) -> DataFrame:
+    def value_counts(self, *, sort: bool = False, parallel: bool = False) -> DataFrame:
         """
-        Count the unique values in a Series.
+        Count the occurrences of unique values.
 
         Parameters
         ----------
         sort
-            Ensure the output is sorted from most values to least.
+            Sort the output by count in descending order.
+            If set to ``False`` (default), the order of the output is random.
+        parallel
+            Execute the computation in parallel.
+
+            .. note::
+                This option should likely not be enabled in a group by context,
+                as the computation is already parallelized per group.
+
+        Returns
+        -------
+        DataFrame
+            Mapping of unique values to their count.
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 2, 3])
-        >>> s.value_counts().sort(by="a")
+        >>> s = pl.Series("color", ["red", "blue", "red", "green", "blue", "blue"])
+        >>> s.value_counts()  # doctest: +IGNORE_RESULT
         shape: (3, 2)
-        ┌─────┬────────┐
-        │ a   ┆ counts │
-        │ --- ┆ ---    │
-        │ i64 ┆ u32    │
-        ╞═════╪════════╡
-        │ 1   ┆ 1      │
-        │ 2   ┆ 2      │
-        │ 3   ┆ 1      │
-        └─────┴────────┘
+        ┌───────┬────────┐
+        │ color ┆ counts │
+        │ ---   ┆ ---    │
+        │ str   ┆ u32    │
+        ╞═══════╪════════╡
+        │ red   ┆ 2      │
+        │ green ┆ 1      │
+        │ blue  ┆ 3      │
+        └───────┴────────┘
+
+        Sort the output by count.
+
+        shape: (3, 2)
+        ┌───────┬────────┐
+        │ color ┆ counts │
+        │ ---   ┆ ---    │
+        │ str   ┆ u32    │
+        ╞═══════╪════════╡
+        │ blue  ┆ 3      │
+        │ red   ┆ 2      │
+        │ green ┆ 1      │
+        └───────┴────────┘
 
         """
-        return wrap_df(self._s.value_counts(sort))
+        return (
+            self.to_frame()
+            .select(F.col(self.name).value_counts(sort=sort, parallel=parallel))
+            .unnest(self.name)
+        )
 
     def unique_counts(self) -> Series:
         """
@@ -2736,6 +2864,8 @@ class Series:
         """
         Filter elements by a boolean mask.
 
+        The original order of the remaining elements is preserved.
+
         Parameters
         ----------
         predicate
@@ -3184,6 +3314,29 @@ class Series:
         """
         return self._s.is_sorted(descending)
 
+    def not_(self) -> Series:
+        """
+        Negate a boolean Series.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [True, False, False])
+        >>> s.not_()
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+            false
+            true
+            true
+        ]
+
+        """
+
     def is_null(self) -> Series:
         """
         Returns a boolean Series indicating which values are null.
@@ -3435,6 +3588,16 @@ class Series:
         -------
         Series
             Series of data type :class:`Boolean`.
+
+        """
+
+    def is_last(self) -> Series:
+        """
+        Get a mask of the last unique value.
+
+        Returns
+        -------
+        Boolean Series
 
         """
 
@@ -4743,7 +4906,7 @@ class Series:
 
         """
 
-    def apply(
+    def map_elements(
         self,
         function: Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
@@ -4751,7 +4914,7 @@ class Series:
         skip_nulls: bool = True,
     ) -> Self:
         """
-        Apply a custom/user-defined function (UDF) over elements in this Series.
+        Map a custom/user-defined function (UDF) over elements in this Series.
 
         .. warning::
             This method is much slower than the native expressions API.
@@ -4793,12 +4956,12 @@ class Series:
         -----
         If your function is expensive and you don't want it to be called more than
         once for a given input, consider applying an ``@lru_cache`` decorator to it.
-        With suitable data you may achieve order-of-magnitude speedups (or more).
+        If your data is suitable you may achieve *significant* speedups.
 
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.apply(lambda x: x + 10)  # doctest: +SKIP
+        >>> s.map_elements(lambda x: x + 10)  # doctest: +SKIP
         shape: (3,)
         Series: 'a' [i64]
         [
@@ -4812,14 +4975,14 @@ class Series:
         Series
 
         """
-        from polars.utils.udfs import warn_on_inefficient_apply
+        from polars.utils.udfs import warn_on_inefficient_map
 
         if return_dtype is None:
             pl_return_dtype = None
         else:
             pl_return_dtype = py_type_to_dtype(return_dtype)
 
-        warn_on_inefficient_apply(function, columns=[self.name], apply_target="series")
+        warn_on_inefficient_map(function, columns=[self.name], map_target="series")
         return self._from_pyseries(
             self._s.apply_lambda(function, pl_return_dtype, skip_nulls)
         )
@@ -5264,7 +5427,7 @@ class Series:
             .to_series()
         )
 
-    def rolling_apply(
+    def rolling_map(
         self,
         function: Callable[[Series], Any],
         window_size: int,
@@ -5274,46 +5437,45 @@ class Series:
         center: bool = False,
     ) -> Series:
         """
-        Apply a custom rolling window function.
+        Compute a custom rolling window function.
 
-        Prefer the specific rolling window functions over this one, as they are faster:
-
-            * rolling_min
-            * rolling_max
-            * rolling_mean
-            * rolling_sum
-
-        The window at a given row will include the row itself and the `window_size - 1`
-        elements before it.
+        .. warning::
+            Computing custom functions is extremely slow. Use specialized rolling
+            functions such as :func:`Series.rolling_sum` if at all possible.
 
         Parameters
         ----------
         function
-            Aggregation function
+            Custom aggregation function.
         window_size
-            The length of the window.
+            Size of the window. The window at a given row will include the row
+            itself and the ``window_size - 1`` elements before it.
         weights
-            An optional slice with the same length as the window that will be multiplied
+            A list of weights with the same length as the window that will be multiplied
             elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing
             a result. If None, it will be set equal to window size.
         center
-            Set the labels at the center of the window
+            Set the labels at the center of the window.
+
+        Warnings
+        --------
+
 
         Examples
         --------
-        >>> import numpy as np
-        >>> s = pl.Series("A", [11.0, 2.0, 9.0, float("nan"), 8.0])
-        >>> print(s.rolling_apply(function=np.nanstd, window_size=3))
+        >>> from numpy import nansum
+        >>> s = pl.Series([11.0, 2.0, 9.0, float("nan"), 8.0])
+        >>> s.rolling_map(nansum, window_size=3)
         shape: (5,)
-        Series: 'A' [f64]
+        Series: '' [f64]
         [
-            null
-            null
-            3.858612
-            3.5
-            0.5
+                null
+                null
+                22.0
+                11.0
+                17.0
         ]
 
         """
@@ -5721,7 +5883,7 @@ class Series:
         >>> s = pl.Series("a", [3, 6, 1, 1, 6])
         >>> s.rank()
         shape: (5,)
-        Series: 'a' [f32]
+        Series: 'a' [f64]
         [
             3.0
             4.5
@@ -6475,6 +6637,68 @@ class Series:
 
     def implode(self) -> Self:
         """Aggregate values into a list."""
+
+    @deprecate_renamed_function("map_elements", version="0.19.0")
+    def apply(
+        self,
+        function: Callable[[Any], Any],
+        return_dtype: PolarsDataType | None = None,
+        *,
+        skip_nulls: bool = True,
+    ) -> Self:
+        """
+        Apply a custom/user-defined function (UDF) over elements in this Series.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`Series.map_elements`.
+
+        Parameters
+        ----------
+        function
+            Custom function or lambda.
+        return_dtype
+            Output datatype. If none is given, the same datatype as this Series will be
+            used.
+        skip_nulls
+            Nulls will be skipped and not passed to the python function.
+            This is faster because python can be skipped and because we call
+            more specialized functions.
+
+        """
+        return self.map_elements(function, return_dtype, skip_nulls=skip_nulls)
+
+    @deprecate_renamed_function("rolling_map", version="0.19.0")
+    def rolling_apply(
+        self,
+        function: Callable[[Series], Any],
+        window_size: int,
+        weights: list[float] | None = None,
+        min_periods: int | None = None,
+        *,
+        center: bool = False,
+    ) -> Series:
+        """
+        Apply a custom rolling window function.
+
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`Series.rolling_map`.
+
+        Parameters
+        ----------
+        function
+            Aggregation function
+        window_size
+            The length of the window.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing
+            a result. If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+
+        """
 
     # Keep the `list` and `str` properties below at the end of the definition of Series,
     # as to not confuse mypy with the type annotation `str` and `list`

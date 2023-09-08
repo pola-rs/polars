@@ -3,10 +3,7 @@ use std::error::Error;
 use arrow::array::Array;
 use polars_arrow::utils::combine_validities_and;
 
-use crate::datatypes::{
-    ArrayFromElementIter, HasUnderlyingArray, PolarsNumericType, StaticArray,
-    StaticallyMatchesPolarsType,
-};
+use crate::datatypes::{ArrayFromElementIter, PolarsNumericType, StaticArray};
 use crate::prelude::{ChunkedArray, PolarsDataType};
 use crate::utils::align_chunks_binary;
 
@@ -20,14 +17,8 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType,
-    ChunkedArray<T>: HasUnderlyingArray,
-    ChunkedArray<U>: HasUnderlyingArray,
-    F: for<'a> FnMut(
-        Option<<<ChunkedArray<T> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
-        Option<<<ChunkedArray<U> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
-    ) -> Option<K>,
-    K: ArrayFromElementIter,
-    K::ArrayType: StaticallyMatchesPolarsType<V>,
+    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> Option<K>,
+    K: ArrayFromElementIter<ArrayType = V::Array>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -53,14 +44,8 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType,
-    ChunkedArray<T>: HasUnderlyingArray,
-    ChunkedArray<U>: HasUnderlyingArray,
-    F: for<'a> FnMut(
-        Option<<<ChunkedArray<T> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
-        Option<<<ChunkedArray<U> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
-    ) -> Result<Option<K>, E>,
-    K: ArrayFromElementIter,
-    K::ArrayType: StaticallyMatchesPolarsType<V>,
+    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> Result<Option<K>, E>,
+    K: ArrayFromElementIter<ArrayType = V::Array>,
     E: Error,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
@@ -87,14 +72,8 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsNumericType,
-    ChunkedArray<T>: HasUnderlyingArray,
-    ChunkedArray<U>: HasUnderlyingArray,
-    F: for<'a> FnMut(
-        <<ChunkedArray<T> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>,
-        <<ChunkedArray<U> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>,
-    ) -> K,
-    K: ArrayFromElementIter,
-    K::ArrayType: StaticallyMatchesPolarsType<V>,
+    F: for<'a> FnMut(T::Physical<'a>, U::Physical<'a>) -> K,
+    K: ArrayFromElementIter<ArrayType = V::Array>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -124,14 +103,8 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsNumericType,
-    ChunkedArray<T>: HasUnderlyingArray,
-    ChunkedArray<U>: HasUnderlyingArray,
-    F: for<'a> FnMut(
-        <<ChunkedArray<T> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>,
-        <<ChunkedArray<U> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>,
-    ) -> Result<K, E>,
-    K: ArrayFromElementIter,
-    K::ArrayType: StaticallyMatchesPolarsType<V>,
+    F: for<'a> FnMut(T::Physical<'a>, U::Physical<'a>) -> Result<K, E>,
+    K: ArrayFromElementIter<ArrayType = V::Array>,
     E: Error,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
@@ -163,14 +136,9 @@ pub fn binary_mut_with_options<T, U, V, F, Arr>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsDataType,
-    ChunkedArray<T>: HasUnderlyingArray,
-    ChunkedArray<U>: HasUnderlyingArray,
-    Arr: Array + StaticallyMatchesPolarsType<V>,
-    F: FnMut(
-        &<ChunkedArray<T> as HasUnderlyingArray>::ArrayT,
-        &<ChunkedArray<U> as HasUnderlyingArray>::ArrayT,
-    ) -> Arr,
+    V: PolarsDataType<Array = Arr>,
+    Arr: Array,
+    F: FnMut(&T::Array, &U::Array) -> Arr,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -189,14 +157,9 @@ pub fn binary<T, U, V, F, Arr>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsDataType,
-    ChunkedArray<T>: HasUnderlyingArray,
-    ChunkedArray<U>: HasUnderlyingArray,
-    Arr: Array + StaticallyMatchesPolarsType<V>,
-    F: FnMut(
-        &<ChunkedArray<T> as HasUnderlyingArray>::ArrayT,
-        &<ChunkedArray<U> as HasUnderlyingArray>::ArrayT,
-    ) -> Arr,
+    V: PolarsDataType<Array = Arr>,
+    Arr: Array,
+    F: FnMut(&T::Array, &U::Array) -> Arr,
 {
     binary_mut_with_options(lhs, rhs, op, lhs.name())
 }
@@ -210,14 +173,9 @@ pub fn try_binary<T, U, V, F, Arr, E>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsDataType,
-    ChunkedArray<T>: HasUnderlyingArray,
-    ChunkedArray<U>: HasUnderlyingArray,
-    Arr: Array + StaticallyMatchesPolarsType<V>,
-    F: FnMut(
-        &<ChunkedArray<T> as HasUnderlyingArray>::ArrayT,
-        &<ChunkedArray<U> as HasUnderlyingArray>::ArrayT,
-    ) -> Result<Arr, E>,
+    V: PolarsDataType<Array = Arr>,
+    Arr: Array,
+    F: FnMut(&T::Array, &U::Array) -> Result<Arr, E>,
     E: Error,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
@@ -243,12 +201,7 @@ pub unsafe fn binary_unchecked_same_type<T, U, F>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    ChunkedArray<T>: HasUnderlyingArray,
-    ChunkedArray<U>: HasUnderlyingArray,
-    F: FnMut(
-        &<ChunkedArray<T> as HasUnderlyingArray>::ArrayT,
-        &<ChunkedArray<U> as HasUnderlyingArray>::ArrayT,
-    ) -> Box<dyn Array>,
+    F: FnMut(&T::Array, &U::Array) -> Box<dyn Array>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let chunks = lhs
@@ -274,12 +227,7 @@ pub unsafe fn try_binary_unchecked_same_type<T, U, F, E>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    ChunkedArray<T>: HasUnderlyingArray,
-    ChunkedArray<U>: HasUnderlyingArray,
-    F: FnMut(
-        &<ChunkedArray<T> as HasUnderlyingArray>::ArrayT,
-        &<ChunkedArray<U> as HasUnderlyingArray>::ArrayT,
-    ) -> Result<Box<dyn Array>, E>,
+    F: FnMut(&T::Array, &U::Array) -> Result<Box<dyn Array>, E>,
     E: Error,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);

@@ -387,7 +387,7 @@ fn test_empty_bytes_to_dataframe() {
     let result = CsvReader::new(file)
         .has_header(false)
         .with_columns(Some(schema.iter_names().map(|s| s.to_string()).collect()))
-        .with_schema(Arc::new(schema))
+        .with_schema(Some(Arc::new(schema)))
         .finish();
     assert!(result.is_ok())
 }
@@ -416,11 +416,11 @@ fn test_missing_value() {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(true)
-        .with_schema(Arc::new(Schema::from_iter([
+        .with_schema(Some(Arc::new(Schema::from_iter([
             Field::new("foo", DataType::UInt32),
             Field::new("bar", DataType::UInt32),
             Field::new("ham", DataType::UInt32),
-        ])))
+        ]))))
         .finish()
         .unwrap();
     assert_eq!(df.column("ham").unwrap().len(), 3)

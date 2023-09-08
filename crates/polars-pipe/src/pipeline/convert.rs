@@ -130,7 +130,7 @@ where
     let out = match lp_arena.get(node) {
         Sink { input, payload } => {
             match payload {
-                SinkType::Memory => Box::new(OrderedSink::new()) as Box<dyn SinkTrait>,
+                SinkType::Memory => Box::new(OrderedSink::new(input_schema.into_owned())) as Box<dyn SinkTrait>,
                 SinkType::File {
                     path, file_type, ..
                 } => {
@@ -145,6 +145,11 @@ where
                         #[cfg(feature = "ipc")]
                         FileType::Ipc(options) => {
                             Box::new(IpcSink::new(path, *options, input_schema.as_ref())?)
+                                as Box<dyn SinkTrait>
+                        },
+                        #[cfg(feature = "csv")]
+                        FileType::Csv(options) => {
+                            Box::new(CsvSink::new(path, *options, input_schema.as_ref())?)
                                 as Box<dyn SinkTrait>
                         },
                         #[allow(unreachable_patterns)]
@@ -524,7 +529,7 @@ where
             Box::new(op) as Box<dyn Operator>
         },
         MapFunction {
-            function: FunctionNode::FastProjection { columns },
+            function: FunctionNode::FastProjection { columns, .. },
             input,
         } => {
             let input_schema = lp_arena.get(*input).schema(lp_arena);

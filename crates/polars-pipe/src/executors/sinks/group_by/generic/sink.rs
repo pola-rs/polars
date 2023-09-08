@@ -59,6 +59,9 @@ impl GenericGroupby2 {
 
 impl Sink for GenericGroupby2 {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        if chunk.is_empty() {
+            return Ok(SinkResult::CanHaveMoreInput);
+        }
         // load data and hashes
         unsafe {
             // safety: we don't hold mutable refs

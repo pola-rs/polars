@@ -314,7 +314,7 @@ impl Debug for Series {
                 "Series"
             ),
             DataType::Null => {
-                writeln!(f, "nullarray")
+                writeln!(f, "nullarray; shape: {}", self.len())
             },
             DataType::Binary => {
                 format_array!(f, self.binary().unwrap(), "binary", self.name(), "Series")

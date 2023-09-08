@@ -11,6 +11,10 @@ from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     DataTypeClass,
     DataTypeGroup,
+    Field,
+    Int64,
+    List,
+    Struct,
     py_type_to_dtype,
 )
 
@@ -162,3 +166,19 @@ def test_conversion_dtype() -> None:
             ],
         ],
     }
+
+
+def test_struct_field_iter() -> None:
+    s = Struct(
+        [Field("a", List(List(Int64))), Field("b", List(Int64)), Field("c", Int64)]
+    )
+    assert list(s) == [
+        ("a", List(List(Int64))),
+        ("b", List(Int64)),
+        ("c", Int64),
+    ]
+    assert list(reversed(s)) == [
+        ("c", Int64),
+        ("b", List(Int64)),
+        ("a", List(List(Int64))),
+    ]

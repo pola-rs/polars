@@ -1663,7 +1663,7 @@ fn test_single_ranked_group() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("value")?.explode()?;
-    let out = out.f32()?;
+    let out = out.f64()?;
     assert_eq!(
         Vec::from(out),
         &[Some(1.0), Some(2.0), Some(1.0), Some(2.0), Some(1.0)]

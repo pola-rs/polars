@@ -69,13 +69,17 @@ pub fn optimize(
     let simplify_expr = opt_state.simplify_expr;
     let slice_pushdown = opt_state.slice_pushdown;
     let streaming = opt_state.streaming;
+    let fast_projection = opt_state.fast_projection;
+    // Don't run optimizations that don't make sense on a single node.
+    // This keeps eager execution more snappy.
+    let eager = opt_state.eager;
     #[cfg(feature = "cse")]
-    let comm_subplan_elim = opt_state.comm_subplan_elim;
+    let comm_subplan_elim = opt_state.comm_subplan_elim && !eager;
     #[cfg(feature = "cse")]
     let comm_subexpr_elim = opt_state.comm_subexpr_elim;
 
     #[allow(unused_variables)]
-    let agg_scan_projection = opt_state.file_caching && !streaming;
+    let agg_scan_projection = opt_state.file_caching && !streaming && !eager;
 
     // gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};
@@ -125,10 +129,13 @@ pub fn optimize(
     }
 
     // make sure its before slice pushdown.
-    if projection_pushdown {
-        rules.push(Box::new(FastProjectionAndCollapse::new()));
+    if fast_projection {
+        rules.push(Box::new(FastProjectionAndCollapse::new(eager)));
     }
-    rules.push(Box::new(DelayRechunk::new()));
+
+    if !eager {
+        rules.push(Box::new(DelayRechunk::new()));
+    }
 
     if slice_pushdown {
         let slice_pushdown_opt = SlicePushDown::new(streaming);
@@ -181,7 +188,9 @@ pub fn optimize(
     }
 
     rules.push(Box::new(ReplaceDropNulls {}));
-    rules.push(Box::new(FlattenUnionRule {}));
+    if !eager {
+        rules.push(Box::new(FlattenUnionRule {}));
+    }
 
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 

@@ -161,7 +161,7 @@ class NotebookFormatter(HTMLFormatter):
             .dataframe > thead > tr > th,
             .dataframe > tbody > tr > td {
               text-align: right;
-              white-space: pre;
+              white-space: pre-wrap;
             }
             </style>
         """

@@ -235,7 +235,7 @@ def test_opaque_filter_on_lists_3784() -> None:
 
     assert (
         df_groups.filter(
-            pl.col("str_list").apply(
+            pl.col("str_list").map_elements(
                 lambda variant: pre in variant
                 and succ in variant
                 and variant.to_list().index(pre) < variant.to_list().index(succ)
@@ -364,3 +364,9 @@ def test_datetime_supertype_5236() -> None:
     )
     assert out.shape == (0, 2)
     assert out.dtypes == [pl.Datetime("ns", "UTC")] * 2
+
+
+def test_shift_drop_nulls_10875() -> None:
+    assert pl.LazyFrame({"a": [1, 2, 3]}).shift(1).drop_nulls().collect()[
+        "a"
+    ].to_list() == [1, 2]

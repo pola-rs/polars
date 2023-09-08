@@ -170,10 +170,6 @@ impl LogicalPlan {
                 write!(f, "{:indent$} SELECT {expr:?} FROM", "")?;
                 input._format(f, sub_indent)
             },
-            LocalProjection { expr, input, .. } => {
-                write!(f, "{:indent$} LOCAL SELECT {expr:?} FROM", "")?;
-                input._format(f, sub_indent)
-            },
             Sort {
                 input, by_column, ..
             } => {
@@ -330,7 +326,7 @@ impl Debug for Expr {
                     AggGroups(expr) => write!(f, "{expr:?}.groups()"),
                     Count(expr) => write!(f, "{expr:?}.count()"),
                     Var(expr, _) => write!(f, "{expr:?}.var()"),
-                    Std(expr, _) => write!(f, "{expr:?}.var()"),
+                    Std(expr, _) => write!(f, "{expr:?}.std()"),
                     Quantile { expr, .. } => write!(f, "{expr:?}.quantile()"),
                 }
             },

@@ -20,9 +20,9 @@ impl AliasExpr {
             expr,
         }
     }
-    fn finish(&self, mut input: Series) -> Series {
-        input.rename(&self.name);
-        input
+
+    fn finish(&self, input: Series) -> Series {
+        input.with_name(&self.name)
     }
 }
 
@@ -68,6 +68,7 @@ impl PhysicalExpr for AliasExpr {
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
     }
+
     fn is_valid_aggregation(&self) -> bool {
         self.physical_expr.is_valid_aggregation()
     }
@@ -81,10 +82,8 @@ impl PartitionedAggregation for AliasExpr {
         state: &ExecutionState,
     ) -> PolarsResult<Series> {
         let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
-        agg.evaluate_partitioned(df, groups, state).map(|mut s| {
-            s.rename(&self.name);
-            s
-        })
+        let s = agg.evaluate_partitioned(df, groups, state)?;
+        Ok(s.with_name(&self.name))
     }
 
     fn finalize(
@@ -94,9 +93,7 @@ impl PartitionedAggregation for AliasExpr {
         state: &ExecutionState,
     ) -> PolarsResult<Series> {
         let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
-        agg.finalize(partitioned, groups, state).map(|mut s| {
-            s.rename(&self.name);
-            s
-        })
+        let s = agg.finalize(partitioned, groups, state)?;
+        Ok(s.with_name(&self.name))
     }
 }

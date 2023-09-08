@@ -34,35 +34,6 @@ def test_arg_true() -> None:
     assert_frame_equal(res, expected)
 
 
-def test_col_select() -> None:
-    df = pl.DataFrame(
-        {
-            "ham": [1, 2, 3],
-            "hamburger": [11, 22, 33],
-            "foo": [3, 2, 1],
-            "bar": ["a", "b", "c"],
-        }
-    )
-
-    # Single column
-    assert df.select(pl.col("foo")).columns == ["foo"]
-    # Regex
-    assert df.select(pl.col("*")).columns == ["ham", "hamburger", "foo", "bar"]
-    assert df.select(pl.col("^ham.*$")).columns == ["ham", "hamburger"]
-    assert df.select(pl.col("*").exclude("ham")).columns == ["hamburger", "foo", "bar"]
-    # Multiple inputs
-    assert df.select(pl.col(["hamburger", "foo"])).columns == ["hamburger", "foo"]
-    assert df.select(pl.col("hamburger", "foo")).columns == ["hamburger", "foo"]
-    assert df.select(pl.col(pl.Series(["ham", "foo"]))).columns == ["ham", "foo"]
-    # Dtypes
-    assert df.select(pl.col(pl.Utf8)).columns == ["bar"]
-    assert df.select(pl.col(pl.Int64, pl.Float64)).columns == [
-        "ham",
-        "hamburger",
-        "foo",
-    ]
-
-
 def test_suffix(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select([pl.all().suffix("_reverse")])
@@ -353,6 +324,22 @@ def test_arr_contains() -> None:
     ).collect().to_dict(False) == {
         "str_list": [["cat", "mouse", "dog"], ["dog", "mouse", "cat"]]
     }
+
+
+def test_rank() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 2, 2, 3],
+        }
+    )
+
+    s = df.select(pl.col("a").rank(method="average").alias("b")).to_series()
+    assert s.to_list() == [1.5, 1.5, 3.5, 3.5, 5.0]
+    assert s.dtype == pl.Float64
+
+    s = df.select(pl.col("a").rank(method="max").alias("b")).to_series()
+    assert s.to_list() == [2, 2, 4, 4, 5]
+    assert s.dtype == pl.get_index_type()
 
 
 def test_rank_so_4109() -> None:
@@ -1026,3 +1013,14 @@ def test_extend_constant_arr(const: Any, dtype: pl.PolarsDataType) -> None:
     expected = pl.Series("s", [[const, const, const, const]], dtype=pl.List(dtype))
 
     assert_series_equal(s.list.eval(pl.element().extend_constant(const, 3)), expected)
+
+
+def test_is_not_deprecated() -> None:
+    df = pl.DataFrame({"a": [True, False, True]})
+
+    with pytest.deprecated_call():
+        expr = pl.col("a").is_not()
+    result = df.select(expr)
+
+    expected = pl.DataFrame({"a": [False, True, False]})
+    assert_frame_equal(result, expected)

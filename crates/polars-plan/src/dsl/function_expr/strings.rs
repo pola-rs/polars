@@ -26,7 +26,7 @@ pub enum StringFunction {
         literal: bool,
         strict: bool,
     },
-    CountMatch(String),
+    CountMatch,
     EndsWith,
     Explode,
     Extract {
@@ -90,7 +90,7 @@ impl StringFunction {
             ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_same_dtype(),
             #[cfg(feature = "regex")]
             Contains { .. } => mapper.with_dtype(DataType::Boolean),
-            CountMatch(_) => mapper.with_dtype(DataType::UInt32),
+            CountMatch => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
             Explode => mapper.with_same_dtype(),
             Extract { .. } => mapper.with_same_dtype(),
@@ -125,7 +125,7 @@ impl Display for StringFunction {
         let s = match self {
             #[cfg(feature = "regex")]
             StringFunction::Contains { .. } => "contains",
-            StringFunction::CountMatch(_) => "count_match",
+            StringFunction::CountMatch => "count_match",
             StringFunction::EndsWith { .. } => "ends_with",
             StringFunction::Extract { .. } => "extract",
             #[cfg(feature = "concat_str")]
@@ -396,34 +396,49 @@ pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
     let pat = pat.utf8()?;
 
     if pat.len() == 1 {
-        let pat = pat
-            .get(0)
-            .ok_or_else(|| polars_err!(ComputeError: "expected a pattern, got null"))?;
-        ca.extract_all(pat).map(|ca| ca.into_series())
+        if let Some(pat) = pat.get(0) {
+            ca.extract_all(pat).map(|ca| ca.into_series())
+        } else {
+            Ok(Series::full_null(
+                ca.name(),
+                ca.len(),
+                &DataType::List(Box::new(DataType::Utf8)),
+            ))
+        }
     } else {
         ca.extract_all_many(pat).map(|ca| ca.into_series())
     }
 }
 
-pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
-    let pat = pat.to_string();
+pub(super) fn count_match(args: &[Series]) -> PolarsResult<Series> {
+    let s = &args[0];
+    let pat = &args[1];
 
     let ca = s.utf8()?;
-    ca.count_match(&pat).map(|ca| ca.into_series())
+    let pat = pat.utf8()?;
+    if pat.len() == 1 {
+        if let Some(pat) = pat.get(0) {
+            ca.count_match(pat).map(|ca| ca.into_series())
+        } else {
+            Ok(Series::full_null(ca.name(), ca.len(), &DataType::UInt32))
+        }
+    } else {
+        ca.count_match_many(pat).map(|ca| ca.into_series())
+    }
 }
 
 #[cfg(feature = "temporal")]
 pub(super) fn strptime(
-    s: &Series,
+    s: &[Series],
     dtype: DataType,
     options: &StrptimeOptions,
 ) -> PolarsResult<Series> {
     match dtype {
-        DataType::Date => to_date(s, options),
+        DataType::Date => to_date(&s[0], options),
         DataType::Datetime(time_unit, time_zone) => {
             to_datetime(s, &time_unit, time_zone.as_ref(), options)
         },
-        DataType::Time => to_time(s, options),
+        DataType::Time => to_time(&s[0], options),
         dt => polars_bail!(ComputeError: "not implemented for dtype {}", dt),
     }
 }
@@ -491,11 +506,13 @@ fn to_date(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
 
 #[cfg(feature = "dtype-datetime")]
 fn to_datetime(
-    s: &Series,
+    s: &[Series],
     time_unit: &TimeUnit,
     time_zone: Option<&TimeZone>,
     options: &StrptimeOptions,
 ) -> PolarsResult<Series> {
+    let datetime_strings = &s[0].utf8().unwrap();
+    let ambiguous = &s[1].utf8().unwrap();
     let tz_aware = match &options.format {
         #[cfg(feature = "timezones")]
         Some(format) => TZ_AWARE_RE.is_match(format),
@@ -511,30 +528,31 @@ fn to_datetime(
         }
     };
 
-    let ca = s.utf8()?;
     let out = if options.exact {
-        ca.as_datetime(
-            options.format.as_deref(),
-            *time_unit,
-            options.cache,
-            tz_aware,
-            time_zone,
-            options.use_earliest,
-        )?
-        .into_series()
+        datetime_strings
+            .as_datetime(
+                options.format.as_deref(),
+                *time_unit,
+                options.cache,
+                tz_aware,
+                time_zone,
+                ambiguous,
+            )?
+            .into_series()
     } else {
-        ca.as_datetime_not_exact(
-            options.format.as_deref(),
-            *time_unit,
-            tz_aware,
-            time_zone,
-            options.use_earliest,
-        )?
-        .into_series()
+        datetime_strings
+            .as_datetime_not_exact(
+                options.format.as_deref(),
+                *time_unit,
+                tz_aware,
+                time_zone,
+                ambiguous,
+            )?
+            .into_series()
     };
 
-    if options.strict && ca.null_count() != out.null_count() {
-        handle_temporal_parsing_error(ca, &out, options.format.as_deref(), true)?;
+    if options.strict && datetime_strings.null_count() != out.null_count() {
+        handle_temporal_parsing_error(datetime_strings, &out, options.format.as_deref(), true)?;
     }
     Ok(out.into_series())
 }

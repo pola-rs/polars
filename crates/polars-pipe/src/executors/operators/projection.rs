@@ -3,18 +3,19 @@ use std::sync::Arc;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
+use smartstring::alias::String as SmartString;
 
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
 #[derive(Clone)]
 pub(crate) struct FastProjectionOperator {
-    columns: Arc<[Arc<str>]>,
+    columns: Arc<[SmartString]>,
     input_schema: SchemaRef,
 }
 
 impl FastProjectionOperator {
-    pub(crate) fn new(columns: Arc<[Arc<str>]>, input_schema: SchemaRef) -> Self {
+    pub(crate) fn new(columns: Arc<[SmartString]>, input_schema: SchemaRef) -> Self {
         Self {
             columns,
             input_schema,

@@ -12,9 +12,14 @@ from polars.datatypes import (
     SIGNED_INTEGER_DTYPES,
     TEMPORAL_DTYPES,
     UNSIGNED_INTEGER_DTYPES,
+    Binary,
+    Boolean,
     Categorical,
+    Date,
     Datetime,
     Duration,
+    Object,
+    Time,
     Utf8,
     is_polars_dtype,
 )
@@ -325,6 +330,11 @@ def all() -> SelectorType:
     """
     Select all columns.
 
+    See Also
+    --------
+    first : Select the first column in the current scope.
+    last : Select the last column in the current scope.
+
     Examples
     --------
     >>> from datetime import date
@@ -363,13 +373,104 @@ def all() -> SelectorType:
     │ 2024-01-01 │
     └────────────┘
 
-    See Also
-    --------
-    first : Select the first column in the current scope.
-    last : Select the last column in the current scope.
-
     """
     return _selector_proxy_(F.all(), name="all")
+
+
+def binary() -> SelectorType:
+    """
+    Select all binary columns.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    string : Select all string columns (optionally including categoricals).
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame({"a": [b"hello"], "b": ["world"], "c": [b"!"], "d": [":)"]})
+    >>> df
+    shape: (1, 4)
+    ┌───────────────┬───────┬───────────────┬─────┐
+    │ a             ┆ b     ┆ c             ┆ d   │
+    │ ---           ┆ ---   ┆ ---           ┆ --- │
+    │ binary        ┆ str   ┆ binary        ┆ str │
+    ╞═══════════════╪═══════╪═══════════════╪═════╡
+    │ [binary data] ┆ world ┆ [binary data] ┆ :)  │
+    └───────────────┴───────┴───────────────┴─────┘
+
+    Select binary columns and export as a dict:
+
+    >>> df.select(cs.binary()).to_dict(False)
+    {'a': [b'hello'], 'c': [b'!']}
+
+    Select all columns *except* for those that are binary:
+
+    >>> df.select(~cs.binary()).to_dict(False)
+    {'b': ['world'], 'd': [':)']}
+
+    """
+    return _selector_proxy_(F.col(Binary), name="binary")
+
+
+def boolean() -> SelectorType:
+    """
+    Select all boolean columns.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame({"n": range(1, 5)}).with_columns(n_even=pl.col("n") % 2 == 0)
+    >>> df
+    shape: (4, 2)
+    ┌─────┬────────┐
+    │ n   ┆ n_even │
+    │ --- ┆ ---    │
+    │ i64 ┆ bool   │
+    ╞═════╪════════╡
+    │ 1   ┆ false  │
+    │ 2   ┆ true   │
+    │ 3   ┆ false  │
+    │ 4   ┆ true   │
+    └─────┴────────┘
+
+    Select and invert boolean columns:
+
+    >>> df.with_columns(is_odd=cs.boolean().not_())
+    shape: (4, 3)
+    ┌─────┬────────┬────────┐
+    │ n   ┆ n_even ┆ is_odd │
+    │ --- ┆ ---    ┆ ---    │
+    │ i64 ┆ bool   ┆ bool   │
+    ╞═════╪════════╪════════╡
+    │ 1   ┆ false  ┆ true   │
+    │ 2   ┆ true   ┆ false  │
+    │ 3   ┆ false  ┆ true   │
+    │ 4   ┆ true   ┆ false  │
+    └─────┴────────┴────────┘
+
+    Select all columns *except* for those that are boolean:
+
+    >>> df.select(~cs.boolean())
+    shape: (4, 1)
+    ┌─────┐
+    │ n   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    │ 2   │
+    │ 3   │
+    │ 4   │
+    └─────┘
+
+    """
+    return _selector_proxy_(F.col(Boolean), name="boolean")
 
 
 def by_dtype(
@@ -377,6 +478,10 @@ def by_dtype(
 ) -> SelectorType:
     """
     Select all columns matching the given dtypes.
+
+    See Also
+    --------
+    by_name : Select all columns matching the given names.
 
     Examples
     --------
@@ -431,13 +536,6 @@ def by_dtype(
     │ foo   ┆ -3265500 │
     └───────┴──────────┘
 
-    See Also
-    --------
-    integer : Select all integer columns.
-    float : Select all float columns.
-    numeric : Select all numeric columns.
-    temporal : Select all temporal columns.
-
     """
     all_dtypes: list[PolarsDataType] = []
     for tp in dtypes:
@@ -464,6 +562,10 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
     ----------
     *names
         One or more names of columns to select.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtypes.
 
     Examples
     --------
@@ -503,10 +605,6 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
     │ 5.5 ┆ true  │
     └─────┴───────┘
 
-    See Also
-    --------
-    by_dtype : Select all columns matching the given dtypes.
-
     """
     all_names = []
     for nm in names:
@@ -525,6 +623,57 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
     )
 
 
+def categorical() -> SelectorType:
+    """
+    Select all categorical columns.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    string : Select all string columns (optionally including categoricals).
+
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "foo": ["xx", "yy"],
+    ...         "bar": [123, 456],
+    ...         "baz": [2.0, 5.5],
+    ...     },
+    ...     schema_overrides={"foo": pl.Categorical},
+    ... )
+
+    Select all categorical columns:
+
+    >>> df.select(cs.categorical())
+    shape: (2, 1)
+    ┌─────┐
+    │ foo │
+    │ --- │
+    │ cat │
+    ╞═════╡
+    │ xx  │
+    │ yy  │
+    └─────┘
+
+    Select all columns *except* for those that are categorical:
+
+    >>> df.select(~cs.categorical())
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ bar ┆ baz │
+    │ --- ┆ --- │
+    │ i64 ┆ f64 │
+    ╞═════╪═════╡
+    │ 123 ┆ 2.0 │
+    │ 456 ┆ 5.5 │
+    └─────┴─────┘
+
+    """
+    return _selector_proxy_(F.col(Categorical), name="categorical")
+
+
 def contains(substring: str | Collection[str]) -> SelectorType:
     """
     Select columns that contain the given literal substring(s).
@@ -533,6 +682,12 @@ def contains(substring: str | Collection[str]) -> SelectorType:
     ----------
     substring
         Substring(s) that matching column names should contain.
+
+    See Also
+    --------
+    matches : Select all columns that match the given regex pattern.
+    ends_with : Select columns that end with the given substring(s).
+    starts_with : Select columns that start with the given substring(s).
 
     Examples
     --------
@@ -585,12 +740,6 @@ def contains(substring: str | Collection[str]) -> SelectorType:
     │ y   ┆ true  │
     └─────┴───────┘
 
-    See Also
-    --------
-    matches : Select all columns that match the given regex pattern.
-    ends_with : Select columns that end with the given substring(s).
-    starts_with : Select columns that start with the given substring(s).
-
     """
     escaped_substring = _re_string(substring)
     raw_params = f"^.*{escaped_substring}.*$"
@@ -600,6 +749,59 @@ def contains(substring: str | Collection[str]) -> SelectorType:
         name="contains",
         parameters={"substring": escaped_substring},
     )
+
+
+def date() -> SelectorType:
+    """
+    Select all date columns.
+
+    See Also
+    --------
+    datetime : Select all datetime columns, optionally filtering by time unit/zone.
+    duration : Select all duration columns, optionally filtering by time unit.
+    temporal : Select all temporal columns.
+    time : Select all time columns.
+
+    Examples
+    --------
+    >>> from datetime import date, datetime, time
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "dtm": [datetime(2001, 5, 7, 10, 25), datetime(2031, 12, 31, 0, 30)],
+    ...         "dt": [date(1999, 12, 31), date(2024, 8, 9)],
+    ...         "tm": [time(0, 0, 0), time(23, 59, 59)],
+    ...     },
+    ... )
+
+    Select all date columns:
+
+    >>> df.select(cs.date())
+    shape: (2, 1)
+    ┌────────────┐
+    │ dt         │
+    │ ---        │
+    │ date       │
+    ╞════════════╡
+    │ 1999-12-31 │
+    │ 2024-08-09 │
+    └────────────┘
+
+    Select all columns *except* for those that are dates:
+
+    >>> df.select(~cs.date())
+    shape: (2, 2)
+    ┌─────────────────────┬──────────┐
+    │ dtm                 ┆ tm       │
+    │ ---                 ┆ ---      │
+    │ datetime[μs]        ┆ time     │
+    ╞═════════════════════╪══════════╡
+    │ 2001-05-07 10:25:00 ┆ 00:00:00 │
+    │ 2031-12-31 00:30:00 ┆ 23:59:59 │
+    └─────────────────────┴──────────┘
+
+    """
+    return _selector_proxy_(F.col(Date), name="date")
 
 
 def datetime(
@@ -623,6 +825,13 @@ def datetime(
         * Set ``None`` to select Datetime columns that do not have a timezone.
         * Set "*" to select Datetime columns that have *any* timezone.
 
+    See Also
+    --------
+    date : Select all date columns.
+    duration : Select all duration columns, optionally filtering by time unit.
+    temporal : Select all temporal columns.
+    time : Select all time columns.
+
     Examples
     --------
     >>> from datetime import datetime, date
@@ -630,8 +839,8 @@ def datetime(
     >>> df = pl.DataFrame(
     ...     {
     ...         "tstamp_tokyo": [
-    ...             datetime(1999, 7, 20, 20, 20, 16, 987654),
-    ...             datetime(2000, 5, 15, 21, 21, 21, 123465),
+    ...             datetime(1999, 7, 21, 5, 20, 16, 987654),
+    ...             datetime(2000, 5, 16, 6, 21, 21, 123465),
     ...         ],
     ...         "tstamp_utc": [
     ...             datetime(2023, 4, 10, 12, 14, 16, 999000),
@@ -764,6 +973,13 @@ def duration(
         One (or more) of the allowed timeunit precision strings, "ms", "us", and "ns".
         Omit to select columns with any valid timeunit.
 
+    See Also
+    --------
+    date : Select all date columns.
+    datetime : Select all datetime columns, optionally filtering by time unit/zone.
+    temporal : Select all temporal columns.
+    time : Select all time columns.
+
     Examples
     --------
     >>> from datetime import date, timedelta
@@ -861,6 +1077,12 @@ def ends_with(*suffix: str) -> SelectorType:
     """
     Select columns that end with the given substring(s).
 
+    See Also
+    --------
+    contains : Select columns that contain the given literal substring(s).
+    matches : Select all columns that match the given regex pattern.
+    starts_with : Select columns that start with the given substring(s).
+
     Parameters
     ----------
     suffix
@@ -917,12 +1139,6 @@ def ends_with(*suffix: str) -> SelectorType:
     │ y   ┆ 456 ┆ true  │
     └─────┴─────┴───────┘
 
-    See Also
-    --------
-    contains : Select columns that contain the given literal substring(s).
-    matches : Select all columns that match the given regex pattern.
-    starts_with : Select columns that start with the given substring(s).
-
     """
     escaped_suffix = _re_string(suffix)
     raw_params = f"^.*{escaped_suffix}$"
@@ -937,6 +1153,11 @@ def ends_with(*suffix: str) -> SelectorType:
 def first() -> SelectorType:
     """
     Select the first column in the current scope.
+
+    See Also
+    --------
+    all : Select all columns.
+    last : Select the last column in the current scope.
 
     Examples
     --------
@@ -976,11 +1197,6 @@ def first() -> SelectorType:
     │ 456 ┆ 5.5 ┆ 1   │
     └─────┴─────┴─────┘
 
-    See Also
-    --------
-    all : Select all columns.
-    last : Select the last column in the current scope.
-
     """
     return _selector_proxy_(F.first(), name="first")
 
@@ -988,6 +1204,13 @@ def first() -> SelectorType:
 def float() -> SelectorType:
     """
     Select all float columns.
+
+    See Also
+    --------
+    integer : Select all integer columns.
+    numeric : Select all numeric columns.
+    signed_integer : Select all signed integer columns.
+    unsigned_integer : Select all unsigned integer columns.
 
     Examples
     --------
@@ -1028,23 +1251,21 @@ def float() -> SelectorType:
     │ y   ┆ 456 │
     └─────┴─────┘
 
-    See Also
-    --------
-    integer : Select all integer columns.
-    numeric : Select all numeric columns.
-    temporal : Select all temporal columns.
-    string : Select all string columns.
-
     """
-    return _selector_proxy_(
-        F.col(FLOAT_DTYPES),
-        name="float",
-    )
+    return _selector_proxy_(F.col(FLOAT_DTYPES), name="float")
 
 
 def integer() -> SelectorType:
     """
     Select all integer columns.
+
+    See Also
+    --------
+    by_dtype : Select columns by dtype.
+    float : Select all float columns.
+    numeric : Select all numeric columns.
+    signed_integer : Select all signed integer columns.
+    unsigned_integer : Select all unsigned integer columns.
 
     Examples
     --------
@@ -1071,7 +1292,7 @@ def integer() -> SelectorType:
     │ 456 ┆ 1   │
     └─────┴─────┘
 
-    Select all columns *except* for those that are integer:
+    Select all columns *except* for those that are integer :
 
     >>> df.select(~cs.integer())
     shape: (2, 2)
@@ -1084,24 +1305,21 @@ def integer() -> SelectorType:
     │ y   ┆ 5.5 │
     └─────┴─────┘
 
-    See Also
-    --------
-    by_dtype : Select columns by dtype.
-    float : Select all float columns.
-    numeric : Select all numeric columns.
-    temporal : Select all temporal columns.
-    string : Select all string columns.
-
     """
-    return _selector_proxy_(
-        F.col(INTEGER_DTYPES),
-        name="integer",
-    )
+    return _selector_proxy_(F.col(INTEGER_DTYPES), name="integer")
 
 
 def signed_integer() -> SelectorType:
     """
     Select all signed integer columns.
+
+    See Also
+    --------
+    by_dtype : Select columns by dtype.
+    float : Select all float columns.
+    integer : Select all integer columns.
+    numeric : Select all numeric columns.
+    unsigned_integer : Select all unsigned integer columns.
 
     Examples
     --------
@@ -1153,24 +1371,21 @@ def signed_integer() -> SelectorType:
     │ -456 ┆ 6789 ┆ 4321 │
     └──────┴──────┴──────┘
 
-    See Also
-    --------
-    by_dtype : Select columns by dtype.
-    float : Select all float columns.
-    integer: Select all integer columns.
-    numeric : Select all numeric columns.
-    unsigned_integer: Select all unsigned integer columns.
-
     """
-    return _selector_proxy_(
-        F.col(SIGNED_INTEGER_DTYPES),
-        name="signed_integer",
-    )
+    return _selector_proxy_(F.col(SIGNED_INTEGER_DTYPES), name="signed_integer")
 
 
 def unsigned_integer() -> SelectorType:
     """
     Select all unsigned integer columns.
+
+    See Also
+    --------
+    by_dtype : Select columns by dtype.
+    float : Select all float columns.
+    integer : Select all integer columns.
+    numeric : Select all numeric columns.
+    signed_integer : Select all signed integer columns.
 
     Examples
     --------
@@ -1224,24 +1439,18 @@ def unsigned_integer() -> SelectorType:
     │ -456 ┆ 6789 ┆ 4321 │
     └──────┴──────┴──────┘
 
-    See Also
-    --------
-    by_dtype : Select columns by dtype.
-    float : Select all float columns.
-    integer: Select all integer columns.
-    numeric : Select all numeric columns.
-    signed_integer: Select all signed integer columns.
-
     """
-    return _selector_proxy_(
-        F.col(UNSIGNED_INTEGER_DTYPES),
-        name="unsigned_integer",
-    )
+    return _selector_proxy_(F.col(UNSIGNED_INTEGER_DTYPES), name="unsigned_integer")
 
 
 def last() -> SelectorType:
     """
     Select the last column in the current scope.
+
+    See Also
+    --------
+    all : Select all columns.
+    first : Select the first column in the current scope.
 
     Examples
     --------
@@ -1281,11 +1490,6 @@ def last() -> SelectorType:
     │ y   ┆ 456 ┆ 5.5 │
     └─────┴─────┴─────┘
 
-    See Also
-    --------
-    all : Select all columns.
-    first : Select the first column in the current scope.
-
     """
     return _selector_proxy_(F.last(), name="last")
 
@@ -1293,6 +1497,12 @@ def last() -> SelectorType:
 def matches(pattern: str) -> SelectorType:
     """
     Select all columns that match the given regex pattern.
+
+    See Also
+    --------
+    contains : Select all columns that contain the given substring.
+    ends_with : Select all columns that end with the given substring(s).
+    starts_with : Select all columns that start with the given substring(s).
 
     Parameters
     ----------
@@ -1338,12 +1548,6 @@ def matches(pattern: str) -> SelectorType:
     │ y   ┆ 1   │
     └─────┴─────┘
 
-    See Also
-    --------
-    contains : Select all columns that contain the given substring.
-    ends_with : Select all columns that end with the given substring(s).
-    starts_with : Select all columns that start with the given substring(s).
-
     """
     if pattern == ".*":
         return all()
@@ -1367,6 +1571,14 @@ def matches(pattern: str) -> SelectorType:
 def numeric() -> SelectorType:
     """
     Select all numeric columns.
+
+    See Also
+    --------
+    by_dtype : Select columns by dtype.
+    float : Select all float columns.
+    integer : Select all integer columns.
+    signed_integer : Select all signed integer columns.
+    unsigned_integer : Select all unsigned integer columns.
 
     Examples
     --------
@@ -1407,19 +1619,66 @@ def numeric() -> SelectorType:
     │ y   │
     └─────┘
 
+    """
+    return _selector_proxy_(F.col(NUMERIC_DTYPES), name="numeric")
+
+
+def object() -> SelectorType:
+    """
+    Select all object columns.
+
     See Also
     --------
     by_dtype : Select columns by dtype.
-    float : Select all float columns.
-    integer : Select all integer columns.
-    temporal : Select all temporal columns.
-    string : Select all string columns.
 
-    """
-    return _selector_proxy_(
-        F.col(NUMERIC_DTYPES),
-        name="numeric",
-    )
+    Examples
+    --------
+    >>> import polars.selectors as cs
+    >>> from uuid import uuid4
+    >>> with pl.Config(fmt_str_lengths=36):
+    ...     df = pl.DataFrame(
+    ...         {
+    ...             "idx": [0, 1],
+    ...             "uuid_obj": [uuid4(), uuid4()],
+    ...             "uuid_str": [str(uuid4()), str(uuid4())],
+    ...         },
+    ...         schema_overrides={"idx": pl.Int32},
+    ...     )
+    ...     print(df)  # doctest: +IGNORE_RESULT
+    ...
+    shape: (2, 3)
+    ┌─────┬──────────────────────────────────────┬──────────────────────────────────────┐
+    │ idx ┆ uuid_obj                             ┆ uuid_str                             │
+    │ --- ┆ ---                                  ┆ ---                                  │
+    │ i32 ┆ object                               ┆ str                                  │
+    ╞═════╪══════════════════════════════════════╪══════════════════════════════════════╡
+    │ 0   ┆ 6be063cf-c9c6-43be-878e-e446cfd42981 ┆ acab9fea-c05d-4b91-b639-418004a63f33 │
+    │ 1   ┆ 7849d8f9-2cac-48e7-96d3-63cf81c14869 ┆ 28c65415-8b7d-4857-a4ce-300dca14b12b │
+    └─────┴──────────────────────────────────────┴──────────────────────────────────────┘
+
+    Select object columns and export as a dict:
+
+    >>> df.select(cs.object()).to_dict(False)  # doctest: +IGNORE_RESULT
+    {
+        "uuid_obj": [
+            UUID("6be063cf-c9c6-43be-878e-e446cfd42981"),
+            UUID("7849d8f9-2cac-48e7-96d3-63cf81c14869"),
+        ]
+    }
+
+    Select all columns *except* for those that are object and export as dict:
+
+    >>> df.select(~cs.object())  # doctest: +IGNORE_RESULT
+    {
+        "idx": [0, 1],
+        "uuid_str": [
+            "acab9fea-c05d-4b91-b639-418004a63f33",
+            "28c65415-8b7d-4857-a4ce-300dca14b12b",
+        ],
+    }
+
+    """  # noqa: W505
+    return _selector_proxy_(F.col(Object), name="object")
 
 
 def starts_with(*prefix: str) -> SelectorType:
@@ -1430,6 +1689,12 @@ def starts_with(*prefix: str) -> SelectorType:
     ----------
     prefix
         Substring(s) that matching column names should start with.
+
+    See Also
+    --------
+    contains : Select all columns that contain the given substring.
+    ends_with : Select all columns that end with the given substring(s).
+    matches : Select all columns that match the given regex pattern.
 
     Examples
     --------
@@ -1482,12 +1747,6 @@ def starts_with(*prefix: str) -> SelectorType:
     │ 2.0 ┆ 8   │
     └─────┴─────┘
 
-    See Also
-    --------
-    contains : Select all columns that contain the given substring.
-    ends_with : Select all columns that end with the given substring(s).
-    matches : Select all columns that match the given regex pattern.
-
     """
     escaped_prefix = _re_string(prefix)
     raw_params = f"^{escaped_prefix}.*$"
@@ -1501,7 +1760,13 @@ def starts_with(*prefix: str) -> SelectorType:
 
 def string(include_categorical: bool = False) -> SelectorType:
     """
-    Select all Utf8 (and, optionally, Categorical) string columns.
+    Select all Utf8 (and, optionally, Categorical) string columns .
+
+    See Also
+    --------
+    binary : Select all binary columns.
+    by_dtype : Select all columns matching the given dtype(s).
+    categorical: Select all categorical columns.
 
     Examples
     --------
@@ -1544,14 +1809,6 @@ def string(include_categorical: bool = False) -> SelectorType:
     │ yy  ┆ b   ┆ 6   ┆ 7.0  │
     └─────┴─────┴─────┴──────┘
 
-    See Also
-    --------
-    by_dtype : Select all columns of a given dtype.
-    float : Select all float columns.
-    integer : Select all integer columns.
-    numeric : Select all numeric columns.
-    temporal : Select all temporal columns.
-
     """
     string_dtypes: list[PolarsDataType] = [Utf8]
     if include_categorical:
@@ -1567,6 +1824,14 @@ def string(include_categorical: bool = False) -> SelectorType:
 def temporal() -> SelectorType:
     """
     Select all temporal columns.
+
+    See Also
+    --------
+    by_dtype : Select all columns matching the given dtype(s).
+    date : Select all date columns.
+    datetime : Select all datetime columns, optionally filtering by time unit/zone.
+    duration : Select all duration columns, optionally filtering by time unit.
+    time : Select all time columns.
 
     Examples
     --------
@@ -1593,9 +1858,9 @@ def temporal() -> SelectorType:
     │ 2021-01-02 ┆ 20:30:45 │
     └────────────┴──────────┘
 
-    Match all temporal columns *except* for `Time` columns:
+    Match all temporal columns *except* for time columns:
 
-    >>> df.select(cs.temporal() - cs.by_dtype(pl.Time))
+    >>> df.select(cs.temporal() - cs.time())
     shape: (2, 1)
     ┌────────────┐
     │ dt         │
@@ -1619,26 +1884,70 @@ def temporal() -> SelectorType:
     │ 2.3456 │
     └────────┘
 
+    """
+    return _selector_proxy_(F.col(TEMPORAL_DTYPES), name="temporal")
+
+
+def time() -> SelectorType:
+    """
+    Select all time columns.
+
     See Also
     --------
-    by_dtype : Select all columns of a given dtype.
-    float : Select all float columns.
-    integer : Select all integer columns.
-    numeric : Select all numeric columns.
-    string : Select all string columns.
+    date : Select all date columns.
+    datetime : Select all datetime columns, optionally filtering by time unit/zone.
+    duration : Select all duration columns, optionally filtering by time unit.
+    temporal : Select all temporal columns.
+
+    Examples
+    --------
+    >>> from datetime import date, datetime, time
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "dtm": [datetime(2001, 5, 7, 10, 25), datetime(2031, 12, 31, 0, 30)],
+    ...         "dt": [date(1999, 12, 31), date(2024, 8, 9)],
+    ...         "tm": [time(0, 0, 0), time(23, 59, 59)],
+    ...     },
+    ... )
+
+    Select all time columns:
+
+    >>> df.select(cs.time())
+    shape: (2, 1)
+    ┌──────────┐
+    │ tm       │
+    │ ---      │
+    │ time     │
+    ╞══════════╡
+    │ 00:00:00 │
+    │ 23:59:59 │
+    └──────────┘
+
+    Select all columns *except* for those that are times:
+
+    >>> df.select(~cs.time())
+    shape: (2, 2)
+    ┌─────────────────────┬────────────┐
+    │ dtm                 ┆ dt         │
+    │ ---                 ┆ ---        │
+    │ datetime[μs]        ┆ date       │
+    ╞═════════════════════╪════════════╡
+    │ 2001-05-07 10:25:00 ┆ 1999-12-31 │
+    │ 2031-12-31 00:30:00 ┆ 2024-08-09 │
+    └─────────────────────┴────────────┘
 
     """
-    return _selector_proxy_(
-        F.col(TEMPORAL_DTYPES),
-        name="temporal",
-    )
+    return _selector_proxy_(F.col(Time), name="time")
 
 
 __all__ = [
     "all",
     "by_dtype",
     "by_name",
+    "categorical",
     "contains",
+    "date",
     "datetime",
     "duration",
     "ends_with",
@@ -1650,6 +1959,7 @@ __all__ = [
     "numeric",
     "starts_with",
     "temporal",
+    "time",
     "string",
     "is_selector",
     "expand_selector",

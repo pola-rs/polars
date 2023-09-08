@@ -24,31 +24,6 @@ def good_agg_parameters() -> list[pl.Expr | list[pl.Expr]]:
     ]
 
 
-def test_group_by_rolling_apply() -> None:
-    df = pl.DataFrame(
-        {
-            "a": [1, 2, 3, 4, 5],
-            "b": [1, 2, 3, 4, 5],
-        }
-    ).set_sorted("a")
-
-    def apply(df: pl.DataFrame) -> pl.DataFrame:
-        return df.select(
-            pl.col("a").min(),
-            pl.col("b").max(),
-        )
-
-    expected = pl.DataFrame(
-        [
-            pl.Series("a", [1, 1, 2, 3, 4], dtype=pl.Int64),
-            pl.Series("b", [1, 2, 3, 4, 5], dtype=pl.Int64),
-        ]
-    )
-
-    out = df.group_by_rolling("a", period="2i").apply(apply, schema=df.schema)
-    assert_frame_equal(out, expected)
-
-
 def test_rolling_group_by_overlapping_groups() -> None:
     # this first aggregates overlapping groups so they cannot be naively flattened
     df = pl.DataFrame({"a": [41, 60, 37, 51, 52, 39, 40]})
@@ -64,7 +39,7 @@ def test_rolling_group_by_overlapping_groups() -> None:
             .agg(
                 # trigger the apply on the expression engine
                 pl.col("a")
-                .apply(lambda x: x)
+                .map_elements(lambda x: x)
                 .sum()
             )
         )["a"],
@@ -101,7 +76,7 @@ def test_group_by_rolling_agg_input_types(lazy: bool) -> None:
 def test_group_by_rolling_negative_offset_3914() -> None:
     df = pl.DataFrame(
         {
-            "datetime": pl.date_range(
+            "datetime": pl.datetime_range(
                 datetime(2020, 1, 1), datetime(2020, 1, 5), "1d", eager=True
             ),
         }
@@ -146,7 +121,7 @@ def test_group_by_rolling_negative_offset_3914() -> None:
 def test_group_by_rolling_negative_offset_crossing_dst(time_zone: str | None) -> None:
     df = pl.DataFrame(
         {
-            "datetime": pl.date_range(
+            "datetime": pl.datetime_range(
                 datetime(2021, 11, 6),
                 datetime(2021, 11, 9),
                 "1d",
@@ -161,7 +136,7 @@ def test_group_by_rolling_negative_offset_crossing_dst(time_zone: str | None) ->
     ).agg(pl.col("value"))
     expected = pl.DataFrame(
         {
-            "datetime": pl.date_range(
+            "datetime": pl.datetime_range(
                 datetime(2021, 11, 6),
                 datetime(2021, 11, 9),
                 "1d",
@@ -196,7 +171,7 @@ def test_group_by_rolling_non_negative_offset_9077(
 ) -> None:
     df = pl.DataFrame(
         {
-            "datetime": pl.date_range(
+            "datetime": pl.datetime_range(
                 datetime(2021, 11, 6),
                 datetime(2021, 11, 9),
                 "1d",
@@ -211,7 +186,7 @@ def test_group_by_rolling_non_negative_offset_9077(
     ).agg(pl.col("value"))
     expected = pl.DataFrame(
         {
-            "datetime": pl.date_range(
+            "datetime": pl.datetime_range(
                 datetime(2021, 11, 6),
                 datetime(2021, 11, 9),
                 "1d",

@@ -8,7 +8,7 @@ use std::ops::Add;
 use ahash::AHashSet;
 use arrow::compute;
 use arrow::types::simd::Simd;
-use num_traits::{Float, NumCast, ToPrimitive};
+use num_traits::ToPrimitive;
 #[cfg(feature = "concat_str")]
 use polars_arrow::prelude::ValueSize;
 
@@ -18,27 +18,9 @@ use crate::utils::coalesce_nulls;
 use crate::utils::concat_df;
 
 /// Compute the covariance between two columns.
-pub fn cov_f<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
+pub fn cov<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<f64>
 where
-    T: PolarsFloatType,
-    T::Native: Float,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
-{
-    if a.len() != b.len() {
-        None
-    } else {
-        let tmp = (a - a.mean()?) * (b - b.mean()?);
-        let n = tmp.len() - tmp.null_count();
-        Some(tmp.sum()? / NumCast::from(n - 1).unwrap())
-    }
-}
-
-/// Compute the covariance between two columns.
-pub fn cov_i<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<f64>
-where
-    T: PolarsIntegerType,
+    T: PolarsNumericType,
     T::Native: ToPrimitive,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
@@ -59,37 +41,20 @@ where
 }
 
 /// Compute the pearson correlation between two columns.
-pub fn pearson_corr_i<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>, ddof: u8) -> Option<f64>
+pub fn pearson_corr<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>, ddof: u8) -> Option<f64>
 where
-    T: PolarsIntegerType,
+    T: PolarsNumericType,
     T::Native: ToPrimitive,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
-    ChunkedArray<T>: ChunkVar<f64>,
+    ChunkedArray<T>: ChunkVar,
 {
     let (a, b) = coalesce_nulls(a, b);
     let a = a.as_ref();
     let b = b.as_ref();
 
-    Some(cov_i(a, b)? / (a.std(ddof)? * b.std(ddof)?))
-}
-
-/// Compute the pearson correlation between two columns.
-pub fn pearson_corr_f<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>, ddof: u8) -> Option<T::Native>
-where
-    T: PolarsFloatType,
-    T::Native: Float,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
-    ChunkedArray<T>: ChunkVar<T::Native>,
-{
-    let (a, b) = coalesce_nulls(a, b);
-    let a = a.as_ref();
-    let b = b.as_ref();
-
-    Some(cov_f(a, b)? / (a.std(ddof)? * b.std(ddof)?))
+    Some(cov(a, b)? / (a.std(ddof)? * b.std(ddof)?))
 }
 
 // utility to be able to also add literals to concat_str function
@@ -267,11 +232,11 @@ mod test {
     fn test_cov() {
         let a = Series::new("a", &[1.0f32, 2.0, 5.0]);
         let b = Series::new("b", &[1.0f32, 2.0, -3.0]);
-        let out = cov_f(a.f32().unwrap(), b.f32().unwrap());
+        let out = cov(a.f32().unwrap(), b.f32().unwrap());
         assert_eq!(out, Some(-5.0));
         let a = a.cast(&DataType::Int32).unwrap();
         let b = b.cast(&DataType::Int32).unwrap();
-        let out = cov_i(a.i32().unwrap(), b.i32().unwrap());
+        let out = cov(a.i32().unwrap(), b.i32().unwrap());
         assert_eq!(out, Some(-5.0));
     }
 
@@ -279,10 +244,8 @@ mod test {
     fn test_pearson_corr() {
         let a = Series::new("a", &[1.0f32, 2.0]);
         let b = Series::new("b", &[1.0f32, 2.0]);
-        assert!((cov_f(a.f32().unwrap(), b.f32().unwrap()).unwrap() - 0.5).abs() < 0.001);
-        assert!(
-            (pearson_corr_f(a.f32().unwrap(), b.f32().unwrap(), 1).unwrap() - 1.0).abs() < 0.001
-        );
+        assert!((cov(a.f32().unwrap(), b.f32().unwrap()).unwrap() - 0.5).abs() < 0.001);
+        assert!((pearson_corr(a.f32().unwrap(), b.f32().unwrap(), 1).unwrap() - 1.0).abs() < 0.001);
     }
 
     #[test]

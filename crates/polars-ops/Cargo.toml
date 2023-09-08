@@ -24,6 +24,7 @@ hex = { version = "0.4", optional = true }
 indexmap = { workspace = true }
 jsonpath_lib = { version = "0.3", optional = true, git = "https://github.com/ritchie46/jsonpath", branch = "improve_compiled" }
 memchr = { workspace = true }
+regex = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
@@ -52,6 +53,7 @@ performant = ["polars-core/performant", "fused"]
 big_idx = ["polars-core/bigidx"]
 round_series = []
 is_first = []
+is_last = []
 is_unique = []
 approx_unique = []
 fused = []
@@ -75,6 +77,7 @@ string_from_radix = ["polars-core/strings"]
 extract_jsonpath = ["serde_json", "jsonpath_lib", "polars-json"]
 log = []
 hash = []
+group_by_list = ["polars-core/group_by_list"]
 rolling_window = ["polars-core/rolling_window"]
 moment = ["polars-core/moment"]
 search_sorted = []
@@ -90,3 +93,4 @@ list_sets = []
 list_any_all = []
 extract_groups = ["dtype-struct", "polars-core/regex"]
 is_in = ["polars-core/reinterpret"]
+convert_index = []

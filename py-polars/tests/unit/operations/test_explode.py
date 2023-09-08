@@ -315,3 +315,37 @@ def test_explode_array() -> None:
     for ex in ("a", ~cs.integer()):
         out = df.explode(ex).collect()  # type: ignore[arg-type]
         assert_frame_equal(out, expected)
+
+
+def test_utf8_list_agg_explode() -> None:
+    df = pl.DataFrame({"a": [[None], ["b"]]})
+
+    df = df.select(
+        pl.col("a").list.eval(pl.element().filter(pl.element().is_not_null()))
+    )
+    assert not df["a"].flags["FAST_EXPLODE"]
+
+    df2 = pl.DataFrame({"a": [[], ["b"]]})
+
+    assert_frame_equal(df, df2)
+    assert_frame_equal(df.explode("a"), df2.explode("a"))
+
+
+def test_explode_null_struct() -> None:
+    df = [
+        {"col1": None},
+        {
+            "col1": [
+                {"field1": None, "field2": None, "field3": None},
+                {"field1": None, "field2": "some", "field3": "value"},
+            ]
+        },
+    ]
+
+    assert pl.DataFrame(df).explode("col1").to_dict(False) == {
+        "col1": [
+            {"field1": None, "field2": None, "field3": None},
+            {"field1": None, "field2": None, "field3": None},
+            {"field1": None, "field2": "some", "field3": "value"},
+        ]
+    }

@@ -3,7 +3,7 @@ import pytest
 import polars as pl
 
 
-def test_err_on_s3_glob() -> None:
+def test_cloud_io_glob_not_supported() -> None:
     with pytest.raises(
         ValueError,
         match=r"globbing patterns not supported when scanning non-local files",

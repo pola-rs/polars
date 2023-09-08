@@ -87,6 +87,19 @@ def test_is_in_9070() -> None:
     assert not pl.Series([1]).is_in(pl.Series([1.99])).item()
 
 
+def test_is_in_float_list_10764() -> None:
+    df = pl.DataFrame(
+        {
+            "lst": [[1.0, 2.0, 3.0, 4.0, 5.0], [3.14, 5.28]],
+            "n": [3.0, 2.0],
+        }
+    )
+
+    assert df.select(pl.col("n").is_in("lst").alias("is_in")).to_dict(False) == {
+        "is_in": [True, False]
+    }
+
+
 def test_is_in_df() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     assert df.select(pl.col("a").is_in([1, 2]))["a"].to_list() == [

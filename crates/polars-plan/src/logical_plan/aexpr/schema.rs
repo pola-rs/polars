@@ -185,6 +185,7 @@ impl AExpr {
                 output_type,
                 input,
                 function,
+                options,
                 ..
             } => {
                 let tmp = function.get_output();
@@ -194,6 +195,7 @@ impl AExpr {
                     // default context because `col()` would return a list in aggregation context
                     .map(|node| arena.get(*node).to_field(schema, Context::Default, arena))
                     .collect::<PolarsResult<Vec<_>>>()?;
+                polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", options.fmt_str);
                 Ok(output_type.get_field(schema, ctxt, &fields))
             },
             Function {
@@ -204,6 +206,7 @@ impl AExpr {
                     // default context because `col()` would return a list in aggregation context
                     .map(|node| arena.get(*node).to_field(schema, Context::Default, arena))
                     .collect::<PolarsResult<Vec<_>>>()?;
+                polars_ensure!(!fields.is_empty(), ComputeError: "expression: '{}' didn't get any inputs", function);
                 function.get_field(schema, ctxt, &fields)
             },
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),

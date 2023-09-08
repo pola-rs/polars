@@ -45,13 +45,13 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
     match s.len() {
         1 => {
             return match method {
-                Average => Series::new(s.name(), &[1.0f32]),
+                Average => Series::new(s.name(), &[1.0f64]),
                 _ => Series::new(s.name(), &[1 as IdxSize]),
             };
         },
         0 => {
             return match method {
-                Average => Float32Chunked::from_slice(s.name(), &[]).into_series(),
+                Average => Float64Chunked::from_slice(s.name(), &[]).into_series(),
                 _ => IdxCa::from_slice(s.name(), &[]).into_series(),
             };
         },
@@ -289,10 +289,10 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
                 Average => {
                     // SAFETY: in bounds.
                     let a = unsafe { count.take_unchecked((&dense).into()) }
-                        .cast(&DataType::Float32)
+                        .cast(&DataType::Float64)
                         .unwrap();
                     let b = unsafe { count.take_unchecked((&(dense - 1)).into()) }
-                        .cast(&DataType::Float32)
+                        .cast(&DataType::Float64)
                         .unwrap()
                         + 1.0;
                     (&a + &b) * 0.5
@@ -354,10 +354,10 @@ mod test {
         assert_eq!(out, &[2, 3, 6, 3, 3, 6, 1]);
 
         let out = rank(&s, RankMethod::Average, false, None)
-            .f32()?
+            .f64()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
-        assert_eq!(out, &[2.0f32, 4.0, 6.5, 4.0, 4.0, 6.5, 1.0]);
+        assert_eq!(out, &[2.0f64, 4.0, 6.5, 4.0, 4.0, 6.5, 1.0]);
 
         let s = Series::new(
             "a",
@@ -365,14 +365,14 @@ mod test {
         );
 
         let out = rank(&s, RankMethod::Average, false, None)
-            .f32()?
+            .f64()?
             .into_iter()
             .collect::<Vec<_>>();
 
         assert_eq!(
             out,
             &[
-                Some(2.0f32),
+                Some(2.0f64),
                 Some(3.5),
                 Some(5.0),
                 Some(3.5),
@@ -419,10 +419,10 @@ mod test {
     fn test_rank_all_null() -> PolarsResult<()> {
         let s = UInt32Chunked::new("", &[None, None, None]).into_series();
         let out = rank(&s, RankMethod::Average, false, None)
-            .f32()?
+            .f64()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
-        assert_eq!(out, &[2.0f32, 2.0, 2.0]);
+        assert_eq!(out, &[2.0f64, 2.0, 2.0]);
         let out = rank(&s, RankMethod::Dense, false, None)
             .idx()?
             .into_no_null_iter()
@@ -435,7 +435,7 @@ mod test {
     fn test_rank_empty() {
         let s = UInt32Chunked::from_slice("", &[]).into_series();
         let out = rank(&s, RankMethod::Average, false, None);
-        assert_eq!(out.dtype(), &DataType::Float32);
+        assert_eq!(out.dtype(), &DataType::Float64);
         let out = rank(&s, RankMethod::Max, false, None);
         assert_eq!(out.dtype(), &IDX_DTYPE);
     }

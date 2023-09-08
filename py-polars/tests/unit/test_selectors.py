@@ -43,7 +43,7 @@ def test_selector_all(df: pl.DataFrame) -> None:
 
 
 def test_selector_by_dtype(df: pl.DataFrame) -> None:
-    assert df.select(cs.by_dtype(pl.UInt16, pl.Boolean)).schema == {
+    assert df.select(cs.by_dtype(pl.UInt16) | cs.boolean()).schema == {
         "abc": pl.UInt16,
         "eee": pl.Boolean,
         "fgg": pl.Boolean,
@@ -261,6 +261,24 @@ def test_selector_matches(df: pl.DataFrame) -> None:
     ]
 
 
+def test_selector_miscellaneous(df: pl.DataFrame) -> None:
+    assert df.select(cs.string()).columns == ["qqR"]
+    assert df.select(cs.categorical()).columns == []
+
+    test_schema = {
+        "abc": pl.Utf8,
+        "mno": pl.Binary,
+        "tuv": pl.Object,
+        "xyz": pl.Categorical,
+    }
+    assert expand_selector(test_schema, cs.binary()) == ("mno",)
+    assert expand_selector(test_schema, ~cs.binary()) == ("abc", "tuv", "xyz")
+    assert expand_selector(test_schema, cs.object()) == ("tuv",)
+    assert expand_selector(test_schema, ~cs.object()) == ("abc", "mno", "xyz")
+    assert expand_selector(test_schema, cs.categorical()) == ("xyz",)
+    assert expand_selector(test_schema, ~cs.categorical()) == ("abc", "mno", "tuv")
+
+
 def test_selector_numeric(df: pl.DataFrame) -> None:
     assert df.select(cs.numeric()).schema == {
         "abc": pl.UInt16,
@@ -310,6 +328,8 @@ def test_selector_temporal(df: pl.DataFrame) -> None:
     assert set(df.select(~cs.temporal()).columns) == (
         all_columns - {"ghi", "JJK", "Lmn", "opp"}
     )
+    assert df.select(cs.time()).schema == {"ghi": pl.Time}
+    assert df.select(cs.date() | cs.time()).schema == {"ghi": pl.Time, "JJK": pl.Date}
 
 
 def test_selector_expansion() -> None:

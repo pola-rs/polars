@@ -225,6 +225,11 @@ pub trait SeriesTrait:
     /// Underlying chunks.
     fn chunks(&self) -> &Vec<ArrayRef>;
 
+    /// Underlying chunks.
+    /// # Safety
+    /// The caller must ensure the length and the data types of `ArrayRef` does not change.
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef>;
+
     /// Number of chunks in this Series
     fn n_chunks(&self) -> usize {
         self.chunks().len()
@@ -519,12 +524,12 @@ pub trait SeriesTrait:
     #[cfg(feature = "rolling_window")]
     /// Apply a custom function over a rolling/ moving window of the array.
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
-    fn rolling_apply(
+    fn rolling_map(
         &self,
         _f: &dyn Fn(&Series) -> Series,
         _options: RollingOptionsFixedWindow,
     ) -> PolarsResult<Series> {
-        polars_bail!(opq = rolling_apply, self._dtype());
+        polars_bail!(opq = rolling_map, self._dtype());
     }
     #[cfg(feature = "concat_str")]
     /// Concat the values into a string array.

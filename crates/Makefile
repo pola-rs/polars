@@ -135,4 +135,3 @@ check-wasm:  ## Check wasm build without supported features
 		--exclude-features performant         \
 		--exclude-features streaming          \
 		--exclude-features test
-

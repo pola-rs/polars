@@ -160,30 +160,30 @@ impl DataFrame {
         self.columns.iter().map(|s| s.estimated_size()).sum()
     }
 
-    // reduce monomorphization
+    // Reduce monomorphization.
     fn apply_columns(&self, func: &(dyn Fn(&Series) -> Series)) -> Vec<Series> {
-        self.columns.iter().map(|s| func(s)).collect()
+        self.columns.iter().map(func).collect()
     }
 
-    // reduce monomorphization
+    // Reduce monomorphization.
     fn apply_columns_par(&self, func: &(dyn Fn(&Series) -> Series + Send + Sync)) -> Vec<Series> {
-        POOL.install(|| self.columns.par_iter().map(|s| func(s)).collect())
+        POOL.install(|| self.columns.par_iter().map(func).collect())
     }
 
-    // reduce monomorphization
+    // Reduce monomorphization.
     fn try_apply_columns_par(
         &self,
         func: &(dyn Fn(&Series) -> PolarsResult<Series> + Send + Sync),
     ) -> PolarsResult<Vec<Series>> {
-        POOL.install(|| self.columns.par_iter().map(|s| func(s)).collect())
+        POOL.install(|| self.columns.par_iter().map(func).collect())
     }
 
-    // reduce monomorphization
+    // Reduce monomorphization.
     fn try_apply_columns(
         &self,
         func: &(dyn Fn(&Series) -> PolarsResult<Series> + Send + Sync),
     ) -> PolarsResult<Vec<Series>> {
-        self.columns.iter().map(|s| func(s)).collect()
+        self.columns.iter().map(func).collect()
     }
 
     /// Get the index of the column.
@@ -1334,7 +1334,7 @@ impl DataFrame {
         let colnames = self.get_column_names_owned();
         let range = get_range(range, ..colnames.len());
 
-        self.select_impl(&colnames[range])
+        self._select_impl(&colnames[range])
     }
 
     /// Get column index of a `Series` by name.
@@ -1428,11 +1428,15 @@ impl DataFrame {
             .into_iter()
             .map(|s| SmartString::from(s.as_ref()))
             .collect::<Vec<_>>();
-        self.select_impl(&cols)
+        self._select_impl(&cols)
     }
 
-    fn select_impl(&self, cols: &[SmartString]) -> PolarsResult<Self> {
+    pub fn _select_impl(&self, cols: &[SmartString]) -> PolarsResult<Self> {
         self.select_check_duplicates(cols)?;
+        self._select_impl_unchecked(cols)
+    }
+
+    pub fn _select_impl_unchecked(&self, cols: &[SmartString]) -> PolarsResult<Self> {
         let selected = self.select_series_impl(cols)?;
         Ok(DataFrame::new_no_checks(selected))
     }
