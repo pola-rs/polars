@@ -193,7 +193,7 @@ class DataFrame(Protocol):
         """Version of the protocol."""
 
     def __dataframe__(
-        self, nan_as_null: bool = False, allow_copy: bool = True
+        self, nan_as_null: bool = False, allow_copy: bool = True  # noqa: FBT001
     ) -> DataFrame:
         """Convert to a dataframe object implementing the dataframe interchange protocol."""  # noqa: W505
 
@@ -236,7 +236,7 @@ class SupportsInterchange(Protocol):
     """Dataframe that supports conversion into an interchange dataframe object."""
 
     def __dataframe__(
-        self, nan_as_null: bool = False, allow_copy: bool = True
+        self, nan_as_null: bool = False, allow_copy: bool = True  # noqa: FBT001
     ) -> SupportsInterchange:
         """Convert to a dataframe object implementing the dataframe interchange protocol."""  # noqa: W505
 

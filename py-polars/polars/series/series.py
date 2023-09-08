@@ -286,7 +286,9 @@ class Series:
                 nan_to_null=nan_to_null,
             )
         elif _check_for_numpy(values) and isinstance(values, np.ndarray):
-            self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
+            self._s = numpy_to_pyseries(
+                name, values, strict=strict, nan_to_null=nan_to_null
+            )
             if values.dtype.type == np.datetime64:
                 # cast to appropriate dtype, handling NaT values
                 dtype = _resolve_datetime_dtype(dtype, values.dtype)
@@ -316,8 +318,8 @@ class Series:
                 name,
                 values,
                 dtype=dtype,
-                strict=strict,
                 dtype_if_empty=dtype_if_empty,
+                strict=strict,
             )
         else:
             raise TypeError(
@@ -334,7 +336,7 @@ class Series:
     @classmethod
     def _from_arrow(cls, name: str, values: pa.Array, *, rechunk: bool = True) -> Self:
         """Construct a Series from an Arrow Array."""
-        return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk))
+        return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk=rechunk))
 
     @classmethod
     def _from_pandas(
@@ -1079,7 +1081,7 @@ class Series:
                 self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s
             else:
                 s = self._from_pyseries(
-                    PySeries.new_u32("", np.array(key, np.uint32), True)
+                    PySeries.new_u32("", np.array(key, np.uint32), _strict=True)
                 )
                 self.__setitem__(s, value)
         elif isinstance(key, (list, tuple)):

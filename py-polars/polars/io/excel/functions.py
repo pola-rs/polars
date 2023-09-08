@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO, NoReturn, Sequence, overload
 import polars._reexport as pl
 from polars.exceptions import NoDataError
 from polars.io.csv.functions import read_csv
-from polars.utils.various import normalise_filepath
+from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from io import BytesIO
@@ -260,7 +260,7 @@ def _initialise_excel_parser(
 ) -> tuple[Any, Any, list[dict[str, Any]]]:
     """Instantiate the indicated Excel parser and establish related properties."""
     if isinstance(source, (str, Path)):
-        source = normalise_filepath(source)
+        source = normalize_filepath(source)
 
     if engine == "openpyxl":
         try:
@@ -309,6 +309,7 @@ def _read_excel_sheet_openpyxl(
     sheet_id: int | None,
     sheet_name: str | None,
     read_csv_options: dict[str, Any] | None,
+    *,
     raise_if_empty: bool,
 ) -> pl.DataFrame:
     """Use the 'openpyxl' library to read data from the given worksheet."""
@@ -356,6 +357,7 @@ def _read_excel_sheet_xlsx2csv(
     sheet_id: int | None,
     sheet_name: str | None,
     read_csv_options: dict[str, Any],
+    *,
     raise_if_empty: bool,
 ) -> pl.DataFrame:
     """Use the 'xlsx2csv' library to read data from the given worksheet."""

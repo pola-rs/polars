@@ -15,7 +15,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, NoDataError
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.utils.various import normalise_filepath
+from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -113,11 +113,11 @@ def test_to_from_file(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
-def test_normalise_filepath(io_files_path: Path) -> None:
+def test_normalize_filepath(io_files_path: Path) -> None:
     with pytest.raises(IsADirectoryError):
-        normalise_filepath(io_files_path)
+        normalize_filepath(io_files_path)
 
-    assert normalise_filepath(str(io_files_path), check_not_directory=False) == str(
+    assert normalize_filepath(str(io_files_path), check_not_directory=False) == str(
         io_files_path
     )
 

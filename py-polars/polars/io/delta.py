@@ -271,7 +271,7 @@ def scan_delta(
     return scan_pyarrow_dataset(pa_ds)
 
 
-def _resolve_delta_lake_uri(table_uri: str, strict: bool = True) -> str:
+def _resolve_delta_lake_uri(table_uri: str, *, strict: bool = True) -> str:
     parsed_result = urlparse(table_uri)
 
     resolved_uri = str(

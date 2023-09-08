@@ -168,7 +168,12 @@ def concat(
             out = wrap_df(plr.concat_df(elems))
         elif how == "vertical_relaxed":
             out = wrap_ldf(
-                plr.concat_lf([df.lazy() for df in elems], rechunk, parallel, True)
+                plr.concat_lf(
+                    [df.lazy() for df in elems],
+                    rechunk=rechunk,
+                    parallel=parallel,
+                    to_supertypes=True,
+                )
             ).collect(no_optimization=True)
         elif how == "diagonal":
             out = wrap_df(plr.diag_concat_df(elems))
@@ -181,11 +186,21 @@ def concat(
             )
     elif isinstance(first, pl.LazyFrame):
         if how == "vertical":
-            return wrap_ldf(plr.concat_lf(elems, rechunk, parallel, False))
+            return wrap_ldf(
+                plr.concat_lf(
+                    elems, rechunk=rechunk, parallel=parallel, to_supertypes=False
+                )
+            )
         if how == "vertical_relaxed":
-            return wrap_ldf(plr.concat_lf(elems, rechunk, parallel, True))
+            return wrap_ldf(
+                plr.concat_lf(
+                    elems, rechunk=rechunk, parallel=parallel, to_supertypes=True
+                )
+            )
         if how == "diagonal":
-            return wrap_ldf(plr.diag_concat_lf(elems, rechunk, parallel))
+            return wrap_ldf(
+                plr.diag_concat_lf(elems, rechunk=rechunk, parallel=parallel)
+            )
         else:
             raise ValueError(
                 "'LazyFrame' only allows {'vertical','vertical_relaxed','diagonal','align'} concat strategies"

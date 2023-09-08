@@ -367,7 +367,7 @@ def test_selector_repr() -> None:
         cs.integer() & cs.matches("z"), "(cs.integer() & cs.matches(pattern='z'))"
     )
     assert_repr_equals(
-        cs.temporal() | cs.by_dtype(pl.Utf8) & cs.string(False),
+        cs.temporal() | cs.by_dtype(pl.Utf8) & cs.string(include_categorical=False),
         "(cs.temporal() | (cs.by_dtype(dtypes=[Utf8]) & cs.string(include_categorical=False)))",
     )
 

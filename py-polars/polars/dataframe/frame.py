@@ -83,6 +83,7 @@ from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
+    deprecate_nonkeyword_arguments,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
 )
@@ -94,7 +95,7 @@ from polars.utils.various import (
     is_bool_sequence,
     is_int_sequence,
     is_str_sequence,
-    normalise_filepath,
+    normalize_filepath,
     parse_percentiles,
     parse_version,
     range_to_slice,
@@ -692,7 +693,7 @@ class DataFrame:
 
         path: str | None
         if isinstance(source, (str, Path)):
-            path = normalise_filepath(source)
+            path = normalize_filepath(source)
         else:
             path = None
             if isinstance(source, BytesIO):
@@ -822,7 +823,7 @@ class DataFrame:
 
         """
         if isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
         if isinstance(columns, str):
             columns = [columns]
 
@@ -892,7 +893,7 @@ class DataFrame:
 
         """
         if isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
         projection, columns = handle_projection_columns(columns)
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_avro(source, columns, projection, n_rows)
@@ -938,7 +939,7 @@ class DataFrame:
 
         """
         if isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
         if isinstance(columns, str):
             columns = [columns]
 
@@ -1016,7 +1017,7 @@ class DataFrame:
 
         """
         if isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
         if isinstance(columns, str):
             columns = [columns]
 
@@ -1053,7 +1054,7 @@ class DataFrame:
         if isinstance(source, StringIO):
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
 
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_json(
@@ -1083,7 +1084,7 @@ class DataFrame:
         if isinstance(source, StringIO):
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
 
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_ndjson(
@@ -1272,7 +1273,7 @@ class DataFrame:
             return self.to_numpy().__array__()
 
     def __dataframe__(
-        self, nan_as_null: bool = False, allow_copy: bool = True
+        self, nan_as_null: bool = False, allow_copy: bool = True  # noqa: FBT001
     ) -> PolarsDataFrame:
         """
         Convert to a dataframe object implementing the dataframe interchange protocol.
@@ -1392,7 +1393,7 @@ class DataFrame:
         else:
             raise ValueError(f"unexpected comparison operator {op!r}")
 
-    def _div(self, other: Any, floordiv: bool) -> DataFrame:
+    def _div(self, other: Any, *, floordiv: bool) -> DataFrame:
         if isinstance(other, pl.Series):
             if floordiv:
                 return self.select(F.all() // lit(other))
@@ -1908,12 +1909,13 @@ class DataFrame:
 
     @overload
     def to_dict(
-        self, as_series: bool = True
+        self, as_series: bool  # noqa: FBT001
     ) -> dict[str, Series] | dict[str, list[Any]]:
         ...
 
+    # TODO: Make `as_series` keyword-only
     def to_dict(
-        self, as_series: bool = True
+        self, as_series: bool = True  # noqa: FBT001
     ) -> dict[str, Series] | dict[str, list[Any]]:
         """
         Convert DataFrame to a dictionary mapping column name to values.
@@ -2023,8 +2025,9 @@ class DataFrame:
         """
         return list(self.iter_rows(named=True))
 
+    @deprecate_nonkeyword_arguments(version="0.19.3")
     def to_numpy(
-        self, structured: bool = False, *, order: IndexOrder = "fortran"
+        self, structured: bool = False, *, order: IndexOrder = "fortran"  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
         Convert DataFrame to a 2D NumPy array.
@@ -2078,7 +2081,7 @@ class DataFrame:
         ...optionally zero-copying as a record array view:
 
         >>> import numpy as np
-        >>> df.to_numpy(True).view(np.recarray)
+        >>> df.to_numpy(structured=True).view(np.recarray)
         rec.array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
                   dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
 
@@ -2371,7 +2374,7 @@ class DataFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
@@ -2418,7 +2421,7 @@ class DataFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
@@ -2567,7 +2570,7 @@ class DataFrame:
             buffer = file = BytesIO()
             should_return_buffer = True
         elif isinstance(file, (str, os.PathLike)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
         elif isinstance(file, TextIOWrapper):
             file = cast(TextIOWrapper, file.buffer)
 
@@ -2624,7 +2627,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
 
         self._df.write_avro(file, compression)
 
@@ -3095,7 +3098,9 @@ class DataFrame:
 
         # finally, inject any sparklines into the table
         for column, params in (sparklines or {}).items():
-            _xl_inject_sparklines(ws, df, table_start, column, has_header, params)
+            _xl_inject_sparklines(
+                ws, df, table_start, column, has_header=has_header, params=params
+            )
 
         # worksheet options
         if hide_gridlines:
@@ -3182,7 +3187,7 @@ class DataFrame:
         if return_bytes:
             file = BytesIO()
         elif isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
 
         if compression is None:
             compression = "uncompressed"
@@ -3243,7 +3248,7 @@ class DataFrame:
         if return_bytes:
             file = BytesIO()
         elif isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
 
         if compression is None:
             compression = "uncompressed"
@@ -3329,9 +3334,9 @@ class DataFrame:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
             if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
-                file = normalise_filepath(file, check_not_directory=False)
+                file = normalize_filepath(file, check_not_directory=False)
             else:
-                file = normalise_filepath(file)
+                file = normalize_filepath(file)
 
         if use_pyarrow:
             tbl = self.to_arrow()
@@ -5219,7 +5224,13 @@ class DataFrame:
 
         """
         return RollingGroupBy(
-            self, index_column, period, offset, closed, by, check_sorted
+            self,
+            index_column=index_column,
+            period=period,
+            offset=offset,
+            closed=closed,
+            by=by,
+            check_sorted=check_sorted,
         )
 
     def group_by_dynamic(
@@ -5548,16 +5559,16 @@ class DataFrame:
         """  # noqa: W505
         return DynamicGroupBy(
             self,
-            index_column,
-            every,
-            period,
-            offset,
-            truncate,
-            include_boundaries,
-            closed,
-            by,
-            start_by,
-            check_sorted,
+            index_column=index_column,
+            every=every,
+            period=period,
+            offset=offset,
+            truncate=truncate,
+            include_boundaries=include_boundaries,
+            closed=closed,
+            by=by,
+            start_by=start_by,
+            check_sorted=check_sorted,
         )
 
     def upsample(

@@ -66,7 +66,7 @@ from polars.utils.various import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
-    normalise_filepath,
+    normalize_filepath,
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -454,7 +454,7 @@ class LazyFrame:
 
         """
         if isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
 
         # try fsspec scanner
         if not _is_local_file(source):
@@ -516,6 +516,7 @@ class LazyFrame:
         cls,
         schema: pa.schema | dict[str, PolarsDataType],
         scan_fn: Any,
+        *,
         pyarrow: bool = False,
     ) -> Self:
         self = cls.__new__(cls)
@@ -613,7 +614,7 @@ class LazyFrame:
         if isinstance(source, StringIO):
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
 
         return cls._from_pyldf(PyLazyFrame.deserialize(source))
 
@@ -843,7 +844,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
