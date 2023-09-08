@@ -123,7 +123,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.slice(0, num_elements)
     }
 
-    /// Get the head of the ChunkedArray
+    /// Get the head of the [`ChunkedArray`]
     #[must_use]
     pub fn head(&self, length: Option<usize>) -> Self
     where
@@ -135,7 +135,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         }
     }
 
-    /// Get the tail of the ChunkedArray
+    /// Get the tail of the [`ChunkedArray`]
     #[must_use]
     pub fn tail(&self, length: Option<usize>) -> Self
     where

@@ -1,4 +1,4 @@
-//! Lazy variant of a [DataFrame](polars_core::frame::DataFrame).
+//! Lazy variant of a [DataFrame].
 #[cfg(feature = "csv")]
 mod csv;
 #[cfg(feature = "ipc")]
@@ -780,7 +780,7 @@ impl LazyFrame {
 
     /// Select (and optionally rename, with [`alias`](crate::dsl::Expr::alias)) columns from the query.
     ///
-    /// Columns can be selected with [`col`](crate::dsl::col);
+    /// Columns can be selected with [`col`];
     /// If you want to select all columns use `col("*")`.
     ///
     /// # Example
@@ -1568,7 +1568,7 @@ pub struct LazyGroupBy {
 impl LazyGroupBy {
     /// Group by and aggregate.
     ///
-    /// Select a column with [col](crate::dsl::col) and choose an aggregation.
+    /// Select a column with [col] and choose an aggregation.
     /// If you want to aggregate all columns use `col("*")`.
     ///
     /// # Example

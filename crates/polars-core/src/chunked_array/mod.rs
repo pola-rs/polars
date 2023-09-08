@@ -62,9 +62,9 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 
 /// # ChunkedArray
 ///
-/// Every Series contains a `ChunkedArray<T>`. Unlike Series, ChunkedArray's are typed. This allows
-/// us to apply closures to the data and collect the results to a `ChunkedArray` of the same type `T`.
-/// Below we use an apply to use the cosine function to the values of a `ChunkedArray`.
+/// Every Series contains a [`ChunkedArray<T>`]. Unlike [`Series`], [`ChunkedArray`]s are typed. This allows
+/// us to apply closures to the data and collect the results to a [`ChunkedArray`] of the same type `T`.
+/// Below we use an apply to use the cosine function to the values of a [`ChunkedArray`].
 ///
 /// ```rust
 /// # use polars_core::prelude::*;
@@ -74,7 +74,7 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 /// ```
 ///
 /// ## Conversion between Series and ChunkedArray's
-/// Conversion from a `Series` to a `ChunkedArray` is effortless.
+/// Conversion from a [`Series`] to a [`ChunkedArray`] is effortless.
 ///
 /// ```rust
 /// # use polars_core::prelude::*;
@@ -89,7 +89,7 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 ///
 /// # Iterators
 ///
-/// `ChunkedArrays` fully support Rust native [Iterator](https://doc.rust-lang.org/std/iter/trait.Iterator.html)
+/// [`ChunkedArray`]s fully support Rust native [Iterator](https://doc.rust-lang.org/std/iter/trait.Iterator.html)
 /// and [DoubleEndedIterator](https://doc.rust-lang.org/std/iter/trait.DoubleEndedIterator.html) traits, thereby
 /// giving access to all the excellent methods available for [Iterators](https://doc.rust-lang.org/std/iter/trait.Iterator.html).
 ///
@@ -110,28 +110,30 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 ///
 /// # Memory layout
 ///
-/// `ChunkedArray`'s use [Apache Arrow](https://github.com/apache/arrow) as backend for the memory layout.
+/// [`ChunkedArray`]s use [Apache Arrow](https://github.com/apache/arrow) as backend for the memory layout.
 /// Arrows memory is immutable which makes it possible to make multiple zero copy (sub)-views from a single array.
 ///
-/// To be able to append data, Polars uses chunks to append new memory locations, hence the `ChunkedArray<T>` data structure.
+/// To be able to append data, Polars uses chunks to append new memory locations, hence the [`ChunkedArray<T>`] data structure.
 /// Appends are cheap, because it will not lead to a full reallocation of the whole array (as could be the case with a Rust Vec).
 ///
-/// However, multiple chunks in a `ChunkArray` will slow down many operations that need random access because we have an extra indirection
+/// However, multiple chunks in a [`ChunkedArray`] will slow down many operations that need random access because we have an extra indirection
 /// and indexes need to be mapped to the proper chunk. Arithmetic may also be slowed down by this.
-/// When multiplying two `ChunkArray'`s with different chunk sizes they cannot utilize [SIMD](https://en.wikipedia.org/wiki/SIMD) for instance.
+/// When multiplying two [`ChunkedArray`]s with different chunk sizes they cannot utilize [SIMD](https://en.wikipedia.org/wiki/SIMD) for instance.
 ///
 /// If you want to have predictable performance
-/// (no unexpected re-allocation of memory), it is advised to call the [ChunkedArray::rechunk] after
+/// (no unexpected re-allocation of memory), it is advised to call the [`ChunkedArray::rechunk`] after
 /// multiple append operations.
 ///
 /// See also [`ChunkedArray::extend`] for appends within a chunk.
 ///
 /// # Invariants
-/// - A `ChunkedArray` should always have at least a single `ArrayRef`.
-/// - The [`PolarsDataType`] `T` should always map to the correct [`ArrowDataType`] in the `ArrayRef`
+/// - A [`ChunkedArray`] should always have at least a single [`ArrayRef`].
+/// - The [`PolarsDataType`] `T` should always map to the correct [`ArrowDataType`] in the [`ArrayRef`]
 ///   chunks.
-/// - Nested datatypes such as `List` and `Array` store the physical types instead of the
+/// - Nested datatypes such as [`List`] and [`Array`] store the physical types instead of the
 ///   logical type given by the datatype.
+///
+/// [`List`]: crate::datatypes::DataType::List
 pub struct ChunkedArray<T: PolarsDataType> {
     pub(crate) field: Arc<Field>,
     pub(crate) chunks: Vec<ArrayRef>,
@@ -195,7 +197,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.bit_settings
     }
 
-    /// Set flags for the Chunked Array
+    /// Set flags for the [`ChunkedArray`]
     pub(crate) fn set_flags(&mut self, flags: Settings) {
         self.bit_settings = flags;
     }
@@ -209,7 +211,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.bit_settings.set_sorted_flag(sorted)
     }
 
-    /// Get the index of the first non null value in this ChunkedArray.
+    /// Get the index of the first non null value in this [`ChunkedArray`].
     pub fn first_non_null(&self) -> Option<usize> {
         if self.is_empty() {
             None
@@ -218,7 +220,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         }
     }
 
-    /// Get the index of the last non null value in this ChunkedArray.
+    /// Get the index of the last non null value in this [`ChunkedArray`].
     pub fn last_non_null(&self) -> Option<usize> {
         last_non_null(self.iter_validities(), self.length as usize)
     }
@@ -234,7 +236,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     #[inline]
-    /// Return if any the chunks in this `[ChunkedArray]` have a validity bitmap.
+    /// Return if any the chunks in this [`ChunkedArray`] have a validity bitmap.
     /// no bitmap means no null values.
     pub fn has_validity(&self) -> bool {
         self.iter_validities().any(|valid| valid.is_some())
@@ -245,7 +247,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.chunks = vec![concatenate_owned_unchecked(self.chunks.as_slice()).unwrap()];
     }
 
-    /// Unpack a Series to the same physical type.
+    /// Unpack a [`Series`] to the same physical type.
     ///
     /// # Safety
     ///
@@ -300,7 +302,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// A mutable reference to the chunks
     ///
     /// # Safety
-    /// The caller must ensure to not change the `DataType` or `length` of any of the chunks.
+    /// The caller must ensure to not change the [`DataType`] or `length` of any of the chunks.
     #[inline]
     pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         &mut self.chunks
@@ -317,7 +319,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.chunks.iter().map(|arr| arr.null_count()).sum()
     }
 
-    /// Create a new ChunkedArray from self, where the chunks are replaced.
+    /// Create a new [`ChunkedArray`] from self, where the chunks are replaced.
     ///
     /// # Safety
     /// The caller must ensure the dtypes of the chunks are correct
@@ -336,7 +338,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         )
     }
 
-    /// Get data type of ChunkedArray.
+    /// Get data type of [`ChunkedArray`].
     pub fn dtype(&self) -> &DataType {
         self.field.data_type()
     }
@@ -346,7 +348,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.field = Arc::new(Field::new(self.name(), dtype))
     }
 
-    /// Name of the ChunkedArray.
+    /// Name of the [`ChunkedArray`].
     pub fn name(&self) -> &str {
         self.field.name()
     }
@@ -356,12 +358,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         &self.field
     }
 
-    /// Rename this ChunkedArray.
+    /// Rename this [`ChunkedArray`].
     pub fn rename(&mut self, name: &str) {
         self.field = Arc::new(Field::new(name, self.field.data_type().clone()))
     }
 
-    /// Return this ChunkedArray with a new name.
+    /// Return this [`ChunkedArray`] with a new name.
     pub fn with_name(mut self, name: &str) -> Self {
         self.rename(name);
         self
@@ -372,9 +374,9 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
-    /// Should be used to match the chunk_id of another ChunkedArray.
+    /// Should be used to match the chunk_id of another [`ChunkedArray`].
     /// # Panics
-    /// It is the callers responsibility to ensure that this ChunkedArray has a single chunk.
+    /// It is the callers responsibility to ensure that this [`ChunkedArray`] has a single chunk.
     pub(crate) fn match_chunks<I>(&self, chunk_id: I) -> Self
     where
         I: Iterator<Item = usize>,

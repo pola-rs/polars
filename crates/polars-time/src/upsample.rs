@@ -10,7 +10,7 @@ use crate::prelude::*;
 use crate::utils::unlocalize_timestamp;
 
 pub trait PolarsUpsample {
-    /// Upsample a DataFrame at a regular frequency.
+    /// Upsample a [`DataFrame`] at a regular frequency.
     ///
     /// # Arguments
     /// * `by` - First group by these columns and then upsample for every group
