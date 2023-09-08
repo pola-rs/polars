@@ -63,7 +63,7 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
         self.0.agg_list(groups)
     }
 
-    fn zip_outer_join_column(
+    unsafe fn zip_outer_join_column(
         &self,
         right_column: &Series,
         opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],

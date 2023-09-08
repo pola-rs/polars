@@ -72,7 +72,7 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
         self.0.agg_max(groups)
     }
 
-    fn zip_outer_join_column(
+    unsafe fn zip_outer_join_column(
         &self,
         right_column: &Series,
         opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],

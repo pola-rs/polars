@@ -105,7 +105,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             .unwrap()
     }
 
-    fn zip_outer_join_column(
+    unsafe fn zip_outer_join_column(
         &self,
         right_column: &Series,
         opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
