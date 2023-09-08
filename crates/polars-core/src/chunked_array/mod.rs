@@ -442,6 +442,35 @@ impl AsSinglePtr for BinaryChunked {}
 #[cfg(feature = "object")]
 impl<T: PolarsObject> AsSinglePtr for ObjectChunked<T> {}
 
+pub enum ChunkedArrayLayout<'a, T: PolarsDataType> {
+    SingleNoNull(&'a T::Array),
+    Single(&'a T::Array),
+    MultiNoNull(&'a ChunkedArray<T>),
+    Multi(&'a ChunkedArray<T>),
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+{
+    pub fn layout(&self) -> ChunkedArrayLayout<'_, T> {
+        if self.chunks.len() == 1 {
+            let arr = self.downcast_iter().next().unwrap();
+            return if arr.null_count() == 0 {
+                ChunkedArrayLayout::SingleNoNull(arr)
+            } else {
+                ChunkedArrayLayout::Single(arr)
+            };
+        }
+
+        if self.downcast_iter().all(|a| a.null_count() == 0) {
+            ChunkedArrayLayout::MultiNoNull(self)
+        } else {
+            ChunkedArrayLayout::Multi(self)
+        }
+    }
+}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
