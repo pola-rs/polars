@@ -72,7 +72,7 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
         self.0.agg_max(groups)
     }
 
-    fn zip_outer_join_column(
+    unsafe fn zip_outer_join_column(
         &self,
         right_column: &Series,
         opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
@@ -168,15 +168,15 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         } else {
             Cow::Borrowed(indices)
         };
-        Ok(ChunkTake::take(&self.0, (&*indices).into())?.into_series())
+        Ok(self.0.take((&*indices).into())?.into_series())
     }
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
+        Ok(self.0.take(iter.into())?.into_series())
     }
 
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
+        self.0.take_unchecked(iter.into()).into_series()
     }
 
     unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
@@ -186,7 +186,7 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
             Cow::Borrowed(idx)
         };
 
-        let mut out = ChunkTake::take_unchecked(&self.0, (&*idx).into());
+        let mut out = self.0.take_unchecked((&*idx).into());
 
         if self.0.is_sorted_ascending_flag()
             && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
@@ -198,12 +198,12 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
     }
 
     unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
+        self.0.take_unchecked(iter.into()).into_series()
     }
 
     #[cfg(feature = "take_opt_iter")]
     fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-        Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
+        Ok(self.0.take(iter.into())?.into_series())
     }
 
     fn len(&self) -> usize {

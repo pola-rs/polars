@@ -138,7 +138,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .unwrap()
     }
 
-    fn zip_outer_join_column(
+    unsafe fn zip_outer_join_column(
         &self,
         right_column: &Series,
         opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
@@ -277,23 +277,22 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        ChunkTake::take(self.0.deref(), indices.into())
-            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
+        let ca = self.0.deref().take(indices.into())?;
+        Ok(ca.into_duration(self.0.time_unit()).into_series())
     }
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        ChunkTake::take(self.0.deref(), iter.into())
-            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
+        let ca = self.0.deref().take(iter.into())?;
+        Ok(ca.into_duration(self.0.time_unit()).into_series())
     }
 
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        ChunkTake::take_unchecked(self.0.deref(), iter.into())
-            .into_duration(self.0.time_unit())
-            .into_series()
+        let ca = self.0.deref().take_unchecked(iter.into());
+        ca.into_duration(self.0.time_unit()).into_series()
     }
 
     unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-        let mut out = ChunkTake::take_unchecked(self.0.deref(), idx.into());
+        let mut out = self.0.deref().take_unchecked(idx.into());
 
         if self.0.is_sorted_ascending_flag()
             && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
@@ -305,15 +304,14 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        ChunkTake::take_unchecked(self.0.deref(), iter.into())
-            .into_duration(self.0.time_unit())
-            .into_series()
+        let ca = self.0.deref().take_unchecked(iter.into());
+        ca.into_duration(self.0.time_unit()).into_series()
     }
 
     #[cfg(feature = "take_opt_iter")]
     fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-        ChunkTake::take(self.0.deref(), iter.into())
-            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
+        let ca = self.0.deref().take(iter.into())?;
+        Ok(ca.into_duration(self.0.time_unit()).into_series())
     }
 
     fn len(&self) -> usize {

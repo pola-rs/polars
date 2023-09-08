@@ -2,16 +2,17 @@ use std::cmp::Ordering;
 
 use arrow::array::Utf8Array;
 
+use crate::datatypes::UInt32Type;
 use crate::prelude::compare_inner::PartialOrdInner;
 use crate::prelude::{
-    CategoricalChunked, IntoTakeRandom, NumTakeRandomChunked, NumTakeRandomCont,
-    NumTakeRandomSingleChunk, PlHashMap, RevMapping, TakeRandBranch3, TakeRandom,
+    CategoricalChunked, IntoTakeRandom, PlHashMap, RevMapping, TakeRandBranch3, TakeRandom,
+    TakeRandomArray, TakeRandomArrayValues, TakeRandomChunked,
 };
 
 type TakeCats<'a> = TakeRandBranch3<
-    NumTakeRandomCont<'a, u32>,
-    NumTakeRandomSingleChunk<'a, u32>,
-    NumTakeRandomChunked<'a, u32>,
+    TakeRandomArrayValues<'a, UInt32Type>,
+    TakeRandomArray<'a, UInt32Type>,
+    TakeRandomChunked<'a, UInt32Type>,
 >;
 
 pub(crate) struct CategoricalTakeRandomLocal<'a> {
