@@ -14,11 +14,20 @@ if TYPE_CHECKING:
 
 class StringCache(contextlib.ContextDecorator):
     """
-    Context manager that allows data sources to share the same categorical features.
+    Context manager for enabling and disabling the global string cache.
 
-    This will temporarily cache the string categories until the context manager is
-    exited. If StringCaches are nested, the global cache will only be invalidated
-    when the outermost context exits.
+    :class:`Categorical` columns created under the same global string cache have
+    the same underlying physical value when string values are equal. This allows the
+    columns to be concatenated or used in a join operation, for example.
+
+    Notes
+    -----
+    Enabling the global string cache introduces some overhead.
+    The amount of overhead depends on the number of categories in your data.
+    It is advised to enable the global string cache only when strictly necessary.
+
+    If ``StringCache``s are nested, the global string cache will only be disabled and
+    cleared when the outermost context exits.
 
     Examples
     --------
@@ -59,7 +68,7 @@ class StringCache(contextlib.ContextDecorator):
     """
 
     def __enter__(self) -> StringCache:
-        plr.set_string_cache(True)
+        plr._set_string_cache(True)
         return self
 
     def __exit__(
@@ -68,15 +77,16 @@ class StringCache(contextlib.ContextDecorator):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        plr.set_string_cache(False)
+        plr._set_string_cache(False)
 
 
 def enable_string_cache(enable: bool | None = None) -> None:
     """
     Enable the global string cache.
 
-    This ensures that casts to Categorical dtypes will have
-    the same category values when string values are equal.
+    :class:`Categorical` columns created under the same global string cache have
+    the same underlying physical value when string values are equal. This allows the
+    columns to be concatenated or used in a join operation, for example.
 
     Parameters
     ----------
@@ -95,6 +105,10 @@ def enable_string_cache(enable: bool | None = None) -> None:
 
     Notes
     -----
+    Enabling the global string cache introduces some overhead.
+    The amount of overhead depends on the number of categories in your data.
+    It is advised to enable the global string cache only when strictly necessary.
+
     Consider using the :class:`StringCache` context manager for a more reliable way of
     enabling and disabling the string cache.
 
@@ -133,20 +147,15 @@ def enable_string_cache(enable: bool | None = None) -> None:
             " and `disable_string_cache()` to disable the string cache.",
             version="0.19.3",
         )
-    else:
-        enable = True
+        plr._set_string_cache(enable)
+        return
 
-    plr.set_string_cache(enable)
+    plr.enable_string_cache()
 
 
 def disable_string_cache() -> bool:
     """
-    Disable the global string cache.
-
-    Warnings
-    --------
-    This will disable the string cache even when used within the :class:`StringCache`
-    context manager.
+    Disable and clear the global string cache.
 
     See Also
     --------
@@ -190,5 +199,5 @@ def disable_string_cache() -> bool:
 
 
 def using_string_cache() -> bool:
-    """Return whether the global string cache is enabled or disabled."""
+    """Check whether the global string cache is enabled."""
     return plr.using_string_cache()

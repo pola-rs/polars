@@ -11,19 +11,20 @@ use crate::datatypes::PlIdHashMap;
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::InitHashMaps;
 
-/// We use atomic reference counting
-/// to determine how many threads use the string cache
-/// if the refcount is zero, we may clear the string cache.
+/// We use atomic reference counting to determine how many threads use the
+/// string cache. If the refcount is zero, we may clear the string cache.
 pub(crate) static USE_STRING_CACHE: AtomicU32 = AtomicU32::new(0);
 static STRING_CACHE_UUID_CTR: AtomicU32 = AtomicU32::new(0);
 
-/// RAII for the string cache
+/// RAII for the string cache.
+///
 /// If an operation creates categoricals and uses them in a join
 /// or comparison that operation must hold this cache via
 /// `let handle = IUseStringCache::hold()`
 /// The cache is valid until `handle` is dropped.
 ///
 /// # De-allocation
+///
 /// Multiple threads can hold the string cache at the same time.
 /// The contents of the cache will only get dropped when no
 /// thread holds it.
@@ -42,49 +43,58 @@ impl Default for IUseStringCache {
 impl IUseStringCache {
     /// Hold the StringCache
     pub fn hold() -> IUseStringCache {
-        set_string_cache(true);
+        _set_string_cache(true);
         IUseStringCache { private_zst: () }
     }
 }
 
 impl Drop for IUseStringCache {
     fn drop(&mut self) {
-        set_string_cache(false)
+        _set_string_cache(false)
     }
 }
 
-pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
-    set_string_cache(true);
-    let out = func();
-    set_string_cache(false);
-    out
-}
-
-/// Use a global string cache for the Categorical Types.
+/// Enable the global string cache.
 ///
-/// This is used to cache the string categories locally.
-/// This allows join operations on categorical types.
+/// [`Categorical`] columns created under the same global string cache have the
+/// same underlying physical value when string values are equal. This allows the
+/// columns to be concatenated or used in a join operation, for example.
+///
+/// Note that enabling the global string cache introduces some overhead.
+/// The amount of overhead depends on the number of categories in your data.
+/// It is advised to enable the global string cache only when strictly necessary.
+///
+/// [`Categorical`]: crate::datatypes::DataType::Categorical
 pub fn enable_string_cache() {
-    set_string_cache(true)
+    _set_string_cache(true)
 }
 
-/// Disable and clear the global string cache used for Categorical Types.
-pub fn reset_string_cache() {
+/// Disable and clear the global string cache.
+pub fn disable_string_cache() {
     USE_STRING_CACHE.store(0, Ordering::Release);
     STRING_CACHE.clear()
 }
 
-/// Check if string cache is set.
+/// Execute a function with the global string cache enabled.
+pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
+    _set_string_cache(true);
+    let out = func();
+    _set_string_cache(false);
+    out
+}
+
+/// Check whether the global string cache is enabled.
 pub fn using_string_cache() -> bool {
     USE_STRING_CACHE.load(Ordering::Acquire) > 0
 }
 
-/// Use a global string cache for the Categorical Types.
+/// Incrementing or decrement the number of string cache uses.
 ///
-/// This is used to cache the string categories locally.
-/// This allows join operations on categorical types.
-fn set_string_cache(toggle: bool) {
-    if toggle {
+/// WARNING: Do not use this function directly. This is a private function
+/// intended for creating RAII objects. It is technically public because it is
+/// used directly by the Python implementation to create a context manager.
+pub fn _set_string_cache(active: bool) {
+    if active {
         USE_STRING_CACHE.fetch_add(1, Ordering::Release);
     } else {
         let previous = USE_STRING_CACHE.fetch_sub(1, Ordering::Release);

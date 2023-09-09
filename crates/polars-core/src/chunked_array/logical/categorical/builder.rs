@@ -512,12 +512,12 @@ impl CategoricalChunked {
 mod test {
     use crate::chunked_array::categorical::CategoricalChunkedBuilder;
     use crate::prelude::*;
-    use crate::{enable_string_cache, reset_string_cache, SINGLE_LOCK};
+    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 
     #[test]
     fn test_categorical_rev() -> PolarsResult<()> {
         let _lock = SINGLE_LOCK.lock();
-        reset_string_cache();
+        disable_string_cache();
         let slice = &[
             Some("foo"),
             None,
@@ -556,10 +556,10 @@ mod test {
 
     #[test]
     fn test_categorical_builder() {
-        use crate::{enable_string_cache, reset_string_cache};
+        use crate::{disable_string_cache, enable_string_cache};
         let _lock = crate::SINGLE_LOCK.lock();
-        for use_string_cache in &[false, true] {
-            reset_string_cache();
+        for use_string_cache in [false, true] {
+            disable_string_cache();
             if use_string_cache {
                 enable_string_cache();
             }

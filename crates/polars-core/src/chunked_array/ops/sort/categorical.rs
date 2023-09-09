@@ -120,7 +120,7 @@ impl CategoricalChunked {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use crate::{enable_string_cache, reset_string_cache, SINGLE_LOCK};
+    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 
     fn assert_order(ca: &CategoricalChunked, cmp: &[&str]) {
         let s = ca.cast(&DataType::Utf8).unwrap();
@@ -134,7 +134,7 @@ mod test {
 
         let _lock = SINGLE_LOCK.lock();
         for use_string_cache in [true, false] {
-            reset_string_cache();
+            disable_string_cache();
             if use_string_cache {
                 enable_string_cache();
             }
@@ -165,7 +165,7 @@ mod test {
 
         let _lock = SINGLE_LOCK.lock();
         for use_string_cache in [true, false] {
-            reset_string_cache();
+            disable_string_cache();
             if use_string_cache {
                 enable_string_cache();
             }

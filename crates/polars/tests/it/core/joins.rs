@@ -1,6 +1,6 @@
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 #[cfg(feature = "dtype-categorical")]
-use polars_core::{reset_string_cache, IUseStringCache};
+use polars_core::{disable_string_cache, IUseStringCache};
 
 use super::*;
 
@@ -295,7 +295,7 @@ fn test_join_categorical() {
     df_a.try_apply("b", |s| s.cast(&DataType::Categorical(None)))
         .unwrap();
     // create a new cache
-    reset_string_cache();
+    disable_string_cache();
 
     // _sc is needed to ensure we hold the string cache.
     let _sc = IUseStringCache::hold();

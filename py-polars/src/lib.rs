@@ -211,8 +211,12 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::meta::threadpool_size))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::string_cache::set_string_cache))
+    m.add_wrapped(wrap_pyfunction!(functions::string_cache::_set_string_cache))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(
+        functions::string_cache::enable_string_cache
+    ))
+    .unwrap();
     m.add_wrapped(wrap_pyfunction!(
         functions::string_cache::disable_string_cache
     ))

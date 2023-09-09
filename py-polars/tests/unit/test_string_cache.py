@@ -85,6 +85,16 @@ def test_string_cache_context_manager_mixed_with_enable_disable() -> None:
     sc(False)
 
 
+def test_string_cache_enable_arg_deprecated() -> None:
+    sc(False)
+    with pytest.deprecated_call():
+        pl.enable_string_cache(True)
+    sc(True)
+    with pytest.deprecated_call():
+        pl.enable_string_cache(False)
+    sc(False)
+
+
 def test_string_cache_join() -> None:
     df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
     df2 = pl.DataFrame({"a": ["foo", "spam", "eggs"], "c": [3, 2, 2]})
@@ -112,11 +122,40 @@ def test_string_cache_join() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_string_cache_enable_arg_deprecated() -> None:
-    sc(False)
-    with pytest.deprecated_call():
-        pl.enable_string_cache(True)
-    sc(True)
-    with pytest.deprecated_call():
-        pl.enable_string_cache(False)
-    sc(False)
+def test_string_cache_eager_lazy() -> None:
+    # tests if the global string cache is really global and not interfered by the lazy
+    # execution. first the global settings was thread-local and this breaks with the
+    # parallel execution of lazy
+    with pl.StringCache():
+        df1 = pl.DataFrame(
+            {"region_ids": ["reg1", "reg2", "reg3", "reg4", "reg5"]}
+        ).select([pl.col("region_ids").cast(pl.Categorical)])
+
+        df2 = pl.DataFrame(
+            {"seq_name": ["reg4", "reg2", "reg1"], "score": [3.0, 1.0, 2.0]}
+        ).select([pl.col("seq_name").cast(pl.Categorical), pl.col("score")])
+
+        expected = pl.DataFrame(
+            {
+                "region_ids": ["reg1", "reg2", "reg3", "reg4", "reg5"],
+                "score": [2.0, 1.0, None, 3.0, None],
+            }
+        ).with_columns(pl.col("region_ids").cast(pl.Categorical))
+
+        result = df1.join(df2, left_on="region_ids", right_on="seq_name", how="left")
+        assert_frame_equal(result, expected)
+
+        # also check row-wise categorical insert.
+        # (column-wise is preferred, but this shouldn't fail)
+        for params in (
+            {"schema": [("region_ids", pl.Categorical)]},
+            {
+                "schema": ["region_ids"],
+                "schema_overrides": {"region_ids": pl.Categorical},
+            },
+        ):
+            df3 = pl.DataFrame(  # type: ignore[arg-type]
+                data=[["reg1"], ["reg2"], ["reg3"], ["reg4"], ["reg5"]],
+                **params,
+            )
+            assert_frame_equal(df1, df3)
