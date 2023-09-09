@@ -133,9 +133,12 @@ mod test {
         let init = &["c", "b", "a", "d"];
 
         let _lock = SINGLE_LOCK.lock();
-        for toggle in [true, false] {
+        for use_string_cache in [true, false] {
             reset_string_cache();
-            enable_string_cache(toggle);
+            if use_string_cache {
+                enable_string_cache();
+            }
+
             let s = Series::new("", init).cast(&DataType::Categorical(None))?;
             let ca = s.categorical()?;
             let mut ca_lexical = ca.clone();
@@ -157,13 +160,16 @@ mod test {
     }
 
     #[test]
-
     fn test_cat_lexical_sort_multiple() -> PolarsResult<()> {
         let init = &["c", "b", "a", "a"];
 
         let _lock = SINGLE_LOCK.lock();
-        for enable in [true, false] {
-            enable_string_cache(enable);
+        for use_string_cache in [true, false] {
+            reset_string_cache();
+            if use_string_cache {
+                enable_string_cache();
+            }
+
             let s = Series::new("", init).cast(&DataType::Categorical(None))?;
             let ca = s.categorical()?;
             let mut ca_lexical: CategoricalChunked = ca.clone();

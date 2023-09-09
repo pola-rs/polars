@@ -42,21 +42,21 @@ impl Default for IUseStringCache {
 impl IUseStringCache {
     /// Hold the StringCache
     pub fn hold() -> IUseStringCache {
-        enable_string_cache(true);
+        set_string_cache(true);
         IUseStringCache { private_zst: () }
     }
 }
 
 impl Drop for IUseStringCache {
     fn drop(&mut self) {
-        enable_string_cache(false)
+        set_string_cache(false)
     }
 }
 
 pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
-    enable_string_cache(true);
+    set_string_cache(true);
     let out = func();
-    enable_string_cache(false);
+    set_string_cache(false);
     out
 }
 
@@ -64,7 +64,26 @@ pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
 ///
 /// This is used to cache the string categories locally.
 /// This allows join operations on categorical types.
-pub fn enable_string_cache(toggle: bool) {
+pub fn enable_string_cache() {
+    set_string_cache(true)
+}
+
+/// Disable and clear the global string cache used for Categorical Types.
+pub fn reset_string_cache() {
+    USE_STRING_CACHE.store(0, Ordering::Release);
+    STRING_CACHE.clear()
+}
+
+/// Check if string cache is set.
+pub fn using_string_cache() -> bool {
+    USE_STRING_CACHE.load(Ordering::Acquire) > 0
+}
+
+/// Use a global string cache for the Categorical Types.
+///
+/// This is used to cache the string categories locally.
+/// This allows join operations on categorical types.
+fn set_string_cache(toggle: bool) {
     if toggle {
         USE_STRING_CACHE.fetch_add(1, Ordering::Release);
     } else {
@@ -74,17 +93,6 @@ pub fn enable_string_cache(toggle: bool) {
             STRING_CACHE.clear()
         }
     }
-}
-
-/// Reset the global string cache used for the Categorical Types.
-pub fn reset_string_cache() {
-    USE_STRING_CACHE.store(0, Ordering::Release);
-    STRING_CACHE.clear()
-}
-
-/// Check if string cache is set.
-pub fn using_string_cache() -> bool {
-    USE_STRING_CACHE.load(Ordering::Acquire) > 0
 }
 
 // This is the hash and the Index offset in the linear buffer

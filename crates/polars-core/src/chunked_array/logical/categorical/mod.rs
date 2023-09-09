@@ -296,7 +296,7 @@ mod test {
     fn test_append_categorical() {
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
-        enable_string_cache(true);
+        enable_string_cache();
 
         let mut s1 = Series::new("1", vec!["a", "b", "c"])
             .cast(&DataType::Categorical(None))
@@ -330,7 +330,6 @@ mod test {
     fn test_categorical_flow() -> PolarsResult<()> {
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
-        enable_string_cache(false);
 
         // tests several things that may lose the dtype information
         let s = Series::new("a", vec!["a", "b", "c"]).cast(&DataType::Categorical(None))?;

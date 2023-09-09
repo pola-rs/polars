@@ -200,7 +200,7 @@ Help: if you're using Python, this may look something like:
 Alternatively, if the performance cost is acceptable, you could just set:
 
     import polars as pl
-    pl.enable_string_cache(True)
+    pl.enable_string_cache()
 
 on startup."#.trim_start())
     };
