@@ -1,0 +1,122 @@
+from typing import Iterator
+
+import pytest
+
+import polars as pl
+from polars.exceptions import StringCacheMismatchError
+from polars.testing import assert_frame_equal
+
+
+@pytest.fixture(autouse=True)
+def _disable_string_cache() -> Iterator[None]:
+    """Fixture to make sure the string cache is disabled before and after each test."""
+    pl.disable_string_cache()
+    yield
+    pl.disable_string_cache()
+
+
+def sc(set: bool) -> None:
+    """Short syntax for checking whether string cache is set."""
+    assert pl.using_string_cache() is set
+
+
+def test_string_cache_enable_disable() -> None:
+    sc(False)
+    pl.enable_string_cache()
+    sc(True)
+    pl.disable_string_cache()
+    sc(False)
+
+
+def test_string_cache_enable_disable_repeated() -> None:
+    sc(False)
+    pl.enable_string_cache()
+    sc(True)
+    pl.enable_string_cache()
+    sc(True)
+    pl.disable_string_cache()
+    sc(False)
+    pl.disable_string_cache()
+    sc(False)
+
+
+def test_string_cache_context_manager() -> None:
+    sc(False)
+    with pl.StringCache():
+        sc(True)
+    sc(False)
+
+
+def test_string_cache_context_manager_nested() -> None:
+    sc(False)
+    with pl.StringCache():
+        sc(True)
+        with pl.StringCache():
+            sc(True)
+        sc(True)
+    sc(False)
+
+
+def test_string_cache_context_manager_mixed_with_enable_disable() -> None:
+    sc(False)
+    with pl.StringCache():
+        sc(True)
+        pl.enable_string_cache()
+        sc(True)
+    sc(True)
+
+    with pl.StringCache():
+        sc(True)
+    sc(True)
+
+    with pl.StringCache():
+        sc(True)
+        with pl.StringCache():
+            sc(True)
+            pl.disable_string_cache()
+            sc(False)
+        sc(False)
+    sc(False)
+
+    with pl.StringCache():
+        sc(True)
+        pl.disable_string_cache()
+        sc(False)
+    sc(False)
+
+
+def test_string_cache_join() -> None:
+    df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
+    df2 = pl.DataFrame({"a": ["foo", "spam", "eggs"], "c": [3, 2, 2]})
+
+    # ensure cache is off when casting to categorical; the join will fail
+    pl.disable_string_cache()
+    assert pl.using_string_cache() is False
+
+    df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
+    df2a = df2.with_columns(pl.col("a").cast(pl.Categorical))
+    with pytest.raises(StringCacheMismatchError):
+        _ = df1a.join(df2a, on="a", how="inner")
+
+    # now turn on the cache
+    pl.enable_string_cache()
+    assert pl.using_string_cache() is True
+
+    df1b = df1.with_columns(pl.col("a").cast(pl.Categorical))
+    df2b = df2.with_columns(pl.col("a").cast(pl.Categorical))
+    out = df1b.join(df2b, on="a", how="inner")
+
+    expected = pl.DataFrame(
+        {"a": ["foo"], "b": [1], "c": [3]}, schema_overrides={"a": pl.Categorical}
+    )
+    assert_frame_equal(out, expected)
+
+
+def test_string_cache_enable_arg_deprecated() -> None:
+    sc(False)
+    with pytest.deprecated_call():
+        pl.enable_string_cache(True)
+    sc(True)
+    with pytest.deprecated_call():
+        pl.enable_string_cache(False)
+    sc(False)
