@@ -551,7 +551,7 @@ def by_dtype(
             raise TypeError(f"invalid dtype: {tp!r}")
 
     return _selector_proxy_(
-        F.col(*all_dtypes), name="by_dtype", parameters={"dtypes": all_dtypes}
+        F.col(all_dtypes), name="by_dtype", parameters={"dtypes": all_dtypes}
     )
 
 
@@ -620,7 +620,7 @@ def by_name(*names: str | Collection[str]) -> SelectorType:
             TypeError(f"Invalid name: {nm!r}")
 
     return _selector_proxy_(
-        F.col(*all_names), name="by_name", parameters={"*names": all_names}
+        F.col(all_names), name="by_name", parameters={"*names": all_names}
     )
 
 
