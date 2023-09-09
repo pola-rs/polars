@@ -16,41 +16,62 @@ use crate::prelude::InitHashMaps;
 pub(crate) static USE_STRING_CACHE: AtomicU32 = AtomicU32::new(0);
 static STRING_CACHE_UUID_CTR: AtomicU32 = AtomicU32::new(0);
 
-/// RAII for the string cache.
+/// Enable the global string cache as long as the object is alive ([RAII]).
 ///
-/// If an operation creates categoricals and uses them in a join
-/// or comparison that operation must hold this cache via
-/// `let handle = IUseStringCache::hold()`
-/// The cache is valid until `handle` is dropped.
+/// # Examples
+///
+/// Enable the string cache by initializing the object:
+///
+/// ```
+/// use polars_core::StringCacheHolder;
+///
+/// let handle = StringCacheHolder::hold();
+/// ```
+///
+/// The string cache is enabled until `handle` is dropped.
 ///
 /// # De-allocation
 ///
 /// Multiple threads can hold the string cache at the same time.
-/// The contents of the cache will only get dropped when no
-/// thread holds it.
-pub struct IUseStringCache {
+/// The contents of the cache will only get dropped when no thread holds it.
+///
+/// [RAII]: https://en.wikipedia.org/wiki/Resource_acquisition_is_initialization
+pub struct StringCacheHolder {
     // only added so that it will never be constructed directly
     #[allow(dead_code)]
     private_zst: (),
 }
 
-impl Default for IUseStringCache {
+impl Default for StringCacheHolder {
     fn default() -> Self {
         Self::hold()
     }
 }
 
-impl IUseStringCache {
+impl StringCacheHolder {
     /// Hold the StringCache
-    pub fn hold() -> IUseStringCache {
+    pub fn hold() -> StringCacheHolder {
         set_string_cache(true);
-        IUseStringCache { private_zst: () }
+        StringCacheHolder { private_zst: () }
     }
 }
 
-impl Drop for IUseStringCache {
+impl Drop for StringCacheHolder {
     fn drop(&mut self) {
         set_string_cache(false)
+    }
+}
+
+/// Increment or decrement the number of string cache uses.
+fn set_string_cache(active: bool) {
+    if active {
+        USE_STRING_CACHE.fetch_add(1, Ordering::Release);
+    } else {
+        let previous = USE_STRING_CACHE.fetch_sub(1, Ordering::Release);
+        if previous == 0 || previous == 1 {
+            USE_STRING_CACHE.store(0, Ordering::Release);
+            STRING_CACHE.clear()
+        }
     }
 }
 
@@ -86,19 +107,6 @@ pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
 /// Check whether the global string cache is enabled.
 pub fn using_string_cache() -> bool {
     USE_STRING_CACHE.load(Ordering::Acquire) > 0
-}
-
-/// Increment or decrement the number of string cache uses.
-fn set_string_cache(active: bool) {
-    if active {
-        USE_STRING_CACHE.fetch_add(1, Ordering::Release);
-    } else {
-        let previous = USE_STRING_CACHE.fetch_sub(1, Ordering::Release);
-        if previous == 0 || previous == 1 {
-            USE_STRING_CACHE.store(0, Ordering::Release);
-            STRING_CACHE.clear()
-        }
-    }
 }
 
 // This is the hash and the Index offset in the linear buffer

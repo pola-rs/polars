@@ -1,5 +1,5 @@
 use polars_core;
-use polars_core::IUseStringCache;
+use polars_core::StringCacheHolder;
 use pyo3::prelude::*;
 
 #[pyfunction]
@@ -19,7 +19,7 @@ pub fn using_string_cache() -> bool {
 
 #[pyclass]
 pub struct PyStringCacheHolder {
-    _inner: IUseStringCache,
+    _inner: StringCacheHolder,
 }
 
 #[pymethods]
@@ -27,7 +27,7 @@ impl PyStringCacheHolder {
     #[new]
     fn new() -> Self {
         Self {
-            _inner: IUseStringCache::hold(),
+            _inner: StringCacheHolder::hold(),
         }
     }
 }

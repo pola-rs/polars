@@ -254,7 +254,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     let _string_cache = if n_row_groups > 1 {
         #[cfg(feature = "dtype-categorical")]
         {
-            Some(polars_core::IUseStringCache::hold())
+            Some(polars_core::StringCacheHolder::hold())
         }
         #[cfg(not(feature = "dtype-categorical"))]
         {

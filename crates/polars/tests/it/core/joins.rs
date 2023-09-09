@@ -1,6 +1,6 @@
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 #[cfg(feature = "dtype-categorical")]
-use polars_core::{disable_string_cache, IUseStringCache};
+use polars_core::{disable_string_cache, StringCacheHolder};
 
 use super::*;
 
@@ -256,7 +256,7 @@ fn test_join_multiple_columns() {
 #[cfg_attr(miri, ignore)]
 #[cfg(feature = "dtype-categorical")]
 fn test_join_categorical() {
-    let _lock = IUseStringCache::hold();
+    let _lock = StringCacheHolder::hold();
     let _lock = polars_core::SINGLE_LOCK.lock();
 
     let (mut df_a, mut df_b) = get_dfs();
@@ -298,7 +298,7 @@ fn test_join_categorical() {
     disable_string_cache();
 
     // _sc is needed to ensure we hold the string cache.
-    let _sc = IUseStringCache::hold();
+    let _sc = StringCacheHolder::hold();
 
     df_b.try_apply("bar", |s| s.cast(&DataType::Categorical(None)))
         .unwrap();
