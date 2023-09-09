@@ -16,7 +16,7 @@ def _disable_string_cache() -> Iterator[None]:
 
 
 def sc(set: bool) -> None:
-    """Short syntax for checking whether string cache is set."""
+    """Short syntax for asserting whether the global string cache is being used."""
     assert pl.using_string_cache() is set
 
 
@@ -83,6 +83,28 @@ def test_string_cache_context_manager_mixed_with_enable_disable() -> None:
         pl.disable_string_cache()
         sc(False)
     sc(False)
+
+
+def test_string_cache_decorator() -> None:
+    @pl.StringCache()
+    def my_function() -> None:
+        sc(True)
+
+    sc(False)
+    my_function()
+    sc(False)
+
+
+def test_string_cache_decorator_mixed_with_enable() -> None:
+    @pl.StringCache()
+    def my_function() -> None:
+        sc(True)
+        pl.enable_string_cache()
+        sc(True)
+
+    sc(False)
+    my_function()
+    sc(True)
 
 
 def test_string_cache_enable_arg_deprecated() -> None:

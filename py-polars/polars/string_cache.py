@@ -7,6 +7,7 @@ from polars.utils.deprecation import issue_deprecation_warning
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
+    from polars.polars import PyStringCacheHolder
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -56,7 +57,7 @@ class StringCache(contextlib.ContextDecorator):
     """
 
     def __enter__(self) -> StringCache:
-        plr._set_string_cache(True)
+        self._string_cache = PyStringCacheHolder()
         return self
 
     def __exit__(
@@ -65,7 +66,7 @@ class StringCache(contextlib.ContextDecorator):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        plr._set_string_cache(False)
+        del self._string_cache
 
 
 def enable_string_cache(enable: bool | None = None) -> None:
@@ -132,8 +133,9 @@ def enable_string_cache(enable: bool | None = None) -> None:
             " and `disable_string_cache()` to disable the string cache.",
             version="0.19.3",
         )
-        plr._set_string_cache(enable)
-        return
+        if enable is False:
+            plr.disable_string_cache()
+            return
 
     plr.enable_string_cache()
 

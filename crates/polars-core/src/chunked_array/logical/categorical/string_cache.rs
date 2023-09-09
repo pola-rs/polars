@@ -43,14 +43,14 @@ impl Default for IUseStringCache {
 impl IUseStringCache {
     /// Hold the StringCache
     pub fn hold() -> IUseStringCache {
-        _set_string_cache(true);
+        set_string_cache(true);
         IUseStringCache { private_zst: () }
     }
 }
 
 impl Drop for IUseStringCache {
     fn drop(&mut self) {
-        _set_string_cache(false)
+        set_string_cache(false)
     }
 }
 
@@ -66,7 +66,7 @@ impl Drop for IUseStringCache {
 ///
 /// [`Categorical`]: crate::datatypes::DataType::Categorical
 pub fn enable_string_cache() {
-    _set_string_cache(true)
+    set_string_cache(true)
 }
 
 /// Disable and clear the global string cache.
@@ -77,9 +77,9 @@ pub fn disable_string_cache() {
 
 /// Execute a function with the global string cache enabled.
 pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
-    _set_string_cache(true);
+    set_string_cache(true);
     let out = func();
-    _set_string_cache(false);
+    set_string_cache(false);
     out
 }
 
@@ -88,12 +88,8 @@ pub fn using_string_cache() -> bool {
     USE_STRING_CACHE.load(Ordering::Acquire) > 0
 }
 
-/// Incrementing or decrement the number of string cache uses.
-///
-/// WARNING: Do not use this function directly. This is a private function
-/// intended for creating RAII objects. It is technically public because it is
-/// used directly by the Python implementation to create a context manager.
-pub fn _set_string_cache(active: bool) {
+/// Increment or decrement the number of string cache uses.
+fn set_string_cache(active: bool) {
     if active {
         USE_STRING_CACHE.fetch_add(1, Ordering::Release);
     } else {
