@@ -26,44 +26,32 @@ class StringCache(contextlib.ContextDecorator):
     The amount of overhead depends on the number of categories in your data.
     It is advised to enable the global string cache only when strictly necessary.
 
-    If ``StringCache``s are nested, the global string cache will only be disabled and
-    cleared when the outermost context exits.
+    If ``StringCache`` calls are nested, the global string cache will only be disabled
+    and cleared when the outermost context exits.
 
     Examples
     --------
-    Construct two dataframes using the same string cache.
+    Construct two Series using the same global string cache.
 
     >>> with pl.StringCache():
-    ...     df1 = pl.DataFrame(
-    ...         data={
-    ...             "color": ["red", "green", "blue", "orange"],
-    ...             "value": [1, 2, 3, 4],
-    ...         },
-    ...         schema={"color": pl.Categorical, "value": pl.UInt8},
-    ...     )
-    ...     df2 = pl.DataFrame(
-    ...         data={
-    ...             "color": ["yellow", "green", "orange", "black", "red"],
-    ...             "char": ["a", "b", "c", "d", "e"],
-    ...         },
-    ...         schema={"color": pl.Categorical, "char": pl.Utf8},
-    ...     )
+    ...     s1 = pl.Series("color", ["red", "green", "red"], dtype=pl.Categorical)
+    ...     s2 = pl.Series("color", ["blue", "red", "green"], dtype=pl.Categorical)
     ...
 
-    As both dataframes use the same string cache for the categorical column,
-    the column can be used in a join operation.
+    As both Series are constructed under the same global string cache,
+    they can be concatenated.
 
-    >>> df1.join(df2, how="inner", on="color")
-    shape: (3, 3)
-    ┌────────┬───────┬──────┐
-    │ color  ┆ value ┆ char │
-    │ ---    ┆ ---   ┆ ---  │
-    │ cat    ┆ u8    ┆ str  │
-    ╞════════╪═══════╪══════╡
-    │ green  ┆ 2     ┆ b    │
-    │ orange ┆ 4     ┆ c    │
-    │ red    ┆ 1     ┆ e    │
-    └────────┴───────┴──────┘
+    >>> pl.concat([s1, s2])
+    shape: (6,)
+    Series: 'color' [cat]
+    [
+            "red"
+            "green"
+            "red"
+            "blue"
+            "red"
+            "green"
+    ]
 
     """
 
@@ -114,30 +102,27 @@ def enable_string_cache(enable: bool | None = None) -> None:
 
     Examples
     --------
+    Construct two Series using the same global string cache.
+
     >>> pl.enable_string_cache()
-    >>> df1 = pl.DataFrame(
-    ...     data={"color": ["red", "green", "blue", "orange"], "value": [1, 2, 3, 4]},
-    ...     schema={"color": pl.Categorical, "value": pl.UInt8},
-    ... )
-    >>> df2 = pl.DataFrame(
-    ...     data={
-    ...         "color": ["yellow", "green", "orange", "black", "red"],
-    ...         "char": ["a", "b", "c", "d", "e"],
-    ...     },
-    ...     schema={"color": pl.Categorical, "char": pl.Utf8},
-    ... )
+    >>> s1 = pl.Series("color", ["red", "green", "red"], dtype=pl.Categorical)
+    >>> s2 = pl.Series("color", ["blue", "red", "green"], dtype=pl.Categorical)
     >>> pl.disable_string_cache()
-    >>> df1.join(df2, how="inner", on="color")
-    shape: (3, 3)
-    ┌────────┬───────┬──────┐
-    │ color  ┆ value ┆ char │
-    │ ---    ┆ ---   ┆ ---  │
-    │ cat    ┆ u8    ┆ str  │
-    ╞════════╪═══════╪══════╡
-    │ green  ┆ 2     ┆ b    │
-    │ orange ┆ 4     ┆ c    │
-    │ red    ┆ 1     ┆ e    │
-    └────────┴───────┴──────┘
+
+    As both Series are constructed under the same global string cache,
+    they can be concatenated.
+
+    >>> pl.concat([s1, s2])
+    shape: (6,)
+    Series: 'color' [cat]
+    [
+            "red"
+            "green"
+            "red"
+            "blue"
+            "red"
+            "green"
+    ]
 
     """
     if enable is not None:
@@ -169,30 +154,27 @@ def disable_string_cache() -> bool:
 
     Examples
     --------
+    Construct two Series using the same global string cache.
+
     >>> pl.enable_string_cache()
-    >>> df1 = pl.DataFrame(
-    ...     data={"color": ["red", "green", "blue", "orange"], "value": [1, 2, 3, 4]},
-    ...     schema={"color": pl.Categorical, "value": pl.UInt8},
-    ... )
-    >>> df2 = pl.DataFrame(
-    ...     data={
-    ...         "color": ["yellow", "green", "orange", "black", "red"],
-    ...         "char": ["a", "b", "c", "d", "e"],
-    ...     },
-    ...     schema={"color": pl.Categorical, "char": pl.Utf8},
-    ... )
+    >>> s1 = pl.Series("color", ["red", "green", "red"], dtype=pl.Categorical)
+    >>> s2 = pl.Series("color", ["blue", "red", "green"], dtype=pl.Categorical)
     >>> pl.disable_string_cache()
-    >>> df1.join(df2, how="inner", on="color")
-    shape: (3, 3)
-    ┌────────┬───────┬──────┐
-    │ color  ┆ value ┆ char │
-    │ ---    ┆ ---   ┆ ---  │
-    │ cat    ┆ u8    ┆ str  │
-    ╞════════╪═══════╪══════╡
-    │ green  ┆ 2     ┆ b    │
-    │ orange ┆ 4     ┆ c    │
-    │ red    ┆ 1     ┆ e    │
-    └────────┴───────┴──────┘
+
+    As both Series are constructed under the same global string cache,
+    they can be concatenated.
+
+    >>> pl.concat([s1, s2])
+    shape: (6,)
+    Series: 'color' [cat]
+    [
+            "red"
+            "green"
+            "red"
+            "blue"
+            "red"
+            "green"
+    ]
 
     """
     return plr.disable_string_cache()

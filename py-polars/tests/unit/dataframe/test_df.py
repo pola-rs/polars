@@ -1290,7 +1290,6 @@ def test_duration_arithmetic() -> None:
     )
 
 
-
 def test_assign() -> None:
     # check if can assign in case of a single column
     df = pl.DataFrame({"a": [1, 2, 3]})
