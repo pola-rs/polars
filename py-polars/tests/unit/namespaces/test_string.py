@@ -566,9 +566,9 @@ def test_count_matches_many() -> None:
         }
     )
     assert (
-        df.select(pl.col("foo").str.count_matches(pl.col("bar")).alias("count")).to_dict(
-            False
-        )
+        df.select(
+            pl.col("foo").str.count_matches(pl.col("bar")).alias("count")
+        ).to_dict(False)
     ) == {"count": [5, 4, None, None]}
 
     assert df["foo"].str.count_matches(df["bar"]).dtype == pl.UInt32
