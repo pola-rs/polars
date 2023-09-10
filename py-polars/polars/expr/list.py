@@ -1071,11 +1071,12 @@ class ExprListNameSpace:
 
     @deprecate_renamed_function("count_matches", version="0.19.03")
     def count_match(self, element: IntoExpr) -> Expr:
-        """              
+        """
+
         Count how often the value produced by ``element`` occurs.
-    
+
         .. deprecated:: 0.19.03
            This method has been renamed to ``Expr.list.count_matches``.
-    
+
         """
         return self.count_matches(element)
