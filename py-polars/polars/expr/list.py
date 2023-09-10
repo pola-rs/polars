@@ -1068,3 +1068,14 @@ class ExprListNameSpace:
 
         """  # noqa: W505
         return self.set_symmetric_difference(other)
+
+    @deprecate_renamed_function("count_matches", version="0.19.02")
+    def count_match(self, element: IntoExpr) -> Expr:
+        """
+        Count how often the value produced by ``element`` occurs.
+
+        .. deprecated:: 0.19.02
+            This method has been renamed to ``Expr.list.count_matches``.
+
+        """
+        return self.count_matches(element)

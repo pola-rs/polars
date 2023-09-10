@@ -7,7 +7,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
-
+import warnings
 
 def test_list_arr_get() -> None:
     a = pl.Series("a", [[1, 2, 3], [4, 5], [6, 7, 8, 9]])
@@ -446,6 +446,16 @@ def test_list_tail_underflow_9087() -> None:
     assert pl.Series([["a", "b", "c"]]).list.tail(pl.lit(1, pl.UInt32)).to_list() == [
         ["c"]
     ]
+
+
+def test_list_count_match_boolean_nulls_9141() -> None:
+    with warnings.catch_warnings():
+        # Filter out DeprecationWarnings related to the old function name
+        warnings.filterwarnings("ignore", category=DeprecationWarning, module=__name__)
+
+        # Your test code here
+        a = pl.DataFrame({"a": [[True, None, False]]})
+        assert a.select(pl.col("a").list.count_match(True))["a"].to_list() == [1]
 
 
 def test_list_count_matches_boolean_nulls_9141() -> None:

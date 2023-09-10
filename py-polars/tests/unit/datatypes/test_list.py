@@ -6,7 +6,7 @@ import pandas as pd
 
 import polars as pl
 from polars.testing import assert_series_equal
-
+import warnings
 
 def test_dtype() -> None:
     # inferred
@@ -273,6 +273,17 @@ def test_flat_aggregation_to_list_conversion_6918() -> None:
     assert df.group_by("a", maintain_order=True).agg(
         pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
     ).to_dict(False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
+
+
+def test_list_count_match() -> None:
+    with warnings.catch_warnings():
+        # Filter out DeprecationWarnings related to the old function name
+        warnings.filterwarnings("ignore", category=DeprecationWarning, module=__name__)
+
+        # Your test code here
+        assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
+            pl.col("listcol").list.count_match(2).alias("number_of_twos")
+        ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
 
 
 def test_list_count_matches() -> None:
