@@ -12,6 +12,7 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.concat
     Expr.str.contains
     Expr.str.count_match
+    Expr.str.count_matches
     Expr.str.decode
     Expr.str.encode
     Expr.str.ends_with

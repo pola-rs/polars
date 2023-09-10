@@ -12,6 +12,7 @@ The following methods are available under the `Series.str` attribute.
     Series.str.concat
     Series.str.contains
     Series.str.count_match
+    Series.str.count_matches
     Series.str.decode
     Series.str.encode
     Series.str.ends_with

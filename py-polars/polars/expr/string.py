@@ -1419,7 +1419,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 
-    def count_match(self, pattern: str | Expr) -> Expr:
+    def count_matches(self, pattern: str | Expr) -> Expr:
         r"""
         Count all successive non-overlapping regex matches.
 
@@ -1439,7 +1439,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t", "bar", None]})
         >>> df.select(
-        ...     pl.col("foo").str.count_match(r"\d").alias("count_digits"),
+        ...     pl.col("foo").str.count_matches(r"\d").alias("count_digits"),
         ... )
         shape: (4, 1)
         ┌──────────────┐
@@ -1455,7 +1455,7 @@ class ExprStringNameSpace:
 
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_count_match(pattern))
+        return wrap_expr(self._pyexpr.str_count_matches(pattern))
 
     def split(self, by: str, *, inclusive: bool = False) -> Expr:
         """
@@ -1937,6 +1937,29 @@ class ExprStringNameSpace:
 
         """
         return self.strip_chars_end(characters)
+
+    @deprecate_renamed_function("count_matches", version="0.19.3")
+    def count_match(self, pattern: str | Expr) -> Expr:
+        """
+        Count all successive non-overlapping regex matches.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`count_matches`.
+
+        Parameters
+        ----------
+        pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`. Returns null if the
+            original value is null.
+
+        """
+        return self.count_matches(pattern)
 
 
 def _validate_format_argument(format: str | None) -> None:

@@ -342,7 +342,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     /// Count all successive non-overlapping regex matches.
-    fn count_match(&self, pat: &str) -> PolarsResult<UInt32Chunked> {
+    fn count_matches(&self, pat: &str) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_utf8();
         let reg = Regex::new(pat)?;
 
@@ -355,7 +355,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     /// Count all successive non-overlapping regex matches.
-    fn count_match_many(&self, pat: &Utf8Chunked) -> PolarsResult<UInt32Chunked> {
+    fn count_matches_many(&self, pat: &Utf8Chunked) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_utf8();
         polars_ensure!(
             ca.len() == pat.len(),
