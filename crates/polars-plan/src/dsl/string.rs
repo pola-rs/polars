@@ -128,9 +128,9 @@ impl StringNameSpace {
     }
 
     /// Count all successive non-overlapping regex matches.
-    pub fn count_match(self, pat: Expr) -> Expr {
+    pub fn count_matches(self, pat: Expr) -> Expr {
         self.0
-            .map_many_private(StringFunction::CountMatch.into(), &[pat], false)
+            .map_many_private(StringFunction::CountMatches.into(), &[pat], false)
     }
 
     /// Convert a Utf8 column into a Date/Datetime/Time column.

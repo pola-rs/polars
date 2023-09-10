@@ -434,7 +434,7 @@ class ListNameSpace:
 
         """
 
-    def count_match(
+    def count_matches(
         self, element: float | str | bool | int | date | datetime | time | Expr
     ) -> Expr:
         """

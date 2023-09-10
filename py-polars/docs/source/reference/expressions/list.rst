@@ -15,7 +15,7 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.arg_min
     Expr.list.concat
     Expr.list.contains
-    Expr.list.count_match
+    Expr.list.count_matches
     Expr.list.diff
     Expr.list.difference
     Expr.list.eval

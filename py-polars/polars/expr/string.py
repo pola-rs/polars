@@ -1419,7 +1419,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 
-    def count_match(self, pattern: str | Expr) -> Expr:
+    def count_matches(self, pattern: str | Expr) -> Expr:
         r"""
         Count all successive non-overlapping regex matches.
 
@@ -1439,7 +1439,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t", "bar", None]})
         >>> df.select(
-        ...     pl.col("foo").str.count_match(r"\d").alias("count_digits"),
+        ...     pl.col("foo").str.count_matches(r"\d").alias("count_digits"),
         ... )
         shape: (4, 1)
         ┌──────────────┐
@@ -1455,7 +1455,7 @@ class ExprStringNameSpace:
 
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_count_match(pattern))
+        return wrap_expr(self._pyexpr.str_count_matches(pattern))
 
     def split(self, by: str, *, inclusive: bool = False) -> Expr:
         """

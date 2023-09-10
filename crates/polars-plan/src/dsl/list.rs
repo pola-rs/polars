@@ -310,12 +310,12 @@ impl ListNameSpace {
     }
     #[cfg(feature = "list_count")]
     /// Count how often the value produced by ``element`` occurs.
-    pub fn count_match<E: Into<Expr>>(self, element: E) -> Expr {
+    pub fn count_matches<E: Into<Expr>>(self, element: E) -> Expr {
         let other = element.into();
 
         Expr::Function {
             input: vec![self.0, other],
-            function: FunctionExpr::ListExpr(ListFunction::CountMatch),
+            function: FunctionExpr::ListExpr(ListFunction::CountMatches),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: true,

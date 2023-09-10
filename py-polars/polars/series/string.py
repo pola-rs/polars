@@ -826,7 +826,7 @@ class StringNameSpace:
 
         """
 
-    def count_match(self, pattern: str | Series) -> Series:
+    def count_matches(self, pattern: str | Series) -> Series:
         r"""
         Count all successive non-overlapping regex matches.
 
@@ -847,7 +847,7 @@ class StringNameSpace:
         --------
         >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t", "bar", None])
         >>> # count digits
-        >>> s.str.count_match(r"\d")
+        >>> s.str.count_matches(r"\d")
         shape: (4,)
         Series: 'foo' [u32]
         [
