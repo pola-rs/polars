@@ -1078,5 +1078,5 @@ class ExprListNameSpace:
         .. deprecated:: 0.19.03
            This method has been renamed to ``Expr.list.count_matches``.
 
-        """ # noqa: W505
+        """
         return self.count_matches(element)
