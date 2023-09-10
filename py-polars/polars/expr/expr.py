@@ -5345,6 +5345,10 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
+
+            .. warning::
+                If passed, the column must be sorted in ascending order. Otherwise,
+                results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
@@ -5784,6 +5788,10 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
+
+            .. warning::
+                If passed, the column must be sorted in ascending order. Otherwise,
+                results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
@@ -6247,6 +6255,10 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
+
+            .. warning::
+                If passed, the column must be sorted in ascending order. Otherwise,
+                results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
@@ -6479,6 +6491,10 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
+
+            .. warning::
+                If passed, the column must be sorted in ascending order. Otherwise,
+                results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
@@ -6716,6 +6732,10 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
+
+            .. warning::
+                If passed, the column must be sorted in ascending order. Otherwise,
+                results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
@@ -6877,6 +6897,10 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
+
+            .. warning::
+                If passed, the column must be sorted in ascending order. Otherwise,
+                results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
