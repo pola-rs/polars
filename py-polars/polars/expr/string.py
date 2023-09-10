@@ -1940,7 +1940,7 @@ class ExprStringNameSpace:
 
     @deprecate_renamed_function("count_matches", version="0.19.3")
     def count_match(self, pattern: str | Expr) -> Expr:
-        r"""
+        """
         Count all successive non-overlapping regex matches.
 
         .. deprecated:: 0.19.3
@@ -1957,6 +1957,7 @@ class ExprStringNameSpace:
         Expr
             Expression of data type :class:`UInt32`. Returns null if the
             original value is null.
+
         """
         return self.count_matches(pattern)
 

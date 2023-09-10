@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import warnings
 from typing import cast
 
 import pytest
@@ -547,27 +546,28 @@ def test_replace_expressions() -> None:
 
 
 def test_extract_all_count() -> None:
-    with warnings.catch_warnings():
-        # Filter out DeprecationWarnings related to the old function name
-        warnings.filterwarnings("ignore", category=DeprecationWarning, module=__name__)
+    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xaz 678 910t", "boo", None]})
+    assert (
+        df.select(
+            pl.col("foo").str.extract_all(r"a").alias("extract"),
+            pl.col("foo").str.count_matches(r"a").alias("count"),
+        ).to_dict(False)
+    ) == {"extract": [["a", "a"], ["a"], [], None], "count": [2, 1, 0, None]}
 
-        # Your test code here
-        df = pl.DataFrame({"foo": ["123 bla 45 asd", "xaz 678 910t", "boo", None]})
-        assert (
-            df.select(
-                pl.col("foo").str.extract_all(r"a").alias("extract"),
-                pl.col("foo").str.count_matches(r"a").alias("count"),
-                pl.col("foo").str.count_match(r"a").alias("count_dep"),
-            ).to_dict(False)
-        ) == {
-            "extract": [["a", "a"], ["a"], [], None],
-            "count": [2, 1, 0, None],
-            "count_dep": [2, 1, 0, None],
-        }
+    assert df["foo"].str.extract_all(r"a").dtype == pl.List
+    assert df["foo"].str.count_matches(r"a").dtype == pl.UInt32
 
-        assert df["foo"].str.extract_all(r"a").dtype == pl.List
-        assert df["foo"].str.count_matches(r"a").dtype == pl.UInt32
-        assert df["foo"].str.count_match(r"a").dtype == pl.UInt32
+
+def test_count_matches_deprecated_count() -> None:
+    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xaz 678 910t", "boo", None]})
+
+    with pytest.deprecated_call():
+        expr = pl.col("foo").str.count_match(r"a")
+
+    result = df.select(expr)
+
+    expected = pl.Series("foo", [2, 1, 0, None], dtype=pl.UInt32).to_frame()
+    assert_frame_equal(result, expected)
 
 
 def test_count_matches_many() -> None:
