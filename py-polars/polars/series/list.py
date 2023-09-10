@@ -697,7 +697,7 @@ class ListNameSpace:
         Count how often the value produced by ``element`` occurs.
 
         .. deprecated:: 0.19.3
-           This method has been renamed to ``Series.list.count_matches``.
+            This method has been renamed to :func:`count_matches`.
 
         Parameters
         ----------

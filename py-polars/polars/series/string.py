@@ -1546,7 +1546,7 @@ class StringNameSpace:
         Count all successive non-overlapping regex matches.
 
         .. deprecated:: 0.19.3
-            This method has been renamed to :func:`Series.strip_chars_end`.
+            This method has been renamed to :func:`count_matches`.
 
         Parameters
         ----------

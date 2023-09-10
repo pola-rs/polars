@@ -126,7 +126,6 @@ def date_range(
        type date. All other permutations return a datetime Series.
 
        .. deprecated:: 0.19.3
-
            In a future version of Polars, `date_range` will always return a `Date`.
            Please use :func:`datetime_range` if you want a `Datetime` instead.
 
