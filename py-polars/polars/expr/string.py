@@ -1940,7 +1940,12 @@ class ExprStringNameSpace:
 
     @deprecate_renamed_function("count_matches", version="0.19.3")
     def count_match(self, pattern: str | Expr) -> Expr:
-        """
+        r"""
+        Count all successive non-overlapping regex matches.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`count_matches`.
+
         Parameters
         ----------
         pattern
@@ -1954,6 +1959,7 @@ class ExprStringNameSpace:
             original value is null.
         """
         return self.count_matches(pattern)
+
 
 def _validate_format_argument(format: str | None) -> None:
     if format is not None and ".%f" in format:

@@ -1562,4 +1562,3 @@ class StringNameSpace:
             Series of data type :class:`UInt32`. Returns null if the original
             value is null.
         """
-

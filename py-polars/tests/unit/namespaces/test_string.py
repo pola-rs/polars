@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import warnings
 from typing import cast
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
-import warnings
+
 
 def test_str_slice() -> None:
     df = pl.DataFrame({"a": ["foobar", "barfoo"]})
@@ -558,7 +559,11 @@ def test_extract_all_count() -> None:
                 pl.col("foo").str.count_matches(r"a").alias("count"),
                 pl.col("foo").str.count_match(r"a").alias("count_dep"),
             ).to_dict(False)
-        ) == {"extract": [["a", "a"], ["a"], [], None], "count": [2, 1, 0, None], "count_dep": [2, 1, 0, None]}
+        ) == {
+            "extract": [["a", "a"], ["a"], [], None],
+            "count": [2, 1, 0, None],
+            "count_dep": [2, 1, 0, None],
+        }
 
         assert df["foo"].str.extract_all(r"a").dtype == pl.List
         assert df["foo"].str.count_matches(r"a").dtype == pl.UInt32

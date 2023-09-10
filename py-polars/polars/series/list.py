@@ -699,4 +699,4 @@ class ListNameSpace:
         .. deprecated:: 0.19.03
            This method has been renamed to ``Series.list.count_matches``.
 
-        """  # noqa: W505
+        """
