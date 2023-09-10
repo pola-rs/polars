@@ -576,6 +576,17 @@ impl<'a> CoreReader<'a> {
             return Ok(df);
         }
 
+        if !self.ignore_errors {
+            if let Some(quote) = self.quote_char {
+                let quote_count = bytes.iter().filter(|&&byte| byte == quote).count();
+                let has_even_quotes = quote_count % 2 == 0;
+                polars_ensure!(
+                    has_even_quotes,
+                    ComputeError: "odd number of quote characters in CSV file"
+                );
+            }
+        }
+
         // all the buffers returned from the threads
         // Structure:
         //      the inner vec has got buffers from all the columns.

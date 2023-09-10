@@ -429,6 +429,16 @@ pub(super) fn parse_lines<'a>(
                 Some((mut field, needs_escaping)) => {
                     let field_len = field.len();
 
+                    if needs_escaping && !ignore_errors {
+                        let has_closing_quote =
+                            field_len > 1 && Some(field[field_len - 1]) == quote_char;
+                        polars_ensure!(
+                            has_closing_quote,
+                            ComputeError: "field '{}' is missing a closing quote",
+                            String::from_utf8_lossy(&field)
+                        );
+                    }
+
                     // +1 is the split character that is consumed by the iterator.
                     read_sol += field_len + 1;
 
