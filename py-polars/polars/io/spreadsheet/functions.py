@@ -140,9 +140,9 @@ def read_excel(
         that have a ``read()`` method, such as a file handler (e.g. via builtin ``open``
         function) or ``BytesIO``).
     sheet_id
-        Sheet number(s) to convert (set ``0`` to load all sheets as DataFrames) and return
-        a ``{sheetname:frame,}`` dict. (Defaults to `1` if neither this nor `sheet_name`
-        are specified). Can also take a sequence of sheet numbers.
+        Sheet number(s) to convert (set ``0`` to load all sheets as DataFrames) and
+        return a ``{sheetname:frame,}`` dict. (Defaults to `1` if neither this nor
+        `sheet_name` are specified). Can also take a sequence of sheet numbers.
     sheet_name
         Sheet name(s) to convert; cannot be used in conjunction with `sheet_id`. If more
         than one is given then a ``{sheetname:frame,}`` dict is returned.
@@ -209,10 +209,10 @@ def read_excel(
     ...     schema_overrides={"dt": pl.Date},
     ... )  # doctest: +SKIP
 
-    The ``openpyxl`` package can also be used to parse Excel data; it has slightly better
-    default type detection, but is slower than ``xlsx2csv``. If you have a sheet that is
-    better read using this package you can set the engine as "openpyxl" (if you use this
-    engine then both `xlsx2csv_options` and `read_csv_options` cannot be set).
+    The ``openpyxl`` package can also be used to parse Excel data; it has slightly
+    better default type detection, but is slower than ``xlsx2csv``. If you have a sheet
+    that is better read using this package you can set the engine as "openpyxl" (if you
+    use this engine then both `xlsx2csv_options` and `read_csv_options` cannot be set).
 
     >>> pl.read_excel(
     ...     source="test.xlsx",
@@ -331,9 +331,9 @@ def read_ods(
         that have a ``read()`` method, such as a file handler (e.g. via builtin ``open``
         function) or ``BytesIO``).
     sheet_id
-        Sheet number(s) to convert (set ``0`` to load all sheets as DataFrames) and return
-        a ``{sheetname:frame,}`` dict. (Defaults to `1` if neither this nor `sheet_name`
-        are specified). Can also take a sequence of sheet numbers.
+        Sheet number(s) to convert (set ``0`` to load all sheets as DataFrames) and
+        return a ``{sheetname:frame,}`` dict. (Defaults to `1` if neither this nor
+        `sheet_name` are specified). Can also take a sequence of sheet numbers.
     sheet_name
         Sheet name(s) to convert; cannot be used in conjunction with `sheet_id`. If more
         than one is given then a ``{sheetname:frame,}`` dict is returned.
@@ -361,7 +361,7 @@ def read_ods(
 
     >>> pl.read_ods(
     ...     source="test.ods",
-    ...     sheet_id = 3,
+    ...     sheet_id=3,
     ...     schema_overrides={"dt": pl.Date},
     ...     raise_if_empty=False,
     ... )  # doctest: +SKIP
