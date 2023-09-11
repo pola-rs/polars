@@ -483,3 +483,16 @@ def test_regex_expansion_exclude_10002() -> None:
         ).to_dict(as_series=False)
         == expected
     )
+
+
+def test_selector_or() -> None:
+    df = pl.DataFrame(
+        {
+            "int": [1, 2, 3],
+            "float": [1.0, 2.0, 3.0],
+            "str": ["x", "y", "z"],
+        }
+    ).with_row_count("rn")
+
+    out = df.select(cs.by_name("rn") | ~cs.numeric())
+    assert out.to_dict(False) == {"rn": [0, 1, 2], "str": ["x", "y", "z"]}
