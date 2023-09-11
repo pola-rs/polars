@@ -174,34 +174,6 @@ pub trait TakeRandom {
     fn last(&self) -> Option<Self::Item>;
 }
 
-// Utility trait because associated type needs a lifetime
-pub trait TakeRandomUtf8 {
-    type Item;
-
-    /// Get a nullable value by index.
-    ///
-    /// # Panics
-    /// Panics if `index >= self.len()`
-    fn get(self, index: usize) -> Option<Self::Item>;
-
-    /// Get a value by index and ignore the null bit.
-    ///
-    /// # Safety
-    ///
-    /// Does not do bound checks.
-    unsafe fn get_unchecked(self, index: usize) -> Option<Self::Item>
-    where
-        Self: Sized,
-    {
-        self.get(index)
-    }
-
-    /// This is much faster if we have many chunks
-    /// # Panics
-    /// Panics if `index >= self.len()`
-    fn last(&self) -> Option<Self::Item>;
-}
-
 /// Fast access by index.
 pub trait ChunkTake: ChunkTakeUnchecked {
     /// Take values from ChunkedArray by index.
