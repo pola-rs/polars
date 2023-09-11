@@ -1022,6 +1022,9 @@ class Series:
 
         # Integer.
         elif isinstance(item, int):
+            if self.len() == 0:
+                raise IndexError("list index out of range")
+
             if item < 0:
                 item = self.len() + item
             return self._s.get_idx(item)

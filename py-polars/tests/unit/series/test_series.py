@@ -2706,3 +2706,11 @@ def test_symmetry_for_max_in_names() -> None:
     # TODO: time arithmetic support?
     # a = pl.Series("a", [1], dtype=pl.Time)
     # assert (a - a.max()).name == (a.max() - a).name == a.name
+
+
+def test_indexing_out_of_range() -> None:
+    data = []
+    with pytest.raises(IndexError):
+        pl.Series(data)[0]
+    with pytest.raises(IndexError):
+        pl.Series(data)[-1]
