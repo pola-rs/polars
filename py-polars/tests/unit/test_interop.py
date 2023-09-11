@@ -566,15 +566,18 @@ def test_to_pandas() -> None:
             pl.col("f").cast(pl.Categorical).alias("i"),
         ]
     )
+
     pd_out = df.to_pandas()
+    ns_datetimes = pa.__version__ < "13"
+
     pd_out_dtypes_expected = [
         np.dtype(np.uint8),
         np.dtype(np.float64),
         np.dtype(np.float64),
-        np.dtype("datetime64[ms]"),
+        np.dtype(f"datetime64[{'ns' if ns_datetimes else 'ms'}]"),
         np.dtype(np.object_),
         np.dtype(np.object_),
-        np.dtype("datetime64[us]"),
+        np.dtype(f"datetime64[{'ns' if ns_datetimes else 'us'}]"),
         pd.CategoricalDtype(categories=["a", "b", "c"], ordered=False),
         pd.CategoricalDtype(categories=["e", "f"], ordered=False),
     ]
