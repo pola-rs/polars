@@ -15,8 +15,7 @@ pub(super) fn update_sorted_flag_before_append<'a, T>(
     other: &'a ChunkedArray<T>,
 ) where
     T: PolarsDataType,
-    &'a ChunkedArray<T>: TakeRandom,
-    <&'a ChunkedArray<T> as TakeRandom>::Item: PartialOrd,
+    T::Physical<'a>: PartialOrd,
 {
     let get_start_end = || {
         let end = {
@@ -28,10 +27,10 @@ pub(super) fn update_sorted_flag_before_append<'a, T>(
                 let borrow = std::mem::transmute::<&ChunkedArray<T>, &'a ChunkedArray<T>>(ca);
                 // ensure we don't access with `len() - 1` this will have O(n^2) complexity
                 // if we append many chunks that are sorted
-                borrow.last()
+                borrow.last_foo()
             }
         };
-        let start = unsafe { other.get_unchecked(0) };
+        let start = unsafe { other.get_unchecked_foo(0) };
 
         (start, end)
     };

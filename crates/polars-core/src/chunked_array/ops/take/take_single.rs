@@ -244,6 +244,7 @@ impl<'a, T: PolarsObject> TakeRandom for &'a ObjectChunked<T> {
     }
 }
 
+/*
 impl TakeRandom for ListChunked {
     type Item = Series;
 
@@ -336,3 +337,4 @@ impl TakeRandom for ArrayChunked {
         }
     }
 }
+*/

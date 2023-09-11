@@ -173,6 +173,7 @@ pub trait TakeRandom {
     /// Panics if `index >= self.len()`
     fn last(&self) -> Option<Self::Item>;
 }
+
 // Utility trait because associated type needs a lifetime
 pub trait TakeRandomUtf8 {
     type Item;
@@ -631,7 +632,7 @@ impl ChunkExpandAtIndex<BinaryType> for BinaryChunked {
 
 impl ChunkExpandAtIndex<ListType> for ListChunked {
     fn new_from_index(&self, index: usize, length: usize) -> ListChunked {
-        let opt_val = self.get(index);
+        let opt_val = self.get_as_series(index);
         match opt_val {
             Some(val) => {
                 let mut ca = ListChunked::full(self.name(), &val, length);
@@ -646,7 +647,7 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
 #[cfg(feature = "dtype-array")]
 impl ChunkExpandAtIndex<FixedSizeListType> for ArrayChunked {
     fn new_from_index(&self, index: usize, length: usize) -> ArrayChunked {
-        let opt_val = self.get(index);
+        let opt_val = self.get_as_series(index);
         match opt_val {
             Some(val) => {
                 let mut ca = ArrayChunked::full(self.name(), &val, length);

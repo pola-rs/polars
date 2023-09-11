@@ -375,6 +375,68 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
+    #[inline]
+    pub fn get_foo(&self, idx: usize) -> Option<T::Physical<'_>> {
+        let (chunk_idx, arr_idx) = self.index_to_chunked_index(idx);
+        let arr = self.downcast_get(chunk_idx)?;
+
+        // SAFETY: if index_to_chunked_index returns a valid chunk_idx, we know
+        // that arr_idx < arr.len().
+        unsafe { arr.get_unchecked(arr_idx) }
+    }
+
+    /// # Safety
+    /// It is the callers responsibility that the `idx < self.len()`.
+    #[inline]
+    pub unsafe fn get_unchecked_foo(&self, idx: usize) -> Option<T::Physical<'_>> {
+        let (chunk_idx, arr_idx) = self.index_to_chunked_index(idx);
+
+        unsafe {
+            // SAFETY: up to the caller to make sure the index is valid.
+            self.downcast_get_unchecked(chunk_idx)
+                .get_unchecked(arr_idx)
+        }
+    }
+
+    #[inline]
+    pub fn last_foo(&self) -> Option<T::Physical<'_>> {
+        unsafe {
+            let arr = self.downcast_get_unchecked(self.chunks.len().checked_sub(1)?);
+            arr.get_unchecked(arr.len().checked_sub(1)?)
+        }
+    }
+}
+
+impl ListChunked {
+    #[inline]
+    pub fn get_as_series(&self, idx: usize) -> Option<Series> {
+        unsafe {
+            Some(Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![self.get_foo(idx)?],
+                &self.inner_dtype().to_physical(),
+            ))
+        }
+    }
+}
+
+impl ArrayChunked {
+    #[inline]
+    pub fn get_as_series(&self, idx: usize) -> Option<Series> {
+        unsafe {
+            Some(Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![self.get_foo(idx)?],
+                &self.inner_dtype().to_physical(),
+            ))
+        }
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+{
     /// Should be used to match the chunk_id of another [`ChunkedArray`].
     /// # Panics
     /// It is the callers responsibility to ensure that this [`ChunkedArray`] has a single chunk.
