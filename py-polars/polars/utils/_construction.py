@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import warnings
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
@@ -664,6 +665,11 @@ def _post_apply_columns(
     return pydf
 
 
+@functools.lru_cache(maxsize=128)
+def _is_polars_dtype_cached(dtype: Any, *, include_unknown: bool = False) -> bool:
+    return is_polars_dtype(dtype, include_unknown=include_unknown)
+
+
 def _unpack_schema(
     schema: SchemaDefinition | None,
     *,
@@ -707,7 +713,10 @@ def _unpack_schema(
                 col for col in column_dtypes if col not in column_names
             ]
     for col, dtype in column_dtypes.items():
-        if not is_polars_dtype(dtype, include_unknown=True) and dtype is not None:
+        if not _is_polars_dtype_cached(
+            dtype,  # type: ignore[arg-type]
+            include_unknown=True,
+        ):
             column_dtypes[col] = py_type_to_dtype(dtype)
 
     return (
