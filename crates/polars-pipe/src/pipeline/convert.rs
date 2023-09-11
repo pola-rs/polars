@@ -181,8 +181,16 @@ where
                             // TODO: support Ipc as well
                             todo!("For now, only parquet cloud files are supported");
                         },
+                        #[cfg(feature = "csv")]
+                        FileType::Csv(csv_options) => Box::new(CsvCloudSink::new(
+                            uri,
+                            cloud_options.as_ref(),
+                            *csv_options,
+                            input_schema.as_ref(),
+                        )?)
+                            as Box<dyn SinkTrait>,
                         #[allow(unreachable_patterns)]
-                        _ => unreachable!(),
+                        other_file_type => todo!("Cloud-sinking of the file type {other_file_type:?} is not (yet) supported."),
                     }
                 },
             }

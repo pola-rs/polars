@@ -212,6 +212,52 @@ impl CsvSink {
     }
 }
 
+#[cfg(all(feature = "csv", feature = "cloud"))]
+pub struct CsvCloudSink {}
+#[cfg(all(feature = "csv", feature = "cloud"))]
+impl CsvCloudSink {
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(
+        uri: &str,
+        cloud_options: Option<&polars_core::cloud::CloudOptions>,
+        csv_options: CsvWriteOptions,
+        schema: &Schema,
+    ) -> PolarsResult<FilesSink> {
+        let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options)?;
+        let writer = CsvWriter::new(file)
+            .has_header(csv_options.has_header)
+            .with_delimiter(csv_options.serialize_options.delimiter)
+            .with_line_terminator(csv_options.serialize_options.line_terminator)
+            .with_quoting_char(csv_options.serialize_options.quote)
+            .with_batch_size(csv_options.batch_size)
+            .with_datetime_format(csv_options.serialize_options.datetime_format)
+            .with_date_format(csv_options.serialize_options.date_format)
+            .with_time_format(csv_options.serialize_options.time_format)
+            .with_float_precision(csv_options.serialize_options.float_precision)
+            .with_null_value(csv_options.serialize_options.null)
+            .with_quote_style(csv_options.serialize_options.quote_style)
+            .batched(schema)?;
+
+        let writer = Box::new(writer) as Box<dyn SinkWriter + Send + Sync>;
+
+        let morsels_per_sink = morsels_per_sink();
+        let backpressure = morsels_per_sink * 2;
+        let (sender, receiver) = bounded(backpressure);
+
+        let io_thread_handle = Arc::new(Some(init_writer_thread(
+            receiver,
+            writer,
+            csv_options.maintain_order,
+            morsels_per_sink,
+        )));
+
+        Ok(FilesSink {
+            sender,
+            io_thread_handle,
+        })
+    }
+}
+
 #[cfg(any(feature = "parquet", feature = "ipc"))]
 fn init_writer_thread(
     receiver: Receiver<Option<DataChunk>>,
