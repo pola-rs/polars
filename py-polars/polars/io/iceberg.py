@@ -204,7 +204,7 @@ def _(a: UnaryOp) -> Any:
     if isinstance(a.op, Invert):
         return Not(_convert_predicate(a.operand))
     else:
-        raise ValueError(f"Unexpected UnaryOp: {a}")
+        raise TypeError(f"Unexpected UnaryOp: {a}")
 
 
 @_convert_predicate.register(Call)
@@ -241,7 +241,7 @@ def _(a: BinOp) -> Any:
     if isinstance(op, BitOr):
         return Or(lhs, rhs)
     else:
-        raise ValueError(f"Unknown: {lhs} {op} {rhs}")
+        raise TypeError(f"Unknown: {lhs} {op} {rhs}")
 
 
 @_convert_predicate.register(Compare)
@@ -261,7 +261,7 @@ def _(a: Compare) -> Any:
     if isinstance(op, LtE):
         return LessThanOrEqual(lhs, rhs)
     else:
-        raise ValueError(f"Unknown comparison: {op}")
+        raise TypeError(f"Unknown comparison: {op}")
 
 
 @_convert_predicate.register(List)
