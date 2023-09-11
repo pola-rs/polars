@@ -6,7 +6,9 @@
 
 # Dependencies
 dataframe-api-compat >= 0.1.6
-deltalake >= 0.10.0
+# pin deltalake until issues with pyarrow 13 resolved
+# https://github.com/delta-io/delta-rs/pull/1602
+deltalake == 0.10.1
 numpy
 pandas
 pyarrow
