@@ -75,10 +75,12 @@ pub fn optimize(
     // Don't run optimizations that don't make sense on a single node.
     // This keeps eager execution more snappy.
     let eager = opt_state.eager;
-    #[cfg(feature = "cse")]
     let comm_subplan_elim = opt_state.comm_subplan_elim && !eager;
-    #[cfg(feature = "cse")]
-    let comm_subexpr_elim = opt_state.comm_subexpr_elim;
+    let comm_subexpr_elim = if cfg!(feature = "cse") {
+        opt_state.comm_subexpr_elim
+    } else {
+        false
+    };
 
     #[allow(unused_variables)]
     let agg_scan_projection = opt_state.file_caching && !streaming && !eager;
