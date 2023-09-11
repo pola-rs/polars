@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 from datetime import timezone
 from inspect import isclass
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Mapping, Sequence
@@ -162,6 +163,18 @@ def _custom_reconstruct(
     return obj
 
 
+@functools.lru_cache(maxsize=128)
+def _is_data_type_or_class_(__obj: Any, /) -> bool:
+    return isinstance(__obj, (DataType, DataTypeClass))
+
+
+def _is_data_type_or_class(__obj: Any, /) -> bool:
+    try:
+        return _is_data_type_or_class_(__obj)
+    except TypeError:
+        return False
+
+
 class DataTypeGroup(frozenset):  # type: ignore[type-arg]
     """Group of data types."""
 
@@ -182,7 +195,7 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
 
         """
         for it in items:
-            if not isinstance(it, (DataType, DataTypeClass)):
+            if not _is_data_type_or_class(it):
                 raise TypeError(
                     f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
                 )
@@ -191,7 +204,7 @@ class DataTypeGroup(frozenset):  # type: ignore[type-arg]
         return dtype_group
 
     def __contains__(self, item: Any) -> bool:
-        if self._match_base_type and isinstance(item, (DataType, DataTypeClass)):
+        if self._match_base_type and _is_data_type_or_class(item):
             item = item.base_type()
         return super().__contains__(item)
 

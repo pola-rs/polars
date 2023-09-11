@@ -24,8 +24,6 @@ from polars.datatypes import (
     Binary,
     Boolean,
     Categorical,
-    DataType,
-    DataTypeClass,
     Date,
     Datetime,
     Decimal,
@@ -49,6 +47,7 @@ from polars.datatypes import (
     Unknown,
     Utf8,
 )
+from polars.datatypes.classes import _is_data_type_or_class
 from polars.dependencies import numpy as np
 from polars.dependencies import pyarrow as pa
 
@@ -157,7 +156,7 @@ def is_polars_dtype(dtype: Any, *, include_unknown: bool = False) -> bool:
             # does not represent a realisable dtype, so ignore by default
             return include_unknown
         else:
-            return isinstance(dtype, (DataType, DataTypeClass))
+            return _is_data_type_or_class(dtype)
     except TypeError:
         return False
 
