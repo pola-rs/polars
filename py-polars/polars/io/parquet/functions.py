@@ -8,7 +8,7 @@ import polars._reexport as pl
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _prepare_file_arg
-from polars.utils.various import normalise_filepath
+from polars.utils.various import normalize_filepath
 
 with contextlib.suppress(ImportError):
     from polars.polars import read_parquet_schema as _read_parquet_schema
@@ -161,7 +161,7 @@ def read_parquet_schema(
 
     """
     if isinstance(source, (str, Path)):
-        source = normalise_filepath(source)
+        source = normalize_filepath(source)
 
     return _read_parquet_schema(source)
 
@@ -227,7 +227,7 @@ def scan_parquet(
 
     """
     if isinstance(source, (str, Path)):
-        source = normalise_filepath(source)
+        source = normalize_filepath(source)
 
     return pl.LazyFrame._scan_parquet(
         source,

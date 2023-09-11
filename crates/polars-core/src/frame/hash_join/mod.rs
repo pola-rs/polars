@@ -374,10 +374,12 @@ impl DataFrame {
             },
         );
 
-        let mut s = s_left
-            .to_physical_repr()
-            .zip_outer_join_column(&s_right.to_physical_repr(), opt_join_tuples);
-        s.rename(s_left.name());
+        let s = unsafe {
+            s_left
+                .to_physical_repr()
+                .zip_outer_join_column(&s_right.to_physical_repr(), opt_join_tuples)
+                .with_name(s_left.name())
+        };
         let s = match s_left.dtype() {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {

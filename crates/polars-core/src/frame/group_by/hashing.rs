@@ -82,9 +82,9 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
     }
 }
 
-// The inner vecs should be sorted by IdxSize
+// The inner vecs should be sorted by [`IdxSize`]
 // the group_by multiple keys variants suffice
-// this requirements as they use an IdxMap strategy
+// this requirements as they use an [`IdxMap`] strategy
 fn finish_group_order_vecs(
     mut vecs: Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>,
     sorted: bool,

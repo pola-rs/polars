@@ -28,7 +28,7 @@ fn err_missing_configuration(feature: &str, scheme: &str) -> BuildResult {
         "configuration '{}' must be provided in order to use '{}' cloud urls", feature, scheme,
     );
 }
-/// Build an ObjectStore based on the URL and passed in url. Return the cloud location and an implementation of the object store.
+/// Build an [`ObjectStore`] based on the URL and passed in url. Return the cloud location and an implementation of the object store.
 pub fn build(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
     let cloud_location = CloudLocation::new(url)?;
     let store = match CloudType::from_str(url)? {

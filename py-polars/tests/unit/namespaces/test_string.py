@@ -184,53 +184,81 @@ def test_str_parse_int_df() -> None:
         )
 
 
-def test_str_strip() -> None:
+def test_str_strip_chars() -> None:
     s = pl.Series([" hello ", "world\t "])
     expected = pl.Series(["hello", "world"])
-    assert_series_equal(s.str.strip(), expected)
+    assert_series_equal(s.str.strip_chars(), expected)
 
     expected = pl.Series(["hell", "world"])
-    assert_series_equal(s.str.strip().str.strip("o"), expected)
+    assert_series_equal(s.str.strip_chars().str.strip_chars("o"), expected)
 
     expected = pl.Series(["ell", "rld\t"])
-    assert_series_equal(s.str.strip(" hwo"), expected)
+    assert_series_equal(s.str.strip_chars(" hwo"), expected)
 
 
-def test_str_lstrip() -> None:
+def test_str_strip_chars_start() -> None:
     s = pl.Series([" hello ", "\t world"])
     expected = pl.Series(["hello ", "world"])
-    assert_series_equal(s.str.lstrip(), expected)
+    assert_series_equal(s.str.strip_chars_start(), expected)
 
     expected = pl.Series(["ello ", "world"])
-    assert_series_equal(s.str.lstrip().str.lstrip("h"), expected)
+    assert_series_equal(s.str.strip_chars_start().str.strip_chars_start("h"), expected)
 
     expected = pl.Series(["ello ", "\t world"])
-    assert_series_equal(s.str.lstrip("hw "), expected)
+    assert_series_equal(s.str.strip_chars_start("hw "), expected)
 
 
-def test_str_rstrip() -> None:
+def test_str_strip_chars_end() -> None:
     s = pl.Series([" hello ", "world\t "])
     expected = pl.Series([" hello", "world"])
-    assert_series_equal(s.str.rstrip(), expected)
+    assert_series_equal(s.str.strip_chars_end(), expected)
 
     expected = pl.Series([" hell", "world"])
-    assert_series_equal(s.str.rstrip().str.rstrip("o"), expected)
+    assert_series_equal(s.str.strip_chars_end().str.strip_chars_end("o"), expected)
 
     expected = pl.Series([" he", "wor"])
-    assert_series_equal(s.str.rstrip("odl \t"), expected)
+    assert_series_equal(s.str.strip_chars_end("odl \t"), expected)
 
 
 def test_str_strip_whitespace() -> None:
     s = pl.Series("a", ["trailing  ", "  leading", "  both  "])
 
     expected = pl.Series("a", ["trailing", "  leading", "  both"])
-    assert_series_equal(s.str.rstrip(), expected)
+    assert_series_equal(s.str.strip_chars_end(), expected)
 
     expected = pl.Series("a", ["trailing  ", "leading", "both  "])
-    assert_series_equal(s.str.lstrip(), expected)
+    assert_series_equal(s.str.strip_chars_start(), expected)
 
     expected = pl.Series("a", ["trailing", "leading", "both"])
-    assert_series_equal(s.str.strip(), expected)
+    assert_series_equal(s.str.strip_chars(), expected)
+
+
+def test_str_strip_deprecated() -> None:
+    with pytest.deprecated_call():
+        pl.col("a").str.strip()
+    with pytest.deprecated_call():
+        pl.col("a").str.lstrip()
+    with pytest.deprecated_call():
+        pl.col("a").str.rstrip()
+
+    with pytest.deprecated_call():
+        pl.Series(["a", "b", "c"]).str.strip()
+    with pytest.deprecated_call():
+        pl.Series(["a", "b", "c"]).str.lstrip()
+    with pytest.deprecated_call():
+        pl.Series(["a", "b", "c"]).str.rstrip()
+
+
+def test_str_strip_prefix() -> None:
+    s = pl.Series(["foo:bar", "foofoo:bar", "bar:bar", "foo", ""])
+    expected = pl.Series([":bar", "foo:bar", "bar:bar", "", ""])
+    assert_series_equal(s.str.strip_prefix("foo"), expected)
+
+
+def test_str_strip_suffix() -> None:
+    s = pl.Series(["foo:bar", "foo:barbar", "foo:foo", "bar", ""])
+    expected = pl.Series(["foo:", "foo:bar", "foo:foo", "", ""])
+    assert_series_equal(s.str.strip_suffix("bar"), expected)
 
 
 def test_str_split() -> None:
@@ -522,15 +550,27 @@ def test_extract_all_count() -> None:
     assert (
         df.select(
             pl.col("foo").str.extract_all(r"a").alias("extract"),
-            pl.col("foo").str.count_match(r"a").alias("count"),
+            pl.col("foo").str.count_matches(r"a").alias("count"),
         ).to_dict(False)
     ) == {"extract": [["a", "a"], ["a"], [], None], "count": [2, 1, 0, None]}
 
     assert df["foo"].str.extract_all(r"a").dtype == pl.List
-    assert df["foo"].str.count_match(r"a").dtype == pl.UInt32
+    assert df["foo"].str.count_matches(r"a").dtype == pl.UInt32
 
 
-def test_count_match_many() -> None:
+def test_count_matches_deprecated_count() -> None:
+    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xaz 678 910t", "boo", None]})
+
+    with pytest.deprecated_call():
+        expr = pl.col("foo").str.count_match(r"a")
+
+    result = df.select(expr)
+
+    expected = pl.Series("foo", [2, 1, 0, None], dtype=pl.UInt32).to_frame()
+    assert_frame_equal(result, expected)
+
+
+def test_count_matches_many() -> None:
     df = pl.DataFrame(
         {
             "foo": ["123 bla 45 asd", "xyz 678 910t", None, "boo"],
@@ -538,17 +578,17 @@ def test_count_match_many() -> None:
         }
     )
     assert (
-        df.select(pl.col("foo").str.count_match(pl.col("bar")).alias("count")).to_dict(
-            False
-        )
+        df.select(
+            pl.col("foo").str.count_matches(pl.col("bar")).alias("count")
+        ).to_dict(False)
     ) == {"count": [5, 4, None, None]}
 
-    assert df["foo"].str.count_match(df["bar"]).dtype == pl.UInt32
+    assert df["foo"].str.count_matches(df["bar"]).dtype == pl.UInt32
 
     # Test broadcast.
     broad = df.select(
-        pl.col("foo").str.count_match(pl.col("bar").first()).alias("count"),
-        pl.col("foo").str.count_match(pl.col("bar").last()).alias("count_null"),
+        pl.col("foo").str.count_matches(pl.col("bar").first()).alias("count"),
+        pl.col("foo").str.count_matches(pl.col("bar").last()).alias("count_null"),
     )
     assert broad.to_dict(False) == {
         "count": [5, 6, None, 0],

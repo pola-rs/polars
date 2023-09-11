@@ -7,7 +7,7 @@ pub struct Bounds {
 }
 
 impl Bounds {
-    /// Create a new `Bounds` and check the input is correct.
+    /// Create a new [`Bounds`] and check the input is correct.
     pub(crate) fn new_checked(start: i64, stop: i64) -> Self {
         assert!(
             start <= stop,
@@ -17,7 +17,7 @@ impl Bounds {
         Self::new(start, stop)
     }
 
-    /// Create a new `Bounds` without checking input correctness.
+    /// Create a new [`Bounds`] without checking input correctness.
     pub(crate) fn new(start: i64, stop: i64) -> Self {
         Bounds { start, stop }
     }

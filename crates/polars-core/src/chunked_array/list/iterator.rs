@@ -96,7 +96,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
 unsafe impl<'a, I: Iterator<Item = Option<ArrayBox>>> TrustedLen for AmortizedListIter<'a, I> {}
 
 impl ListChunked {
-    /// This is an iterator over a ListChunked that save allocations.
+    /// This is an iterator over a [`ListChunked`] that save allocations.
     /// A Series is:
     ///     1. [`Arc<ChunkedArray>`]
     ///     ChunkedArray is:

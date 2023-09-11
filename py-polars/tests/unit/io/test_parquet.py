@@ -215,13 +215,13 @@ def test_chunked_round_trip() -> None:
     df1 = pl.DataFrame(
         {
             "a": [1] * 2,
-            "l": [[1] for j in range(0, 2)],
+            "l": [[1] for j in range(2)],
         }
     )
     df2 = pl.DataFrame(
         {
             "a": [2] * 3,
-            "l": [[2] for j in range(0, 3)],
+            "l": [[2] for j in range(3)],
         }
     )
 

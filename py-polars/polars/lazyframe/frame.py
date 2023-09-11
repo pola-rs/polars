@@ -66,7 +66,7 @@ from polars.utils.various import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
-    normalise_filepath,
+    normalize_filepath,
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -299,11 +299,11 @@ class LazyFrame:
         self._ldf = ldf
         return self
 
-    def __getstate__(self) -> Any:
+    def __getstate__(self) -> bytes:
         return self._ldf.__getstate__()
 
-    def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
-        self._ldf = LazyFrame("", [])._ldf
+    def __setstate__(self, state: bytes) -> None:
+        self._ldf = LazyFrame()._ldf  # Initialize with a dummy
         self._ldf.__setstate__(state)
 
     @classmethod
@@ -454,7 +454,7 @@ class LazyFrame:
 
         """
         if isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
 
         # try fsspec scanner
         if not _is_local_file(source):
@@ -516,6 +516,7 @@ class LazyFrame:
         cls,
         schema: pa.schema | dict[str, PolarsDataType],
         scan_fn: Any,
+        *,
         pyarrow: bool = False,
     ) -> Self:
         self = cls.__new__(cls)
@@ -613,7 +614,7 @@ class LazyFrame:
         if isinstance(source, StringIO):
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
 
         return cls._from_pyldf(PyLazyFrame.deserialize(source))
 
@@ -843,7 +844,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
@@ -1886,22 +1887,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_parquet("out.parquet")  # doctest: +SKIP
 
         """
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
-
-        lf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim=False,
-            comm_subexpr_elim=False,
-            streaming=True,
-            eager=False,
+        lf = self._set_sink_optimizations(
+            type_coercion=type_coercion,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            no_optimization=no_optimization,
+            slice_pushdown=slice_pushdown,
         )
+
         return lf.sink_parquet(
             path=path,
             compression=compression,
@@ -1963,22 +1957,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_ipc("out.arrow")  # doctest: +SKIP
 
         """
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
-
-        lf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim=False,
-            comm_subexpr_elim=False,
-            streaming=True,
-            eager=False,
+        lf = self._set_sink_optimizations(
+            type_coercion=type_coercion,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            no_optimization=no_optimization,
+            slice_pushdown=slice_pushdown,
         )
+
         return lf.sink_ipc(
             path=path,
             compression=compression,
@@ -2092,21 +2079,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if not null_value:
             null_value = None
 
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
-
-        lf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim=False,
-            comm_subexpr_elim=False,
-            streaming=True,
-            eager=False,
+        lf = self._set_sink_optimizations(
+            type_coercion=type_coercion,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            no_optimization=no_optimization,
+            slice_pushdown=slice_pushdown,
         )
 
         return lf.sink_csv(
@@ -2123,6 +2102,33 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             null_value=null_value,
             quote_style=quote_style,
             maintain_order=maintain_order,
+        )
+
+    def _set_sink_optimizations(
+        self,
+        *,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
+    ) -> PyLazyFrame:
+        if no_optimization:
+            predicate_pushdown = False
+            projection_pushdown = False
+            slice_pushdown = False
+
+        return self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            comm_subplan_elim=False,
+            comm_subexpr_elim=False,
+            streaming=True,
+            eager=False,
         )
 
     @deprecate_renamed_parameter(

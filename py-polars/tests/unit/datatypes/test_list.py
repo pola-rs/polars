@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, time
 
 import pandas as pd
+import pytest
 
 import polars as pl
 from polars.testing import assert_series_equal
@@ -275,12 +276,24 @@ def test_flat_aggregation_to_list_conversion_6918() -> None:
     ).to_dict(False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
 
 
-def test_list_count_match() -> None:
+def test_list_count_matches_deprecated() -> None:
+    with pytest.deprecated_call():
+        # Your test code here
+        assert pl.DataFrame(
+            {"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}
+        ).select(pl.col("listcol").list.count_match(2).alias("number_of_twos")).to_dict(
+            False
+        ) == {
+            "number_of_twos": [0, 0, 2, 1, 0]
+        }
+
+
+def test_list_count_matches() -> None:
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
-        pl.col("listcol").list.count_match(2).alias("number_of_twos")
+        pl.col("listcol").list.count_matches(2).alias("number_of_twos")
     ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
-        pl.col("listcol").list.count_match(2).alias("number_of_twos")
+        pl.col("listcol").list.count_matches(2).alias("number_of_twos")
     ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
 
 

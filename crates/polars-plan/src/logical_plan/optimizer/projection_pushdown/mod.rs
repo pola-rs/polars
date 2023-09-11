@@ -688,7 +688,7 @@ impl ProjectionPushDown {
                 )
             },
             // These nodes only have inputs and exprs, so we can use same logic.
-            lp @ Slice { .. } | lp @ FileSink { .. } => process_generic(
+            lp @ Slice { .. } | lp @ Sink { .. } => process_generic(
                 self,
                 lp,
                 acc_projections,

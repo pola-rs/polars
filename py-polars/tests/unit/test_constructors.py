@@ -1286,7 +1286,7 @@ def test_datetime_date_subclasses() -> None:
 def test_list_null_constructor() -> None:
     s = pl.Series("a", [[None], [None]], dtype=pl.List(pl.Null))
     assert s.dtype == pl.List(pl.Null)
-    assert s.to_list() == [None, None]
+    assert s.to_list() == [[None], [None]]
 
     # nested
     dtype = pl.List(pl.List(pl.Int8))

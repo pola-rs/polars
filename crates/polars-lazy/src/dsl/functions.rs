@@ -206,7 +206,7 @@ pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, args: UnionArgs) -> PolarsResult
     )
 }
 
-/// Collect all `LazyFrame` computations.
+/// Collect all [`LazyFrame`] computations.
 pub fn collect_all<I>(lfs: I) -> PolarsResult<Vec<DataFrame>>
 where
     I: IntoParallelIterator<Item = LazyFrame>,

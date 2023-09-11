@@ -224,8 +224,14 @@ impl LogicalPlan {
                 write!(f, "{:indent$}EXTERNAL_CONTEXT", "")?;
                 input._format(f, sub_indent)
             },
-            FileSink { input, .. } => {
-                write!(f, "{:indent$}FILE_SINK", "")?;
+            Sink { input, payload, .. } => {
+                let name = match payload {
+                    SinkType::Memory => "SINK (memory)",
+                    SinkType::File { .. } => "SINK (file)",
+                    #[cfg(feature = "cloud")]
+                    SinkType::Cloud { .. } => "SINK (cloud)",
+                };
+                write!(f, "{:indent$}{}", "", name)?;
                 input._format(f, sub_indent)
             },
         }

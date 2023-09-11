@@ -107,7 +107,7 @@ impl CloudOptions {
         self
     }
 
-    /// Build the ObjectStore implementation for AWS.
+    /// Build the [`ObjectStore`] implementation for AWS.
     #[cfg(feature = "aws")]
     pub fn build_aws(&self, bucket_name: &str) -> PolarsResult<impl ObjectStore> {
         let options = self
@@ -140,7 +140,7 @@ impl CloudOptions {
         self
     }
 
-    /// Build the ObjectStore implementation for Azure.
+    /// Build the [`ObjectStore`] implementation for Azure.
     #[cfg(feature = "azure")]
     pub fn build_azure(&self, container_name: &str) -> PolarsResult<impl ObjectStore> {
         let options = self
@@ -173,7 +173,7 @@ impl CloudOptions {
         self
     }
 
-    /// Build the ObjectStore implementation for GCP.
+    /// Build the [`ObjectStore`] implementation for GCP.
     #[cfg(feature = "gcp")]
     pub fn build_gcp(&self, bucket_name: &str) -> PolarsResult<impl ObjectStore> {
         let options = self

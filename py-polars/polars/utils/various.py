@@ -180,7 +180,7 @@ def can_create_dicts_with_pyarrow(dtypes: Sequence[PolarsDataType]) -> bool:
     )
 
 
-def normalise_filepath(path: str | Path, check_not_directory: bool = True) -> str:
+def normalize_filepath(path: str | Path, *, check_not_directory: bool = True) -> str:
     """Create a string path, expanding the home directory if present."""
     # don't use pathlib here as it modifies slashes (s3:// -> s3:/)
     path = os.path.expanduser(path)  # noqa: PTH111

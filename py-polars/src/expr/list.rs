@@ -33,8 +33,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "list_count")]
-    fn list_count_match(&self, expr: PyExpr) -> Self {
-        self.inner.clone().list().count_match(expr.inner).into()
+    fn list_count_matches(&self, expr: PyExpr) -> Self {
+        self.inner.clone().list().count_matches(expr.inner).into()
     }
 
     fn list_diff(&self, n: i64, null_behavior: Wrap<NullBehavior>) -> PyResult<Self> {
