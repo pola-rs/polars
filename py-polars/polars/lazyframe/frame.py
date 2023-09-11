@@ -2042,8 +2042,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             (which is indistinguishable from a record with one empty field).
             This is the default.
             - always: This puts quotes around every field. Always.
-            - never: This never puts quotes around fields, even if they contain
-            characters that would typically require quotes (such as the separator).
+            - never: This never puts quotes around fields, even if that results in
+            invalid CSV data (e.g.: by not quoting strings containing the separator).
             - non_numeric: This puts quotes around all fields that are non-numeric.
             Namely, when writing a field that does not parse as a valid float
             or integer, then quotes will be used even if they aren`t strictly
