@@ -171,7 +171,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.gt(self._to_expr(other)._pyexpr))
 
     def __invert__(self) -> Self:
-        return self.is_not()
+        return self.not_()
 
     def __le__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr.lt_eq(self._to_expr(other)._pyexpr))
@@ -230,13 +230,11 @@ class Expr:
     def __rxor__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other)._xor(self._pyexpr))
 
-    # state
-    def __getstate__(self) -> Any:
+    def __getstate__(self) -> bytes:
         return self._pyexpr.__getstate__()
 
-    def __setstate__(self, state: Any) -> None:
-        # init with a dummy
-        self._pyexpr = F.lit(0)._pyexpr
+    def __setstate__(self, state: bytes) -> None:
+        self._pyexpr = F.lit(0)._pyexpr  # Initialize with a dummy
         self._pyexpr.__setstate__(state)
 
     def __array_ufunc__(
@@ -959,7 +957,18 @@ class Expr:
         '''
         return function(self, *args, **kwargs)
 
+    @deprecate_renamed_function("not_", version="0.19.2")
     def is_not(self) -> Self:
+        """
+        Negate a boolean expression.
+
+        .. deprecated:: 0.19.2
+            This method has been renamed to :func:`Expr.not_`.
+
+        """
+        return self.not_()
+
+    def not_(self) -> Self:
         """
         Negate a boolean expression.
 
@@ -982,7 +991,7 @@ class Expr:
         │ false ┆ b    │
         │ false ┆ null │
         └───────┴──────┘
-        >>> df.select(pl.col("a").is_not())
+        >>> df.select(pl.col("a").not_())
         shape: (3, 1)
         ┌───────┐
         │ a     │
@@ -995,7 +1004,7 @@ class Expr:
         └───────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.is_not())
+        return self._from_pyexpr(self._pyexpr.not_())
 
     def is_null(self) -> Self:
         """
@@ -1376,28 +1385,29 @@ class Expr:
         """
         Drop all null values.
 
-        Warnings
+        The original order of the remaining elements is preserved.
+
+        See Also
         --------
-        Note that null values are not floating point NaN values!
+        drop_nans
+
+        Notes
+        -----
+        A null value is not the same as a NaN value.
         To drop NaN values, use :func:`drop_nans`.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [8, 9, 10, 11],
-        ...         "b": [None, 4.0, 4.0, float("nan")],
-        ...     }
-        ... )
-        >>> df.select(pl.col("b").drop_nulls())
+        >>> df = pl.DataFrame({"a": [1.0, None, 3.0, float("nan")]})
+        >>> df.select(pl.col("a").drop_nulls())
         shape: (3, 1)
         ┌─────┐
-        │ b   │
+        │ a   │
         │ --- │
         │ f64 │
         ╞═════╡
-        │ 4.0 │
-        │ 4.0 │
+        │ 1.0 │
+        │ 3.0 │
         │ NaN │
         └─────┘
 
@@ -1406,31 +1416,32 @@ class Expr:
 
     def drop_nans(self) -> Self:
         """
-        Drop floating point NaN values.
+        Drop all floating point NaN values.
 
-        Warnings
+        The original order of the remaining elements is preserved.
+
+        See Also
         --------
-        Note that NaN values are not null values!
+        drop_nulls
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
         To drop null values, use :func:`drop_nulls`.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [8, 9, 10, 11],
-        ...         "b": [None, 4.0, 4.0, float("nan")],
-        ...     }
-        ... )
-        >>> df.select(pl.col("b").drop_nans())
+        >>> df = pl.DataFrame({"a": [1.0, None, 3.0, float("nan")]})
+        >>> df.select(pl.col("a").drop_nans())
         shape: (3, 1)
         ┌──────┐
-        │ b    │
+        │ a    │
         │ ---  │
         │ f64  │
         ╞══════╡
+        │ 1.0  │
         │ null │
-        │ 4.0  │
-        │ 4.0  │
+        │ 3.0  │
         └──────┘
 
         """
@@ -3058,7 +3069,7 @@ class Expr:
         Compute expressions over the given groups.
 
         This expression is similar to performing a group by aggregation and joining the
-        result back into the original dataframe.
+        result back into the original DataFrame.
 
         The outcome is similar to how `window functions
         <https://www.postgresql.org/docs/current/tutorial-window.html>`_
@@ -3215,6 +3226,39 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.is_first())
 
+    def is_last(self) -> Self:
+        """
+        Get a mask of the last unique value.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "num": [1, 2, 3, 1, 5],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("num").is_last().alias("is_last"))
+        shape: (5, 2)
+        ┌─────┬─────────┐
+        │ num ┆ is_last │
+        │ --- ┆ ---     │
+        │ i64 ┆ bool    │
+        ╞═════╪═════════╡
+        │ 1   ┆ false   │
+        │ 2   ┆ true    │
+        │ 3   ┆ true    │
+        │ 1   ┆ true    │
+        │ 5   ┆ true    │
+        └─────┴─────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.is_last())
+
     def is_duplicated(self) -> Self:
         """
         Get mask of duplicated values.
@@ -3310,8 +3354,8 @@ class Expr:
         self,
         breaks: Sequence[float],
         labels: Sequence[str] | None = None,
-        left_closed: bool = False,
-        include_breaks: bool = False,
+        left_closed: bool = False,  # noqa: FBT001
+        include_breaks: bool = False,  # noqa: FBT001
     ) -> Self:
         """
         Bin continuous values into discrete categories.
@@ -3391,9 +3435,9 @@ class Expr:
         self,
         quantiles: Sequence[float] | int,
         labels: Sequence[str] | None = None,
-        left_closed: bool = False,
-        allow_duplicates: bool = False,
-        include_breaks: bool = False,
+        left_closed: bool = False,  # noqa: FBT001
+        allow_duplicates: bool = False,  # noqa: FBT001
+        include_breaks: bool = False,  # noqa: FBT001
     ) -> Self:
         """
         Bin continuous values into discrete categories based on their quantiles.
@@ -3561,6 +3605,8 @@ class Expr:
         """
         Filter a single column.
 
+        The original order of the remaining elements is preserved.
+
         Mostly useful in an aggregation context. If you want to filter on a DataFrame
         level, use `LazyFrame.filter`.
 
@@ -3642,12 +3688,12 @@ class Expr:
         agg_list: bool = False,
     ) -> Self:
         """
-        Apply a custom python function to a Series or sequence of Series.
+        Apply a custom python function to a whole Series or sequence of Series.
 
-        The output of this custom function must be a Series.
-        If you want to apply a custom function elementwise over single values, see
-        :func:`apply`. A use case for ``map`` is when you want to transform an
-        expression with a third-party library.
+        The output of this custom function must be a Series. If you want to apply a
+        custom function elementwise over single values, see :func:`map_elements`.
+        A reasonable use case for ``map`` functions is transforming the values
+        represented by an expression using a third-party library.
 
         Read more in `the book
         <https://pola-rs.github.io/polars-book/user-guide/expressions/user-defined-functions>`_.
@@ -3655,11 +3701,16 @@ class Expr:
         Parameters
         ----------
         function
-            Lambda/ function to apply.
+            Lambda/function to apply.
         return_dtype
             Dtype of the output Series.
         agg_list
-            Aggregate list
+            Aggregate list.
+
+        Notes
+        -----
+        If you are looking to map a function over a window function or groupby context,
+        refer to func:`map_elements` instead.
 
         Warnings
         --------
@@ -3669,6 +3720,7 @@ class Expr:
         See Also
         --------
         map_dict
+        map_elements
 
         Examples
         --------
@@ -3705,55 +3757,58 @@ class Expr:
         strategy: MapElementsStrategy = "thread_local",
     ) -> Self:
         """
-        Map a custom/user-defined function (UDF) in a GroupBy or Projection context.
+        Map a custom/user-defined function (UDF) to each element of a column.
 
         .. warning::
             This method is much slower than the native expressions API.
             Only use it if you cannot implement your logic otherwise.
 
-        Depending on the context it has the following behavior:
+        The UDF is applied to each element of a column. Note that, in a GroupBy
+        context, the column will have been pre-aggregated and so each element
+        will itself be a Series. Therefore, depending on the context,
+        requirements for `function` differ:
 
         * Selection
-            Expects `f` to be of type Callable[[Any], Any].
-            Applies a python function over each individual value in the column.
+            Expects `function` to be of type ``Callable[[Any], Any]``.
+            Applies a Python function to each individual value in the column.
         * GroupBy
-            Expects `f` to be of type Callable[[Series], Series].
-            Applies a python function over each group.
+            Expects `function` to be of type ``Callable[[Series], Any]``.
+            For each group, applies a Python function to the slice of the column
+            corresponding to that group.
 
         Parameters
         ----------
         function
-            Lambda/ function to map.
+            Lambda/function to map.
         return_dtype
             Dtype of the output Series.
-            If not set, the dtype will be
-            ``polars.Unknown``.
+            If not set, the dtype will be ``pl.Unknown``.
         skip_nulls
-            Don't map the function over values
-            that contain nulls. This is faster.
+            Don't map the function over values that contain nulls (this is faster).
         pass_name
-            Pass the Series name to the custom function
-            This is more expensive.
+            Pass the Series name to the custom function (this is more expensive).
         strategy : {'thread_local', 'threading'}
-            This functionality is in `alpha` stage. This may be removed
-            /changed without it being considered a breaking change.
+            This functionality is considered experimental and may be removed/changed.
 
             - 'thread_local': run the python function on a single thread.
             - 'threading': run the python function on separate threads. Use with
-                        care as this can slow performance. This might only speed up
-                        your code if the amount of work per element is significant
-                        and the python function releases the GIL (e.g. via calling
-                        a c function)
+              care as this can slow performance. This might only speed up
+              your code if the amount of work per element is significant
+              and the python function releases the GIL (e.g. via calling
+              a c function)
 
         Notes
         -----
-        * Using ``map`` is strongly discouraged as you will be effectively running
-          python "for" loops. This will be very slow. Wherever possible you should
-          strongly prefer the native expression API to achieve the best performance.
+        * Using ``map_elements`` is strongly discouraged as you will be effectively
+          running python "for" loops, which will be very slow. Wherever possible you
+          should prefer the native expression API to achieve the best performance.
 
         * If your function is expensive and you don't want it to be called more than
           once for a given input, consider applying an ``@lru_cache`` decorator to it.
-          With suitable data you may achieve order-of-magnitude speedups (or more).
+          If your data is suitable you may achieve *significant* speedups.
+
+        * Window function application using ``over`` is considered a GroupBy context
+          here, so ``map_elements`` can be used to map functions over window groups.
 
         Warnings
         --------
@@ -3769,7 +3824,7 @@ class Expr:
         ...     }
         ... )
 
-        In a selection context, the function is applied by row.
+        The function is applied to each element of column `'a'`:
 
         >>> df.with_columns(  # doctest: +SKIP
         ...     pl.col("a").map_elements(lambda x: x * 2).alias("a_times_2"),
@@ -3786,17 +3841,36 @@ class Expr:
         │ 1   ┆ c   ┆ 2         │
         └─────┴─────┴───────────┘
 
-        It is better to implement this with an expression:
+        Tip: it is better to implement this with an expression:
 
         >>> df.with_columns(
         ...     (pl.col("a") * 2).alias("a_times_2"),
         ... )  # doctest: +IGNORE_RESULT
 
-        In a GroupBy context the function is applied by group:
+        In a GroupBy context, each element of the column is itself a Series:
 
-        >>> df.lazy().group_by("b", maintain_order=True).agg(
-        ...     pl.col("a").map_elements(lambda x: x.sum())
-        ... ).collect()
+        >>> (
+        ...     df.lazy().group_by("b").agg(pl.col("a")).collect()
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (3, 2)
+        ┌─────┬───────────┐
+        │ b   ┆ a         │
+        │ --- ┆ ---       │
+        │ str ┆ list[i64] │
+        ╞═════╪═══════════╡
+        │ a   ┆ [1]       │
+        │ b   ┆ [2]       │
+        │ c   ┆ [3, 1]    │
+        └─────┴───────────┘
+
+        Therefore, from the user's point-of-view, the function is applied per-group:
+
+        >>> (
+        ...     df.lazy()
+        ...     .group_by("b")
+        ...     .agg(pl.col("a").map_elements(lambda x: x.sum()))
+        ...     .collect()
+        ... )  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬─────┐
         │ b   ┆ a   │
@@ -3808,10 +3882,47 @@ class Expr:
         │ c   ┆ 4   │
         └─────┴─────┘
 
-        It is better to implement this with an expression:
+        Tip: again, it is better to implement this with an expression:
 
-        >>> df.group_by("b", maintain_order=True).agg(
-        ...     pl.col("a").sum(),
+        >>> (
+        ...     df.lazy()
+        ...     .group_by("b", maintain_order=True)
+        ...     .agg(pl.col("a").sum())
+        ...     .collect()
+        ... )  # doctest: +IGNORE_RESULT
+
+        Window function application using ``over`` will behave as a GroupBy
+        context, with your function receiving individual window groups:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "key": ["x", "x", "y", "x", "y", "z"],
+        ...         "val": [1, 1, 1, 1, 1, 1],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     scaled=pl.col("val").map_elements(lambda s: s * len(s)).over("key"),
+        ... ).sort("key")
+        shape: (6, 3)
+        ┌─────┬─────┬────────┐
+        │ key ┆ val ┆ scaled │
+        │ --- ┆ --- ┆ ---    │
+        │ str ┆ i64 ┆ i64    │
+        ╞═════╪═════╪════════╡
+        │ x   ┆ 1   ┆ 3      │
+        │ x   ┆ 1   ┆ 3      │
+        │ x   ┆ 1   ┆ 3      │
+        │ y   ┆ 1   ┆ 2      │
+        │ y   ┆ 1   ┆ 2      │
+        │ z   ┆ 1   ┆ 1      │
+        └─────┴─────┴────────┘
+
+        Note that this function would *also* be better-implemented natively:
+
+        >>> df.with_columns(
+        ...     scaled=(pl.col("val") * pl.col("val").count()).over("key"),
+        ... ).sort(
+        ...     "key"
         ... )  # doctest: +IGNORE_RESULT
 
         """
@@ -5234,6 +5345,10 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
+
+            .. warning::
+                If passed, the column must be sorted in ascending order. Otherwise,
+                results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
@@ -5315,7 +5430,7 @@ class Expr:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
         ... ).with_row_count()
         >>> df_temporal
         shape: (25, 2)
@@ -5521,7 +5636,7 @@ class Expr:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
         ... ).with_row_count()
         >>> df_temporal
         shape: (25, 2)
@@ -5673,6 +5788,10 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
+
+            .. warning::
+                If passed, the column must be sorted in ascending order. Otherwise,
+                results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
@@ -5754,7 +5873,7 @@ class Expr:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
         ... ).with_row_count()
         >>> df_temporal
         shape: (25, 2)
@@ -5987,7 +6106,7 @@ class Expr:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
         ... ).with_row_count()
         >>> df_temporal
         shape: (25, 2)
@@ -6136,6 +6255,10 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
+
+            .. warning::
+                If passed, the column must be sorted in ascending order. Otherwise,
+                results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
@@ -6219,7 +6342,7 @@ class Expr:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
         ... ).with_row_count()
         >>> df_temporal
         shape: (25, 2)
@@ -6368,6 +6491,10 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
+
+            .. warning::
+                If passed, the column must be sorted in ascending order. Otherwise,
+                results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
@@ -6451,7 +6578,7 @@ class Expr:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df_temporal = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, "1h", eager=True)}
+        ...     {"date": pl.datetime_range(start, stop, "1h", eager=True)}
         ... ).with_row_count()
         >>> df_temporal
         shape: (25, 2)
@@ -6605,6 +6732,10 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
+
+            .. warning::
+                If passed, the column must be sorted in ascending order. Otherwise,
+                results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
@@ -6766,6 +6897,10 @@ class Expr:
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype Datetime.
+
+            .. warning::
+                If passed, the column must be sorted in ascending order. Otherwise,
+                results will not be correct.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
@@ -8757,6 +8892,7 @@ class Expr:
             dtype: PolarsDataType | None,
             dtype_if_empty: PolarsDataType | None,
             dtype_keys: PolarsDataType | None,
+            *,
             is_keys: bool,
         ) -> Series:
             """

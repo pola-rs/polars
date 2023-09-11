@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "cloud", feature = "parquet"))]
 use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
 
@@ -178,13 +178,6 @@ pub enum LogicalPlan {
         projection: Option<Arc<Vec<String>>>,
         selection: Option<Expr>,
     },
-    // a projection that doesn't have to be optimized
-    // or may drop projected columns if they aren't in current schema (after optimization)
-    LocalProjection {
-        expr: Vec<Expr>,
-        input: Box<LogicalPlan>,
-        schema: SchemaRef,
-    },
     /// Column selection
     Projection {
         expr: Vec<Expr>,
@@ -257,9 +250,9 @@ pub enum LogicalPlan {
         contexts: Vec<LogicalPlan>,
         schema: SchemaRef,
     },
-    FileSink {
+    Sink {
         input: Box<LogicalPlan>,
-        payload: FileSinkOptions,
+        payload: SinkType,
     },
 }
 

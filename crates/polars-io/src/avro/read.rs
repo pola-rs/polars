@@ -7,7 +7,9 @@ use polars_core::prelude::*;
 use super::{finish_reader, ArrowChunk, ArrowReader, ArrowResult};
 use crate::prelude::*;
 
-/// Read Apache Avro format into a DataFrame
+/// Read [Apache Avro] format into a [`DataFrame`]
+///
+/// [Apache Avro]: https://avro.apache.org
 ///
 /// # Example
 /// ```

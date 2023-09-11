@@ -275,7 +275,7 @@ impl SqlExprVisitor<'_> {
                 } else {
                     s.parse::<i64>().map(AnyValue::Int64).map_err(|_| ())
                 }
-                .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {:?}"))?
+                .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {s:?}"))?
             },
             SqlValue::SingleQuotedString(s)
             | SqlValue::NationalStringLiteral(s)
@@ -322,12 +322,12 @@ impl SqlExprVisitor<'_> {
         };
 
         Ok(match (trim_where, trim_what) {
-            (None | Some(TrimWhereField::Both), None) => expr.str().strip(None),
-            (None | Some(TrimWhereField::Both), Some(val)) => expr.str().strip(Some(val)),
-            (Some(TrimWhereField::Leading), None) => expr.str().lstrip(None),
-            (Some(TrimWhereField::Leading), Some(val)) => expr.str().lstrip(Some(val)),
-            (Some(TrimWhereField::Trailing), None) => expr.str().rstrip(None),
-            (Some(TrimWhereField::Trailing), Some(val)) => expr.str().rstrip(Some(val)),
+            (None | Some(TrimWhereField::Both), None) => expr.str().strip_chars(None),
+            (None | Some(TrimWhereField::Both), Some(val)) => expr.str().strip_chars(Some(val)),
+            (Some(TrimWhereField::Leading), None) => expr.str().strip_chars_start(None),
+            (Some(TrimWhereField::Leading), Some(val)) => expr.str().strip_chars_start(Some(val)),
+            (Some(TrimWhereField::Trailing), None) => expr.str().strip_chars_end(None),
+            (Some(TrimWhereField::Trailing), Some(val)) => expr.str().strip_chars_end(Some(val)),
         })
     }
 

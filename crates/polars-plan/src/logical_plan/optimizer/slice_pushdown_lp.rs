@@ -309,9 +309,6 @@ impl SlicePushDown {
             // here we do not pushdown.
             // we reset the state and then start the optimization again
             m @ (Selection { .. }, _)
-            // let's be conservative. projections may do aggregations and a pushed down slice
-            // will lead to incorrect aggregations
-            | m @ (LocalProjection {..},_)
             // other blocking nodes
             | m @ (DataFrameScan {..}, _)
             | m @ (Sort {..}, _)

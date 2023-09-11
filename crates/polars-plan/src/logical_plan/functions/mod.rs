@@ -1,4 +1,3 @@
-mod drop;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
 #[cfg(feature = "python")]
@@ -59,7 +58,8 @@ pub enum FunctionNode {
         columns: Arc<[Arc<str>]>,
     },
     FastProjection {
-        columns: Arc<[Arc<str>]>,
+        columns: Arc<[SmartString]>,
+        duplicate_check: bool,
     },
     DropNulls {
         subset: Arc<[Arc<str>]>,
@@ -80,9 +80,6 @@ pub enum FunctionNode {
         // A column name gets swapped with an existing column
         swapping: bool,
     },
-    Drop {
-        names: Arc<[SmartString]>,
-    },
     Explode {
         columns: Arc<[Arc<str>]>,
         schema: SchemaRef,
@@ -102,7 +99,16 @@ impl PartialEq for FunctionNode {
     fn eq(&self, other: &Self) -> bool {
         use FunctionNode::*;
         match (self, other) {
-            (FastProjection { columns: l }, FastProjection { columns: r }) => l == r,
+            (
+                FastProjection {
+                    columns: l,
+                    duplicate_check: dl,
+                },
+                FastProjection {
+                    columns: r,
+                    duplicate_check: dr,
+                },
+            ) => l == r && dl == dr,
             (DropNulls { subset: l }, DropNulls { subset: r }) => l == r,
             (Rechunk, Rechunk) => true,
             (
@@ -117,7 +123,6 @@ impl PartialEq for FunctionNode {
                     ..
                 },
             ) => existing_l == existing_r && new_l == new_r,
-            (Drop { names: l }, Drop { names: r }) => l == r,
             (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
             (Melt { args: l, .. }, Melt { args: r, .. }) => l == r,
             (RowCount { name: l, .. }, RowCount { name: r, .. }) => l == r,
@@ -138,8 +143,7 @@ impl FunctionNode {
             | FastProjection { .. }
             | Unnest { .. }
             | Rename { .. }
-            | Explode { .. }
-            | Drop { .. } => true,
+            | Explode { .. } => true,
             Melt { args, .. } => args.streamable,
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
@@ -178,7 +182,7 @@ impl FunctionNode {
                 .map(|schema| Cow::Owned(schema.clone()))
                 .unwrap_or_else(|| Cow::Borrowed(input_schema))),
             Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
-            FastProjection { columns } => {
+            FastProjection { columns, .. } => {
                 let schema = columns
                     .iter()
                     .map(|name| {
@@ -229,7 +233,6 @@ impl FunctionNode {
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
             Rename { existing, new, .. } => rename::rename_schema(input_schema, existing, new),
-            Drop { names } => drop::drop_schema(input_schema, names),
             Explode { schema, .. } | RowCount { schema, .. } | Melt { schema, .. } => {
                 Ok(Cow::Owned(schema.clone()))
             },
@@ -248,8 +251,7 @@ impl FunctionNode {
             | Unnest { .. }
             | Rename { .. }
             | Explode { .. }
-            | Melt { .. }
-            | Drop { .. } => true,
+            | Melt { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
             RowCount { .. } => false,
@@ -269,8 +271,7 @@ impl FunctionNode {
             | Unnest { .. }
             | Rename { .. }
             | Explode { .. }
-            | Melt { .. }
-            | Drop { .. } => true,
+            | Melt { .. } => true,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => true,
             RowCount { .. } => true,
@@ -300,7 +301,16 @@ impl FunctionNode {
                 schema,
                 ..
             } => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
-            FastProjection { columns } => df.select(columns.as_ref()),
+            FastProjection {
+                columns,
+                duplicate_check,
+            } => {
+                if *duplicate_check {
+                    df._select_impl(columns.as_ref())
+                } else {
+                    df._select_impl_unchecked(columns.as_ref())
+                }
+            },
             DropNulls { subset } => df.drop_nulls(Some(subset.as_ref())),
             Rechunk => {
                 df.as_single_chunk_par();
@@ -332,7 +342,6 @@ impl FunctionNode {
                 }
             },
             Rename { existing, new, .. } => rename::rename_impl(df, existing, new),
-            Drop { names } => drop::drop_impl(df, names),
             Explode { columns, .. } => df.explode(columns.as_ref()),
             Melt { args, .. } => {
                 let args = (**args).clone();
@@ -356,7 +365,7 @@ impl Display for FunctionNode {
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
             #[cfg(feature = "python")]
             OpaquePython { .. } => write!(f, "python dataframe udf"),
-            FastProjection { columns } => {
+            FastProjection { columns, .. } => {
                 write!(f, "FAST_PROJECT: ")?;
                 let columns = columns.as_ref();
                 fmt_column_delimited(f, columns, "[", "]")
@@ -385,7 +394,6 @@ impl Display for FunctionNode {
                 }
             },
             Rename { .. } => write!(f, "RENAME"),
-            Drop { .. } => write!(f, "DROP"),
             Explode { .. } => write!(f, "EXPLODE"),
             Melt { .. } => write!(f, "MELT"),
             RowCount { .. } => write!(f, "WITH ROW COUNT"),

@@ -34,11 +34,11 @@ impl SortByExpr {
 
 fn prepare_descending(descending: &[bool], by_len: usize) -> Vec<bool> {
     match (descending.len(), by_len) {
-        // equal length
+        // Equal length.
         (n_rdescending, n) if n_rdescending == n => descending.to_vec(),
-        // none given all false
+        // None given all false.
         (0, n) => vec![false; n],
-        // broadcast first
+        // Broadcast first.
         (_, n) => vec![descending[0]; n],
     }
 }
@@ -91,8 +91,7 @@ impl PhysicalExpr for SortByExpr {
             sorted_idx.len(), series.len()
         );
 
-        // Safety:
-        // sorted index are within bounds
+        // SAFETY: sorted index are within bounds.
         unsafe { series.take_unchecked(&sorted_idx) }
     }
 
@@ -104,11 +103,10 @@ impl PhysicalExpr for SortByExpr {
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;
-        // if the length of the sort_by argument differs
-        // we raise an error
+        // If the length of the sort_by argument differs we raise an error.
         let invalid = AtomicBool::new(false);
 
-        // the groups of the lhs of the expressions do not match the series values
+        // The groups of the lhs of the expressions do not match the series values,
         // we must take the slower path.
         if !matches!(ac_in.update_groups, UpdateGroups::No) {
             polars_ensure!(
@@ -122,7 +120,7 @@ impl PhysicalExpr for SortByExpr {
             let mut s = s.list().unwrap().clone();
 
             let descending = self.descending[0];
-            let mut ca: ListChunked = POOL.install(|| {
+            let ca: ListChunked = POOL.install(|| {
                 s.par_iter_indexed()
                     .zip(sort_by.par_iter_indexed())
                     .map(|(opt_s, s_sort_by)| match (opt_s, s_sort_by) {
@@ -133,7 +131,7 @@ impl PhysicalExpr for SortByExpr {
                             } else {
                                 let idx = s_sort_by.arg_sort(SortOptions {
                                     descending,
-                                    // we are already in par iter.
+                                    // We are already in par iter.
                                     multithreaded: false,
                                     ..Default::default()
                                 });
@@ -144,8 +142,7 @@ impl PhysicalExpr for SortByExpr {
                     })
                     .collect()
             });
-            ca.rename(s.name());
-            let s = ca.into_series();
+            let s = ca.with_name(s.name()).into_series();
             ac_in.with_series(s, true, Some(&self.expr))?;
             Ok(ac_in)
         } else {
@@ -170,8 +167,7 @@ impl PhysicalExpr for SortByExpr {
                         .map(|indicator| {
                             let new_idx = match indicator {
                                 GroupsIndicator::Idx((_, idx)) => {
-                                    // Safety:
-                                    // Group tuples are always in bounds
+                                    // SAFETY: group tuples are always in bounds.
                                     let group = unsafe {
                                         sort_by_s.take_iter_unchecked(
                                             &mut idx.iter().map(|i| *i as usize),
@@ -180,7 +176,7 @@ impl PhysicalExpr for SortByExpr {
 
                                     let sorted_idx = group.arg_sort(SortOptions {
                                         descending: descending[0],
-                                        // we are already in par iter.
+                                        // We are already in par iter.
                                         multithreaded: false,
                                         ..Default::default()
                                     });
@@ -190,7 +186,7 @@ impl PhysicalExpr for SortByExpr {
                                     let group = sort_by_s.slice(first as i64, len as usize);
                                     let sorted_idx = group.arg_sort(SortOptions {
                                         descending: descending[0],
-                                        // we are already in par iter.
+                                        // We are already in par iter.
                                         multithreaded: false,
                                         ..Default::default()
                                     });
@@ -245,8 +241,7 @@ impl PhysicalExpr for SortByExpr {
                         .map(|indicator| {
                             let new_idx = match indicator {
                                 GroupsIndicator::Idx((_first, idx)) => {
-                                    // Safety:
-                                    // Group tuples are always in bounds
+                                    // SAFETY: group tuples are always in bounds.
                                     let groups = sort_by_s
                                         .iter()
                                         .map(|s| unsafe {
@@ -297,9 +292,8 @@ impl PhysicalExpr for SortByExpr {
                 "the expression in `sort_by` argument must result in the same length"
             );
 
-            // if the rhs is already aggregated once,
-            // it is reordered by the group_by operation
-            // we must ensure that we are as well.
+            // If the rhs is already aggregated once, it is reordered by the
+            // group_by operation - we must ensure that we are as well.
             if ordered_by_group_operation {
                 let s = ac_in.aggregated();
                 ac_in.with_series(s.explode().unwrap(), false, None)?;

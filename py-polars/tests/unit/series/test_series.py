@@ -219,6 +219,30 @@ def test_concat() -> None:
     assert s.len() == 3
 
 
+def test_equal() -> None:
+    s1 = pl.Series("a", [1.0, 2.0, None], Float64)
+    s2 = pl.Series("a", [1, 2, None], Int64)
+
+    assert s1.series_equal(s2) is True
+    assert s1.series_equal(s2, strict=True) is False
+    assert s1.series_equal(s2, null_equal=False) is False
+
+    df = pl.DataFrame(
+        {"dtm": [datetime(2222, 2, 22, 22, 22, 22)]},
+        schema_overrides={"dtm": Datetime(time_zone="UTC")},
+    ).with_columns(
+        s3=pl.col("dtm").dt.convert_time_zone("Europe/London"),
+        s4=pl.col("dtm").dt.convert_time_zone("Asia/Tokyo"),
+    )
+    s3 = df["s3"].rename("b")
+    s4 = df["s4"].rename("b")
+
+    assert s3.series_equal(s4) is False
+    assert s3.series_equal(s4, strict=True) is False
+    assert s3.series_equal(s4, null_equal=False) is False
+    assert s3.dt.convert_time_zone("Asia/Tokyo").series_equal(s4) is True
+
+
 def test_to_frame() -> None:
     s1 = pl.Series([1, 2])
     s2 = pl.Series("s", [1, 2])
@@ -264,8 +288,10 @@ def test_bitwise_ops() -> None:
 
 
 def test_bitwise_floats_invert() -> None:
-    a = pl.Series([2.0, 3.0, 0.0])
-    assert ~a == NotImplemented
+    s = pl.Series([2.0, 3.0, 0.0])
+
+    with pytest.raises(pl.SchemaError):
+        ~s
 
 
 def test_equality() -> None:
@@ -285,6 +311,9 @@ def test_equality() -> None:
 
     a = pl.Series("name", ["ham", "foo", "bar"])
     assert_series_equal((a == "ham"), pl.Series("name", [True, False, False]))
+
+    a = pl.Series("name", [[1], [1, 2], [2, 3]])
+    assert_series_equal((a == [1]), pl.Series("name", [True, False, False]))
 
 
 def test_agg() -> None:
@@ -1192,8 +1221,66 @@ def test_apply_list_out() -> None:
 
 
 def test_is_first() -> None:
-    s = pl.Series("", [1, 1, 2])
-    assert s.is_first().to_list() == [True, False, True]
+    # numeric
+    s = pl.Series([1, 1, None, 2, None, 3, 3])
+    assert s.is_first().to_list() == [True, False, True, True, False, True, False]
+    # str
+    s = pl.Series(["x", "x", None, "y", None, "z", "z"])
+    assert s.is_first().to_list() == [True, False, True, True, False, True, False]
+    # boolean
+    s = pl.Series([True, True, None, False, None, False, False])
+    assert s.is_first().to_list() == [True, False, True, True, False, False, False]
+    # struct
+    s = pl.Series(
+        [
+            {"x": 1, "y": 2},
+            {"x": 1, "y": 2},
+            None,
+            {"x": 2, "y": 1},
+            None,
+            {"x": 3, "y": 2},
+            {"x": 3, "y": 2},
+        ]
+    )
+    assert s.is_first().to_list() == [True, False, True, True, False, True, False]
+    # list
+    s = pl.Series([[1, 2], [1, 2], None, [2, 3], None, [3, 4], [3, 4]])
+    assert s.is_first().to_list() == [True, False, True, True, False, True, False]
+
+
+def test_is_last() -> None:
+    # numeric
+    s = pl.Series([1, 1, None, 2, None, 3, 3])
+    assert s.is_last().to_list() == [False, True, False, True, True, False, True]
+    # str
+    s = pl.Series(["x", "x", None, "y", None, "z", "z"])
+    assert s.is_last().to_list() == [False, True, False, True, True, False, True]
+    # boolean
+    s = pl.Series([True, True, None, False, None, False, False])
+    assert s.is_last().to_list() == [False, True, False, False, True, False, True]
+    # struct
+    s = pl.Series(
+        [
+            {"x": 1, "y": 2},
+            {"x": 1, "y": 2},
+            None,
+            {"x": 2, "y": 1},
+            None,
+            {"x": 3, "y": 2},
+            {"x": 3, "y": 2},
+        ]
+    )
+    assert s.is_last().to_list() == [False, True, False, True, True, False, True]
+    # list
+    s = pl.Series([[1, 2], [1, 2], None, [2, 3], None, [3, 4], [3, 4]])
+    assert s.is_last().to_list() == [False, True, False, True, True, False, True]
+
+
+@pytest.mark.parametrize("dtypes", [pl.Int32, pl.Utf8, pl.Boolean, pl.List(pl.Int32)])
+def test_is_first_last_all_null(dtypes: pl.PolarsDataType) -> None:
+    s = pl.Series([None, None, None], dtype=dtypes)
+    assert s.is_first().to_list() == [True, False, False]
+    assert s.is_last().to_list() == [False, False, True]
 
 
 def test_reinterpret() -> None:
@@ -2238,10 +2325,19 @@ def test_product() -> None:
     assert out == 6
     a = pl.Series("a", [1, 2, None])
     out = a.product()
-    assert out is None
+    assert out == 2
     a = pl.Series("a", [None, 2, 3])
     out = a.product()
-    assert out is None
+    assert out == 6
+    a = pl.Series("a", [])
+    out = a.product()
+    assert out == 1
+    a = pl.Series("a", [None, None])
+    out = a.product()
+    assert out == 1
+    a = pl.Series("a", [3.0, None, float("nan")])
+    out = a.product()
+    assert math.isnan(out)
 
 
 def test_ceil() -> None:
@@ -2368,6 +2464,15 @@ def test_set_at_idx() -> None:
     assert s.set_at_idx([0, 1], ["a", "b"]).to_list() == ["a", "b", "z"]
     s = pl.Series([True, False, True])
     assert s.set_at_idx([0, 1], [False, True]).to_list() == [False, True, True]
+
+    # set negative indices
+    a = pl.Series(range(5))
+    a[-2] = None
+    a[-5] = None
+    assert a.to_list() == [None, 1, 2, None, 4]
+
+    with pytest.raises(pl.ComputeError):
+        a[-100] = None
 
 
 def test_repr() -> None:

@@ -6,7 +6,7 @@ import sys
 import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pyarrow as pa
@@ -15,7 +15,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, NoDataError
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.utils.various import normalise_filepath
+from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -39,6 +39,47 @@ def test_quoted_date() -> None:
     result = pl.read_csv(csv.encode(), try_parse_dates=True)
     expected = pl.DataFrame({"a": [date(2022, 1, 1), date(2022, 1, 2)], "b": [1, 2]})
     assert_frame_equal(result, expected)
+
+
+def test_date_pattern_with_datetime_override_10826() -> None:
+    result = pl.read_csv(
+        source=io.StringIO("col\n2023-01-01\n2023-02-01\n2023-03-01"),
+        dtypes={"col": pl.Datetime},
+    )
+    expected = pl.from_repr(
+        """
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ col                 │
+        │ ---                 │
+        │ datetime[μs]        │
+        ╞═════════════════════╡
+        │ 2023-01-01 00:00:00 │
+        │ 2023-02-01 00:00:00 │
+        │ 2023-03-01 00:00:00 │
+        └─────────────────────┘
+        """
+    )
+    assert_frame_equal(result, cast(pl.DataFrame, expected))
+    result = pl.read_csv(
+        source=io.StringIO("col\n2023-01-01T01:02:03\n2023-02-01\n2023-03-01"),
+        dtypes={"col": pl.Datetime},
+    )
+    expected = pl.from_repr(
+        """
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ col                 │
+        │ ---                 │
+        │ datetime[μs]        │
+        ╞═════════════════════╡
+        │ 2023-01-01 01:02:03 │
+        │ 2023-02-01 00:00:00 │
+        │ 2023-03-01 00:00:00 │
+        └─────────────────────┘
+        """
+    )
+    assert_frame_equal(result, cast(pl.DataFrame, expected))
 
 
 def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
@@ -72,11 +113,11 @@ def test_to_from_file(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
-def test_normalise_filepath(io_files_path: Path) -> None:
+def test_normalize_filepath(io_files_path: Path) -> None:
     with pytest.raises(IsADirectoryError):
-        normalise_filepath(io_files_path)
+        normalize_filepath(io_files_path)
 
-    assert normalise_filepath(str(io_files_path), check_not_directory=False) == str(
+    assert normalize_filepath(str(io_files_path), check_not_directory=False) == str(
         io_files_path
     )
 
@@ -1039,7 +1080,7 @@ def test_datetime_format_inferred_precision(
 
 
 def test_inferred_datetime_format_mixed() -> None:
-    ts = pl.date_range(datetime(2000, 1, 1), datetime(2000, 1, 2), eager=True)
+    ts = pl.datetime_range(datetime(2000, 1, 1), datetime(2000, 1, 2), eager=True)
     df = pl.DataFrame({"naive": ts, "aware": ts.dt.replace_time_zone("UTC")})
     result = df.write_csv()
     expected = (

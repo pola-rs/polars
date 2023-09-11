@@ -38,12 +38,13 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
-pyarrow = ["pyarrow>=7.0.0"]
-pandas = ["pyarrow>=7.0.0", "pandas"]
+pyarrow = ["pyarrow >= 7.0.0"]
+pandas = ["pyarrow >= 7.0.0", "pandas"]
 numpy = ["numpy >= 1.16.0"]
 fsspec = ["fsspec"]
 connectorx = ["connectorx"]
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
+openpyxl = ["openpyxl >= 3.0.0"]
 deltalake = ["deltalake >= 0.10.0"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 matplotlib = ["matplotlib"]
@@ -78,12 +79,14 @@ module = [
   "deltalake.*",
   "fsspec.*",
   "matplotlib.*",
+  "moto.server",
   "polars.polars",
   "pyarrow.*",
   "pydantic",
   "sqlalchemy.*",
   "xlsx2csv",
   "xlsxwriter.*",
+  "openpyxl",
   "zoneinfo",
 ]
 ignore_missing_imports = true
@@ -121,6 +124,11 @@ select = [
   "PT", # flake8-pytest-style
   "RUF", # Ruff-specific rules
   "PTH", # flake8-use-pathlib
+  "FA", # flake8-future-annotations
+  "PIE", # flake8-pie
+  "TD", # flake8-todos
+  "TRY", # tryceratops
+  "FBT001", # flake8-boolean-trap
 ]
 
 ignore = [
@@ -148,6 +156,11 @@ ignore = [
   "D105", # Missing docstring in magic method
   "D100", # Missing docstring in public module
   "D104", # Missing docstring in public package
+  # flake8-todos
+  "TD002", # Missing author in TODO
+  "TD003", # Missing issue link on the line following this TODO
+  # tryceratops
+  "TRY003", # Avoid specifying long messages outside the exception class
 ]
 
 [tool.ruff.pycodestyle]
@@ -163,7 +176,7 @@ ban-relative-imports = "all"
 strict = true
 
 [tool.ruff.per-file-ignores]
-"tests/**/*.py" = ["D100", "D103", "B018"]
+"tests/**/*.py" = ["D100", "D103", "B018", "FBT001"]
 
 [tool.pytest.ini_options]
 addopts = [

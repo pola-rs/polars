@@ -80,6 +80,16 @@ impl From<regex::Error> for PolarsError {
     }
 }
 
+#[cfg(feature = "object_store")]
+impl From<object_store::Error> for PolarsError {
+    fn from(err: object_store::Error) -> Self {
+        PolarsError::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("object store error {err:?}"),
+        ))
+    }
+}
+
 pub type PolarsResult<T> = Result<T, PolarsError>;
 
 pub use arrow::error::Error as ArrowError;
@@ -110,14 +120,14 @@ pub fn map_err<E: Error>(error: E) -> PolarsError {
 
 #[macro_export]
 macro_rules! polars_err {
+    ($variant:ident: $fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::__private::must_use(
+            $crate::PolarsError::$variant(format!($fmt, $($arg),*).into())
+        )
+    };
     ($variant:ident: $err:expr $(,)?) => {
         $crate::__private::must_use(
             $crate::PolarsError::$variant($err.into())
-        )
-    };
-    ($variant:ident: $fmt:literal, $($arg:tt)+) => {
-        $crate::__private::must_use(
-            $crate::PolarsError::$variant(format!($fmt, $($arg)+).into())
         )
     };
     (expr = $expr:expr, $variant:ident: $err:expr $(,)?) => {

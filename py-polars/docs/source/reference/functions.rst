@@ -31,6 +31,7 @@ Parallelization
    :toctree: api/
 
    collect_all
+   collect_all_async
 
 Random
 ~~~~~~

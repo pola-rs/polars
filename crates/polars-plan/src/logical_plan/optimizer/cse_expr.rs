@@ -316,14 +316,20 @@ impl ExprIdentifierVisitor<'_> {
             // Don't allow this for now, as we can get `null().cast()` in ternary expressions.
             // TODO! Add a typed null
             AExpr::Literal(LiteralValue::Null) => REFUSE_NO_MEMBER,
-            AExpr::Column(_) | AExpr::Literal(_) | AExpr::Count | AExpr::Alias(_, _) => {
-                REFUSE_ALLOW_MEMBER
+            AExpr::Column(_) | AExpr::Literal(_) | AExpr::Alias(_, _) => REFUSE_ALLOW_MEMBER,
+            AExpr::Count => {
+                if self.is_group_by {
+                    REFUSE_NO_MEMBER
+                } else {
+                    REFUSE_ALLOW_MEMBER
+                }
             },
             #[cfg(feature = "random")]
             AExpr::Function {
                 function: FunctionExpr::Random { .. },
                 ..
             } => REFUSE_NO_MEMBER,
+            AExpr::AnonymousFunction { .. } => REFUSE_NO_MEMBER,
             _ => {
                 // During aggregation we only store elementwise operation in the state
                 // other operations we cannot add to the state as they have the output size of the
@@ -506,7 +512,12 @@ impl RewritingVisitor for CommonSubExprRewriter<'_> {
             return Ok(recurse);
         }
 
-        let (_, count) = self.sub_expr_map.get(id).unwrap();
+        // Because some expressions don't have hash / equality guarantee (e.g. floats)
+        // we can get none here. This must be changed later.
+        let Some((_, count)) = self.sub_expr_map.get(id) else {
+            self.visited_idx += 1;
+            return Ok(RewriteRecursion::NoMutateAndContinue);
+        };
         if *count > 1 {
             self.replaced_identifiers.insert(id.clone());
             // rewrite this sub-expression, don't visit its children

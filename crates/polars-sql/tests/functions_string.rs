@@ -48,35 +48,78 @@ fn test_string_functions() {
             col("a").str().to_uppercase().alias("upper_a_df"),
             col("a").str().to_uppercase().alias("upper_a_df2"),
             col("a").str().to_uppercase().alias("upper_a_df3"),
-            col("a").str().strip(Some("x".into())).alias("trim_a"),
+            col("a").str().strip_chars(Some("x".into())).alias("trim_a"),
             col("a")
                 .str()
-                .lstrip(Some("x".into()))
+                .strip_chars_start(Some("x".into()))
                 .alias("trim_a_leading"),
             col("a")
                 .str()
-                .rstrip(Some("x".into()))
+                .strip_chars_end(Some("x".into()))
                 .alias("trim_a_trailing"),
-            col("a").str().lstrip(None).alias("ltrim_a"),
-            col("a").str().rstrip(None).alias("rtrim_a"),
+            col("a").str().strip_chars_start(None).alias("ltrim_a"),
+            col("a").str().strip_chars_end(None).alias("rtrim_a"),
             col("a")
                 .str()
-                .lstrip(Some("-".into()))
+                .strip_chars_start(Some("-".into()))
                 .alias("ltrim_a_dash"),
             col("a")
                 .str()
-                .rstrip(Some("-".into()))
+                .strip_chars_end(Some("-".into()))
                 .alias("rtrim_a_dash"),
             col("a")
                 .str()
-                .lstrip(Some("xyz".into()))
+                .strip_chars_start(Some("xyz".into()))
                 .alias("ltrim_a_xyz"),
             col("a")
                 .str()
-                .rstrip(Some("xyz".into()))
+                .strip_chars_end(Some("xyz".into()))
                 .alias("rtrim_a_xyz"),
         ])
         .collect()
         .unwrap();
+    assert!(df_sql.frame_equal_missing(&df_pl));
+}
+
+#[test]
+fn array_to_string() {
+    let df = df! {
+        "a" => &["first", "first", "third"],
+        "b" => &[1, 1, 42],
+    }
+    .unwrap();
+    let mut context = SQLContext::new();
+    context.register("df", df.clone().lazy());
+    let sql = context
+        .execute(
+            r#"
+        SELECT
+            b,
+            a
+        FROM df
+        GROUP BY
+            b"#,
+        )
+        .unwrap();
+    context.register("df_1", sql.clone());
+    let sql = r#"
+        SELECT
+            b,
+            array_to_string(a, ', ') as as,
+        FROM df_1
+        ORDER BY
+            b,
+            as"#;
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+
+    let df_pl = df
+        .lazy()
+        .group_by([col("b")])
+        .agg([col("a")])
+        .select(&[col("b"), col("a").list().join(", ").alias("as")])
+        .sort_by_exprs(vec![col("b"), col("as")], vec![false, false], false, true)
+        .collect()
+        .unwrap();
+
     assert!(df_sql.frame_equal_missing(&df_pl));
 }

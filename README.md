@@ -206,6 +206,7 @@ You can also install the dependencies directly.
 | fsspec     | Support for reading from remote file systems                                 |
 | connectorx | Support for reading from SQL databases                                       |
 | xlsx2csv   | Support for reading from Excel files                                         |
+| openpyxl   | Support for reading from Excel files with native types                       |
 | deltalake  | Support for reading from Delta Lake Tables                                   |
 | timezone   | Timezone support, only needed if are on Python<3.9 or you are on Windows     |
 

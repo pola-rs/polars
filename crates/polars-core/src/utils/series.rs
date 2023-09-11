@@ -19,7 +19,7 @@ pub fn _to_physical_and_bit_repr(s: &[Series]) -> Vec<Series> {
         .collect()
 }
 
-/// A utility that allocates an `UnstableSeries`. The applied function can then use that
+/// A utility that allocates an [`UnstableSeries`]. The applied function can then use that
 /// series container to save heap allocations and swap arrow arrays.
 pub fn with_unstable_series<F, T>(dtype: &DataType, f: F) -> T
 where

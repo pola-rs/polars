@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime
+from typing import TYPE_CHECKING
+
 import pytest
 
 import polars as pl
 from polars.interchange.column import PolarsColumn
 from polars.interchange.protocol import ColumnNullType, CopyNotAllowedError, DtypeKind
 from polars.testing import assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.interchange.protocol import Dtype
 
 
 def test_init_global_categorical_zero_copy_fails() -> None:
@@ -222,26 +228,49 @@ def test_get_buffers_chunked_zero_copy_fails() -> None:
         col.get_buffers()
 
 
-def test_get_data_buffer() -> None:
-    s = pl.Series([1, None, 3], dtype=pl.Int16)
-    col = PolarsColumn(s)
+@pytest.mark.parametrize(
+    ("series", "expected_data", "expected_dtype"),
+    [
+        (
+            pl.Series([1, None, 3], dtype=pl.Int16),
+            pl.Series([1, 0, 3], dtype=pl.Int16),
+            (DtypeKind.INT, 16, "s", "="),
+        ),
+        (
+            pl.Series([-1.5, 3.0, None], dtype=pl.Float64),
+            pl.Series([-1.5, 3.0, 0.0], dtype=pl.Float64),
+            (DtypeKind.FLOAT, 64, "g", "="),
+        ),
+        (
+            pl.Series(["a", "bc", None, "éâç"], dtype=pl.Utf8),
+            pl.Series([97, 98, 99, 195, 169, 195, 162, 195, 167], dtype=pl.UInt8),
+            (DtypeKind.STRING, 8, "U", "="),
+        ),
+        (
+            pl.Series(
+                [datetime(1988, 1, 2), None, datetime(2022, 12, 3)], dtype=pl.Datetime
+            ),
+            pl.Series([568080000000000, 0, 1670025600000000], dtype=pl.Int64),
+            (DtypeKind.DATETIME, 64, "tsu:", "="),
+        ),
+        (
+            pl.Series(["a", "b", None, "a"], dtype=pl.Categorical),
+            pl.Series([0, 1, 0, 0], dtype=pl.UInt32),
+            (DtypeKind.UINT, 32, "I", "="),
+        ),
+    ],
+)
+def test_get_data_buffer(
+    series: pl.Series,
+    expected_data: pl.Series,
+    expected_dtype: Dtype,
+) -> None:
+    col = PolarsColumn(series)
 
     result_buffer, result_dtype = col._get_data_buffer()
 
-    expected = pl.Series([1, 0, 3], dtype=pl.Int16)
-    assert_series_equal(result_buffer._data, expected)
-    assert result_dtype == (DtypeKind.INT, 16, "s", "=")
-
-
-def test_get_data_buffer_categorical() -> None:
-    s = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-    col = PolarsColumn(s)
-
-    result_buffer, result_dtype = col._get_data_buffer()
-
-    expected = pl.Series([0, 1, 0], dtype=pl.UInt32)
-    assert_series_equal(result_buffer._data, expected)
-    assert result_dtype == (DtypeKind.UINT, 32, "I", "=")
+    assert_series_equal(result_buffer._data, expected_data)
+    assert result_dtype == expected_dtype
 
 
 def test_get_validity_buffer() -> None:

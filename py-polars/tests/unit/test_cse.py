@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_cse_rename_cross_join_5405() -> None:
@@ -357,4 +358,64 @@ def test_cse_quantile_10815() -> None:
         "b_3": [0.6145786693120769],
         "a_1": [0.16650805109739197],
         "b_1": [0.2012768694081981],
+    }
+
+
+def test_cse_nan_10824() -> None:
+    v = pl.col("a") / pl.col("b")
+    magic = pl.when(v > 0).then(pl.lit(float("nan"))).otherwise(v)
+    assert (
+        str(
+            (
+                pl.DataFrame(
+                    {
+                        "a": [1.0],
+                        "b": [1.0],
+                    }
+                )
+                .lazy()
+                .select(magic)
+                .collect(comm_subexpr_elim=True)
+            ).to_dict(False)
+        )
+        == "{'literal': [nan]}"
+    )
+
+
+def test_cse_10901() -> None:
+    df = pl.DataFrame(data=range(6), schema={"a": pl.Int64})
+    a = pl.col("a").rolling_sum(window_size=2)
+    b = pl.col("a").rolling_sum(window_size=3)
+    exprs = {
+        "ax1": a,
+        "ax2": a * 2,
+        "bx1": b,
+        "bx2": b * 2,
+    }
+
+    expected = pl.DataFrame(
+        {
+            "a": [0, 1, 2, 3, 4, 5],
+            "ax1": [None, 1, 3, 5, 7, 9],
+            "ax2": [None, 2, 6, 10, 14, 18],
+            "bx1": [None, None, 3, 6, 9, 12],
+            "bx2": [None, None, 6, 12, 18, 24],
+        }
+    )
+
+    assert_frame_equal(df.lazy().with_columns(**exprs).collect(), expected)
+
+
+def test_cse_count_in_group_by() -> None:
+    q = (
+        pl.LazyFrame({"a": [1, 1, 2], "b": [1, 2, 3], "c": [40, 51, 12]})
+        .group_by("a")
+        .agg(pl.all().slice(0, pl.count() - 1))
+    )
+
+    assert "POLARS_CSER" not in q.explain()
+    assert q.collect().sort("a").to_dict(False) == {
+        "a": [1, 2],
+        "b": [[1], []],
+        "c": [[40], []],
     }

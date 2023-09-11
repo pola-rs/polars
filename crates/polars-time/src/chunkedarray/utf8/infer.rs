@@ -232,25 +232,29 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
     fn try_from_with_unit(value: Pattern, time_unit: Option<TimeUnit>) -> PolarsResult<Self> {
         let time_unit = time_unit.expect("time_unit must be provided for datetime");
         match (value, time_unit) {
-            (Pattern::DatetimeDMY, TimeUnit::Milliseconds) => Ok(DatetimeInfer {
-                pattern: Pattern::DatetimeDMY,
-                patterns: patterns::DATETIME_D_M_Y,
-                latest_fmt: patterns::DATETIME_D_M_Y[0],
-                transform: transform_datetime_ms,
-                transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
-                logical_type: DataType::Datetime(TimeUnit::Milliseconds, None),
-            }),
-            (Pattern::DatetimeDMY, TimeUnit::Microseconds) => Ok(DatetimeInfer {
-                pattern: Pattern::DatetimeDMY,
-                patterns: patterns::DATETIME_D_M_Y,
-                latest_fmt: patterns::DATETIME_D_M_Y[0],
-                transform: transform_datetime_us,
-                transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
-                logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
-            }),
-            (Pattern::DatetimeDMY, TimeUnit::Nanoseconds) => Ok(DatetimeInfer {
+            (Pattern::DatetimeDMY | Pattern::DateDMY, TimeUnit::Milliseconds) => {
+                Ok(DatetimeInfer {
+                    pattern: Pattern::DatetimeDMY,
+                    patterns: patterns::DATETIME_D_M_Y,
+                    latest_fmt: patterns::DATETIME_D_M_Y[0],
+                    transform: transform_datetime_ms,
+                    transform_bytes: StrpTimeState::default(),
+                    fmt_len: 0,
+                    logical_type: DataType::Datetime(TimeUnit::Milliseconds, None),
+                })
+            },
+            (Pattern::DatetimeDMY | Pattern::DateDMY, TimeUnit::Microseconds) => {
+                Ok(DatetimeInfer {
+                    pattern: Pattern::DatetimeDMY,
+                    patterns: patterns::DATETIME_D_M_Y,
+                    latest_fmt: patterns::DATETIME_D_M_Y[0],
+                    transform: transform_datetime_us,
+                    transform_bytes: StrpTimeState::default(),
+                    fmt_len: 0,
+                    logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
+                })
+            },
+            (Pattern::DatetimeDMY | Pattern::DateDMY, TimeUnit::Nanoseconds) => Ok(DatetimeInfer {
                 pattern: Pattern::DatetimeDMY,
                 patterns: patterns::DATETIME_D_M_Y,
                 latest_fmt: patterns::DATETIME_D_M_Y[0],
@@ -259,25 +263,29 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
                 fmt_len: 0,
                 logical_type: DataType::Datetime(TimeUnit::Nanoseconds, None),
             }),
-            (Pattern::DatetimeYMD, TimeUnit::Milliseconds) => Ok(DatetimeInfer {
-                pattern: Pattern::DatetimeYMD,
-                patterns: patterns::DATETIME_Y_M_D,
-                latest_fmt: patterns::DATETIME_Y_M_D[0],
-                transform: transform_datetime_ms,
-                transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
-                logical_type: DataType::Datetime(TimeUnit::Milliseconds, None),
-            }),
-            (Pattern::DatetimeYMD, TimeUnit::Microseconds) => Ok(DatetimeInfer {
-                pattern: Pattern::DatetimeYMD,
-                patterns: patterns::DATETIME_Y_M_D,
-                latest_fmt: patterns::DATETIME_Y_M_D[0],
-                transform: transform_datetime_us,
-                transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
-                logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
-            }),
-            (Pattern::DatetimeYMD, TimeUnit::Nanoseconds) => Ok(DatetimeInfer {
+            (Pattern::DatetimeYMD | Pattern::DateYMD, TimeUnit::Milliseconds) => {
+                Ok(DatetimeInfer {
+                    pattern: Pattern::DatetimeYMD,
+                    patterns: patterns::DATETIME_Y_M_D,
+                    latest_fmt: patterns::DATETIME_Y_M_D[0],
+                    transform: transform_datetime_ms,
+                    transform_bytes: StrpTimeState::default(),
+                    fmt_len: 0,
+                    logical_type: DataType::Datetime(TimeUnit::Milliseconds, None),
+                })
+            },
+            (Pattern::DatetimeYMD | Pattern::DateYMD, TimeUnit::Microseconds) => {
+                Ok(DatetimeInfer {
+                    pattern: Pattern::DatetimeYMD,
+                    patterns: patterns::DATETIME_Y_M_D,
+                    latest_fmt: patterns::DATETIME_Y_M_D[0],
+                    transform: transform_datetime_us,
+                    transform_bytes: StrpTimeState::default(),
+                    fmt_len: 0,
+                    logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
+                })
+            },
+            (Pattern::DatetimeYMD | Pattern::DateYMD, TimeUnit::Nanoseconds) => Ok(DatetimeInfer {
                 pattern: Pattern::DatetimeYMD,
                 patterns: patterns::DATETIME_Y_M_D,
                 latest_fmt: patterns::DATETIME_Y_M_D[0],
@@ -313,7 +321,6 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
                 fmt_len: 0,
                 logical_type: DataType::Datetime(TimeUnit::Nanoseconds, None),
             }),
-            _ => polars_bail!(ComputeError: "could not convert pattern"),
         }
     }
 }
@@ -380,12 +387,11 @@ where
                 .map(|opt_val| opt_val.and_then(|val| self.parse(val)));
             PrimitiveArray::from_trusted_len_iter(iter)
         });
-        let mut out = ChunkedArray::from_chunk_iter(ca.name(), chunks)
+        ChunkedArray::from_chunk_iter(ca.name(), chunks)
             .into_series()
             .cast(&self.logical_type)
-            .unwrap();
-        out.rename(ca.name());
-        out
+            .unwrap()
+            .with_name(ca.name())
     }
 }
 

@@ -61,7 +61,7 @@ impl PhysicalExpr for AggregationExpr {
                             let out = rename_series(agg_s, &keep_name);
                             return Ok(AggregationContext::new(out, Cow::Borrowed(groups), true))
                         } else {
-                            polars_bail!(ComputeError: "cannot aggregate as {}, the column is already aggregated");
+                            polars_bail!(ComputeError: "cannot aggregate as {}, the column is already aggregated", self.agg_type);
                         }
                     },
                     _ => ()

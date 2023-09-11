@@ -26,7 +26,7 @@ pub enum StringFunction {
         literal: bool,
         strict: bool,
     },
-    CountMatch(String),
+    CountMatches,
     EndsWith,
     Explode,
     Extract {
@@ -49,7 +49,6 @@ pub enum StringFunction {
         fillchar: char,
     },
     Lowercase,
-    LStrip(Option<String>),
     #[cfg(feature = "extract_jsonpath")]
     JsonExtract {
         dtype: Option<DataType>,
@@ -67,10 +66,13 @@ pub enum StringFunction {
         width: usize,
         fillchar: char,
     },
-    RStrip(Option<String>),
     Slice(i64, Option<u64>),
     StartsWith,
-    Strip(Option<String>),
+    StripChars(Option<String>),
+    StripCharsStart(Option<String>),
+    StripCharsEnd(Option<String>),
+    StripPrefix(String),
+    StripSuffix(String),
     #[cfg(feature = "temporal")]
     Strptime(DataType, StrptimeOptions),
     #[cfg(feature = "dtype-decimal")]
@@ -90,7 +92,7 @@ impl StringFunction {
             ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_same_dtype(),
             #[cfg(feature = "regex")]
             Contains { .. } => mapper.with_dtype(DataType::Boolean),
-            CountMatch(_) => mapper.with_dtype(DataType::UInt32),
+            CountMatches => mapper.with_dtype(DataType::UInt32),
             EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
             Explode => mapper.with_same_dtype(),
             Extract { .. } => mapper.with_same_dtype(),
@@ -111,9 +113,14 @@ impl StringFunction {
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
-            Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) | Slice(_, _) => {
-                mapper.with_same_dtype()
-            },
+            Uppercase
+            | Lowercase
+            | StripChars(_)
+            | StripCharsStart(_)
+            | StripCharsEnd(_)
+            | StripPrefix(_)
+            | StripSuffix(_)
+            | Slice(_, _) => mapper.with_same_dtype(),
             #[cfg(feature = "string_justify")]
             Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
         }
@@ -125,7 +132,7 @@ impl Display for StringFunction {
         let s = match self {
             #[cfg(feature = "regex")]
             StringFunction::Contains { .. } => "contains",
-            StringFunction::CountMatch(_) => "count_match",
+            StringFunction::CountMatches => "count_matches",
             StringFunction::EndsWith { .. } => "ends_with",
             StringFunction::Extract { .. } => "extract",
             #[cfg(feature = "concat_str")]
@@ -142,18 +149,20 @@ impl Display for StringFunction {
             StringFunction::JsonExtract { .. } => "json_extract",
             #[cfg(feature = "string_justify")]
             StringFunction::LJust { .. } => "str.ljust",
-            StringFunction::LStrip(_) => "lstrip",
             StringFunction::Length => "str_lengths",
             StringFunction::Lowercase => "lowercase",
             StringFunction::NChars => "n_chars",
             #[cfg(feature = "string_justify")]
             StringFunction::RJust { .. } => "rjust",
-            StringFunction::RStrip(_) => "rstrip",
             #[cfg(feature = "regex")]
             StringFunction::Replace { .. } => "replace",
             StringFunction::Slice(_, _) => "str_slice",
             StringFunction::StartsWith { .. } => "starts_with",
-            StringFunction::Strip(_) => "strip",
+            StringFunction::StripChars(_) => "strip_chars",
+            StringFunction::StripCharsStart(_) => "strip_chars_start",
+            StringFunction::StripCharsEnd(_) => "strip_chars_end",
+            StringFunction::StripPrefix(_) => "strip_prefix",
+            StringFunction::StripSuffix(_) => "strip_suffix",
             #[cfg(feature = "temporal")]
             StringFunction::Strptime(_, _) => "strptime",
             #[cfg(feature = "nightly")]
@@ -325,7 +334,7 @@ pub(super) fn rjust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Se
     Ok(ca.rjust(width, fillchar).into_series())
 }
 
-pub(super) fn strip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
+pub(super) fn strip_chars(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     if let Some(matches) = matches {
         if matches.chars().count() == 1 {
@@ -343,7 +352,7 @@ pub(super) fn strip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     }
 }
 
-pub(super) fn lstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
+pub(super) fn strip_chars_start(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
 
     if let Some(matches) = matches {
@@ -366,7 +375,7 @@ pub(super) fn lstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> 
     }
 }
 
-pub(super) fn rstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
+pub(super) fn strip_chars_end(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     if let Some(matches) = matches {
         if matches.chars().count() == 1 {
@@ -388,6 +397,20 @@ pub(super) fn rstrip(s: &Series, matches: Option<&str>) -> PolarsResult<Series> 
     }
 }
 
+pub(super) fn strip_prefix(s: &Series, prefix: &str) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    Ok(ca
+        .apply_values(|s| Cow::Borrowed(s.strip_prefix(prefix).unwrap_or(s)))
+        .into_series())
+}
+
+pub(super) fn strip_suffix(s: &Series, suffix: &str) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    Ok(ca
+        .apply_values(|s| Cow::Borrowed(s.strip_suffix(suffix).unwrap_or(s)))
+        .into_series())
+}
+
 pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
     let s = &args[0];
     let pat = &args[1];
@@ -396,20 +419,35 @@ pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {
     let pat = pat.utf8()?;
 
     if pat.len() == 1 {
-        let pat = pat
-            .get(0)
-            .ok_or_else(|| polars_err!(ComputeError: "expected a pattern, got null"))?;
-        ca.extract_all(pat).map(|ca| ca.into_series())
+        if let Some(pat) = pat.get(0) {
+            ca.extract_all(pat).map(|ca| ca.into_series())
+        } else {
+            Ok(Series::full_null(
+                ca.name(),
+                ca.len(),
+                &DataType::List(Box::new(DataType::Utf8)),
+            ))
+        }
     } else {
         ca.extract_all_many(pat).map(|ca| ca.into_series())
     }
 }
 
-pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
-    let pat = pat.to_string();
+pub(super) fn count_matches(args: &[Series]) -> PolarsResult<Series> {
+    let s = &args[0];
+    let pat = &args[1];
 
     let ca = s.utf8()?;
-    ca.count_match(&pat).map(|ca| ca.into_series())
+    let pat = pat.utf8()?;
+    if pat.len() == 1 {
+        if let Some(pat) = pat.get(0) {
+            ca.count_matches(pat).map(|ca| ca.into_series())
+        } else {
+            Ok(Series::full_null(ca.name(), ca.len(), &DataType::UInt32))
+        }
+    } else {
+        ca.count_matches_many(pat).map(|ca| ca.into_series())
+    }
 }
 
 #[cfg(feature = "temporal")]

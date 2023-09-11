@@ -41,17 +41,6 @@ impl<'a> ALogicalPlanBuilder<'a> {
         ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
     }
 
-    pub fn project_local(self, exprs: Vec<Node>) -> Self {
-        let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
-        let schema = aexprs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);
-        let lp = ALogicalPlan::LocalProjection {
-            expr: exprs,
-            input: self.root,
-            schema: Arc::new(schema),
-        };
-        self.add_alp(lp)
-    }
-
     pub fn project(self, exprs: Vec<Node>, options: ProjectionOptions) -> Self {
         let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
         let schema = aexprs_to_schema(&exprs, &input_schema, Context::Default, self.expr_arena);

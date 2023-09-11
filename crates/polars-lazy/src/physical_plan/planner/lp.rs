@@ -150,9 +150,16 @@ pub fn create_physical_plan(
     match logical_plan {
         #[cfg(feature = "python")]
         PythonScan { options, .. } => Ok(Box::new(executors::PythonScanExec { options })),
-        FileSink { .. } => panic!(
-            "sink_parquet not yet supported in standard engine. Use 'collect().write_parquet()'"
-        ),
+        Sink { payload, .. } => {
+            match payload {
+                SinkType::Memory => panic!("Memory Sink not supported in the standard engine."),
+                SinkType::File{file_type, ..} => panic!(
+                    "sink_{file_type:?} not yet supported in standard engine. Use 'collect().write_parquet()'"
+                ),
+                #[cfg(feature = "cloud")]
+                SinkType::Cloud{..} => panic!("Cloud Sink not supported in standard engine.")
+            }
+        }
         Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()
@@ -267,34 +274,6 @@ pub fn create_physical_plan(
                 #[cfg(test)]
                 schema: _schema,
                 options,
-            }))
-        },
-        LocalProjection {
-            expr,
-            input,
-            schema: _schema,
-            ..
-        } => {
-            let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-
-            let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            let mut state = ExpressionConversionState::new(POOL.current_num_threads() > expr.len());
-            let phys_expr = create_physical_expressions(
-                &expr,
-                Context::Default,
-                expr_arena,
-                Some(&input_schema),
-                &mut state,
-            )?;
-            Ok(Box::new(executors::ProjectionExec {
-                input,
-                cse_exprs: vec![],
-                expr: phys_expr,
-                has_windows: state.has_windows,
-                input_schema,
-                #[cfg(test)]
-                schema: _schema,
-                options: Default::default(),
             }))
         },
         DataFrameScan {

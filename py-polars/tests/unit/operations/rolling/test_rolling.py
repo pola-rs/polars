@@ -148,7 +148,7 @@ def test_rolling_negative_offset(
 ) -> None:
     df = pl.DataFrame(
         {
-            "ts": pl.date_range(
+            "ts": pl.datetime_range(
                 datetime(2021, 1, 1), datetime(2021, 1, 4), "1d", eager=True
             ),
             "value": [1, 2, 3, 4],
@@ -159,7 +159,7 @@ def test_rolling_negative_offset(
     )
     expected = pl.DataFrame(
         {
-            "ts": pl.date_range(
+            "ts": pl.datetime_range(
                 datetime(2021, 1, 1), datetime(2021, 1, 4), "1d", eager=True
             ),
             "value": expected_values,
@@ -210,7 +210,7 @@ def test_rolling_skew() -> None:
 def test_rolling_crossing_dst(
     time_zone: str | None, rolling_fn: str, expected_values: list[int | None | float]
 ) -> None:
-    ts = pl.date_range(
+    ts = pl.datetime_range(
         datetime(2021, 11, 5), datetime(2021, 11, 10), "1d", time_zone="UTC", eager=True
     ).dt.replace_time_zone(time_zone)
     df = pl.DataFrame({"ts": ts, "value": [1, 2, 3, 4, 5, 6]})
@@ -518,7 +518,7 @@ def test_dynamic_group_by_timezone_awareness(
 ) -> None:
     df = pl.DataFrame(
         (
-            pl.date_range(
+            pl.datetime_range(
                 datetime(2020, 1, 1),
                 datetime(2020, 1, 10),
                 timedelta(days=1),
@@ -548,7 +548,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
     # start by datapoint
     start = datetime(2022, 12, 16, tzinfo=tzinfo)
     stop = datetime(2022, 12, 16, hour=3, tzinfo=tzinfo)
-    df = pl.DataFrame({"date": pl.date_range(start, stop, "30m", eager=True)})
+    df = pl.DataFrame({"date": pl.datetime_range(start, stop, "30m", eager=True)})
 
     assert df.group_by_dynamic(
         "date",
@@ -589,7 +589,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
     stop = datetime(2022, 1, 12, 7, tzinfo=tzinfo)
 
     df = pl.DataFrame(
-        {"date": pl.date_range(start, stop, "12h", eager=True)}
+        {"date": pl.datetime_range(start, stop, "12h", eager=True)}
     ).with_columns(pl.col("date").dt.weekday().alias("day"))
 
     result = df.group_by_dynamic(

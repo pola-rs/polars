@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.series.utils import expr_dispatch
+from polars.utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     from polars import Expr, Series
@@ -645,8 +646,8 @@ class StringNameSpace:
             <https://docs.rs/regex/latest/regex/>`_.
         group_index
             Index of the targeted capture group.
-            Group 0 mean the whole pattern, first group begin at index 1
-            Default to the first capture group
+            Group 0 means the whole pattern, the first group begin at index 1.
+            Defaults to the first capture group.
 
         Returns
         -------
@@ -704,8 +705,7 @@ class StringNameSpace:
         Extract all matches for the given regex pattern.
 
         Extract each successive non-overlapping regex match in an individual string
-        as a list. Extracted matches contain ``null`` if the original value is null
-        or the regex did not capture anything.
+        as a list. If the haystack string is ``null``, ``null`` is returned.
 
         Parameters
         ----------
@@ -757,13 +757,15 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t"])
+        >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t", "bar", None])
         >>> s.str.extract_all(r"\d+")
-        shape: (2,)
+        shape: (4,)
         Series: 'foo' [list[str]]
         [
             ["123", "45"]
             ["678", "910"]
+            []
+            null
         ]
 
         '''
@@ -824,7 +826,7 @@ class StringNameSpace:
 
         """
 
-    def count_match(self, pattern: str) -> Series:
+    def count_matches(self, pattern: str | Series) -> Series:
         r"""
         Count all successive non-overlapping regex matches.
 
@@ -832,24 +834,27 @@ class StringNameSpace:
         ----------
         pattern
             A valid regular expression pattern, compatible with the `regex crate
-            <https://docs.rs/regex/latest/regex/>`_.
+            <https://docs.rs/regex/latest/regex/>`_. Can also be a :class:`Series` of
+            regular expressions.
 
         Returns
         -------
         Series
-            Series of data type :class:`UInt32`. Contains null values if the original
-            value is null or if the regex captures nothing.
+            Series of data type :class:`UInt32`. Returns null if the original
+            value is null.
 
         Examples
         --------
-        >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t"])
+        >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t", "bar", None])
         >>> # count digits
-        >>> s.str.count_match(r"\d")
-        shape: (2,)
+        >>> s.str.count_matches(r"\d")
+        shape: (4,)
         Series: 'foo' [u32]
         [
             5
             6
+            0
+            null
         ]
 
         """
@@ -1083,7 +1088,7 @@ class StringNameSpace:
 
         """
 
-    def strip(self, characters: str | None = None) -> Series:
+    def strip_chars(self, characters: str | None = None) -> Series:
         r"""
         Remove leading and trailing characters.
 
@@ -1097,7 +1102,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series([" hello ", "\tworld"])
-        >>> s.str.strip()
+        >>> s.str.strip_chars()
         shape: (2,)
         Series: '' [str]
         [
@@ -1109,7 +1114,7 @@ class StringNameSpace:
         will not be stripped automatically when doing so, unless that whitespace is
         also included in the string.
 
-        >>> s.str.strip("o ")
+        >>> s.str.strip_chars("o ")
         shape: (2,)
         Series: '' [str]
         [
@@ -1119,7 +1124,7 @@ class StringNameSpace:
 
         """
 
-    def lstrip(self, characters: str | None = None) -> Series:
+    def strip_chars_start(self, characters: str | None = None) -> Series:
         r"""
         Remove leading characters.
 
@@ -1133,7 +1138,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series([" hello ", "\tworld"])
-        >>> s.str.lstrip()
+        >>> s.str.strip_chars_start()
         shape: (2,)
         Series: '' [str]
         [
@@ -1144,7 +1149,7 @@ class StringNameSpace:
         Characters can be stripped by passing a string as argument. Note that whitespace
         will not be stripped automatically when doing so.
 
-        >>> s.str.lstrip("wod\t")
+        >>> s.str.strip_chars_start("wod\t")
         shape: (2,)
         Series: '' [str]
         [
@@ -1154,7 +1159,7 @@ class StringNameSpace:
 
         """
 
-    def rstrip(self, characters: str | None = None) -> Series:
+    def strip_chars_end(self, characters: str | None = None) -> Series:
         r"""
         Remove trailing characters.
 
@@ -1168,7 +1173,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series([" hello ", "world\t"])
-        >>> s.str.rstrip()
+        >>> s.str.strip_chars_end()
         shape: (2,)
         Series: '' [str]
         [
@@ -1179,7 +1184,7 @@ class StringNameSpace:
         Characters can be stripped by passing a string as argument. Note that whitespace
         will not be stripped automatically when doing so.
 
-        >>> s.str.rstrip("orld\t")
+        >>> s.str.strip_chars_end("orld\t")
         shape: (2,)
         Series: '' [str]
         [
@@ -1187,6 +1192,57 @@ class StringNameSpace:
             "w"
         ]
 
+        """
+
+    def strip_prefix(self, prefix: str) -> Series:
+        """
+        Remove prefix.
+
+        The prefix will be removed from the string exactly once, if found.
+
+        Parameters
+        ----------
+        prefix
+            The prefix to be removed.
+
+        Examples
+        --------
+        >>> s = pl.Series(["foobar", "foofoobar", "foo", "bar"])
+        >>> s.str.strip_prefix("foo")
+        shape: (4,)
+        Series: '' [str]
+        [
+                "bar"
+                "foobar"
+                ""
+                "bar"
+        ]
+
+        """
+
+    def strip_suffix(self, suffix: str) -> Series:
+        """
+        Remove suffix.
+
+        The suffix will be removed from the string exactly once, if found.
+
+        Parameters
+        ----------
+        suffix
+            The suffix to be removed.
+
+        Examples
+        --------
+        >>> s = pl.Series(["foobar", "foobarbar", "foo", "bar"])
+        >>> s.str.strip_suffix("bar")
+        shape: (4,)
+        Series: '' [str]
+        [
+                "foo"
+                "foobar"
+                "foo"
+                ""
+        ]
         """
 
     def zfill(self, alignment: int) -> Series:
@@ -1430,5 +1486,79 @@ class StringNameSpace:
                 51966
                 null
         ]
+
+        """
+
+    @deprecate_renamed_function("strip_chars", version="0.19.3")
+    def strip(self, characters: str | None = None) -> Series:
+        """
+        Remove leading and trailing characters.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`strip_chars`.
+
+        Parameters
+        ----------
+        characters
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
+
+        """
+
+    @deprecate_renamed_function("strip_chars_start", version="0.19.3")
+    def lstrip(self, characters: str | None = None) -> Series:
+        """
+        Remove leading characters.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`strip_chars_start`.
+
+        Parameters
+        ----------
+        characters
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
+
+        """
+
+    @deprecate_renamed_function("strip_chars_end", version="0.19.3")
+    def rstrip(self, characters: str | None = None) -> Series:
+        """
+        Remove trailing characters.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`Series.strip_chars_end`.
+
+        Parameters
+        ----------
+        characters
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
+
+        """
+
+    @deprecate_renamed_function("count_matches", version="0.19.3")
+    def count_match(self, pattern: str | Series) -> Series:
+        """
+        Count all successive non-overlapping regex matches.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`count_matches`.
+
+        Parameters
+        ----------
+        pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_. Can also be a :class:`Series` of
+            regular expressions.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`UInt32`. Returns null if the original
+            value is null.
 
         """

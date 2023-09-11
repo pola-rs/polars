@@ -14,7 +14,7 @@ pub enum ListFunction {
     #[cfg(feature = "list_take")]
     Take(bool),
     #[cfg(feature = "list_count")]
-    CountMatch,
+    CountMatches,
     Sum,
     #[cfg(feature = "list_sets")]
     SetOperation(SetOperation),
@@ -37,7 +37,7 @@ impl Display for ListFunction {
             #[cfg(feature = "list_take")]
             Take(_) => "take",
             #[cfg(feature = "list_count")]
-            CountMatch => "count",
+            CountMatches => "count",
             Sum => "sum",
             #[cfg(feature = "list_sets")]
             SetOperation(s) => return write!(f, "{s}"),
@@ -95,14 +95,17 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
             let length_ca = length_s.cast(&DataType::Int64)?;
             let length_ca = length_ca.i64().unwrap();
 
-            list_ca
-                .amortized_iter()
-                .zip(length_ca)
-                .map(|(opt_s, opt_length)| match (opt_s, opt_length) {
-                    (Some(s), Some(length)) => Some(s.as_ref().slice(offset, length as usize)),
-                    _ => None,
-                })
-                .collect_trusted()
+            // SAFETY: unstable series never lives longer than the iterator.
+            unsafe {
+                list_ca
+                    .amortized_iter()
+                    .zip(length_ca)
+                    .map(|(opt_s, opt_length)| match (opt_s, opt_length) {
+                        (Some(s), Some(length)) => Some(s.as_ref().slice(offset, length as usize)),
+                        _ => None,
+                    })
+                    .collect_trusted()
+            }
         },
         (offset_len, 1) => {
             check_slice_arg_shape(offset_len, list_ca.len(), "offset")?;
@@ -113,14 +116,17 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
                 .unwrap_or(usize::MAX);
             let offset_ca = offset_s.cast(&DataType::Int64)?;
             let offset_ca = offset_ca.i64().unwrap();
-            list_ca
-                .amortized_iter()
-                .zip(offset_ca)
-                .map(|(opt_s, opt_offset)| match (opt_s, opt_offset) {
-                    (Some(s), Some(offset)) => Some(s.as_ref().slice(offset, length_slice)),
-                    _ => None,
-                })
-                .collect_trusted()
+            // SAFETY: unstable series never lives longer than the iterator.
+            unsafe {
+                list_ca
+                    .amortized_iter()
+                    .zip(offset_ca)
+                    .map(|(opt_s, opt_offset)| match (opt_s, opt_offset) {
+                        (Some(s), Some(offset)) => Some(s.as_ref().slice(offset, length_slice)),
+                        _ => None,
+                    })
+                    .collect_trusted()
+            }
         },
         _ => {
             check_slice_arg_shape(offset_s.len(), list_ca.len(), "offset")?;
@@ -132,19 +138,22 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
             let length_ca = length_s.cast(&DataType::Int64)?;
             let length_ca = length_ca.i64().unwrap();
 
-            list_ca
-                .amortized_iter()
-                .zip(offset_ca)
-                .zip(length_ca)
-                .map(
-                    |((opt_s, opt_offset), opt_length)| match (opt_s, opt_offset, opt_length) {
-                        (Some(s), Some(offset), Some(length)) => {
-                            Some(s.as_ref().slice(offset, length as usize))
-                        },
-                        _ => None,
-                    },
-                )
-                .collect_trusted()
+            // SAFETY: unstable series never lives longer than the iterator.
+            unsafe {
+                list_ca
+                    .amortized_iter()
+                    .zip(offset_ca)
+                    .zip(length_ca)
+                    .map(|((opt_s, opt_offset), opt_length)| {
+                        match (opt_s, opt_offset, opt_length) {
+                            (Some(s), Some(offset), Some(length)) => {
+                                Some(s.as_ref().slice(offset, length as usize))
+                            },
+                            _ => None,
+                        }
+                    })
+                    .collect_trusted()
+            }
         },
     };
     out.rename(s.name());
@@ -238,7 +247,7 @@ pub(super) fn take(args: &[Series], null_on_oob: bool) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "list_count")]
-pub(super) fn count_match(args: &[Series]) -> PolarsResult<Series> {
+pub(super) fn count_matches(args: &[Series]) -> PolarsResult<Series> {
     let s = &args[0];
     let element = &args[1];
     polars_ensure!(
@@ -247,7 +256,7 @@ pub(super) fn count_match(args: &[Series]) -> PolarsResult<Series> {
         element.len()
     );
     let ca = s.list()?;
-    list_count_match(ca, element.get(0).unwrap())
+    list_count_matches(ca, element.get(0).unwrap())
 }
 
 pub(super) fn sum(s: &Series) -> PolarsResult<Series> {

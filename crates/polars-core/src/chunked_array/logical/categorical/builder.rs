@@ -92,7 +92,7 @@ impl RevMapping {
         !self.is_global()
     }
 
-    /// Get the categories in this RevMapping
+    /// Get the categories in this [`RevMapping`]
     pub fn get_categories(&self) -> &Utf8Array<i64> {
         match self {
             Self::Global(_, a, _) => a,
@@ -105,7 +105,9 @@ impl RevMapping {
         self.get_categories().len()
     }
 
-    /// Categorical to str
+    /// [`Categorical`] to [`str`]
+    ///
+    /// [`Categorical`]: crate::datatypes::DataType::Categorical
     pub fn get(&self, idx: u32) -> &str {
         match self {
             Self::Global(map, a, _) => {
@@ -126,7 +128,9 @@ impl RevMapping {
         }
     }
 
-    /// Categorical to str
+    /// [`Categorical`] to [`str`]
+    ///
+    /// [`Categorical`]: crate::datatypes::DataType::Categorical
     ///
     /// # Safety
     /// This doesn't do any bound checking
@@ -150,7 +154,10 @@ impl RevMapping {
         }
     }
 
-    /// str to Categorical
+    /// [`str`] to [`Categorical`]
+    ///
+    ///
+    /// [`Categorical`]: crate::datatypes::DataType::Categorical
     pub fn find(&self, value: &str) -> Option<u32> {
         match self {
             Self::Global(rev_map, a, id) => {
@@ -270,7 +277,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
     }
 
     /// `store_hashes` is not needed by the local builder, only for the global builder under contention
-    /// The hashes have the same order as the `Utf8Array` values.
+    /// The hashes have the same order as the [`Utf8Array`] values.
     fn build_local_map<I>(&mut self, i: I, store_hashes: bool) -> Vec<u64>
     where
         I: IntoIterator<Item = Option<&'a str>>,
@@ -297,7 +304,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
         std::mem::take(&mut self.hashes)
     }
 
-    /// Build a global string cached `CategoricalChunked` from a local `Dictionary`.
+    /// Build a global string cached [`CategoricalChunked`] from a local [`Dictionary`].
     pub(super) fn global_map_from_local(&mut self, keys: &UInt32Array, values: Utf8Array<i64>) {
         // locally we don't need a hashmap because we all categories are 1 integer apart
         // so the index is local, and the values is global
@@ -352,7 +359,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
-        // first build the values: `Utf8Array`
+        // first build the values: [`Utf8Array`]
         // we can use a local hashmap for that
         // `hashes.len()` is equal to to the number of unique values.
         let hashes = self.build_local_map(i, true);

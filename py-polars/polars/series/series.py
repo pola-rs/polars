@@ -35,7 +35,6 @@ from polars.datatypes import (
     Datetime,
     Decimal,
     Duration,
-    Float32,
     Float64,
     Int8,
     Int16,
@@ -287,7 +286,9 @@ class Series:
                 nan_to_null=nan_to_null,
             )
         elif _check_for_numpy(values) and isinstance(values, np.ndarray):
-            self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
+            self._s = numpy_to_pyseries(
+                name, values, strict=strict, nan_to_null=nan_to_null
+            )
             if values.dtype.type == np.datetime64:
                 # cast to appropriate dtype, handling NaT values
                 dtype = _resolve_datetime_dtype(dtype, values.dtype)
@@ -317,8 +318,8 @@ class Series:
                 name,
                 values,
                 dtype=dtype,
-                strict=strict,
                 dtype_if_empty=dtype_if_empty,
+                strict=strict,
             )
         else:
             raise TypeError(
@@ -335,7 +336,7 @@ class Series:
     @classmethod
     def _from_arrow(cls, name: str, values: pa.Array, *, rechunk: bool = True) -> Self:
         """Construct a Series from an Arrow Array."""
-        return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk))
+        return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk=rechunk))
 
     @classmethod
     def _from_pandas(
@@ -423,11 +424,11 @@ class Series:
             " To check if a Series contains any values, use `is_empty()`."
         )
 
-    def __getstate__(self) -> Any:
+    def __getstate__(self) -> bytes:
         return self._s.__getstate__()
 
-    def __setstate__(self, state: Any) -> None:
-        self._s = sequence_to_pyseries("", [], Float32)
+    def __setstate__(self, state: bytes) -> None:
+        self._s = Series()._s  # Initialize with a dummy
         self._s.__setstate__(state)
 
     def __str__(self) -> str:
@@ -470,7 +471,7 @@ class Series:
             other = Series([other])
         return other ^ self
 
-    def _comp(self, other: Any, op: ComparisonOperator) -> Self:
+    def _comp(self, other: Any, op: ComparisonOperator) -> Series:
         # special edge-case; boolean broadcast series (eq/neq) is its own result
         if self.dtype == Boolean and isinstance(other, bool) and op in ("eq", "neq"):
             if (other is True and op == "eq") or (other is False and op == "neq"):
@@ -514,10 +515,10 @@ class Series:
         ...
 
     @overload
-    def __eq__(self, other: Any) -> Self:
+    def __eq__(self, other: Any) -> Series:
         ...
 
-    def __eq__(self, other: Any) -> Self | Expr:
+    def __eq__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
@@ -527,10 +528,10 @@ class Series:
         ...
 
     @overload
-    def __ne__(self, other: Any) -> Self:
+    def __ne__(self, other: Any) -> Series:
         ...
 
-    def __ne__(self, other: Any) -> Self | Expr:
+    def __ne__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__ne__(other)
         return self._comp(other, "neq")
@@ -540,10 +541,10 @@ class Series:
         ...
 
     @overload
-    def __gt__(self, other: Any) -> Self:
+    def __gt__(self, other: Any) -> Series:
         ...
 
-    def __gt__(self, other: Any) -> Self | Expr:
+    def __gt__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__gt__(other)
         return self._comp(other, "gt")
@@ -553,10 +554,10 @@ class Series:
         ...
 
     @overload
-    def __lt__(self, other: Any) -> Self:
+    def __lt__(self, other: Any) -> Series:
         ...
 
-    def __lt__(self, other: Any) -> Self | Expr:
+    def __lt__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__lt__(other)
         return self._comp(other, "lt")
@@ -566,10 +567,10 @@ class Series:
         ...
 
     @overload
-    def __ge__(self, other: Any) -> Self:
+    def __ge__(self, other: Any) -> Series:
         ...
 
-    def __ge__(self, other: Any) -> Self | Expr:
+    def __ge__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__ge__(other)
         return self._comp(other, "gt_eq")
@@ -579,10 +580,10 @@ class Series:
         ...
 
     @overload
-    def __le__(self, other: Any) -> Self:
+    def __le__(self, other: Any) -> Series:
         ...
 
-    def __le__(self, other: Any) -> Self | Expr:
+    def __le__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self).__le__(other)
         return self._comp(other, "lt_eq")
@@ -804,10 +805,8 @@ class Series:
             other = F.lit(other)
         return self.to_frame().select(F.col(self.name) // other).to_series()
 
-    def __invert__(self) -> Self:
-        if self.dtype == Boolean:
-            return self._from_pyseries(self._s._not())
-        return NotImplemented
+    def __invert__(self) -> Series:
+        return self.not_()
 
     @overload
     def __mul__(self, other: Expr) -> Expr:  # type: ignore[misc]
@@ -925,7 +924,7 @@ class Series:
         return self.clone()
 
     def __contains__(self, item: Any) -> bool:
-        # TODO! optimize via `is_in` and `SORTED` flags
+        # TODO: optimize via `is_in` and `SORTED` flags
         try:
             return (self == item).any()
         except ValueError:
@@ -937,7 +936,7 @@ class Series:
             #  a faster way to return nested/List series; sequential 'get_idx' calls
             #  make this path a lot slower (~10x) than it needs to be.
             get_idx = self._s.get_idx
-            for idx in range(0, self.len()):
+            for idx in range(self.len()):
                 yield get_idx(idx)
         else:
             buffer_size = 25_000
@@ -1085,7 +1084,7 @@ class Series:
                 self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s
             else:
                 s = self._from_pyseries(
-                    PySeries.new_u32("", np.array(key, np.uint32), True)
+                    PySeries.new_u32("", np.array(key, np.uint32), _strict=True)
                 )
                 self.__setitem__(s, value)
         elif isinstance(key, (list, tuple)):
@@ -1401,11 +1400,59 @@ class Series:
         """
         Drop all null values.
 
-        Creates a new Series that copies data from this Series without null values.
+        The original order of the remaining elements is preserved.
+
+        See Also
+        --------
+        drop_nans
+
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To drop NaN values, use :func:`drop_nans`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1.0, None, 3.0, float("nan")])
+        >>> s.drop_nulls()
+        shape: (3,)
+        Series: '' [f64]
+        [
+                1.0
+                3.0
+                NaN
+        ]
+
         """
 
     def drop_nans(self) -> Series:
-        """Drop NaN values."""
+        """
+        Drop all floating point NaN values.
+
+        The original order of the remaining elements is preserved.
+
+        See Also
+        --------
+        drop_nulls
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To drop null values, use :func:`drop_nulls`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1.0, None, 3.0, float("nan")])
+        >>> s.drop_nans()
+        shape: (3,)
+        Series: '' [f64]
+        [
+                1.0
+                null
+                3.0
+        ]
+
+        """
 
     def to_frame(self, name: str | None = None) -> DataFrame:
         """
@@ -2750,7 +2797,7 @@ class Series:
             if str(exc) == "Already mutably borrowed":
                 self._s.append(other._s.clone())
             else:
-                raise exc
+                raise
         return self
 
     def extend(self, other: Series) -> Self:
@@ -2814,12 +2861,14 @@ class Series:
             if str(exc) == "Already mutably borrowed":
                 self._s.extend(other._s.clone())
             else:
-                raise exc
+                raise
         return self
 
     def filter(self, predicate: Series | list[bool]) -> Self:
         """
         Filter elements by a boolean mask.
+
+        The original order of the remaining elements is preserved.
 
         Parameters
         ----------
@@ -3269,6 +3318,29 @@ class Series:
         """
         return self._s.is_sorted(descending)
 
+    def not_(self) -> Series:
+        """
+        Negate a boolean Series.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [True, False, False])
+        >>> s.not_()
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+            false
+            true
+            true
+        ]
+
+        """
+
     def is_null(self) -> Series:
         """
         Returns a boolean Series indicating which values are null.
@@ -3520,6 +3592,16 @@ class Series:
         -------
         Series
             Series of data type :class:`Boolean`.
+
+        """
+
+    def is_last(self) -> Series:
+        """
+        Get a mask of the last unique value.
+
+        Returns
+        -------
+        Boolean Series
 
         """
 
@@ -4878,7 +4960,7 @@ class Series:
         -----
         If your function is expensive and you don't want it to be called more than
         once for a given input, consider applying an ``@lru_cache`` decorator to it.
-        With suitable data you may achieve order-of-magnitude speedups (or more).
+        If your data is suitable you may achieve *significant* speedups.
 
         Examples
         --------

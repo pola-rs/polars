@@ -116,7 +116,7 @@ def test_dataset_foo(df: pl.DataFrame, tmp_path: Path) -> None:
         .select(["bools", "floats", "date"])
         .collect(),
     )
-    # todo! remove string cache
+    # TODO: remove string cache
     with pl.StringCache():
         helper_dataset_test(
             file_path,

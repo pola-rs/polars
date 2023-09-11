@@ -21,11 +21,10 @@ impl LogicalPlan {
             AnonymousScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             Selection { input, .. } => input.schema(),
             Projection { schema, .. } => Ok(Cow::Borrowed(schema)),
-            LocalProjection { schema, .. } => Ok(Cow::Borrowed(schema)),
             Aggregate { schema, .. } => Ok(Cow::Borrowed(schema)),
             Join { schema, .. } => Ok(Cow::Borrowed(schema)),
             HStack { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Distinct { input, .. } | FileSink { input, .. } => input.schema(),
+            Distinct { input, .. } | Sink { input, .. } => input.schema(),
             Slice { input, .. } => input.schema(),
             MapFunction {
                 input, function, ..

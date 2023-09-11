@@ -4,11 +4,11 @@ use std::cell::UnsafeCell;
 
 /// [`UnsafeCell`], but [`Sync`].
 ///
-/// This is just an `UnsafeCell`, except it implements `Sync`
-/// if `T` implements `Sync`.
+/// This is just an [`UnsafeCell`], except it implements [`Sync`]
+/// if `T` implements [`Sync`].
 ///
-/// `UnsafeCell` doesn't implement `Sync`, to prevent accidental misuse.
-/// You can use `SyncUnsafeCell` instead of `UnsafeCell` to allow it to be
+/// [`UnsafeCell`] doesn't implement [`Sync`], to prevent accidental misuse.
+/// You can use [`SyncUnsafeCell`] instead of [`UnsafeCell`] to allow it to be
 /// shared between threads, if that's intentional.
 /// Providing proper synchronization is still the task of the user,
 /// making this type just as unsafe to use.
@@ -22,7 +22,7 @@ pub struct SyncUnsafeCell<T: ?Sized> {
 unsafe impl<T: ?Sized + Sync> Sync for SyncUnsafeCell<T> {}
 
 impl<T> SyncUnsafeCell<T> {
-    /// Constructs a new instance of `SyncUnsafeCell` which will wrap the specified value.
+    /// Constructs a new instance of [`SyncUnsafeCell`] which will wrap the specified value.
     #[inline]
     pub fn new(value: T) -> Self {
         Self {
@@ -51,7 +51,7 @@ impl<T: ?Sized> SyncUnsafeCell<T> {
 
     /// Returns a mutable reference to the underlying data.
     ///
-    /// This call borrows the `SyncUnsafeCell` mutably (at compile-time) which
+    /// This call borrows the [`SyncUnsafeCell`] mutably (at compile-time) which
     /// guarantees that we possess the only reference.
     #[inline]
     pub fn get_mut(&mut self) -> &mut T {
@@ -78,7 +78,7 @@ impl<T: Default> Default for SyncUnsafeCell<T> {
 }
 
 impl<T> From<T> for SyncUnsafeCell<T> {
-    /// Creates a new `SyncUnsafeCell<T>` containing the given value.
+    /// Creates a new [`SyncUnsafeCell<T>`] containing the given value.
     fn from(t: T) -> SyncUnsafeCell<T> {
         SyncUnsafeCell::new(t)
     }

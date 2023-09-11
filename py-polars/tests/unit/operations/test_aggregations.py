@@ -1,6 +1,7 @@
-import math
+from __future__ import annotations
+
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -46,13 +47,13 @@ def test_boolean_aggs() -> None:
 def test_duration_aggs() -> None:
     df = pl.DataFrame(
         {
-            "time1": pl.date_range(
+            "time1": pl.datetime_range(
                 start=datetime(2022, 12, 12),
                 end=datetime(2022, 12, 18),
                 interval="1d",
                 eager=True,
             ),
-            "time2": pl.date_range(
+            "time2": pl.datetime_range(
                 start=datetime(2023, 1, 12),
                 end=datetime(2023, 1, 18),
                 interval="1d",
@@ -100,7 +101,7 @@ def test_median() -> None:
 
 def test_single_element_std() -> None:
     s = pl.Series([1])
-    assert math.isnan(s.std(ddof=1))  # type: ignore[arg-type]
+    assert s.std(ddof=1) is None
     assert s.std(ddof=0) == 0.0
 
 
@@ -116,7 +117,7 @@ def test_quantile() -> None:
 @pytest.mark.parametrize("n", [1, 2, 10, 100])
 def test_quantile_vs_numpy(tp: type, n: int) -> None:
     a: np.ndarray[Any, Any] = np.random.randint(0, 50, n).astype(tp)
-    np_result: Optional[npt.ArrayLike] = np.median(a)
+    np_result: npt.ArrayLike | None = np.median(a)
     # nan check
     if np_result != np_result:
         np_result = None

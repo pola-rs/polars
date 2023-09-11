@@ -450,8 +450,13 @@ def test_list_tail_underflow_9087() -> None:
 
 def test_list_count_match_boolean_nulls_9141() -> None:
     a = pl.DataFrame({"a": [[True, None, False]]})
+    assert a.select(pl.col("a").list.count_matches(True))["a"].to_list() == [1]
 
-    assert a.select(pl.col("a").list.count_match(True))["a"].to_list() == [1]
+
+def test_list_count_matches_boolean_nulls_9141() -> None:
+    a = pl.DataFrame({"a": [[True, None, False]]})
+
+    assert a.select(pl.col("a").list.count_matches(True))["a"].to_list() == [1]
 
 
 def test_list_set_operations() -> None:

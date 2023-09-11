@@ -1550,6 +1550,7 @@ dependencies = [
  "polars-core",
  "polars-json",
  "polars-utils",
+ "regex",
  "serde",
  "serde_json",
  "smartstring",
@@ -1648,6 +1649,7 @@ name = "polars-utils"
 version = "0.32.0"
 dependencies = [
  "ahash",
+ "bytemuck",
  "hashbrown 0.14.0",
  "num-traits",
  "once_cell",
@@ -1675,7 +1677,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.19.0"
+version = "0.19.2"
 dependencies = [
  "ahash",
  "built",
@@ -1693,6 +1695,7 @@ dependencies = [
  "polars-core",
  "polars-error",
  "polars-lazy",
+ "polars-ops",
  "pyo3",
  "pyo3-built",
  "serde_json",

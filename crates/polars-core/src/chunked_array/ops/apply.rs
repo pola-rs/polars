@@ -17,14 +17,12 @@ use crate::utils::CustomIterTools;
 impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
-    Self: HasUnderlyingArray,
 {
     pub fn apply_values_generic<'a, U, K, F>(&'a self, op: F) -> ChunkedArray<U>
     where
         U: PolarsDataType,
-        F: FnMut(<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>) -> K + Copy,
-        K: ArrayFromElementIter,
-        K::ArrayType: StaticallyMatchesPolarsType<U>,
+        F: FnMut(T::Physical<'a>) -> K + Copy,
+        K: ArrayFromElementIter<ArrayType = U::Array>,
     {
         let iter = self.downcast_iter().map(|arr| {
             let element_iter = arr.values_iter().map(op);
@@ -38,10 +36,8 @@ where
     pub fn try_apply_values_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
     where
         U: PolarsDataType,
-        F: FnMut(<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>) -> Result<K, E>
-            + Copy,
-        K: ArrayFromElementIter,
-        K::ArrayType: StaticallyMatchesPolarsType<U>,
+        F: FnMut(T::Physical<'a>) -> Result<K, E> + Copy,
+        K: ArrayFromElementIter<ArrayType = U::Array>,
         E: Error,
     {
         let iter = self.downcast_iter().map(|arr| {
@@ -56,12 +52,8 @@ where
     pub fn try_apply_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
     where
         U: PolarsDataType,
-        F: FnMut(
-                Option<<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
-            ) -> Result<Option<K>, E>
-            + Copy,
-        K: ArrayFromElementIter,
-        K::ArrayType: StaticallyMatchesPolarsType<U>,
+        F: FnMut(Option<T::Physical<'a>>) -> Result<Option<K>, E> + Copy,
+        K: ArrayFromElementIter<ArrayType = U::Array>,
         E: Error,
     {
         let iter = self.downcast_iter().map(|arr| {
@@ -73,22 +65,25 @@ where
         ChunkedArray::try_from_chunk_iter(self.name(), iter)
     }
 
-    pub fn apply_generic<'a, U, K, F>(&'a self, op: F) -> ChunkedArray<U>
+    pub fn apply_generic<'a, U, K, F>(&'a self, mut op: F) -> ChunkedArray<U>
     where
         U: PolarsDataType,
-        F: FnMut(
-                Option<<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
-            ) -> Option<K>
-            + Copy,
-        K: ArrayFromElementIter,
-        K::ArrayType: StaticallyMatchesPolarsType<U>,
+        F: FnMut(Option<T::Physical<'a>>) -> Option<K>,
+        K: ArrayFromElementIter<ArrayType = U::Array>,
     {
-        let iter = self.downcast_iter().map(|arr| {
-            let element_iter = arr.iter().map(op);
-            K::array_from_iter(element_iter)
-        });
-
-        ChunkedArray::from_chunk_iter(self.name(), iter)
+        if self.null_count() == 0 {
+            let iter = self.downcast_iter().map(|arr| {
+                let element_iter = arr.values_iter().map(|x| op(Some(x)));
+                K::array_from_iter(element_iter)
+            });
+            ChunkedArray::from_chunk_iter(self.name(), iter)
+        } else {
+            let iter = self.downcast_iter().map(|arr| {
+                let element_iter = arr.iter().map(&mut op);
+                K::array_from_iter(element_iter)
+            });
+            ChunkedArray::from_chunk_iter(self.name(), iter)
+        }
     }
 }
 

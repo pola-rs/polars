@@ -57,6 +57,7 @@ from polars.datatypes import (
     is_polars_dtype,
 )
 from polars.type_aliases import PolarsDataType
+from polars.utils.deprecation import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
     import sys
@@ -281,6 +282,7 @@ if os.environ.get("POLARS_ACTIVATE_DECIMAL") == "1":
 
 
 def _get_strategy_dtypes(
+    *,
     base_type: bool = False,
     excluding: tuple[PolarsDataType] | PolarsDataType | None = None,
 ) -> list[PolarsDataType]:
@@ -313,13 +315,14 @@ def _flexhash(elem: Any) -> int:
     return hash(elem)
 
 
+@deprecate_nonkeyword_arguments(allowed_args=["inner_dtype"], version="0.19.3")
 def create_list_strategy(
     inner_dtype: PolarsDataType | None,
     select_from: Sequence[Any] | None = None,
     size: int | None = None,
     min_size: int | None = None,
     max_size: int | None = None,
-    unique: bool = False,
+    unique: bool = False,  # noqa: FBT001
 ) -> SearchStrategy[list[Any]]:
     """
     Hypothesis strategy for producing polars List data.
