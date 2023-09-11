@@ -597,7 +597,7 @@ macro_rules! impl_chunk_expand {
 
 impl<T: PolarsNumericType> ChunkExpandAtIndex<T> for ChunkedArray<T>
 where
-    ChunkedArray<T>: ChunkFull<T::Native> + TakeRandom<Item = T::Native>,
+    ChunkedArray<T>: ChunkFull<T::Native>,
 {
     fn new_from_index(&self, index: usize, length: usize) -> ChunkedArray<T> {
         let mut out = impl_chunk_expand!(self, length, index);

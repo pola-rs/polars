@@ -27,10 +27,10 @@ pub(super) fn update_sorted_flag_before_append<'a, T>(
                 let borrow = std::mem::transmute::<&ChunkedArray<T>, &'a ChunkedArray<T>>(ca);
                 // ensure we don't access with `len() - 1` this will have O(n^2) complexity
                 // if we append many chunks that are sorted
-                borrow.last_foo()
+                borrow.last()
             }
         };
-        let start = unsafe { other.get_unchecked_foo(0) };
+        let start = unsafe { other.get_unchecked(0) };
 
         (start, end)
     };

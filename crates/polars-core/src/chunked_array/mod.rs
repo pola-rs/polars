@@ -376,7 +376,7 @@ where
     T: PolarsDataType,
 {
     #[inline]
-    pub fn get_foo(&self, idx: usize) -> Option<T::Physical<'_>> {
+    pub fn get(&self, idx: usize) -> Option<T::Physical<'_>> {
         let (chunk_idx, arr_idx) = self.index_to_chunked_index(idx);
         let arr = self.downcast_get(chunk_idx)?;
 
@@ -388,7 +388,7 @@ where
     /// # Safety
     /// It is the callers responsibility that the `idx < self.len()`.
     #[inline]
-    pub unsafe fn get_unchecked_foo(&self, idx: usize) -> Option<T::Physical<'_>> {
+    pub unsafe fn get_unchecked(&self, idx: usize) -> Option<T::Physical<'_>> {
         let (chunk_idx, arr_idx) = self.index_to_chunked_index(idx);
 
         unsafe {
@@ -399,7 +399,7 @@ where
     }
 
     #[inline]
-    pub fn last_foo(&self) -> Option<T::Physical<'_>> {
+    pub fn last(&self) -> Option<T::Physical<'_>> {
         unsafe {
             let arr = self.downcast_get_unchecked(self.chunks.len().checked_sub(1)?);
             arr.get_unchecked(arr.len().checked_sub(1)?)
@@ -413,7 +413,7 @@ impl ListChunked {
         unsafe {
             Some(Series::from_chunks_and_dtype_unchecked(
                 self.name(),
-                vec![self.get_foo(idx)?],
+                vec![self.get(idx)?],
                 &self.inner_dtype().to_physical(),
             ))
         }
@@ -426,7 +426,7 @@ impl ArrayChunked {
         unsafe {
             Some(Series::from_chunks_and_dtype_unchecked(
                 self.name(),
-                vec![self.get_foo(idx)?],
+                vec![self.get(idx)?],
                 &self.inner_dtype().to_physical(),
             ))
         }
