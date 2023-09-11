@@ -325,6 +325,29 @@ def test_json_extract_lazy_expr() -> None:
     assert_frame_equal(ldf, expected)
 
 
+def test_json_extract_primitive_to_list_11053() -> None:
+    df = pl.DataFrame(
+        {
+            "json": [
+                '{"col1": ["123"], "col2": "123"}',
+                '{"col1": ["xyz"], "col2": null}',
+            ]
+        }
+    )
+    schema = pl.Struct(
+        {
+            "col1": pl.List(pl.Utf8),
+            "col2": pl.List(pl.Utf8),
+        }
+    )
+
+    output = df.select(
+        pl.col("json").str.json_extract(schema).alias("casted_json")
+    ).unnest("casted_json")
+    expected = pl.DataFrame({"col1": [["123"], ["xyz"]], "col2": [["123"], None]})
+    assert_frame_equal(output, expected)
+
+
 def test_jsonpath_single() -> None:
     s = pl.Series(['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}'])
     expected = pl.Series(["1", None, "2", "2.1", "true"])
