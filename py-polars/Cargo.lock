@@ -99,7 +99,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.17.4"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=ba6a882bc1542b0b899774b696ebea77482b5c31#ba6a882bc1542b0b899774b696ebea77482b5c31"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=7c93e358fc400bf3c0c0219c22eefc6b38fc2d12#7c93e358fc400bf3c0c0219c22eefc6b38fc2d12"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -116,6 +116,7 @@ dependencies = [
  "futures",
  "getrandom",
  "hash_hasher",
+ "hashbrown 0.14.0",
  "lexical-core",
  "lz4",
  "multiversion",
