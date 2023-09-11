@@ -2116,9 +2116,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arg_min())
 
-    def search_sorted(
-        self, element: Expr | int | float | Series, side: SearchSortedSide = "any"
-    ) -> Self:
+    def search_sorted(self, element: IntoExpr, side: SearchSortedSide = "any") -> Self:
         """
         Find indices where elements should be inserted to maintain order.
 

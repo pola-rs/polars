@@ -1,5 +1,5 @@
 import re
-from datetime import date
+from datetime import date, datetime
 from tempfile import NamedTemporaryFile
 from typing import Any
 
@@ -418,4 +418,47 @@ def test_cse_count_in_group_by() -> None:
         "a": [1, 2],
         "b": [[1], []],
         "c": [[40], []],
+    }
+
+
+def test_no_cse_in_with_context() -> None:
+    df1 = pl.DataFrame(
+        {
+            "timestamp": [
+                datetime(2023, 1, 1, 0, 0),
+                datetime(2023, 5, 1, 0, 0),
+                datetime(2023, 10, 1, 0, 0),
+            ],
+            "value": [2, 5, 9],
+        }
+    )
+    df2 = pl.DataFrame(
+        {
+            "date_start": [
+                datetime(2022, 12, 31, 0, 0),
+                datetime(2023, 1, 2, 0, 0),
+            ],
+            "date_end": [
+                datetime(2023, 4, 30, 0, 0),
+                datetime(2023, 5, 5, 0, 0),
+            ],
+            "label": [0, 1],
+        }
+    )
+
+    assert (
+        df1.lazy()
+        .with_context(df2.lazy())
+        .select(
+            pl.col("date_start", "label").take(
+                pl.col("date_start").search_sorted("timestamp") - 1
+            ),
+        )
+    ).collect().to_dict(False) == {
+        "date_start": [
+            datetime(2022, 12, 31, 0, 0),
+            datetime(2023, 1, 2, 0, 0),
+            datetime(2023, 1, 2, 0, 0),
+        ],
+        "label": [0, 1, 1],
     }

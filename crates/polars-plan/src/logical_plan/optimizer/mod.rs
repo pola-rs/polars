@@ -9,6 +9,7 @@ mod cse;
 mod delay_rechunk;
 mod drop_nulls;
 
+mod collect_members;
 #[cfg(feature = "cse")]
 mod cse_expr;
 mod fast_projection;
@@ -43,6 +44,7 @@ pub use crate::frame::{AllowedOptimizations, OptState};
 use crate::logical_plan::optimizer::cse_expr::CommonSubExprOptimizer;
 #[cfg(feature = "cse")]
 use crate::logical_plan::visitor::*;
+use crate::prelude::optimizer::collect_members::MemberCollector;
 
 pub trait Optimize {
     fn optimize(&self, logical_plan: LogicalPlan) -> PolarsResult<LogicalPlan>;
@@ -91,6 +93,12 @@ pub fn optimize(
 
     let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
 
+    // Collect members for optimizations that need it.
+    let mut members = MemberCollector::new();
+    if !eager && (comm_subexpr_elim || projection_pushdown) {
+        members.collect(lp_top, lp_arena)
+    }
+
     #[cfg(feature = "cse")]
     let cse_changed = if comm_subplan_elim {
         let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
@@ -116,7 +124,7 @@ pub fn optimize(
         let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
 
-        if projection_pushdown_opt.has_joins_or_unions && projection_pushdown_opt.has_cache {
+        if members.has_joins_or_unions && members.has_cache {
             cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_changed);
         }
     }
@@ -196,7 +204,7 @@ pub fn optimize(
 
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
-    if comm_subexpr_elim {
+    if comm_subexpr_elim && !members.has_ext_context {
         let mut optimizer = CommonSubExprOptimizer::new(expr_arena);
         lp_top = ALogicalPlanNode::with_context(lp_top, lp_arena, |alp_node| {
             alp_node.rewrite(&mut optimizer)
