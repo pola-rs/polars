@@ -45,6 +45,17 @@ def test_str_contains() -> None:
     assert_series_equal(s.str.contains("mes"), expected)
 
 
+def test_count_match_literal() -> None:
+    s = pl.Series(["12 dbc 3xy", "cat\\w", "1zy3\\d\\d", None])
+    out = s.str.count_matches(r"\d", literal=True)
+    expected = pl.Series([0, 0, 2, None], dtype=pl.UInt32)
+    assert_series_equal(out, expected)
+
+    out = s.str.count_matches(pl.Series([r"\w", r"\w", r"\d", r"\d"]), literal=True)
+    expected = pl.Series([0, 1, 2, None], dtype=pl.UInt32)
+    assert_series_equal(out, expected)
+
+
 def test_str_encode() -> None:
     s = pl.Series(["foo", "bar", None])
     hex_encoded = pl.Series(["666f6f", "626172", None])
