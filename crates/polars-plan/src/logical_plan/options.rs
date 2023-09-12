@@ -76,9 +76,9 @@ pub struct IpcWriterOptions {
 }
 
 #[cfg(feature = "csv")]
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct CsvWriterOptions {
+pub struct CsvWriteOptions {
     pub has_header: bool,
     pub batch_size: usize,
     pub maintain_order: bool,
@@ -332,7 +332,7 @@ pub enum FileType {
     #[cfg(feature = "ipc")]
     Ipc(IpcWriterOptions),
     #[cfg(feature = "csv")]
-    Csv(CsvWriterOptions),
+    Csv(CsvWriteOptions),
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

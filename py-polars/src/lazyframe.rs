@@ -570,7 +570,7 @@ impl PyLazyFrame {
             quote_style,
         };
 
-        let options = CsvWriterOptions {
+        let options = CsvWriteOptions {
             has_header,
             maintain_order,
             batch_size,

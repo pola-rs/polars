@@ -3,7 +3,7 @@ pub use polars_plan::logical_plan::{
     AnonymousScan, AnonymousScanOptions, Literal, LiteralValue, LogicalPlan, Null, NULL,
 };
 #[cfg(feature = "csv")]
-pub use polars_plan::prelude::CsvWriterOptions;
+pub use polars_plan::prelude::CsvWriteOptions;
 #[cfg(feature = "ipc")]
 pub use polars_plan::prelude::IpcWriterOptions;
 #[cfg(feature = "parquet")]

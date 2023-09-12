@@ -4,6 +4,7 @@ use std::thread::JoinHandle;
 
 use crossbeam_channel::{bounded, Receiver, Sender};
 use polars_core::prelude::*;
+#[cfg(feature = "csv")]
 use polars_io::csv::CsvWriter;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetWriter;
@@ -47,7 +48,7 @@ impl<W: std::io::Write> SinkWriter for polars_io::ipc::BatchedWriter<W> {
 }
 
 #[cfg(feature = "csv")]
-impl SinkWriter for polars_io::csv::BatchedWriter<std::fs::File> {
+impl<W: std::io::Write> SinkWriter for polars_io::csv::BatchedWriter<W> {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         self.write_batch(df)
     }
@@ -176,7 +177,7 @@ pub struct CsvSink {}
 #[cfg(feature = "csv")]
 impl CsvSink {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(path: &Path, options: CsvWriterOptions, schema: &Schema) -> PolarsResult<FilesSink> {
+    pub fn new(path: &Path, options: CsvWriteOptions, schema: &Schema) -> PolarsResult<FilesSink> {
         let file = std::fs::File::create(path)?;
         let writer = CsvWriter::new(file)
             .has_header(options.has_header)
@@ -224,7 +225,7 @@ impl CsvCloudSink {
         schema: &Schema,
     ) -> PolarsResult<FilesSink> {
         let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options)?;
-        let writer = CsvWriter::new(file)
+        let writer = CsvWriter::new(cloud_writer)
             .has_header(csv_options.has_header)
             .with_delimiter(csv_options.serialize_options.delimiter)
             .with_line_terminator(csv_options.serialize_options.line_terminator)
@@ -238,7 +239,7 @@ impl CsvCloudSink {
             .with_quote_style(csv_options.serialize_options.quote_style)
             .batched(schema)?;
 
-        let writer = Box::new(writer) as Box<dyn SinkWriter + Send + Sync>;
+        let writer = Box::new(writer) as Box<dyn SinkWriter + Send>;
 
         let morsels_per_sink = morsels_per_sink();
         let backpressure = morsels_per_sink * 2;

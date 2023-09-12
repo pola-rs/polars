@@ -737,7 +737,7 @@ impl LazyFrame {
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "csv")]
-    pub fn sink_csv(mut self, path: PathBuf, options: CsvWriterOptions) -> PolarsResult<()> {
+    pub fn sink_csv(mut self, path: PathBuf, options: CsvWriteOptions) -> PolarsResult<()> {
         self.opt_state.streaming = true;
         self.logical_plan = LogicalPlan::Sink {
             input: Box::new(self.logical_plan),
@@ -766,7 +766,7 @@ impl LazyFrame {
         mut self,
         uri: String,
         cloud_options: Option<polars_core::cloud::CloudOptions>,
-        csv_options: CsvWriterOptions,
+        csv_options: CsvWriteOptions,
     ) -> PolarsResult<()> {
         self.opt_state.streaming = true;
         self.logical_plan = LogicalPlan::Sink {
