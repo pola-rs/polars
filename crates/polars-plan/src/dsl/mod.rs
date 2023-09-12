@@ -32,6 +32,8 @@ mod selector;
 pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
+pub mod udf;
+pub use udf::UserDefinedFunction;
 
 use std::fmt::Debug;
 use std::sync::Arc;

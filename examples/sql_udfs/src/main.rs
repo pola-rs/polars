@@ -1,107 +1,32 @@
 use std::collections::HashMap;
 
-use polars::lazy::dsl::{Expr, GetOutput, SpecialEq};
+use polars::lazy::dsl::udf::UserDefinedFunction;
+use polars::lazy::dsl::{Expr, GetOutput};
 use polars::prelude::*;
-use polars::sql::{FunctionOptions, FunctionRegistry, UserDefinedFunction};
+use polars::sql::FunctionRegistry;
 
 struct MyFunctionRegistry {
-    functions: HashMap<String, MyUdf>,
-}
-
-#[derive(Clone)]
-struct MyUdf {
-    name: &'static str,
-    input_fields: Vec<Field>,
-    output_field: Field,
-    function_impl: Arc<dyn SeriesUdf>,
-}
-
-impl MyUdf {
-    pub fn new(
-        name: &'static str,
-        fields: Vec<Field>,
-        output_field: Field,
-        fun: impl SeriesUdf + 'static,
-    ) -> Self {
-        MyUdf {
-            name,
-            input_fields: fields,
-            output_field,
-            function_impl: Arc::new(fun),
-        }
-    }
-}
-
-impl UserDefinedFunction for MyUdf {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>> {
-        if s.len() != self.input_fields.len() {
-            polars_bail!(
-                ComputeError:
-                "expected {} arguments, got {}",
-                self.input_fields.len(),
-                s.len()
-            )
-        };
-
-        self.function_impl.as_ref().call_udf(s)
-    }
-
-    fn output_type(&self) -> GetOutput {
-        GetOutput::from_type(self.output_field.dtype.clone())
-    }
-
-    fn options(&self) -> FunctionOptions {
-        FunctionOptions {
-            fmt_str: self.name,
-            ..FunctionOptions::default()
-        }
-    }
+    functions: HashMap<String, UserDefinedFunction>,
 }
 
 impl MyFunctionRegistry {
-    fn new(funcs: Vec<MyUdf>) -> Self {
+    fn new(funcs: Vec<UserDefinedFunction>) -> Self {
         let functions = funcs.into_iter().map(|f| (f.name.to_string(), f)).collect();
         MyFunctionRegistry { functions }
     }
 }
 
 impl FunctionRegistry for MyFunctionRegistry {
-    fn register(&mut self, name: &str, fun: &dyn UserDefinedFunction) -> PolarsResult<()> {
-        if let Some(f) = fun.as_any().downcast_ref::<MyUdf>() {
-            self.functions.insert(name.to_string(), f.clone());
-            Ok(())
-        } else {
-            polars_bail!(ComputeError: "unexpected Udf")
-        }
+    fn register(&mut self, name: &str, fun: UserDefinedFunction) -> PolarsResult<()> {
+        self.functions.insert(name.to_string(), fun);
+        Ok(())
     }
 
     fn call(&self, name: &str, args: Vec<Expr>) -> PolarsResult<Expr> {
         if let Some(f) = self.functions.get(name) {
-            let schema = Schema::from_iter(f.input_fields.clone());
-
-            if args
-                .iter()
-                .map(|e| e.to_field(&schema, polars::sql::Context::Default))
-                .collect::<PolarsResult<Vec<_>>>()
-                .is_err()
-            {
-                polars_bail!(InvalidOperation: "unexpected field in UDF \nexpected: {:?}\n received {:?}", f.input_fields, args)
-            };
-
-            let func: SpecialEq<Arc<dyn SeriesUdf>> = SpecialEq::new(f.function_impl.clone());
-            let expr = Expr::AnonymousFunction {
-                input: args,
-                function: func,
-                output_type: f.output_type(),
-                options: f.options(),
-            };
-            Ok(expr.alias(&f.output_field.name))
+            f.call(args)
         } else {
-            todo!()
+            polars_bail!(ComputeError: "function {} not found", name)
         }
     }
 
@@ -111,13 +36,13 @@ impl FunctionRegistry for MyFunctionRegistry {
 }
 
 fn main() -> PolarsResult<()> {
-    let my_custom_sum = MyUdf::new(
+    let my_custom_sum = UserDefinedFunction::new(
         "my_custom_sum",
         vec![
             Field::new("a", DataType::Int32),
             Field::new("b", DataType::Int32),
         ],
-        Field::new("a_plus_b", DataType::Int32),
+        GetOutput::same_type(),
         move |s: &mut [Series]| {
             let first = s[0].clone();
             let second = s[1].clone();
@@ -138,7 +63,6 @@ fn main() -> PolarsResult<()> {
 
     ctx.register("foo", df);
     let res = ctx.execute("SELECT a, b, my_custom_sum(a, b) FROM foo");
-
     assert!(res.is_ok());
     println!("{:?}", res.unwrap().collect()?);
 
@@ -148,13 +72,13 @@ fn main() -> PolarsResult<()> {
         .is_err());
 
     // create a new UDF to be registered on the context
-    let my_custom_divide = MyUdf::new(
+    let my_custom_divide = UserDefinedFunction::new(
         "my_custom_divide",
         vec![
             Field::new("a", DataType::Int32),
             Field::new("b", DataType::Int32),
         ],
-        Field::new("a_div_b", DataType::Int32),
+        GetOutput::same_type(),
         move |s: &mut [Series]| {
             let first = s[0].clone();
             let second = s[1].clone();
@@ -163,7 +87,7 @@ fn main() -> PolarsResult<()> {
     );
 
     // register a new UDF on an existing context
-    ctx.registry_mut().register("my_div", &my_custom_divide)?;
+    ctx.registry_mut().register("my_div", my_custom_divide)?;
 
     // execute the query
     let res = ctx.execute("SELECT a, b, my_div(a, b) as my_div FROM foo")?;
