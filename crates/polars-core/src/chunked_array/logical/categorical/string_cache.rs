@@ -91,6 +91,11 @@ pub fn enable_string_cache() {
 }
 
 /// Disable and clear the global string cache.
+///
+/// **Warning**: Disabling the string cache this way may cause errors if there
+/// are other threads that rely the global string cache being enabled.
+/// Consider using either [`with_string_cache`] or [`StringCacheHolder`] for a
+/// more reliable way of enabling and disabling the string cache.
 pub fn disable_string_cache() {
     USE_STRING_CACHE.store(0, Ordering::Release);
     STRING_CACHE.clear()

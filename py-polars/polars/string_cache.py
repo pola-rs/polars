@@ -54,6 +54,16 @@ class StringCache(contextlib.ContextDecorator):
             "green"
     ]
 
+    The class can also be used as a function decorator, in which case the string cache
+    is enabled during function execution, and disabled afterwards.
+
+    >>> @pl.StringCache()
+    ... def construct_categoricals() -> pl.Series:
+    ...     s1 = pl.Series("color", ["red", "green", "red"], dtype=pl.Categorical)
+    ...     s2 = pl.Series("color", ["blue", "red", "green"], dtype=pl.Categorical)
+    ...     return pl.concat([s1, s2])
+    ...
+
     """
 
     def __enter__(self) -> StringCache:
@@ -89,8 +99,8 @@ def enable_string_cache(enable: bool | None = None) -> None:
 
     See Also
     --------
-    enable_string_cache : Function to disable the string cache.
     StringCache : Context manager for enabling and disabling the string cache.
+    disable_string_cache : Function to disable the string cache.
 
     Notes
     -----
@@ -144,15 +154,17 @@ def disable_string_cache() -> bool:
     """
     Disable and clear the global string cache.
 
+    Warnings
+    --------
+    Disabling the string cache this way may cause errors if there are other threads
+    that rely the global string cache being enabled.
+    Consider using the :class:`StringCache` context manager for a more reliable way of
+    enabling and disabling the string cache.
+
     See Also
     --------
     enable_string_cache : Function to enable the string cache.
     StringCache : Context manager for enabling and disabling the string cache.
-
-    Notes
-    -----
-    Consider using the :class:`StringCache` context manager for a more reliable way of
-    enabling and disabling the string cache.
 
     Examples
     --------
