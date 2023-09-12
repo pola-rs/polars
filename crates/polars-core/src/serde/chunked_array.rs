@@ -5,7 +5,6 @@ use serde::{Serialize, Serializer};
 
 use crate::chunked_array::Settings;
 use crate::prelude::*;
-use crate::series::implementations::null::NullChunked;
 
 pub struct IterSer<I>
 where

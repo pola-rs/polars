@@ -6,7 +6,6 @@ pub mod series;
 mod test {
     use crate::chunked_array::Settings;
     use crate::prelude::*;
-    use crate::series::implementations::null::NullChunked;
     use crate::series::IsSorted;
 
     #[test]

@@ -7,7 +7,6 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use crate::chunked_array::builder::AnonymousListBuilder;
 use crate::chunked_array::Settings;
 use crate::prelude::*;
-use crate::series::implementations::null::NullChunked;
 
 impl Serialize for Series {
     fn serialize<S>(

@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::series::implementations::null::NullChunked;
 
 macro_rules! unpack_chunked {
     ($series:expr, $expected:pat => $ca:ty, $name:expr) => {

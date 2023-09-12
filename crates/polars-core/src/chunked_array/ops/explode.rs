@@ -13,7 +13,6 @@ use polars_arrow::trusted_len::TrustedLenPush;
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
 use crate::prelude::*;
-use crate::series::implementations::null::NullChunked;
 
 pub(crate) trait ExplodeByOffsets {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series;
