@@ -104,6 +104,7 @@ impl ChunkFilter<ListType> for ListChunked {
                 )),
             };
         }
+        check_filter_len!(self, filter);
         Ok(unsafe {
             arity::binary_unchecked_same_type(
                 self,
@@ -129,6 +130,7 @@ impl ChunkFilter<FixedSizeListType> for ArrayChunked {
                 )),
             };
         }
+        check_filter_len!(self, filter);
         Ok(unsafe {
             arity::binary_unchecked_same_type(
                 self,
@@ -157,7 +159,7 @@ where
                 _ => Ok(ObjectChunked::new_empty(self.name())),
             };
         }
-        polars_ensure!(!self.is_empty(), NoData: "cannot filter empty object array");
+        check_filter_len!(self, filter);
         let chunks = self.downcast_iter().collect::<Vec<_>>();
         let mut builder = ObjectChunkedBuilder::<T>::new(self.name(), self.len());
         for (idx, mask) in filter.into_iter().enumerate() {
