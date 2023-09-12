@@ -2181,7 +2181,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         the final number of rows in the DataFrame. Filters, join operations and fewer
         rows being available in the scanned data will all influence the final number
         of rows (joins are especially susceptible to this, and may return no data
-        at all if ``n_rows`` is too small as the joi keys may not be present).
+        at all if ``n_rows`` is too small as the join keys may not be present).
 
         Warnings
         --------
