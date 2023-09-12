@@ -234,6 +234,7 @@ __all__ = [
     "numpy",
     "pandas",
     "pydantic",
+    "pyiceberg",
     "pyarrow",
     "zoneinfo",
     # lazy utilities

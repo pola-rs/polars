@@ -55,7 +55,7 @@ xlsxwriter = ["xlsxwriter"]
 adbc = ["adbc_driver_sqlite"]
 cloudpickle = ["cloudpickle"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,sqlalchemy,xlsxwriter,adbc,cloudpickle]",
+  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle]",
 ]
 
 [tool.mypy]
