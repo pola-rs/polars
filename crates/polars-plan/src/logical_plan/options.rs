@@ -303,6 +303,22 @@ pub struct AnonymousScanOptions {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
+pub enum SinkType {
+    Memory,
+    File {
+        path: Arc<PathBuf>,
+        file_type: FileType,
+    },
+    #[cfg(feature = "cloud")]
+    Cloud {
+        uri: Arc<String>,
+        file_type: FileType,
+        cloud_options: Option<polars_core::cloud::CloudOptions>,
+    },
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug)]
 pub struct FileSinkOptions {
     pub path: Arc<PathBuf>,
     pub file_type: FileType,
@@ -317,7 +333,6 @@ pub enum FileType {
     Ipc(IpcWriterOptions),
     #[cfg(feature = "csv")]
     Csv(CsvWriterOptions),
-    Memory,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

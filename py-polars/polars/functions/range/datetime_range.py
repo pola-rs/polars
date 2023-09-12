@@ -82,10 +82,7 @@ def datetime_range(
         Upper bound of the datetime range.
     interval
         Interval of the range periods, specified as a Python ``timedelta`` object
-        or a Polars duration string like ``1h30m25s``.
-
-        Append ``_saturating`` to the interval string to restrict resulting invalid
-        dates to valid ranges.
+        or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
@@ -100,6 +97,33 @@ def datetime_range(
     -------
     Expr or Series
         Column of data type :class:`Datetime`.
+
+    Notes
+    -----
+    `interval` is created according to the following string language:
+
+    - 1ns   (1 nanosecond)
+    - 1us   (1 microsecond)
+    - 1ms   (1 millisecond)
+    - 1s    (1 second)
+    - 1m    (1 minute)
+    - 1h    (1 hour)
+    - 1d    (1 calendar day)
+    - 1w    (1 calendar week)
+    - 1mo   (1 calendar month)
+    - 1q    (1 calendar quarter)
+    - 1y    (1 calendar year)
+
+    Or combine them:
+    "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+    Suffix with `"_saturating"` to indicate that dates too large for
+    their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+    instead of erroring.
+
+    By "calendar day", we mean the corresponding time on the next day (which may
+    not be 24 hours, due to daylight savings). Similarly for "calendar week",
+    "calendar month", "calendar quarter", and "calendar year".
 
     Examples
     --------
@@ -236,10 +260,7 @@ def datetime_ranges(
         Upper bound of the datetime range.
     interval
         Interval of the range periods, specified as a Python ``timedelta`` object
-        or a Polars duration string like ``1h30m25s``.
-
-        Append ``_saturating`` to the interval string to restrict resulting invalid
-        dates to valid ranges.
+        or using the Polars duration string language (see "Notes" section below).
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the range are closed (inclusive).
     time_unit : {None, 'ns', 'us', 'ms'}
@@ -249,6 +270,33 @@ def datetime_ranges(
     eager
         Evaluate immediately and return a ``Series``.
         If set to ``False`` (default), return an expression instead.
+
+    Notes
+    -----
+    `interval` is created according to the following string language:
+
+    - 1ns   (1 nanosecond)
+    - 1us   (1 microsecond)
+    - 1ms   (1 millisecond)
+    - 1s    (1 second)
+    - 1m    (1 minute)
+    - 1h    (1 hour)
+    - 1d    (1 calendar day)
+    - 1w    (1 calendar week)
+    - 1mo   (1 calendar month)
+    - 1q    (1 calendar quarter)
+    - 1y    (1 calendar year)
+
+    Or combine them:
+    "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+    Suffix with `"_saturating"` to indicate that dates too large for
+    their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+    instead of erroring.
+
+    By "calendar day", we mean the corresponding time on the next day (which may
+    not be 24 hours, due to daylight savings). Similarly for "calendar week",
+    "calendar month", "calendar quarter", and "calendar year".
 
     Returns
     -------

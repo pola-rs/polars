@@ -22,11 +22,12 @@ use serde::{Deserialize, Serialize};
 use super::write::QuoteStyle;
 
 fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> std::io::Result<()> {
-    if v.is_empty() {
+    if options.quote_style == QuoteStyle::Never {
+        write!(f, "{v}")
+    } else if v.is_empty() {
         write!(f, "\"\"")
     } else {
         let needs_escaping = memchr(options.quote, v.as_bytes()).is_some();
-
         if needs_escaping {
             let replaced = unsafe {
                 // Replace from single quote " to double quote "".
@@ -40,6 +41,7 @@ fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> s
         let surround_with_quotes = match options.quote_style {
             QuoteStyle::Always | QuoteStyle::NonNumeric => true,
             QuoteStyle::Necessary => memchr2(options.delimiter, b'\n', v.as_bytes()).is_some(),
+            QuoteStyle::Never => false,
         };
 
         let quote = options.quote as char;

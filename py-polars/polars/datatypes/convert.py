@@ -150,7 +150,7 @@ def _map_py_type_to_dtype(
     raise TypeError("invalid type")
 
 
-def is_polars_dtype(dtype: Any, include_unknown: bool = False) -> bool:
+def is_polars_dtype(dtype: Any, *, include_unknown: bool = False) -> bool:
     """Indicate whether the given input is a Polars dtype, or dtype specialisation."""
     try:
         if dtype == Unknown:
@@ -380,20 +380,20 @@ def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
 
 @overload
 def py_type_to_dtype(
-    data_type: Any, raise_unmatched: Literal[True] = True
+    data_type: Any, *, raise_unmatched: Literal[True] = ...
 ) -> PolarsDataType:
     ...
 
 
 @overload
 def py_type_to_dtype(
-    data_type: Any, raise_unmatched: Literal[False]
+    data_type: Any, *, raise_unmatched: Literal[False]
 ) -> PolarsDataType | None:
     ...
 
 
 def py_type_to_dtype(
-    data_type: Any, raise_unmatched: bool = True, allow_strings: bool = False
+    data_type: Any, *, raise_unmatched: bool = True, allow_strings: bool = False
 ) -> PolarsDataType | None:
     """Convert a Python dtype (or type annotation) to a Polars dtype."""
     if isinstance(data_type, ForwardRef):

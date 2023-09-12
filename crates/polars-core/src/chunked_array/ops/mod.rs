@@ -200,7 +200,19 @@ pub trait TakeRandomUtf8 {
 }
 
 /// Fast access by index.
-pub trait ChunkTake {
+pub trait ChunkTake: ChunkTakeUnchecked {
+    /// Take values from ChunkedArray by index.
+    /// Note that the iterator will be cloned, so prefer an iterator that takes the owned memory
+    /// by reference.
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
+    where
+        Self: Sized,
+        I: TakeIterator,
+        INulls: TakeIteratorNulls;
+}
+
+/// Fast access by index.
+pub trait ChunkTakeUnchecked {
     /// Take values from ChunkedArray by index.
     ///
     /// # Safety
@@ -208,15 +220,6 @@ pub trait ChunkTake {
     /// Doesn't do any bound checking.
     #[must_use]
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
-    where
-        Self: Sized,
-        I: TakeIterator,
-        INulls: TakeIteratorNulls;
-
-    /// Take values from ChunkedArray by index.
-    /// Note that the iterator will be cloned, so prefer an iterator that takes the owned memory
-    /// by reference.
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
     where
         Self: Sized,
         I: TakeIterator,

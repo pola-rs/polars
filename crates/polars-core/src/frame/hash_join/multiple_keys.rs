@@ -13,7 +13,7 @@ use crate::utils::series::_to_physical_and_bit_repr;
 use crate::utils::{_set_partition_size, split_df};
 use crate::POOL;
 
-/// Compare the rows of two DataFrames
+/// Compare the rows of two [`DataFrame`]s
 pub(crate) unsafe fn compare_df_rows2(
     left: &DataFrame,
     right: &DataFrame,

@@ -1236,10 +1236,9 @@ impl Expr {
                         ComputeError: "`weights` is not supported in 'rolling by' expression"
                     );
                     let (by, tz) = match by.dtype() {
-                        DataType::Datetime(_, tz) => (
-                            by.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?,
-                            tz,
-                        ),
+                        DataType::Datetime(tu, tz) => {
+                            (by.cast(&DataType::Datetime(*tu, None))?, tz)
+                        },
                         _ => (by.clone(), &None),
                     };
                     ensure_sorted_arg(&by, expr_name)?;

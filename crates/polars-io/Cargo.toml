@@ -39,6 +39,7 @@ serde_json = { version = "1", default-features = false, features = ["alloc", "ra
 simd-json = { workspace = true, optional = true }
 simdutf8 = { version = "0.1", optional = true }
 tokio = { version = "1.26", features = ["net"], optional = true }
+tokio-util = { version = "0.7.8", features = ["io", "io-util"], optional = true }
 url = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
@@ -88,8 +89,8 @@ dtype-decimal = ["polars-core/dtype-decimal"]
 fmt = ["polars-core/fmt"]
 lazy = []
 parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "memmap"]
-async = ["async-trait", "futures", "tokio", "arrow/io_ipc_write_async", "polars-error/regex"]
-cloud = ["object_store", "async", "url"]
+async = ["async-trait", "futures", "tokio", "tokio-util", "arrow/io_ipc_write_async", "polars-error/regex"]
+cloud = ["object_store", "async", "polars-core/async", "polars-error/object_store", "url"]
 aws = ["object_store/aws", "cloud", "polars-core/aws"]
 azure = ["object_store/azure", "cloud", "polars-core/azure"]
 gcp = ["object_store/gcp", "cloud", "polars-core/gcp"]

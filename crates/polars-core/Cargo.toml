@@ -179,7 +179,7 @@ docs-selection = [
 ]
 
 # Cloud support.
-"async" = ["url"]
+"async" = ["url", "object_store"]
 "aws" = ["async", "object_store/aws"]
 "azure" = ["async", "object_store/azure"]
 "gcp" = ["async", "object_store/gcp"]

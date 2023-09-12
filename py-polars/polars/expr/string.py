@@ -9,7 +9,10 @@ from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.exceptions import ChronoFormatWarning
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import rename_use_earliest_to_ambiguous
+from polars.utils.deprecation import (
+    deprecate_renamed_function,
+    rename_use_earliest_to_ambiguous,
+)
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
@@ -524,7 +527,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_to_titlecase())
 
-    def strip(self, characters: str | None = None) -> Expr:
+    def strip_chars(self, characters: str | None = None) -> Expr:
         r"""
         Remove leading and trailing characters.
 
@@ -550,7 +553,7 @@ class ExprStringNameSpace:
         │ world  │
         └────────┘
 
-        >>> df.select(pl.col("foo").str.strip())
+        >>> df.select(pl.col("foo").str.strip_chars())
         shape: (2, 1)
         ┌───────┐
         │ foo   │
@@ -565,7 +568,7 @@ class ExprStringNameSpace:
         will not be stripped automatically when doing so, unless that whitespace is
         also included in the string.
 
-        >>> df.select(pl.col("foo").str.strip("ow\n"))
+        >>> df.select(pl.col("foo").str.strip_chars("ow\n"))
         shape: (2, 1)
         ┌───────┐
         │ foo   │
@@ -577,9 +580,9 @@ class ExprStringNameSpace:
         └───────┘
 
         """
-        return wrap_expr(self._pyexpr.str_strip(characters))
+        return wrap_expr(self._pyexpr.str_strip_chars(characters))
 
-    def lstrip(self, characters: str | None = None) -> Expr:
+    def strip_chars_start(self, characters: str | None = None) -> Expr:
         r"""
         Remove leading characters.
 
@@ -593,7 +596,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [" hello ", "\tworld"]})
-        >>> df.select(pl.col("foo").str.lstrip())
+        >>> df.select(pl.col("foo").str.strip_chars_start())
         shape: (2, 1)
         ┌────────┐
         │ foo    │
@@ -607,7 +610,7 @@ class ExprStringNameSpace:
         Characters can be stripped by passing a string as argument. Note that whitespace
         will not be stripped automatically when doing so.
 
-        >>> df.select(pl.col("foo").str.lstrip("wod\t"))
+        >>> df.select(pl.col("foo").str.strip_chars_start("wod\t"))
         shape: (2, 1)
         ┌─────────┐
         │ foo     │
@@ -619,9 +622,9 @@ class ExprStringNameSpace:
         └─────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_lstrip(characters))
+        return wrap_expr(self._pyexpr.str_strip_chars_start(characters))
 
-    def rstrip(self, characters: str | None = None) -> Expr:
+    def strip_chars_end(self, characters: str | None = None) -> Expr:
         r"""
         Remove trailing characters.
 
@@ -646,7 +649,7 @@ class ExprStringNameSpace:
         │ world  │
         │        │
         └────────┘
-        >>> df.select(pl.col("foo").str.rstrip())
+        >>> df.select(pl.col("foo").str.strip_chars_end())
         shape: (2, 1)
         ┌────────┐
         │ foo    │
@@ -661,7 +664,7 @@ class ExprStringNameSpace:
         will not be stripped automatically when doing so, unless that whitespace is
         also included in the string.
 
-        >>> df.select(pl.col("foo").str.rstrip("oldw "))
+        >>> df.select(pl.col("foo").str.strip_chars_end("oldw "))
         shape: (2, 1)
         ┌───────┐
         │ foo   │
@@ -674,7 +677,67 @@ class ExprStringNameSpace:
         └───────┘
 
         """
-        return wrap_expr(self._pyexpr.str_rstrip(characters))
+        return wrap_expr(self._pyexpr.str_strip_chars_end(characters))
+
+    def strip_prefix(self, prefix: str) -> Expr:
+        """
+        Remove prefix.
+
+        The prefix will be removed from the string exactly once, if found.
+
+        Parameters
+        ----------
+        prefix
+            The prefix to be removed.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": ["foobar", "foofoobar", "foo", "bar"]})
+        >>> df.with_columns(pl.col("a").str.strip_prefix("foo").alias("stripped"))
+        shape: (4, 2)
+        ┌───────────┬──────────┐
+        │ a         ┆ stripped │
+        │ ---       ┆ ---      │
+        │ str       ┆ str      │
+        ╞═══════════╪══════════╡
+        │ foobar    ┆ bar      │
+        │ foofoobar ┆ foobar   │
+        │ foo       ┆          │
+        │ bar       ┆ bar      │
+        └───────────┴──────────┘
+
+        """
+        return wrap_expr(self._pyexpr.str_strip_prefix(prefix))
+
+    def strip_suffix(self, suffix: str) -> Expr:
+        """
+        Remove suffix.
+
+        The suffix will be removed from the string exactly once, if found.
+
+        Parameters
+        ----------
+        suffix
+            The suffix to be removed.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": ["foobar", "foobarbar", "foo", "bar"]})
+        >>> df.with_columns(pl.col("a").str.strip_suffix("bar").alias("stripped"))
+        shape: (4, 2)
+        ┌───────────┬──────────┐
+        │ a         ┆ stripped │
+        │ ---       ┆ ---      │
+        │ str       ┆ str      │
+        ╞═══════════╪══════════╡
+        │ foobar    ┆ foo      │
+        │ foobarbar ┆ foobar   │
+        │ foo       ┆ foo      │
+        │ bar       ┆          │
+        └───────────┴──────────┘
+
+        """
+        return wrap_expr(self._pyexpr.str_strip_suffix(suffix))
 
     def zfill(self, alignment: int) -> Expr:
         """
@@ -1356,7 +1419,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_extract_groups(pattern))
 
-    def count_match(self, pattern: str | Expr) -> Expr:
+    def count_matches(self, pattern: str | Expr, *, literal: bool = False) -> Expr:
         r"""
         Count all successive non-overlapping regex matches.
 
@@ -1365,6 +1428,8 @@ class ExprStringNameSpace:
         pattern
             A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
+        literal
+            Treat ``pattern`` as a literal string, not as a regular expression.
 
         Returns
         -------
@@ -1376,7 +1441,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t", "bar", None]})
         >>> df.select(
-        ...     pl.col("foo").str.count_match(r"\d").alias("count_digits"),
+        ...     pl.col("foo").str.count_matches(r"\d").alias("count_digits"),
         ... )
         shape: (4, 1)
         ┌──────────────┐
@@ -1390,9 +1455,27 @@ class ExprStringNameSpace:
         │ null         │
         └──────────────┘
 
+        >>> df = pl.DataFrame({"bar": ["12 dbc 3xy", "cat\\w", "1zy3\\d\\d", None]})
+        >>> df.select(
+        ...     pl.col("bar")
+        ...     .str.count_matches(r"\d", literal=True)
+        ...     .alias("count_digits"),
+        ... )
+        shape: (4, 1)
+        ┌──────────────┐
+        │ count_digits │
+        │ ---          │
+        │ u32          │
+        ╞══════════════╡
+        │ 0            │
+        │ 0            │
+        │ 2            │
+        │ null         │
+        └──────────────┘
+
         """
         pattern = parse_as_expression(pattern, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_count_match(pattern))
+        return wrap_expr(self._pyexpr.str_count_matches(pattern, literal))
 
     def split(self, by: str, *, inclusive: bool = False) -> Expr:
         """
@@ -1820,6 +1903,83 @@ class ExprStringNameSpace:
 
         """
         return wrap_expr(self._pyexpr.str_parse_int(radix, strict))
+
+    @deprecate_renamed_function("strip_chars", version="0.19.3")
+    def strip(self, characters: str | None = None) -> Expr:
+        """
+        Remove leading and trailing characters.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`strip_chars`.
+
+        Parameters
+        ----------
+        characters
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
+
+        """
+        return self.strip_chars(characters)
+
+    @deprecate_renamed_function("strip_chars_start", version="0.19.3")
+    def lstrip(self, characters: str | None = None) -> Expr:
+        """
+        Remove leading characters.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`strip_chars_start`.
+
+        Parameters
+        ----------
+        characters
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
+
+        """
+        return self.strip_chars_start(characters)
+
+    @deprecate_renamed_function("strip_chars_end", version="0.19.3")
+    def rstrip(self, characters: str | None = None) -> Expr:
+        """
+        Remove trailing characters.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`strip_chars_end`.
+
+        Parameters
+        ----------
+        characters
+            The set of characters to be removed. All combinations of this set of
+            characters will be stripped. If set to None (default), all whitespace is
+            removed instead.
+
+        """
+        return self.strip_chars_end(characters)
+
+    @deprecate_renamed_function("count_matches", version="0.19.3")
+    def count_match(self, pattern: str | Expr) -> Expr:
+        """
+        Count all successive non-overlapping regex matches.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`count_matches`.
+
+        Parameters
+        ----------
+        pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`. Returns null if the
+            original value is null.
+
+        """
+        return self.count_matches(pattern)
 
 
 def _validate_format_argument(format: str | None) -> None:

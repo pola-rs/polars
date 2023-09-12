@@ -10,9 +10,9 @@ macro_rules! impl_unit_setter {
     };
 }
 
-/// Arguments used by `datetime` in order to produce an `Expr` of `Datetime`
+/// Arguments used by `datetime` in order to produce an [`Expr`] of Datetime
 ///
-/// Construct a `DatetimeArgs` with `DatetimeArgs::new(y, m, d)`. This will set the other time units to `lit(0)`. You
+/// Construct a [`DatetimeArgs`] with `DatetimeArgs::new(y, m, d)`. This will set the other time units to `lit(0)`. You
 /// can then set the other fields with the `with_*` methods, or use `with_hms` to set `hour`, `minute`, and `second` all
 /// at once.
 ///
@@ -150,9 +150,9 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
     }
 }
 
-/// Arguments used by `duration` in order to produce an `Expr` of `Duration`
+/// Arguments used by `duration` in order to produce an [`Expr`] of [`Duration`]
 ///
-/// To construct a `DurationArgs`, use struct literal syntax with `..Default::default()` to leave unspecified fields at
+/// To construct a [`DurationArgs`], use struct literal syntax with `..Default::default()` to leave unspecified fields at
 /// their default value of `lit(0)`, as demonstrated below.
 ///
 /// ```
@@ -195,7 +195,7 @@ impl Default for DurationArgs {
 }
 
 impl DurationArgs {
-    /// Create a new `DurationArgs` with all fields set to `lit(0)`. Use the `with_*` methods to set the fields.
+    /// Create a new [`DurationArgs`] with all fields set to `lit(0)`. Use the `with_*` methods to set the fields.
     pub fn new() -> Self {
         Self::default()
     }
@@ -250,7 +250,7 @@ impl DurationArgs {
     impl_unit_setter!(with_nanoseconds(nanoseconds));
 }
 
-/// Construct a column of `Duration` from the provided [`DurationArgs`]
+/// Construct a column of [`Duration`] from the provided [`DurationArgs`]
 #[cfg(feature = "temporal")]
 pub fn duration(args: DurationArgs) -> Expr {
     let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {

@@ -73,7 +73,9 @@ class StringCache(contextlib.ContextDecorator):
             _enable_string_cache(False)
 
 
-def enable_string_cache(enable: bool) -> None:
+# TODO: Rename/redesign this function
+# https://github.com/pola-rs/polars/issues/10425
+def enable_string_cache(enable: bool) -> None:  # noqa: FBT001
     """
     Enable (or disable) the global string cache.
 

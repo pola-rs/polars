@@ -83,6 +83,7 @@ from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
+    deprecate_nonkeyword_arguments,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
 )
@@ -94,7 +95,7 @@ from polars.utils.various import (
     is_bool_sequence,
     is_int_sequence,
     is_str_sequence,
-    normalise_filepath,
+    normalize_filepath,
     parse_percentiles,
     parse_version,
     range_to_slice,
@@ -148,6 +149,7 @@ if TYPE_CHECKING:
         RowTotalsDefinition,
         SchemaDefinition,
         SchemaDict,
+        SelectorType,
         SizeUnit,
         StartBy,
         UniqueKeepStrategy,
@@ -691,7 +693,7 @@ class DataFrame:
 
         path: str | None
         if isinstance(source, (str, Path)):
-            path = normalise_filepath(source)
+            path = normalize_filepath(source)
         else:
             path = None
             if isinstance(source, BytesIO):
@@ -821,7 +823,7 @@ class DataFrame:
 
         """
         if isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
         if isinstance(columns, str):
             columns = [columns]
 
@@ -891,7 +893,7 @@ class DataFrame:
 
         """
         if isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
         projection, columns = handle_projection_columns(columns)
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_avro(source, columns, projection, n_rows)
@@ -937,7 +939,7 @@ class DataFrame:
 
         """
         if isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
         if isinstance(columns, str):
             columns = [columns]
 
@@ -1015,7 +1017,7 @@ class DataFrame:
 
         """
         if isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
         if isinstance(columns, str):
             columns = [columns]
 
@@ -1052,7 +1054,7 @@ class DataFrame:
         if isinstance(source, StringIO):
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
 
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_json(
@@ -1082,7 +1084,7 @@ class DataFrame:
         if isinstance(source, StringIO):
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
 
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_ndjson(
@@ -1271,10 +1273,10 @@ class DataFrame:
             return self.to_numpy().__array__()
 
     def __dataframe__(
-        self, nan_as_null: bool = False, allow_copy: bool = True
+        self, nan_as_null: bool = False, allow_copy: bool = True  # noqa: FBT001
     ) -> PolarsDataFrame:
         """
-        Convert to a DataFrame object implementing the DataFrame interchange protocol.
+        Convert to a dataframe object implementing the dataframe interchange protocol.
 
         Parameters
         ----------
@@ -1391,7 +1393,7 @@ class DataFrame:
         else:
             raise ValueError(f"unexpected comparison operator {op!r}")
 
-    def _div(self, other: Any, floordiv: bool) -> DataFrame:
+    def _div(self, other: Any, *, floordiv: bool) -> DataFrame:
         if isinstance(other, pl.Series):
             if floordiv:
                 return self.select(F.all() // lit(other))
@@ -1459,7 +1461,7 @@ class DataFrame:
     def __getstate__(self) -> list[Series]:
         return self.get_columns()
 
-    def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
+    def __setstate__(self, state: list[Series]) -> None:
         self._df = DataFrame(state)._df
 
     def __mul__(self, other: DataFrame | Series | int | float) -> Self:
@@ -1907,12 +1909,13 @@ class DataFrame:
 
     @overload
     def to_dict(
-        self, as_series: bool = True
+        self, as_series: bool  # noqa: FBT001
     ) -> dict[str, Series] | dict[str, list[Any]]:
         ...
 
+    # TODO: Make `as_series` keyword-only
     def to_dict(
-        self, as_series: bool = True
+        self, as_series: bool = True  # noqa: FBT001
     ) -> dict[str, Series] | dict[str, list[Any]]:
         """
         Convert DataFrame to a dictionary mapping column name to values.
@@ -2022,8 +2025,9 @@ class DataFrame:
         """
         return list(self.iter_rows(named=True))
 
+    @deprecate_nonkeyword_arguments(version="0.19.3")
     def to_numpy(
-        self, structured: bool = False, *, order: IndexOrder = "fortran"
+        self, structured: bool = False, *, order: IndexOrder = "fortran"  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
         Convert DataFrame to a 2D NumPy array.
@@ -2077,7 +2081,7 @@ class DataFrame:
         ...optionally zero-copying as a record array view:
 
         >>> import numpy as np
-        >>> df.to_numpy(True).view(np.recarray)
+        >>> df.to_numpy(structured=True).view(np.recarray)
         rec.array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
                   dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
 
@@ -2370,7 +2374,7 @@ class DataFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
@@ -2417,7 +2421,7 @@ class DataFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
@@ -2524,7 +2528,7 @@ class DataFrame:
             ``Float64`` datatypes.
         null_value
             A string representing null values (defaulting to the empty string).
-        quote_style : {'necessary', 'always', 'non_numeric'}
+        quote_style : {'necessary', 'always', 'non_numeric', 'never'}
             Determines the quoting strategy used.
             - necessary (default): This puts quotes around fields only when necessary.
             They are necessary when fields contain a quote,
@@ -2533,6 +2537,8 @@ class DataFrame:
             (which is indistinguishable from a record with one empty field).
             This is the default.
             - always: This puts quotes around every field. Always.
+            - never: This never puts quotes around fields, even if that results in
+            invalid CSV data (e.g.: by not quoting strings containing the separator).
             - non_numeric: This puts quotes around all fields that are non-numeric.
             Namely, when writing a field that does not parse as a valid float
             or integer, then quotes will be used even if they aren`t strictly
@@ -2566,7 +2572,7 @@ class DataFrame:
             buffer = file = BytesIO()
             should_return_buffer = True
         elif isinstance(file, (str, os.PathLike)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
         elif isinstance(file, TextIOWrapper):
             file = cast(TextIOWrapper, file.buffer)
 
@@ -2623,7 +2629,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
 
         self._df.write_avro(file, compression)
 
@@ -2649,7 +2655,7 @@ class DataFrame:
         has_header: bool = True,
         autofilter: bool = True,
         autofit: bool = False,
-        hidden_columns: Sequence[str] | None = None,
+        hidden_columns: Sequence[str] | SelectorType | None = None,
         hide_gridlines: bool = False,
         sheet_zoom: int | None = None,
         freeze_panes: (
@@ -3069,9 +3075,10 @@ class DataFrame:
                     has_header=has_header,
                     format_cache=fmt_cache,
                 )
-
         # additional column-level properties
-        hidden_columns = _expand_selectors(df, hidden_columns or ())
+        if hidden_columns is None:
+            hidden_columns = ()
+        hidden_columns = _expand_selectors(df, hidden_columns)
         if isinstance(column_widths, int):
             column_widths = {column: column_widths for column in df.columns}
         else:
@@ -3093,7 +3100,9 @@ class DataFrame:
 
         # finally, inject any sparklines into the table
         for column, params in (sparklines or {}).items():
-            _xl_inject_sparklines(ws, df, table_start, column, has_header, params)
+            _xl_inject_sparklines(
+                ws, df, table_start, column, has_header=has_header, params=params
+            )
 
         # worksheet options
         if hide_gridlines:
@@ -3180,7 +3189,7 @@ class DataFrame:
         if return_bytes:
             file = BytesIO()
         elif isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
 
         if compression is None:
             compression = "uncompressed"
@@ -3241,7 +3250,7 @@ class DataFrame:
         if return_bytes:
             file = BytesIO()
         elif isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
 
         if compression is None:
             compression = "uncompressed"
@@ -3327,9 +3336,9 @@ class DataFrame:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
             if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
-                file = normalise_filepath(file, check_not_directory=False)
+                file = normalize_filepath(file, check_not_directory=False)
             else:
-                file = normalise_filepath(file)
+                file = normalize_filepath(file)
 
         if use_pyarrow:
             tbl = self.to_arrow()
@@ -4140,7 +4149,7 @@ class DataFrame:
         # reshape wide result
         n_cols = len(self.columns)
         described = [
-            df_metrics[(n * n_cols) : (n + 1) * n_cols] for n in range(0, len(metrics))
+            df_metrics[(n * n_cols) : (n + 1) * n_cols] for n in range(len(metrics))
         ]
 
         # cast by column type (numeric/bool -> float), (other -> string)
@@ -5217,7 +5226,13 @@ class DataFrame:
 
         """
         return RollingGroupBy(
-            self, index_column, period, offset, closed, by, check_sorted
+            self,
+            index_column=index_column,
+            period=period,
+            offset=offset,
+            closed=closed,
+            by=by,
+            check_sorted=check_sorted,
         )
 
     def group_by_dynamic(
@@ -5546,16 +5561,16 @@ class DataFrame:
         """  # noqa: W505
         return DynamicGroupBy(
             self,
-            index_column,
-            every,
-            period,
-            offset,
-            truncate,
-            include_boundaries,
-            closed,
-            by,
-            start_by,
-            check_sorted,
+            index_column=index_column,
+            every=every,
+            period=period,
+            offset=offset,
+            truncate=truncate,
+            include_boundaries=include_boundaries,
+            closed=closed,
+            by=by,
+            start_by=start_by,
+            check_sorted=check_sorted,
         )
 
     def upsample(
@@ -6088,7 +6103,7 @@ class DataFrame:
         >>> df.select(pl.col("foo") * 2 + pl.col("bar"))  # doctest: +IGNORE_RESULT
 
         """
-        # TODO:
+        # TODO: Enable warning for inefficient map
         # from polars.utils.udfs import warn_on_inefficient_map
         # warn_on_inefficient_map(function, columns=self.columns, map_target="frame)
 
@@ -6191,13 +6206,14 @@ class DataFrame:
         if in_place:
             try:
                 self._df.vstack_mut(other._df)
-                return self
             except RuntimeError as exc:
                 if str(exc) == "Already mutably borrowed":
                     self._df.vstack_mut(other._df.clone())
                     return self
                 else:
-                    raise exc
+                    raise
+            else:
+                return self
 
         return self._from_pydf(self._df.vstack(other._df))
 
@@ -6261,7 +6277,7 @@ class DataFrame:
             if str(exc) == "Already mutably borrowed":
                 self._df.extend(other._df.clone())
             else:
-                raise exc
+                raise
         return self
 
     def drop(
@@ -7170,7 +7186,7 @@ class DataFrame:
 
         if n_fill:
             if not isinstance(fill_values, list):
-                fill_values = [fill_values for _ in range(0, df.width)]
+                fill_values = [fill_values for _ in range(df.width)]
 
             df = df.select(
                 [
@@ -7196,7 +7212,7 @@ class DataFrame:
                 s.name + "_" + str(slice_nbr).zfill(zfill_val)
             )
             for s in df
-            for slice_nbr in range(0, n_cols)
+            for slice_nbr in range(n_cols)
         ]
 
         return DataFrame(slices)

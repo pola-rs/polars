@@ -15,6 +15,8 @@ pub enum QuoteStyle {
     Necessary,
     /// This puts quotes around all fields that are non-numeric. Namely, when writing a field that does not parse as a valid float or integer, then quotes will be used even if they aren’t strictly necessary.
     NonNumeric,
+    /// Never quote any fields, even if it would produce invalid CSV data.
+    Never,
 }
 
 /// Write a DataFrame to csv.

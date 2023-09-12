@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "cloud", feature = "parquet"))]
 use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
 
@@ -250,9 +250,9 @@ pub enum LogicalPlan {
         contexts: Vec<LogicalPlan>,
         schema: SchemaRef,
     },
-    FileSink {
+    Sink {
         input: Box<LogicalPlan>,
-        payload: FileSinkOptions,
+        payload: SinkType,
     },
 }
 

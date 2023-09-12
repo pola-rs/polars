@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 def _scan_pyarrow_dataset(
     ds: pa.dataset.Dataset,
+    *,
     allow_pyarrow_filter: bool = True,
     batch_size: int | None = None,
 ) -> LazyFrame:
@@ -34,7 +35,9 @@ def _scan_pyarrow_dataset(
 
     """
     func = partial(_scan_pyarrow_dataset_impl, ds, batch_size=batch_size)
-    return pl.LazyFrame._scan_python_function(ds.schema, func, allow_pyarrow_filter)
+    return pl.LazyFrame._scan_python_function(
+        ds.schema, func, pyarrow=allow_pyarrow_filter
+    )
 
 
 def _scan_pyarrow_dataset_impl(
