@@ -1068,7 +1068,7 @@ impl FromPyObject<'_> for Wrap<AsofStrategy> {
             "nearest" => AsofStrategy::Nearest,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "strategy must be one of {{'backward', 'forward', 'nearest'}}, got {v}",
+                    "asof strategy must be one of {{'backward', 'forward', 'nearest'}}, got {v}",
                 )))
             },
         };
@@ -1083,7 +1083,7 @@ impl FromPyObject<'_> for Wrap<InterpolationMethod> {
             "nearest" => InterpolationMethod::Nearest,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "method must be one of {{'linear', 'nearest'}}, got {v}",
+                    "interpolation method must be one of {{'linear', 'nearest'}}, got {v}",
                 )))
             },
         };
@@ -1098,11 +1098,9 @@ impl FromPyObject<'_> for Wrap<Option<AvroCompression>> {
             "uncompressed" => None,
             "snappy" => Some(AvroCompression::Snappy),
             "deflate" => Some(AvroCompression::Deflate),
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "compression must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {v}",
-                )))
-            },
+            v => return Err(PyValueError::new_err(format!(
+                "avro compression must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {v}",
+            ))),
         };
         Ok(Wrap(parsed))
     }
@@ -1115,7 +1113,7 @@ impl FromPyObject<'_> for Wrap<CategoricalOrdering> {
             "lexical" => CategoricalOrdering::Lexical,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "ordering must be one of {{'physical', 'lexical'}}, got {v}",
+                    "categorical ordering must be one of {{'physical', 'lexical'}}, got {v}",
                 )))
             },
         };
@@ -1137,7 +1135,7 @@ impl FromPyObject<'_> for Wrap<StartBy> {
             "sunday" => StartBy::Sunday,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "closed must be one of {{'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}}, got {v}",
+                    "start_by must be one of {{'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}}, got {v}",
                 )))
             }
         };
@@ -1169,7 +1167,7 @@ impl FromPyObject<'_> for Wrap<CsvEncoding> {
             "utf8-lossy" => CsvEncoding::LossyUtf8,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "encoding must be one of {{'utf8', 'utf8-lossy'}}, got {v}",
+                    "csv encoding must be one of {{'utf8', 'utf8-lossy'}}, got {v}",
                 )))
             },
         };
@@ -1186,7 +1184,7 @@ impl FromPyObject<'_> for Wrap<Option<IpcCompression>> {
             "zstd" => Some(IpcCompression::ZSTD),
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "compression must be one of {{'uncompressed', 'lz4', 'zstd'}}, got {v}",
+                    "ipc compression must be one of {{'uncompressed', 'lz4', 'zstd'}}, got {v}",
                 )))
             },
         };
@@ -1321,7 +1319,7 @@ impl FromPyObject<'_> for Wrap<RankMethod> {
             "random" => RankMethod::Random,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "method must be one of {{'min', 'max', 'average', 'dense', 'ordinal', 'random'}}, got {v}",
+                    "rank method must be one of {{'min', 'max', 'average', 'dense', 'ordinal', 'random'}}, got {v}",
                 )))
             }
         };
@@ -1354,7 +1352,7 @@ impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
             "any" => UniqueKeepStrategy::Any,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "keep must be one of {{'first', 'last', 'any', 'none'}}, got {v}",
+                    "keep strategy must be one of {{'first', 'last', 'any', 'none'}}, got {v}",
                 )))
             },
         };
@@ -1370,7 +1368,7 @@ impl FromPyObject<'_> for Wrap<IpcCompression> {
             "lz4" => IpcCompression::LZ4,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "compression must be one of {{'zstd', 'lz4'}}, got {v}",
+                    "ipc compression must be one of {{'zstd', 'lz4'}}, got {v}",
                 )))
             },
         };
@@ -1386,7 +1384,7 @@ impl FromPyObject<'_> for Wrap<SearchSortedSide> {
             "right" => SearchSortedSide::Right,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "side must be one of {{'any', 'left', 'right'}}, got {v}",
+                    "sorted side must be one of {{'any', 'left', 'right'}}, got {v}",
                 )))
             },
         };
@@ -1400,11 +1398,9 @@ impl FromPyObject<'_> for Wrap<WindowMapping> {
             "group_to_rows" => WindowMapping::GroupsToRows,
             "join" => WindowMapping::Join,
             "explode" => WindowMapping::Explode,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "side must be one of {{'group_to_rows', 'join', 'explode'}}, got {v}",
-                )))
-            },
+            v => return Err(PyValueError::new_err(format!(
+                "mapping strategy must be one of {{'group_to_rows', 'join', 'explode'}}, got {v}",
+            ))),
         };
         Ok(Wrap(parsed))
     }
@@ -1436,7 +1432,7 @@ impl FromPyObject<'_> for Wrap<QuoteStyle> {
             "never" => QuoteStyle::Never,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "validate must be one of {{'always', 'necessary', 'non_numeric'}}, got {v}",
+                    "quote_style must be one of {{'always', 'necessary', 'non_numeric', 'never'}}, got {v}",
                 )))
             },
         };
@@ -1454,7 +1450,7 @@ impl FromPyObject<'_> for Wrap<SetOperation> {
             "symmetric_difference" => SetOperation::SymmetricDifference,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "validate must be one of {{'union', 'difference', 'intersection', 'symmetric_difference'}}, got {v}",
+                    "set operation must be one of {{'union', 'difference', 'intersection', 'symmetric_difference'}}, got {v}",
                 )))
             }
         };
@@ -1476,7 +1472,7 @@ pub(crate) fn parse_fill_null_strategy(
         "one" => FillNullStrategy::One,
         e => {
             return Err(PyValueError::new_err(format!(
-                "strategy must be one of {{'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}}, got {e}",
+                "fill strategy must be one of {{'forward', 'backward', 'min', 'max', 'mean', 'zero', 'one'}}, got {e}",
             )))
         }
     };
@@ -1519,7 +1515,7 @@ pub(crate) fn parse_parquet_compression(
         ),
         e => {
             return Err(PyValueError::new_err(format!(
-                "compression must be one of {{'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}}, got {e}",
+                "parquet compression must be one of {{'uncompressed', 'snappy', 'gzip', 'lzo', 'brotli', 'lz4', 'zstd'}}, got {e}",
             )))
         }
     };
