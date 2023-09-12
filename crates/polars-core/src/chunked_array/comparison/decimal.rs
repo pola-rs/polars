@@ -1,7 +1,6 @@
 use crate::prelude::*;
 
-impl ChunkCompare<&DecimalChunked> for DecimalChunked
-{
+impl ChunkCompare<&DecimalChunked> for DecimalChunked {
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &DecimalChunked) -> Self::Item {
@@ -46,7 +45,7 @@ mod test {
             {
                 // apply the decimal chunked comparison
                 let actual_chunked = $chunk_cmp(&to_chunk($a, $precision, $scale), &to_chunk($b, $precision, $scale));
-                
+
                 let (a, b) = if $a.len() < $b.len() {
                     assert_eq!($a.len(), 1);
                     (vec![$a[0]; $b.len()], $b.to_vec()) // duplicate the unique `a` element b.len() times
@@ -67,8 +66,7 @@ mod test {
     }
 
     fn to_chunk(v: &[i128], precision: usize, scale: usize) -> DecimalChunked {
-        Int128Chunked::from_vec("", v.into())
-                .into_decimal_unchecked(Some(precision), scale)
+        Int128Chunked::from_vec("", v.into()).into_decimal_unchecked(Some(precision), scale)
     }
 
     fn sample_decimal_chunked(precision: usize) -> [Vec<i128>; 3] {
@@ -85,8 +83,10 @@ mod test {
         let (precision, scale) = (38, 0);
         let [a, b, c] = sample_decimal_chunked(precision);
         let i128_cmp = |(x, y)| x == y;
-        let decimal_cmp = |chunk_x: &DecimalChunked, chunk_y: &DecimalChunked| chunk_x.equal(chunk_y);
-        let decimal_missing_cmp = |chunk_x: &DecimalChunked, chunk_y: &DecimalChunked| chunk_x.equal_missing(chunk_y);
+        let decimal_cmp =
+            |chunk_x: &DecimalChunked, chunk_y: &DecimalChunked| chunk_x.equal(chunk_y);
+        let decimal_missing_cmp =
+            |chunk_x: &DecimalChunked, chunk_y: &DecimalChunked| chunk_x.equal_missing(chunk_y);
         for (x, y) in [(&a, &b), (&a, &c), (&b, &c)] {
             assert_cmp!(precision, scale, x, y, i128_cmp, decimal_cmp);
             assert_cmp!(precision, scale, y, x, i128_cmp, decimal_cmp);
@@ -100,8 +100,10 @@ mod test {
         let (precision, scale) = (5, 1);
         let [a, b, c] = sample_decimal_chunked(precision);
         let i128_cmp = |(x, y)| x != y;
-        let decimal_cmp = |chunk_x: &DecimalChunked, chunk_y: &DecimalChunked| chunk_x.not_equal(chunk_y);
-        let decimal_missing_cmp = |chunk_x: &DecimalChunked, chunk_y: &DecimalChunked| chunk_x.not_equal_missing(chunk_y);
+        let decimal_cmp =
+            |chunk_x: &DecimalChunked, chunk_y: &DecimalChunked| chunk_x.not_equal(chunk_y);
+        let decimal_missing_cmp =
+            |chunk_x: &DecimalChunked, chunk_y: &DecimalChunked| chunk_x.not_equal_missing(chunk_y);
         for (x, y) in [(&a, &b), (&a, &c), (&b, &c)] {
             assert_cmp!(precision, scale, x, y, i128_cmp, decimal_cmp);
             assert_cmp!(precision, scale, y, x, i128_cmp, decimal_cmp);
@@ -127,7 +129,8 @@ mod test {
         let (precision, scale) = (32, 5);
         let [a, b, c] = sample_decimal_chunked(precision);
         let i128_cmp = |(x, y)| x <= y;
-        let decimal_cmp = |chunk_x: &DecimalChunked, chunk_y: &DecimalChunked| chunk_x.lt_eq(chunk_y);
+        let decimal_cmp =
+            |chunk_x: &DecimalChunked, chunk_y: &DecimalChunked| chunk_x.lt_eq(chunk_y);
         for (x, y) in [(&a, &b), (&a, &c), (&b, &c)] {
             assert_cmp!(precision, scale, x, y, i128_cmp, decimal_cmp);
             assert_cmp!(precision, scale, y, x, i128_cmp, decimal_cmp);
@@ -151,7 +154,8 @@ mod test {
         let (precision, scale) = (15, 3);
         let [a, b, c] = sample_decimal_chunked(precision);
         let i128_cmp = |(x, y)| x >= y;
-        let decimal_cmp = |chunk_x: &DecimalChunked, chunk_y: &DecimalChunked| chunk_x.gt_eq(chunk_y);
+        let decimal_cmp =
+            |chunk_x: &DecimalChunked, chunk_y: &DecimalChunked| chunk_x.gt_eq(chunk_y);
         for (x, y) in [(&a, &b), (&a, &c), (&b, &c)] {
             assert_cmp!(precision, scale, x, y, i128_cmp, decimal_cmp);
             assert_cmp!(precision, scale, y, x, i128_cmp, decimal_cmp);
