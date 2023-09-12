@@ -66,12 +66,13 @@ AVRO
    read_avro
    DataFrame.write_avro
 
-Excel
-~~~~~
+Spreadsheet
+~~~~~~~~~~~
 .. autosummary::
    :toctree: api/
 
    read_excel
+   read_ods
    DataFrame.write_excel
 
 Delta Lake

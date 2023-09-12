@@ -4,28 +4,43 @@
 
 --prefer-binary
 
-# Dependencies
-dataframe-api-compat >= 0.1.6
-# pin deltalake until issues with pyarrow 13 resolved
-# https://github.com/delta-io/delta-rs/pull/1602
-deltalake == 0.10.1
+# ------------
+# DEPENDENCIES
+# ------------
+
+# Interoperability
 numpy
 pandas
 pyarrow
 pydantic >= 2.0.0
+# Datetime / time zones
 backports.zoneinfo; python_version < '3.9'
 tzdata; platform_system == 'Windows'
+# Database
 SQLAlchemy
-xlsx2csv
-openpyxl
-XlsxWriter
 adbc_driver_sqlite; python_version >= '3.9' and platform_system != 'Windows'
 connectorx
+# Cloud
 cloudpickle
 fsspec
 s3fs[boto3]
+# Spreadsheet
+ezodf
+lxml
+openpyxl
+xlsx2csv
+XlsxWriter
+# Deltalake
+# note: pinning deltalake until issues with pyarrow 13 resolved
+# https://github.com/delta-io/delta-rs/pull/1602
+deltalake == 0.10.1
+# Dataframe interchange protocol
+dataframe-api-compat >= 0.1.6
 
-# Tooling
+# -------
+# TOOLING
+# -------
+
 hypothesis==6.82.6
 maturin==1.2.3
 patchelf; platform_system == 'Linux'  # Extra dependency for maturin, only for Linux
