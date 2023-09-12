@@ -29,7 +29,7 @@ def test_scan_iceberg_plain(iceberg_path: str) -> None:
     assert df.schema == {
         "id": pl.Int32,
         "str": pl.Utf8,
-        "ts": pl.Datetime(time_unit="us", time_zone=None)
+        "ts": pl.Datetime(time_unit="us", time_zone=None),
     }
 
 
@@ -63,9 +63,7 @@ def test_isin_expression() -> None:
     from pyiceberg.expressions import In, literal  # type: ignore[attr-defined]
 
     expr = _to_ast("(pa.compute.field('id')).isin([1,2,3])")
-    assert _convert_predicate(expr) == In(
-        "id", {literal(1), literal(2), literal(3)}
-    )
+    assert _convert_predicate(expr) == In("id", {literal(1), literal(2), literal(3)})
 
 
 def test_parse_combined_expression() -> None:
