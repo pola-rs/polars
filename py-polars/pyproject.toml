@@ -196,6 +196,7 @@ filterwarnings = [
   "error",
   # ...except where it prevents test debugging in an IPython console
   "ignore:.*unrecognized arguments.*PyDevIPCompleter:DeprecationWarning",
+  "ignore:.*is_sparse is deprecated.*:FutureWarning",
 ]
 xfail_strict = true
 
