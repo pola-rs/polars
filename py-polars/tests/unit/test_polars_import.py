@@ -67,4 +67,4 @@ def test_polars_import() -> None:
         assert isinstance(polars_import_time, int)
 
         if_err = f"Possible import speed regression; took {polars_import_time//1_000}ms"
-        assert polars_import_time < 400_000, f"{if_err}\n{df_import}"
+        assert polars_import_time < 200_000, f"{if_err}\n{df_import}"

@@ -122,12 +122,12 @@ def scan_iceberg(
     ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
 
-    Creates a scan for a Iceberg table with additional delta specific options.
+    Creates a scan for a Iceberg table with additional options.
     In the below example, `without_files` option is used which loads the table without
     file tracking information.
 
     >>> table_path = "/path/to/iceberg-table/metadata.json"
-    >>> delta_table_options = {"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
+    >>> storage_options = {"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
     >>> pl.scan_iceberg(
     ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
@@ -148,6 +148,8 @@ def scan_iceberg(
 
 def _to_ast(expr: str) -> ast.expr:
     """
+    Converts a Python string to an AST.
+
     This will take the Python Arrow exprssion (as a string), and it will
     be converted into a Python AST that can be traversed to convert it to a PyIceberg
     expression.
