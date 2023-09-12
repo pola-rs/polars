@@ -81,15 +81,6 @@ where
     }
 }
 
-impl<F> SeriesUdf for Arc<F>
-where
-    F: SeriesUdf,
-{
-    fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>> {
-        self.as_ref().call_udf(s)
-    }
-}
-
 impl Debug for dyn SeriesUdf {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "SeriesUdf")
