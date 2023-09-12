@@ -56,7 +56,7 @@ def scan_iceberg(
     Parameters
     ----------
     source
-        URI or Table to the root of the Delta lake table.
+        A PyIceberg table, or a direct path to the metadata.
 
         Note: For Local filesystem, absolute and relative paths are supported but
         for the supported object storages - GCS, Azure and S3 full URI must be provided.
@@ -91,11 +91,11 @@ def scan_iceberg(
     ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
 
-    Creates a scan for a Delta table from Azure.
+    Creates a scan for a Iceberg table from Azure.
     Supported options for Azure are available `here
-    <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
+    <https://py.iceberg.apache.org/configuration/#azure-data-lake>`__.
 
-    Following type of table paths are supported,
+    Following type of table paths are supported:
     * az://<container>/<path>/metadata.json
     * adl://<container>/<path>/metadata.json
     * abfs[s]://<container>/<path>/metadata.json
@@ -109,14 +109,27 @@ def scan_iceberg(
     ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
 
-    Creates a scan for a Delta table with additional delta specific options.
+    Creates a scan for a Iceberg table from Google Cloud Storage.
+    Supported options for GCS are available `here
+    <https://py.iceberg.apache.org/configuration/#google-cloud-storage>`__.
+
+    >>> table_path = "s3://bucket/path/to/iceberg-table/metadata.json"
+    >>> storage_options = {
+    ...     "gcs.project-id": "my-gcp-project",
+    ...     "gcs.oauth.token": "ya29.dr.AfM...",
+    ... }
+    >>> pl.scan_iceberg(
+    ...     table_path, storage_options=storage_options
+    ... ).collect()  # doctest: +SKIP
+
+    Creates a scan for a Iceberg table with additional delta specific options.
     In the below example, `without_files` option is used which loads the table without
     file tracking information.
 
     >>> table_path = "/path/to/iceberg-table/metadata.json"
-    >>> delta_table_options = {"without_files": True}
+    >>> delta_table_options = {"py-io-impl": "pyiceberg.io.fsspec.FsspecFileIO"}
     >>> pl.scan_iceberg(
-    ...     table_path, delta_table_options=delta_table_options
+    ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
 
     """
@@ -133,7 +146,20 @@ def scan_iceberg(
     return pl.LazyFrame._scan_python_function(arrow_schema, func, pyarrow=True)
 
 
-def _to_ast(expr: str) -> Any:
+def _to_ast(expr: str) -> ast.expr:
+    """
+    This will take the Python Arrow exprssion (as a string), and it will
+    be converted into a Python AST that can be traversed to convert it to a PyIceberg
+    expression.
+
+    Parameters
+    ----------
+    expr The string expression
+
+    Returns
+    -------
+    The AST representing the Arrow expression
+    """
     return ast.parse(expr, mode="eval").body
 
 
