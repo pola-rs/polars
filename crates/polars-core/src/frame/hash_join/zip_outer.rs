@@ -1,7 +1,7 @@
 use super::*;
 
 pub trait ZipOuterJoinColumn {
-    fn zip_outer_join_column(
+    unsafe fn zip_outer_join_column(
         &self,
         _right_column: &Series,
         _opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
@@ -15,7 +15,7 @@ where
     T: PolarsIntegerType,
     ChunkedArray<T>: IntoSeries,
 {
-    fn zip_outer_join_column(
+    unsafe fn zip_outer_join_column(
         &self,
         right_column: &Series,
         opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
@@ -45,7 +45,7 @@ where
 macro_rules! impl_zip_outer_join {
     ($chunkedtype:ident) => {
         impl ZipOuterJoinColumn for $chunkedtype {
-            fn zip_outer_join_column(
+            unsafe fn zip_outer_join_column(
                 &self,
                 right_column: &Series,
                 opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
@@ -77,7 +77,7 @@ impl_zip_outer_join!(BooleanChunked);
 impl_zip_outer_join!(BinaryChunked);
 
 impl ZipOuterJoinColumn for Utf8Chunked {
-    fn zip_outer_join_column(
+    unsafe fn zip_outer_join_column(
         &self,
         right_column: &Series,
         opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
@@ -93,7 +93,7 @@ impl ZipOuterJoinColumn for Utf8Chunked {
 }
 
 impl ZipOuterJoinColumn for Float32Chunked {
-    fn zip_outer_join_column(
+    unsafe fn zip_outer_join_column(
         &self,
         right_column: &Series,
         opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
@@ -108,7 +108,7 @@ impl ZipOuterJoinColumn for Float32Chunked {
 }
 
 impl ZipOuterJoinColumn for Float64Chunked {
-    fn zip_outer_join_column(
+    unsafe fn zip_outer_join_column(
         &self,
         right_column: &Series,
         opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],

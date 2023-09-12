@@ -1,12 +1,15 @@
 # Configuration file for the Sphinx documentation builder.
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+from __future__ import annotations
+
 import inspect
 import os
 import re
 import sys
 import warnings
 from pathlib import Path
+from typing import Any
 
 import sphinx_autosummary_accessors
 
@@ -157,7 +160,7 @@ favicons = [
 
 # sphinx-ext-linkcode - Add external links to source code
 # https://www.sphinx-doc.org/en/master/usage/extensions/linkcode.html
-def linkcode_resolve(domain, info):
+def linkcode_resolve(domain: str, info: dict[str, Any]) -> str | None:
     """
     Determine the URL corresponding to Python object.
 

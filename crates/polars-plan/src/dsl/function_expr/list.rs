@@ -14,7 +14,7 @@ pub enum ListFunction {
     #[cfg(feature = "list_take")]
     Take(bool),
     #[cfg(feature = "list_count")]
-    CountMatch,
+    CountMatches,
     Sum,
     #[cfg(feature = "list_sets")]
     SetOperation(SetOperation),
@@ -37,7 +37,7 @@ impl Display for ListFunction {
             #[cfg(feature = "list_take")]
             Take(_) => "take",
             #[cfg(feature = "list_count")]
-            CountMatch => "count",
+            CountMatches => "count",
             Sum => "sum",
             #[cfg(feature = "list_sets")]
             SetOperation(s) => return write!(f, "{s}"),
@@ -247,7 +247,7 @@ pub(super) fn take(args: &[Series], null_on_oob: bool) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "list_count")]
-pub(super) fn count_match(args: &[Series]) -> PolarsResult<Series> {
+pub(super) fn count_matches(args: &[Series]) -> PolarsResult<Series> {
     let s = &args[0];
     let element = &args[1];
     polars_ensure!(
@@ -256,7 +256,7 @@ pub(super) fn count_match(args: &[Series]) -> PolarsResult<Series> {
         element.len()
     );
     let ca = s.list()?;
-    list_count_match(ca, element.get(0).unwrap())
+    list_count_matches(ca, element.get(0).unwrap())
 }
 
 pub(super) fn sum(s: &Series) -> PolarsResult<Series> {

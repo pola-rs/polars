@@ -1533,22 +1533,22 @@ def test_write_csv() -> None:
 
 def test_from_generator_or_iterable() -> None:
     # generator function
-    def gen(n: int, strkey: bool = True) -> Iterator[Any]:
+    def gen(n: int, *, strkey: bool = True) -> Iterator[Any]:
         for i in range(n):
             yield (str(i) if strkey else i), 1 * i, 2**i, 3**i
 
     # iterable object
     class Rows:
-        def __init__(self, n: int, strkey: bool = True):
+        def __init__(self, n: int, *, strkey: bool = True):
             self._n = n
             self._strkey = strkey
 
         def __iter__(self) -> Iterator[Any]:
-            yield from gen(self._n, self._strkey)
+            yield from gen(self._n, strkey=self._strkey)
 
     # check init from column-oriented generator
     assert_frame_equal(
-        pl.DataFrame(data=gen(4, False), orient="col"),
+        pl.DataFrame(data=gen(4, strkey=False), orient="col"),
         pl.DataFrame(
             data=[(0, 0, 1, 1), (1, 1, 2, 3), (2, 2, 4, 9), (3, 3, 8, 27)], orient="col"
         ),

@@ -35,7 +35,6 @@ from polars.datatypes import (
     Datetime,
     Decimal,
     Duration,
-    Float32,
     Float64,
     Int8,
     Int16,
@@ -287,7 +286,9 @@ class Series:
                 nan_to_null=nan_to_null,
             )
         elif _check_for_numpy(values) and isinstance(values, np.ndarray):
-            self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
+            self._s = numpy_to_pyseries(
+                name, values, strict=strict, nan_to_null=nan_to_null
+            )
             if values.dtype.type == np.datetime64:
                 # cast to appropriate dtype, handling NaT values
                 dtype = _resolve_datetime_dtype(dtype, values.dtype)
@@ -317,8 +318,8 @@ class Series:
                 name,
                 values,
                 dtype=dtype,
-                strict=strict,
                 dtype_if_empty=dtype_if_empty,
+                strict=strict,
             )
         else:
             raise TypeError(
@@ -335,7 +336,7 @@ class Series:
     @classmethod
     def _from_arrow(cls, name: str, values: pa.Array, *, rechunk: bool = True) -> Self:
         """Construct a Series from an Arrow Array."""
-        return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk))
+        return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk=rechunk))
 
     @classmethod
     def _from_pandas(
@@ -423,11 +424,11 @@ class Series:
             " To check if a Series contains any values, use `is_empty()`."
         )
 
-    def __getstate__(self) -> Any:
+    def __getstate__(self) -> bytes:
         return self._s.__getstate__()
 
-    def __setstate__(self, state: Any) -> None:
-        self._s = sequence_to_pyseries("", [], Float32)
+    def __setstate__(self, state: bytes) -> None:
+        self._s = Series()._s  # Initialize with a dummy
         self._s.__setstate__(state)
 
     def __str__(self) -> str:
@@ -923,7 +924,7 @@ class Series:
         return self.clone()
 
     def __contains__(self, item: Any) -> bool:
-        # TODO! optimize via `is_in` and `SORTED` flags
+        # TODO: optimize via `is_in` and `SORTED` flags
         try:
             return (self == item).any()
         except ValueError:
@@ -935,7 +936,7 @@ class Series:
             #  a faster way to return nested/List series; sequential 'get_idx' calls
             #  make this path a lot slower (~10x) than it needs to be.
             get_idx = self._s.get_idx
-            for idx in range(0, self.len()):
+            for idx in range(self.len()):
                 yield get_idx(idx)
         else:
             buffer_size = 25_000
@@ -1080,7 +1081,7 @@ class Series:
                 self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s
             else:
                 s = self._from_pyseries(
-                    PySeries.new_u32("", np.array(key, np.uint32), True)
+                    PySeries.new_u32("", np.array(key, np.uint32), _strict=True)
                 )
                 self.__setitem__(s, value)
         elif isinstance(key, (list, tuple)):
@@ -2793,7 +2794,7 @@ class Series:
             if str(exc) == "Already mutably borrowed":
                 self._s.append(other._s.clone())
             else:
-                raise exc
+                raise
         return self
 
     def extend(self, other: Series) -> Self:
@@ -2857,7 +2858,7 @@ class Series:
             if str(exc) == "Already mutably borrowed":
                 self._s.extend(other._s.clone())
             else:
-                raise exc
+                raise
         return self
 
     def filter(self, predicate: Series | list[bool]) -> Self:

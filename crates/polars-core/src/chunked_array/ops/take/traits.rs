@@ -1,4 +1,5 @@
 //! Traits that indicate the allowed arguments in a ChunkedArray::take operation.
+#[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::GroupsProxyIter;
 use crate::prelude::*;
 
@@ -16,6 +17,7 @@ pub trait TakeIteratorNulls: Iterator<Item = Option<usize>> + TrustedLen {
 
 unsafe impl TrustedLen for &mut dyn TakeIterator {}
 unsafe impl TrustedLen for &mut dyn TakeIteratorNulls {}
+#[cfg(feature = "algorithm_group_by")]
 unsafe impl TrustedLen for GroupsProxyIter<'_> {}
 
 // Implement for the ref as well

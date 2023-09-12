@@ -54,7 +54,9 @@ avx512 = []
 docs = []
 temporal = ["regex", "chrono", "polars-error/regex"]
 random = ["rand", "rand_distr"]
-default = ["docs", "temporal"]
+algorithm_join = []
+algorithm_group_by = []
+default = ["algorithm_join", "algorithm_group_by"]
 lazy = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
@@ -176,10 +178,12 @@ docs-selection = [
   "chunked_ids",
   "semi_anti_join",
   "partition_by",
+  "algorithm_join",
+  "algorithm_group_by",
 ]
 
 # Cloud support.
-"async" = ["url"]
+"async" = ["url", "object_store"]
 "aws" = ["async", "object_store/aws"]
 "azure" = ["async", "object_store/azure"]
 "gcp" = ["async", "object_store/gcp"]

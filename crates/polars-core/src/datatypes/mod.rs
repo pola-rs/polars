@@ -182,7 +182,7 @@ impl PolarsIntegerType for Int128Type {}
 pub struct ObjectType<T>(T);
 #[cfg(feature = "object")]
 unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
-    type Physical<'a> = &'a ();
+    type Physical<'a> = &'a T;
     type Array = ObjectArray<T>;
 
     fn get_dtype() -> DataType {

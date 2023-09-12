@@ -226,8 +226,8 @@ impl AggList for BinaryChunked {
     }
 }
 
-/// This aggregates into a `ListChunked` by slicing the array that is aggregated.
-/// Used for `List` and `Array` data types.
+/// This aggregates into a [`ListChunked`] by slicing the array that is aggregated.
+/// Used for [`List`] and [`Array`] data types.
 fn agg_list_by_slicing<
     A: PolarsDataType,
     F: Fn(&ChunkedArray<A>, bool, &mut Vec<i64>, &mut i64, &mut Vec<ArrayRef>) -> bool,

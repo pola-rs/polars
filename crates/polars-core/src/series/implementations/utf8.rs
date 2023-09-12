@@ -9,7 +9,9 @@ use crate::chunked_array::ops::compare_inner::{
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
+#[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
+#[cfg(feature = "algorithm_join")]
 use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
@@ -60,19 +62,23 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
         Ok(())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_min(groups)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_max(groups)
     }
 
-    fn zip_outer_join_column(
+    #[cfg(feature = "algorithm_join")]
+    unsafe fn zip_outer_join_column(
         &self,
         right_column: &Series,
         opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
@@ -94,6 +100,7 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         NumOpsDispatch::remainder(&self.0, rhs)
     }
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
@@ -168,15 +175,15 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         } else {
             Cow::Borrowed(indices)
         };
-        Ok(ChunkTake::take(&self.0, (&*indices).into())?.into_series())
+        Ok(self.0.take((&*indices).into())?.into_series())
     }
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
+        Ok(self.0.take(iter.into())?.into_series())
     }
 
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
+        self.0.take_unchecked(iter.into()).into_series()
     }
 
     unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
@@ -186,7 +193,7 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
             Cow::Borrowed(idx)
         };
 
-        let mut out = ChunkTake::take_unchecked(&self.0, (&*idx).into());
+        let mut out = self.0.take_unchecked((&*idx).into());
 
         if self.0.is_sorted_ascending_flag()
             && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
@@ -198,12 +205,12 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
     }
 
     unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
+        self.0.take_unchecked(iter.into()).into_series()
     }
 
     #[cfg(feature = "take_opt_iter")]
     fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-        Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
+        Ok(self.0.take(iter.into())?.into_series())
     }
 
     fn len(&self) -> usize {
@@ -247,14 +254,17 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         self.0.has_validity()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
         ChunkUnique::unique(&self.0).map(|ca| ca.into_series())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
         ChunkUnique::n_unique(&self.0)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         ChunkUnique::arg_unique(&self.0)
     }

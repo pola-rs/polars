@@ -293,7 +293,7 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
     }
 }
 
-/// An `AnyValueBuffer` that should be used when we trust the builder
+/// An [`AnyValueBuffer`] that should be used when we trust the builder
 #[derive(Clone)]
 pub enum AnyValueBufferTrusted<'a> {
     Boolean(BooleanChunkedBuilder),
@@ -433,13 +433,13 @@ impl<'a> AnyValueBufferTrusted<'a> {
         }
     }
 
-    /// Will add the AnyValue into `Self` and unpack as the physical type
-    /// belonging to `Self`. This should only be used with physical buffers
+    /// Will add the [`AnyValue`] into [`Self`] and unpack as the physical type
+    /// belonging to [`Self`]. This should only be used with physical buffers
     ///
     /// If a type is not primitive or utf8, the anyvalue will be converted to static
     ///
     /// # Safety
-    /// The caller must ensure that the `AnyValue` type exactly matches the `Buffer` type and is owned.
+    /// The caller must ensure that the [`AnyValue`] type exactly matches the `Buffer` type and is owned.
     #[inline]
     pub unsafe fn add_unchecked_owned_physical(&mut self, val: &AnyValue<'_>) {
         use AnyValueBufferTrusted::*;
@@ -478,7 +478,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
     }
 
     /// # Safety
-    /// The caller must ensure that the `AnyValue` type exactly matches the `Buffer` type and is borrowed.
+    /// The caller must ensure that the [`AnyValue`] type exactly matches the `Buffer` type and is borrowed.
     #[inline]
     pub unsafe fn add_unchecked_borrowed_physical(&mut self, val: &AnyValue<'_>) {
         use AnyValueBufferTrusted::*;

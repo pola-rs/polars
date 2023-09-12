@@ -76,7 +76,7 @@ ColumnNameOrSelector: TypeAlias = Union[str, SelectorType]
 # User-facing string literal types
 # The following all have an equivalent Rust enum with the same name
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
-CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric"]
+CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 FillNullStrategy: TypeAlias = Literal[

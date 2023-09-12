@@ -45,6 +45,8 @@ async = [
   "polars-pipe/async",
   "streaming",
 ]
+cloud = ["async", "polars-pipe/cloud"]
+cloud_write = ["cloud"]
 ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe/ipc"]
 json = ["polars-io/json", "polars-plan/json", "polars-json"]
 csv = ["polars-io/csv", "polars-plan/csv", "polars-pipe/csv"]

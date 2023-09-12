@@ -9,7 +9,7 @@ use smartstring::alias::String as SmartString;
 use crate::prelude::*;
 use crate::utils::try_get_supertype;
 
-/// A map from field/column name (`String`) to the type of that field/column (`DataType`)
+/// A map from field/column name ([`String`](smartstring::alias::String)) to the type of that field/column ([`DataType`])
 #[derive(Eq, Clone, Default)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct Schema {
@@ -17,7 +17,7 @@ pub struct Schema {
 }
 
 // Schemas will only compare equal if they have the same fields in the same order. We can't use `self.inner ==
-// other.inner` because IndexMap ignores order when checking equality, but we don't want to ignore it.
+// other.inner` because [`IndexMap`] ignores order when checking equality, but we don't want to ignore it.
 impl PartialEq for Schema {
     fn eq(&self, other: &Self) -> bool {
         self.len() == other.len() && self.iter().zip(other.iter()).all(|(a, b)| a == b)
@@ -360,9 +360,9 @@ impl Schema {
         ArrowSchema::from(fields)
     }
 
-    /// Iterates the `Field`s in this schema, constructing them anew by cloning each `(&name, &dtype)` pair
+    /// Iterates the [`Field`]s in this schema, constructing them anew by cloning each `(&name, &dtype)` pair
     ///
-    /// Note that this clones each name and dtype in order to form an owned `Field`. For a clone-free version, use
+    /// Note that this clones each name and dtype in order to form an owned [`Field`]. For a clone-free version, use
     /// [`iter`][Self::iter], which returns `(&name, &dtype)`.
     pub fn iter_fields(&self) -> impl Iterator<Item = Field> + ExactSizeIterator + '_ {
         self.inner

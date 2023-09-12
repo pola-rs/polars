@@ -147,7 +147,7 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> PolarsResult<Utf8Chunked> {
     Ok(builder.finish())
 }
 
-/// Concat `[DataFrame]`s horizontally.
+/// Concat [`DataFrame`]s horizontally.
 #[cfg(feature = "horizontal_concat")]
 /// Concat horizontally and extend with null values if lengths don't match
 pub fn hor_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
@@ -187,7 +187,7 @@ pub fn hor_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
     Ok(first_df)
 }
 
-/// Concat `[DataFrame]`s diagonally.
+/// Concat [`DataFrame`]s diagonally.
 #[cfg(feature = "diagonal_concat")]
 /// Concat diagonally thereby combining different schemas.
 pub fn diag_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {

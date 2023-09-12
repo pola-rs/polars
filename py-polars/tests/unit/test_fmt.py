@@ -1,4 +1,6 @@
-from typing import Any, Iterator, List
+from __future__ import annotations
+
+from typing import Any, Iterator
 
 import pytest
 
@@ -83,7 +85,7 @@ Series: 'foo' [i64]
     ],
 )
 def test_fmt_series(
-    capfd: pytest.CaptureFixture[str], expected: str, values: List[Any]
+    capfd: pytest.CaptureFixture[str], expected: str, values: list[Any]
 ) -> None:
     s = pl.Series(name="foo", values=values)
     print(s)

@@ -9,6 +9,7 @@ mod cse;
 mod delay_rechunk;
 mod drop_nulls;
 
+mod collect_members;
 #[cfg(feature = "cse")]
 mod cse_expr;
 mod fast_projection;
@@ -43,6 +44,7 @@ pub use crate::frame::{AllowedOptimizations, OptState};
 use crate::logical_plan::optimizer::cse_expr::CommonSubExprOptimizer;
 #[cfg(feature = "cse")]
 use crate::logical_plan::visitor::*;
+use crate::prelude::optimizer::collect_members::MemberCollector;
 
 pub trait Optimize {
     fn optimize(&self, logical_plan: LogicalPlan) -> PolarsResult<LogicalPlan>;
@@ -75,8 +77,11 @@ pub fn optimize(
     let eager = opt_state.eager;
     #[cfg(feature = "cse")]
     let comm_subplan_elim = opt_state.comm_subplan_elim && !eager;
+
     #[cfg(feature = "cse")]
     let comm_subexpr_elim = opt_state.comm_subexpr_elim;
+    #[cfg(not(feature = "cse"))]
+    let comm_subexpr_elim = false;
 
     #[allow(unused_variables)]
     let agg_scan_projection = opt_state.file_caching && !streaming && !eager;
@@ -91,16 +96,23 @@ pub fn optimize(
 
     let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
 
+    // Collect members for optimizations that need it.
+    let mut members = MemberCollector::new();
+    if !eager && (comm_subexpr_elim || projection_pushdown) {
+        members.collect(lp_top, lp_arena)
+    }
+
     #[cfg(feature = "cse")]
-    let cse_changed = if comm_subplan_elim {
+    let cse_plan_changed = if comm_subplan_elim {
         let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
         lp_top = lp;
+        members.has_cache |= changed;
         changed
     } else {
         false
     };
     #[cfg(not(feature = "cse"))]
-    let cse_changed = false;
+    let cse_plan_changed = false;
 
     // we do simplification
     if simplify_expr {
@@ -116,8 +128,8 @@ pub fn optimize(
         let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
 
-        if projection_pushdown_opt.has_joins_or_unions && projection_pushdown_opt.has_cache {
-            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_changed);
+        if members.has_joins_or_unions && members.has_cache {
+            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_plan_changed);
         }
     }
 
@@ -160,7 +172,7 @@ pub fn optimize(
     // and predicate pushdown are done. At that moment
     // the file fingerprints are finished.
     #[cfg(any(feature = "cse", feature = "parquet", feature = "ipc", feature = "csv"))]
-    if agg_scan_projection || cse_changed {
+    if agg_scan_projection || cse_plan_changed {
         // we do this so that expressions are simplified created by the pushdown optimizations
         // we must clean up the predicates, because the agg_scan_projection
         // uses them in the hashtable to determine duplicates.
@@ -181,7 +193,7 @@ pub fn optimize(
         file_cacher.assign_unions(lp_top, lp_arena, expr_arena, scratch);
 
         #[cfg(feature = "cse")]
-        if cse_changed {
+        if cse_plan_changed {
             // this must run after cse
             cse::decrement_file_counters_by_cache_hits(lp_top, lp_arena, expr_arena, 0, scratch);
         }
@@ -196,7 +208,7 @@ pub fn optimize(
 
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
-    if comm_subexpr_elim {
+    if comm_subexpr_elim && !members.has_ext_context {
         let mut optimizer = CommonSubExprOptimizer::new(expr_arena);
         lp_top = ALogicalPlanNode::with_context(lp_top, lp_arena, |alp_node| {
             alp_node.rewrite(&mut optimizer)

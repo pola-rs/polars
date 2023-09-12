@@ -63,16 +63,24 @@ impl PyExpr {
         self.inner.clone().str().to_time(options).into()
     }
 
-    fn str_strip(&self, matches: Option<String>) -> Self {
-        self.inner.clone().str().strip(matches).into()
+    fn str_strip_chars(&self, matches: Option<String>) -> Self {
+        self.inner.clone().str().strip_chars(matches).into()
     }
 
-    fn str_rstrip(&self, matches: Option<String>) -> Self {
-        self.inner.clone().str().rstrip(matches).into()
+    fn str_strip_chars_start(&self, matches: Option<String>) -> Self {
+        self.inner.clone().str().strip_chars_start(matches).into()
     }
 
-    fn str_lstrip(&self, matches: Option<String>) -> Self {
-        self.inner.clone().str().lstrip(matches).into()
+    fn str_strip_chars_end(&self, matches: Option<String>) -> Self {
+        self.inner.clone().str().strip_chars_end(matches).into()
+    }
+
+    fn str_strip_prefix(&self, prefix: String) -> Self {
+        self.inner.clone().str().strip_prefix(prefix).into()
+    }
+
+    fn str_strip_suffix(&self, suffix: String) -> Self {
+        self.inner.clone().str().strip_suffix(suffix).into()
     }
 
     fn str_slice(&self, start: i64, length: Option<u64>) -> Self {
@@ -259,8 +267,12 @@ impl PyExpr {
             .into())
     }
 
-    fn str_count_match(&self, pat: Self) -> Self {
-        self.inner.clone().str().count_match(pat.inner).into()
+    fn str_count_matches(&self, pat: Self, literal: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .count_matches(pat.inner, literal)
+            .into()
     }
 
     fn str_split(&self, by: &str) -> Self {

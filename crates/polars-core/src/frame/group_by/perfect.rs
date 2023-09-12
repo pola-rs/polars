@@ -229,7 +229,7 @@ impl CategoricalChunked {
 #[repr(C, align(64))]
 struct AlignTo64([u8; 64]);
 
-/// There are no guarantees that the Vec<T> will remain aligned if you reallocate the data.
+/// There are no guarantees that the [`Vec<T>`] will remain aligned if you reallocate the data.
 /// This means that you cannot reallocate so you will need to know how big to allocate up front.
 unsafe fn aligned_vec<T>(n: usize) -> Vec<T> {
     assert!(std::mem::align_of::<T>() <= 64);
