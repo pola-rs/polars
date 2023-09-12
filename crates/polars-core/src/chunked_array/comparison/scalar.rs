@@ -12,8 +12,10 @@ where
         f: impl Fn(&PrimitiveArray<T::Native>, &dyn Scalar) -> BooleanArray,
     ) -> BooleanChunked {
         let rhs: T::Native = NumCast::from(rhs).unwrap();
-        let scalar = PrimitiveScalar::new(T::get_dtype().to_arrow(), Some(rhs));
-        self.apply_kernel_cast(&|arr| Box::new(f(arr, &scalar)))
+        self.apply_kernel_cast(&|arr| {
+            let scalar = PrimitiveScalar::new(arr.data_type().clone(), Some(rhs));
+            Box::new(f(arr, &scalar))
+        })
     }
 }
 
