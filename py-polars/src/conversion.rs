@@ -1098,9 +1098,11 @@ impl FromPyObject<'_> for Wrap<Option<AvroCompression>> {
             "uncompressed" => None,
             "snappy" => Some(AvroCompression::Snappy),
             "deflate" => Some(AvroCompression::Deflate),
-            v => return Err(PyValueError::new_err(format!(
+            v => {
+                return Err(PyValueError::new_err(format!(
                 "avro compression must be one of {{'uncompressed', 'snappy', 'deflate'}}, got {v}",
-            ))),
+            )))
+            },
         };
         Ok(Wrap(parsed))
     }
@@ -1398,9 +1400,11 @@ impl FromPyObject<'_> for Wrap<WindowMapping> {
             "group_to_rows" => WindowMapping::GroupsToRows,
             "join" => WindowMapping::Join,
             "explode" => WindowMapping::Explode,
-            v => return Err(PyValueError::new_err(format!(
-                "mapping strategy must be one of {{'group_to_rows', 'join', 'explode'}}, got {v}",
-            ))),
+            v => {
+                return Err(PyValueError::new_err(format!(
+                 "mapping strategy must be one of {{'group_to_rows', 'join', 'explode'}}, got {v}",
+            )))
+            },
         };
         Ok(Wrap(parsed))
     }
