@@ -13,11 +13,11 @@ body:
       required: true
 
   - type: input
-    id: location
+    id: link
     attributes:
-      label: Location
+      label: Link
       description: >
         Provide a link to the existing documentation, if applicable.
-      placeholder: https://pola-rs.github.io/polars/docs/python/dev/reference/api/polars.read_csv.html
+      placeholder: ex. https://pola-rs.github.io/polars/docs/python/dev/...
     validations:
       required: false
