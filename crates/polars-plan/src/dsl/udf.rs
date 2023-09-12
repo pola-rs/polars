@@ -77,7 +77,7 @@ impl UserDefinedFunction {
 
     /// creates a logical expression with a call of the UDF
     /// This does not do any schema validation and is therefore faster.
-    /// 
+    ///
     /// Only use this if you are certain that the schema is correct.
     /// If the schema is invalid, the query will fail at runtime.
     pub fn call_unchecked(self, args: Vec<Expr>) -> Expr {
