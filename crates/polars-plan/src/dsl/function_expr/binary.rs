@@ -1,3 +1,4 @@
+use polars_core::prelude::arity::binary_elementwise;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -7,8 +8,8 @@ use super::*;
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum BinaryFunction {
     Contains { pat: Vec<u8>, literal: bool },
-    StartsWith(Vec<u8>),
-    EndsWith(Vec<u8>),
+    StartsWith,
+    EndsWith,
 }
 
 impl Display for BinaryFunction {
@@ -16,8 +17,8 @@ impl Display for BinaryFunction {
         use BinaryFunction::*;
         let s = match self {
             Contains { .. } => "contains",
-            StartsWith(_) => "starts_with",
-            EndsWith(_) => "ends_with",
+            StartsWith => "starts_with",
+            EndsWith => "ends_with",
         };
         write!(f, "bin.{s}")
     }
@@ -32,13 +33,39 @@ pub(super) fn contains(s: &Series, pat: &[u8], literal: bool) -> PolarsResult<Se
     }
 }
 
-pub(super) fn ends_with(s: &Series, sub: &[u8]) -> PolarsResult<Series> {
-    let ca = s.binary()?;
-    Ok(ca.ends_with(sub).into_series())
+pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].binary()?;
+    let sub = s[1].binary()?;
+
+    Ok(match sub.len() {
+        1 => match sub.get(0) {
+            Some(s) => ca.ends_with(s),
+            None => BooleanChunked::full(ca.name(), false, ca.len()),
+        },
+        _ => binary_elementwise(ca, sub, |opt_s, opt_sub| match (opt_s, opt_sub) {
+            (Some(s), Some(sub)) => Some(s.ends_with(sub)),
+            _ => Some(false),
+        }),
+    }
+    .with_name(ca.name())
+    .into_series())
 }
-pub(super) fn starts_with(s: &Series, sub: &[u8]) -> PolarsResult<Series> {
-    let ca = s.binary()?;
-    Ok(ca.starts_with(sub).into_series())
+pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].binary()?;
+    let sub = s[1].binary()?;
+
+    Ok(match sub.len() {
+        1 => match sub.get(0) {
+            Some(s) => ca.starts_with(s),
+            None => BooleanChunked::full(ca.name(), false, ca.len()),
+        },
+        _ => binary_elementwise(ca, sub, |opt_s, opt_sub| match (opt_s, opt_sub) {
+            (Some(s), Some(sub)) => Some(s.starts_with(sub)),
+            _ => Some(false),
+        }),
+    }
+    .with_name(ca.name())
+    .into_series())
 }
 
 impl From<BinaryFunction> for FunctionExpr {

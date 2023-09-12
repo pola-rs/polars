@@ -717,11 +717,11 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Contains { pat, literal } => {
                 map!(binary::contains, &pat, literal)
             },
-            EndsWith(sub) => {
-                map!(binary::ends_with, &sub)
+            EndsWith => {
+                map_as_slice!(binary::ends_with)
             },
-            StartsWith(sub) => {
-                map!(binary::starts_with, &sub)
+            StartsWith => {
+                map_as_slice!(binary::starts_with)
             },
         }
     }

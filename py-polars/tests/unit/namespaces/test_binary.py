@@ -45,12 +45,27 @@ def test_contains() -> None:
 
 
 def test_starts_ends_with() -> None:
-    assert pl.DataFrame({"a": [b"hamburger", b"nuts", b"lollypop"]}).select(
+    assert pl.DataFrame(
+        {
+            "a": [b"hamburger", b"nuts", b"lollypop"],
+            "end": [b"ger", b"tg", None],
+            "start": [b"ha", b"nga", None],
+        }
+    ).select(
         [
-            pl.col("a").bin.ends_with(b"pop").alias("pop"),
-            pl.col("a").bin.starts_with(b"ham").alias("ham"),
+            pl.col("a").bin.ends_with(b"pop").alias("end_lit"),
+            pl.col("a").bin.ends_with(pl.col("end")).alias("end_expr"),
+            pl.col("a").bin.starts_with(b"ham").alias("start_lit"),
+            pl.col("a").bin.starts_with(pl.col("start")).alias("start_expr"),
         ]
-    ).to_dict(False) == {"pop": [False, False, True], "ham": [True, False, False]}
+    ).to_dict(
+        False
+    ) == {
+        "end_lit": [False, False, True],
+        "end_expr": [True, False, False],
+        "start_lit": [True, False, False],
+        "start_expr": [True, False, False],
+    }
 
 
 def test_base64_encode() -> None:
