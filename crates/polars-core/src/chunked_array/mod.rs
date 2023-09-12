@@ -16,6 +16,7 @@ pub mod ops;
 pub mod arithmetic;
 pub mod builder;
 pub mod cast;
+pub mod collect;
 pub mod comparison;
 pub mod float;
 pub mod iterator;
