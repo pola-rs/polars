@@ -2153,14 +2153,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Collect a small number of rows for debugging purposes.
 
-        Fetch is like a :func:`collect` operation, but it overwrites the number of rows
-        read by every scan operation. This is a utility that helps debug a query on a
-        smaller number of rows.
-
-        Note that the fetch does not guarantee the final number of rows in the
-        DataFrame. Filter, join operations and a lower number of rows available in the
-        scanned file influence the final number of rows.
-
         Parameters
         ----------
         n_rows
@@ -2183,6 +2175,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
+
+        Notes
+        -----
+        This is similar to a :func:`collect` operation, but it overwrites the number of
+        rows read by *every* scan operation. Be aware that ``fetch`` does not guarantee
+        the final number of rows in the DataFrame. Filters, join operations and fewer
+        rows being available in the scanned data will all influence the final number
+        of rows (joins are especially susceptible to this, and may return no data
+        at all if ``n_rows`` is too small as the join keys may not be present).
+
+        Warnings
+        --------
+        This is strictly a utility function that can help to debug queries using a
+        smaller number of rows, and should *not* be used in production code.
 
         Returns
         -------
