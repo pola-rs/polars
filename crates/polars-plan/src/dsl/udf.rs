@@ -33,7 +33,7 @@ impl std::fmt::Debug for UserDefinedFunction {
 }
 
 impl UserDefinedFunction {
-    /// Create a new ScalarUDF
+    /// Create a new UserDefinedFunction
     pub fn new(
         name: &str,
         input_fields: Vec<Field>,
