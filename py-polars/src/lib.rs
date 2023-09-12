@@ -51,7 +51,8 @@ use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::{
     ArrowErrorException, ColumnNotFoundError, ComputeError, DuplicateError, InvalidOperationError,
-    NoDataError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
+    NoDataError, OutOfBoundsError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError,
+    StructFieldNotFoundError,
 };
 use crate::expr::PyExpr;
 use crate::lazyframe::PyLazyFrame;
@@ -243,6 +244,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     )
     .unwrap();
     m.add("NoDataError", py.get_type::<NoDataError>()).unwrap();
+    m.add("OutOfBoundsError", py.get_type::<OutOfBoundsError>())
+        .unwrap();
     m.add("PolarsPanicError", py.get_type::<PanicException>())
         .unwrap();
     m.add("SchemaError", py.get_type::<SchemaError>()).unwrap();

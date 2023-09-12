@@ -154,8 +154,23 @@ impl PySeries {
         }
     }
 
-    fn get_idx(&self, py: Python, idx: usize) -> PyResult<PyObject> {
-        let av = self.series.get(idx).map_err(PyPolarsErr::from)?;
+    /// Get index but allow negative indices
+    fn get_index_signed(&self, py: Python, index: i64) -> PyResult<PyObject> {
+        let index = if index < 0 {
+            match self.len().checked_sub(index.abs() as usize) {
+                Some(v) => v,
+                None => {
+                    return Err(PyPolarsErr::from(polars_err!(oob = index, self.len())).into());
+                },
+            }
+        } else {
+            index as usize
+        };
+        self.get_index(py, index)
+    }
+
+    fn get_index(&self, py: Python, index: usize) -> PyResult<PyObject> {
+        let av = self.series.get(index).map_err(PyPolarsErr::from)?;
         if let AnyValue::List(s) = av {
             let pyseries = PySeries::new(s);
             let out = POLARS
@@ -166,7 +181,7 @@ impl PySeries {
 
             Ok(out.into_py(py))
         } else {
-            Ok(Wrap(self.series.get(idx).map_err(PyPolarsErr::from)?).into_py(py))
+            Ok(Wrap(av).into_py(py))
         }
     }
 

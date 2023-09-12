@@ -1856,7 +1856,7 @@ class DataFrame:
                     f"can only call `.item()` if the dataframe is of shape (1, 1), or if"
                     f" explicit row/col values are provided; frame has shape {self.shape!r}"
                 )
-            return self._df.select_at_idx(0).get_idx(0)
+            return self._df.select_at_idx(0).get_index(0)
 
         elif row is None or column is None:
             raise ValueError("cannot call `.item()` with only one of `row` or `column`")
@@ -1868,7 +1868,7 @@ class DataFrame:
         )
         if s is None:
             raise IndexError(f"column index {column!r} is out of bounds")
-        return s.get_idx(row)
+        return s.get_index_signed(row)
 
     def to_arrow(self) -> pa.Table:
         """

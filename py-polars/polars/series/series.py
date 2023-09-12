@@ -64,7 +64,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ShapeError
+from polars.exceptions import OutOfBoundsError, ShapeError
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
@@ -933,11 +933,11 @@ class Series:
     def __iter__(self) -> Generator[Any, None, None]:
         if self.dtype == List:
             # TODO: either make a change and return py-native list data here, or find
-            #  a faster way to return nested/List series; sequential 'get_idx' calls
+            #  a faster way to return nested/List series; sequential 'get_index' calls
             #  make this path a lot slower (~10x) than it needs to be.
-            get_idx = self._s.get_idx
+            get_index = self._s.get_index
             for idx in range(self.len()):
-                yield get_idx(idx)
+                yield get_index(idx)
         else:
             buffer_size = 25_000
             for offset in range(0, self.len(), buffer_size):
@@ -1019,17 +1019,20 @@ class Series:
         elif _check_for_numpy(item) and isinstance(item, np.ndarray):
             return self._take_with_series(numpy_to_idxs(item, self.len()))
 
-        # Integer.
+        # Integer
         elif isinstance(item, int):
-            if item < 0:
-                item = self.len() + item
-            return self._s.get_idx(item)
+            try:
+                return self._s.get_index_signed(item)
+            except OutOfBoundsError as exc:
+                raise IndexError(
+                    f"index {item} is out of bounds for Series of length {self.len()}"
+                ) from exc
 
-        # Slice.
+        # Slice
         elif isinstance(item, slice):
             return PolarsSlice(self).apply(item)
 
-        # Range.
+        # Range
         elif isinstance(item, range):
             return self[range_to_slice(item)]
 

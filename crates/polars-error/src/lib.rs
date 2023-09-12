@@ -55,6 +55,8 @@ pub enum PolarsError {
     Io(#[from] io::Error),
     #[error("no data: {0}")]
     NoData(ErrString),
+    #[error("{0}")]
+    OutOfBounds(ErrString),
     #[error("field not found: {0}")]
     SchemaFieldNotFound(ErrString),
     #[error("data types don't match: {0}")]
@@ -105,6 +107,7 @@ impl PolarsError {
             InvalidOperation(msg) => InvalidOperation(func(msg).into()),
             Io(err) => ComputeError(func(&format!("IO: {err}")).into()),
             NoData(msg) => NoData(func(msg).into()),
+            OutOfBounds(msg) => OutOfBounds(func(msg).into()),
             SchemaFieldNotFound(msg) => SchemaFieldNotFound(func(msg).into()),
             SchemaMismatch(msg) => SchemaMismatch(func(msg).into()),
             ShapeMismatch(msg) => ShapeMismatch(func(msg).into()),
@@ -205,7 +208,7 @@ on startup."#.trim_start())
         polars_err!(Duplicate: "column with name '{}' has more than one occurrences", $name)
     };
     (oob = $idx:expr, $len:expr) => {
-        polars_err!(ComputeError: "index {} is out of bounds for sequence of size {}", $idx, $len)
+        polars_err!(OutOfBounds: "index {} is out of bounds for sequence of length {}", $idx, $len)
     };
     (agg_len = $agg_len:expr, $groups_len:expr) => {
         polars_err!(

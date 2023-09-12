@@ -2811,3 +2811,19 @@ def test_symmetry_for_max_in_names() -> None:
     # TODO: time arithmetic support?
     # a = pl.Series("a", [1], dtype=pl.Time)
     # assert (a - a.max()).name == (a.max() - a).name == a.name
+
+
+def test_series_getitem_out_of_bounds_positive() -> None:
+    s = pl.Series([1, 2])
+    with pytest.raises(
+        IndexError, match="index 10 is out of bounds for Series of length 2"
+    ):
+        s[10]
+
+
+def test_series_getitem_out_of_bounds_negative() -> None:
+    s = pl.Series([1, 2])
+    with pytest.raises(
+        IndexError, match="index -10 is out of bounds for Series of length 2"
+    ):
+        s[-10]
