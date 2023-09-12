@@ -52,12 +52,13 @@ impl UserDefinedFunction {
     /// creates a logical expression with a call of the UDF
     /// This utility allows using the UDF without requiring access to the registry.
     /// The schema is validated and the query will fail if the schema is invalid.
-    pub fn call(&self, args: Vec<Expr>) -> PolarsResult<Expr> {
-        let func: SpecialEq<Arc<dyn SeriesUdf>> = SpecialEq::new(self.fun.clone());
+    pub fn call(self, args: Vec<Expr>) -> PolarsResult<Expr> {
+        let func: SpecialEq<Arc<dyn SeriesUdf>> = SpecialEq::new(self.fun);
+
         if args.len() != self.input_fields.len() {
             polars_bail!(InvalidOperation: "expected {} arguments, got {}", self.input_fields.len(), args.len())
         }
-        let schema = Schema::from_iter(self.input_fields.iter().cloned());
+        let schema = Schema::from_iter(self.input_fields.into_iter());
 
         if args
             .iter()
@@ -65,30 +66,28 @@ impl UserDefinedFunction {
             .collect::<PolarsResult<Vec<_>>>()
             .is_err()
         {
-            polars_bail!(InvalidOperation: "unexpected field in UDF \nexpected: {:?}\n received {:?}", self.input_fields, args)
+            polars_bail!(InvalidOperation: "unexpected field in UDF \nexpected: {:?}\n received {:?}", schema, args)
         };
 
-        let expr = Expr::AnonymousFunction {
+        Ok(Expr::AnonymousFunction {
             input: args,
             function: func,
-            output_type: self.return_type.clone(),
+            output_type: self.return_type,
             options: self.options,
-        };
-        Ok(expr.alias(&self.name))
+        })
     }
 
     /// creates a logical expression with a call of the UDF
     /// This does not do any schema validation and is therefore faster.
     /// Only use this if you are certain that the schema is correct.
     /// If the schema is invalid, the query will fail at runtime.
-    pub fn call_unchecked(&self, args: Vec<Expr>) -> Expr {
-        let func: SpecialEq<Arc<dyn SeriesUdf>> = SpecialEq::new(self.fun.clone());
-        let expr = Expr::AnonymousFunction {
+    pub fn call_unchecked(self, args: Vec<Expr>) -> Expr {
+        let func: SpecialEq<Arc<dyn SeriesUdf>> = SpecialEq::new(self.fun);
+        Expr::AnonymousFunction {
             input: args,
             function: func,
             output_type: self.return_type.clone(),
             options: self.options,
-        };
-        expr.alias(&self.name)
+        }
     }
 }
