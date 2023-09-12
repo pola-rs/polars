@@ -35,7 +35,6 @@ miri:  ## Run miri
 	MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows" \
 	POLARS_ALLOW_EXTENSION=1 \
 	cargo miri test \
-	    --no-default-features \
 	    --features object \
 	    -p polars-core \
 	    -p polars-arrow

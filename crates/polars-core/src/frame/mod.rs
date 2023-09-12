@@ -7,6 +7,7 @@ use ahash::AHashSet;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 
+#[cfg(feature = "algorithm_group_by")]
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
 #[cfg(feature = "describe")]
@@ -22,7 +23,9 @@ mod chunks;
 pub(crate) mod cross_join;
 pub mod explode;
 mod from;
+#[cfg(feature = "algorithm_group_by")]
 pub mod group_by;
+#[cfg(feature = "algorithm_join")]
 pub mod hash_join;
 #[cfg(feature = "rows")]
 pub mod row;
@@ -34,6 +37,7 @@ pub use chunks::*;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
+#[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::GroupsIndicator;
 #[cfg(feature = "row_hash")]
 use crate::hashing::df_rows_to_hashes_threaded_vertical;
@@ -3065,6 +3069,7 @@ impl DataFrame {
     /// | 3   | 3   | "c" |
     /// +-----+-----+-----+
     /// ```
+    #[cfg(feature = "algorithm_group_by")]
     pub fn unique_stable(
         &self,
         subset: Option<&[String]>,
@@ -3075,6 +3080,7 @@ impl DataFrame {
     }
 
     /// Unstable distinct. See [`DataFrame::unique_stable`].
+    #[cfg(feature = "algorithm_group_by")]
     pub fn unique(
         &self,
         subset: Option<&[String]>,
@@ -3084,6 +3090,7 @@ impl DataFrame {
         self.unique_impl(false, subset, keep, slice)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     pub fn unique_impl(
         &self,
         maintain_order: bool,
@@ -3169,6 +3176,7 @@ impl DataFrame {
     /// assert!(ca.all());
     /// # Ok::<(), PolarsError>(())
     /// ```
+    #[cfg(feature = "algorithm_group_by")]
     pub fn is_unique(&self) -> PolarsResult<BooleanChunked> {
         let gb = self.group_by(self.get_column_names())?;
         let groups = gb.take_groups();
@@ -3193,6 +3201,7 @@ impl DataFrame {
     /// assert!(!ca.all());
     /// # Ok::<(), PolarsError>(())
     /// ```
+    #[cfg(feature = "algorithm_group_by")]
     pub fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
         let gb = self.group_by(self.get_column_names())?;
         let groups = gb.take_groups();
@@ -3327,7 +3336,7 @@ impl DataFrame {
         self.take_unchecked_impl(&ca, allow_threads)
     }
 
-    #[cfg(feature = "partition_by")]
+    #[cfg(all(feature = "partition_by", feature = "algorithm_group_by"))]
     #[doc(hidden)]
     pub fn _partition_by_impl(
         &self,

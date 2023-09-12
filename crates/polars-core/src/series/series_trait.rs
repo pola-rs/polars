@@ -126,23 +126,29 @@ pub(crate) mod private {
         ) -> PolarsResult<()> {
             polars_bail!(opq = vec_hash_combine, self._dtype());
         }
+        #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
+        #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
+        #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
+        #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_std(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
+        #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_var(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
+        #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
@@ -170,6 +176,7 @@ pub(crate) mod private {
         fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
             invalid_operation_panic!(rem, self)
         }
+        #[cfg(feature = "algorithm_group_by")]
         fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
             invalid_operation_panic!(group_tuples, self)
         }

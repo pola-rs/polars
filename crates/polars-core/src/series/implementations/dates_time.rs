@@ -17,7 +17,9 @@ use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::ops::ToBitRepr;
 use crate::chunked_array::AsSinglePtr;
+#[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
+#[cfg(feature = "algorithm_join")]
 use crate::frame::hash_join::*;
 use crate::prelude::*;
 
@@ -90,14 +92,17 @@ macro_rules! impl_dyn_series {
                 Ok(())
             }
 
+        #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_min(groups).$into_logical().into_series()
             }
 
+        #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_max(groups).$into_logical().into_series()
             }
 
+        #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
                 // we cannot cast and dispatch as the inner type of the list would be incorrect
                 self.0
@@ -106,6 +111,7 @@ macro_rules! impl_dyn_series {
                     .unwrap()
             }
 
+#[cfg(feature = "algorithm_join")]
             unsafe fn zip_outer_join_column(
                 &self,
                 right_column: &Series,
@@ -153,6 +159,7 @@ macro_rules! impl_dyn_series {
             fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
                 polars_bail!(opq = rem, self.0.dtype(), rhs.dtype());
             }
+    #[cfg(feature = "algorithm_group_by")]
             fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
                 self.0.group_tuples(multithreaded, sorted)
             }
@@ -352,14 +359,17 @@ macro_rules! impl_dyn_series {
                 self.0.has_validity()
             }
 
+#[cfg(feature = "algorithm_group_by")]
             fn unique(&self) -> PolarsResult<Series> {
                 self.0.unique().map(|ca| ca.$into_logical().into_series())
             }
 
+#[cfg(feature = "algorithm_group_by")]
             fn n_unique(&self) -> PolarsResult<usize> {
                 self.0.n_unique()
             }
 
+#[cfg(feature = "algorithm_group_by")]
             fn arg_unique(&self) -> PolarsResult<IdxCa> {
                 self.0.arg_unique()
             }

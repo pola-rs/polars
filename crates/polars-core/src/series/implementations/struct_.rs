@@ -62,6 +62,7 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
         self.0.agg_list(groups)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         let df = DataFrame::new_no_checks(vec![]);
         let gb = df
