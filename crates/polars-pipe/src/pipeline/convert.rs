@@ -185,7 +185,7 @@ where
                         FileType::Csv(csv_options) => Box::new(CsvCloudSink::new(
                             uri,
                             cloud_options.as_ref(),
-                            *csv_options,
+                            csv_options.clone(),
                             input_schema.as_ref(),
                         )?)
                             as Box<dyn SinkTrait>,
