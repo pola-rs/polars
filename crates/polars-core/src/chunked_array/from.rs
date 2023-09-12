@@ -118,7 +118,7 @@ where
         unsafe { Ok(Self::from_chunks(name, chunks?)) }
     }
 
-    /// Create a new ChunkedArray from existing chunks.
+    /// Create a new [`ChunkedArray`] from existing chunks.
     ///
     /// # Safety
     /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.

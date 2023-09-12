@@ -527,7 +527,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     #[cfg(feature = "list_take")]
                     Take(null_ob_oob) => map_as_slice!(list::take, null_ob_oob),
                     #[cfg(feature = "list_count")]
-                    CountMatch => map_as_slice!(list::count_match),
+                    CountMatches => map_as_slice!(list::count_matches),
                     Sum => map!(list::sum),
                     #[cfg(feature = "list_sets")]
                     SetOperation(s) => map_as_slice!(list::set_operation, s),
@@ -647,8 +647,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         match func {
             #[cfg(feature = "regex")]
             Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
-            CountMatch => {
-                map_as_slice!(strings::count_match)
+            CountMatches(literal) => {
+                map_as_slice!(strings::count_matches, literal)
             },
             EndsWith { .. } => map_as_slice!(strings::ends_with),
             StartsWith { .. } => map_as_slice!(strings::starts_with),
@@ -690,9 +690,11 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Lowercase => map!(strings::lowercase),
             #[cfg(feature = "nightly")]
             Titlecase => map!(strings::titlecase),
-            Strip(matches) => map!(strings::strip, matches.as_deref()),
-            LStrip(matches) => map!(strings::lstrip, matches.as_deref()),
-            RStrip(matches) => map!(strings::rstrip, matches.as_deref()),
+            StripChars(matches) => map!(strings::strip_chars, matches.as_deref()),
+            StripCharsStart(matches) => map!(strings::strip_chars_start, matches.as_deref()),
+            StripCharsEnd(matches) => map!(strings::strip_chars_end, matches.as_deref()),
+            StripPrefix(prefix) => map!(strings::strip_prefix, &prefix),
+            StripSuffix(suffix) => map!(strings::strip_suffix, &suffix),
             #[cfg(feature = "string_from_radix")]
             FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
             Slice(start, length) => map!(strings::str_slice, start, length),

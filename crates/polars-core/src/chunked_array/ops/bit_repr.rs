@@ -2,7 +2,7 @@ use arrow::buffer::Buffer;
 
 use crate::prelude::*;
 
-/// Reinterprets the type of a ChunkedArray. T and U must have the same size
+/// Reinterprets the type of a [`ChunkedArray`]. T and U must have the same size
 /// and alignment.
 fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
     ca: &ChunkedArray<T>,
@@ -22,7 +22,7 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
     ChunkedArray::from_chunk_iter(ca.name(), chunks)
 }
 
-/// Reinterprets the type of a ListChunked. T and U must have the same size
+/// Reinterprets the type of a [`ListChunked`]. T and U must have the same size
 /// and alignment.
 fn reinterpret_list_chunked<T: PolarsNumericType, U: PolarsNumericType>(
     ca: &ListChunked,

@@ -7,7 +7,7 @@ if TYPE_CHECKING:
 
 
 def _check_arg_is_1byte(
-    arg_name: str, arg: str | None, can_be_empty: bool = False
+    arg_name: str, arg: str | None, *, can_be_empty: bool = False
 ) -> None:
     if isinstance(arg, str):
         arg_byte_length = len(arg.encode("utf-8"))

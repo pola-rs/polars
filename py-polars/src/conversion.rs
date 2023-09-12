@@ -1433,6 +1433,7 @@ impl FromPyObject<'_> for Wrap<QuoteStyle> {
             "always" => QuoteStyle::Always,
             "necessary" => QuoteStyle::Necessary,
             "non_numeric" => QuoteStyle::NonNumeric,
+            "never" => QuoteStyle::Never,
             v => {
                 return Err(PyValueError::new_err(format!(
                     "validate must be one of {{'always', 'necessary', 'non_numeric'}}, got {v}",

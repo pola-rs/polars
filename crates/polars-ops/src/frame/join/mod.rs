@@ -312,8 +312,11 @@ pub trait DataFrameJoinOps: IntoDf {
                 // Allocate a new vec for df_left so that the keys are left and then other values.
                 let mut keys = Vec::with_capacity(selected_left.len() + df_left.width());
                 for (s_left, s_right) in selected_left.iter().zip(&selected_right) {
-                    let mut s = s_left.zip_outer_join_column(s_right, opt_join_tuples);
-                    s.rename(s_left.name());
+                    let s = unsafe {
+                        s_left
+                            .zip_outer_join_column(s_right, opt_join_tuples)
+                            .with_name(s_left.name())
+                    };
                     keys.push(s)
                 }
                 keys.extend_from_slice(df_left.get_columns());

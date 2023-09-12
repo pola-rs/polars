@@ -583,7 +583,7 @@ impl<'df> GroupBy<'df> {
         DataFrame::new(cols)
     }
 
-    /// Aggregate grouped `Series` and determine the quantile per group.
+    /// Aggregate grouped [`Series`] and determine the quantile per group.
     ///
     /// # Example
     ///
@@ -616,7 +616,7 @@ impl<'df> GroupBy<'df> {
         DataFrame::new(cols)
     }
 
-    /// Aggregate grouped `Series` and determine the median per group.
+    /// Aggregate grouped [`Series`] and determine the median per group.
     ///
     /// # Example
     ///
@@ -638,7 +638,7 @@ impl<'df> GroupBy<'df> {
         DataFrame::new(cols)
     }
 
-    /// Aggregate grouped `Series` and determine the variance per group.
+    /// Aggregate grouped [`Series`] and determine the variance per group.
     #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn var(&self, ddof: u8) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
@@ -651,7 +651,7 @@ impl<'df> GroupBy<'df> {
         DataFrame::new(cols)
     }
 
-    /// Aggregate grouped `Series` and determine the standard deviation per group.
+    /// Aggregate grouped [`Series`] and determine the standard deviation per group.
     #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn std(&self, ddof: u8) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
@@ -790,7 +790,7 @@ impl<'df> GroupBy<'df> {
         }
     }
 
-    /// Apply a closure over the groups as a new DataFrame in parallel.
+    /// Apply a closure over the groups as a new [`DataFrame`] in parallel.
     #[deprecated(since = "0.24.1", note = "use polars.lazy aggregations")]
     pub fn par_apply<F>(&self, f: F) -> PolarsResult<DataFrame>
     where
@@ -813,7 +813,7 @@ impl<'df> GroupBy<'df> {
         Ok(df)
     }
 
-    /// Apply a closure over the groups as a new DataFrame.
+    /// Apply a closure over the groups as a new [`DataFrame`].
     pub fn apply<F>(&self, mut f: F) -> PolarsResult<DataFrame>
     where
         F: FnMut(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
