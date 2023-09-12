@@ -19,23 +19,23 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture()
-def excel_file_path(io_files_path: Path) -> str:
-    return str(io_files_path / "example.xlsx")
+def excel_file_path(io_files_path: Path) -> Path:
+    return io_files_path / "example.xlsx"
 
 
 @pytest.fixture()
-def empty_excel_file_path(io_files_path: Path) -> str:
-    return str(io_files_path / "empty.xlsx")
+def empty_excel_file_path(io_files_path: Path) -> Path:
+    return io_files_path / "empty.xlsx"
 
 
 @pytest.fixture()
-def openoffice_file_path(io_files_path: Path) -> str:
-    return str(io_files_path / "example.ods")
+def openoffice_file_path(io_files_path: Path) -> Path:
+    return io_files_path / "example.ods"
 
 
 @pytest.fixture()
-def empty_openoffice_file_path(io_files_path: Path) -> str:
-    return str(io_files_path / "empty.ods")
+def empty_openoffice_file_path(io_files_path: Path) -> Path:
+    return io_files_path / "empty.ods"
 
 
 @pytest.mark.parametrize(
@@ -119,7 +119,7 @@ def test_read_excel_all_sheets(
         sheet_id=0,
         **params,
     )
-    assert len(frames) == (3 if spreadsheet_path.endswith("ods") else 4)
+    assert len(frames) == (3 if str(spreadsheet_path).endswith("ods") else 4)
 
     expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
     expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
