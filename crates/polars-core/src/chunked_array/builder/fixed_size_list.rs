@@ -27,24 +27,12 @@ impl<T: NativeType> FixedSizeListNumericBuilder<T> {
 }
 
 pub(crate) trait FixedSizeListBuilder {
-    fn push(&mut self, arr: ArrayRef) -> PolarsResult<()>;
     unsafe fn push_unchecked(&mut self, arr: &dyn Array, offset: usize);
     unsafe fn push_null(&mut self);
     fn finish(&mut self) -> ArrayChunked;
 }
 
 impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
-    #[inline]
-    fn push(&mut self, arr: ArrayRef) -> PolarsResult<()> {
-        let inner = self.inner.as_mut().unwrap();
-        let arr = arr
-            .as_any()
-            .downcast_ref::<PrimitiveArray<T>>()
-            .ok_or_else(|| polars_err!(ComputeError : "failed to downcast array"))?;
-
-        Ok(inner.try_push(Some(arr.clone()))?)
-    }
-
     #[inline]
     unsafe fn push_unchecked(&mut self, arr: &dyn Array, offset: usize) {
         let start = offset * self.width;
@@ -107,11 +95,6 @@ impl AnonymousOwnedFixedSizeListBuilder {
 }
 
 impl FixedSizeListBuilder for AnonymousOwnedFixedSizeListBuilder {
-    #[inline]
-    fn push(&mut self, arr: ArrayRef) -> PolarsResult<()> {
-        self.inner.push(arr);
-        Ok(())
-    }
     #[inline]
     unsafe fn push_unchecked(&mut self, arr: &dyn Array, offset: usize) {
         let arr = arr.sliced_unchecked(offset * self.inner.width, self.inner.width);
