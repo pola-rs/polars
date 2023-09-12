@@ -10,13 +10,13 @@ from typing import TYPE_CHECKING, Any, ClassVar, Hashable, cast
 
 _DATAFRAME_API_COMPAT_AVAILABLE = True
 _DELTALAKE_AVAILABLE = True
-_PYICEBERG_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
 _NUMPY_AVAILABLE = True
 _PANDAS_AVAILABLE = True
 _PYARROW_AVAILABLE = True
 _PYDANTIC_AVAILABLE = True
+_PYICEBERG_AVAILABLE = True
 _ZONEINFO_AVAILABLE = True
 
 
@@ -180,13 +180,13 @@ else:
         "dataframe_api_compat"
     )
     deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
-    pyiceberg, _PYICEBERG_AVAILABLE = _lazy_import("pyiceberg")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
     numpy, _NUMPY_AVAILABLE = _lazy_import("numpy")
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
     pydantic, _PYDANTIC_AVAILABLE = _lazy_import("pydantic")
+    pyiceberg, _PYICEBERG_AVAILABLE = _lazy_import("pyiceberg")
     zoneinfo, _ZONEINFO_AVAILABLE = (
         _lazy_import("zoneinfo")
         if sys.version_info >= (3, 9)

@@ -29,7 +29,8 @@ import polars._reexport as pl
 from polars.dependencies import _PYICEBERG_AVAILABLE
 
 if _PYICEBERG_AVAILABLE:
-    from polars.dependencies.pyiceberg.expressions import (
+    from polars.dependencies import pyiceberg
+    from pyiceberg.expressions import (
         And,
         EqualTo,
         GreaterThan,

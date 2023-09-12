@@ -198,7 +198,7 @@ pip install 'polars[numpy,pandas,pyarrow]'  # install a subset of all optional d
 You can also install the dependencies directly.
 
 | Tag        | Description                                                                  |
-| ---------- | ---------------------------------------------------------------------------- |
+|------------|------------------------------------------------------------------------------|
 | **all**    | Install all optional dependencies (all of the following)                     |
 | pandas     | Install with Pandas for converting data to and from Pandas Dataframes/Series |
 | numpy      | Install with numpy for converting data to and from numpy arrays              |
@@ -208,6 +208,7 @@ You can also install the dependencies directly.
 | xlsx2csv   | Support for reading from Excel files                                         |
 | openpyxl   | Support for reading from Excel files with native types                       |
 | deltalake  | Support for reading from Delta Lake Tables                                   |
+| pyiceberg  | Support for reading from Apacke Iceberg tables                               |
 | timezone   | Timezone support, only needed if are on Python<3.9 or you are on Windows     |
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
