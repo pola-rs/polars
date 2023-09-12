@@ -928,7 +928,7 @@ def test_rolling_nanoseconds_11003() -> None:
             "val": [1, 2, 3],
         }
     )
-    df = df.with_columns(pl.col("dt").str.to_datetime(time_unit="ns"))
+    df = df.with_columns(pl.col("dt").str.to_datetime(time_unit="ns")).set_sorted("dt")
     result = df.with_columns(
         pl.col("val").rolling_sum("500ns", by="dt", closed="right")
     )
