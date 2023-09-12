@@ -124,7 +124,22 @@ mod test {
         let s = Series::try_from(("test", arr.to_boxed())).unwrap();
         let json = serde_json::to_string(&s).unwrap();
         let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap();
-        assert_eq!(out, s);
+        assert!(s.series_equal_missing(&out));
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-array")]
+    fn test_serde_empty_array() {
+        let empty_s = Series::new_empty("test",&DataType::UInt8);
+        let dtype = ArrowDataType::FixedSizeList(
+            Box::new(ArrowField::new("test", ArrowDataType::UInt8, true)),
+            3,
+        );
+        let arr = FixedSizeListArray::new(dtype, empty_s.to_arrow(0), None);
+        let s = Series::try_from(("test", arr.to_boxed())).unwrap();
+        let json = serde_json::to_string(&s).unwrap();
+        let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap();
+        assert!(s.series_equal_missing(&out));
     }
 
     #[test]

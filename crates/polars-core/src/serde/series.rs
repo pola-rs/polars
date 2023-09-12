@@ -265,19 +265,15 @@ impl<'de> Deserialize<'de> for Series {
                     },
                     #[cfg(feature = "dtype-array")]
                     DataType::Array(dt, size) => {
-                        let mut values: Vec<Option<Series>> = map.next_value()?;
-                        let mut builder =
-                            get_fixed_size_list_builder(&dt, values.len(), size, &name).unwrap();
-
-                        for s in values.iter_mut() {
-                            match s {
-                                None => unsafe { builder.push_null() },
-                                Some(s) => {
-                                    builder.push(s.rechunk().to_arrow(0)).unwrap();
-                                },
-                            }
-                        }
-                        Ok(builder.finish().into_series())
+                        let inner_s: Series = map.next_value()?;
+                        let arrow_dtype = DataType::Array(dt, size).to_arrow();
+                        let arr = FixedSizeListArray::new(
+                            arrow_dtype,
+                            inner_s.rechunk().to_arrow(0),
+                            None,
+                        );
+                        let s = Series::try_from((name.as_ref(), arr.to_boxed())).unwrap();
+                        Ok(s)
                     },
                     dt => {
                         panic!("{dt:?} dtype deserialization not yet implemented")

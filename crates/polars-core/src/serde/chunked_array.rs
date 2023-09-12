@@ -134,8 +134,30 @@ impl_serialize!(Utf8Chunked);
 impl_serialize!(BooleanChunked);
 impl_serialize!(ListChunked);
 impl_serialize!(BinaryChunked);
+
 #[cfg(feature = "dtype-array")]
-impl_serialize!(ArrayChunked);
+impl Serialize for ArrayChunked {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_map(Some(3))?;
+        state.serialize_entry("name", self.name())?;
+        state.serialize_entry("datatype", self.dtype())?;
+
+        // Construct a new series with underlying
+        let inner_array: Vec<ArrayRef> = self
+            .downcast_iter()
+            .map(|arr| arr.values().clone())
+            .collect();
+        //SAFETY: dtype of underlying is correct
+        let s = unsafe {
+            Series::from_chunks_and_dtype_unchecked("", inner_array, &self.inner_dtype())
+        };
+        state.serialize_entry("values", &s)?;
+        state.end()
+    }
+}
 impl Serialize for NullChunked {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
