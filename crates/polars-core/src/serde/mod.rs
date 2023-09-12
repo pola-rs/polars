@@ -130,7 +130,7 @@ mod test {
     #[test]
     #[cfg(feature = "dtype-array")]
     fn test_serde_empty_array() {
-        let empty_s = Series::new_empty("test",&DataType::UInt8);
+        let empty_s = Series::new_empty("test", &DataType::UInt8);
         let dtype = ArrowDataType::FixedSizeList(
             Box::new(ArrowField::new("test", ArrowDataType::UInt8, true)),
             3,

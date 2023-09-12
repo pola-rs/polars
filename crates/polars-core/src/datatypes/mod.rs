@@ -61,8 +61,8 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized {
     type Array: for<'a> StaticArray<ValueT<'a> = Self::Physical<'a>>;
 
     fn get_dtype() -> DataType
-        where
-            Self: Sized;
+    where
+        Self: Sized;
 }
 
 pub trait PolarsNumericType: 'static

@@ -4,10 +4,7 @@ use std::fmt::Formatter;
 use serde::de::{MapAccess, Visitor};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-#[cfg(feature = "dtype-array")]
-use crate::chunked_array::builder::get_fixed_size_list_builder;
 use crate::chunked_array::builder::AnonymousListBuilder;
-
 use crate::chunked_array::Settings;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
