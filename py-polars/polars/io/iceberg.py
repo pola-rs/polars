@@ -5,9 +5,8 @@ from _ast import GtE, Lt, LtE
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pyiceberg.table import Table
-
     from polars import DataFrame, LazyFrame, Series
+    from polars.dependencies.pyiceberg.table import Table
 
 from ast import (
     Attribute,
@@ -30,7 +29,7 @@ import polars._reexport as pl
 from polars.dependencies import _PYICEBERG_AVAILABLE
 
 if _PYICEBERG_AVAILABLE:
-    from pyiceberg.expressions import (
+    from polars.dependencies.pyiceberg.expressions import (
         And,
         EqualTo,
         GreaterThan,
