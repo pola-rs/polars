@@ -17,7 +17,7 @@ pub struct UserDefinedFunction {
     /// The function output type.
     pub return_type: GetOutput,
     /// The function implementation.
-    pub fun: Arc<dyn SeriesUdf>,
+    pub fun: SpecialEq<Arc<dyn SeriesUdf>>,
     /// Options for the function.
     pub options: FunctionOptions,
 }
@@ -44,7 +44,7 @@ impl UserDefinedFunction {
             name: name.to_owned(),
             input_fields,
             return_type,
-            fun: Arc::new(fun),
+            fun: SpecialEq::new(Arc::new(fun)),
             options: FunctionOptions::default(),
         }
     }
@@ -53,8 +53,6 @@ impl UserDefinedFunction {
     /// This utility allows using the UDF without requiring access to the registry.
     /// The schema is validated and the query will fail if the schema is invalid.
     pub fn call(self, args: Vec<Expr>) -> PolarsResult<Expr> {
-        let func: SpecialEq<Arc<dyn SeriesUdf>> = SpecialEq::new(self.fun);
-
         if args.len() != self.input_fields.len() {
             polars_bail!(InvalidOperation: "expected {} arguments, got {}", self.input_fields.len(), args.len())
         }
@@ -71,7 +69,7 @@ impl UserDefinedFunction {
 
         Ok(Expr::AnonymousFunction {
             input: args,
-            function: func,
+            function: self.fun,
             output_type: self.return_type,
             options: self.options,
         })
@@ -79,13 +77,13 @@ impl UserDefinedFunction {
 
     /// creates a logical expression with a call of the UDF
     /// This does not do any schema validation and is therefore faster.
+    /// 
     /// Only use this if you are certain that the schema is correct.
     /// If the schema is invalid, the query will fail at runtime.
     pub fn call_unchecked(self, args: Vec<Expr>) -> Expr {
-        let func: SpecialEq<Arc<dyn SeriesUdf>> = SpecialEq::new(self.fun);
         Expr::AnonymousFunction {
             input: args,
-            function: func,
+            function: self.fun,
             output_type: self.return_type.clone(),
             options: self.options,
         }
