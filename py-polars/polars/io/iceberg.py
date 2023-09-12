@@ -154,7 +154,8 @@ def _to_ast(expr: str) -> ast.expr:
 
     Parameters
     ----------
-    expr The string expression
+    expr
+        The string expression
 
     Returns
     -------

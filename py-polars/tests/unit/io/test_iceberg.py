@@ -26,6 +26,11 @@ def iceberg_path() -> str:
 def test_scan_iceberg_plain(iceberg_path: str) -> None:
     df = pl.scan_iceberg(iceberg_path)
     assert len(df.collect()) == 3
+    assert df.schema == {
+        "id": pl.Int32,
+        "str": pl.Utf8,
+        "ts": pl.Datetime(time_unit='us', time_zone=None)
+    }
 
 
 def test_scan_iceberg_filter_on_partition(iceberg_path: str) -> None:
