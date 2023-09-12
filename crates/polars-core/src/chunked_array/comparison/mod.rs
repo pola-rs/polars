@@ -1,3 +1,6 @@
+#[cfg(feature = "dtype-decimal")]
+mod decimal;
+
 mod scalar;
 
 use std::ops::{BitOr, Not};
