@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use hashbrown::hash_map::RawEntryMut;
 use polars_arrow::export::arrow::array::BinaryArray;
+use polars_core::datatypes::ChunkId;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
-use polars_core::frame::hash_join::ChunkId;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
 use polars_utils::hash_to_partition;

@@ -10,6 +10,7 @@ use polars_core::export::num::Num;
 use polars_core::export::regex::Regex;
 use polars_core::prelude::arity::try_binary_elementwise;
 use polars_utils::cache::FastFixedCache;
+use regex::escape;
 
 use super::*;
 #[cfg(feature = "binary_encoding")]
@@ -342,9 +343,13 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     /// Count all successive non-overlapping regex matches.
-    fn count_matches(&self, pat: &str) -> PolarsResult<UInt32Chunked> {
+    fn count_matches(&self, pat: &str, literal: bool) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_utf8();
-        let reg = Regex::new(pat)?;
+        let reg = if literal {
+            Regex::new(escape(pat).as_str())?
+        } else {
+            Regex::new(pat)?
+        };
 
         let mut out: UInt32Chunked = ca
             .into_iter()
@@ -355,7 +360,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     /// Count all successive non-overlapping regex matches.
-    fn count_matches_many(&self, pat: &Utf8Chunked) -> PolarsResult<UInt32Chunked> {
+    fn count_matches_many(&self, pat: &Utf8Chunked, literal: bool) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_utf8();
         polars_ensure!(
             ca.len() == pat.len(),
@@ -368,7 +373,13 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         let op = move |opt_s: Option<&str>, opt_pat: Option<&str>| -> PolarsResult<Option<u32>> {
             match (opt_s, opt_pat) {
                 (Some(s), Some(pat)) => {
-                    let reg = reg_cache.get_or_insert_with(pat, |p| Regex::new(p).unwrap());
+                    let reg = reg_cache.get_or_insert_with(pat, |p| {
+                        if literal {
+                            Regex::new(escape(p).as_str()).unwrap()
+                        } else {
+                            Regex::new(p).unwrap()
+                        }
+                    });
                     Ok(Some(reg.find_iter(s).count() as u32))
                 },
                 _ => Ok(None),

@@ -35,7 +35,6 @@ miri:  ## Run miri
 	MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows" \
 	POLARS_ALLOW_EXTENSION=1 \
 	cargo miri test \
-	    --no-default-features \
 	    --features object \
 	    -p polars-core \
 	    -p polars-arrow
@@ -54,6 +53,19 @@ test:  ## Run tests
 		-p polars-plan \
 		-- \
 		--test-threads=2
+
+.PHONY: nextest
+nextest:  ## Run tests with nextest
+	cargo nextest run --all-features \
+		-p polars-lazy \
+		-p polars-io \
+		-p polars-core \
+		-p polars-arrow \
+		-p polars-time \
+		-p polars-utils \
+		-p polars-row \
+		-p polars-sql \
+		-p polars-plan \
 
 .PHONY: integration-tests
 integration-tests:  ## Run integration tests

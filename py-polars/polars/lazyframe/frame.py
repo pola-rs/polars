@@ -2033,7 +2033,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ``Float64`` datatypes.
         null_value
             A string representing null values (defaulting to the empty string).
-        quote_style : {'necessary', 'always', 'non_numeric'}
+        quote_style : {'necessary', 'always', 'non_numeric', 'never'}
             Determines the quoting strategy used.
             - necessary (default): This puts quotes around fields only when necessary.
             They are necessary when fields contain a quote,
@@ -2042,6 +2042,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             (which is indistinguishable from a record with one empty field).
             This is the default.
             - always: This puts quotes around every field. Always.
+            - never: This never puts quotes around fields, even if that results in
+            invalid CSV data (e.g.: by not quoting strings containing the separator).
             - non_numeric: This puts quotes around all fields that are non-numeric.
             Namely, when writing a field that does not parse as a valid float
             or integer, then quotes will be used even if they aren`t strictly
@@ -2151,14 +2153,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Collect a small number of rows for debugging purposes.
 
-        Fetch is like a :func:`collect` operation, but it overwrites the number of rows
-        read by every scan operation. This is a utility that helps debug a query on a
-        smaller number of rows.
-
-        Note that the fetch does not guarantee the final number of rows in the
-        DataFrame. Filter, join operations and a lower number of rows available in the
-        scanned file influence the final number of rows.
-
         Parameters
         ----------
         n_rows
@@ -2181,6 +2175,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
+
+        Notes
+        -----
+        This is similar to a :func:`collect` operation, but it overwrites the number of
+        rows read by *every* scan operation. Be aware that ``fetch`` does not guarantee
+        the final number of rows in the DataFrame. Filters, join operations and fewer
+        rows being available in the scanned data will all influence the final number
+        of rows (joins are especially susceptible to this, and may return no data
+        at all if ``n_rows`` is too small as the join keys may not be present).
+
+        Warnings
+        --------
+        This is strictly a utility function that can help to debug queries using a
+        smaller number of rows, and should *not* be used in production code.
 
         Returns
         -------

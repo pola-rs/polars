@@ -7,7 +7,9 @@ use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
+#[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
+#[cfg(feature = "algorithm_join")]
 use crate::frame::hash_join::*;
 use crate::prelude::*;
 
@@ -89,6 +91,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         Ok(())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         self.0
             .agg_min(groups)
@@ -96,6 +99,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
         self.0
             .agg_max(groups)
@@ -103,6 +107,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
         self.0
             .agg_sum(groups)
@@ -110,6 +115,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
         self.0
             .agg_std(groups, ddof)
@@ -120,6 +126,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series {
         self.0
             .agg_var(groups, ddof)
@@ -130,6 +137,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         self.0
@@ -138,6 +146,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .unwrap()
     }
 
+    #[cfg(feature = "algorithm_join")]
     unsafe fn zip_outer_join_column(
         &self,
         right_column: &Series,
@@ -197,6 +206,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_duration(self.0.time_unit())
             .into_series())
     }
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         self.0.group_tuples(multithreaded, sorted)
     }
@@ -364,16 +374,19 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.has_validity()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
         self.0
             .unique()
             .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
         self.0.n_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.0.arg_unique()
     }

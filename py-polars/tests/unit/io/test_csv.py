@@ -1463,23 +1463,27 @@ def test_csv_quote_styles() -> None:
     df = pl.DataFrame(
         {
             "float": [1.0, 2.0, None],
-            "string": ["a", "abc", '"hello'],
+            "string": ["a", "a,bc", '"hello'],
             "int": [1, 2, 3],
             "bool": [True, False, None],
         }
     )
 
     assert (
-        df.write_csv(quote_style="necessary")
-        == 'float,string,int,bool\n1.0,a,1,true\n2.0,abc,2,false\n,"""hello",3,\n'
+        df.write_csv(quote_style="always")
+        == '"float","string","int","bool"\n"1.0","a","1","true"\n"2.0","a,bc","2","false"\n"","""hello","3",""\n'
     )
     assert (
-        df.write_csv(quote_style="always")
-        == '"float","string","int","bool"\n"1.0","a","1","true"\n"2.0","abc","2","false"\n"","""hello","3",""\n'
+        df.write_csv(quote_style="necessary")
+        == 'float,string,int,bool\n1.0,a,1,true\n2.0,"a,bc",2,false\n,"""hello",3,\n'
+    )
+    assert (
+        df.write_csv(quote_style="never")
+        == 'float,string,int,bool\n1.0,a,1,true\n2.0,a,bc,2,false\n,"hello,3,\n'
     )
     assert (
         df.write_csv(quote_style="non_numeric", quote="8")
-        == '8float8,8string8,8int8,8bool8\n1.0,8a8,1,8true8\n2.0,8abc8,2,8false8\n,8"hello8,3,\n'
+        == '8float8,8string8,8int8,8bool8\n1.0,8a8,1,8true8\n2.0,8a,bc8,2,8false8\n,8"hello8,3,\n'
     )
 
 

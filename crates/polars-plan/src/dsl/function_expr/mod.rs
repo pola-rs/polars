@@ -647,8 +647,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         match func {
             #[cfg(feature = "regex")]
             Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
-            CountMatches => {
-                map_as_slice!(strings::count_matches)
+            CountMatches(literal) => {
+                map_as_slice!(strings::count_matches, literal)
             },
             EndsWith { .. } => map_as_slice!(strings::ends_with),
             StartsWith { .. } => map_as_slice!(strings::starts_with),
@@ -717,11 +717,11 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Contains { pat, literal } => {
                 map!(binary::contains, &pat, literal)
             },
-            EndsWith(sub) => {
-                map!(binary::ends_with, &sub)
+            EndsWith => {
+                map_as_slice!(binary::ends_with)
             },
-            StartsWith(sub) => {
-                map!(binary::starts_with, &sub)
+            StartsWith => {
+                map_as_slice!(binary::starts_with)
             },
         }
     }

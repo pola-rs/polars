@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
-from polars.exceptions import ShapeError, TimeZoneAwareConstructorWarning
+from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
 
@@ -821,9 +821,29 @@ def test_init_records() -> None:
     assert_frame_equal(df, expected)
     assert df.to_dicts() == dicts
 
-    df_cd = pl.DataFrame(dicts, schema=["c", "d"])
-    expected = pl.DataFrame({"c": [1, 2, 1], "d": [2, 1, 2]})
-    assert_frame_equal(df_cd, expected)
+    df_cd = pl.DataFrame(dicts, schema=["a", "c", "d"])
+    expected_values = {
+        "a": [1, 2, 1],
+        "c": [None, None, None],
+        "d": [None, None, None],
+    }
+    assert df_cd.to_dict(False) == expected_values
+
+    data = {"a": 1, "b": 2, "c": 3}
+
+    df1 = pl.from_dicts([data])
+    assert df1.columns == ["a", "b", "c"]
+
+    df1.columns = ["x", "y", "z"]
+    assert df1.columns == ["x", "y", "z"]
+
+    df2 = pl.from_dicts([data], schema=["c", "b", "a"])
+    assert df2.columns == ["c", "b", "a"]
+
+    for colname in ("c", "b", "a"):
+        assert pl.from_dicts([data], schema=[colname]).to_dict(False) == {
+            colname: [data[colname]]
+        }
 
 
 def test_init_records_schema_order() -> None:
@@ -956,13 +976,10 @@ def test_from_dicts_missing_columns() -> None:
     ]
     assert pl.from_dicts(data).to_dict(False) == {"a": [1, None], "b": [None, 2]}
 
-    # missing columns in the schema; only load the declared keys
+    # partial schema with some columns missing; only load the declared keys
     data = [{"a": 1, "b": 2}]
     assert pl.from_dicts(data, schema=["a"]).to_dict(False) == {"a": [1]}
-
-    # invalid
-    with pytest.raises(ShapeError):
-        pl.from_dicts([{"a": 1, "b": 2}], schema=["xyz"])
+    assert pl.from_dicts(data, schema=["x"]).to_dict(False) == {"x": [None]}
 
 
 def test_from_rows_dtype() -> None:

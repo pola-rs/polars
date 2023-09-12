@@ -826,7 +826,7 @@ class StringNameSpace:
 
         """
 
-    def count_matches(self, pattern: str | Series) -> Series:
+    def count_matches(self, pattern: str | Series, *, literal: bool = False) -> Series:
         r"""
         Count all successive non-overlapping regex matches.
 
@@ -836,6 +836,8 @@ class StringNameSpace:
             A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_. Can also be a :class:`Series` of
             regular expressions.
+        literal
+            Treat ``pattern`` as a literal string, not as a regular expression.
 
         Returns
         -------
@@ -854,6 +856,17 @@ class StringNameSpace:
             5
             6
             0
+            null
+        ]
+
+        >>> s = pl.Series("bar", ["12 dbc 3xy", "cat\\w", "1zy3\\d\\d", None])
+        >>> s.str.count_matches(r"\d", literal=True)
+        shape: (4,)
+        Series: 'bar' [u32]
+        [
+            0
+            0
+            2
             null
         ]
 
