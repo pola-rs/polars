@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use polars::lazy::dsl::udf::UserDefinedFunction;
-use polars::lazy::dsl::{Expr, GetOutput};
+use polars::lazy::dsl::GetOutput;
 use polars::prelude::*;
 use polars::sql::FunctionRegistry;
 
@@ -22,12 +22,8 @@ impl FunctionRegistry for MyFunctionRegistry {
         Ok(())
     }
 
-    fn call(&self, name: &str, args: Vec<Expr>) -> PolarsResult<Expr> {
-        if let Some(f) = self.functions.get(name) {
-            f.call(args)
-        } else {
-            polars_bail!(ComputeError: "function {} not found", name)
-        }
+    fn get_udf(&self, name: &str) -> PolarsResult<Option<UserDefinedFunction>> {
+        Ok(self.functions.get(name).cloned())
     }
 
     fn contains(&self, name: &str) -> bool {
