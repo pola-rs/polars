@@ -2,14 +2,13 @@
 
 use polars_arrow::error::{polars_bail, PolarsResult};
 use polars_plan::prelude::udf::UserDefinedFunction;
-use polars_plan::prelude::Expr;
 pub use polars_plan::prelude::{Context, FunctionOptions};
 /// A registry that holds user defined functions.
 pub trait FunctionRegistry: Send + Sync {
     /// Register a function.
     fn register(&mut self, name: &str, fun: UserDefinedFunction) -> PolarsResult<()>;
     /// Call a user defined function.
-    fn call(&self, name: &str, args: Vec<Expr>) -> PolarsResult<Expr>;
+    fn get_udf(&self, name: &str) -> PolarsResult<Option<UserDefinedFunction>>;
     /// Check if a function is registered.
     fn contains(&self, name: &str) -> bool;
 }
@@ -22,8 +21,8 @@ impl FunctionRegistry for DefaultFunctionRegistry {
         polars_bail!(ComputeError: "'register' not implemented on DefaultFunctionRegistry'")
     }
 
-    fn call(&self, _name: &str, _args: Vec<Expr>) -> PolarsResult<Expr> {
-        polars_bail!(ComputeError: "'call_udf' not implemented on DefaultFunctionRegistry'")
+    fn get_udf(&self, _name: &str) -> PolarsResult<Option<UserDefinedFunction>> {
+        polars_bail!(ComputeError: "'get_udf' not implemented on DefaultFunctionRegistry'")
     }
     fn contains(&self, _name: &str) -> bool {
         false

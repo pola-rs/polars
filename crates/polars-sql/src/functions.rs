@@ -710,7 +710,11 @@ impl SqlFunctionVisitor<'_> {
                 }
             })
             .collect::<PolarsResult<Vec<_>>>()?;
-        self.ctx.function_registry.call(func_name, args)
+        if let Some(expr) = self.ctx.function_registry.get_udf(func_name)? {
+            expr.call(args)
+        } else {
+            polars_bail!(ComputeError: "UDF {} not found", func_name)
+        }
     }
 
     fn visit_unary(&self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
