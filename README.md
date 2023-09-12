@@ -1,3 +1,4 @@
+<h1 align="center">
   <img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars_github_logo_rect_dark_name.svg">
   <br>
 </h1>
@@ -207,7 +208,7 @@ You can also install the dependencies directly.
 | xlsx2csv   | Support for reading from Excel files                                         |
 | openpyxl   | Support for reading from Excel files with native types                       |
 | deltalake  | Support for reading from Delta Lake Tables                                   |
-| pyiceberg  | Support for reading from Apacke Iceberg tables                               |
+| pyiceberg  | Support for reading from Apache Iceberg tables                               |
 | timezone   | Timezone support, only needed if are on Python<3.9 or you are on Windows     |
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
