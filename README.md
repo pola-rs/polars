@@ -1,4 +1,3 @@
-<h1 align="center">
   <img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars_github_logo_rect_dark_name.svg">
   <br>
 </h1>
@@ -198,7 +197,7 @@ pip install 'polars[numpy,pandas,pyarrow]'  # install a subset of all optional d
 You can also install the dependencies directly.
 
 | Tag        | Description                                                                  |
-|------------|------------------------------------------------------------------------------|
+| ---------- | ---------------------------------------------------------------------------- |
 | **all**    | Install all optional dependencies (all of the following)                     |
 | pandas     | Install with Pandas for converting data to and from Pandas Dataframes/Series |
 | numpy      | Install with numpy for converting data to and from numpy arrays              |
