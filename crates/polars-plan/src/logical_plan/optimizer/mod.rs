@@ -103,15 +103,16 @@ pub fn optimize(
     }
 
     #[cfg(feature = "cse")]
-    let cse_changed = if comm_subplan_elim {
+    let cse_plan_changed = if comm_subplan_elim {
         let (lp, changed) = cse::elim_cmn_subplans(lp_top, lp_arena, expr_arena);
         lp_top = lp;
+        members.has_cache |= changed;
         changed
     } else {
         false
     };
     #[cfg(not(feature = "cse"))]
-    let cse_changed = false;
+    let cse_plan_changed = false;
 
     // we do simplification
     if simplify_expr {
@@ -128,7 +129,7 @@ pub fn optimize(
         lp_arena.replace(lp_top, alp);
 
         if members.has_joins_or_unions && members.has_cache {
-            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_changed);
+            cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, cse_plan_changed);
         }
     }
 
@@ -171,7 +172,7 @@ pub fn optimize(
     // and predicate pushdown are done. At that moment
     // the file fingerprints are finished.
     #[cfg(any(feature = "cse", feature = "parquet", feature = "ipc", feature = "csv"))]
-    if agg_scan_projection || cse_changed {
+    if agg_scan_projection || cse_plan_changed {
         // we do this so that expressions are simplified created by the pushdown optimizations
         // we must clean up the predicates, because the agg_scan_projection
         // uses them in the hashtable to determine duplicates.
@@ -192,7 +193,7 @@ pub fn optimize(
         file_cacher.assign_unions(lp_top, lp_arena, expr_arena, scratch);
 
         #[cfg(feature = "cse")]
-        if cse_changed {
+        if cse_plan_changed {
             // this must run after cse
             cse::decrement_file_counters_by_cache_hits(lp_top, lp_arena, expr_arena, 0, scratch);
         }
