@@ -58,7 +58,7 @@ impl UserDefinedFunction {
         if args.len() != self.input_fields.len() {
             polars_bail!(InvalidOperation: "expected {} arguments, got {}", self.input_fields.len(), args.len())
         }
-        let schema = Schema::from_iter(self.input_fields.into_iter());
+        let schema = Schema::from_iter(self.input_fields);
 
         if args
             .iter()
