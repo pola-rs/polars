@@ -544,7 +544,7 @@ def by_dtype(
             all_dtypes.append(tp)  # type: ignore[arg-type]
         elif isinstance(tp, Collection):
             for t in tp:
-                if not is_polars_dtype(t):
+                if not is_polars_dtype(t, use_cache=True):
                     raise TypeError(f"invalid dtype: {t!r}")
                 all_dtypes.append(t)
         else:

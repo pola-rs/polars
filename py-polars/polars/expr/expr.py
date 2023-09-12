@@ -889,7 +889,7 @@ class Expr:
         ):
             if isinstance(item, str):
                 exclude_cols.append(item)
-            elif is_polars_dtype(item):
+            elif is_polars_dtype(item, use_cache=True):
                 exclude_dtypes.append(item)
             else:
                 raise TypeError(

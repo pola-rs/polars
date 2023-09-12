@@ -404,7 +404,7 @@ def sequence_to_pyseries(
     if (
         dtype is not None
         and dtype not in (List, Struct, Unknown)
-        and is_polars_dtype(dtype)
+        and is_polars_dtype(dtype, use_cache=True)
         and (python_dtype is None)
     ):
         constructor = polars_type_to_constructor(dtype)
@@ -707,7 +707,11 @@ def _unpack_schema(
                 col for col in column_dtypes if col not in column_names
             ]
     for col, dtype in column_dtypes.items():
-        if not is_polars_dtype(dtype, include_unknown=True) and dtype is not None:
+        if not is_polars_dtype(
+            dtype,  # type: ignore[call-overload]
+            include_unknown=True,
+            use_cache=True,
+        ):
             column_dtypes[col] = py_type_to_dtype(dtype)
 
     return (

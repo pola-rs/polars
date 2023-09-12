@@ -208,7 +208,7 @@ class ColumnFactory:
             item = names[0]
             if isinstance(item, str):
                 return wrap_expr(plr.cols(names))
-            elif is_polars_dtype(item):
+            elif is_polars_dtype(item, use_cache=True):
                 return wrap_expr(plr.dtype_cols(names))
             else:
                 raise TypeError(

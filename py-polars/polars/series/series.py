@@ -249,7 +249,7 @@ class Series:
         # Raise early error on invalid dtype
         if (
             dtype is not None
-            and not is_polars_dtype(dtype)
+            and not is_polars_dtype(dtype, use_cache=True)
             and py_type_to_dtype(dtype, raise_unmatched=False) is None
         ):
             raise ValueError(

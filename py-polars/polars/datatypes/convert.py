@@ -13,6 +13,7 @@ from typing import (
     Callable,
     Collection,
     ForwardRef,
+    Hashable,
     Optional,
     TypeVar,
     Union,
@@ -150,8 +151,8 @@ def _map_py_type_to_dtype(
     raise TypeError("invalid type")
 
 
-def is_polars_dtype(dtype: Any, *, include_unknown: bool = False) -> bool:
-    """Indicate whether the given input is a Polars dtype, or dtype specialisation."""
+@functools.lru_cache(maxsize=128)
+def _is_polars_dtype(dtype: Any, *, include_unknown: bool = False) -> bool:
     try:
         if dtype == Unknown:
             # does not represent a realisable dtype, so ignore by default
@@ -160,6 +161,39 @@ def is_polars_dtype(dtype: Any, *, include_unknown: bool = False) -> bool:
             return isinstance(dtype, (DataType, DataTypeClass))
     except TypeError:
         return False
+
+
+@overload
+def is_polars_dtype(
+    dtype: Any,
+    *,
+    include_unknown: bool = False,
+    use_cache: Literal[False] = False,
+) -> bool:
+    ...
+
+
+@overload
+def is_polars_dtype(
+    dtype: Hashable,
+    *,
+    include_unknown: bool = False,
+    use_cache: Literal[True],
+) -> bool:
+    ...
+
+
+def is_polars_dtype(
+    dtype: Any,
+    *,
+    include_unknown: bool = False,
+    use_cache: bool = False,  # caching only supported for hashable `dtype` arguments
+) -> bool:
+    """Indicate whether the given input is a Polars dtype, or dtype specialisation."""
+    if use_cache:
+        return _is_polars_dtype(dtype, include_unknown=include_unknown)
+    else:
+        return _is_polars_dtype.__wrapped__(dtype, include_unknown=include_unknown)
 
 
 def unpack_dtypes(
