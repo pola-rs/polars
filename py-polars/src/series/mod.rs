@@ -157,7 +157,7 @@ impl PySeries {
     /// Get index but allow negative indices
     fn get_index_signed(&self, py: Python, index: i64) -> PyResult<PyObject> {
         let index = if index < 0 {
-            match self.len().checked_sub(index.abs() as usize) {
+            match self.len().checked_sub(index.unsigned_abs() as usize) {
                 Some(v) => v,
                 None => {
                     return Err(PyPolarsErr::from(polars_err!(oob = index, self.len())).into());
