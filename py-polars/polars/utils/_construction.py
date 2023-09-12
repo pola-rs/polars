@@ -1090,14 +1090,14 @@ def _sequence_of_dict_to_pydf(
     )
     dicts_schema = (
         include_unknowns(schema_overrides, column_names or list(schema_overrides))
-        if schema_overrides and column_names
+        if column_names
         else None
     )
     pydf = PyDataFrame.read_dicts(data, infer_schema_length, dicts_schema)
 
-    if not schema_overrides and set(pydf.columns()) == set(column_names):
-        pass
-    elif column_names or schema_overrides:
+    # TODO: we can remove this `schema_overrides` block completely
+    #  once https://github.com/pola-rs/polars/issues/11044 is fixed
+    if schema_overrides:
         pydf = _post_apply_columns(
             pydf,
             columns=column_names,
