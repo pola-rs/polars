@@ -149,8 +149,8 @@ mod tests {
     #[test]
     fn test_resolve_homedir_windows() {
         let paths: Vec<PathBuf> = vec![
-            r#"c:\Users\user1\test.csv"#.into(),
-            r#"~\user1\test.csv"#.into(),
+            r"c:\Users\user1\test.csv".into(),
+            r"~\user1\test.csv".into(),
             "~".into(),
         ];
 
