@@ -634,7 +634,7 @@ class Config(contextlib.ContextDecorator):
 
     @classmethod
     def set_tbl_cell_numeric_alignment(
-        cls, format: Literal["LEFT", "CENTER", "RIGHT"]
+        cls, format: Literal["LEFT", "CENTER", "RIGHT"] | None
     ) -> type[Config]:
         """
         Set table cell alignment for numeric columns.
@@ -674,7 +674,12 @@ class Config(contextlib.ContextDecorator):
         KeyError: if alignment string not recognised.
 
         """
-        os.environ["POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT"] = format
+        if format is None:
+            os.environ.pop("POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT", None)
+        elif format not in {"LEFT", "CENTER", "RIGHT"}:
+            raise ValueError(f"invalid alignment: {format!r}")
+        else:
+            os.environ["POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT"] = format
         return cls
 
     @classmethod

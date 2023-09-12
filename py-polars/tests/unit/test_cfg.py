@@ -798,6 +798,12 @@ def test_set_fmt_str_lengths_invalid_length() -> None:
         ("POLARS_FMT_MAX_ROWS", "set_tbl_rows", 3, "3"),
         ("POLARS_FMT_STR_LEN", "set_fmt_str_lengths", 42, "42"),
         ("POLARS_FMT_TABLE_CELL_ALIGNMENT", "set_tbl_cell_alignment", "RIGHT", "RIGHT"),
+        (
+            "POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT",
+            "set_tbl_cell_numeric_alignment",
+            "RIGHT",
+            "RIGHT",
+        ),
         ("POLARS_FMT_TABLE_HIDE_COLUMN_NAMES", "set_tbl_hide_column_names", True, "1"),
         (
             "POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW",
