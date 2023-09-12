@@ -31,6 +31,7 @@ mod fill_null;
 mod filter;
 mod for_each;
 pub mod full;
+pub mod gather;
 #[cfg(feature = "interpolate")]
 mod interpolate;
 mod len;
@@ -172,6 +173,20 @@ pub trait TakeRandom {
     /// # Panics
     /// Panics if `index >= self.len()`
     fn last(&self) -> Option<Self::Item>;
+}
+
+pub trait ChunkGather : ChunkGatherUnchecked {
+    /// Gather values from ChunkedArray by index.
+    fn gather(&self, indices: &IdxCa) -> PolarsResult<Self>
+    where Self: Sized;
+}
+
+pub trait ChunkGatherUnchecked {
+    /// Gather values from ChunkedArray by index.
+    ///
+    /// # Safety
+    /// The non-null indices must be valid.
+    unsafe fn gather_unchecked(&self, indices: &IdxCa) -> Self;
 }
 
 /// Fast access by index.
