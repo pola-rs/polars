@@ -273,3 +273,14 @@ impl NumericNative for f64 {
 
 // Provide options to cloud providers (credentials, region).
 pub type CloudOptions = PlHashMap<String, String>;
+
+
+// Indicates that this datatype has no parameters.
+pub trait PolarsParameterFreeDataType : PolarsDataType { }
+
+impl<T: PolarsNumericType> PolarsParameterFreeDataType for T { }
+impl PolarsParameterFreeDataType for BooleanType { }
+impl PolarsParameterFreeDataType for Utf8Type { }
+impl PolarsParameterFreeDataType for BinaryType { }
+impl PolarsParameterFreeDataType for DateType { }
+impl PolarsParameterFreeDataType for TimeType { }
