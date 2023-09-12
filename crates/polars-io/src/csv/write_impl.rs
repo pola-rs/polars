@@ -213,6 +213,7 @@ pub struct SerializeOptions {
     pub null: String,
     /// String appended after every row.
     pub line_terminator: String,
+    /// Type of quotation style to use (always, minimal, non-numeric only)
     pub quote_style: QuoteStyle,
 }
 
