@@ -42,6 +42,25 @@ pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
     }
 }
 
+/// Compute the reflective correlation between two columns.
+pub fn reflective_corr(a: Expr, b: Expr) -> Expr {
+    let input = vec![a, b];
+    let function = FunctionExpr::Correlation {
+        method: CorrelationMethod::Rcor,
+        ddof: 1,
+    };
+    Expr::Function {
+        input,
+        function,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            cast_to_supertypes: true,
+            auto_explode: true,
+            ..Default::default()
+        },
+    }
+}
+
 /// Compute the spearman rank correlation between two columns.
 /// Missing data will be excluded from the computation.
 /// # Arguments

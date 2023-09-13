@@ -57,6 +57,45 @@ where
     Some(cov(a, b)? / (a.std(ddof)? * b.std(ddof)?))
 }
 
+pub fn reflective_corr<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<f64>
+    where
+        T: PolarsNumericType,
+        T::Native: ToPrimitive,
+        <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
+        + compute::aggregate::Sum<T::Native>
+        + compute::aggregate::SimdOrd<T::Native>,
+        ChunkedArray<T>: ChunkVar,
+{
+    let (a, b) = coalesce_nulls(a, b);
+    let a = a.as_ref();
+    let b = b.as_ref();
+
+
+    let a: Float64Chunked = a.apply_values_generic(|a| a.to_f64().unwrap());
+    let b: Float64Chunked = b.apply_values_generic(|b| b.to_f64().unwrap());
+
+    let mut sxx = 0.0;
+    let mut sxy = 0.0;
+    let mut syy = 0.0;
+    let eps = f64::EPSILON;
+
+    for (val_a, val_b) in a.into_iter().zip(b.into_iter()) {
+        if let (Some(val_a), Some(val_b)) = (val_a, val_b) {
+            if (val_a < 0.0) || (val_b < 0.0) {
+                continue;
+            }
+            sxx += val_a.powi(2);
+            syy += val_b.powi(2);
+            sxy += val_a * val_b;
+        }
+    }
+    let d = (sxx * syy).sqrt();
+
+    let rcor = if d > eps { sxy / d } else { 0.0 };
+
+    Some(rcor)
+}
+
 // utility to be able to also add literals to concat_str function
 #[cfg(feature = "concat_str")]
 enum IterBroadCast<'a> {
@@ -246,6 +285,13 @@ mod test {
         let b = Series::new("b", &[1.0f32, 2.0]);
         assert!((cov(a.f32().unwrap(), b.f32().unwrap()).unwrap() - 0.5).abs() < 0.001);
         assert!((pearson_corr(a.f32().unwrap(), b.f32().unwrap(), 1).unwrap() - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_reflective_corr() {
+        let a = Series::new("a", &[1.0f32, 2.0, 3.0, 4.0, 5.0, 3.0, 3.0]);
+        let b = Series::new("b", &[5.0f32, 4.0, 3.0, 2.0, 1.0, 2.0, 1.0]);
+        println!("{:?}", reflective_corr(a.f32().unwrap(), b.f32().unwrap()))
     }
 
     #[test]

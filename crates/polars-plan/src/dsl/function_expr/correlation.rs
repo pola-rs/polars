@@ -10,6 +10,7 @@ pub enum CorrelationMethod {
     #[cfg(all(feature = "rank", feature = "propagate_nans"))]
     SpearmanRank(bool),
     Covariance,
+    Rcor,
 }
 
 impl Display for CorrelationMethod {
@@ -20,6 +21,7 @@ impl Display for CorrelationMethod {
             #[cfg(all(feature = "rank", feature = "propagate_nans"))]
             SpearmanRank(_) => "spearman_rank",
             Covariance => return write!(f, "covariance"),
+            Rcor => return write!(f, "reflective"),
         };
         write!(f, "{}_correlation", s)
     }
@@ -33,6 +35,7 @@ pub(super) fn corr(s: &[Series], ddof: u8, method: CorrelationMethod) -> PolarsR
             spearman_rank_corr(s, ddof, propagate_nans)
         },
         CorrelationMethod::Covariance => covariance(s),
+        CorrelationMethod::Rcor => reflective_corr(s),
     }
 }
 
@@ -74,6 +77,27 @@ fn pearson_corr(s: &[Series], ddof: u8) -> PolarsResult<Series> {
             let a = a.cast(&DataType::Float64)?;
             let b = b.cast(&DataType::Float64)?;
             pearson_corr(a.f64().unwrap(), b.f64().unwrap(), ddof)
+        },
+    };
+    Ok(Series::new(name, &[ret]))
+}
+
+fn reflective_corr(s: &[Series]) -> PolarsResult<Series> {
+    let a = &s[0];
+    let b = &s[1];
+    let name = "reflective_corr";
+
+    use polars_core::functions::reflective_corr;
+    let ret = match a.dtype() {
+        DataType::Float32 => reflective_corr(a.f32().unwrap(), b.f32().unwrap()),
+        DataType::Float64 => reflective_corr(a.f64().unwrap(), b.f64().unwrap()),
+        DataType::Int32 => reflective_corr(a.i32().unwrap(), b.i32().unwrap()),
+        DataType::Int64 => reflective_corr(a.i64().unwrap(), b.i64().unwrap()),
+        DataType::UInt32 => reflective_corr(a.u32().unwrap(), b.u32().unwrap()),
+        _ => {
+            let a = a.cast(&DataType::Float64)?;
+            let b = b.cast(&DataType::Float64)?;
+            reflective_corr(a.f64().unwrap(), b.f64().unwrap())
         },
     };
     Ok(Series::new(name, &[ret]))

@@ -186,6 +186,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::spearman_rank_corr))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::reflective_corr))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::whenthen::when))
         .unwrap();
 

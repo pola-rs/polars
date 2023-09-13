@@ -697,7 +697,7 @@ def corr(
         "Delta Degrees of Freedom": the divisor used in the calculation is N - ddof,
         where N represents the number of elements.
         By default ddof is 1.
-    method : {'pearson', 'spearman'}
+    method : {'pearson', 'spearman', 'rcor'}
         Correlation method.
     propagate_nans
         If `True` any `NaN` encountered will lead to `NaN` in the output.
@@ -743,9 +743,13 @@ def corr(
         return wrap_expr(
             plr.spearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans)
         )
+    elif method == "rcor":
+        return wrap_expr(
+            plr.reflective_corr(a._pyexpr, b._pyexpr)
+        )
     else:
         raise ValueError(
-            f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
+            f"method must be one of {{'pearson', 'spearman', 'reflective'}}, got {method!r}"
         )
 
 

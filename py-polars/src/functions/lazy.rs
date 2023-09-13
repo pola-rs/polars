@@ -404,6 +404,11 @@ pub fn pearson_corr(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
 }
 
 #[pyfunction]
+pub fn reflective_corr(a: PyExpr, b: PyExpr) -> PyExpr {
+    dsl::reflective_corr(a.inner, b.inner).into()
+}
+
+#[pyfunction]
 pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
