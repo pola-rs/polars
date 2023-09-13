@@ -5674,8 +5674,8 @@ class Series:
         shuffle
             Shuffle the order of sampled data points.
         seed
-            Seed for the random number generator. If set to None (default), a random
-            seed is generated using the ``random`` module.
+            Seed for the random number generator. If set to None (default), a
+            random seed is generated for each sample operation.
 
         Examples
         --------
@@ -6313,8 +6313,8 @@ class Series:
         Parameters
         ----------
         seed
-            Seed for the random number generator. If set to None (default), a random
-            seed is generated using the ``random`` module.
+            Seed for the random number generator. If set to None (default), a
+            random seed is generated each time the shuffle is called.
 
         Examples
         --------
