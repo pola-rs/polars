@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "timezones")]
 static TZ_AWARE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
-use polars_core::prelude::arity::binary_elementwise;
 
 use super::*;
 
