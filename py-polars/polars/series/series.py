@@ -1189,12 +1189,13 @@ class Series:
         """Format output data in HTML for display in Jupyter Notebooks."""
         return self.to_frame()._repr_html_(from_series=True)
 
-    def item(self, row: int | None = None) -> Any:
+    @deprecate_renamed_parameter("row", "index", version="0.19.3")
+    def item(self, index: int | None = None) -> Any:
         """
-        Return the series as a scalar, or return the element at the given row index.
+        Return the series as a scalar, or return the element at the given index.
 
-        If no row index is provided, this is equivalent to ``s[0]``, with a check
-        that the shape is (1,). With a row index, this is equivalent to ``s[row]``.
+        If no index is provided, this is equivalent to ``s[0]``, with a check
+        that the shape is (1,). With an index, this is equivalent to ``s[index]``.
 
         Examples
         --------
@@ -1206,15 +1207,15 @@ class Series:
         24
 
         """
-        if row is None:
+        if index is None:
             if len(self) != 1:
                 raise ValueError(
-                    f"can only call '.item()' if the series is of length 1, or an"
-                    f" explicit row index is provided (series is of length {len(self)})"
+                    "can only call '.item()' if the series is of length 1,"
+                    f" or an explicit index is provided (series is of length {len(self)})"
                 )
             return self._s.get_index(0)
 
-        return self._s.get_index_signed(row)
+        return self._s.get_index_signed(index)
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
