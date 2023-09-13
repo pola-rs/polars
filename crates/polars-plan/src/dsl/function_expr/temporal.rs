@@ -126,8 +126,14 @@ fn apply_offsets_to_datetime(
     offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
     time_zone: Option<&Tz>,
 ) -> PolarsResult<Int64Chunked> {
-    match offsets.len() {
-        1 => match offsets.get(0) {
+    match (datetime.len(), offsets.len()) {
+        (1, _) => match datetime.0.get(0) {
+            Some(dt) => offsets.try_apply_values_generic(|offset| {
+                offset_fn(&Duration::parse(offset), dt, time_zone)
+            }),
+            _ => Ok(Int64Chunked::full_null(datetime.0.name(), offsets.len())),
+        },
+        (_, 1) => match offsets.get(0) {
             Some(offset) => datetime
                 .0
                 .try_apply(|v| offset_fn(&Duration::parse(offset), v, time_zone)),
