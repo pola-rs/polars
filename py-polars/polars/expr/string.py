@@ -952,6 +952,23 @@ class ExprStringNameSpace:
         │ null   ┆ null       │
         └────────┴────────────┘
 
+        >>> df = pl.DataFrame(
+        ...     {"fruits": ["apple", "mango", "banana"], "suffix": ["le", "go", "nu"]}
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("fruits").str.ends_with(pl.col("suffix")).alias("has_suffix"),
+        ... )
+        shape: (3, 3)
+        ┌────────┬────────┬────────────┐
+        │ fruits ┆ suffix ┆ has_suffix │
+        │ ---    ┆ ---    ┆ ---        │
+        │ str    ┆ str    ┆ bool       │
+        ╞════════╪════════╪════════════╡
+        │ apple  ┆ le     ┆ true       │
+        │ mango  ┆ go     ┆ true       │
+        │ banana ┆ nu     ┆ false      │
+        └────────┴────────┴────────────┘
+
         Using ``ends_with`` as a filter condition:
 
         >>> df.filter(pl.col("fruits").str.ends_with("go"))
@@ -998,6 +1015,23 @@ class ExprStringNameSpace:
         │ mango  ┆ false      │
         │ null   ┆ null       │
         └────────┴────────────┘
+
+        >>> df = pl.DataFrame(
+        ...     {"fruits": ["apple", "mango", "banana"], "prefix": ["app", "na", "ba"]}
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("fruits").str.starts_with(pl.col("prefix")).alias("has_prefix"),
+        ... )
+        shape: (3, 3)
+        ┌────────┬────────┬────────────┐
+        │ fruits ┆ prefix ┆ has_prefix │
+        │ ---    ┆ ---    ┆ ---        │
+        │ str    ┆ str    ┆ bool       │
+        ╞════════╪════════╪════════════╡
+        │ apple  ┆ app    ┆ true       │
+        │ mango  ┆ na     ┆ false      │
+        │ banana ┆ ba     ┆ true       │
+        └────────┴────────┴────────────┘
 
         Using ``starts_with`` as a filter condition:
 

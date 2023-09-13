@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "timezones")]
 static TZ_AWARE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
+use polars_core::prelude::arity::binary_elementwise;
 
 use super::*;
 
@@ -260,46 +261,36 @@ pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].utf8()?;
     let sub = s[1].utf8()?;
 
-    let mut out: BooleanChunked = match sub.len() {
+    Ok(match sub.len() {
         1 => match sub.get(0) {
             Some(s) => ca.ends_with(s),
             None => BooleanChunked::full(ca.name(), false, ca.len()),
         },
-        _ => ca
-            .into_iter()
-            .zip(sub)
-            .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
-                (Some(src), Some(val)) => src.ends_with(val),
-                _ => false,
-            })
-            .collect_trusted(),
-    };
-
-    out.rename(ca.name());
-    Ok(out.into_series())
+        _ => binary_elementwise(ca, sub, |opt_src, opt_sub| match (opt_src, opt_sub) {
+            (Some(src), Some(sub)) => Some(src.ends_with(sub)),
+            _ => Some(false),
+        }),
+    }
+    .with_name(ca.name())
+    .into_series())
 }
 
 pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].utf8()?;
     let sub = s[1].utf8()?;
 
-    let mut out: BooleanChunked = match sub.len() {
+    Ok(match sub.len() {
         1 => match sub.get(0) {
             Some(s) => ca.starts_with(s),
             None => BooleanChunked::full(ca.name(), false, ca.len()),
         },
-        _ => ca
-            .into_iter()
-            .zip(sub)
-            .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
-                (Some(src), Some(val)) => src.starts_with(val),
-                _ => false,
-            })
-            .collect_trusted(),
-    };
-
-    out.rename(ca.name());
-    Ok(out.into_series())
+        _ => binary_elementwise(ca, sub, |opt_src, opt_sub| match (opt_src, opt_sub) {
+            (Some(src), Some(sub)) => Some(src.starts_with(sub)),
+            _ => Some(false),
+        }),
+    }
+    .with_name(ca.name())
+    .into_series())
 }
 
 /// Extract a regex pattern from the a string value.
