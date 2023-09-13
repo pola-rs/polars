@@ -644,14 +644,13 @@ def _post_apply_columns(
     column_casts = []
     for i, col in enumerate(columns):
         dtype = dtypes.get(col)
-        if dtype == Categorical != pydf_dtypes[i]:
+        pydf_dtype = pydf_dtypes[i]
+        if dtype == Categorical != pydf_dtype:
             column_casts.append(F.col(col).cast(Categorical)._pyexpr)
-        elif structs and col in structs and structs[col] != pydf_dtypes[i]:
-            column_casts.append(F.col(col).cast(structs[col])._pyexpr)
-        elif dtype not in (None, Unknown) and dtype != pydf_dtypes[i]:
-            column_casts.append(
-                F.col(col).cast(dtype)._pyexpr,  # type: ignore[arg-type]
-            )
+        elif structs and (struct := structs.get(col)) and struct != pydf_dtype:
+            column_casts.append(F.col(col).cast(struct)._pyexpr)
+        elif dtype is not None and dtype != Unknown and dtype != pydf_dtype:
+            column_casts.append(F.col(col).cast(dtype)._pyexpr)
 
     if column_casts or column_subset:
         pydf = pydf.lazy()
