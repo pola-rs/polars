@@ -972,14 +972,14 @@ class ExprStringNameSpace:
         Using ``ends_with`` as a filter condition:
 
         >>> df.filter(pl.col("fruits").str.ends_with("go"))
-        shape: (1, 1)
-        ┌────────┐
-        │ fruits │
-        │ ---    │
-        │ str    │
-        ╞════════╡
-        │ mango  │
-        └────────┘
+        shape: (1, 2)
+        ┌────────┬────────┐
+        │ fruits ┆ suffix │
+        │ ---    ┆ ---    │
+        │ str    ┆ str    │
+        ╞════════╪════════╡
+        │ mango  ┆ go     │
+        └────────┴────────┘
 
         """
         suffix = parse_as_expression(suffix, str_as_lit=True)
@@ -1036,14 +1036,14 @@ class ExprStringNameSpace:
         Using ``starts_with`` as a filter condition:
 
         >>> df.filter(pl.col("fruits").str.starts_with("app"))
-        shape: (1, 1)
-        ┌────────┐
-        │ fruits │
-        │ ---    │
-        │ str    │
-        ╞════════╡
-        │ apple  │
-        └────────┘
+        shape: (1, 2)
+        ┌────────┬────────┐
+        │ fruits ┆ prefix │
+        │ ---    ┆ ---    │
+        │ str    ┆ str    │
+        ╞════════╪════════╡
+        │ apple  ┆ app    │
+        └────────┴────────┘
 
         """
         prefix = parse_as_expression(prefix, str_as_lit=True)
