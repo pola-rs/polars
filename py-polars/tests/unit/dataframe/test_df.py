@@ -1868,7 +1868,7 @@ def test_reproducible_hash_with_seeds() -> None:
 @pytest.mark.parametrize("seeds", [(11, 22, 33, 44), (11, None, None, None)])
 @pytest.mark.parametrize("use_numpy", [False, True])
 def test_hash_with_different_seed_types(
-    seeds: tuple[int | None], use_numpy: bool
+    seeds: tuple[int | np.random.Generator | None], use_numpy: bool
 ) -> None:
     """
     Test that hashes are at least consistent within a session.
@@ -1877,15 +1877,25 @@ def test_hash_with_different_seed_types(
     """
     df = pl.DataFrame({"s": [1234, None, 5678]})
 
-    def get_hash(df, seeds: tuple[int], use_numpy: bool) -> tuple[pl.Series]:
+    def get_hash(
+        df: pl.DataFrame,
+        seeds: tuple[int | np.random.Generator | None, ...],
+        use_numpy: bool,
+    ) -> tuple[pl.Series, ...]:
         """A small helper function."""
         if use_numpy:
-            seeds = [np.random.default_rng(s) for s in seeds if s is not None]
+            seeds = tuple(
+                np.random.default_rng(s) if s is not None else None for s in seeds
+            )
+
+        s0, s1, s2, s3 = seeds
+        if s0 is None:
+            raise TypeError("Mypy needs this.")
 
         return (
-            df.hash_rows(*seeds),
-            df["s"].hash(*seeds),
-            df.select([pl.col("s").hash(*seeds)])["s"],
+            df.hash_rows(s0, s1, s2, s3),
+            df["s"].hash(s0, s1, s2, s3),
+            df.select([pl.col("s").hash(s0, s1, s2, s3)])["s"],
         )
 
     first_run = get_hash(df, seeds, use_numpy)
@@ -1900,13 +1910,15 @@ def test_sample_with_different_seed_types(seed: int | None, use_numpy: bool) -> 
     """Test that sampling is consistent with different seed types."""
     df = pl.DataFrame({"s": [1234, None, 5678, 8765, 4321, 123, 456, 789]})
 
-    def get_sample(df, seed: tuple[int], use_numpy: bool) -> tuple[pl.Series]:
+    def get_sample(
+        df: pl.DataFrame, seed: int | None, use_numpy: bool
+    ) -> tuple[pl.Series, ...]:
         """A small helper function."""
-        seed = np.random.default_rng(seed) if use_numpy else seed
+        s0 = np.random.default_rng(seed) if use_numpy else seed
         return (
-            df.sample(fraction=1, shuffle=True, seed=seed)["s"],
-            df["s"].sample(fraction=1, shuffle=True, seed=seed),
-            df.select([pl.col("s").sample(fraction=1, shuffle=True, seed=seed)])["s"],
+            df.sample(fraction=1, shuffle=True, seed=s0)["s"],
+            df["s"].sample(fraction=1, shuffle=True, seed=s0),
+            df.select([pl.col("s").sample(fraction=1, shuffle=True, seed=s0)])["s"],
         )
 
     first_run = get_sample(df, seed, use_numpy)

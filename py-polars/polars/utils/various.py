@@ -511,10 +511,9 @@ def parse_random_seed(seed: int | np.random.Generator | None) -> int:
     -------
     The random seed.
     """
-    try:
-        return seed.integers(0, 10000)
-    except AttributeError:
-        pass
+    # Originally this was a try/except clause, but mypy didn't like that.
+    if hasattr(seed, "integers"):
+        return seed.integers(0, 10000)  # type: ignore[union-attr]
 
     if seed is None:
         return random.randint(0, 10000)
