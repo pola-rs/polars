@@ -11,7 +11,7 @@ use polars_algo::hist;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
 use polars_core::with_match_physical_numeric_polars_type;
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::Python;
@@ -154,8 +154,15 @@ impl PySeries {
         }
     }
 
-    fn get_idx(&self, py: Python, idx: usize) -> PyResult<PyObject> {
-        let av = self.series.get(idx).map_err(PyPolarsErr::from)?;
+    fn get_index(&self, py: Python, index: usize) -> PyResult<PyObject> {
+        let av = match self.series.get(index) {
+            Ok(v) => v,
+            Err(PolarsError::OutOfBounds(err)) => {
+                return Err(PyIndexError::new_err(err.to_string()))
+            },
+            Err(e) => return Err(PyPolarsErr::from(e).into()),
+        };
+
         if let AnyValue::List(s) = av {
             let pyseries = PySeries::new(s);
             let out = POLARS
@@ -163,11 +170,27 @@ impl PySeries {
                 .unwrap()
                 .call1(py, (pyseries,))
                 .unwrap();
-
-            Ok(out.into_py(py))
-        } else {
-            Ok(Wrap(self.series.get(idx).map_err(PyPolarsErr::from)?).into_py(py))
+            return Ok(out.into_py(py));
         }
+
+        Ok(Wrap(av).into_py(py))
+    }
+
+    /// Get index but allow negative indices
+    fn get_index_signed(&self, py: Python, index: i64) -> PyResult<PyObject> {
+        let index = if index < 0 {
+            match self.len().checked_sub(index.unsigned_abs() as usize) {
+                Some(v) => v,
+                None => {
+                    return Err(PyIndexError::new_err(
+                        polars_err!(oob = index, self.len()).to_string(),
+                    ));
+                },
+            }
+        } else {
+            index as usize
+        };
+        self.get_index(py, index)
     }
 
     fn bitand(&self, other: &PySeries) -> PyResult<Self> {

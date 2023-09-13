@@ -40,6 +40,7 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                 },
                 PolarsError::Io(err) => PyIOError::new_err(err.to_string()),
                 PolarsError::NoData(err) => NoDataError::new_err(err.to_string()),
+                PolarsError::OutOfBounds(err) => OutOfBoundsError::new_err(err.to_string()),
                 PolarsError::SchemaFieldNotFound(name) => {
                     SchemaFieldNotFoundError::new_err(name.to_string())
                 },
@@ -75,6 +76,7 @@ create_exception!(exceptions, ComputeError, PyException);
 create_exception!(exceptions, DuplicateError, PyException);
 create_exception!(exceptions, InvalidOperationError, PyException);
 create_exception!(exceptions, NoDataError, PyException);
+create_exception!(exceptions, OutOfBoundsError, PyException);
 create_exception!(exceptions, SchemaError, PyException);
 create_exception!(exceptions, SchemaFieldNotFoundError, PyException);
 create_exception!(exceptions, ShapeError, PyException);

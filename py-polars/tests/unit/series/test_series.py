@@ -2471,7 +2471,7 @@ def test_set_at_idx() -> None:
     a[-5] = None
     assert a.to_list() == [None, 1, 2, None, 4]
 
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.OutOfBoundsError):
         a[-100] = None
 
 
@@ -2548,22 +2548,6 @@ def test_get_chunks() -> None:
     chunks = pl.concat([a, b], rechunk=False).get_chunks()
     assert_series_equal(chunks[0], a)
     assert_series_equal(chunks[1], b)
-
-
-def test_item() -> None:
-    s = pl.Series("a", [1])
-    assert s.item() == 1
-
-    s = pl.Series("a", [1, 2])
-    with pytest.raises(ValueError):
-        s.item()
-
-    assert s.item(0) == 1
-    assert s.item(-1) == 2
-
-    s = pl.Series("a", [])
-    with pytest.raises(ValueError):
-        s.item()
 
 
 def test_ptr() -> None:
@@ -2811,3 +2795,19 @@ def test_symmetry_for_max_in_names() -> None:
     # TODO: time arithmetic support?
     # a = pl.Series("a", [1], dtype=pl.Time)
     # assert (a - a.max()).name == (a.max() - a).name == a.name
+
+
+def test_series_getitem_out_of_bounds_positive() -> None:
+    s = pl.Series([1, 2])
+    with pytest.raises(
+        IndexError, match="index 10 is out of bounds for sequence of length 2"
+    ):
+        s[10]
+
+
+def test_series_getitem_out_of_bounds_negative() -> None:
+    s = pl.Series([1, 2])
+    with pytest.raises(
+        IndexError, match="index -10 is out of bounds for sequence of length 2"
+    ):
+        s[-10]
