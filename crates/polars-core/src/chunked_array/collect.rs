@@ -1,11 +1,11 @@
 //! Methods for collecting into a ChunkedArray.
 //!
 //! For types that don't have dtype parameters:
-//! iter.(try_)to_ca(_trusted) (name)
+//! iter.(try_)collect_ca(_trusted) (name)
 //!
 //! For all types:
-//! iter.(try_)to_ca(_trusted)_like (other_df)  Copies name/dtype from other_df
-//! iter.(try_)to_ca(_trusted)_with_dtype (name, df)
+//! iter.(try_)collect_ca(_trusted)_like (other_df)  Copies name/dtype from other_df
+//! iter.(try_)collect_ca(_trusted)_with_dtype (name, df)
 //!
 //! The try variants work on iterators of Results, the trusted variants do not
 //! check the length of the iterator.
@@ -21,7 +21,7 @@ use crate::datatypes::{
 
 pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
     #[inline]
-    fn to_ca_with_dtype(self, name: &str, dtype: DataType) -> ChunkedArray<T>
+    fn collect_ca_with_dtype(self, name: &str, dtype: DataType) -> ChunkedArray<T>
     where
         T::Array: ArrayFromIterDtype<Self::Item>,
     {
@@ -31,7 +31,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
     }
 
     #[inline]
-    fn to_ca_like(self, name_dtype_src: &ChunkedArray<T>) -> ChunkedArray<T>
+    fn collect_ca_like(self, name_dtype_src: &ChunkedArray<T>) -> ChunkedArray<T>
     where
         T::Array: ArrayFromIterDtype<Self::Item>,
     {
@@ -41,7 +41,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
     }
 
     #[inline]
-    fn to_ca_trusted_with_dtype(self, name: &str, dtype: DataType) -> ChunkedArray<T>
+    fn collect_ca_trusted_with_dtype(self, name: &str, dtype: DataType) -> ChunkedArray<T>
     where
         T::Array: ArrayFromIterDtype<Self::Item>,
         Self: TrustedLen,
@@ -52,7 +52,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
     }
 
     #[inline]
-    fn to_ca_trusted_like(self, name_dtype_src: &ChunkedArray<T>) -> ChunkedArray<T>
+    fn collect_ca_trusted_like(self, name_dtype_src: &ChunkedArray<T>) -> ChunkedArray<T>
     where
         T::Array: ArrayFromIterDtype<Self::Item>,
         Self: TrustedLen,
@@ -63,7 +63,11 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
     }
 
     #[inline]
-    fn try_to_ca_with_dtype<U, E>(self, name: &str, dtype: DataType) -> Result<ChunkedArray<T>, E>
+    fn try_collect_ca_with_dtype<U, E>(
+        self,
+        name: &str,
+        dtype: DataType,
+    ) -> Result<ChunkedArray<T>, E>
     where
         T::Array: ArrayFromIterDtype<U>,
         Self: Iterator<Item = Result<U, E>>,
@@ -74,7 +78,10 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
     }
 
     #[inline]
-    fn try_to_ca_like<U, E>(self, name_dtype_src: &ChunkedArray<T>) -> Result<ChunkedArray<T>, E>
+    fn try_collect_ca_like<U, E>(
+        self,
+        name_dtype_src: &ChunkedArray<T>,
+    ) -> Result<ChunkedArray<T>, E>
     where
         T::Array: ArrayFromIterDtype<U>,
         Self: Iterator<Item = Result<U, E>>,
@@ -85,7 +92,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
     }
 
     #[inline]
-    fn try_to_ca_trusted_with_dtype<U, E>(
+    fn try_collect_ca_trusted_with_dtype<U, E>(
         self,
         name: &str,
         dtype: DataType,
@@ -100,7 +107,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
     }
 
     #[inline]
-    fn try_to_ca_trusted_like<U, E>(
+    fn try_collect_ca_trusted_like<U, E>(
         self,
         name_dtype_src: &ChunkedArray<T>,
     ) -> Result<ChunkedArray<T>, E>
@@ -118,7 +125,7 @@ impl<T: PolarsDataType, I: Iterator> ChunkedCollectIterExt<T> for I {}
 
 pub trait ChunkedCollectInferIterExt<T: PolarsDataType>: Iterator + Sized {
     #[inline]
-    fn to_ca(self, name: &str) -> ChunkedArray<T>
+    fn collect_ca(self, name: &str) -> ChunkedArray<T>
     where
         T::Array: ArrayFromIter<Self::Item>,
     {
@@ -128,7 +135,7 @@ pub trait ChunkedCollectInferIterExt<T: PolarsDataType>: Iterator + Sized {
     }
 
     #[inline]
-    fn to_ca_trusted(self, name: &str) -> ChunkedArray<T>
+    fn collect_ca_trusted(self, name: &str) -> ChunkedArray<T>
     where
         T::Array: ArrayFromIter<Self::Item>,
         Self: TrustedLen,
@@ -139,7 +146,7 @@ pub trait ChunkedCollectInferIterExt<T: PolarsDataType>: Iterator + Sized {
     }
 
     #[inline]
-    fn try_to_ca<U, E>(self, name: &str) -> Result<ChunkedArray<T>, E>
+    fn try_collect_ca<U, E>(self, name: &str) -> Result<ChunkedArray<T>, E>
     where
         T::Array: ArrayFromIter<U>,
         Self: Iterator<Item = Result<U, E>>,
@@ -150,7 +157,7 @@ pub trait ChunkedCollectInferIterExt<T: PolarsDataType>: Iterator + Sized {
     }
 
     #[inline]
-    fn try_to_ca_trusted<U, E>(self, name: &str) -> Result<ChunkedArray<T>, E>
+    fn try_collect_ca_trusted<U, E>(self, name: &str) -> Result<ChunkedArray<T>, E>
     where
         T::Array: ArrayFromIter<U>,
         Self: Iterator<Item = Result<U, E>> + TrustedLen,

@@ -41,7 +41,7 @@ where
 {
     fn from_iter<I: IntoIterator<Item = Option<T::Native>>>(iter: I) -> Self {
         // TODO: eliminate this FromIterator implementation entirely.
-        iter.into_iter().to_ca("")
+        iter.into_iter().collect_ca("")
     }
 }
 
