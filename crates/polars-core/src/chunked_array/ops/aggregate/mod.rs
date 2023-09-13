@@ -22,21 +22,21 @@ use crate::utils::CustomIterTools;
 
 mod float_sum;
 
-/// Aggregations that return Series of unit length. Those can be used in broadcasting operations.
+/// Aggregations that return [`Series`] of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
-    /// Get the sum of the ChunkedArray as a new Series of length 1.
+    /// Get the sum of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn sum_as_series(&self) -> Series {
         unimplemented!()
     }
-    /// Get the max of the ChunkedArray as a new Series of length 1.
+    /// Get the max of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn max_as_series(&self) -> Series {
         unimplemented!()
     }
-    /// Get the min of the ChunkedArray as a new Series of length 1.
+    /// Get the min of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn min_as_series(&self) -> Series {
         unimplemented!()
     }
-    /// Get the product of the ChunkedArray as a new Series of length 1.
+    /// Get the product of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn prod_as_series(&self) -> Series {
         unimplemented!()
     }

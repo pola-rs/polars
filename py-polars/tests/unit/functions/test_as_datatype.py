@@ -457,21 +457,31 @@ def test_struct_lit_cast() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
 
-    for lit in [pl.lit(None), pl.lit(pl.Series([[]]))]:
-        out = df.select(pl.struct([pl.col("a"), lit.alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
+    out = df.select(pl.struct([pl.col("a"), pl.lit(None).alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
 
-        expected = pl.Series(
-            "a",
-            [
-                {"a": 1, "b": None},
-                {"a": 2, "b": None},
-                {"a": 3, "b": None},
-            ],
-            dtype=pl.Struct(
-                [pl.Field("a", pl.Int64), pl.Field("b", pl.List(pl.Int64))]
-            ),
-        )
-        assert_series_equal(out, expected)
+    expected = pl.Series(
+        "a",
+        [
+            {"a": 1, "b": None},
+            {"a": 2, "b": None},
+            {"a": 3, "b": None},
+        ],
+        dtype=pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.List(pl.Int64))]),
+    )
+    assert_series_equal(out, expected)
+
+    out = df.select(pl.struct([pl.col("a"), pl.lit(pl.Series([[]])).alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
+
+    expected = pl.Series(
+        "a",
+        [
+            {"a": 1, "b": []},
+            {"a": 2, "b": []},
+            {"a": 3, "b": []},
+        ],
+        dtype=pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.List(pl.Int64))]),
+    )
+    assert_series_equal(out, expected)
 
 
 def test_suffix_in_struct_creation() -> None:
@@ -502,6 +512,16 @@ def test_concat_str_wildcard_expansion() -> None:
     assert df.select(
         pl.concat_str(pl.all()).str.to_lowercase()
     ).to_series().to_list() == ["xs", "yo", "zs"]
+
+
+def test_concat_str_with_non_utf8_col() -> None:
+    out = (
+        pl.LazyFrame({"a": [0], "b": ["x"]})
+        .select(pl.concat_str(["a", "b"], separator="-").fill_null(pl.col("a")))
+        .collect()
+    )
+    expected = pl.Series("a", ["0-x"], dtype=pl.Utf8)
+    assert_series_equal(out.to_series(), expected)
 
 
 def test_format() -> None:

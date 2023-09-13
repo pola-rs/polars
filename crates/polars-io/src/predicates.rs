@@ -1,7 +1,7 @@
 use polars_core::prelude::*;
 
 pub trait PhysicalIoExpr: Send + Sync {
-    /// Take a `DataFrame` and produces a boolean `Series` that serves
+    /// Take a [`DataFrame`] and produces a boolean [`Series`] that serves
     /// as a predicate mask
     fn evaluate(&self, df: &DataFrame) -> PolarsResult<Series>;
 

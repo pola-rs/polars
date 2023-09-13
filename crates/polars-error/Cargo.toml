@@ -10,6 +10,7 @@ description = "Error definitions for the Polars DataFrame library"
 
 [dependencies]
 arrow = { workspace = true }
+object_store = { version = "0.7", default-features = false, optional = true }
 regex = { workspace = true, optional = true }
 thiserror = { workspace = true }
 

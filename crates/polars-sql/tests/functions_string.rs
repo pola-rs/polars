@@ -48,32 +48,32 @@ fn test_string_functions() {
             col("a").str().to_uppercase().alias("upper_a_df"),
             col("a").str().to_uppercase().alias("upper_a_df2"),
             col("a").str().to_uppercase().alias("upper_a_df3"),
-            col("a").str().strip(Some("x".into())).alias("trim_a"),
+            col("a").str().strip_chars(Some("x".into())).alias("trim_a"),
             col("a")
                 .str()
-                .lstrip(Some("x".into()))
+                .strip_chars_start(Some("x".into()))
                 .alias("trim_a_leading"),
             col("a")
                 .str()
-                .rstrip(Some("x".into()))
+                .strip_chars_end(Some("x".into()))
                 .alias("trim_a_trailing"),
-            col("a").str().lstrip(None).alias("ltrim_a"),
-            col("a").str().rstrip(None).alias("rtrim_a"),
+            col("a").str().strip_chars_start(None).alias("ltrim_a"),
+            col("a").str().strip_chars_end(None).alias("rtrim_a"),
             col("a")
                 .str()
-                .lstrip(Some("-".into()))
+                .strip_chars_start(Some("-".into()))
                 .alias("ltrim_a_dash"),
             col("a")
                 .str()
-                .rstrip(Some("-".into()))
+                .strip_chars_end(Some("-".into()))
                 .alias("rtrim_a_dash"),
             col("a")
                 .str()
-                .lstrip(Some("xyz".into()))
+                .strip_chars_start(Some("xyz".into()))
                 .alias("ltrim_a_xyz"),
             col("a")
                 .str()
-                .rstrip(Some("xyz".into()))
+                .strip_chars_end(Some("xyz".into()))
                 .alias("rtrim_a_xyz"),
         ])
         .collect()

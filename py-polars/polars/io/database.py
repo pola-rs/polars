@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Iterable, Sequence, TypedDict
 from polars.convert import from_arrow
 from polars.exceptions import UnsuitableSQLError
 from polars.utils.deprecation import (
+    deprecate_nonkeyword_arguments,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -204,7 +205,10 @@ class ConnectionExecutor:
             )
         return None
 
-    def execute(self, query: str, select_queries_only: bool = True) -> Self:
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "query"], version="0.19.3")
+    def execute(
+        self, query: str, select_queries_only: bool = True  # noqa: FBT001
+    ) -> Self:
         """Execute a query and reference the result set."""
         if select_queries_only:
             q = re.search(r"\w{3,}", re.sub(r"/\*(.|[\r\n])*?\*/", "", query))

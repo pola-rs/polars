@@ -21,40 +21,23 @@ mod traits;
 #[cfg(feature = "chunked_ids")]
 pub(crate) use take_chunked::*;
 
-macro_rules! take_iter_n_chunks {
-    ($ca:expr, $indices:expr) => {{
-        let taker = $ca.take_rand();
-        $indices.into_iter().map(|idx| taker.get(idx)).collect()
-    }};
-}
-
-macro_rules! take_opt_iter_n_chunks {
-    ($ca:expr, $indices:expr) => {{
-        let taker = $ca.take_rand();
-        $indices
-            .into_iter()
-            .map(|opt_idx| opt_idx.and_then(|idx| taker.get(idx)))
-            .collect()
-    }};
-}
-
 macro_rules! take_iter_n_chunks_unchecked {
-    ($ca:expr, $indices:expr) => {{
+    ($cat:ty, $ca:expr, $indices:expr) => {{
         let taker = $ca.take_rand();
         $indices
             .into_iter()
             .map(|idx| taker.get_unchecked(idx))
-            .collect()
+            .collect::<$cat>()
     }};
 }
 
 macro_rules! take_opt_iter_n_chunks_unchecked {
-    ($ca:expr, $indices:expr) => {{
+    ($cat:ty, $ca:expr, $indices:expr) => {{
         let taker = $ca.take_rand();
         $indices
             .into_iter()
-            .map(|opt_idx| opt_idx.and_then(|idx| taker.get_unchecked(idx)))
-            .collect()
+            .map(|opt_idx| taker.get_unchecked(opt_idx?))
+            .collect::<$cat>()
     }};
 }
 
@@ -68,7 +51,23 @@ where
     }
 }
 
-impl<T> ChunkTake for ChunkedArray<T>
+impl<T: PolarsDataType> ChunkTake for ChunkedArray<T>
+where
+    ChunkedArray<T>: ChunkTakeUnchecked,
+{
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
+    where
+        Self: std::marker::Sized,
+        I: TakeIterator,
+        INulls: TakeIteratorNulls,
+    {
+        indices.check_bounds(self.len())?;
+        // SAFETY: just checked bounds.
+        Ok(unsafe { self.take_unchecked(indices) })
+    }
+}
+
+impl<T> ChunkTakeUnchecked for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
@@ -153,21 +152,9 @@ where
             },
         }
     }
-
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
-    where
-        Self: std::marker::Sized,
-        I: TakeIterator,
-        INulls: TakeIteratorNulls,
-    {
-        indices.check_bounds(self.len())?;
-        // Safety:
-        // just checked bounds
-        Ok(unsafe { self.take_unchecked(indices) })
-    }
 }
 
-impl ChunkTake for BooleanChunked {
+impl ChunkTakeUnchecked for BooleanChunked {
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
@@ -184,17 +171,19 @@ impl ChunkTake for BooleanChunked {
                     1 => take::take_unchecked(chunks.next().unwrap(), array),
                     _ => {
                         return if !array.has_validity() {
-                            let iter = array.values().iter().map(|i| *i as usize);
-                            let mut ca: BooleanChunked = take_iter_n_chunks!(self, iter);
-                            ca.rename(self.name());
-                            ca
+                            let taker = self.take_rand();
+                            array
+                                .values_iter()
+                                .map(|i| taker.get(*i as usize))
+                                .collect::<Self>()
+                                .with_name(self.name())
                         } else {
-                            let iter = array
+                            let taker = self.take_rand();
+                            array
                                 .into_iter()
-                                .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
-                            let mut ca: BooleanChunked = take_opt_iter_n_chunks!(self, iter);
-                            ca.rename(self.name());
-                            ca
+                                .map(|opt_idx| taker.get(*(opt_idx?) as usize))
+                                .collect::<Self>()
+                                .with_name(self.name())
                         }
                     },
                 };
@@ -210,9 +199,8 @@ impl ChunkTake for BooleanChunked {
                     },
                     (_, 1) => take_bool_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef,
                     _ => {
-                        let mut ca: BooleanChunked = take_iter_n_chunks_unchecked!(self, iter);
-                        ca.rename(self.name());
-                        return ca;
+                        return take_iter_n_chunks_unchecked!(Self, self, iter)
+                            .with_name(self.name());
                     },
                 };
                 self.finish_from_array(array)
@@ -230,7 +218,8 @@ impl ChunkTake for BooleanChunked {
                         take_bool_opt_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
                     },
                     _ => {
-                        let mut ca: BooleanChunked = take_opt_iter_n_chunks_unchecked!(self, iter);
+                        let mut ca: BooleanChunked =
+                            take_opt_iter_n_chunks_unchecked!(Self, self, iter);
                         ca.rename(self.name());
                         return ca;
                     },
@@ -239,21 +228,9 @@ impl ChunkTake for BooleanChunked {
             },
         }
     }
-
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
-    where
-        Self: std::marker::Sized,
-        I: TakeIterator,
-        INulls: TakeIteratorNulls,
-    {
-        indices.check_bounds(self.len())?;
-        // Safety:
-        // just checked bounds
-        Ok(unsafe { self.take_unchecked(indices) })
-    }
 }
 
-impl ChunkTake for Utf8Chunked {
+impl ChunkTakeUnchecked for Utf8Chunked {
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
@@ -262,19 +239,9 @@ impl ChunkTake for Utf8Chunked {
     {
         self.as_binary().take_unchecked(indices).to_utf8()
     }
-
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
-    where
-        Self: std::marker::Sized,
-        I: TakeIterator,
-        INulls: TakeIteratorNulls,
-    {
-        let out = self.as_binary().take(indices)?;
-        Ok(unsafe { out.to_utf8() })
-    }
 }
 
-impl ChunkTake for BinaryChunked {
+impl ChunkTakeUnchecked for BinaryChunked {
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
@@ -292,17 +259,13 @@ impl ChunkTake for BinaryChunked {
                     _ => {
                         return if !array.has_validity() {
                             let iter = array.values().iter().map(|i| *i as usize);
-                            let mut ca: BinaryChunked = take_iter_n_chunks_unchecked!(self, iter);
-                            ca.rename(self.name());
-                            ca
+                            take_iter_n_chunks_unchecked!(Self, self, iter).with_name(self.name())
                         } else {
                             let iter = array
                                 .into_iter()
                                 .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
-                            let mut ca: BinaryChunked =
-                                take_opt_iter_n_chunks_unchecked!(self, iter);
-                            ca.rename(self.name());
-                            ca
+                            take_opt_iter_n_chunks_unchecked!(Self, self, iter)
+                                .with_name(self.name())
                         }
                     },
                 };
@@ -315,9 +278,8 @@ impl ChunkTake for BinaryChunked {
                     },
                     (_, 1) => take_binary_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef,
                     _ => {
-                        let mut ca: BinaryChunked = take_iter_n_chunks_unchecked!(self, iter);
-                        ca.rename(self.name());
-                        return ca;
+                        return take_iter_n_chunks_unchecked!(Self, self, iter)
+                            .with_name(self.name());
                     },
                 };
                 self.finish_from_array(array)
@@ -332,30 +294,17 @@ impl ChunkTake for BinaryChunked {
                         take_binary_opt_iter_unchecked(chunks.next().unwrap(), iter) as ArrayRef
                     },
                     _ => {
-                        let mut ca: BinaryChunked = take_opt_iter_n_chunks_unchecked!(self, iter);
-                        ca.rename(self.name());
-                        return ca;
+                        return take_opt_iter_n_chunks_unchecked!(Self, self, iter)
+                            .with_name(self.name());
                     },
                 };
                 self.finish_from_array(array)
             },
         }
     }
-
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
-    where
-        Self: std::marker::Sized,
-        I: TakeIterator,
-        INulls: TakeIteratorNulls,
-    {
-        indices.check_bounds(self.len())?;
-        // Safety:
-        // just checked bounds
-        Ok(unsafe { self.take_unchecked(indices) })
-    }
 }
 
-impl ChunkTake for ListChunked {
+impl ChunkTakeUnchecked for ListChunked {
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
@@ -382,15 +331,15 @@ impl ChunkTake for ListChunked {
                     _ => {
                         if !array.has_validity() {
                             let iter = array.values().iter().map(|i| *i as usize);
-                            let mut ca: ListChunked =
-                                take_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
+                            let mut ca =
+                                take_iter_n_chunks_unchecked!(Self, ca_self.as_ref(), iter);
                             ca.chunks.pop().unwrap()
                         } else {
                             let iter = array
                                 .into_iter()
                                 .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
-                            let mut ca: ListChunked =
-                                take_opt_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
+                            let mut ca =
+                                take_opt_iter_n_chunks_unchecked!(Self, ca_self.as_ref(), iter);
                             ca.chunks.pop().unwrap()
                         }
                     },
@@ -403,7 +352,7 @@ impl ChunkTake for ListChunked {
                     let idx: NoNull<IdxCa> = iter.map(|v| v as IdxSize).collect();
                     ca_self.take_unchecked((&idx.into_inner()).into())
                 } else {
-                    let mut ca: ListChunked = take_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
+                    let mut ca = take_iter_n_chunks_unchecked!(Self, ca_self.as_ref(), iter);
                     self.finish_from_array(ca.chunks.pop().unwrap())
                 }
             },
@@ -412,29 +361,16 @@ impl ChunkTake for ListChunked {
                     let idx: IdxCa = iter.map(|v| v.map(|v| v as IdxSize)).collect();
                     ca_self.take_unchecked((&idx).into())
                 } else {
-                    let mut ca: ListChunked =
-                        take_opt_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
+                    let mut ca = take_opt_iter_n_chunks_unchecked!(Self, ca_self.as_ref(), iter);
                     self.finish_from_array(ca.chunks.pop().unwrap())
                 }
             },
         }
     }
-
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
-    where
-        Self: std::marker::Sized,
-        I: TakeIterator,
-        INulls: TakeIteratorNulls,
-    {
-        indices.check_bounds(self.len())?;
-        // Safety:
-        // just checked bounds
-        Ok(unsafe { self.take_unchecked(indices) })
-    }
 }
 
 #[cfg(feature = "dtype-array")]
-impl ChunkTake for ArrayChunked {
+impl ChunkTakeUnchecked for ArrayChunked {
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
@@ -466,22 +402,10 @@ impl ChunkTake for ArrayChunked {
             },
         }
     }
-
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
-    where
-        Self: std::marker::Sized,
-        I: TakeIterator,
-        INulls: TakeIteratorNulls,
-    {
-        indices.check_bounds(self.len())?;
-        // Safety:
-        // just checked bounds
-        Ok(unsafe { self.take_unchecked(indices) })
-    }
 }
 
 #[cfg(feature = "object")]
-impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
+impl<T: PolarsObject> ChunkTakeUnchecked for ObjectChunked<T> {
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
@@ -560,18 +484,6 @@ impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
                 ca
             },
         }
-    }
-
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
-    where
-        Self: std::marker::Sized,
-        I: TakeIterator,
-        INulls: TakeIteratorNulls,
-    {
-        indices.check_bounds(self.len())?;
-        // Safety:
-        // just checked bounds
-        Ok(unsafe { self.take_unchecked(indices) })
     }
 }
 

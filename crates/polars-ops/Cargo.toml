@@ -10,7 +10,7 @@ description = "More operations on Polars data structures"
 
 [dependencies]
 polars-arrow = { version = "0.32.0", path = "../polars-arrow", default-features = false }
-polars-core = { version = "0.32.0", path = "../polars-core", features = [], default-features = false }
+polars-core = { version = "0.32.0", path = "../polars-core", features = ["algorithm_group_by", "algorithm_join"], default-features = false }
 polars-json = { version = "0.32.0", optional = true, path = "../polars-json", default-features = false }
 polars-utils = { version = "0.32.0", path = "../polars-utils", default-features = false }
 

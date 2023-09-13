@@ -98,7 +98,7 @@ impl Series {
         }
     }
 
-    /// Sample a fraction between 0.0-1.0 of this ChunkedArray.
+    /// Sample a fraction between 0.0-1.0 of this [`ChunkedArray`].
     pub fn sample_frac(
         &self,
         frac: f64,
@@ -125,7 +125,7 @@ where
     T: PolarsDataType,
     ChunkedArray<T>: ChunkTake,
 {
-    /// Sample n datapoints from this ChunkedArray.
+    /// Sample n datapoints from this [`ChunkedArray`].
     pub fn sample_n(
         &self,
         n: usize,
@@ -152,7 +152,7 @@ where
         }
     }
 
-    /// Sample a fraction between 0.0-1.0 of this ChunkedArray.
+    /// Sample a fraction between 0.0-1.0 of this [`ChunkedArray`].
     pub fn sample_frac(
         &self,
         frac: f64,
@@ -166,7 +166,7 @@ where
 }
 
 impl DataFrame {
-    /// Sample n datapoints from this DataFrame.
+    /// Sample n datapoints from this [`DataFrame`].
     pub fn sample_n(
         &self,
         n: usize,
@@ -185,7 +185,7 @@ impl DataFrame {
         Ok(unsafe { self.take_unchecked(&idx) })
     }
 
-    /// Sample a fraction between 0.0-1.0 of this DataFrame.
+    /// Sample a fraction between 0.0-1.0 of this [`DataFrame`].
     pub fn sample_frac(
         &self,
         frac: f64,
@@ -203,7 +203,7 @@ where
     T: PolarsNumericType,
     T::Native: Float,
 {
-    /// Create `ChunkedArray` with samples from a Normal distribution.
+    /// Create [`ChunkedArray`] with samples from a Normal distribution.
     pub fn rand_normal(name: &str, length: usize, mean: f64, std_dev: f64) -> PolarsResult<Self> {
         let normal = Normal::new(mean, std_dev).map_err(to_compute_err)?;
         let mut builder = PrimitiveChunkedBuilder::<T>::new(name, length);
@@ -216,7 +216,7 @@ where
         Ok(builder.finish())
     }
 
-    /// Create `ChunkedArray` with samples from a Standard Normal distribution.
+    /// Create [`ChunkedArray`] with samples from a Standard Normal distribution.
     pub fn rand_standard_normal(name: &str, length: usize) -> Self {
         let mut builder = PrimitiveChunkedBuilder::<T>::new(name, length);
         let mut rng = rand::thread_rng();
@@ -228,7 +228,7 @@ where
         builder.finish()
     }
 
-    /// Create `ChunkedArray` with samples from a Uniform distribution.
+    /// Create [`ChunkedArray`] with samples from a Uniform distribution.
     pub fn rand_uniform(name: &str, length: usize, low: f64, high: f64) -> Self {
         let uniform = Uniform::new(low, high);
         let mut builder = PrimitiveChunkedBuilder::<T>::new(name, length);
@@ -243,7 +243,7 @@ where
 }
 
 impl BooleanChunked {
-    /// Create `ChunkedArray` with samples from a Bernoulli distribution.
+    /// Create [`ChunkedArray`] with samples from a Bernoulli distribution.
     pub fn rand_bernoulli(name: &str, length: usize, p: f64) -> PolarsResult<Self> {
         let dist = Bernoulli::new(p).map_err(to_compute_err)?;
         let mut rng = rand::thread_rng();

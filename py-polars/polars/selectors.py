@@ -24,7 +24,7 @@ from polars.datatypes import (
     is_polars_dtype,
 )
 from polars.expr import Expr
-from polars.utils.deprecation import deprecate_function
+from polars.utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
     import sys
@@ -181,6 +181,7 @@ def _expand_selectors(
 def _expand_selector_dicts(
     df: DataFrame,
     d: Mapping[Any, Any] | None,
+    *,
     expand_keys: bool,
     expand_values: bool,
     tuple_keys: bool = False,
@@ -949,10 +950,7 @@ def datetime(
             [time_zone] if isinstance(time_zone, (str, timezone)) else list(time_zone)
         )
 
-    datetime_dtypes = []
-    for tu in time_unit:
-        for tz in time_zone:  # type: ignore[union-attr]
-            datetime_dtypes.append(Datetime(tu, tz))
+    datetime_dtypes = [Datetime(tu, tz) for tu in time_unit for tz in time_zone]  # type: ignore[union-attr]
 
     return _selector_proxy_(
         F.col(datetime_dtypes),
@@ -1758,7 +1756,8 @@ def starts_with(*prefix: str) -> SelectorType:
     )
 
 
-def string(include_categorical: bool = False) -> SelectorType:
+@deprecate_nonkeyword_arguments(version="0.19.3")
+def string(include_categorical: bool = False) -> SelectorType:  # noqa: FBT001
     """
     Select all Utf8 (and, optionally, Categorical) string columns .
 
@@ -1797,7 +1796,9 @@ def string(include_categorical: bool = False) -> SelectorType:
 
     Group by all string *and* categorical columns:
 
-    >>> df.group_by(cs.string(True)).agg(cs.numeric().sum()).sort(by=cs.string(True))
+    >>> df.group_by(cs.string(include_categorical=True)).agg(cs.numeric().sum()).sort(
+    ...     by=cs.string(include_categorical=True)
+    ... )
     shape: (3, 4)
     ┌─────┬─────┬─────┬──────┐
     │ w   ┆ z   ┆ x   ┆ y    │

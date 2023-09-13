@@ -8,7 +8,9 @@ use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{IntoPartialOrdInner, PartialOrdInner};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
+#[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
+#[cfg(feature = "algorithm_join")]
 use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
@@ -113,7 +115,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         list.into_series()
     }
 
-    fn zip_outer_join_column(
+    unsafe fn zip_outer_join_column(
         &self,
         right_column: &Series,
         opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
@@ -137,6 +139,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
             CategoricalChunked::from_cats_and_rev_map_unchecked(cats, new_rev_map).into_series()
         }
     }
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         #[cfg(feature = "performant")]
         {

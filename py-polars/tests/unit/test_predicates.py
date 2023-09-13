@@ -122,6 +122,30 @@ def test_predicate_pushdown_block_8661() -> None:
     ).collect().to_dict(False) == {"g": [1, 2, 2], "t": [4, 2, 3], "x": [40, 30, 20]}
 
 
+def test_predicate_pushdown_with_context_11014() -> None:
+    df1 = pl.LazyFrame(
+        {
+            "df1_c1": [1, 2, 3],
+            "df1_c2": [2, 3, 4],
+        }
+    )
+
+    df2 = pl.LazyFrame(
+        {
+            "df2_c1": [2, 3, 4],
+            "df2_c2": [3, 4, 5],
+        }
+    )
+
+    out = (
+        df1.with_context(df2)
+        .filter(pl.col("df1_c1").is_in(pl.col("df2_c1")))
+        .collect(predicate_pushdown=True)
+    )
+
+    assert out.to_dict(False) == {"df1_c1": [2, 3], "df1_c2": [3, 4]}
+
+
 def test_predicate_pushdown_cumsum_9566() -> None:
     df = pl.DataFrame({"A": range(10), "B": ["b"] * 5 + ["a"] * 5})
 

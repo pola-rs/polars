@@ -27,9 +27,7 @@ impl FunctionExpr {
             BinaryExpr(s) => {
                 use BinaryFunction::*;
                 match s {
-                    Contains { .. } | EndsWith(_) | StartsWith(_) => {
-                        mapper.with_dtype(DataType::Boolean)
-                    },
+                    Contains { .. } | EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
                 }
             },
             #[cfg(feature = "temporal")]
@@ -107,7 +105,7 @@ impl FunctionExpr {
                     #[cfg(feature = "list_take")]
                     Take(_) => mapper.with_same_dtype(),
                     #[cfg(feature = "list_count")]
-                    CountMatch => mapper.with_dtype(IDX_DTYPE),
+                    CountMatches => mapper.with_dtype(IDX_DTYPE),
                     Sum => mapper.nested_sum_type(),
                     #[cfg(feature = "list_sets")]
                     SetOperation(_) => mapper.with_same_dtype(),
