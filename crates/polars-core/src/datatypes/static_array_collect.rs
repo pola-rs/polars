@@ -1,14 +1,18 @@
 use std::sync::Arc;
 
+#[cfg(feature = "dtype-array")]
+use arrow::array::FixedSizeListArray;
 use arrow::array::{
-    Array, BinaryArray, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryArray,
-    MutableBinaryValuesArray, PrimitiveArray, Utf8Array,
+    Array, BinaryArray, BooleanArray, ListArray, MutableBinaryArray, MutableBinaryValuesArray,
+    PrimitiveArray, Utf8Array,
 };
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::Bitmap;
+#[cfg(feature = "dtype-array")]
 use polars_arrow::prelude::fixed_size_list::AnonymousBuilder as AnonymousFixedSizeListArrayBuilder;
 use polars_arrow::prelude::list::AnonymousBuilder as AnonymousListArrayBuilder;
 use polars_arrow::trusted_len::{TrustedLen, TrustedLenPush};
 
+#[cfg(feature = "object")]
 use crate::chunked_array::object::{ObjectArray, PolarsObject};
 use crate::datatypes::static_array::ParameterFreeDtypeStaticArray;
 use crate::datatypes::{DataType, NumericNative, PolarsDataType, StaticArray};
@@ -392,7 +396,7 @@ impl<'a> ArrayFromIter<&'a [u8]> for BinaryArray<i64> {
 
 impl<'a> ArrayFromIter<Option<&'a [u8]>> for BinaryArray<i64> {
     fn arr_from_iter<I: IntoIterator<Item = Option<&'a [u8]>>>(iter: I) -> Self {
-        BinaryArray::from_iter(iter.into_iter())
+        BinaryArray::from_iter(iter)
     }
 
     fn arr_from_iter_trusted<I>(iter: I) -> Self
@@ -402,7 +406,7 @@ impl<'a> ArrayFromIter<Option<&'a [u8]>> for BinaryArray<i64> {
     {
         unsafe {
             // SAFETY: the iterator is TrustedLen.
-            BinaryArray::from_trusted_len_iter_unchecked(iter.into_iter()).into()
+            BinaryArray::from_trusted_len_iter_unchecked(iter.into_iter())
         }
     }
 
@@ -427,7 +431,7 @@ impl<'a> ArrayFromIter<Option<&'a [u8]>> for BinaryArray<i64> {
     {
         unsafe {
             // SAFETY: the iterator is TrustedLen.
-            BinaryArray::try_from_trusted_len_iter_unchecked(iter.into_iter())
+            BinaryArray::try_from_trusted_len_iter_unchecked(iter)
         }
     }
 }
@@ -540,6 +544,7 @@ macro_rules! impl_collect_bool_validity {
                     let Some($x) = iter.next() else {
                         break 'exhausted;
                     };
+                    #[allow(clippy::redundant_locals)]
                     let $x = $unpack;
                     let is_true: bool = $truth;
                     buf_mask |= (is_true as u8) << i;
@@ -640,13 +645,13 @@ impl ArrayFromIter<Option<bool>> for BooleanArray {
 // as Rust considers that AsRef<dyn Array> for Option<&dyn Array> could be implemented.
 trait AsArray {
     fn as_array(&self) -> &dyn Array;
-    fn as_boxed_array(self) -> Box<dyn Array>; // Prevents unnecessary re-boxing.
+    fn into_boxed_array(self) -> Box<dyn Array>; // Prevents unnecessary re-boxing.
 }
 impl AsArray for Box<dyn Array> {
     fn as_array(&self) -> &dyn Array {
         self.as_ref()
     }
-    fn as_boxed_array(self) -> Box<dyn Array> {
+    fn into_boxed_array(self) -> Box<dyn Array> {
         self
     }
 }
@@ -654,7 +659,7 @@ impl<'a> AsArray for &'a dyn Array {
     fn as_array(&self) -> &'a dyn Array {
         *self
     }
-    fn as_boxed_array(self) -> Box<dyn Array> {
+    fn into_boxed_array(self) -> Box<dyn Array> {
         self.to_boxed()
     }
 }
@@ -713,7 +718,7 @@ impl ArrayFromIterDtype<Box<dyn Array>> for FixedSizeListArray {
         let iter_values: Vec<_> = iter.into_iter().collect();
         let mut builder = AnonymousFixedSizeListArrayBuilder::new(iter_values.len(), *width);
         for arr in iter_values {
-            builder.push(arr.as_boxed_array());
+            builder.push(arr.into_boxed_array());
         }
         builder.finish(Some(&dtype.to_arrow())).unwrap()
     }
@@ -740,7 +745,7 @@ impl ArrayFromIterDtype<Option<Box<dyn Array>>> for FixedSizeListArray {
         let mut builder = AnonymousFixedSizeListArrayBuilder::new(iter_values.len(), *width);
         for arr in iter_values {
             match arr {
-                Some(a) => builder.push(a.as_boxed_array()),
+                Some(a) => builder.push(a.into_boxed_array()),
                 None => builder.push_null(),
             }
         }
@@ -798,7 +803,7 @@ impl<'a, T: PolarsObject> ArrayFromIterDtype<Option<&'a T>> for ObjectArray<T> {
         let iter = iter.into_iter();
         let size = iter.size_hint().0;
 
-        let mut null_mask_builder = MutableBitmap::with_capacity(size);
+        let mut null_mask_builder = arrow::bitmap::MutableBitmap::with_capacity(size);
         let values: Vec<T> = iter
             .map(|value| match value? {
                 Some(value) => {

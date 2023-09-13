@@ -18,10 +18,13 @@ pub trait TrustedLenPush<T> {
     /// # Safety
     /// Caller must ensure the iterators reported length is correct.
     unsafe fn extend_trusted_len_unchecked<I: IntoIterator<Item = T>>(&mut self, iter: I);
-    
+
     /// # Safety
     /// Caller must ensure the iterators reported length is correct.
-    unsafe fn try_extend_trusted_len_unchecked<E, I: IntoIterator<Item = Result<T, E>>>(&mut self, iter: I) -> Result<(), E>;
+    unsafe fn try_extend_trusted_len_unchecked<E, I: IntoIterator<Item = Result<T, E>>>(
+        &mut self,
+        iter: I,
+    ) -> Result<(), E>;
 
     fn from_trusted_len_iter<I: IntoIterator<Item = T, IntoIter = J>, J: TrustedLen>(
         iter: I,
@@ -35,7 +38,11 @@ pub trait TrustedLenPush<T> {
     /// Caller must ensure the iterators reported length is correct.
     unsafe fn from_trusted_len_iter_unchecked<I: IntoIterator<Item = T>>(iter: I) -> Self;
 
-    fn try_from_trusted_len_iter<E, I: IntoIterator<Item = Result<T, E>, IntoIter = J>, J: TrustedLen>(
+    fn try_from_trusted_len_iter<
+        E,
+        I: IntoIterator<Item = Result<T, E>, IntoIter = J>,
+        J: TrustedLen,
+    >(
         iter: I,
     ) -> Result<Self, E>
     where
@@ -45,8 +52,11 @@ pub trait TrustedLenPush<T> {
     }
     /// # Safety
     /// Caller must ensure the iterators reported length is correct.
-    unsafe fn try_from_trusted_len_iter_unchecked<E, I: IntoIterator<Item = Result<T, E>>>(iter: I) -> Result<Self, E>
-    where Self: Sized;
+    unsafe fn try_from_trusted_len_iter_unchecked<E, I: IntoIterator<Item = Result<T, E>>>(
+        iter: I,
+    ) -> Result<Self, E>
+    where
+        Self: Sized;
 }
 
 impl<T> TrustedLenPush<T> for Vec<T> {
@@ -72,7 +82,10 @@ impl<T> TrustedLenPush<T> for Vec<T> {
         self.set_len(self.len() + upper)
     }
 
-    unsafe fn try_extend_trusted_len_unchecked<E, I: IntoIterator<Item = Result<T, E>>>(&mut self, iter: I) -> Result<(), E> {
+    unsafe fn try_extend_trusted_len_unchecked<E, I: IntoIterator<Item = Result<T, E>>>(
+        &mut self,
+        iter: I,
+    ) -> Result<(), E> {
         let iter = iter.into_iter();
         let upper = iter.size_hint().1.expect("must have an upper bound");
         self.reserve(upper);
@@ -93,11 +106,14 @@ impl<T> TrustedLenPush<T> for Vec<T> {
         v
     }
 
-    unsafe fn try_from_trusted_len_iter_unchecked<E, I: IntoIterator<Item = Result<T, E>>>(iter: I) -> Result<Self, E>
-    where Self: Sized {
+    unsafe fn try_from_trusted_len_iter_unchecked<E, I: IntoIterator<Item = Result<T, E>>>(
+        iter: I,
+    ) -> Result<Self, E>
+    where
+        Self: Sized,
+    {
         let mut v = vec![];
         v.try_extend_trusted_len_unchecked(iter)?;
         Ok(v)
     }
-
 }

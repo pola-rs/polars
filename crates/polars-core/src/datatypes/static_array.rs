@@ -1,12 +1,16 @@
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::bitmap::Bitmap;
-use crate::datatypes::static_array_collect::ArrayFromIterDtype;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::{ObjectArray, ObjectValueIter};
+use crate::datatypes::static_array_collect::ArrayFromIterDtype;
 use crate::prelude::*;
 
-pub trait StaticArray: Array + for<'a> ArrayFromIterDtype<Self::ValueT<'a>> + for<'a> ArrayFromIterDtype<Option<Self::ValueT<'a>>> {
+pub trait StaticArray:
+    Array
+    + for<'a> ArrayFromIterDtype<Self::ValueT<'a>>
+    + for<'a> ArrayFromIterDtype<Option<Self::ValueT<'a>>>
+{
     type ValueT<'a>
     where
         Self: 'a;
@@ -59,7 +63,6 @@ pub trait StaticArray: Array + for<'a> ArrayFromIterDtype<Self::ValueT<'a>> + fo
 pub trait ParameterFreeDtypeStaticArray: StaticArray {
     fn get_dtype() -> DataType;
 }
-
 
 impl<T: NumericNative> StaticArray for PrimitiveArray<T> {
     type ValueT<'a> = T;

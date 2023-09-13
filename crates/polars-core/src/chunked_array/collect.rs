@@ -16,15 +16,14 @@ use polars_arrow::trusted_len::TrustedLen;
 
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{
-    DataType, Field, PolarsDataType,
-    ArrayCollectIterExt, ArrayFromIterDtype, ArrayFromIter,
+    ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype, DataType, Field, PolarsDataType,
 };
 
 pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
     #[inline]
     fn to_ca_with_dtype(self, name: &str, dtype: DataType) -> ChunkedArray<T>
     where
-        T::Array: ArrayFromIterDtype<Self::Item>
+        T::Array: ArrayFromIterDtype<Self::Item>,
     {
         let field = Arc::new(Field::new(name, dtype.clone()));
         let arr = self.collect_arr_with_dtype(dtype);
@@ -34,7 +33,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
     #[inline]
     fn to_ca_like(self, name_dtype_src: &ChunkedArray<T>) -> ChunkedArray<T>
     where
-        T::Array: ArrayFromIterDtype<Self::Item>
+        T::Array: ArrayFromIterDtype<Self::Item>,
     {
         let field = Arc::clone(&name_dtype_src.field);
         let arr = self.collect_arr_with_dtype(field.dtype.clone());
@@ -45,7 +44,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
     fn to_ca_trusted_with_dtype(self, name: &str, dtype: DataType) -> ChunkedArray<T>
     where
         T::Array: ArrayFromIterDtype<Self::Item>,
-        Self: TrustedLen
+        Self: TrustedLen,
     {
         let field = Arc::new(Field::new(name, dtype.clone()));
         let arr = self.collect_arr_trusted_with_dtype(dtype);
@@ -121,7 +120,7 @@ pub trait ChunkedCollectInferIterExt<T: PolarsDataType>: Iterator + Sized {
     #[inline]
     fn to_ca(self, name: &str) -> ChunkedArray<T>
     where
-        T::Array: ArrayFromIter<Self::Item>
+        T::Array: ArrayFromIter<Self::Item>,
     {
         let field = Arc::new(Field::new(name, T::get_dtype()));
         let arr = self.collect_arr();
