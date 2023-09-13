@@ -4,6 +4,7 @@ import inspect
 import os
 import re
 import sys
+import random
 import warnings
 from collections.abc import MappingView, Sized
 from enum import Enum
@@ -23,6 +24,7 @@ from polars.datatypes import (
     unpack_dtypes,
 )
 from polars.dependencies import _PYARROW_AVAILABLE
+from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
     from collections.abc import Reversible
@@ -490,3 +492,30 @@ def parse_percentiles(percentiles: Sequence[float] | float | None) -> Sequence[f
         at_or_above_50_percentiles = [0.5, *at_or_above_50_percentiles]
 
     return [*sub_50_percentiles, *at_or_above_50_percentiles]
+
+
+def parse_random_seed(seed: int | np.random.Generator | None) -> int:
+    """Parse the random seed, in case a numpy.random.Generator is used.
+
+    If ``seed`` is None, a random seed is generated using the ``random`` module.
+    If ``seed`` is a numpy.random.Generator, a random seed is generated from the
+    Generator object.
+
+    Parameters
+    ----------
+    seed
+        The provided random seed, Generator, or ``None``.
+
+    Returns
+    -------
+    The random seed.
+    """
+    try:
+        return seed.integers(0, 10000)
+    except AttributeError:
+        pass
+
+    if seed is None:
+        return random.randint(0, 10000)
+
+    return seed

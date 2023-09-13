@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import numpy as np
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -46,11 +47,17 @@ def test_sample_expr() -> None:
     result2 = pl.select(pl.lit(a).sample(n=10)).to_series()
     assert_series_equal(result1, result2)
 
+    # Similarly using a numpy.random.Generator:
+    result1 = pl.select(pl.lit(a).sample(n=10, seed=np.random.default_rng(1))).to_series()
+    result2 = pl.select(pl.lit(a).sample(n=10, seed=np.random.default_rng(1))).to_series()
+    assert_series_equal(result1, result2)
+
 
 def test_sample_df() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
 
     assert df.sample(n=2, seed=0).shape == (2, 3)
+    assert df.sample(n=2, seed=np.random.default_rng(1)).shape == (2, 3)
     assert df.sample(fraction=0.4, seed=0).shape == (1, 3)
 
 
@@ -71,6 +78,7 @@ def test_sample_series() -> None:
     s = pl.Series("a", [1, 2, 3, 4, 5])
 
     assert len(s.sample(n=2, seed=0)) == 2
+    assert len(s.sample(n=2, seed=np.random.default_rng(0))) == 2
     assert len(s.sample(fraction=0.4, seed=0)) == 2
 
     assert len(s.sample(n=2, with_replacement=True, seed=0)) == 2
@@ -95,6 +103,21 @@ def test_rank_random_expr() -> None:
     )
     assert_frame_equal(df_ranks1, df_ranks2)
 
+    # And with a numpy.random.Generator:
+    df_ranks1 = df.with_columns(
+        pl.col("c")
+        .rank(method="random", seed=np.random.default_rng(1))
+        .over("a")
+        .alias("rank")
+    )
+    df_ranks2 = df.with_columns(
+        pl.col("c")
+        .rank(method="random", seed=np.random.default_rng(1))
+        .over("a")
+        .alias("rank")
+    )
+    assert_frame_equal(df_ranks1, df_ranks2)
+
 
 def test_rank_random_series() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
@@ -112,6 +135,11 @@ def test_shuffle_expr() -> None:
 
     pl.set_random_seed(1)
     result2 = pl.select(pl.lit(s).shuffle()).to_series()
+    assert_series_equal(result1, result2)
+
+    # And with an numpy.random.Generator:
+    result1 = pl.select(pl.lit(s).shuffle(np.random.default_rng(1))).to_series()
+    result2 = pl.select(pl.lit(s).shuffle(np.random.default_rng(1))).to_series()
     assert_series_equal(result1, result2)
 
 

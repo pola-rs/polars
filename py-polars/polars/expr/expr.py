@@ -57,7 +57,7 @@ from polars.utils.deprecation import (
     warn_closed_future_change,
 )
 from polars.utils.meta import threadpool_size
-from polars.utils.various import sphinx_accessor
+from polars.utils.various import parse_random_seed, sphinx_accessor
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
@@ -5074,10 +5074,10 @@ class Expr:
 
     def hash(
         self,
-        seed: int = 0,
-        seed_1: int | None = None,
-        seed_2: int | None = None,
-        seed_3: int | None = None,
+        seed: int | np.random.Generator = 0,
+        seed_1: int | np.random.Generator | None = None,
+        seed_2: int | np.random.Generator | None = None,
+        seed_3: int | np.random.Generator | None = None,
     ) -> Self:
         """
         Hash the elements in the selection.
@@ -5116,10 +5116,10 @@ class Expr:
         └──────────────────────┴──────────────────────┘
 
         """
-        k0 = seed
-        k1 = seed_1 if seed_1 is not None else seed
-        k2 = seed_2 if seed_2 is not None else seed
-        k3 = seed_3 if seed_3 is not None else seed
+        k0 = parse_random_seed(seed)
+        k1 = parse_random_seed(seed_1 if seed_1 is not None else seed)
+        k2 = parse_random_seed(seed_2 if seed_2 is not None else seed)
+        k3 = parse_random_seed(seed_3 if seed_3 is not None else seed)
         return self._from_pyexpr(self._pyexpr.hash(k0, k1, k2, k3))
 
     def reinterpret(self, *, signed: bool = True) -> Self:
@@ -7150,7 +7150,7 @@ class Expr:
         method: RankMethod = "average",
         *,
         descending: bool = False,
-        seed: int | None = None,
+        seed: int | np.random.Generator | None = None,
     ) -> Self:
         """
         Assign ranks to data, dealing with ties appropriately.
@@ -7234,6 +7234,7 @@ class Expr:
         └─────┴─────┴──────┘
 
         """
+        seed = parse_random_seed(seed)
         return self._from_pyexpr(self._pyexpr.rank(method, descending, seed))
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Self:
@@ -8005,7 +8006,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.reshape(dimensions))
 
-    def shuffle(self, seed: int | None = None) -> Self:
+    def shuffle(self, seed: int | np.random.Generator | None = None) -> Self:
         """
         Shuffle the contents of this expression.
 
@@ -8031,6 +8032,7 @@ class Expr:
         └─────┘
 
         """
+        seed = parse_random_seed(seed) if seed is not None else seed
         return self._from_pyexpr(self._pyexpr.shuffle(seed))
 
     def sample(
@@ -8040,7 +8042,7 @@ class Expr:
         fraction: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
-        seed: int | None = None,
+        seed: int | np.random.Generator | None = None,
     ) -> Self:
         """
         Sample from this expression.
@@ -8076,6 +8078,7 @@ class Expr:
         └─────┘
 
         """
+        seed = parse_random_seed(seed) if seed is not None else seed
         if n is not None and fraction is not None:
             raise ValueError("cannot specify both `n` and `fraction`")
 
@@ -8086,6 +8089,7 @@ class Expr:
 
         if n is None:
             n = 1
+
         return self._from_pyexpr(
             self._pyexpr.sample_n(n, with_replacement, shuffle, seed)
         )

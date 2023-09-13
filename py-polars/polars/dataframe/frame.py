@@ -97,6 +97,7 @@ from polars.utils.various import (
     is_str_sequence,
     normalize_filepath,
     parse_percentiles,
+    parse_random_seed,
     parse_version,
     range_to_slice,
     scale_bytes,
@@ -8679,7 +8680,7 @@ class DataFrame:
         fraction: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
-        seed: int | None = None,
+        seed: int | np.random.Generator | None = None,
     ) -> Self:
         """
         Sample from this DataFrame.
@@ -8725,8 +8726,7 @@ class DataFrame:
         if n is not None and fraction is not None:
             raise ValueError("cannot specify both `n` and `fraction`")
 
-        if seed is None:
-            seed = random.randint(0, 10000)
+        seed = parse_random_seed(seed)
 
         if n is None and fraction is not None:
             return self._from_pydf(
@@ -9375,10 +9375,10 @@ class DataFrame:
 
     def hash_rows(
         self,
-        seed: int = 0,
-        seed_1: int | None = None,
-        seed_2: int | None = None,
-        seed_3: int | None = None,
+        seed: int | np.random.Generator = 0,
+        seed_1: int | np.random.Generator | None = None,
+        seed_2: int | np.random.Generator | None = None,
+        seed_3: int | np.random.Generator | None = None,
     ) -> Series:
         """
         Hash and combine the rows in this DataFrame.
@@ -9415,10 +9415,10 @@ class DataFrame:
         ]
 
         """
-        k0 = seed
-        k1 = seed_1 if seed_1 is not None else seed
-        k2 = seed_2 if seed_2 is not None else seed
-        k3 = seed_3 if seed_3 is not None else seed
+        k0 = parse_random_seed(seed)
+        k1 = parse_random_seed(seed_1 if seed_1 is not None else seed)
+        k2 = parse_random_seed(seed_2 if seed_2 is not None else seed)
+        k3 = parse_random_seed(seed_3 if seed_3 is not None else seed)
         return wrap_s(self._df.hash_rows(k0, k1, k2, k3))
 
     def interpolate(self) -> DataFrame:

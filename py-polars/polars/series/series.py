@@ -5655,7 +5655,7 @@ class Series:
         fraction: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
-        seed: int | None = None,
+        seed: int | np.random.Generator | None = None,
     ) -> Series:
         """
         Sample from this Series.
@@ -5761,10 +5761,10 @@ class Series:
 
     def hash(
         self,
-        seed: int = 0,
-        seed_1: int | None = None,
-        seed_2: int | None = None,
-        seed_3: int | None = None,
+        seed: int | np.random.Generator = 0,
+        seed_1: int | np.random.Generator | None = None,
+        seed_2: int | np.random.Generator | None = None,
+        seed_3: int | np.random.Generator | None = None,
     ) -> Series:
         """
         Hash the Series.
@@ -5847,7 +5847,7 @@ class Series:
         method: RankMethod = "average",
         *,
         descending: bool = False,
-        seed: int | None = None,
+        seed: int | np.random.Generator | None = None,
     ) -> Series:
         """
         Assign ranks to data, dealing with ties appropriately.
@@ -6304,7 +6304,7 @@ class Series:
 
         """
 
-    def shuffle(self, seed: int | None = None) -> Series:
+    def shuffle(self, seed: int | np.random.Generator | None = None) -> Series:
         """
         Shuffle the contents of this Series.
 

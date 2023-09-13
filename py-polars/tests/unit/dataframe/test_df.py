@@ -23,6 +23,7 @@ from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
     assert_series_equal,
+    assert_series_not_equal,
 )
 from polars.testing.parametric import columns
 from polars.utils._construction import iterable_to_pydf
@@ -1862,6 +1863,52 @@ def test_reproducible_hash_with_seeds() -> None:
         assert_series_equal(expected, result, check_names=False, check_exact=True)
         result = df.select([pl.col("s").hash(*seeds)])["s"]
         assert_series_equal(expected, result, check_names=False, check_exact=True)
+
+
+@pytest.mark.parametrize("seeds", [(11, 22, 33, 44), (11, None, None, None)])
+@pytest.mark.parametrize("use_numpy", [False, True])
+def test_hash_with_different_seed_types(seeds: tuple[int | None], use_numpy: bool) -> None:
+    """Test that hashes are at least consistent within a session.
+
+    Verifies that int, numpy.random.Generator, None seeds yield reproducible hashes.
+    """
+    df = pl.DataFrame({"s": [1234, None, 5678]})
+
+    def get_hash(df, seeds: tuple[int], use_numpy: bool) -> tuple[pl.Series]:
+        """A small helper function"""
+        if use_numpy:
+            seeds = [np.random.default_rng(s) for s in seeds if s is not None]
+
+        return df.hash_rows(*seeds), df["s"].hash(*seeds), df.select([pl.col("s").hash(*seeds)])["s"]
+
+    first_run = get_hash(df, seeds, use_numpy)
+    second_run = get_hash(df, seeds, use_numpy)
+    for hashes in zip(first_run, second_run):
+        assert_series_equal(*hashes, check_names=False, check_exact=True)
+
+
+@pytest.mark.parametrize("seed", [1, None])
+@pytest.mark.parametrize("use_numpy", [True, False])
+def test_sample_with_different_seed_types(seed: int | None, use_numpy: bool) -> None:
+    """Test that sampling is consistent with different seed types."""
+    df = pl.DataFrame({"s": [1234, None, 5678, 8765, 4321, 123, 456, 789]})
+
+    def get_sample(df, seed: tuple[int], use_numpy: bool) -> tuple[pl.Series]:
+        """A small helper function"""
+        seed = np.random.default_rng(seed) if use_numpy else seed
+        return (
+            df.sample(fraction=1, shuffle=True, seed=seed)["s"],
+            df["s"].sample(fraction=1, shuffle=True, seed=seed),
+            df.select([pl.col("s").sample(fraction=1, shuffle=True, seed=seed)])["s"]
+        )
+
+    first_run = get_sample(df, seed, use_numpy)
+    second_run = get_sample(df, seed, use_numpy)
+    for samples in zip(first_run, second_run):
+        if seed is not None:
+            assert_series_equal(*samples, check_names=False, check_exact=True)
+        else:
+            assert_series_not_equal(*samples, check_names=False, check_exact=True)
 
 
 def test_create_df_from_object() -> None:
