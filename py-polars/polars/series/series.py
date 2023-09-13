@@ -64,7 +64,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import OutOfBoundsError, ShapeError
+from polars.exceptions import ShapeError
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
@@ -1021,12 +1021,7 @@ class Series:
 
         # Integer
         elif isinstance(item, int):
-            try:
-                return self._s.get_index_signed(item)
-            except OutOfBoundsError as exc:
-                raise IndexError(
-                    f"index {item} is out of bounds for Series of length {self.len()}"
-                ) from exc
+            return self._s.get_index_signed(item)
 
         # Slice
         elif isinstance(item, slice):
@@ -1211,12 +1206,15 @@ class Series:
         24
 
         """
-        if row is None and len(self) != 1:
-            raise ValueError(
-                f"can only call '.item()' if the series is of length 1, or an"
-                f" explicit row index is provided (series is of length {len(self)})"
-            )
-        return self[row or 0]
+        if row is None:
+            if len(self) != 1:
+                raise ValueError(
+                    f"can only call '.item()' if the series is of length 1, or an"
+                    f" explicit row index is provided (series is of length {len(self)})"
+                )
+            return self._s.get_index(0)
+
+        return self._s.get_index_signed(row)
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """

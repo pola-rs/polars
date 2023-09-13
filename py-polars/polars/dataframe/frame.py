@@ -1853,8 +1853,9 @@ class DataFrame:
         if row is None and column is None:
             if self.shape != (1, 1):
                 raise ValueError(
-                    f"can only call `.item()` if the dataframe is of shape (1, 1), or if"
-                    f" explicit row/col values are provided; frame has shape {self.shape!r}"
+                    "can only call `.item()` if the dataframe is of shape (1, 1),"
+                    " or if explicit row/col values are provided;"
+                    f" frame has shape {self.shape!r}"
                 )
             return self._df.select_at_idx(0).get_index(0)
 
