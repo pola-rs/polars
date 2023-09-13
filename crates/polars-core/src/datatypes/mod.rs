@@ -14,6 +14,7 @@ mod dtype;
 mod field;
 mod from_values;
 mod static_array;
+mod static_array_collect;
 mod time_unit;
 
 use std::cmp::Ordering;
@@ -42,6 +43,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserializer, Serializer};
 pub use static_array::StaticArray;
+pub use static_array_collect::{ArrayCollect, ArrayFromIter, ArrayFromIterDtype};
 pub use time_unit::*;
 
 use crate::chunked_array::arithmetic::ArrayArithmetics;
@@ -273,14 +275,3 @@ impl NumericNative for f64 {
 
 // Provide options to cloud providers (credentials, region).
 pub type CloudOptions = PlHashMap<String, String>;
-
-
-// Indicates that this datatype has no parameters.
-pub trait PolarsParameterFreeDataType : PolarsDataType { }
-
-impl<T: PolarsNumericType> PolarsParameterFreeDataType for T { }
-impl PolarsParameterFreeDataType for BooleanType { }
-impl PolarsParameterFreeDataType for Utf8Type { }
-impl PolarsParameterFreeDataType for BinaryType { }
-impl PolarsParameterFreeDataType for DateType { }
-impl PolarsParameterFreeDataType for TimeType { }
