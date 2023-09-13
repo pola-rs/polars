@@ -1,13 +1,27 @@
+//! Methods for collecting into a ChunkedArray.
+//! To enable:
+//!     where ChunkedArray<T>: ChunkedCollect<T>
+//!
+//! For types that don't have dtype parameters:
+//! iter.(try_)to_ca(_trusted) (name)
+//!
+//! For all types:
+//! iter.(try_)to_ca(_trusted)_like (other_df)  Copies name/dtype from other_df
+//! iter.(try_)to_ca(_trusted)_with_dtype (name, df)
+//!
+//! The try variants work on iterators of Results, the trusted variants do not
+//! check the length of the iterator.
+
 use std::sync::Arc;
 
-use arrow::array::PrimitiveArray;
-use arrow::bitmap::MutableBitmap;
+use arrow::array::{BinaryArray, MutableBinaryArray, MutableBinaryValuesArray, PrimitiveArray};
+use arrow::bitmap::Bitmap;
 use polars_arrow::trusted_len::{TrustedLen, TrustedLenPush};
 
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{
-    DataType, DecimalType, Field, NumericNative, PolarsDataType, PolarsNumericType,
-    PolarsParameterFreeDataType, UInt8Chunked,
+    BinaryChunked, DataType, Field, NumericNative, PolarsDataType,
+    PolarsNumericType, PolarsParameterFreeDataType, Utf8Chunked,
 };
 
 // Convenience trait for specifying bounds.
@@ -257,6 +271,146 @@ where
 // ---------------
 // Implementations
 // ---------------
+macro_rules! impl_collect_vec_validity {
+    ($iter: ident, $x:ident, $unpack:expr) => {{
+        let mut iter = $iter.into_iter();
+        let mut buf: Vec<T> = Vec::new();
+        let mut bitmap: Vec<u8> = Vec::new();
+        let lo = iter.size_hint().0;
+        buf.reserve(8 + lo);
+        bitmap.reserve(8 + 8 * (lo / 64));
+
+        let mut nonnull_count = 0;
+        let mut mask = 0u8;
+        'exhausted: loop {
+            unsafe {
+                // SAFETY: when we enter this loop we always have at least one
+                // capacity in bitmap, and at least 8 in buf.
+                for i in 0..8 {
+                    let Some($x) = iter.next() else {
+                        break 'exhausted;
+                    };
+                    let x = $unpack;
+                    let nonnull = x.is_some();
+                    mask |= (nonnull as u8) << i;
+                    nonnull_count += nonnull as usize;
+                    buf.push_unchecked(x.unwrap_or_default());
+                }
+
+                bitmap.push_unchecked(mask);
+                mask = 0;
+            }
+
+            buf.reserve(8);
+            if bitmap.len() == bitmap.capacity() {
+                bitmap.reserve(8); // Waste some space to make branch more predictable.
+            }
+        }
+
+        unsafe {
+            // SAFETY: when we broke to 'exhausted we had capacity by the loop invariant.
+            // It's also no problem if we make the mask bigger than strictly necessary.
+            bitmap.push_unchecked(mask);
+        }
+
+        let null_count = buf.len() - nonnull_count;
+        let arrow_bitmap = if null_count > 0 {
+            unsafe {
+                // SAFETY: we made sure the null_count is correct.
+                Some(Bitmap::from_inner(Arc::new(bitmap.into()), 0, buf.len(), null_count).unwrap())
+            }
+        } else {
+            None
+        };
+
+        (buf, arrow_bitmap)
+    }};
+}
+
+macro_rules! impl_trusted_collect_vec_validity {
+    ($iter: ident, $x:ident, $unpack:expr) => {{
+        let mut iter = $iter.into_iter();
+        let mut buf: Vec<T> = Vec::new();
+        let mut bitmap: Vec<u8> = Vec::new();
+        let n = iter.size_hint().1.expect("must have an upper bound");
+        buf.reserve(n);
+        bitmap.reserve(8 + 8 * (n / 64));
+
+        let mut nonnull_count = 0;
+        while buf.len() + 8 <= n {
+            unsafe {
+                let mut mask = 0u8;
+                for i in 0..8 {
+                    let $x = iter.next().unwrap_unchecked();
+                    let x = $unpack;
+                    let nonnull = x.is_some();
+                    mask |= (nonnull as u8) << i;
+                    nonnull_count += nonnull as usize;
+                    buf.push_unchecked(x.unwrap_or_default());
+                }
+                bitmap.push_unchecked(mask);
+            }
+        }
+
+        if buf.len() < n {
+            unsafe {
+                let mut mask = 0u8;
+                for i in 0..n - buf.len() {
+                    let $x = iter.next().unwrap_unchecked();
+                    let x = $unpack;
+                    let nonnull = x.is_some();
+                    mask |= (nonnull as u8) << i;
+                    nonnull_count += nonnull as usize;
+                    buf.push_unchecked(x.unwrap_or_default());
+                }
+                bitmap.push_unchecked(mask);
+            }
+        }
+
+        let null_count = buf.len() - nonnull_count;
+        let arrow_bitmap = if null_count > 0 {
+            unsafe {
+                // SAFETY: we made sure the null_count is correct.
+                Some(Bitmap::from_inner(Arc::new(bitmap.into()), 0, buf.len(), null_count).unwrap())
+            }
+        } else {
+            None
+        };
+
+        (buf, arrow_bitmap)
+    }};
+}
+
+fn collect_vec_validity<T: Default, I: IntoIterator<Item = Option<T>>>(
+    iter: I,
+) -> (Vec<T>, Option<Bitmap>) {
+    impl_collect_vec_validity!(iter, x, x)
+}
+
+fn try_collect_vec_validity<T: Default, E, I: IntoIterator<Item = Result<Option<T>, E>>>(
+    iter: I,
+) -> Result<(Vec<T>, Option<Bitmap>), E> {
+    Ok(impl_collect_vec_validity!(iter, x, x?))
+}
+
+fn trusted_collect_vec_validity<T, I>(iter: I) -> (Vec<T>, Option<Bitmap>)
+where
+    T: Default,
+    I: IntoIterator<Item = Option<T>>,
+    I::IntoIter: TrustedLen,
+{
+    impl_trusted_collect_vec_validity!(iter, x, x)
+}
+
+fn try_trusted_collect_vec_validity<T, E, I>(iter: I) -> Result<(Vec<T>, Option<Bitmap>), E>
+where
+    T: Default,
+    I: IntoIterator<Item = Result<Option<T>, E>>,
+    I::IntoIter: TrustedLen,
+{
+    Ok(impl_trusted_collect_vec_validity!(iter, x, x?))
+}
+
 impl<'a, P: NumericNative, T: PolarsNumericType<Native = P>> ChunkedFromIterOptionTrick<P, P>
     for ChunkedArray<T>
 {
@@ -298,82 +452,6 @@ impl<'a, P: NumericNative, T: PolarsNumericType<Native = P>> ChunkedFromIterOpti
     }
 }
 
-// Exhausts the iterator, passing smaller subiterators to f that are guaranteed
-// to have a correct upper bound.
-fn try_exhaust_iterator_chunked<T, E, I, F>(iter: I, mut f: F) -> Result<(), E>
-where
-    I: IntoIterator<Item = T>,
-    F: FnMut(std::iter::Take<&mut I::IntoIter>) -> Result<bool, E>,
-{
-    let mut iter = iter.into_iter();
-    let mut min_count = 8;
-    loop {
-        let (lo, hi) = iter.size_hint();
-        if hi == Some(0) {
-            return Ok(());
-        }
-        let count = std::cmp::max(lo, min_count);
-        if f(iter.by_ref().take(count))? {
-            return Ok(());
-        }
-
-        // We don't want to immediately reserve space for 1024 elements for
-        // small inputs, but eventually we do want to process relatively
-        // large blocks of data, even if the iterator hint keeps returning
-        // small or zero size hints.
-        if min_count < 1024 {
-            min_count *= 2;
-        }
-    }
-}
-
-/// SAFETY: the iterator must have a correct upper size hint.
-unsafe fn extend_vec_validity<T: Default, I: Iterator<Item = Option<T>>>(
-    iter: I,
-    buf: &mut Vec<T>,
-    validity: &mut MutableBitmap,
-) -> bool {
-    let upper = iter.size_hint().1.expect("must have an upper bound");
-    buf.reserve(upper);
-    validity.reserve(upper);
-
-    let mut iter_exhausted = true;
-    for x in iter {
-        iter_exhausted = false;
-        // SAFETY: we reserved for count, and the iterator is no longer than that.
-        unsafe {
-            validity.push_unchecked(x.is_some());
-            buf.push_unchecked(x.unwrap_or_default());
-        }
-    }
-
-    iter_exhausted
-}
-
-/// SAFETY: the iterator must have a correct upper size hint.
-unsafe fn try_extend_vec_validity<T: Default, E, I: Iterator<Item = Result<Option<T>, E>>>(
-    iter: I,
-    buf: &mut Vec<T>,
-    validity: &mut MutableBitmap,
-) -> Result<bool, E> {
-    let upper = iter.size_hint().1.expect("must have an upper bound");
-    buf.reserve(upper);
-    validity.reserve(upper);
-
-    let mut iter_exhausted = true;
-    for x in iter {
-        iter_exhausted = false;
-        // SAFETY: we reserved for count, and the iterator is no longer than that.
-        unsafe {
-            let x = x?;
-            validity.push_unchecked(x.is_some());
-            buf.push_unchecked(x.unwrap_or_default());
-        }
-    }
-
-    Ok(iter_exhausted)
-}
-
 impl<'a, P: NumericNative, T: PolarsNumericType<Native = P>>
     ChunkedFromIterOptionTrick<P, Option<P>> for ChunkedArray<T>
 {
@@ -381,15 +459,8 @@ impl<'a, P: NumericNative, T: PolarsNumericType<Native = P>>
     where
         I: IntoIterator<Item = Option<P>>,
     {
-        let mut buf = Vec::new();
-        let mut validity = MutableBitmap::new();
-        let _ignore: Result<(), ()> = try_exhaust_iterator_chunked(iter, |chunk_iter| unsafe {
-            // SAFETY: try_exhaust_iterator_chunked guarantees the upper bound of
-            // chunk_iter is correct.
-            Ok(extend_vec_validity(chunk_iter, &mut buf, &mut validity))
-        });
-
-        let arr = PrimitiveArray::new(field.dtype.to_arrow(), buf.into(), validity.into());
+        let (buf, validity) = collect_vec_validity(iter);
+        let arr = PrimitiveArray::new(field.dtype.to_arrow(), buf.into(), validity);
         ChunkedArray::from_chunk_iter_and_field(field, [arr])
     }
 
@@ -398,16 +469,8 @@ impl<'a, P: NumericNative, T: PolarsNumericType<Native = P>>
         I: IntoIterator<Item = Option<P>>,
         I::IntoIter: TrustedLen,
     {
-        let mut buf = Vec::new();
-        let mut validity = MutableBitmap::new();
-        let iter = iter.into_iter();
-        unsafe {
-            // SAFETY: TrustedLen guarantees this is safe, and will exactly
-            // and completely exhaust the iterator.
-            extend_vec_validity(iter, &mut buf, &mut validity);
-        }
-
-        let arr = PrimitiveArray::new(field.dtype.to_arrow(), buf.into(), validity.into());
+        let (buf, validity) = trusted_collect_vec_validity(iter);
+        let arr = PrimitiveArray::new(field.dtype.to_arrow(), buf.into(), validity);
         ChunkedArray::from_chunk_iter_and_field(field, [arr])
     }
 
@@ -415,15 +478,8 @@ impl<'a, P: NumericNative, T: PolarsNumericType<Native = P>>
     where
         I: IntoIterator<Item = Result<Option<P>, E>>,
     {
-        let mut buf = Vec::new();
-        let mut validity = MutableBitmap::new();
-        try_exhaust_iterator_chunked(iter, |chunk_iter| unsafe {
-            // SAFETY: try_exhaust_iterator_chunked guarantees the upper bound of
-            // chunk_iter is correct.
-            try_extend_vec_validity(chunk_iter, &mut buf, &mut validity)
-        })?;
-
-        let arr = PrimitiveArray::new(field.dtype.to_arrow(), buf.into(), validity.into());
+        let (buf, validity) = try_collect_vec_validity(iter)?;
+        let arr = PrimitiveArray::new(field.dtype.to_arrow(), buf.into(), validity);
         Ok(ChunkedArray::from_chunk_iter_and_field(field, [arr]))
     }
 
@@ -433,117 +489,149 @@ impl<'a, P: NumericNative, T: PolarsNumericType<Native = P>>
         I: IntoIterator<Item = Result<Option<P>, E>>,
         I::IntoIter: TrustedLen,
     {
-        let mut buf = Vec::new();
-        let mut validity = MutableBitmap::new();
-        let iter = iter.into_iter();
-        unsafe {
-            // SAFETY: TrustedLen guarantees this is safe, and will exactly
-            // and completely exhaust the iterator.
-            try_extend_vec_validity(iter, &mut buf, &mut validity)?;
-        }
-
-        let arr = PrimitiveArray::new(field.dtype.to_arrow(), buf.into(), validity.into());
+        let (buf, validity) = try_trusted_collect_vec_validity(iter)?;
+        let arr = PrimitiveArray::new(field.dtype.to_arrow(), buf.into(), validity);
         Ok(ChunkedArray::from_chunk_iter_and_field(field, [arr]))
     }
 }
 
-impl<'a> ChunkedFromIterOptionTrick<DecimalType, DecimalType> for ChunkedArray<DecimalType> {
+impl<T: AsRef<[u8]>> ChunkedFromIterOptionTrick<T, T> for BinaryChunked {
     fn ca_from_iter_impl<I>(iter: I, field: Arc<Field>) -> Self
     where
-        I: IntoIterator<Item = DecimalType>,
+        I: IntoIterator<Item = T>,
     {
-        todo!()
+        let arr = BinaryArray::<i64>::from_iter_values(iter.into_iter());
+        ChunkedArray::from_chunk_iter_and_field(field, [arr])
     }
 
     fn ca_from_iter_trusted_impl<I>(iter: I, field: Arc<Field>) -> Self
     where
-        I: IntoIterator<Item = DecimalType>,
+        I: IntoIterator<Item = T>,
+        I::IntoIter: TrustedLen,
     {
-        todo!()
+        let arr = unsafe {
+            MutableBinaryArray::<i64>::from_trusted_len_values_iter_unchecked(iter.into_iter())
+        };
+        ChunkedArray::from_chunk_iter_and_field(field, [arr.into()])
     }
+
+    fn try_ca_from_iter_impl<I, E>(iter: I, field: Arc<Field>) -> Result<Self, E>
+    where
+        I: IntoIterator<Item = Result<T, E>>,
+    {
+        // No built-in for this?
+        let mut arr = MutableBinaryValuesArray::<i64>::new();
+        let mut iter = iter.into_iter();
+        arr.reserve(iter.size_hint().0, 0);
+        iter.try_for_each(|x| -> Result<(), E> {
+            arr.push(x?);
+            Ok(())
+        })?;
+        Ok(ChunkedArray::from_chunk_iter_and_field(field, [arr.into()]))
+    }
+
+    // No built-in for this, not really faster than default impl anyway.
+    // fn try_ca_from_iter_trusted_impl<I, E>(iter: I, field: Arc<Field>) -> Result<Self, E>
 }
 
-impl<'a> ChunkedFromIterOptionTrick<DecimalType, Option<DecimalType>>
-    for ChunkedArray<DecimalType>
-{
+impl<T: AsRef<[u8]>> ChunkedFromIterOptionTrick<T, Option<T>> for BinaryChunked {
     fn ca_from_iter_impl<I>(iter: I, field: Arc<Field>) -> Self
     where
-        I: IntoIterator<Item = Option<DecimalType>>,
+        I: IntoIterator<Item = Option<T>>,
     {
-        todo!()
+        let arr = BinaryArray::<i64>::from_iter(iter.into_iter());
+        ChunkedArray::from_chunk_iter_and_field(field, [arr])
     }
 
     fn ca_from_iter_trusted_impl<I>(iter: I, field: Arc<Field>) -> Self
     where
-        I: IntoIterator<Item = Option<DecimalType>>,
+        I: IntoIterator<Item = Option<T>>,
+        I::IntoIter: TrustedLen,
     {
-        todo!()
+        let arr = unsafe { BinaryArray::<i64>::from_trusted_len_iter_unchecked(iter.into_iter()) };
+        ChunkedArray::from_chunk_iter_and_field(field, [arr])
+    }
+
+    fn try_ca_from_iter_impl<I, E>(iter: I, field: Arc<Field>) -> Result<Self, E>
+    where
+        I: IntoIterator<Item = Result<Option<T>, E>>,
+    {
+        // No built-in for this?
+        let mut arr = MutableBinaryArray::<i64>::new();
+        let mut iter = iter.into_iter();
+        arr.reserve(iter.size_hint().0, 0);
+        iter.try_for_each(|x| -> Result<(), E> {
+            arr.push(x?);
+            Ok(())
+        })?;
+        Ok(ChunkedArray::from_chunk_iter_and_field(field, [arr.into()]))
+    }
+
+    #[inline]
+    fn try_ca_from_iter_trusted_impl<I, E>(iter: I, field: Arc<Field>) -> Result<Self, E>
+    where
+        I: IntoIterator<Item = Result<Option<T>, E>>,
+        I::IntoIter: TrustedLen,
+    {
+        let arr = unsafe { BinaryArray::<i64>::try_from_trusted_len_iter_unchecked(iter.into_iter()) }?;
+        Ok(ChunkedArray::from_chunk_iter_and_field(field, [arr]))
     }
 }
 
 /*
-
-trait MaybeOptionChunkedCollect {
-
-
-}
-
-impl<'a, T: PolarsDataType, U> ChunkedFromIterOptionTrick<U, U> for ChunkedArray<T> {
-    fn ca_from_iter<I>(iter: I, name: &str, dtype: DataType) -> Self
-       where I: IntoIterator<Item = T::Physical<'a>> {
-        todo!()
+impl<T: AsRef<str>> ChunkedFromIterOptionTrick<T, T> for Utf8Chunked {
+    fn ca_from_iter_impl<I>(iter: I, field: Arc<Field>) -> Self
+    where
+        I: IntoIterator<Item = T>,
+    {
+        let arr = BinaryArray::<i64>::from_iter_values(iter.into_iter());
+        ChunkedArray::from_chunk_iter_and_field(field, [arr])
     }
-}
 
-impl<'a, T: PolarsDataType, U> ChunkedFromIter<U, Option<U>> for ChunkedArray<T> {
-    fn ca_from_iter<I>(iter: I, name: &str, dtype: DataType) -> Self
-       where I: IntoIterator<Item = Option<T::Physical<'a>>> {
-        todo!()
+    fn ca_from_iter_trusted_impl<I>(iter: I, field: Arc<Field>) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        I::IntoIter: TrustedLen,
+    {
+        let arr = unsafe {
+            MutableBinaryArray::<i64>::from_trusted_len_values_iter_unchecked(iter.into_iter())
+        };
+        ChunkedArray::from_chunk_iter_and_field(field, [arr.into()])
     }
+
+    fn try_ca_from_iter_impl<I, E>(iter: I, field: Arc<Field>) -> Result<Self, E>
+    where
+        I: IntoIterator<Item = Result<T, E>>,
+    {
+        // No built-in for this?
+        let mut arr = MutableBinaryValuesArray::<i64>::new();
+        let mut iter = iter.into_iter();
+        arr.reserve(iter.size_hint().0, 0);
+        iter.try_for_each(|x| -> Result<(), E> {
+            arr.push(x?);
+            Ok(())
+        })?;
+        Ok(ChunkedArray::from_chunk_iter_and_field(field, [arr.into()]))
+    }
+
+    // No built-in for this, not really faster than default impl anyway.
+    // fn try_ca_from_iter_trusted_impl<I, E>(iter: I, field: Arc<Field>) -> Result<Self, E>
 }
 */
 
-// impl<T> MaybeOptionChunkedCollect for T { }
-// impl<T> MaybeOptionChunkedCollect for Option<T> { }
+
+
 
 /*
-impl<T, I: Iterator<Item=T>, CA: ChunkedFromIter<T>> ChunkedCollect<CA> for I {
-    fn collect_ca(self) -> CA {
-        todo!()
-    }
-}
+impl_polars_datatype!(BinaryType, Binary, BinaryArray<i64>, 'a, &'a [u8]);
+impl_polars_datatype!(BooleanType, Boolean, BooleanArray, 'a, bool);
 
-impl<T, I: Iterator<Item=Option<T>>, CA: ChunkedFromIter<T>> ChunkedCollect<CA> for I {
-    fn collect_ca(self) -> CA {
-        todo!()
-    }
-}
+pub struct ListType {}
+
+#[cfg(feature = "dtype-array")]
+pub struct FixedSizeListType {}
+#[cfg(feature = "object")]
+pub struct ObjectType<T>(T);
+
+
 */
-
-/*
-impl<T: PolarsDataType> ChunkedArray<T> {
-    fn from_iter<'a>(iter: T) -> Self
-       where T: IntoIterator<Item = T::Physical<'a>> {
-        todo!()
-
-    }
-}
-*/
-
-/*
-impl<T: PolarsNumericType> ChunkedFromIter<T::Native> for ChunkedArray<T> {
-    fn from_iter<I>(iter: I) -> Self
-       where I: IntoIterator<Item = T::Native> {
-        todo!()
-    }
-
-    fn from_nonnull_iter<I>(iter: I) -> Self
-       where I: IntoIterator<Item = T::Native> {
-        todo!()
-    }
-}
-*/
-
-// impl<T: PolarsNumericType> ChunkedFromIter<Option<T::Native>> for ChunkedArray<T> {
-
-// }
