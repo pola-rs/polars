@@ -201,6 +201,8 @@ macro_rules! impl_collect_vec_validity {
                     let Some($x) = iter.next() else {
                         break 'exhausted;
                     };
+                    #[allow(clippy::all)]
+                    // #[allow(clippy::redundant_locals)]  Clippy lint too new
                     let x = $unpack;
                     let nonnull = x.is_some();
                     mask |= (nonnull as u8) << i;
@@ -253,6 +255,8 @@ macro_rules! impl_trusted_collect_vec_validity {
                 let mut mask = 0u8;
                 for i in 0..8 {
                     let $x = iter.next().unwrap_unchecked();
+                    #[allow(clippy::all)]
+                    // #[allow(clippy::redundant_locals)]  Clippy lint too new
                     let x = $unpack;
                     let nonnull = x.is_some();
                     mask |= (nonnull as u8) << i;
@@ -544,7 +548,8 @@ macro_rules! impl_collect_bool_validity {
                     let Some($x) = iter.next() else {
                         break 'exhausted;
                     };
-                    #[allow(clippy::redundant_locals)]
+                    #[allow(clippy::all)]
+                    // #[allow(clippy::redundant_locals)]  Clippy lint too new
                     let $x = $unpack;
                     let is_true: bool = $truth;
                     buf_mask |= (is_true as u8) << i;
