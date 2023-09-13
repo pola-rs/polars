@@ -258,39 +258,15 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
 }
 
 pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let sub = s[1].utf8()?;
-
-    Ok(match sub.len() {
-        1 => match sub.get(0) {
-            Some(s) => ca.ends_with(s),
-            None => BooleanChunked::full(ca.name(), false, ca.len()),
-        },
-        _ => binary_elementwise(ca, sub, |opt_src, opt_sub| match (opt_src, opt_sub) {
-            (Some(src), Some(sub)) => Some(src.ends_with(sub)),
-            _ => Some(false),
-        }),
-    }
-    .with_name(ca.name())
-    .into_series())
+    let ca = s[0].cast(&DataType::Binary)?;
+    let sub = s[1].cast(&DataType::Binary)?;
+    binary::ends_with(&[ca, sub])
 }
 
 pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let sub = s[1].utf8()?;
-
-    Ok(match sub.len() {
-        1 => match sub.get(0) {
-            Some(s) => ca.starts_with(s),
-            None => BooleanChunked::full(ca.name(), false, ca.len()),
-        },
-        _ => binary_elementwise(ca, sub, |opt_src, opt_sub| match (opt_src, opt_sub) {
-            (Some(src), Some(sub)) => Some(src.starts_with(sub)),
-            _ => Some(false),
-        }),
-    }
-    .with_name(ca.name())
-    .into_series())
+    let ca = s[0].cast(&DataType::Binary)?;
+    let sub = s[1].cast(&DataType::Binary)?;
+    binary::starts_with(&[ca, sub])
 }
 
 /// Extract a regex pattern from the a string value.
