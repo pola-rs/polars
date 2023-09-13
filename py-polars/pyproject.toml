@@ -191,6 +191,7 @@ markers = [
   "write_disk: Tests that write to disk",
   "slow: Tests with a longer than average runtime.",
   "benchmark: Tests that should be run on a Polars release build.",
+  "docs: Documentation code snippets",
 ]
 filterwarnings = [
   # Fail on warnings...
@@ -198,6 +199,7 @@ filterwarnings = [
   # ...except where it prevents test debugging in an IPython console
   "ignore:.*unrecognized arguments.*PyDevIPCompleter:DeprecationWarning",
   "ignore:.*is_sparse is deprecated.*:FutureWarning",
+  "ignore:Matplotlib is currently using agg:UserWarning",
 ]
 xfail_strict = true
 

@@ -65,11 +65,13 @@ jobs:
 
       - name: Run tests and report coverage
         if: github.ref_name != 'main'
-        run: pytest --cov -n auto --dist loadgroup -m "not benchmark"
+        run: pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs"
 
       - name: Run doctests
         if: github.ref_name != 'main'
-        run: python tests/docs/run_doctest.py
+        run: |
+          python tests/docs/run_doctest.py
+          pytest tests/docs/test_user_guide.py -m docs
 
       - name: Check import without optional dependencies
         if: github.ref_name != 'main'
