@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import inspect
 import os
+import random
 import re
 import sys
-import random
 import warnings
 from collections.abc import MappingView, Sized
 from enum import Enum
@@ -24,12 +24,12 @@ from polars.datatypes import (
     unpack_dtypes,
 )
 from polars.dependencies import _PYARROW_AVAILABLE
-from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
     from collections.abc import Reversible
 
     from polars import DataFrame, Series
+    from polars.dependencies import numpy as np
     from polars.type_aliases import PolarsDataType, PolarsIntegerType, SizeUnit
 
     if sys.version_info >= (3, 10):
@@ -495,7 +495,8 @@ def parse_percentiles(percentiles: Sequence[float] | float | None) -> Sequence[f
 
 
 def parse_random_seed(seed: int | np.random.Generator | None) -> int:
-    """Parse the random seed, in case a numpy.random.Generator is used.
+    """
+    Parse the random seed, in case a numpy.random.Generator is used.
 
     If ``seed`` is None, a random seed is generated using the ``random`` module.
     If ``seed`` is a numpy.random.Generator, a random seed is generated from the

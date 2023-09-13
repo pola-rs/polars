@@ -4,6 +4,7 @@ import random
 
 import numpy as np
 import pytest
+
 from polars.utils.various import parse_random_seed
 
 

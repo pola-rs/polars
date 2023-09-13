@@ -1867,19 +1867,26 @@ def test_reproducible_hash_with_seeds() -> None:
 
 @pytest.mark.parametrize("seeds", [(11, 22, 33, 44), (11, None, None, None)])
 @pytest.mark.parametrize("use_numpy", [False, True])
-def test_hash_with_different_seed_types(seeds: tuple[int | None], use_numpy: bool) -> None:
-    """Test that hashes are at least consistent within a session.
+def test_hash_with_different_seed_types(
+    seeds: tuple[int | None], use_numpy: bool
+) -> None:
+    """
+    Test that hashes are at least consistent within a session.
 
     Verifies that int, numpy.random.Generator, None seeds yield reproducible hashes.
     """
     df = pl.DataFrame({"s": [1234, None, 5678]})
 
     def get_hash(df, seeds: tuple[int], use_numpy: bool) -> tuple[pl.Series]:
-        """A small helper function"""
+        """A small helper function."""
         if use_numpy:
             seeds = [np.random.default_rng(s) for s in seeds if s is not None]
 
-        return df.hash_rows(*seeds), df["s"].hash(*seeds), df.select([pl.col("s").hash(*seeds)])["s"]
+        return (
+            df.hash_rows(*seeds),
+            df["s"].hash(*seeds),
+            df.select([pl.col("s").hash(*seeds)])["s"],
+        )
 
     first_run = get_hash(df, seeds, use_numpy)
     second_run = get_hash(df, seeds, use_numpy)
@@ -1894,12 +1901,12 @@ def test_sample_with_different_seed_types(seed: int | None, use_numpy: bool) -> 
     df = pl.DataFrame({"s": [1234, None, 5678, 8765, 4321, 123, 456, 789]})
 
     def get_sample(df, seed: tuple[int], use_numpy: bool) -> tuple[pl.Series]:
-        """A small helper function"""
+        """A small helper function."""
         seed = np.random.default_rng(seed) if use_numpy else seed
         return (
             df.sample(fraction=1, shuffle=True, seed=seed)["s"],
             df["s"].sample(fraction=1, shuffle=True, seed=seed),
-            df.select([pl.col("s").sample(fraction=1, shuffle=True, seed=seed)])["s"]
+            df.select([pl.col("s").sample(fraction=1, shuffle=True, seed=seed)])["s"],
         )
 
     first_run = get_sample(df, seed, use_numpy)

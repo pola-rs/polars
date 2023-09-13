@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import random
 from collections import defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO, TextIOWrapper

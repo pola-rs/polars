@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
-import numpy as np
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -48,8 +48,12 @@ def test_sample_expr() -> None:
     assert_series_equal(result1, result2)
 
     # Similarly using a numpy.random.Generator:
-    result1 = pl.select(pl.lit(a).sample(n=10, seed=np.random.default_rng(1))).to_series()
-    result2 = pl.select(pl.lit(a).sample(n=10, seed=np.random.default_rng(1))).to_series()
+    result1 = pl.select(
+        pl.lit(a).sample(n=10, seed=np.random.default_rng(1))
+    ).to_series()
+    result2 = pl.select(
+        pl.lit(a).sample(n=10, seed=np.random.default_rng(1))
+    ).to_series()
     assert_series_equal(result1, result2)
 
 
