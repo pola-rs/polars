@@ -5,8 +5,12 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
-    fn bin_contains(&self, lit: Vec<u8>) -> Self {
-        self.inner.clone().binary().contains_literal(lit).into()
+    fn bin_contains(&self, lit: PyExpr) -> Self {
+        self.inner
+            .clone()
+            .binary()
+            .contains_literal(lit.inner)
+            .into()
     }
 
     fn bin_ends_with(&self, sub: PyExpr) -> Self {

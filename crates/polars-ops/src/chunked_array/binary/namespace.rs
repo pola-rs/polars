@@ -12,21 +12,34 @@ use super::*;
 
 pub trait BinaryNameSpaceImpl: AsBinary {
     /// Check if binary contains given literal
-    fn contains(&self, lit: &[u8]) -> PolarsResult<BooleanChunked> {
+    fn contains(&self, lit: &[u8]) -> BooleanChunked {
         let ca = self.as_binary();
         let f = |s: &[u8]| find(s, lit).is_some();
-        let mut out: BooleanChunked = if !ca.has_validity() {
-            ca.into_no_null_iter().map(f).collect()
+        if !ca.has_validity() {
+            ca.into_no_null_iter()
+                .map(f)
+                .collect::<BooleanChunked>()
+                .with_name(ca.name())
         } else {
-            ca.into_iter().map(|opt_s| opt_s.map(f)).collect()
-        };
-        out.rename(ca.name());
-        Ok(out)
+            ca.into_iter()
+                .map(|opt_s| opt_s.map_or(false, f))
+                .collect::<BooleanChunked>()
+                .with_name(ca.name())
+        }
     }
 
-    /// Check if strings contain a given literal
-    fn contains_literal(&self, lit: &[u8]) -> PolarsResult<BooleanChunked> {
-        self.contains(lit)
+    fn contains_chunked(&self, lit: &BinaryChunked) -> BooleanChunked {
+        let ca = self.as_binary();
+        match lit.len() {
+            1 => match lit.get(0) {
+                Some(pat) => ca.contains(pat),
+                None => BooleanChunked::full(ca.name(), false, ca.len()),
+            },
+            _ => binary_elementwise(ca, lit, |opt_src, opt_lit| match (opt_src, opt_lit) {
+                (Some(src), Some(lit)) => Some(find(src, lit).is_some()),
+                _ => Some(false),
+            }),
+        }
     }
 
     /// Check if strings ends with a substring

@@ -714,8 +714,8 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: BinaryFunction) -> Self {
         use BinaryFunction::*;
         match func {
-            Contains { pat, literal } => {
-                map!(binary::contains, &pat, literal)
+            Contains => {
+                map_as_slice!(binary::contains)
             },
             EndsWith => {
                 map_as_slice!(binary::ends_with)
