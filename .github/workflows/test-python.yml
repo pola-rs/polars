@@ -41,6 +41,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Set up Graphviz
+        uses: ts-graphviz/setup-graphviz@v1
+
       - name: Create virtual environment
         run: |
           python -m venv .venv
@@ -127,7 +130,7 @@ jobs:
 
       - name: Run tests
         if: github.ref_name != 'main'
-        run: pytest -n auto --dist loadgroup -m "not benchmark"
+        run: pytest -n auto --dist loadgroup -m "not benchmark and not docs"
 
       - name: Check import without optional dependencies
         if: github.ref_name != 'main'
