@@ -101,7 +101,7 @@ impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<
     }
 }
 
-pub trait ArrayCollect<A: StaticArray>: Iterator + Sized {
+pub trait ArrayCollectIterExt<A: StaticArray>: Iterator + Sized {
     #[inline(always)]
     fn collect_arr(self) -> A
     where
@@ -173,7 +173,7 @@ pub trait ArrayCollect<A: StaticArray>: Iterator + Sized {
     }
 }
 
-impl<A: StaticArray, I: Iterator> ArrayCollect<A> for I {}
+impl<A: StaticArray, I: Iterator> ArrayCollectIterExt<A> for I {}
 
 // ---------------
 // Implementations

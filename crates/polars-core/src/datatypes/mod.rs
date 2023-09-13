@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserializer, Serializer};
 pub use static_array::StaticArray;
-pub use static_array_collect::{ArrayCollect, ArrayFromIter, ArrayFromIterDtype};
+pub use static_array_collect::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype};
 pub use time_unit::*;
 
 use crate::chunked_array::arithmetic::ArrayArithmetics;

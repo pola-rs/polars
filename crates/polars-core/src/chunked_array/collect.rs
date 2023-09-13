@@ -17,7 +17,7 @@ use polars_arrow::trusted_len::TrustedLen;
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{
     DataType, Field, PolarsDataType,
-    ArrayCollect, ArrayFromIterDtype, ArrayFromIter,
+    ArrayCollectIterExt, ArrayFromIterDtype, ArrayFromIter,
 };
 
 pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
@@ -117,7 +117,7 @@ pub trait ChunkedCollectIterExt<T: PolarsDataType>: Iterator + Sized {
 
 impl<T: PolarsDataType, I: Iterator> ChunkedCollectIterExt<T> for I {}
 
-pub trait ChunkedCollectIterInferExt<T: PolarsDataType>: Iterator + Sized {
+pub trait ChunkedCollectInferIterExt<T: PolarsDataType>: Iterator + Sized {
     #[inline]
     fn to_ca(self, name: &str) -> ChunkedArray<T>
     where
@@ -162,4 +162,4 @@ pub trait ChunkedCollectIterInferExt<T: PolarsDataType>: Iterator + Sized {
     }
 }
 
-impl<T: PolarsDataType, I: Iterator> ChunkedCollectIterInferExt<T> for I {}
+impl<T: PolarsDataType, I: Iterator> ChunkedCollectInferIterExt<T> for I {}
