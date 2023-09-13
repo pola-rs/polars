@@ -257,15 +257,23 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
 }
 
 pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].cast(&DataType::Binary)?;
-    let sub = s[1].cast(&DataType::Binary)?;
-    binary::ends_with(&[ca, sub])
+    let ca = &s[0].utf8()?.as_binary();
+    let suffix = &s[1].utf8()?.as_binary();
+
+    Ok(ca
+        .ends_with_chunked(suffix)
+        .with_name(ca.name())
+        .into_series())
 }
 
 pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].cast(&DataType::Binary)?;
-    let sub = s[1].cast(&DataType::Binary)?;
-    binary::starts_with(&[ca, sub])
+    let ca = &s[0].utf8()?.as_binary();
+    let prefix = &s[1].utf8()?.as_binary();
+
+    Ok(ca
+        .starts_with_chunked(prefix)
+        .with_name(ca.name())
+        .into_series())
 }
 
 /// Extract a regex pattern from the a string value.
