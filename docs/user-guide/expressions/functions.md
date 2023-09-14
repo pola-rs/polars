@@ -17,12 +17,6 @@ By default if you perform an expression it will keep the same name as the origin
 
 {{code_block('user-guide/expressions/functions','samename',[])}}
 
-=== ":fontawesome-brands-python: Python"
-
-```python
---8<-- "python/user-guide/expressions/functions.py:samename"
-```
-
 ```python exec="on" result="text" session="user-guide/functions"
 --8<-- "python/user-guide/expressions/functions.py:samename"
 ```
