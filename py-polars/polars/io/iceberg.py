@@ -55,7 +55,7 @@ def scan_iceberg(
 
     Examples
     --------
-    Creates a scan for a Iceberg table from local filesystem, or object store.
+    Creates a scan for an Iceberg table from local filesystem, or object store.
 
     >>> table_path = "file:/path/to/iceberg-table/metadata.json"
     >>> pl.scan_iceberg(table_path).collect()  # doctest: +SKIP
@@ -74,7 +74,7 @@ def scan_iceberg(
     ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
 
-    Creates a scan for a Iceberg table from Azure.
+    Creates a scan for an Iceberg table from Azure.
     Supported options for Azure are available `here
     <https://py.iceberg.apache.org/configuration/#azure-data-lake>`__.
 
@@ -92,7 +92,7 @@ def scan_iceberg(
     ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
 
-    Creates a scan for a Iceberg table from Google Cloud Storage.
+    Creates a scan for an Iceberg table from Google Cloud Storage.
     Supported options for GCS are available `here
     <https://py.iceberg.apache.org/configuration/#google-cloud-storage>`__.
 
@@ -105,7 +105,7 @@ def scan_iceberg(
     ...     table_path, storage_options=storage_options
     ... ).collect()  # doctest: +SKIP
 
-    Creates a scan for a Iceberg table with additional options.
+    Creates a scan for an Iceberg table with additional options.
     In the below example, `without_files` option is used which loads the table without
     file tracking information.
 
