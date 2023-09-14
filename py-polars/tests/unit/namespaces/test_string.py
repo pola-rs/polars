@@ -843,6 +843,31 @@ def test_split() -> None:
     assert_frame_equal(df["x"].str.split("_", inclusive=True).to_frame(), expected)
 
 
+def test_split_expr() -> None:
+    df = pl.DataFrame({"x": ["a_a", None, "b", "c*c*c"], "by": ["_", "#", "^", "*"]})
+    out = df.select([pl.col("x").str.split(pl.col("by"))])
+    expected = pl.DataFrame(
+        [
+            {"x": ["a", "a"]},
+            {"x": None},
+            {"x": ["b"]},
+            {"x": ["c", "c", "c"]},
+        ]
+    )
+    assert_frame_equal(out, expected)
+
+    out = df.select([pl.col("x").str.split(pl.col("by"), inclusive=True)])
+    expected = pl.DataFrame(
+        [
+            {"x": ["a_", "a"]},
+            {"x": None},
+            {"x": ["b"]},
+            {"x": ["c*", "c*", "c"]},
+        ]
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_split_exact() -> None:
     df = pl.DataFrame({"x": ["a_a", None, "b", "c_c"]})
     out = df.select([pl.col("x").str.split_exact("_", 2, inclusive=False)]).unnest("x")
