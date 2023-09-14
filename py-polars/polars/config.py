@@ -193,7 +193,13 @@ class Config(contextlib.ContextDecorator):
         save: Save the current set of Config options as a JSON string or file.
 
         """
-        options = json.loads(cfg)
+        try:
+            options = json.loads(cfg)
+        except json.JSONDecodeError as err:
+            raise ValueError(
+                "invalid Config string (did you mean to use `load_from_file`?)"
+            ) from err
+
         os.environ.update(options.get("environment", {}))
         for cfg_methodname, value in options.get("direct", {}).items():
             if hasattr(cls, cfg_methodname):
@@ -216,7 +222,13 @@ class Config(contextlib.ContextDecorator):
         save: Save the current set of Config options as a JSON string or file.
 
         """
-        options = Path(normalize_filepath(file)).read_text()
+        try:
+            options = Path(normalize_filepath(file)).read_text()
+        except OSError as err:
+            raise ValueError(
+                f"invalid Config file (did you mean to use `load`?)\n{err}"
+            ) from err
+
         return cls.load(options)
 
     @classmethod

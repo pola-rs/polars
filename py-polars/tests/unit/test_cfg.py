@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Any, Iterator
+from pathlib import Path
+from typing import Any, Iterator
 
 import pytest
 
@@ -9,9 +10,6 @@ import polars as pl
 from polars.config import _POLARS_CFG_ENV_VARS, _get_float_fmt
 from polars.exceptions import StringCacheMismatchError
 from polars.testing import assert_frame_equal
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 @pytest.fixture(autouse=True)
@@ -570,6 +568,16 @@ def test_config_load_save(tmp_path: Path) -> None:
         if file is None:
             pl.Config.load(cfg)
         else:
+            with pytest.raises(ValueError, match="invalid Config file"):
+                pl.Config.load_from_file(cfg)
+
+            if isinstance(file, Path):
+                with pytest.raises(TypeError, match="the JSON object must be str"):
+                    pl.Config.load(file)  # type: ignore[arg-type]
+            else:
+                with pytest.raises(ValueError, match="invalid Config string"):
+                    pl.Config.load(file)
+
             pl.Config.load_from_file(file)
 
         # ...and confirm the saved options were set.
