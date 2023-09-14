@@ -21,10 +21,12 @@ def iceberg_path(io_files_path: Path) -> str:
         os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")
 
     iceberg_path = io_files_path / "iceberg-table" / "metadata" / "v2.metadata.json"
-    return str(iceberg_path.resolve())
+    return f"file://{iceberg_path.resolve()}"
 
 
-@pytest.mark.filterwarnings("ignore:No preferred file implementation for scheme*:UserWarning")
+@pytest.mark.filterwarnings(
+    "ignore:No preferred file implementation for scheme*:UserWarning"
+)
 def test_scan_iceberg_plain(iceberg_path: str) -> None:
     df = pl.scan_iceberg(iceberg_path)
     assert len(df.collect()) == 3
@@ -34,14 +36,19 @@ def test_scan_iceberg_plain(iceberg_path: str) -> None:
         "ts": pl.Datetime(time_unit="us", time_zone=None),
     }
 
-@pytest.mark.filterwarnings("ignore:No preferred file implementation for scheme*:UserWarning")
+
+@pytest.mark.filterwarnings(
+    "ignore:No preferred file implementation for scheme*:UserWarning"
+)
 def test_scan_iceberg_filter_on_partition(iceberg_path: str) -> None:
     df = pl.scan_iceberg(iceberg_path)
     df = df.filter(pl.col("ts") > "2023-03-02T00:00:00")
     assert len(df.collect()) == 1
 
 
-@pytest.mark.filterwarnings("ignore:No preferred file implementation for scheme*:UserWarning")
+@pytest.mark.filterwarnings(
+    "ignore:No preferred file implementation for scheme*:UserWarning"
+)
 def test_scan_iceberg_filter_on_column(iceberg_path: str) -> None:
     df = pl.scan_iceberg(iceberg_path)
     df = df.filter(pl.col("id") < 2)
