@@ -15,7 +15,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     fn contains(&self, lit: &[u8]) -> BooleanChunked {
         let ca = self.as_binary();
         let f = |s: &[u8]| find(s, lit).is_some();
-        ca.apply_values_generic(|v| f(v))
+        ca.apply_values_generic(f)
     }
 
     fn contains_chunked(&self, lit: &BinaryChunked) -> BooleanChunked {
