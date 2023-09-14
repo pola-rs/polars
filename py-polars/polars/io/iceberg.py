@@ -2,12 +2,6 @@ from __future__ import annotations
 
 import ast
 from _ast import GtE, Lt, LtE
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from polars import DataFrame, LazyFrame, Series
-    from polars.dependencies.pyiceberg.table import Table
-
 from ast import (
     Attribute,
     BinOp,
@@ -23,7 +17,7 @@ from ast import (
     UnaryOp,
 )
 from functools import partial, singledispatch
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars.dependencies import _PYICEBERG_AVAILABLE
@@ -42,6 +36,10 @@ if _PYICEBERG_AVAILABLE:
         Not,
         Or,
     )
+
+if TYPE_CHECKING:
+    from polars import DataFrame, LazyFrame, Series
+    from polars.dependencies.pyiceberg.table import Table
 
 
 def scan_iceberg(
@@ -145,26 +143,6 @@ def scan_iceberg(
     return pl.LazyFrame._scan_python_function(arrow_schema, func, pyarrow=True)
 
 
-def _to_ast(expr: str) -> ast.expr:
-    """
-    Converts a Python string to an AST.
-
-    This will take the Python Arrow exprssion (as a string), and it will
-    be converted into a Python AST that can be traversed to convert it to a PyIceberg
-    expression.
-
-    Parameters
-    ----------
-    expr
-        The string expression
-
-    Returns
-    -------
-    The AST representing the Arrow expression
-    """
-    return ast.parse(expr, mode="eval").body
-
-
 def _scan_pyarrow_dataset_impl(
     tbl: Table,
     with_columns: list[str] | None = None,
@@ -184,7 +162,7 @@ def _scan_pyarrow_dataset_impl(
     predicate
         pyarrow expression that can be evaluated with eval
     n_rows:
-        Materialize only n rows from the arrow dataset
+        Materialize only n rows from the arrow dataset.
     batch_size
         The maximum row count for scanned pyarrow record batches.
     kwargs:
@@ -195,6 +173,8 @@ def _scan_pyarrow_dataset_impl(
     DataFrame
 
     """
+    from polars import from_arrow
+
     scan = tbl.scan(limit=n_rows)
 
     if with_columns is not None:
@@ -211,9 +191,27 @@ def _scan_pyarrow_dataset_impl(
 
         scan = scan.filter(pyiceberg_expr)
 
-    from polars import from_arrow
-
     return from_arrow(scan.to_arrow())
+
+
+def _to_ast(expr: str) -> ast.expr:
+    """
+    Converts a Python string to an AST.
+
+    This will take the Python Arrow expression (as a string), and it will
+    be converted into a Python AST that can be traversed to convert it to a PyIceberg
+    expression.
+
+    Parameters
+    ----------
+    expr
+        The string expression
+
+    Returns
+    -------
+    The AST representing the Arrow expression
+    """
+    return ast.parse(expr, mode="eval").body
 
 
 @singledispatch
@@ -295,10 +293,3 @@ def _(a: Compare) -> Any:
 @_convert_predicate.register(List)
 def _(a: List) -> Any:
     return [_convert_predicate(e) for e in a.elts]
-
-
-def _check_if_pyiceberg_available() -> None:
-    if not _PYICEBERG_AVAILABLE:
-        raise ImportError(
-            "pyiceberg is not installed. Please run `pip install pyiceberg[pyarrow]>=0.4.0`."
-        )
