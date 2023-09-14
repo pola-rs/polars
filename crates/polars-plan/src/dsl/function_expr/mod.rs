@@ -240,6 +240,8 @@ impl Hash for FunctionExpr {
             FunctionExpr::Boolean(f) => f.hash(state),
             #[cfg(feature = "strings")]
             FunctionExpr::StringExpr(f) => f.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            FunctionExpr::StructExpr(f) => f.hash(state),
             #[cfg(feature = "random")]
             FunctionExpr::Random { method, .. } => method.hash(state),
             #[cfg(feature = "range")]
