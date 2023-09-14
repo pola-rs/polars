@@ -80,6 +80,7 @@ module = [
   "deltalake.*",
   "ezodf.*",
   "fsspec.*",
+  "gevent",
   "matplotlib.*",
   "moto.server",
   "openpyxl",
@@ -90,7 +91,6 @@ module = [
   "xlsx2csv",
   "xlsxwriter.*",
   "zoneinfo",
-  "gevent",
 ]
 ignore_missing_imports = true
 

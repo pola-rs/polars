@@ -64,7 +64,7 @@ class _GeventDataFrameResult(Generic[T]):
         self._watcher.send()
 
 
-class _AioDataFrameResult(Generic[T], Awaitable[T]):
+class _AioDataFrameResult(Awaitable[T], Generic[T]):
     __slots__ = ("loop", "result")
 
     def __init__(self) -> None:

@@ -11,13 +11,13 @@ from typing import TYPE_CHECKING, Any, ClassVar, Hashable, cast
 _DATAFRAME_API_COMPAT_AVAILABLE = True
 _DELTALAKE_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
+_GEVENT_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
 _NUMPY_AVAILABLE = True
 _PANDAS_AVAILABLE = True
 _PYARROW_AVAILABLE = True
 _PYDANTIC_AVAILABLE = True
 _ZONEINFO_AVAILABLE = True
-_GEVENT_AVAILABLE = True
 
 
 class _LazyModule(ModuleType):
@@ -231,12 +231,12 @@ __all__ = [
     "dataframe_api_compat",
     "deltalake",
     "fsspec",
+    "gevent",
     "numpy",
     "pandas",
     "pydantic",
     "pyarrow",
     "zoneinfo",
-    "gevent",
     # lazy utilities
     "_check_for_numpy",
     "_check_for_pandas",
@@ -246,10 +246,10 @@ __all__ = [
     # exported flags/guards
     "_DELTALAKE_AVAILABLE",
     "_FSSPEC_AVAILABLE",
+    "_GEVENT_AVAILABLE",
     "_HYPOTHESIS_AVAILABLE",
     "_NUMPY_AVAILABLE",
     "_PANDAS_AVAILABLE",
     "_PYARROW_AVAILABLE",
     "_ZONEINFO_AVAILABLE",
-    "_GEVENT_AVAILABLE",
 ]

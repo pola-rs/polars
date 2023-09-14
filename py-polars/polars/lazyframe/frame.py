@@ -1753,8 +1753,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Collect DataFrame asynchronously in thread pool.
 
-        Collects into a DataFrame, like :func:`collect` but instead of returning
-        dataframe directly they are scheduled to be collected inside thread pool,
+        Collects into a DataFrame (like :func:`collect`), but instead of returning
+        dataframe directly, they are scheduled to be collected inside thread pool,
         while this method returns almost instantly.
 
         May be useful if you use gevent or asyncio and want to release control to other

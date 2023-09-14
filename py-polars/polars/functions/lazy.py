@@ -1704,8 +1704,8 @@ def collect_all_async(
     """
     Collect multiple LazyFrames at the same time asynchronously in thread pool.
 
-    Collects into a list of DataFrame, like :func:`polars.collect_all`
-    but instead of returning them directly they are scheduled to be collected
+    Collects into a list of DataFrame (like :func:`polars.collect_all`),
+    but instead of returning them directly, they are scheduled to be collected
     inside thread pool, while this method returns almost instantly.
 
     May be useful if you use gevent or asyncio and want to release control to other
