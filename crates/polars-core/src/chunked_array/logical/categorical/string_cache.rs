@@ -94,19 +94,11 @@ pub fn enable_string_cache() {
 ///
 /// **Warning**: Disabling the string cache this way may cause errors if there
 /// are other threads that rely the global string cache being enabled.
-/// Consider using either [`with_string_cache`] or [`StringCacheHolder`] for a
-/// more reliable way of enabling and disabling the string cache.
+/// Consider using [`StringCacheHolder`] for a more reliable way of enabling
+/// and disabling the string cache.
 pub fn disable_string_cache() {
     USE_STRING_CACHE.store(0, Ordering::Release);
     STRING_CACHE.clear()
-}
-
-/// Execute a function with the global string cache enabled.
-pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
-    set_string_cache(true);
-    let out = func();
-    set_string_cache(false);
-    out
 }
 
 /// Check whether the global string cache is enabled.
