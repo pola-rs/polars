@@ -563,6 +563,7 @@ macro_rules! impl_collect_bool_validity {
             validity.reserve(8 + 8 * (lo / 64));
         }
 
+        let mut len = 0;
         let mut buf_mask = 0u8;
         let mut true_count = 0;
         let mut valid_mask = 0u8;
@@ -584,6 +585,7 @@ macro_rules! impl_collect_bool_validity {
                         valid_mask |= (nonnull as u8) << i;
                         nonnull_count += nonnull as usize;
                     }
+                    len += 1;
                 }
 
                 buf.push_unchecked(buf_mask);
@@ -611,7 +613,6 @@ macro_rules! impl_collect_bool_validity {
             }
         }
 
-        let len = buf.len();
         let false_count = len - true_count;
         let values =
             unsafe { Bitmap::from_inner(Arc::new(buf.into()), 0, len, false_count).unwrap() };
