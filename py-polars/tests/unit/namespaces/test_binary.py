@@ -29,11 +29,11 @@ def test_contains() -> None:
         schema=["idx", "bin"],
     )
     for pattern, expected in (
-        (b"e * ", [True, False, False, False]),
-        (b"text", [True, False, False, False]),
-        (b"special", [False, True, False, False]),
-        (b"", [True, True, True, False]),
-        (b"qwe", [False, False, False, False]),
+        (b"e * ", [True, False, False, None]),
+        (b"text", [True, False, False, None]),
+        (b"special", [False, True, False, None]),
+        (b"", [True, True, True, None]),
+        (b"qwe", [False, False, False, None]),
     ):
         # series
         assert expected == df["bin"].bin.contains(pattern).to_list()
@@ -42,7 +42,9 @@ def test_contains() -> None:
             expected == df.select(pl.col("bin").bin.contains(pattern))["bin"].to_list()
         )
         # frame filter
-        assert sum(expected) == len(df.filter(pl.col("bin").bin.contains(pattern)))
+        assert sum([e for e in expected if e is True]) == len(
+            df.filter(pl.col("bin").bin.contains(pattern))
+        )
 
 
 def test_contains_with_expr() -> None:
