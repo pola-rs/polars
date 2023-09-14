@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 #[cfg(feature = "dtype-array")]
@@ -364,31 +365,60 @@ impl<T: NumericNative> ArrayFromIter<Option<T>> for PrimitiveArray<T> {
     }
 }
 
-impl<'a> ArrayFromIter<&'a [u8]> for BinaryArray<i64> {
-    fn arr_from_iter<I: IntoIterator<Item = &'a [u8]>>(iter: I) -> Self {
-        BinaryArray::from_iter_values(iter.into_iter())
+// We don't use AsRef here because it leads to problems with conflicting implementations,
+// as Rust considers that AsRef<[u8]> for Option<&[u8]> could be implemented.
+trait IntoBytes {
+    type AsRefT: AsRef<[u8]>;
+    fn into_bytes(self) -> Self::AsRefT;
+}
+trait TrivialIntoBytes: AsRef<[u8]> {}
+impl<T: TrivialIntoBytes> IntoBytes for T {
+    type AsRefT = Self;
+    fn into_bytes(self) -> Self {
+        self
+    }
+}
+impl TrivialIntoBytes for Vec<u8> {}
+impl<'a> TrivialIntoBytes for Cow<'a, [u8]> {}
+impl<'a> TrivialIntoBytes for &'a [u8] {}
+impl TrivialIntoBytes for String {}
+impl<'a> TrivialIntoBytes for &'a str {}
+impl<'a> IntoBytes for Cow<'a, str> {
+    type AsRefT = Cow<'a, [u8]>;
+    fn into_bytes(self) -> Cow<'a, [u8]> {
+        match self {
+            Cow::Borrowed(a) => Cow::Borrowed(a.as_bytes()),
+            Cow::Owned(s) => Cow::Owned(s.into_bytes()),
+        }
+    }
+}
+
+impl<T: IntoBytes> ArrayFromIter<T> for BinaryArray<i64> {
+    fn arr_from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        BinaryArray::from_iter_values(iter.into_iter().map(|s| s.into_bytes()))
     }
 
     fn arr_from_iter_trusted<I>(iter: I) -> Self
     where
-        I: IntoIterator<Item = &'a [u8]>,
+        I: IntoIterator<Item = T>,
         I::IntoIter: TrustedLen,
     {
         unsafe {
             // SAFETY: our iterator is TrustedLen.
-            MutableBinaryArray::from_trusted_len_values_iter_unchecked(iter.into_iter()).into()
+            MutableBinaryArray::from_trusted_len_values_iter_unchecked(
+                iter.into_iter().map(|s| s.into_bytes()),
+            )
+            .into()
         }
     }
 
-    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<&'a [u8], E>>>(
-        iter: I,
-    ) -> Result<Self, E> {
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<T, E>>>(iter: I) -> Result<Self, E> {
         // No built-in for this?
         let mut arr = MutableBinaryValuesArray::new();
         let mut iter = iter.into_iter();
         arr.reserve(iter.size_hint().0, 0);
         iter.try_for_each(|x| -> Result<(), E> {
-            arr.push(x?);
+            arr.push(x?.into_bytes());
             Ok(())
         })?;
         Ok(arr.into())
@@ -398,23 +428,25 @@ impl<'a> ArrayFromIter<&'a [u8]> for BinaryArray<i64> {
     // fn try_arr_from_iter_trusted<E, I>(iter: I) -> Result<Self, E>
 }
 
-impl<'a> ArrayFromIter<Option<&'a [u8]>> for BinaryArray<i64> {
-    fn arr_from_iter<I: IntoIterator<Item = Option<&'a [u8]>>>(iter: I) -> Self {
-        BinaryArray::from_iter(iter)
+impl<T: IntoBytes> ArrayFromIter<Option<T>> for BinaryArray<i64> {
+    fn arr_from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
+        BinaryArray::from_iter(iter.into_iter().map(|s| Some(s?.into_bytes())))
     }
 
     fn arr_from_iter_trusted<I>(iter: I) -> Self
     where
-        I: IntoIterator<Item = Option<&'a [u8]>>,
+        I: IntoIterator<Item = Option<T>>,
         I::IntoIter: TrustedLen,
     {
         unsafe {
             // SAFETY: the iterator is TrustedLen.
-            BinaryArray::from_trusted_len_iter_unchecked(iter.into_iter())
+            BinaryArray::from_trusted_len_iter_unchecked(
+                iter.into_iter().map(|s| Some(s?.into_bytes())),
+            )
         }
     }
 
-    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<&'a [u8]>, E>>>(
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<T>, E>>>(
         iter: I,
     ) -> Result<Self, E> {
         // No built-in for this?
@@ -422,7 +454,7 @@ impl<'a> ArrayFromIter<Option<&'a [u8]>> for BinaryArray<i64> {
         let mut iter = iter.into_iter();
         arr.reserve(iter.size_hint().0, 0);
         iter.try_for_each(|x| -> Result<(), E> {
-            arr.push(x?);
+            arr.push(x?.map(|s| s.into_bytes()));
             Ok(())
         })?;
         Ok(arr.into())
@@ -430,12 +462,14 @@ impl<'a> ArrayFromIter<Option<&'a [u8]>> for BinaryArray<i64> {
 
     fn try_arr_from_iter_trusted<E, I>(iter: I) -> Result<Self, E>
     where
-        I: IntoIterator<Item = Result<Option<&'a [u8]>, E>>,
+        I: IntoIterator<Item = Result<Option<T>, E>>,
         I::IntoIter: TrustedLen,
     {
         unsafe {
             // SAFETY: the iterator is TrustedLen.
-            BinaryArray::try_from_trusted_len_iter_unchecked(iter)
+            BinaryArray::try_from_trusted_len_iter_unchecked(
+                iter.into_iter().map(|s| s.map(|s| Some(s?.into_bytes()))),
+            )
         }
     }
 }
@@ -451,78 +485,69 @@ unsafe fn into_utf8array(arr: BinaryArray<i64>) -> Utf8Array<i64> {
     }
 }
 
-impl<'a> ArrayFromIter<&'a str> for Utf8Array<i64> {
+trait StrIntoBytes: IntoBytes {}
+impl StrIntoBytes for String {}
+impl<'a> StrIntoBytes for &'a str {}
+impl<'a> StrIntoBytes for Cow<'a, str> {}
+
+impl<T: StrIntoBytes> ArrayFromIter<T> for Utf8Array<i64> {
     #[inline(always)]
-    fn arr_from_iter<I: IntoIterator<Item = &'a str>>(iter: I) -> Self {
-        unsafe { into_utf8array(iter.into_iter().map(str::as_bytes).collect_arr()) }
+    fn arr_from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        unsafe { into_utf8array(iter.into_iter().collect_arr()) }
     }
 
     #[inline(always)]
     fn arr_from_iter_trusted<I>(iter: I) -> Self
     where
-        I: IntoIterator<Item = &'a str>,
+        I: IntoIterator<Item = T>,
         I::IntoIter: TrustedLen,
     {
-        unsafe { into_utf8array(iter.into_iter().map(str::as_bytes).collect_arr()) }
+        unsafe { into_utf8array(iter.into_iter().collect_arr()) }
     }
 
     #[inline(always)]
-    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<&'a str, E>>>(
-        iter: I,
-    ) -> Result<Self, E> {
-        let arr = iter
-            .into_iter()
-            .map(|s| s.map(str::as_bytes))
-            .try_collect_arr()?;
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<T, E>>>(iter: I) -> Result<Self, E> {
+        let arr = iter.into_iter().try_collect_arr()?;
         unsafe { Ok(into_utf8array(arr)) }
     }
 
     #[inline(always)]
-    fn try_arr_from_iter_trusted<E, I: IntoIterator<Item = Result<&'a str, E>>>(
+    fn try_arr_from_iter_trusted<E, I: IntoIterator<Item = Result<T, E>>>(
         iter: I,
     ) -> Result<Self, E> {
-        let arr = iter
-            .into_iter()
-            .map(|s| s.map(str::as_bytes))
-            .try_collect_arr()?;
+        let arr = iter.into_iter().try_collect_arr()?;
         unsafe { Ok(into_utf8array(arr)) }
     }
 }
 
-impl<'a> ArrayFromIter<Option<&'a str>> for Utf8Array<i64> {
+impl<T: StrIntoBytes> ArrayFromIter<Option<T>> for Utf8Array<i64> {
     #[inline(always)]
-    fn arr_from_iter<I: IntoIterator<Item = Option<&'a str>>>(iter: I) -> Self {
-        unsafe { into_utf8array(iter.into_iter().map(|s| s.map(str::as_bytes)).collect_arr()) }
+    fn arr_from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
+        unsafe { into_utf8array(iter.into_iter().collect_arr()) }
     }
 
     #[inline(always)]
     fn arr_from_iter_trusted<I>(iter: I) -> Self
     where
-        I: IntoIterator<Item = Option<&'a str>>,
+        I: IntoIterator<Item = Option<T>>,
         I::IntoIter: TrustedLen,
     {
-        unsafe { into_utf8array(iter.into_iter().map(|s| s.map(str::as_bytes)).collect_arr()) }
+        unsafe { into_utf8array(iter.into_iter().collect_arr()) }
     }
 
     #[inline(always)]
-    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<&'a str>, E>>>(
+    fn try_arr_from_iter<E, I: IntoIterator<Item = Result<Option<T>, E>>>(
         iter: I,
     ) -> Result<Self, E> {
-        let arr = iter
-            .into_iter()
-            .map(|s| s.map(|s| Some(s?.as_bytes())))
-            .try_collect_arr()?;
+        let arr = iter.into_iter().try_collect_arr()?;
         unsafe { Ok(into_utf8array(arr)) }
     }
 
     #[inline(always)]
-    fn try_arr_from_iter_trusted<E, I: IntoIterator<Item = Result<Option<&'a str>, E>>>(
+    fn try_arr_from_iter_trusted<E, I: IntoIterator<Item = Result<Option<T>, E>>>(
         iter: I,
     ) -> Result<Self, E> {
-        let arr = iter
-            .into_iter()
-            .map(|s| s.map(|s| Some(s?.as_bytes())))
-            .try_collect_arr()?;
+        let arr = iter.into_iter().try_collect_arr()?;
         unsafe { Ok(into_utf8array(arr)) }
     }
 }
