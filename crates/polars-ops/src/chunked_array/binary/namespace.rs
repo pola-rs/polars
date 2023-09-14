@@ -47,7 +47,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         out
     }
 
-    fn starts_with_chunked<B: AsBinary>(&self, prefix: &B) -> BooleanChunked {
+    fn starts_with_chunked(&self, prefix: &BinaryChunked) -> BooleanChunked {
         let ca = self.as_binary();
         let prefix = prefix.as_binary();
         match prefix.len() {
@@ -62,7 +62,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         }
     }
 
-    fn ends_with_chunked<B: AsBinary>(&self, suffix: &B) -> BooleanChunked {
+    fn ends_with_chunked(&self, suffix: &BinaryChunked) -> BooleanChunked {
         let ca = self.as_binary();
         let suffix = suffix.as_binary();
         match suffix.len() {
