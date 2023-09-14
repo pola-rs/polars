@@ -257,49 +257,23 @@ pub(super) fn contains(s: &[Series], literal: bool, strict: bool) -> PolarsResul
 }
 
 pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let sub = s[1].utf8()?;
+    let ca = &s[0].utf8()?.as_binary();
+    let suffix = &s[1].utf8()?.as_binary();
 
-    let mut out: BooleanChunked = match sub.len() {
-        1 => match sub.get(0) {
-            Some(s) => ca.ends_with(s),
-            None => BooleanChunked::full(ca.name(), false, ca.len()),
-        },
-        _ => ca
-            .into_iter()
-            .zip(sub)
-            .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
-                (Some(src), Some(val)) => src.ends_with(val),
-                _ => false,
-            })
-            .collect_trusted(),
-    };
-
-    out.rename(ca.name());
-    Ok(out.into_series())
+    Ok(ca
+        .ends_with_chunked(suffix)
+        .with_name(ca.name())
+        .into_series())
 }
 
 pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
-    let ca = s[0].utf8()?;
-    let sub = s[1].utf8()?;
+    let ca = &s[0].utf8()?.as_binary();
+    let prefix = &s[1].utf8()?.as_binary();
 
-    let mut out: BooleanChunked = match sub.len() {
-        1 => match sub.get(0) {
-            Some(s) => ca.starts_with(s),
-            None => BooleanChunked::full(ca.name(), false, ca.len()),
-        },
-        _ => ca
-            .into_iter()
-            .zip(sub)
-            .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
-                (Some(src), Some(val)) => src.starts_with(val),
-                _ => false,
-            })
-            .collect_trusted(),
-    };
-
-    out.rename(ca.name());
-    Ok(out.into_series())
+    Ok(ca
+        .starts_with_chunked(prefix)
+        .with_name(ca.name())
+        .into_series())
 }
 
 /// Extract a regex pattern from the a string value.

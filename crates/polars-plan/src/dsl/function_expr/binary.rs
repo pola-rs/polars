@@ -1,4 +1,3 @@
-use polars_core::prelude::arity::binary_elementwise;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -35,37 +34,21 @@ pub(super) fn contains(s: &Series, pat: &[u8], literal: bool) -> PolarsResult<Se
 
 pub(super) fn ends_with(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].binary()?;
-    let sub = s[1].binary()?;
+    let suffix = s[1].binary()?;
 
-    Ok(match sub.len() {
-        1 => match sub.get(0) {
-            Some(s) => ca.ends_with(s),
-            None => BooleanChunked::full(ca.name(), false, ca.len()),
-        },
-        _ => binary_elementwise(ca, sub, |opt_s, opt_sub| match (opt_s, opt_sub) {
-            (Some(s), Some(sub)) => Some(s.ends_with(sub)),
-            _ => Some(false),
-        }),
-    }
-    .with_name(ca.name())
-    .into_series())
+    Ok(ca
+        .ends_with_chunked(suffix)
+        .with_name(ca.name())
+        .into_series())
 }
 pub(super) fn starts_with(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].binary()?;
-    let sub = s[1].binary()?;
+    let prefix = s[1].binary()?;
 
-    Ok(match sub.len() {
-        1 => match sub.get(0) {
-            Some(s) => ca.starts_with(s),
-            None => BooleanChunked::full(ca.name(), false, ca.len()),
-        },
-        _ => binary_elementwise(ca, sub, |opt_s, opt_sub| match (opt_s, opt_sub) {
-            (Some(s), Some(sub)) => Some(s.starts_with(sub)),
-            _ => Some(false),
-        }),
-    }
-    .with_name(ca.name())
-    .into_series())
+    Ok(ca
+        .starts_with_chunked(prefix)
+        .with_name(ca.name())
+        .into_series())
 }
 
 impl From<BinaryFunction> for FunctionExpr {
