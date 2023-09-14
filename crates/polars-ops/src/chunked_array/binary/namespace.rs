@@ -6,6 +6,7 @@ use base64::engine::general_purpose;
 #[cfg(feature = "binary_encoding")]
 use base64::Engine as _;
 use memchr::memmem::find;
+use polars_core::prelude::arity::binary_elementwise;
 
 use super::*;
 
@@ -44,6 +45,36 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         let mut out: BooleanChunked = ca.into_iter().map(|opt_s| opt_s.map(f)).collect();
         out.rename(ca.name());
         out
+    }
+
+    fn starts_with_chunked(&self, prefix: &BinaryChunked) -> BooleanChunked {
+        let ca = self.as_binary();
+        match prefix.len() {
+            1 => match prefix.get(0) {
+                Some(s) => self.starts_with(s),
+                None => BooleanChunked::full(ca.name(), false, ca.len()),
+            },
+            _ => binary_elementwise(ca, prefix, |opt_s, opt_sub| match (opt_s, opt_sub) {
+                (Some(s), Some(sub)) => Some(s.starts_with(sub)),
+                _ => Some(false),
+            }),
+        }
+    }
+
+    fn ends_with_chunked(&self, suffix: &BinaryChunked) -> BooleanChunked {
+        let ca = self.as_binary();
+        match suffix.len() {
+            1 => match suffix.get(0) {
+                Some(s) => self.ends_with(s),
+                None => BooleanChunked::full(ca.name(), false, ca.len()),
+            },
+            _ => binary_elementwise(self.as_binary(), suffix, |opt_s, opt_sub| {
+                match (opt_s, opt_sub) {
+                    (Some(s), Some(sub)) => Some(s.ends_with(sub)),
+                    _ => Some(false),
+                }
+            }),
+        }
     }
 
     #[cfg(feature = "binary_encoding")]

@@ -9,12 +9,12 @@ impl PyExpr {
         self.inner.clone().binary().contains_literal(lit).into()
     }
 
-    fn bin_ends_with(&self, sub: Vec<u8>) -> Self {
-        self.inner.clone().binary().ends_with(sub).into()
+    fn bin_ends_with(&self, sub: PyExpr) -> Self {
+        self.inner.clone().binary().ends_with(sub.inner).into()
     }
 
-    fn bin_starts_with(&self, sub: Vec<u8>) -> Self {
-        self.inner.clone().binary().starts_with(sub).into()
+    fn bin_starts_with(&self, sub: PyExpr) -> Self {
+        self.inner.clone().binary().starts_with(sub.inner).into()
     }
 
     #[cfg(feature = "binary_encoding")]

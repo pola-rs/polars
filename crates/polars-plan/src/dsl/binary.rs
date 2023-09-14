@@ -12,14 +12,20 @@ impl BinaryNameSpace {
     }
 
     /// Check if a binary value ends with the given sequence.
-    pub fn ends_with<S: AsRef<[u8]>>(self, sub: S) -> Expr {
-        let sub = sub.as_ref().into();
-        self.0.map_private(BinaryFunction::EndsWith(sub).into())
+    pub fn ends_with(self, sub: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::BinaryExpr(BinaryFunction::EndsWith),
+            &[sub],
+            true,
+        )
     }
 
     /// Check if a binary value starts with the given sequence.
-    pub fn starts_with<S: AsRef<[u8]>>(self, sub: S) -> Expr {
-        let sub = sub.as_ref().into();
-        self.0.map_private(BinaryFunction::StartsWith(sub).into())
+    pub fn starts_with(self, sub: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::BinaryExpr(BinaryFunction::StartsWith),
+            &[sub],
+            true,
+        )
     }
 }

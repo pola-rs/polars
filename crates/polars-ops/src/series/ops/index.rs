@@ -22,7 +22,7 @@ where
             Ok(IdxSize::try_from(v).unwrap())
         } else {
             IdxSize::from_i64(len + v.to_i64().unwrap()).ok_or_else(|| {
-                PolarsError::ComputeError(
+                PolarsError::OutOfBounds(
                     format!(
                         "index {} is out of bounds for series of len {}",
                         v, target_len

@@ -27,9 +27,7 @@ impl FunctionExpr {
             BinaryExpr(s) => {
                 use BinaryFunction::*;
                 match s {
-                    Contains { .. } | EndsWith(_) | StartsWith(_) => {
-                        mapper.with_dtype(DataType::Boolean)
-                    },
+                    Contains { .. } | EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
                 }
             },
             #[cfg(feature = "temporal")]

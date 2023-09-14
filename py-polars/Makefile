@@ -76,6 +76,7 @@ test: .venv build  ## Run fast unittests
 .PHONY: doctest
 doctest: .venv build  ## Run doctests
 	$(VENV_BIN)/python tests/docs/run_doctest.py
+	$(VENV_BIN)/pytest tests/docs/test_user_guide.py -m docs
 
 .PHONY: test-all
 test-all: .venv build  ## Run all tests
