@@ -25,7 +25,7 @@ static STRING_CACHE_UUID_CTR: AtomicU32 = AtomicU32::new(0);
 /// ```
 /// use polars_core::StringCacheHolder;
 ///
-/// let handle = StringCacheHolder::hold();
+/// let _sc = StringCacheHolder::hold();
 /// ```
 ///
 /// The string cache is enabled until `handle` is dropped.

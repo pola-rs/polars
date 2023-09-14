@@ -154,17 +154,15 @@ def disable_string_cache() -> bool:
     """
     Disable and clear the global string cache.
 
-    Warnings
-    --------
-    Disabling the string cache this way may cause errors if there are other threads
-    that rely the global string cache being enabled.
-    Consider using the :class:`StringCache` context manager for a more reliable way of
-    enabling and disabling the string cache.
-
     See Also
     --------
     enable_string_cache : Function to enable the string cache.
     StringCache : Context manager for enabling and disabling the string cache.
+
+    Notes
+    -----
+    Consider using the :class:`StringCache` context manager for a more reliable way of
+    enabling and disabling the string cache.
 
     Examples
     --------

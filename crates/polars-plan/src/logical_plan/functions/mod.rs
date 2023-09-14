@@ -332,7 +332,7 @@ impl FunctionNode {
                 // we use a global string cache here as streaming chunks all have different rev maps
                 #[cfg(feature = "dtype-categorical")]
                 {
-                    let _hold = StringCacheHolder::hold();
+                    let _sc = StringCacheHolder::hold();
                     Arc::get_mut(function).unwrap().call_udf(df)
                 }
 

@@ -1,6 +1,6 @@
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 #[cfg(feature = "dtype-categorical")]
-use polars_core::{disable_string_cache, StringCacheHolder};
+use polars_core::{disable_string_cache, StringCacheHolder, SINGLE_LOCK};
 
 use super::*;
 
