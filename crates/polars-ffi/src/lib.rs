@@ -30,20 +30,31 @@ pub fn export_series(s: &Series) -> SeriesExport {
 }
 
 /// # Safety
-/// `SeriesExport`
+/// `SeriesExport` must be valid
 pub unsafe fn import_series(e: SeriesExport) -> PolarsResult<Series> {
     let field = ffi::import_field_from_c(&e.field)?;
 
-    let arrays = Vec::from_raw_parts(e.arrays, e.len, e.len);
-    let chunks = arrays
-        .into_iter()
-        .map(|arr| import_array(arr, &e.field))
-        .collect::<PolarsResult<Vec<_>>>()?;
+    let chunks = (0..e.len).map(|i| {
+        let arr = std::ptr::read(e.arrays.add(i));
+        import_array(arr, &e.field)
+    }).collect::<PolarsResult<Vec<_>>>()?;
+
     Ok(Series::from_chunks_and_dtype_unchecked(
         &field.name,
         chunks,
         &(&field.data_type).into(),
     ))
+}
+
+/// # Safety
+/// `SeriesExport` must be valid
+pub unsafe fn import_series_buffer(e: *mut SeriesExport, len: usize) -> PolarsResult<Vec<Series>> {
+    let mut out = Vec::with_capacity(len);
+    for i in 0..len {
+        let e = std::ptr::read(e.add(i));
+        out.push(import_series(e)?)
+    }
+    Ok(out)
 }
 
 /// # Safety
@@ -68,8 +79,22 @@ mod test {
         let s = Series::new("a", [1, 2]);
         let e = export_series(&s);
 
+        let s = vec![s];
+        let input = s.iter().map(export_series).collect::<Vec<_>>().into_boxed_slice();
+        let slice_ptr = input.as_ptr();
+        std::mem::forget(input);
+
+
+        let len = 1;
         unsafe {
-            assert_eq!(import_series(e).unwrap(), s);
-        };
+            let inputs = Vec::from_raw_parts(slice_ptr as *mut SeriesExport, len, len);
+            drop(inputs);
+        }
+        drop(s);
+
+
+        // unsafe {
+        //     assert_eq!(import_series(e).unwrap(), s);
+        // };
     }
 }

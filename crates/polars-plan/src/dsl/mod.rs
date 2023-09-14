@@ -65,6 +65,7 @@ use crate::prelude::*;
 use crate::utils::has_expr;
 #[cfg(feature = "is_in")]
 use crate::utils::has_leaf_literal;
+pub use function_expr::schema::FieldsMapper;
 
 impl Expr {
     /// Modify the Options passed to the `Function` node.

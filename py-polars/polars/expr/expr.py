@@ -9397,6 +9397,24 @@ class Expr:
         """
         return ExprStructNameSpace(self)
 
+    def _register_plugin(self,
+                         lib: str,
+    symbol: str,
+    is_elementwise: bool = False,
+    input_wildcard_expansion: bool = False,
+    auto_explode: bool = False,
+    cast_to_supertypes: bool = False,
+                         ) -> Self:
+
+        return self._from_pyexpr(self._pyexpr.register_plugin(
+            lib,
+            symbol,
+            is_elementwise,
+            input_wildcard_expansion,
+            auto_explode,
+            cast_to_supertypes
+        ))
+
 
 def _prepare_alpha(
     com: float | int | None = None,

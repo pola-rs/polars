@@ -854,4 +854,37 @@ impl PyExpr {
         };
         self.inner.clone().set_sorted_flag(is_sorted).into()
     }
+
+    #[cfg(feature = "ffi_plugin")]
+    fn register_plugin(&self, lib: &str,
+                       symbol: &str,
+                       is_elementwise: bool,
+                       input_wildcard_expansion: bool,
+                       auto_explode: bool,
+                       cast_to_supertypes: bool,
+    )  -> Self {
+        use polars_plan::prelude::*;
+        let inner = self.inner.clone();
+
+        let collect_groups = if is_elementwise {
+            ApplyOptions::ApplyFlat
+        } else {
+            ApplyOptions::ApplyGroups
+        };
+
+        Expr::Function {
+            input: vec![inner],
+            function: FunctionExpr::FfiPlugin {
+                lib: Arc::from(lib),
+                symbol: Arc::from(symbol)
+            },
+            options: FunctionOptions {
+                collect_groups,
+                input_wildcard_expansion,
+                auto_explode,
+                cast_to_supertypes,
+                ..Default::default()
+            }
+        }.into()
+    }
 }

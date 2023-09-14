@@ -37,7 +37,7 @@ mod rolling;
 mod round;
 #[cfg(feature = "row_hash")]
 mod row_hash;
-mod schema;
+pub(super) mod schema;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
 mod shift_and_fill;
@@ -236,7 +236,6 @@ pub enum FunctionExpr {
     FfiPlugin {
         lib: Arc<str>,
         symbol: Arc<str>,
-        output_type: DataType,
     },
 }
 
@@ -268,11 +267,9 @@ impl Hash for FunctionExpr {
             FunctionExpr::FfiPlugin {
                 lib,
                 symbol,
-                output_type,
             } => {
                 lib.hash(state);
                 symbol.hash(state);
-                output_type.hash(state);
             },
             _ => {},
         }
@@ -660,7 +657,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => {
-                map_as_slice!(plugin::call_plugin, lib.as_ref(), symbol.as_ref())
+                unsafe { map_as_slice!(plugin::call_plugin, lib.as_ref(), symbol.as_ref()) }
             },
         }
     }
