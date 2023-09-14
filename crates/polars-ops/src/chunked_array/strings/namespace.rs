@@ -9,7 +9,6 @@ use polars_arrow::kernels::string::*;
 use polars_core::export::num::Num;
 use polars_core::export::regex::Regex;
 use polars_core::prelude::arity::{binary_elementwise_for_each, try_binary_elementwise};
-use polars_core::utils::rayon::iter::split;
 use polars_utils::cache::FastFixedCache;
 use regex::escape;
 
