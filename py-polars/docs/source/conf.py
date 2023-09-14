@@ -106,7 +106,7 @@ html_theme_options = {
     "external_links": [
         {
             "name": "User Guide",
-            "url": f"{web_root}/polars-book/user-guide/index.html",
+            "url": f"{web_root}/polars/user-guide/index.html",
         },
         {
             "name": "Powered by Xomnia",
