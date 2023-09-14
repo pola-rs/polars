@@ -1327,7 +1327,14 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
             .unwrap(),
         5
     );
-    assert_eq!(out.column("filtered")?.list()?.get_as_series(2).unwrap().len(), 0);
+    assert_eq!(
+        out.column("filtered")?
+            .list()?
+            .get_as_series(2)
+            .unwrap()
+            .len(),
+        0
+    );
 
     Ok(())
 }

@@ -175,10 +175,11 @@ pub trait TakeRandom {
     fn last(&self) -> Option<Self::Item>;
 }
 
-pub trait ChunkGather : ChunkGatherUnchecked {
+pub trait ChunkGather: ChunkGatherUnchecked {
     /// Gather values from ChunkedArray by index.
     fn gather(&self, indices: &IdxCa) -> PolarsResult<Self>
-    where Self: Sized;
+    where
+        Self: Sized;
 }
 
 pub trait ChunkGatherUnchecked {
