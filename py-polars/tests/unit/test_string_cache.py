@@ -74,14 +74,14 @@ def test_string_cache_context_manager_mixed_with_enable_disable() -> None:
         with pl.StringCache():
             sc(True)
             pl.disable_string_cache()
-            sc(False)
-        sc(False)
+            sc(True)
+        sc(True)
     sc(False)
 
     with pl.StringCache():
         sc(True)
         pl.disable_string_cache()
-        sc(False)
+        sc(True)
     sc(False)
 
 
