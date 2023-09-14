@@ -20,26 +20,12 @@ from functools import partial, singledispatch
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
-from polars.dependencies import _PYICEBERG_AVAILABLE
-
-if _PYICEBERG_AVAILABLE:
-    from pyiceberg.expressions import (
-        And,
-        EqualTo,
-        GreaterThan,
-        GreaterThanOrEqual,
-        In,
-        IsNaN,
-        IsNull,
-        LessThan,
-        LessThanOrEqual,
-        Not,
-        Or,
-    )
+from polars.dependencies import pyiceberg
 
 if TYPE_CHECKING:
+    from pyiceberg.table import Table
+
     from polars import DataFrame, LazyFrame, Series
-    from polars.dependencies.pyiceberg.table import Table
 
 
 def scan_iceberg(
@@ -228,7 +214,7 @@ def _(a: Constant) -> Any:
 @_convert_predicate.register(UnaryOp)
 def _(a: UnaryOp) -> Any:
     if isinstance(a.op, Invert):
-        return Not(_convert_predicate(a.operand))
+        return pyiceberg.expressions.Not(_convert_predicate(a.operand))
     else:
         raise TypeError(f"Unexpected UnaryOp: {a}")
 
@@ -242,11 +228,11 @@ def _(a: Call) -> Any:
     else:
         ref = _convert_predicate(a.func.value)[0]  # type: ignore[attr-defined]
         if f == "isin":
-            return In(ref, args[0])
+            return pyiceberg.expressions.In(ref, args[0])
         elif f == "is_null":
-            return IsNull(ref)
+            return pyiceberg.expressions.IsNull(ref)
         elif f == "is_nan":
-            return IsNaN(ref)
+            return pyiceberg.expressions.IsNaN(ref)
 
     raise ValueError(f"Unknown call: {f}")
 
@@ -263,9 +249,9 @@ def _(a: BinOp) -> Any:
 
     op = a.op
     if isinstance(op, BitAnd):
-        return And(lhs, rhs)
+        return pyiceberg.expressions.And(lhs, rhs)
     if isinstance(op, BitOr):
-        return Or(lhs, rhs)
+        return pyiceberg.expressions.Or(lhs, rhs)
     else:
         raise TypeError(f"Unknown: {lhs} {op} {rhs}")
 
@@ -277,15 +263,15 @@ def _(a: Compare) -> Any:
     rhs = _convert_predicate(a.comparators[0])
 
     if isinstance(op, Gt):
-        return GreaterThan(lhs, rhs)
+        return pyiceberg.expressions.GreaterThan(lhs, rhs)
     if isinstance(op, GtE):
-        return GreaterThanOrEqual(lhs, rhs)
+        return pyiceberg.expressions.GreaterThanOrEqual(lhs, rhs)
     if isinstance(op, Eq):
-        return EqualTo(lhs, rhs)
+        return pyiceberg.expressions.EqualTo(lhs, rhs)
     if isinstance(op, Lt):
-        return LessThan(lhs, rhs)
+        return pyiceberg.expressions.LessThan(lhs, rhs)
     if isinstance(op, LtE):
-        return LessThanOrEqual(lhs, rhs)
+        return pyiceberg.expressions.LessThanOrEqual(lhs, rhs)
     else:
         raise TypeError(f"Unknown comparison: {op}")
 
