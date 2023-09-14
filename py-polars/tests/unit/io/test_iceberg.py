@@ -1,18 +1,25 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import contextlib
+import os
+from pathlib import Path
 
 import pytest
 
 import polars as pl
 from polars.io.iceberg import _convert_predicate, _to_ast
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
 
 @pytest.fixture()
 def iceberg_path(io_files_path: Path) -> str:
+    # Iceberg requires absolute paths, so we'll symlink
+    # the test table into /tmp/iceberg/t1/
+    Path("/tmp/iceberg").mkdir(parents=True, exist_ok=True)
+    current_path = Path(__file__).parent.resolve()
+
+    with contextlib.suppress(FileExistsError):
+        os.symlink(f"{current_path}/files/iceberg-table", "/tmp/iceberg/t1")
+
     iceberg_path = io_files_path / "iceberg-table" / "metadata" / "v2.metadata.json"
     return str(iceberg_path.resolve())
 
