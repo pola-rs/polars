@@ -420,6 +420,7 @@ impl ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-array")]
 impl ArrayChunked {
     #[inline]
     pub fn get_as_series(&self, idx: usize) -> Option<Series> {
