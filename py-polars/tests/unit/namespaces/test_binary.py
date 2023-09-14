@@ -60,10 +60,12 @@ def test_contains_with_expr() -> None:
         [
             pl.col("bin").bin.contains(pl.col("lit1")).alias("contains_1"),
             pl.col("bin").bin.contains(pl.col("lit2")).alias("contains_2"),
+            pl.col("bin").bin.contains(pl.lit(None)).alias("contains_3"),
         ]
     ).to_dict(False) == {
         "contains_1": [True, True, False, None],
-        "contains_2": [False, True, False, None],
+        "contains_2": [None, True, False, None],
+        "contains_3": [None, None, None, None],
     }
 
 

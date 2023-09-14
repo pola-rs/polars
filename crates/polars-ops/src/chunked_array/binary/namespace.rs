@@ -6,7 +6,7 @@ use base64::engine::general_purpose;
 #[cfg(feature = "binary_encoding")]
 use base64::Engine as _;
 use memchr::memmem::find;
-use polars_core::prelude::arity::binary_elementwise;
+use polars_core::prelude::arity::{binary_elementwise, binary_elementwise_values};
 
 use super::*;
 
@@ -23,13 +23,9 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         match lit.len() {
             1 => match lit.get(0) {
                 Some(lit) => ca.contains(lit),
-                None => BooleanChunked::full(ca.name(), false, ca.len()),
+                None => BooleanChunked::full_null(ca.name(), ca.len()),
             },
-            _ => binary_elementwise(ca, lit, |opt_src, opt_lit| match (opt_src, opt_lit) {
-                (Some(src), Some(lit)) => Some(find(src, lit).is_some()),
-                (None, _) => None,
-                _ => Some(false),
-            }),
+            _ => binary_elementwise_values(ca, lit, |src, lit| find(src, lit).is_some()),
         }
     }
 
