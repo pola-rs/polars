@@ -520,7 +520,7 @@ fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
 }
 
 #[cfg(test)]
-// #[cfg(feature = "dtype-categorical")]
+#[cfg(feature = "dtype-categorical")]
 mod test {
     use polars_core::prelude::*;
 
