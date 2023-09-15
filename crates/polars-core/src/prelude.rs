@@ -14,6 +14,7 @@ pub use crate::chunked_array::builder::{
     ListBooleanChunkedBuilder, ListBuilderTrait, ListPrimitiveChunkedBuilder,
     ListUtf8ChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
 };
+pub use crate::chunked_array::collect::{ChunkedCollectInferIterExt, ChunkedCollectIterExt};
 pub use crate::chunked_array::iterator::PolarsIterator;
 #[cfg(feature = "dtype-categorical")]
 pub use crate::chunked_array::logical::categorical::*;
@@ -31,7 +32,7 @@ pub use crate::chunked_array::ops::*;
 pub use crate::chunked_array::temporal::conversion::*;
 pub(crate) use crate::chunked_array::ChunkIdIter;
 pub use crate::chunked_array::ChunkedArray;
-pub use crate::datatypes::*;
+pub use crate::datatypes::{ArrayCollectIterExt, *};
 pub use crate::error::{
     polars_bail, polars_ensure, polars_err, polars_warn, PolarsError, PolarsResult,
 };

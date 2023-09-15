@@ -12,8 +12,8 @@ mod aliases;
 mod any_value;
 mod dtype;
 mod field;
-mod from_values;
 mod static_array;
+mod static_array_collect;
 mod time_unit;
 
 use std::cmp::Ordering;
@@ -32,7 +32,6 @@ use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 pub use dtype::*;
 pub use field::*;
-pub use from_values::ArrayFromElementIter;
 use num_traits::{Bounded, FromPrimitive, Num, NumCast, One, Zero};
 use polars_arrow::data_types::IsFloat;
 #[cfg(feature = "serde")]
@@ -42,6 +41,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserializer, Serializer};
 pub use static_array::StaticArray;
+pub use static_array_collect::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype};
 pub use time_unit::*;
 
 use crate::chunked_array::arithmetic::ArrayArithmetics;
