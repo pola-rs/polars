@@ -387,12 +387,12 @@ impl PyExpr {
         self.clone().inner.approx_n_unique().into()
     }
 
-    fn is_first(&self) -> Self {
-        self.clone().inner.is_first().into()
+    fn is_first_distinct(&self) -> Self {
+        self.clone().inner.is_first_distinct().into()
     }
 
-    fn is_last(&self) -> Self {
-        self.clone().inner.is_last().into()
+    fn is_last_distinct(&self) -> Self {
+        self.clone().inner.is_last_distinct().into()
     }
 
     fn explode(&self) -> Self {

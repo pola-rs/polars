@@ -136,8 +136,8 @@ The opt-in features are:
   - `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip)
   - `round_series` - round underlying float types of `Series`.
   - `repeat_by` - [Repeat element in an Array N times, where N is given by another array.
-  - `is_first` - Check if element is first unique value.
-  - `is_last` - Check if element is last unique value.
+  - `is_first_distinct` - Check if element is first unique value.
+  - `is_last_distinct` - Check if element is last unique value.
   - `checked_arithmetic` - checked arithmetic/ returning `None` on invalid operations.
   - `dot_product` - Dot/inner product on Series and Expressions.
   - `concat_str` - Concat string data in linear time.

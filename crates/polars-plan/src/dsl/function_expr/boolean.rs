@@ -21,10 +21,10 @@ pub enum BooleanFunction {
     IsInfinite,
     IsNan,
     IsNotNan,
-    #[cfg(feature = "is_first")]
-    IsFirst,
-    #[cfg(feature = "is_last")]
-    IsLast,
+    #[cfg(feature = "is_first_distinct")]
+    IsFirstDistinct,
+    #[cfg(feature = "is_last_distinct")]
+    IsLastDistinct,
     #[cfg(feature = "is_unique")]
     IsUnique,
     #[cfg(feature = "is_unique")]
@@ -59,10 +59,10 @@ impl Display for BooleanFunction {
             IsInfinite => "is_infinite",
             IsNan => "is_nan",
             IsNotNan => "is_not_nan",
-            #[cfg(feature = "is_first")]
-            IsFirst => "is_first",
-            #[cfg(feature = "is_last")]
-            IsLast => "is_last",
+            #[cfg(feature = "is_first_distinct")]
+            IsFirstDistinct => "is_first_distinct",
+            #[cfg(feature = "is_last_distinct")]
+            IsLastDistinct => "is_last_distinct",
             #[cfg(feature = "is_unique")]
             IsUnique => "is_unique",
             #[cfg(feature = "is_unique")]
@@ -89,10 +89,10 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsInfinite => map!(is_infinite),
             IsNan => map!(is_nan),
             IsNotNan => map!(is_not_nan),
-            #[cfg(feature = "is_first")]
-            IsFirst => map!(is_first),
-            #[cfg(feature = "is_last")]
-            IsLast => map!(is_last),
+            #[cfg(feature = "is_first_distinct")]
+            IsFirstDistinct => map!(is_first_distinct),
+            #[cfg(feature = "is_last_distinct")]
+            IsLastDistinct => map!(is_last_distinct),
             #[cfg(feature = "is_unique")]
             IsUnique => map!(is_unique),
             #[cfg(feature = "is_unique")]
@@ -154,14 +154,14 @@ pub(super) fn is_not_nan(s: &Series) -> PolarsResult<Series> {
     s.is_not_nan().map(|ca| ca.into_series())
 }
 
-#[cfg(feature = "is_first")]
-fn is_first(s: &Series) -> PolarsResult<Series> {
-    polars_ops::prelude::is_first(s).map(|ca| ca.into_series())
+#[cfg(feature = "is_first_distinct")]
+fn is_first_distinct(s: &Series) -> PolarsResult<Series> {
+    polars_ops::prelude::is_first_distinct(s).map(|ca| ca.into_series())
 }
 
-#[cfg(feature = "is_last")]
-fn is_last(s: &Series) -> PolarsResult<Series> {
-    polars_ops::prelude::is_last(s).map(|ca| ca.into_series())
+#[cfg(feature = "is_last_distinct")]
+fn is_last_distinct(s: &Series) -> PolarsResult<Series> {
+    polars_ops::prelude::is_last_distinct(s).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "is_unique")]

@@ -724,19 +724,19 @@ pub trait RepeatBy {
     }
 }
 
-#[cfg(feature = "is_first")]
+#[cfg(feature = "is_first_distinct")]
 /// Mask the first unique values as `true`
-pub trait IsFirst<T: PolarsDataType> {
-    fn is_first(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_first, T::get_dtype());
+pub trait IsFirstDistinct<T: PolarsDataType> {
+    fn is_first_distinct(&self) -> PolarsResult<BooleanChunked> {
+        polars_bail!(opq = is_first_distinct, T::get_dtype());
     }
 }
 
-#[cfg(feature = "is_last")]
+#[cfg(feature = "is_last_distinct")]
 /// Mask the last unique values as `true`
-pub trait IsLast<T: PolarsDataType> {
-    fn is_last(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_last, T::get_dtype());
+pub trait IsLastDistinct<T: PolarsDataType> {
+    fn is_last_distinct(&self) -> PolarsResult<BooleanChunked> {
+        polars_bail!(opq = is_last_distinct, T::get_dtype());
     }
 }
 
