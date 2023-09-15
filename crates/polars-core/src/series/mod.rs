@@ -488,29 +488,23 @@ impl Series {
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_threaded(
-        &self,
-        idx: &IdxCa,
-        rechunk: bool,
-    ) -> Series {
+    pub unsafe fn take_unchecked_threaded(&self, idx: &IdxCa, rechunk: bool) -> Series {
         self.threaded_op(rechunk, idx.len(), &|offset, len| {
             let idx = idx.slice(offset as i64, len);
             Ok(self.take_unchecked(&idx))
-        }).unwrap()
+        })
+        .unwrap()
     }
 
     /// Take by index if ChunkedArray contains a single chunk.
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_slice_unchecked_threaded(
-        &self,
-        idx: &[IdxSize],
-        rechunk: bool,
-    ) -> Series {
+    pub unsafe fn take_slice_unchecked_threaded(&self, idx: &[IdxSize], rechunk: bool) -> Series {
         self.threaded_op(rechunk, idx.len(), &|offset, len| {
-            Ok(self.take_slice_unchecked(&idx[offset..offset+len]))
-        }).unwrap()
+            Ok(self.take_slice_unchecked(&idx[offset..offset + len]))
+        })
+        .unwrap()
     }
 
     /// # Safety

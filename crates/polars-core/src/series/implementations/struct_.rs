@@ -193,19 +193,27 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        self.0.try_apply_fields(|s| s.take(indices)).map(|ca| ca.into_series())
+        self.0
+            .try_apply_fields(|s| s.take(indices))
+            .map(|ca| ca.into_series())
     }
 
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
-        self.0.apply_fields(|s| s.take_unchecked(indices)).into_series()
+        self.0
+            .apply_fields(|s| s.take_unchecked(indices))
+            .into_series()
     }
-    
+
     fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
-        self.0.try_apply_fields(|s| s.take_slice(indices)).map(|ca| ca.into_series())
+        self.0
+            .try_apply_fields(|s| s.take_slice(indices))
+            .map(|ca| ca.into_series())
     }
-    
+
     unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
-        self.0.apply_fields(|s| s.take_slice_unchecked(indices)).into_series()
+        self.0
+            .apply_fields(|s| s.take_slice_unchecked(indices))
+            .into_series()
     }
 
     /// Get length of series.

@@ -299,7 +299,7 @@ pub trait DataFrameJoinOps: IntoDf {
                             &opt_join_tuples
                                 .iter()
                                 .map(|(left, _right)| *left)
-                                .collect_ca("")
+                                .collect_ca(""),
                         )
                     },
                     || unsafe {
@@ -307,7 +307,7 @@ pub trait DataFrameJoinOps: IntoDf {
                             &opt_join_tuples
                                 .iter()
                                 .map(|(_left, right)| *right)
-                                .collect_ca("")
+                                .collect_ca(""),
                         )
                     },
                 );

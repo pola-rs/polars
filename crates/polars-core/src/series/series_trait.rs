@@ -283,7 +283,7 @@ pub trait SeriesTrait:
     /// # Safety
     /// This doesn't check any bounds.
     unsafe fn take_unchecked(&self, _idx: &IdxCa) -> Series;
-    
+
     /// Take by index. This operation is clone.
     fn take_slice(&self, _indices: &[IdxSize]) -> PolarsResult<Series>;
 

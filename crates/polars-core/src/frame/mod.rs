@@ -1709,10 +1709,7 @@ impl DataFrame {
                 })
             })
         } else {
-            self.columns
-                .iter()
-                .map(|s| s.take_unchecked(idx))
-                .collect()
+            self.columns.iter().map(|s| s.take_unchecked(idx)).collect()
         };
         DataFrame::new_no_checks(cols)
     }

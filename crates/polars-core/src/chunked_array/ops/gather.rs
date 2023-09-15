@@ -22,7 +22,10 @@ where
     }
 }
 
-unsafe fn target_value_unchecked<'a, A: StaticArray>(targets: &[&'a A], idx: IdxSize) -> A::ValueT<'a> {
+unsafe fn target_value_unchecked<'a, A: StaticArray>(
+    targets: &[&'a A],
+    idx: IdxSize,
+) -> A::ValueT<'a> {
     let (chunk_idx, arr_idx) =
         index_to_chunked_index(targets.iter().map(|a| a.len()), idx as usize);
     let arr = targets.get_unchecked(chunk_idx);
@@ -71,7 +74,12 @@ impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for 
     unsafe fn take_unchecked(&self, indices: &I) -> Self {
         let targets: Vec<_> = self.downcast_iter().collect();
         let inner = self.dtype().inner_dtype().unwrap_or(self.dtype());
-        let arr = gather_idx_array_unchecked(inner.clone(), &targets, self.null_count() > 0, indices.as_ref());
+        let arr = gather_idx_array_unchecked(
+            inner.clone(),
+            &targets,
+            self.null_count() > 0,
+            indices.as_ref(),
+        );
         ChunkedArray::from_chunk_iter_like(self, [arr])
     }
 }
@@ -106,15 +114,20 @@ impl<T: PolarsDataType> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
             if idx_arr.null_count() == 0 {
-                gather_idx_array_unchecked(inner.clone(), &targets, targets_have_nulls, idx_arr.values())
+                gather_idx_array_unchecked(
+                    inner.clone(),
+                    &targets,
+                    targets_have_nulls,
+                    idx_arr.values(),
+                )
             } else {
                 if targets.len() == 1 {
                     let target = targets.iter().next().unwrap();
                     if targets_have_nulls {
                         idx_arr
-                        .iter()
-                        .map(|i| target.get_unchecked(*i? as usize))
-                        .collect_arr_with_dtype(inner.clone())
+                            .iter()
+                            .map(|i| target.get_unchecked(*i? as usize))
+                            .collect_arr_with_dtype(inner.clone())
                     } else {
                         idx_arr
                             .iter()

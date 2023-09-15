@@ -163,19 +163,33 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        Ok(self.0.take(indices)?.into_decimal_unchecked(self.0.precision(), self.0.scale()).into_series())
+        Ok(self
+            .0
+            .take(indices)?
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series())
     }
 
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
-        self.0.take_unchecked(indices).into_decimal_unchecked(self.0.precision(), self.0.scale()).into_series()
+        self.0
+            .take_unchecked(indices)
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series()
     }
-    
+
     fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
-        Ok(self.0.take(indices)?.into_decimal_unchecked(self.0.precision(), self.0.scale()).into_series())
+        Ok(self
+            .0
+            .take(indices)?
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series())
     }
-    
+
     unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
-        self.0.take_unchecked(indices).into_decimal_unchecked(self.0.precision(), self.0.scale()).into_series()
+        self.0
+            .take_unchecked(indices)
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series()
     }
 
     fn len(&self) -> usize {

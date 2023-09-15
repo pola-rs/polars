@@ -287,19 +287,33 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        Ok(self.0.take(indices)?.into_duration(self.0.time_unit()).into_series())
+        Ok(self
+            .0
+            .take(indices)?
+            .into_duration(self.0.time_unit())
+            .into_series())
     }
 
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
-        self.0.take_unchecked(indices).into_duration(self.0.time_unit()).into_series()
+        self.0
+            .take_unchecked(indices)
+            .into_duration(self.0.time_unit())
+            .into_series()
     }
-    
+
     fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
-        Ok(self.0.take(indices)?.into_duration(self.0.time_unit()).into_series())
+        Ok(self
+            .0
+            .take(indices)?
+            .into_duration(self.0.time_unit())
+            .into_series())
     }
-    
+
     unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
-        self.0.take_unchecked(indices).into_duration(self.0.time_unit()).into_series()
+        self.0
+            .take_unchecked(indices)
+            .into_duration(self.0.time_unit())
+            .into_series()
     }
 
     fn len(&self) -> usize {

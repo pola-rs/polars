@@ -233,7 +233,7 @@ where
         }
         out
     }
-    
+
     pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
         name: &str,
         chunks: Vec<ArrayRef>,

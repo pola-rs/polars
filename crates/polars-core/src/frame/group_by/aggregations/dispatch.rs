@@ -24,8 +24,7 @@ impl Series {
                 } else if !self.has_validity() {
                     Some(idx.len() as IdxSize)
                 } else {
-                    let take =
-                        unsafe { self.take_slice_unchecked(idx) };
+                    let take = unsafe { self.take_slice_unchecked(idx) };
                     Some((take.len() - take.null_count()) as IdxSize)
                 }
             }),
@@ -49,28 +48,25 @@ impl Series {
     pub unsafe fn agg_first(&self, groups: &GroupsProxy) -> Series {
         let mut out = match groups {
             GroupsProxy::Idx(groups) => {
-                let indices = groups.iter().map(|(first, idx)| {
-                    if idx.is_empty() {
-                        None
-                    } else {
-                        Some(first)
-                    }
-                })
-                    .collect_ca("");
-                // SAFETY: groups are always in bounds.
-                self.take_unchecked(&indices)
-            },
-            GroupsProxy::Slice { groups, .. } => {
-                let indices =
-                    groups.iter().map(
-                        |&[first, len]| {
-                            if len == 0 {
+                let indices = groups
+                    .iter()
+                    .map(
+                        |(first, idx)| {
+                            if idx.is_empty() {
                                 None
                             } else {
                                 Some(first)
                             }
                         },
                     )
+                    .collect_ca("");
+                // SAFETY: groups are always in bounds.
+                self.take_unchecked(&indices)
+            },
+            GroupsProxy::Slice { groups, .. } => {
+                let indices = groups
+                    .iter()
+                    .map(|&[first, len]| if len == 0 { None } else { Some(first) })
                     .collect_ca("");
                 // SAFETY: groups are always in bounds.
                 self.take_unchecked(&indices)
@@ -186,24 +182,29 @@ impl Series {
     pub unsafe fn agg_last(&self, groups: &GroupsProxy) -> Series {
         let out = match groups {
             GroupsProxy::Idx(groups) => {
-                let indices = groups.all().iter().map(|idx| {
-                    if idx.is_empty() {
-                        None
-                    } else {
-                        Some(idx[idx.len() - 1])
-                    }
-                })
+                let indices = groups
+                    .all()
+                    .iter()
+                    .map(|idx| {
+                        if idx.is_empty() {
+                            None
+                        } else {
+                            Some(idx[idx.len() - 1])
+                        }
+                    })
                     .collect_ca("");
                 self.take_unchecked(&indices)
             },
             GroupsProxy::Slice { groups, .. } => {
-                let indices = groups.iter().map(|&[first, len]| {
-                    if len == 0 {
-                        None
-                    } else {
-                        Some(first + len - 1)
-                    }
-                })
+                let indices = groups
+                    .iter()
+                    .map(|&[first, len]| {
+                        if len == 0 {
+                            None
+                        } else {
+                            Some(first + len - 1)
+                        }
+                    })
                     .collect_ca("");
                 self.take_unchecked(&indices)
             },

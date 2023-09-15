@@ -28,7 +28,10 @@ where
         ChunkedArray::from_chunk_iter(self.name(), iter)
     }
 
-    pub fn try_apply_values_generic<'a, U, K, F, E>(&'a self, mut op: F) -> Result<ChunkedArray<U>, E>
+    pub fn try_apply_values_generic<'a, U, K, F, E>(
+        &'a self,
+        mut op: F,
+    ) -> Result<ChunkedArray<U>, E>
     where
         U: PolarsDataType,
         F: FnMut(T::Physical<'a>) -> Result<K, E>,
@@ -44,7 +47,11 @@ where
     }
 
     // Applies a function only to the non-null elements, propagating nulls.
-    pub fn apply_nonnull_values_generic<'a, U, K, F>(&'a self, dtype: DataType, mut op: F) -> ChunkedArray<U>
+    pub fn apply_nonnull_values_generic<'a, U, K, F>(
+        &'a self,
+        dtype: DataType,
+        mut op: F,
+    ) -> ChunkedArray<U>
     where
         U: PolarsDataType,
         F: FnMut(T::Physical<'a>) -> K,
@@ -52,10 +59,16 @@ where
     {
         let iter = self.downcast_iter().map(|arr| {
             if arr.null_count() == 0 {
-                let out: U::Array = arr.values_iter().map(&mut op).collect_arr_with_dtype(dtype.clone());
+                let out: U::Array = arr
+                    .values_iter()
+                    .map(&mut op)
+                    .collect_arr_with_dtype(dtype.clone());
                 out.with_validity_typed(arr.validity().cloned())
             } else {
-                let out: U::Array = arr.iter().map(|opt| opt.map(&mut op)).collect_arr_with_dtype(dtype.clone());
+                let out: U::Array = arr
+                    .iter()
+                    .map(|opt| opt.map(&mut op))
+                    .collect_arr_with_dtype(dtype.clone());
                 out.with_validity_typed(arr.validity().cloned())
             }
         });
@@ -64,7 +77,10 @@ where
     }
 
     // Applies a function only to the non-null elements, propagating nulls.
-    pub fn try_apply_nonnull_values_generic<'a, U, K, F, E>(&'a self, mut op: F) -> Result<ChunkedArray<U>, E>
+    pub fn try_apply_nonnull_values_generic<'a, U, K, F, E>(
+        &'a self,
+        mut op: F,
+    ) -> Result<ChunkedArray<U>, E>
     where
         U: PolarsDataType,
         F: FnMut(T::Physical<'a>) -> Result<K, E>,
@@ -75,7 +91,10 @@ where
                 let out: U::Array = arr.values_iter().map(&mut op).try_collect_arr()?;
                 out.with_validity_typed(arr.validity().cloned())
             } else {
-                let out: U::Array = arr.iter().map(|opt| opt.map(&mut op).transpose()).try_collect_arr()?;
+                let out: U::Array = arr
+                    .iter()
+                    .map(|opt| opt.map(&mut op).transpose())
+                    .try_collect_arr()?;
                 out.with_validity_typed(arr.validity().cloned())
             };
             Ok(arr)

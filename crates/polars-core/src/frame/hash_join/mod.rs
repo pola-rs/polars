@@ -256,9 +256,7 @@ impl DataFrame {
                 if let Some((offset, len)) = slice {
                     right_idx = slice_slice(right_idx, offset, len);
                 }
-                unsafe {
-                    other.take_unchecked(&right_idx.iter().copied().collect_ca(""))
-                }
+                unsafe { other.take_unchecked(&right_idx.iter().copied().collect_ca("")) }
             },
             ChunkJoinOptIds::Right(right_idx) => {
                 let mut right_idx = &*right_idx;
@@ -361,7 +359,7 @@ impl DataFrame {
                         .iter()
                         .copied()
                         .map(|(left, _right)| left)
-                        .collect_ca("outer-join-left-indices")
+                        .collect_ca("outer-join-left-indices"),
                 )
             },
             || unsafe {
@@ -370,7 +368,7 @@ impl DataFrame {
                         .iter()
                         .copied()
                         .map(|(_left, right)| right)
-                        .collect_ca("outer-join-right-indices")
+                        .collect_ca("outer-join-right-indices"),
                 )
             },
         );

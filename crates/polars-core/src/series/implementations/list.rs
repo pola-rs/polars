@@ -134,11 +134,11 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
         self.0.take_unchecked(indices).into_series()
     }
-    
+
     fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
         Ok(self.0.take(indices)?.into_series())
     }
-    
+
     unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
         self.0.take_unchecked(indices).into_series()
     }

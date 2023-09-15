@@ -195,14 +195,7 @@ impl DataFrame {
         }
 
         // SAFETY: join tuples are in bounds.
-        let right_df = unsafe {
-            other.take_unchecked(
-                &take_idx
-                    .iter()
-                    .copied()
-                    .collect_ca("")
-            )
-        };
+        let right_df = unsafe { other.take_unchecked(&take_idx.iter().copied().collect_ca("")) };
 
         _finish_join(left, right_df, suffix.as_deref())
     }
