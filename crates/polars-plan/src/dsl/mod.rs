@@ -41,6 +41,7 @@ pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
 pub use expr::*;
+pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;

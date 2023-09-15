@@ -370,6 +370,21 @@ impl Utf8Chunked {
         });
         Utf8Chunked::from_chunk_iter(self.name(), chunks)
     }
+
+    /// Utility that reuses an string buffer to amortize allocations.
+    /// Prefer this over an `apply` that returns an owned `String`.
+    pub fn apply_to_buffer<'a, F>(&'a self, mut f: F) -> Self
+    where
+        F: FnMut(&'a str, &mut String),
+    {
+        let mut buf = String::new();
+        let outer = |s: &'a str| {
+            buf.clear();
+            f(s, &mut buf);
+            unsafe { std::mem::transmute::<&str, &'a str>(buf.as_str()) }
+        };
+        self.apply_mut(outer)
+    }
 }
 
 impl BinaryChunked {

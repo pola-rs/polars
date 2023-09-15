@@ -998,6 +998,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "libloading"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d580318f95776505201b28cf98eb1fa5e4be3b689633ba6a3e6cd880ff22d8cb"
+dependencies = [
+ "cfg-if",
+ "windows-sys",
+]
+
+[[package]]
 name = "libm"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1463,6 +1473,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-ffi"
+version = "0.32.0"
+dependencies = [
+ "arrow2",
+ "polars-core",
+]
+
+[[package]]
 name = "polars-io"
 version = "0.32.0"
 dependencies = [
@@ -1588,9 +1606,11 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "ciborium",
+ "libloading",
  "once_cell",
  "polars-arrow",
  "polars-core",
+ "polars-ffi",
  "polars-io",
  "polars-ops",
  "polars-time",
@@ -1697,6 +1717,7 @@ dependencies = [
  "polars-error",
  "polars-lazy",
  "polars-ops",
+ "polars-plan",
  "pyo3",
  "pyo3-built",
  "serde_json",

@@ -13,6 +13,7 @@ polars-core = { path = "../crates/polars-core", default-features = false, featur
 polars-error = { path = "../crates/polars-error" }
 polars-lazy = { path = "../crates/polars-lazy", default-features = false, features = ["python"] }
 polars-ops = { path = "../crates/polars-ops", default-features = false }
+polars-plan = { path = "../crates/polars-plan", default-features = false }
 
 ahash = "0.8"
 ciborium = "0.2"
@@ -139,6 +140,7 @@ list_any_all = ["polars/list_any_all"]
 cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
+ffi_plugin = ["polars-plan/ffi_plugin"]
 
 all = [
   "dtype-i8",
@@ -185,6 +187,7 @@ all = [
   "rle",
   "extract_groups",
   "polars-ops/convert_index",
+  "ffi_plugin",
 ]
 
 # we cannot conditionally activate simd

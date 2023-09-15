@@ -120,6 +120,37 @@ impl ArrayFromElementIter for &str {
     }
 }
 
+impl ArrayFromElementIter for String {
+    type ArrayType = Utf8Array<i64>;
+
+    fn array_from_iter<I: TrustedLen<Item = Option<Self>>>(iter: I) -> Self::ArrayType {
+        // SAFETY: guarded by `TrustedLen` trait
+        unsafe { Utf8Array::from_trusted_len_iter_unchecked(iter) }
+    }
+
+    fn array_from_values_iter<I: TrustedLen<Item = Self>>(iter: I) -> Self::ArrayType {
+        let len = iter.size_hint().0;
+        Utf8Array::from_values_iter(iter, len, len * 24)
+    }
+    fn try_array_from_iter<E: Error, I: TrustedLen<Item = Result<Option<Self>, E>>>(
+        iter: I,
+    ) -> Result<Self::ArrayType, E> {
+        let len = iter.size_hint().0;
+        let mut mutable = MutableUtf8Array::<i64>::with_capacities(len, len * 24);
+        mutable.extend_fallible(iter)?;
+        Ok(mutable.into())
+    }
+
+    fn try_array_from_values_iter<E: Error, I: TrustedLen<Item = Result<Self, E>>>(
+        iter: I,
+    ) -> Result<Self::ArrayType, E> {
+        let len = iter.size_hint().0;
+        let mut mutable = MutableUtf8ValuesArray::<i64>::with_capacities(len, len * 24);
+        mutable.extend_fallible(iter)?;
+        Ok(mutable.into())
+    }
+}
+
 impl ArrayFromElementIter for Cow<'_, str> {
     type ArrayType = Utf8Array<i64>;
 
