@@ -188,6 +188,10 @@ def _to_ast(expr: str) -> ast.expr:
     be converted into a Python AST that can be traversed to convert it to a PyIceberg
     expression.
 
+    The reason to convert it to an AST is because the PyArrow expression
+    itself doesn't have any methods/properties to traverse the expression.
+    We need this to convert it into a PyIceberg expression.
+
     Parameters
     ----------
     expr
