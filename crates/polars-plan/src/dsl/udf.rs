@@ -28,6 +28,7 @@ impl std::fmt::Debug for UserDefinedFunction {
             .field("name", &self.name)
             .field("signature", &self.input_fields)
             .field("fun", &"<FUNC>")
+            .field("options", &self.options)
             .finish()
     }
 }

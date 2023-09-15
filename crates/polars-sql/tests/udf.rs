@@ -1,12 +1,15 @@
-use std::collections::HashMap;
+use std::sync::Arc;
 
-use polars::lazy::dsl::udf::UserDefinedFunction;
-use polars::lazy::dsl::GetOutput;
-use polars::prelude::*;
-use polars::sql::FunctionRegistry;
+use polars_arrow::error::PolarsResult;
+use polars_core::prelude::{DataType, Field, *};
+use polars_core::series::Series;
+use polars_lazy::prelude::IntoLazy;
+use polars_plan::prelude::{GetOutput, UserDefinedFunction};
+use polars_sql::function_registry::FunctionRegistry;
+use polars_sql::SQLContext;
 
 struct MyFunctionRegistry {
-    functions: HashMap<String, UserDefinedFunction>,
+    functions: PlHashMap<String, UserDefinedFunction>,
 }
 
 impl MyFunctionRegistry {
@@ -31,7 +34,8 @@ impl FunctionRegistry for MyFunctionRegistry {
     }
 }
 
-fn main() -> PolarsResult<()> {
+#[test]
+fn test_udfs() -> PolarsResult<()> {
     let my_custom_sum = UserDefinedFunction::new(
         "my_custom_sum",
         vec![
@@ -46,7 +50,7 @@ fn main() -> PolarsResult<()> {
         },
     );
 
-    let mut ctx = polars::sql::SQLContext::new()
+    let mut ctx = SQLContext::new()
         .with_function_registry(Arc::new(MyFunctionRegistry::new(vec![my_custom_sum])));
 
     let df = df! {
@@ -60,7 +64,6 @@ fn main() -> PolarsResult<()> {
     ctx.register("foo", df);
     let res = ctx.execute("SELECT a, b, my_custom_sum(a, b) FROM foo");
     assert!(res.is_ok());
-    println!("{:?}", res.unwrap().collect()?);
 
     // schema is invalid so it will fail
     assert!(ctx
@@ -86,9 +89,15 @@ fn main() -> PolarsResult<()> {
     ctx.registry_mut().register("my_div", my_custom_divide)?;
 
     // execute the query
-    let res = ctx.execute("SELECT a, b, my_div(a, b) as my_div FROM foo")?;
-
-    println!("{:?}", res.collect()?);
+    let res = ctx
+        .execute("SELECT a, b, my_div(a, b) as my_div FROM foo")?
+        .collect()?;
+    let expected = df! {
+        "a" => &[1, 2, 3],
+        "b" => &[1, 2, 3],
+        "my_div" => &[1, 1, 1]
+    }?;
+    assert!(expected.frame_equal_missing(&res));
 
     Ok(())
 }
