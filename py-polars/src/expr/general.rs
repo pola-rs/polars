@@ -856,13 +856,16 @@ impl PyExpr {
     }
 
     #[cfg(feature = "ffi_plugin")]
-    fn register_plugin(&self, lib: &str,
-                       symbol: &str,
-                       is_elementwise: bool,
-                       input_wildcard_expansion: bool,
-                       auto_explode: bool,
-                       cast_to_supertypes: bool,
-    )  -> Self {
+    fn register_plugin(
+        &self,
+        lib: &str,
+        symbol: &str,
+        args: Vec<PyExpr>,
+        is_elementwise: bool,
+        input_wildcard_expansion: bool,
+        auto_explode: bool,
+        cast_to_supertypes: bool,
+    ) -> Self {
         use polars_plan::prelude::*;
         let inner = self.inner.clone();
 
@@ -871,12 +874,17 @@ impl PyExpr {
         } else {
             ApplyOptions::ApplyGroups
         };
+        let mut input = Vec::with_capacity(args.len() + 1);
+        input.push(inner);
+        for a in args {
+            input.push(a.inner)
+        }
 
         Expr::Function {
-            input: vec![inner],
+            input,
             function: FunctionExpr::FfiPlugin {
                 lib: Arc::from(lib),
-                symbol: Arc::from(symbol)
+                symbol: Arc::from(symbol),
             },
             options: FunctionOptions {
                 collect_groups,
@@ -884,7 +892,8 @@ impl PyExpr {
                 auto_explode,
                 cast_to_supertypes,
                 ..Default::default()
-            }
-        }.into()
+            },
+        }
+        .into()
     }
 }

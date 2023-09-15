@@ -264,10 +264,7 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "dtype-categorical")]
             FunctionExpr::Categorical(f) => f.hash(state),
             #[cfg(feature = "ffi_plugin")]
-            FunctionExpr::FfiPlugin {
-                lib,
-                symbol,
-            } => {
+            FunctionExpr::FfiPlugin { lib, symbol } => {
                 lib.hash(state);
                 symbol.hash(state);
             },
@@ -656,8 +653,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Random { method, seed } => map!(random::random, method, seed),
             SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
             #[cfg(feature = "ffi_plugin")]
-            FfiPlugin { lib, symbol, .. } => {
-                unsafe { map_as_slice!(plugin::call_plugin, lib.as_ref(), symbol.as_ref()) }
+            FfiPlugin { lib, symbol, .. } => unsafe {
+                map_as_slice!(plugin::call_plugin, lib.as_ref(), symbol.as_ref())
             },
         }
     }

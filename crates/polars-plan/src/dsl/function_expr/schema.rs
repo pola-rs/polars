@@ -241,7 +241,9 @@ impl FunctionExpr {
             Random { .. } => mapper.with_same_dtype(),
             SetSortedFlag(_) => mapper.with_same_dtype(),
             #[cfg(feature = "ffi_plugin")]
-            FfiPlugin { lib, symbol } => unsafe { plugin::plugin_field(fields, lib, &format!("__polars_field_{}", symbol.as_ref())) },
+            FfiPlugin { lib, symbol } => unsafe {
+                plugin::plugin_field(fields, lib, &format!("__polars_field_{}", symbol.as_ref()))
+            },
         }
     }
 }
@@ -252,9 +254,7 @@ pub struct FieldsMapper<'a> {
 
 impl<'a> FieldsMapper<'a> {
     pub fn new(fields: &'a [Field]) -> Self {
-        Self {
-            fields
-        }
+        Self { fields }
     }
 
     /// Field with the same dtype.

@@ -41,6 +41,7 @@ pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
 pub use expr::*;
+pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;
@@ -65,7 +66,6 @@ use crate::prelude::*;
 use crate::utils::has_expr;
 #[cfg(feature = "is_in")]
 use crate::utils::has_leaf_literal;
-pub use function_expr::schema::FieldsMapper;
 
 impl Expr {
     /// Modify the Options passed to the `Function` node.

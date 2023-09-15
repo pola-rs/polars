@@ -374,10 +374,9 @@ impl Utf8Chunked {
     /// Utility that reuses an string buffer to amortize allocations.
     /// Prefer this over an `apply` that returns an owned `String`.
     pub fn apply_to_buffer<'a, F>(&'a self, mut f: F) -> Self
-        where
-            F: FnMut(&'a str, &mut String)
+    where
+        F: FnMut(&'a str, &mut String),
     {
-
         let mut buf = String::new();
         let outer = |s: &'a str| {
             buf.clear();
