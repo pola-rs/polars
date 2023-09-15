@@ -190,7 +190,7 @@ addopts = [
   "--strict-markers",
   "--import-mode=importlib",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
-  "-m not slow and not hypothesis and not benchmark and not write_disk",
+  "-m not slow and not hypothesis and not benchmark and not write_disk and not docs",
 ]
 markers = [
   "write_disk: Tests that write to disk",
