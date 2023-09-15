@@ -240,6 +240,8 @@ impl Hash for FunctionExpr {
             FunctionExpr::Boolean(f) => f.hash(state),
             #[cfg(feature = "strings")]
             FunctionExpr::StringExpr(f) => f.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            FunctionExpr::StructExpr(f) => f.hash(state),
             #[cfg(feature = "random")]
             FunctionExpr::Random { method, .. } => method.hash(state),
             #[cfg(feature = "range")]
@@ -714,8 +716,8 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: BinaryFunction) -> Self {
         use BinaryFunction::*;
         match func {
-            Contains { pat, literal } => {
-                map!(binary::contains, &pat, literal)
+            Contains => {
+                map_as_slice!(binary::contains)
             },
             EndsWith => {
                 map_as_slice!(binary::ends_with)

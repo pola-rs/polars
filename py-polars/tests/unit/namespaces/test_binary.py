@@ -24,15 +24,16 @@ def test_contains() -> None:
             (1, b"some * * text"),
             (2, b"(with) special\n * chars"),
             (3, b"**etc...?$"),
+            (4, None),
         ],
         schema=["idx", "bin"],
     )
     for pattern, expected in (
-        (b"e * ", [True, False, False]),
-        (b"text", [True, False, False]),
-        (b"special", [False, True, False]),
-        (b"", [True, True, True]),
-        (b"qwe", [False, False, False]),
+        (b"e * ", [True, False, False, None]),
+        (b"text", [True, False, False, None]),
+        (b"special", [False, True, False, None]),
+        (b"", [True, True, True, None]),
+        (b"qwe", [False, False, False, None]),
     ):
         # series
         assert expected == df["bin"].bin.contains(pattern).to_list()
@@ -41,7 +42,31 @@ def test_contains() -> None:
             expected == df.select(pl.col("bin").bin.contains(pattern))["bin"].to_list()
         )
         # frame filter
-        assert sum(expected) == len(df.filter(pl.col("bin").bin.contains(pattern)))
+        assert sum([e for e in expected if e is True]) == len(
+            df.filter(pl.col("bin").bin.contains(pattern))
+        )
+
+
+def test_contains_with_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "bin": [b"some * * text", b"(with) special\n * chars", b"**etc...?$", None],
+            "lit1": [b"e * ", b"", b"qwe", b"None"],
+            "lit2": [None, b"special\n", b"?!", None],
+        }
+    )
+
+    assert df.select(
+        [
+            pl.col("bin").bin.contains(pl.col("lit1")).alias("contains_1"),
+            pl.col("bin").bin.contains(pl.col("lit2")).alias("contains_2"),
+            pl.col("bin").bin.contains(pl.lit(None)).alias("contains_3"),
+        ]
+    ).to_dict(False) == {
+        "contains_1": [True, True, False, None],
+        "contains_2": [None, True, False, None],
+        "contains_3": [None, None, None, None],
+    }
 
 
 def test_starts_ends_with() -> None:

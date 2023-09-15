@@ -39,6 +39,7 @@ dataframe-api-compat >= 0.1.6
 pyiceberg >= 0.5.0rc3
 # Other
 matplotlib
+gevent
 
 # -------
 # TOOLING

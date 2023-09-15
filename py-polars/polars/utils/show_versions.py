@@ -63,6 +63,7 @@ def _get_dependency_info() -> dict[str, str]:
         "connectorx",
         "deltalake",
         "fsspec",
+        "gevent",
         "matplotlib",
         "numpy",
         "pandas",

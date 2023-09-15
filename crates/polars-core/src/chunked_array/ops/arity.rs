@@ -3,7 +3,7 @@ use std::error::Error;
 use arrow::array::Array;
 use polars_arrow::utils::combine_validities_and;
 
-use crate::datatypes::{ArrayFromElementIter, PolarsNumericType, StaticArray};
+use crate::datatypes::{ArrayFromElementIter, StaticArray};
 use crate::prelude::{ChunkedArray, PolarsDataType};
 use crate::utils::align_chunks_binary;
 
@@ -71,7 +71,7 @@ pub fn binary_elementwise_values<T, U, V, F, K>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsNumericType,
+    V: PolarsDataType,
     F: for<'a> FnMut(T::Physical<'a>, U::Physical<'a>) -> K,
     K: ArrayFromElementIter<ArrayType = V::Array>,
 {
@@ -102,7 +102,7 @@ pub fn try_binary_elementwise_values<T, U, V, F, K, E>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsNumericType,
+    V: PolarsDataType,
     F: for<'a> FnMut(T::Physical<'a>, U::Physical<'a>) -> Result<K, E>,
     K: ArrayFromElementIter<ArrayType = V::Array>,
     E: Error,
