@@ -3218,7 +3218,7 @@ class Expr:
         └─────┴───────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.is_first())
+        return self._from_pyexpr(self._pyexpr.is_first_distinct())
 
     def is_last_distinct(self) -> Self:
         """
@@ -3247,7 +3247,7 @@ class Expr:
         └─────┴───────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.is_last())
+        return self._from_pyexpr(self._pyexpr.is_last_distinct())
 
     def is_duplicated(self) -> Self:
         """
