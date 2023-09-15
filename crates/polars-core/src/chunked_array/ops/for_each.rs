@@ -14,7 +14,7 @@ where
             })
         } else {
             self.downcast_iter().for_each(|arr| {
-                arr.iter().for_each(|x| op(x));
+                arr.iter().for_each(&mut op);
             })
         }
     }
