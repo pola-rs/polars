@@ -35,6 +35,24 @@ where
 }
 
 #[inline]
+pub fn binary_elementwise_for_each<T, U, F>(lhs: &ChunkedArray<T>, rhs: &ChunkedArray<U>, mut op: F)
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>),
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    lhs.downcast_iter()
+        .zip(rhs.downcast_iter())
+        .for_each(|(lhs_arr, rhs_arr)| {
+            lhs_arr
+                .iter()
+                .zip(rhs_arr.iter())
+                .for_each(|(lhs_opt_val, rhs_opt_val)| op(lhs_opt_val, rhs_opt_val));
+        })
+}
+
+#[inline]
 pub fn try_binary_elementwise<T, U, V, F, K, E>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,

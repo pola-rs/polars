@@ -8,7 +8,7 @@ use polars_arrow::kernels::string::*;
 #[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
 use polars_core::export::regex::Regex;
-use polars_core::prelude::arity::try_binary_elementwise;
+use polars_core::prelude::arity::{binary_elementwise_for_each, try_binary_elementwise};
 use polars_utils::cache::FastFixedCache;
 use regex::escape;
 
@@ -309,6 +309,66 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             }
         }
         Ok(builder.finish())
+    }
+
+    fn split(&self, by: &str) -> ListChunked {
+        let ca = self.as_utf8();
+        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+
+        ca.for_each(|opt_v| match opt_v {
+            Some(val) => {
+                let iter = val.split(by);
+                builder.append_values_iter(iter)
+            },
+            _ => builder.append_null(),
+        });
+        builder.finish()
+    }
+
+    fn split_many(&self, by: &Utf8Chunked) -> ListChunked {
+        let ca = self.as_utf8();
+
+        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+
+        binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
+            (Some(s), Some(by)) => {
+                let iter = s.split(by);
+                builder.append_values_iter(iter);
+            },
+            _ => builder.append_null(),
+        });
+
+        builder.finish()
+    }
+
+    fn split_inclusive(&self, by: &str) -> ListChunked {
+        let ca = self.as_utf8();
+        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+
+        ca.for_each(|opt_v| match opt_v {
+            Some(val) => {
+                let iter = val.split_inclusive(by);
+                builder.append_values_iter(iter)
+            },
+            _ => builder.append_null(),
+        });
+        builder.finish()
+    }
+
+    fn split_inclusive_many(&self, by: &Utf8Chunked) -> ListChunked {
+        let ca = self.as_utf8();
+
+        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+
+        binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
+            (Some(s), Some(by)) => {
+                let iter = s.split_inclusive(by);
+                builder.append_values_iter(iter);
+            },
+            _ => builder.append_null(),
+        });
+
+        builder.finish()
     }
 
     /// Extract each successive non-overlapping regex match in an individual string as an array.

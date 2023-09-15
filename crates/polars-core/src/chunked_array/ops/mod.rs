@@ -29,6 +29,7 @@ mod explode_and_offsets;
 mod extend;
 mod fill_null;
 mod filter;
+mod for_each;
 pub mod full;
 #[cfg(feature = "interpolate")]
 mod interpolate;
