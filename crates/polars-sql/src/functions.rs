@@ -602,7 +602,7 @@ impl SqlFunctionVisitor<'_> {
             // ----
             // Comparison functions
             // ----
-            NullIf => self.visit_binary(|l, r: Expr| when(l.clone().eq(r)).then(lit(crate::functions::LiteralValue::Null)).otherwise(l)),
+            NullIf => self.visit_binary(|l, r: Expr| when(l.clone().eq(r)).then(lit(LiteralValue::Null)).otherwise(l)),
             Coalesce => self.visit_variadic(coalesce),
 
             // ----
