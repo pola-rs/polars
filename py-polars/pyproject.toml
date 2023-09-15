@@ -95,7 +95,10 @@ module = [
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["IPython.*"]
+module = [
+  "IPython.*",
+  "matplotlib.*",
+]
 follow_imports = "skip"
 
 [[tool.mypy.overrides]]
