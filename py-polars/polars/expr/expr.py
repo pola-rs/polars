@@ -9277,7 +9277,7 @@ class Expr:
         cast_to_supertypes: bool = False,
     ) -> Self:
         """
-        Register a shared library as a plugin
+        Register a shared library as a plugin.
 
         .. warning::
             This is highly unsafe as this will call the C function
@@ -9293,6 +9293,8 @@ class Expr:
             Library to load.
         symbol
             Function to load.
+        args
+            Arguments (other than self) passed to this function.
         is_elementwise
             If the function only operates on scalars
             this will trigger fast paths.
