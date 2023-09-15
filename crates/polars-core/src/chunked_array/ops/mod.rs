@@ -175,21 +175,22 @@ pub trait TakeRandom {
     fn last(&self) -> Option<Self::Item>;
 }
 
-pub trait ChunkGather: ChunkGatherUnchecked {
+pub trait ChunkTake<Idx: ?Sized>: ChunkTakeUnchecked<Idx> {
     /// Gather values from ChunkedArray by index.
-    fn gather(&self, indices: &IdxCa) -> PolarsResult<Self>
+    fn take(&self, indices: &Idx) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 
-pub trait ChunkGatherUnchecked {
+pub trait ChunkTakeUnchecked<Idx: ?Sized> {
     /// Gather values from ChunkedArray by index.
     ///
     /// # Safety
     /// The non-null indices must be valid.
-    unsafe fn gather_unchecked(&self, indices: &IdxCa) -> Self;
+    unsafe fn take_unchecked(&self, indices: &Idx) -> Self;
 }
 
+/*
 /// Fast access by index.
 pub trait ChunkTake: ChunkTakeUnchecked {
     /// Take values from ChunkedArray by index.
@@ -216,6 +217,7 @@ pub trait ChunkTakeUnchecked {
         I: TakeIterator,
         INulls: TakeIteratorNulls;
 }
+*/
 
 /// Create a `ChunkedArray` with new values by index or by boolean mask.
 /// Note that these operations clone data. This is however the only way we can modify at mask or

@@ -133,7 +133,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
         Random => {
             // Safety:
             // in bounds
-            let arr = unsafe { s.take_unchecked(&sort_idx_ca).unwrap() };
+            let arr = unsafe { s.take_unchecked(&sort_idx_ca) };
             let not_consecutive_same = arr
                 .slice(1, len - 1)
                 .not_equal(&arr.slice(0, len - 1))
@@ -185,7 +185,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
         _ => {
             let inv_ca = IdxCa::from_vec(s.name(), inv);
             // SAFETY: in bounds.
-            let arr = unsafe { s.take_unchecked(&sort_idx_ca).unwrap() };
+            let arr = unsafe { s.take_unchecked(&sort_idx_ca) };
             let validity = arr.chunks()[0].validity().cloned();
             let not_consecutive_same = arr
                 .slice(1, len - 1)

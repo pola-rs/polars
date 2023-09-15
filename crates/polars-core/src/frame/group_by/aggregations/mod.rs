@@ -1111,5 +1111,3 @@ where
         agg_median_generic::<_, Float64Type>(self, groups)
     }
 }
-
-impl<T: PolarsDataType> ChunkedArray<T> where ChunkedArray<T>: ChunkTake + IntoSeries {}

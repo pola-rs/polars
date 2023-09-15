@@ -85,15 +85,15 @@ impl Series {
         match with_replacement {
             true => {
                 let idx = create_rand_index_with_replacement(n, len, seed);
-                // Safety we know that we never go out of bounds
+                // SAFETY: we know that we never go out of bounds.
                 debug_assert_eq!(len, self.len());
-                unsafe { self.take_unchecked(&idx) }
+                unsafe { Ok(self.take_unchecked(&idx)) }
             },
             false => {
                 let idx = create_rand_index_no_replacement(n, len, seed, shuffle);
-                // Safety we know that we never go out of bounds
+                // SAFETY: we know that we never go out of bounds.
                 debug_assert_eq!(len, self.len());
-                unsafe { self.take_unchecked(&idx) }
+                unsafe { Ok(self.take_unchecked(&idx)) }
             },
         }
     }
@@ -116,14 +116,14 @@ impl Series {
         let idx = create_rand_index_no_replacement(n, len, seed, true);
         // Safety we know that we never go out of bounds
         debug_assert_eq!(len, self.len());
-        unsafe { self.take_unchecked(&idx).unwrap() }
+        unsafe { self.take_unchecked(&idx) }
     }
 }
 
 impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
-    ChunkedArray<T>: ChunkTake,
+    ChunkedArray<T>: ChunkTake<IdxCa>,
 {
     /// Sample n datapoints from this [`ChunkedArray`].
     pub fn sample_n(
@@ -141,13 +141,13 @@ where
                 let idx = create_rand_index_with_replacement(n, len, seed);
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
-                unsafe { Ok(self.take_unchecked((&idx).into())) }
+                unsafe { Ok(self.take_unchecked(&idx)) }
             },
             false => {
                 let idx = create_rand_index_no_replacement(n, len, seed, shuffle);
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
-                unsafe { Ok(self.take_unchecked((&idx).into())) }
+                unsafe { Ok(self.take_unchecked(&idx)) }
             },
         }
     }

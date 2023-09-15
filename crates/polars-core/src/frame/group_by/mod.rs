@@ -265,10 +265,8 @@ impl<'df> GroupBy<'df> {
                 .map(|s| {
                     match groups {
                         GroupsProxy::Idx(groups) => {
-                            let mut iter = groups.first().iter().map(|first| *first as usize);
-                            // Safety:
-                            // groups are always in bounds
-                            let mut out = unsafe { s.take_iter_unchecked(&mut iter) };
+                            // SAFETY: groups are always in bounds.
+                            let mut out = unsafe { s.take_slice_unchecked(groups.first()) };
                             if groups.sorted {
                                 out.set_sorted_flag(s.is_sorted_flag());
                             };
@@ -276,7 +274,7 @@ impl<'df> GroupBy<'df> {
                         },
                         GroupsProxy::Slice { groups, rolling } => {
                             if *rolling && !groups.is_empty() {
-                                // groups can be sliced
+                                // Groups can be sliced.
                                 let offset = groups[0][0];
                                 let [upper_offset, upper_len] = groups[groups.len() - 1];
                                 return s.slice(
@@ -285,11 +283,10 @@ impl<'df> GroupBy<'df> {
                                 );
                             }
 
-                            let mut iter = groups.iter().map(|&[first, _len]| first as usize);
-                            // Safety:
-                            // groups are always in bounds
-                            let mut out = unsafe { s.take_iter_unchecked(&mut iter) };
-                            // sliced groups are always in order of discovery
+                            let indices = groups.iter().map(|&[first, _len]| first).collect_ca("");
+                            // SAFETY: groups are always in bounds.
+                            let mut out = unsafe { s.take_unchecked(&indices) };
+                            // Sliced groups are always in order of discovery.
                             out.set_sorted_flag(s.is_sorted_flag());
                             out
                         },
@@ -838,7 +835,7 @@ impl<'df> GroupBy<'df> {
 
 unsafe fn take_df(df: &DataFrame, g: GroupsIndicator) -> DataFrame {
     match g {
-        GroupsIndicator::Idx(idx) => df.take_iter_unchecked(idx.1.iter().map(|i| *i as usize)),
+        GroupsIndicator::Idx(idx) => df.take_slice_unchecked(idx.1),
         GroupsIndicator::Slice([first, len]) => df.slice(first as i64, len as usize),
     }
 }

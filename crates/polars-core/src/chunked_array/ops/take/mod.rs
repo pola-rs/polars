@@ -20,6 +20,7 @@ mod traits;
 #[cfg(feature = "chunked_ids")]
 pub(crate) use take_chunked::*;
 
+/*
 macro_rules! take_iter_n_chunks_unchecked {
     ($cat:ty, $ca:expr, $indices:expr) => {{
         let taker = $ca.take_rand();
@@ -503,3 +504,5 @@ mod test {
         assert_eq!(ca.get(2), Some("c"));
     }
 }
+
+*/

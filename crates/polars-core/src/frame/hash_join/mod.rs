@@ -257,9 +257,7 @@ impl DataFrame {
                     right_idx = slice_slice(right_idx, offset, len);
                 }
                 unsafe {
-                    other.take_opt_iter_unchecked(
-                        right_idx.iter().map(|opt_i| opt_i.map(|i| i as usize)),
-                    )
+                    other.take_unchecked(&right_idx.iter().copied().collect_ca(""))
                 }
             },
             ChunkJoinOptIds::Right(right_idx) => {
@@ -358,17 +356,21 @@ impl DataFrame {
         // Take the left and right dataframes by join tuples
         let (mut df_left, df_right) = POOL.join(
             || unsafe {
-                self.drop(s_left.name()).unwrap().take_opt_iter_unchecked(
-                    opt_join_tuples
+                self.drop(s_left.name()).unwrap().take_unchecked(
+                    &opt_join_tuples
                         .iter()
-                        .map(|(left, _right)| left.map(|i| i as usize)),
+                        .copied()
+                        .map(|(left, _right)| left)
+                        .collect_ca("outer-join-left-indices")
                 )
             },
             || unsafe {
-                other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
-                    opt_join_tuples
+                other.drop(s_right.name()).unwrap().take_unchecked(
+                    &opt_join_tuples
                         .iter()
-                        .map(|(_left, right)| right.map(|i| i as usize)),
+                        .copied()
+                        .map(|(_left, right)| right)
+                        .collect_ca("outer-join-right-indices")
                 )
             },
         );

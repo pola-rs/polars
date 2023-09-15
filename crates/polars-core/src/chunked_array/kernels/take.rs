@@ -44,7 +44,7 @@ pub(crate) unsafe fn take_list_unchecked(
 
     // Temporary series so that we can take primitives from it.
     let s = Series::try_from(("", values.values().clone() as ArrayRef)).unwrap();
-    let taken = s.take_unchecked(&list_indices.into()).unwrap();
+    let taken = s.take_unchecked(&list_indices.into());
 
     let taken = taken.array_ref(0).clone();
     let validity = if let Some(validity) = values.validity() {
