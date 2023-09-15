@@ -38,6 +38,8 @@ pub struct RollingOptions {
     pub closed_window: Option<ClosedWindow>,
     /// Optional parameters for the rolling function
     pub fn_params: DynArgs,
+    /// Warn if data is not known to be sorted by `by` column (if passed)
+    pub warn_if_unsorted: bool,
 }
 
 #[cfg(feature = "rolling_window")]
@@ -51,6 +53,7 @@ impl Default for RollingOptions {
             by: None,
             closed_window: None,
             fn_params: None,
+            warn_if_unsorted: true,
         }
     }
 }

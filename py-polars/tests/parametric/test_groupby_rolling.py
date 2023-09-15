@@ -7,7 +7,7 @@ import hypothesis.strategies as st
 from hypothesis import assume, given, reject
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric.primitives import column, dataframes
 from polars.testing.parametric.strategies import strategy_closed, strategy_time_unit
 from polars.utils.convert import _timedelta_to_pl_duration
@@ -73,5 +73,103 @@ def test_group_by_rolling(
     expected = pl.DataFrame(expected_dict).select(
         pl.col("ts").cast(pl.Datetime(time_unit)),
         pl.col("value").cast(pl.List(pl.Int64)),
+    )
+    assert_frame_equal(result, expected)
+
+
+@given(
+    window_size=st.timedeltas(min_value=timedelta(microseconds=0)).map(
+        _timedelta_to_pl_duration
+    ),
+    closed=strategy_closed,
+    data=st.data(),
+    time_unit=strategy_time_unit,
+    aggregation=st.sampled_from(
+        [
+            "min",
+            "max",
+            "mean",
+            "sum",
+            #  "std", blocked by https://github.com/pola-rs/polars/issues/11140
+            #  "var", blocked by https://github.com/pola-rs/polars/issues/11140
+            "median",
+        ]
+    ),
+)
+def test_rolling_aggs(
+    window_size: str,
+    closed: ClosedInterval,
+    data: st.DataObject,
+    time_unit: TimeUnit,
+    aggregation: str,
+) -> None:
+    # Check:
+    # - that we get the same results whether we sort the data beforehand,
+    #   or whether polars sorts it for us under-the-hood
+    # - that even if polars temporarily sorts the data under-the-hood, the
+    #   order that the user passed the data in is restored
+    assume(window_size != "")
+    dataframe = data.draw(
+        dataframes(
+            [
+                column("ts", dtype=pl.Datetime(time_unit)),
+                column("value", dtype=pl.Int64),
+            ],
+        )
+    )
+    # take unique because of https://github.com/pola-rs/polars/issues/11150
+    df = dataframe.unique("ts")
+    func = f"rolling_{aggregation}"
+    try:
+        result = df.with_columns(
+            getattr(pl.col("value"), func)(
+                window_size=window_size, by="ts", closed=closed, warn_if_unsorted=False
+            )
+        )
+    except pl.exceptions.PolarsPanicError as exc:
+        assert any(  # noqa: PT017
+            msg in str(exc)
+            for msg in (
+                "attempt to multiply with overflow",
+                "attempt to add with overflow",
+            )
+        )
+        reject()
+
+    expected = (
+        df.with_row_count("index")
+        .sort("ts")
+        .with_columns(
+            getattr(pl.col("value"), func)(
+                window_size=window_size, by="ts", closed=closed
+            ),
+            "index",
+        )
+        .sort("index")
+        .drop("index")
+    )
+    assert_frame_equal(result, expected)
+    assert_series_equal(result["ts"], df["ts"])
+
+    expected_dict: dict[str, list[object]] = {"ts": [], "value": []}
+    for ts, _ in df.iter_rows():
+        window = df.filter(
+            pl.col("ts").is_between(
+                pl.lit(ts, dtype=pl.Datetime(time_unit)).dt.offset_by(
+                    f"-{window_size}"
+                ),
+                pl.lit(ts, dtype=pl.Datetime(time_unit)),
+                closed=closed,
+            )
+        )
+        expected_dict["ts"].append(ts)
+        if window.is_empty():
+            expected_dict["value"].append(None)
+        else:
+            value = getattr(window["value"], aggregation)()
+            expected_dict["value"].append(value)
+    expected = pl.DataFrame(expected_dict).select(
+        pl.col("ts").cast(pl.Datetime(time_unit)),
+        pl.col("value").cast(result["value"].dtype),
     )
     assert_frame_equal(result, expected)

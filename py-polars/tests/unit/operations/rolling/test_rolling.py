@@ -835,18 +835,18 @@ def test_rolling_weighted_quantile_10031() -> None:
     )
 
 
-def test_rolling_aggregations_unsorted_raise_10991() -> None:
+def test_rolling_aggregations_unsorted_temporarily_sorts_10991() -> None:
     df = pl.DataFrame(
         {
             "dt": [datetime(2020, 1, 3), datetime(2020, 1, 1), datetime(2020, 1, 2)],
             "val": [1, 2, 3],
         }
     )
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match="argument in operation 'rolling_sum' is not explicitly sorted",
-    ):
-        df.with_columns(roll=pl.col("val").rolling_sum("2d", by="dt", closed="right"))
+    result = df.with_columns(
+        roll=pl.col("val").rolling_sum("2d", by="dt", closed="right")
+    )
+    expected = df.with_columns(roll=pl.Series([4, 2, 5]))
+    assert_frame_equal(result, expected)
 
 
 def test_rolling() -> None:

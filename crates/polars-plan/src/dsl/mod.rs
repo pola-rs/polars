@@ -1,7 +1,5 @@
 #![allow(ambiguous_glob_reexports)]
 //! Domain specific language for the Lazy API.
-#[cfg(feature = "rolling_window")]
-use polars_core::utils::ensure_sorted_arg;
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
 #[cfg(feature = "dtype-categorical")]
@@ -1230,19 +1228,52 @@ impl Expr {
                 move |s| {
                     let mut by = s[1].clone();
                     by = by.rechunk();
-                    let s = &s[0];
+                    let series: Series;
 
                     polars_ensure!(
                         options.weights.is_none(),
                         ComputeError: "`weights` is not supported in 'rolling by' expression"
                     );
-                    let (by, tz) = match by.dtype() {
+                    let (mut by, tz) = match by.dtype() {
                         DataType::Datetime(tu, tz) => {
                             (by.cast(&DataType::Datetime(*tu, None))?, tz)
                         },
                         _ => (by.clone(), &None),
                     };
-                    ensure_sorted_arg(&by, expr_name)?;
+                    let sorting_indices;
+                    let original_indices;
+                    let by_flag = by.is_sorted_flag();
+                    match by_flag {
+                        IsSorted::Ascending => {
+                            series = s[0].clone();
+                            original_indices = None;
+                        },
+                        IsSorted::Descending => {
+                            series = s[0].reverse();
+                            by = by.reverse();
+                            original_indices = None;
+                        },
+                        IsSorted::Not => {
+                            eprintln!(
+                                "PolarsPerformanceWarning: Series is not known to be \
+                                sorted by `by` column, so Polars is temporarily \
+                                sorting it for you.\n\
+                                You can silence this warning by:\n\
+                                - passing `warn_if_unsorted=False`;\n\
+                                - sorting your data by your `by` column beforehand;\n\
+                                - setting `.set_sorted()` if you already know your data is sorted\n\
+                                before passing it to the rolling aggregation function"
+                            );
+                            sorting_indices = by.arg_sort(Default::default());
+                            unsafe { by = by.take_unchecked(&sorting_indices)? };
+                            unsafe { series = s[0].take_unchecked(&sorting_indices)? };
+                            let int_range =
+                                UInt32Chunked::from_iter_values("", 0..s[0].len() as u32)
+                                    .into_series();
+                            original_indices =
+                                unsafe { int_range.take_unchecked(&sorting_indices) }.ok()
+                        },
+                    };
                     let by = by.datetime().unwrap();
                     let by_values = by.cont_slice().map_err(|_| {
                         polars_err!(
@@ -1264,7 +1295,17 @@ impl Expr {
                         fn_params: options.fn_params.clone(),
                     };
 
-                    rolling_fn(s, options).map(Some)
+                    match by_flag {
+                        IsSorted::Ascending => rolling_fn(&series, options).map(Some),
+                        IsSorted::Descending => {
+                            Ok(rolling_fn(&series, options)?.reverse()).map(Some)
+                        },
+                        IsSorted::Not => {
+                            let res = rolling_fn(&series, options)?;
+                            let indices = &original_indices.unwrap().arg_sort(Default::default());
+                            unsafe { res.take_unchecked(indices) }.map(Some)
+                        },
+                    }
                 },
                 &[col(by)],
                 output_type,
