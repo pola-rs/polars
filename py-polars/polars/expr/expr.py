@@ -9262,6 +9262,7 @@ class Expr:
             function, window_size, weights, min_periods, center=center
         )
 
+    @deprecate_renamed_function("is_first_distinct", version="0.19.3")
     def is_first(self) -> Self:
         """
         Return a boolean mask indicating the first occurrence of each distinct value.
@@ -9277,6 +9278,7 @@ class Expr:
         """
         return self.is_first_distinct()
 
+    @deprecate_renamed_function("is_last_distinct", version="0.19.3")
     def is_last(self) -> Self:
         """
         Return a boolean mask indicating the last occurrence of each distinct value.

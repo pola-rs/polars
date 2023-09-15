@@ -1220,69 +1220,6 @@ def test_apply_list_out() -> None:
     assert out[2].to_list() == [2, 2]
 
 
-def test_is_first() -> None:
-    # numeric
-    s = pl.Series([1, 1, None, 2, None, 3, 3])
-    assert s.is_first().to_list() == [True, False, True, True, False, True, False]
-    # str
-    s = pl.Series(["x", "x", None, "y", None, "z", "z"])
-    assert s.is_first().to_list() == [True, False, True, True, False, True, False]
-    # boolean
-    s = pl.Series([True, True, None, False, None, False, False])
-    assert s.is_first().to_list() == [True, False, True, True, False, False, False]
-    # struct
-    s = pl.Series(
-        [
-            {"x": 1, "y": 2},
-            {"x": 1, "y": 2},
-            None,
-            {"x": 2, "y": 1},
-            None,
-            {"x": 3, "y": 2},
-            {"x": 3, "y": 2},
-        ]
-    )
-    assert s.is_first().to_list() == [True, False, True, True, False, True, False]
-    # list
-    s = pl.Series([[1, 2], [1, 2], None, [2, 3], None, [3, 4], [3, 4]])
-    assert s.is_first().to_list() == [True, False, True, True, False, True, False]
-
-
-def test_is_last() -> None:
-    # numeric
-    s = pl.Series([1, 1, None, 2, None, 3, 3])
-    assert s.is_last().to_list() == [False, True, False, True, True, False, True]
-    # str
-    s = pl.Series(["x", "x", None, "y", None, "z", "z"])
-    assert s.is_last().to_list() == [False, True, False, True, True, False, True]
-    # boolean
-    s = pl.Series([True, True, None, False, None, False, False])
-    assert s.is_last().to_list() == [False, True, False, False, True, False, True]
-    # struct
-    s = pl.Series(
-        [
-            {"x": 1, "y": 2},
-            {"x": 1, "y": 2},
-            None,
-            {"x": 2, "y": 1},
-            None,
-            {"x": 3, "y": 2},
-            {"x": 3, "y": 2},
-        ]
-    )
-    assert s.is_last().to_list() == [False, True, False, True, True, False, True]
-    # list
-    s = pl.Series([[1, 2], [1, 2], None, [2, 3], None, [3, 4], [3, 4]])
-    assert s.is_last().to_list() == [False, True, False, True, True, False, True]
-
-
-@pytest.mark.parametrize("dtypes", [pl.Int32, pl.Utf8, pl.Boolean, pl.List(pl.Int32)])
-def test_is_first_last_all_null(dtypes: pl.PolarsDataType) -> None:
-    s = pl.Series([None, None, None], dtype=dtypes)
-    assert s.is_first().to_list() == [True, False, False]
-    assert s.is_last().to_list() == [False, False, True]
-
-
 def test_reinterpret() -> None:
     s = pl.Series("a", [1, 1, 2], dtype=pl.UInt64)
     assert s.reinterpret(signed=True).dtype == pl.Int64

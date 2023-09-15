@@ -6732,6 +6732,7 @@ class Series:
 
         """
 
+    @deprecate_renamed_function("is_first_distinct", version="0.19.3")
     def is_first(self) -> Series:
         """
         Return a boolean mask indicating the first occurrence of each distinct value.
@@ -6746,6 +6747,7 @@ class Series:
 
         """
 
+    @deprecate_renamed_function("is_last_distinct", version="0.19.3")
     def is_last(self) -> Series:
         """
         Return a boolean mask indicating the last occurrence of each distinct value.
