@@ -204,7 +204,7 @@ filterwarnings = [
   # ...except where it prevents test debugging in an IPython console
   "ignore:.*unrecognized arguments.*PyDevIPCompleter:DeprecationWarning",
   "ignore:.*is_sparse is deprecated.*:FutureWarning",
-  "ignore:Matplotlib is currently using agg:UserWarning",
+  "ignore:FigureCanvasAgg is non-interactive:UserWarning",
 ]
 xfail_strict = true
 
