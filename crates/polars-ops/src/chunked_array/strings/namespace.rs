@@ -315,7 +315,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         let ca = self.as_utf8();
         let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
 
-        ca.for_each_generic(|opt_v| match opt_v {
+        ca.for_each(|opt_v| match opt_v {
             Some(val) => {
                 let iter = val.split(by);
                 builder.append_values_iter(iter)
@@ -345,7 +345,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         let ca = self.as_utf8();
         let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
 
-        ca.for_each_generic(|opt_v| match opt_v {
+        ca.for_each(|opt_v| match opt_v {
             Some(val) => {
                 let iter = val.split_inclusive(by);
                 builder.append_values_iter(iter)
