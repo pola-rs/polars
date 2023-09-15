@@ -8,7 +8,7 @@ use polars_arrow::kernels::string::*;
 #[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
 use polars_core::export::regex::Regex;
-use polars_core::prelude::arity::{binary_elementwise_for_each, try_binary_elementwise};
+use polars_core::prelude::arity::*;
 use polars_utils::cache::FastFixedCache;
 use regex::escape;
 
@@ -88,6 +88,47 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         Ok(out)
     }
 
+    fn contains_chunked(
+        &self,
+        pat: &Utf8Chunked,
+        literal: bool,
+        strict: bool,
+    ) -> PolarsResult<BooleanChunked> {
+        let ca = self.as_utf8();
+        match pat.len() {
+            1 => match pat.get(0) {
+                Some(pat) => {
+                    if literal {
+                        ca.contains_literal(pat)
+                    } else {
+                        ca.contains(pat, strict)
+                    }
+                },
+                None => Ok(BooleanChunked::full_null(ca.name(), ca.len())),
+            },
+            _ => {
+                if literal {
+                    Ok(binary_elementwise_values(ca, pat, |src, pat| {
+                        src.contains(pat)
+                    }))
+                } else if strict {
+                    try_binary_elementwise_values(ca, pat, |src, pat| {
+                        Ok(Regex::new(pat)?.is_match(src))
+                    })
+                } else {
+                    Ok(binary_elementwise(ca, pat, |opt_src, opt_pat| {
+                        match (opt_src, opt_pat) {
+                            (Some(src), Some(pat)) => {
+                                Regex::new(pat).ok().map(|re| re.is_match(src))
+                            },
+                            _ => None,
+                        }
+                    }))
+                }
+            },
+        }
+    }
+
     /// Get the length of the string values as number of chars.
     fn str_n_chars(&self) -> UInt32Chunked {
         let ca = self.as_utf8();
@@ -135,18 +176,11 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         let res_reg = Regex::new(pat);
         let opt_reg = if strict { Some(res_reg?) } else { res_reg.ok() };
 
-        let mut out: BooleanChunked = match (opt_reg, ca.has_validity()) {
-            (Some(reg), false) => ca
-                .into_no_null_iter()
-                .map(|s: &str| reg.is_match(s))
-                .collect(),
-            (Some(reg), true) => ca
-                .into_iter()
-                .map(|opt_s| opt_s.map(|s: &str| reg.is_match(s)))
-                .collect(),
-            (None, _) => ca.into_iter().map(|_| None).collect(),
+        let out: BooleanChunked = if let Some(reg) = opt_reg {
+            ca.apply_values_generic(|s| reg.is_match(s))
+        } else {
+            BooleanChunked::full_null(ca.name(), ca.len())
         };
-        out.rename(ca.name());
         Ok(out)
     }
 
@@ -156,24 +190,6 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         // faster at finding literal matches than str::contains.
         // ref: https://github.com/pola-rs/polars/pull/6811
         self.contains(regex::escape(lit).as_str(), true)
-    }
-
-    /// Check if strings ends with a substring
-    fn ends_with(&self, sub: &str) -> BooleanChunked {
-        let ca = self.as_utf8();
-        let f = |s: &str| s.ends_with(sub);
-        let mut out: BooleanChunked = ca.into_iter().map(|opt_s| opt_s.map(f)).collect();
-        out.rename(ca.name());
-        out
-    }
-
-    /// Check if strings starts with a substring
-    fn starts_with(&self, sub: &str) -> BooleanChunked {
-        let ca = self.as_utf8();
-        let f = |s: &str| s.starts_with(sub);
-        let mut out: BooleanChunked = ca.into_iter().map(|opt_s| opt_s.map(f)).collect();
-        out.rename(ca.name());
-        out
     }
 
     /// Replace the leftmost regex-matched (sub)string with another string
