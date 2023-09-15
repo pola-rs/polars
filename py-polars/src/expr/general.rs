@@ -387,12 +387,12 @@ impl PyExpr {
         self.clone().inner.approx_n_unique().into()
     }
 
-    fn is_first(&self) -> Self {
-        self.clone().inner.is_first().into()
+    fn is_first_distinct(&self) -> Self {
+        self.clone().inner.is_first_distinct().into()
     }
 
-    fn is_last(&self) -> Self {
-        self.clone().inner.is_last().into()
+    fn is_last_distinct(&self) -> Self {
+        self.clone().inner.is_last_distinct().into()
     }
 
     fn explode(&self) -> Self {
@@ -853,5 +853,48 @@ impl PyExpr {
             IsSorted::Ascending
         };
         self.inner.clone().set_sorted_flag(is_sorted).into()
+    }
+
+    #[cfg(feature = "ffi_plugin")]
+    #[allow(clippy::too_many_arguments)]
+    fn register_plugin(
+        &self,
+        lib: &str,
+        symbol: &str,
+        args: Vec<PyExpr>,
+        is_elementwise: bool,
+        input_wildcard_expansion: bool,
+        auto_explode: bool,
+        cast_to_supertypes: bool,
+    ) -> Self {
+        use polars_plan::prelude::*;
+        let inner = self.inner.clone();
+
+        let collect_groups = if is_elementwise {
+            ApplyOptions::ApplyFlat
+        } else {
+            ApplyOptions::ApplyGroups
+        };
+        let mut input = Vec::with_capacity(args.len() + 1);
+        input.push(inner);
+        for a in args {
+            input.push(a.inner)
+        }
+
+        Expr::Function {
+            input,
+            function: FunctionExpr::FfiPlugin {
+                lib: Arc::from(lib),
+                symbol: Arc::from(symbol),
+            },
+            options: FunctionOptions {
+                collect_groups,
+                input_wildcard_expansion,
+                auto_explode,
+                cast_to_supertypes,
+                ..Default::default()
+            },
+        }
+        .into()
     }
 }

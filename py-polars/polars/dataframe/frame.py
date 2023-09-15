@@ -9768,7 +9768,8 @@ class DataFrame:
         """
         Start a group by operation.
 
-        Alias for :func:`DataFrame.group_by`.
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`DataFrame.group_by`.
 
         Parameters
         ----------
@@ -9809,7 +9810,8 @@ class DataFrame:
         """
         Create rolling groups based on a time, Int32, or Int64 column.
 
-        Alias for :func:`DataFrame.group_by_rolling`.
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`DataFrame.group_by_rolling`.
 
         Parameters
         ----------
@@ -9865,7 +9867,8 @@ class DataFrame:
         """
         Group based on a time value (or index value of type Int32, Int64).
 
-        Alias for :func:`DataFrame.group_by_rolling`.
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`DataFrame.group_by_dynamic`.
 
         Parameters
         ----------
