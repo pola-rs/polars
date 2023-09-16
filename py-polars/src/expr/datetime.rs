@@ -50,11 +50,11 @@ impl PyExpr {
             .into()
     }
 
-    fn dt_truncate(&self, every: String, offset: String, ambiguous: Self) -> Self {
+    fn dt_truncate(&self, every: Self, offset: String, ambiguous: Self) -> Self {
         self.inner
             .clone()
             .dt()
-            .truncate(TruncateOptions { every, offset }, ambiguous.inner)
+            .truncate(every.inner, offset, ambiguous.inner)
             .into()
     }
 
