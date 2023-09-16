@@ -83,8 +83,8 @@ zip_with = []
 round_series = []
 checked_arithmetic = []
 repeat_by = []
-is_first = []
-is_last = []
+is_first_distinct = []
+is_last_distinct = []
 asof_join = []
 cross_join = []
 dot_product = []
@@ -153,8 +153,8 @@ docs-selection = [
   "round_series",
   "checked_arithmetic",
   "repeat_by",
-  "is_first",
-  "is_last",
+  "is_first_distinct",
+  "is_last_distinct",
   "asof_join",
   "cross_join",
   "dot_product",

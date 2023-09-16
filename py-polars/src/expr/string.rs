@@ -275,12 +275,12 @@ impl PyExpr {
             .into()
     }
 
-    fn str_split(&self, by: &str) -> Self {
-        self.inner.clone().str().split(by).into()
+    fn str_split(&self, by: Self) -> Self {
+        self.inner.clone().str().split(by.inner).into()
     }
 
-    fn str_split_inclusive(&self, by: &str) -> Self {
-        self.inner.clone().str().split_inclusive(by).into()
+    fn str_split_inclusive(&self, by: Self) -> Self {
+        self.inner.clone().str().split_inclusive(by.inner).into()
     }
 
     fn str_split_exact(&self, by: &str, n: usize) -> Self {
