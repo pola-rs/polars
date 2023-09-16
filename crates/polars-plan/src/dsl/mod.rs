@@ -1254,16 +1254,18 @@ impl Expr {
                             original_indices = None;
                         },
                         IsSorted::Not => {
-                            eprintln!(
-                                "PolarsPerformanceWarning: Series is not known to be \
-                                sorted by `by` column, so Polars is temporarily \
-                                sorting it for you.\n\
-                                You can silence this warning by:\n\
-                                - passing `warn_if_unsorted=False`;\n\
-                                - sorting your data by your `by` column beforehand;\n\
-                                - setting `.set_sorted()` if you already know your data is sorted\n\
-                                before passing it to the rolling aggregation function"
-                            );
+                            if options.warn_if_unsorted {
+                                eprintln!(
+                                    "PolarsPerformanceWarning: Series is not known to be \
+                                    sorted by `by` column, so Polars is temporarily \
+                                    sorting it for you.\n\
+                                    You can silence this warning by:\n\
+                                    - passing `warn_if_unsorted=False`;\n\
+                                    - sorting your data by your `by` column beforehand;\n\
+                                    - setting `.set_sorted()` if you already know your data is sorted\n\
+                                    before passing it to the rolling aggregation function"
+                                );
+                            }
                             sorting_indices = by.arg_sort(Default::default());
                             unsafe { by = by.take_unchecked(&sorting_indices)? };
                             unsafe { series = s[0].take_unchecked(&sorting_indices)? };
