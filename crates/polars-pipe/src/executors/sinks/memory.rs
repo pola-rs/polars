@@ -13,6 +13,7 @@ pub(super) struct MemTracker {
     available_mem: Arc<AtomicUsize>,
     used_by_node: Arc<AtomicUsize>,
     fetch_count: Arc<AtomicUsize>,
+    available_mem_max: Option<usize>,
     thread_count: usize,
     available_at_start: usize,
     refresh_interval: usize,
@@ -25,25 +26,30 @@ impl MemTracker {
         } else {
             64
         };
+        let available_mem_max = std::env::var("POLARS_MAX_MEMORY_MIB")
+            .ok()
+            .map(|s| s.parse::<usize>().expect("integer") * TO_MB);
+
 
         let mut out = Self {
             available_mem: Default::default(),
             used_by_node: Default::default(),
             fetch_count: Arc::new(AtomicUsize::new(1)),
+            available_mem_max,
             thread_count,
             available_at_start: 0,
             refresh_interval,
         };
-        let available = MEMINFO.free() as usize;
-        out.available_mem.store(available, Ordering::Relaxed);
-        out.available_at_start = available;
+        out.refresh_memory();
+        out.available_at_start = out.available_mem.load(Ordering::Relaxed);
         out
     }
 
     /// This shouldn't be called often as this is expensive.
     fn refresh_memory(&self) {
+        let free = MEMINFO.free() as usize;
         self.available_mem
-            .store(MEMINFO.free() as usize, Ordering::Relaxed);
+            .store(self.available_mem_max.unwrap_or(free).min(free), Ordering::Relaxed);
     }
 
     /// Get available memory of the system measured on latest refresh.
