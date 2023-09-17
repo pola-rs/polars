@@ -11,8 +11,8 @@ description = "SQL transpiler for Polars. Converts SQL to Polars logical plans"
 [dependencies]
 polars-arrow = { workspace = true, features = ["like"] }
 polars-core = { workspace = true, features = [] }
-polars-lazy = { workspace = true, features = ["compile", "strings", "cross_join", "trigonometry", "abs", "round_series", "log", "regex", "is_in", "meta", "cum_agg"] }
-polars-plan = { workspace = true, features = ["compile"] }
+polars-lazy = { workspace = true, features = ["strings", "cross_join", "trigonometry", "abs", "round_series", "log", "regex", "is_in", "meta", "cum_agg"] }
+polars-plan = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
