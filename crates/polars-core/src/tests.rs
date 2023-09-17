@@ -55,17 +55,13 @@ fn test_dataframe_has_the_correct_schema() {
                 "decimal" => to_decimal(precision, scale, vec![1_i128])
             )
             .unwrap();
-            let get_dtype = |name: &str| data.schema().get_field(name).unwrap().data_type().clone();
-
-            // We use the following code to check the precision and scale of the decimal type.
-            // assert_eq!(dtype, Decimal(precision, scale) checks only enum variant type equality.
-            match get_dtype("decimal") {
-                DataType::Decimal(Some(precision), Some(scale)) => {
-                    assert_eq!(scale, scale);
-                    assert_eq!(precision, precision);
-                },
-                _ => assert!(false, "expected decimal"),
-            }
+            let dtype = data
+                .schema()
+                .get_field("decimal")
+                .unwrap()
+                .data_type()
+                .clone();
+            assert_eq!(dtype, DataType::Decimal(Some(precision), Some(scale)));
         }
     }
 }
