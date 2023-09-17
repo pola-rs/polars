@@ -5715,10 +5715,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every
             interval of the window
         period
-            length of the window, if None it is equal to 'every'
+            length of the window, if None it will equal 'every'
         offset
-            offset of the window if None and period is None it will be equal to negative
-            `every`
+            offset of the window, if None it will equal negative `every`
         truncate
             truncate the time value to the window lower bound
         include_boundaries
