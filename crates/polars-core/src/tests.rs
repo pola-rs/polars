@@ -47,21 +47,25 @@ fn test_dataframe_has_the_correct_schema() {
     assert_eq!(get_dtype("f64"), DataType::Float64);
     assert_eq!(get_dtype("bool"), DataType::Boolean);
     assert_eq!(get_dtype("utf8"), DataType::Utf8);
-    assert_eq!(get_dtype("decimal"), DataType::Decimal(Some(38), Some(0)));
 
-    for precision in 0..39 {
-        for scale in 0..=precision {
-            let data = df!(
-                "decimal" => to_decimal(precision, scale, vec![1_i128])
-            )
-            .unwrap();
-            let dtype = data
-                .schema()
-                .get_field("decimal")
-                .unwrap()
-                .data_type()
-                .clone();
-            assert_eq!(dtype, DataType::Decimal(Some(precision), Some(scale)));
+    #[cfg(not(feature = "python"))]
+    {
+        assert_eq!(get_dtype("decimal"), DataType::Decimal(Some(38), Some(0)));
+
+        for precision in 0..39 {
+            for scale in 0..=precision {
+                let data = df!(
+                    "decimal" => to_decimal(precision, scale, vec![1_i128])
+                )
+                .unwrap();
+                let dtype = data
+                    .schema()
+                    .get_field("decimal")
+                    .unwrap()
+                    .data_type()
+                    .clone();
+                assert_eq!(dtype, DataType::Decimal(Some(precision), Some(scale)));
+            }
         }
     }
 }
