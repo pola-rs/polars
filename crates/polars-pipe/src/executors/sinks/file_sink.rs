@@ -9,7 +9,7 @@ use polars_io::csv::CsvWriter;
 use polars_io::parquet::ParquetWriter;
 #[cfg(feature = "ipc")]
 use polars_io::prelude::IpcWriter;
-#[cfg(feature = "ipc")]
+#[cfg(any(feature = "ipc", feature = "csv"))]
 use polars_io::SerWriter;
 use polars_plan::prelude::*;
 
@@ -212,7 +212,7 @@ impl CsvSink {
     }
 }
 
-#[cfg(any(feature = "parquet", feature = "ipc"))]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 fn init_writer_thread(
     receiver: Receiver<Option<DataChunk>>,
     mut writer: Box<dyn SinkWriter + Send>,
