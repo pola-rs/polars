@@ -9,15 +9,15 @@ repository = { workspace = true }
 description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { version = "0.32.0", path = "../polars-arrow" }
-polars-core = { version = "0.32.0", path = "../polars-core", features = ["lazy", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.32.0", path = "../polars-io", features = ["lazy", "csv"], default-features = false }
-polars-json = { version = "0.32.0", path = "../polars-json", optional = true }
-polars-ops = { version = "0.32.0", path = "../polars-ops", default-features = false }
-polars-pipe = { version = "0.32.0", path = "../polars-pipe", optional = true }
-polars-plan = { version = "0.32.0", path = "../polars-plan" }
-polars-time = { version = "0.32.0", path = "../polars-time", optional = true }
-polars-utils = { version = "0.32.0", path = "../polars-utils" }
+polars-arrow = { workspace = true }
+polars-core = { workspace = true, features = ["lazy", "zip_with", "random"], default-features = false }
+polars-io = { workspace = true, features = ["lazy", "csv"], default-features = false }
+polars-json = { workspace = true, optional = true }
+polars-ops = { workspace = true }
+polars-pipe = { workspace = true, optional = true }
+polars-plan = { workspace = true }
+polars-time = { workspace = true, optional = true }
+polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 bitflags = { workspace = true }

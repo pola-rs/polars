@@ -11,4 +11,4 @@ repository.workspace = true
 
 [dependencies]
 arrow = { workspace = true }
-polars-core = { version = "0.32.0", path = "../polars-core", default-features = false }
+polars-core = { workspace = true }

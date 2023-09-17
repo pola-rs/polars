@@ -13,7 +13,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.32.0"
+version = "0.33.0"
 authors = ["Ritchie Vink <ritchie46@gmail.com>"]
 edition = "2021"
 homepage = "https://www.pola.rs/"
@@ -51,13 +51,29 @@ thiserror = "1"
 url = "2.3.1"
 version_check = "0.9.4"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
+polars-core = { path = "crates/polars-core", default-features = false }
+polars-arrow = { path = "crates/polars-arrow", default-features = false }
+polars-plan = { path = "crates/polars-plan", default-features = false }
+polars-lazy = { path = "crates/polars-lazy", default-features = false }
+polars-pipe = { path = "crates/polars-pipe", default-features = false }
+polars-row = { path = "crates/polars-row", default-features = false }
+polars-ffi = { path = "crates/polars-ffi", default-features = false }
+polars-ops = { path = "crates/polars-ops", default-features = false }
+polars-sql = { path = "crates/polars-sql", default-features = false }
+polars-algo = { path = "crates/polars-algo", default-features = false }
+polars-time = { path = "crates/polars-time", default-features = false }
+polars-utils = { path = "crates/polars-utils", default-features = false }
+polars-io = { path = "crates/polars-io", default-features = false }
+polars-error = { path = "crates/polars-error", default-features = false }
+polars-json = { path = "crates/polars-json", default-features = false }
+polars = { path = "crates/polars", default-features = false }
 
 [workspace.dependencies.arrow]
 package = "arrow2"
-git = "https://github.com/jorgecarleitao/arrow2"
-rev = "7c93e358fc400bf3c0c0219c22eefc6b38fc2d12"
+# git = "https://github.com/jorgecarleitao/arrow2"
+# rev = "7c93e358fc400bf3c0c0219c22eefc6b38fc2d12"
 # branch = ""
-# version = "0.17.4"
+version = "0.18.0"
 default-features = false
 features = [
   "compute_aggregate",
