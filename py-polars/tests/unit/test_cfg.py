@@ -611,10 +611,6 @@ def test_numeric_right_alignment() -> None:
             "└─────────┴─────────┴───────────┘"
         )
 
-    # test nonsensical float precision raises an error
-    with pytest.raises(ValueError):
-        pl.Config.set_float_precision(50)
-
 
 def test_string_cache() -> None:
     df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
@@ -703,7 +699,7 @@ def test_config_load_save(tmp_path: Path) -> None:
         assert os.environ.get("POLARS_FMT_MAX_COLS") is None
         assert os.environ.get("POLARS_VERBOSE") is None
         assert _get_float_fmt() == "mixed"
-        assert _get_float_precision() == 255
+        assert _get_float_precision() is None
 
     # ref: #11094
     with pl.Config(

@@ -17,7 +17,7 @@ def _get_float_fmt() -> str:  # pragma: no cover
 
 
 def _get_float_precision() -> int:
-    return 0
+    return -1
 
 
 # note: module not available when building docs
@@ -452,12 +452,6 @@ class Config(contextlib.ContextDecorator):
             Number of decimal places to display
 
         """
-        if precision is None:
-            precision = 255
-        elif precision > 16 and precision != 255:
-            raise ValueError(
-                f"precision must be None, or a number between 0-16; got {precision}"
-            )
         _set_float_precision(precision)
         return cls
 

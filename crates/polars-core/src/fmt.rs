@@ -2,6 +2,7 @@
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::RwLock;
 use std::{fmt, str};
 
 #[cfg(any(
@@ -33,7 +34,7 @@ pub enum FloatFmt {
     Full,
 }
 static FLOAT_FMT: AtomicU8 = AtomicU8::new(FloatFmt::Mixed as u8);
-static FLOAT_PRECISION: AtomicU8 = AtomicU8::new(u8::MAX);
+static FLOAT_PRECISION: RwLock<Option<usize>> = RwLock::new(None);
 
 pub fn get_float_fmt() -> FloatFmt {
     match FLOAT_FMT.load(Ordering::Relaxed) {
@@ -43,16 +44,16 @@ pub fn get_float_fmt() -> FloatFmt {
     }
 }
 
-pub fn get_float_precision() -> u8 {
-    FLOAT_PRECISION.load(Ordering::Relaxed)
+pub fn get_float_precision() -> Option<usize> {
+    FLOAT_PRECISION.read().unwrap().clone()
 }
 
 pub fn set_float_fmt(fmt: FloatFmt) {
     FLOAT_FMT.store(fmt as u8, Ordering::Relaxed)
 }
 
-pub fn set_float_precision(precision: u8) {
-    FLOAT_PRECISION.store(precision, Ordering::Relaxed)
+pub fn set_float_precision(precision: Option<usize>) {
+    *FLOAT_PRECISION.write().unwrap() = precision;
 }
 
 macro_rules! format_array {
@@ -724,12 +725,16 @@ const SCIENTIFIC_BOUND: f64 = 999999.0;
 fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
     let v: f64 = NumCast::from(v).unwrap();
 
-    let precision = get_float_precision();
-    if precision != u8::MAX {
-        if format!("{v:.precision$}", precision = precision as usize).len() > 19 {
-            return write!(f, "{v:>width$.precision$e}", precision = precision as usize);
-        }
-        return write!(f, "{v:>width$.precision$}", precision = precision as usize);
+    let float_precision = get_float_precision();
+
+    match float_precision {
+        Some(precision) => {
+            if format!("{v:.precision$}", precision = precision).len() > 19 {
+                return write!(f, "{v:>width$.precision$e}", precision = precision);
+            }
+            return write!(f, "{v:>width$.precision$}", precision = precision);
+        },
+        _ => {},
     }
 
     if matches!(get_float_fmt(), FloatFmt::Full) {

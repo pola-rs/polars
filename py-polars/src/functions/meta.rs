@@ -48,19 +48,14 @@ pub fn get_float_fmt() -> PyResult<String> {
 }
 
 #[pyfunction]
-pub fn set_float_precision(precision: u8) -> PyResult<()> {
+pub fn set_float_precision(precision: Option<usize>) -> PyResult<()> {
     use polars_core::fmt::set_float_precision;
-    if precision > 16 && precision != u8::MAX {
-        return Err(PyValueError::new_err(format!(
-            "maximum supported float precision is 16, got {precision}",
-        )));
-    }
     set_float_precision(precision);
     Ok(())
 }
 
 #[pyfunction]
-pub fn get_float_precision() -> PyResult<u8> {
+pub fn get_float_precision() -> PyResult<Option<usize>> {
     use polars_core::fmt::get_float_precision;
     Ok(get_float_precision())
 }
