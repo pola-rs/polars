@@ -28,9 +28,9 @@ fn should_block_join_specific(ae: &AExpr, how: &JoinType) -> LeftRight<bool> {
                 | FunctionExpr::Boolean(BooleanFunction::IsDuplicated),
             ..
         } => LeftRight(true, true),
-        #[cfg(feature = "is_first")]
+        #[cfg(feature = "is_first_distinct")]
         Function {
-            function: FunctionExpr::Boolean(BooleanFunction::IsFirst),
+            function: FunctionExpr::Boolean(BooleanFunction::IsFirstDistinct),
             ..
         } => LeftRight(true, true),
         // any operation that checks for equality or ordering can be wrong because

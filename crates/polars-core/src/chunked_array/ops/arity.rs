@@ -3,7 +3,7 @@ use std::error::Error;
 use arrow::array::Array;
 use polars_arrow::utils::combine_validities_and;
 
-use crate::datatypes::{ArrayFromElementIter, PolarsNumericType, StaticArray};
+use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter, StaticArray};
 use crate::prelude::{ChunkedArray, PolarsDataType};
 use crate::utils::align_chunks_binary;
 
@@ -18,7 +18,7 @@ where
     U: PolarsDataType,
     V: PolarsDataType,
     F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> Option<K>,
-    K: ArrayFromElementIter<ArrayType = V::Array>,
+    V::Array: ArrayFromIter<Option<K>>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -29,9 +29,27 @@ where
                 .iter()
                 .zip(rhs_arr.iter())
                 .map(|(lhs_opt_val, rhs_opt_val)| op(lhs_opt_val, rhs_opt_val));
-            K::array_from_iter(element_iter)
+            element_iter.collect_arr()
         });
     ChunkedArray::from_chunk_iter(lhs.name(), iter)
+}
+
+#[inline]
+pub fn binary_elementwise_for_each<T, U, F>(lhs: &ChunkedArray<T>, rhs: &ChunkedArray<U>, mut op: F)
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>),
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    lhs.downcast_iter()
+        .zip(rhs.downcast_iter())
+        .for_each(|(lhs_arr, rhs_arr)| {
+            lhs_arr
+                .iter()
+                .zip(rhs_arr.iter())
+                .for_each(|(lhs_opt_val, rhs_opt_val)| op(lhs_opt_val, rhs_opt_val));
+        })
 }
 
 #[inline]
@@ -45,8 +63,7 @@ where
     U: PolarsDataType,
     V: PolarsDataType,
     F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> Result<Option<K>, E>,
-    K: ArrayFromElementIter<ArrayType = V::Array>,
-    E: Error,
+    V::Array: ArrayFromIter<Option<K>>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -57,7 +74,7 @@ where
                 .iter()
                 .zip(rhs_arr.iter())
                 .map(|(lhs_opt_val, rhs_opt_val)| op(lhs_opt_val, rhs_opt_val));
-            K::try_array_from_iter(element_iter)
+            element_iter.try_collect_arr()
         });
     ChunkedArray::try_from_chunk_iter(lhs.name(), iter)
 }
@@ -71,9 +88,9 @@ pub fn binary_elementwise_values<T, U, V, F, K>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsNumericType,
+    V: PolarsDataType,
     F: for<'a> FnMut(T::Physical<'a>, U::Physical<'a>) -> K,
-    K: ArrayFromElementIter<ArrayType = V::Array>,
+    V::Array: ArrayFromIter<K>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -87,7 +104,7 @@ where
                 .zip(rhs_arr.values_iter())
                 .map(|(lhs_val, rhs_val)| op(lhs_val, rhs_val));
 
-            let array = K::array_from_values_iter(element_iter);
+            let array: V::Array = element_iter.collect_arr();
             array.with_validity_typed(validity)
         });
     ChunkedArray::from_chunk_iter(lhs.name(), iter)
@@ -102,10 +119,9 @@ pub fn try_binary_elementwise_values<T, U, V, F, K, E>(
 where
     T: PolarsDataType,
     U: PolarsDataType,
-    V: PolarsNumericType,
+    V: PolarsDataType,
     F: for<'a> FnMut(T::Physical<'a>, U::Physical<'a>) -> Result<K, E>,
-    K: ArrayFromElementIter<ArrayType = V::Array>,
-    E: Error,
+    V::Array: ArrayFromIter<K>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -119,7 +135,7 @@ where
                 .zip(rhs_arr.values_iter())
                 .map(|(lhs_val, rhs_val)| op(lhs_val, rhs_val));
 
-            let array = K::try_array_from_values_iter(element_iter)?;
+            let array: V::Array = element_iter.try_collect_arr()?;
             Ok(array.with_validity_typed(validity))
         });
     ChunkedArray::try_from_chunk_iter(lhs.name(), iter)

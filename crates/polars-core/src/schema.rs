@@ -129,7 +129,7 @@ impl Schema {
     ) -> PolarsResult<Self> {
         polars_ensure!(
             index <= self.len(),
-            ComputeError:
+            OutOfBounds:
                 "index {} is out of bounds for schema with length {} (the max index allowed is self.len())",
                     index,
                     self.len()
@@ -167,7 +167,7 @@ impl Schema {
     ) -> PolarsResult<Option<DataType>> {
         polars_ensure!(
             index <= self.len(),
-            ComputeError:
+            OutOfBounds:
                 "index {} is out of bounds for schema with length {} (the max index allowed is self.len())",
                     index,
                     self.len()

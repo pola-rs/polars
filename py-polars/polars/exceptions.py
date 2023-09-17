@@ -6,6 +6,7 @@ try:
         DuplicateError,
         InvalidOperationError,
         NoDataError,
+        OutOfBoundsError,
         PolarsPanicError,
         SchemaError,
         SchemaFieldNotFoundError,
@@ -35,6 +36,12 @@ except ImportError:
     class NoDataError(Exception):  # type: ignore[no-redef]
         """Exception raised when an operation can not be performed on an empty data structure."""  # noqa: W505
 
+    class OutOfBoundsError(Exception):  # type: ignore[no-redef]
+        """Exception raised when the given index is out of bounds."""
+
+    class PolarsPanicError(Exception):  # type: ignore[no-redef]
+        """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
+
     class SchemaError(Exception):  # type: ignore[no-redef]
         """Exception raised when trying to combine data structures with mismatched schemas."""  # noqa: W505
 
@@ -49,9 +56,6 @@ except ImportError:
 
     class StructFieldNotFoundError(Exception):  # type: ignore[no-redef]
         """Exception raised when a specified schema field is not found."""
-
-    class PolarsPanicError(Exception):  # type: ignore[no-redef]
-        """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
 
 
 class ChronoFormatWarning(Warning):
@@ -103,6 +107,7 @@ __all__ = [
     "InvalidOperationError",
     "NoDataError",
     "NoRowsReturnedError",
+    "OutOfBoundsError",
     "PolarsInefficientMapWarning",
     "PolarsPanicError",
     "RowsError",

@@ -148,12 +148,12 @@ If you are stuck or unsure about your solution, feel free to open a draft pull r
 
 ## Contributing to documentation
 
-The most important components of Polars documentation are the [user guide](https://pola-rs.github.io/polars-book/user-guide/), the API references, and the database of questions on [StackOverflow](https://stackoverflow.com/).
+The most important components of Polars documentation are the [user guide](https://pola-rs.github.io/polars/user-guide/), the API references, and the database of questions on [StackOverflow](https://stackoverflow.com/).
 
 ### User guide
 
-The user guide is maintained in the [polars-book](https://github.com/pola-rs/polars-book) repository.
-For contributing to the user guide, please refer to the [contributing guide](https://github.com/pola-rs/polars-book/blob/master/CONTRIBUTING.md) in that repository.
+The user guide is maintained in the `docs` folder.
+Further contributing information will be added shortly.
 
 ### API reference
 

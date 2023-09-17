@@ -18,7 +18,7 @@ class ExprBinaryNameSpace:
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
-    def contains(self, literal: bytes) -> Expr:
+    def contains(self, literal: bytes | Expr) -> Expr:
         r"""
         Check if binaries in Series contain a binary substring.
 
@@ -43,26 +43,26 @@ class ExprBinaryNameSpace:
         ...     {
         ...         "name": ["black", "yellow", "blue"],
         ...         "code": [b"\x00\x00\x00", b"\xff\xff\x00", b"\x00\x00\xff"],
+        ...         "lit": [b"\x00", b"\xff\x00", b"\xff\xff"],
         ...     }
         ... )
         >>> colors.select(
         ...     "name",
-        ...     pl.col("code").bin.encode("hex").alias("code_encoded_hex"),
-        ...     pl.col("code").bin.contains(b"\xff").alias("contains_ff"),
-        ...     pl.col("code").bin.starts_with(b"\xff").alias("starts_with_ff"),
-        ...     pl.col("code").bin.ends_with(b"\xff").alias("ends_with_ff"),
+        ...     pl.col("code").bin.contains(b"\xff").alias("contains_with_lit"),
+        ...     pl.col("code").bin.contains(pl.col("lit")).alias("contains_with_expr"),
         ... )
-        shape: (3, 5)
-        ┌────────┬──────────────────┬─────────────┬────────────────┬──────────────┐
-        │ name   ┆ code_encoded_hex ┆ contains_ff ┆ starts_with_ff ┆ ends_with_ff │
-        │ ---    ┆ ---              ┆ ---         ┆ ---            ┆ ---          │
-        │ str    ┆ str              ┆ bool        ┆ bool           ┆ bool         │
-        ╞════════╪══════════════════╪═════════════╪════════════════╪══════════════╡
-        │ black  ┆ 000000           ┆ false       ┆ false          ┆ false        │
-        │ yellow ┆ ffff00           ┆ true        ┆ true           ┆ false        │
-        │ blue   ┆ 0000ff           ┆ true        ┆ false          ┆ true         │
-        └────────┴──────────────────┴─────────────┴────────────────┴──────────────┘
+        shape: (3, 3)
+        ┌────────┬───────────────────┬────────────────────┐
+        │ name   ┆ contains_with_lit ┆ contains_with_expr │
+        │ ---    ┆ ---               ┆ ---                │
+        │ str    ┆ bool              ┆ bool               │
+        ╞════════╪═══════════════════╪════════════════════╡
+        │ black  ┆ false             ┆ true               │
+        │ yellow ┆ true              ┆ true               │
+        │ blue   ┆ true              ┆ false              │
+        └────────┴───────────────────┴────────────────────┘
         """
+        literal = parse_as_expression(literal, str_as_lit=True)
         return wrap_expr(self._pyexpr.bin_contains(literal))
 
     def ends_with(self, suffix: bytes | Expr) -> Expr:

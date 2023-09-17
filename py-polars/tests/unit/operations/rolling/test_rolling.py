@@ -48,7 +48,7 @@ def example_df() -> pl.DataFrame:
 def test_rolling_kernels_and_group_by_rolling(
     example_df: pl.DataFrame, period: str | timedelta, closed: ClosedInterval
 ) -> None:
-    out1 = example_df.select(
+    out1 = example_df.set_sorted("dt").select(
         [
             pl.col("dt"),
             # this differs from group_by aggregation because the empty window is
@@ -790,7 +790,7 @@ def test_rolling_empty_window_9406(time_unit: TimeUnit) -> None:
         "d",
         [datetime(2019, 1, x) for x in [16, 17, 18, 22, 23]],
         dtype=pl.Datetime(time_unit=time_unit, time_zone=None),
-    )
+    ).set_sorted()
     rawdata = pl.Series("x", [1.1, 1.2, 1.3, 1.15, 1.25], dtype=pl.Float64)
     rmin = pl.Series("x", [None, 1.1, 1.1, None, 1.15], dtype=pl.Float64)
     rmax = pl.Series("x", [None, 1.1, 1.2, None, 1.15], dtype=pl.Float64)
@@ -833,6 +833,20 @@ def test_rolling_weighted_quantile_10031() -> None:
         ),
         pl.Series([None, None, None, 3.5, 5.5]),
     )
+
+
+def test_rolling_aggregations_unsorted_raise_10991() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [datetime(2020, 1, 3), datetime(2020, 1, 1), datetime(2020, 1, 2)],
+            "val": [1, 2, 3],
+        }
+    )
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="argument in operation 'rolling_sum' is not explicitly sorted",
+    ):
+        df.with_columns(roll=pl.col("val").rolling_sum("2d", by="dt", closed="right"))
 
 
 def test_rolling() -> None:
@@ -914,7 +928,7 @@ def test_rolling_nanoseconds_11003() -> None:
             "val": [1, 2, 3],
         }
     )
-    df = df.with_columns(pl.col("dt").str.to_datetime(time_unit="ns"))
+    df = df.with_columns(pl.col("dt").str.to_datetime(time_unit="ns")).set_sorted("dt")
     result = df.with_columns(
         pl.col("val").rolling_sum("500ns", by="dt", closed="right")
     )

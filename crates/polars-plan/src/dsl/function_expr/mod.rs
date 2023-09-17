@@ -24,6 +24,8 @@ mod list;
 #[cfg(feature = "log")]
 mod log;
 mod nan;
+#[cfg(feature = "ffi_plugin")]
+mod plugin;
 mod pow;
 #[cfg(feature = "random")]
 mod random;
@@ -35,7 +37,7 @@ mod rolling;
 mod round;
 #[cfg(feature = "row_hash")]
 mod row_hash;
-mod schema;
+pub(super) mod schema;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
 mod shift_and_fill;
@@ -230,6 +232,11 @@ pub enum FunctionExpr {
         seed: Option<u64>,
     },
     SetSortedFlag(IsSorted),
+    #[cfg(feature = "ffi_plugin")]
+    FfiPlugin {
+        lib: Arc<str>,
+        symbol: Arc<str>,
+    },
 }
 
 impl Hash for FunctionExpr {
@@ -240,6 +247,8 @@ impl Hash for FunctionExpr {
             FunctionExpr::Boolean(f) => f.hash(state),
             #[cfg(feature = "strings")]
             FunctionExpr::StringExpr(f) => f.hash(state),
+            #[cfg(feature = "dtype-struct")]
+            FunctionExpr::StructExpr(f) => f.hash(state),
             #[cfg(feature = "random")]
             FunctionExpr::Random { method, .. } => method.hash(state),
             #[cfg(feature = "range")]
@@ -254,6 +263,11 @@ impl Hash for FunctionExpr {
             FunctionExpr::Interpolate(f) => f.hash(state),
             #[cfg(feature = "dtype-categorical")]
             FunctionExpr::Categorical(f) => f.hash(state),
+            #[cfg(feature = "ffi_plugin")]
+            FunctionExpr::FfiPlugin { lib, symbol } => {
+                lib.hash(state);
+                symbol.hash(state);
+            },
             _ => {},
         }
     }
@@ -365,6 +379,8 @@ impl Display for FunctionExpr {
             #[cfg(feature = "random")]
             Random { method, .. } => method.into(),
             SetSortedFlag(_) => "set_sorted",
+            #[cfg(feature = "ffi_plugin")]
+            FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
         };
         write!(f, "{s}")
     }
@@ -636,6 +652,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "random")]
             Random { method, seed } => map!(random::random, method, seed),
             SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
+            #[cfg(feature = "ffi_plugin")]
+            FfiPlugin { lib, symbol, .. } => unsafe {
+                map_as_slice!(plugin::call_plugin, lib.as_ref(), symbol.as_ref())
+            },
         }
     }
 }
@@ -680,6 +700,12 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Strptime(dtype, options) => {
                 map_as_slice!(strings::strptime, dtype.clone(), &options)
             },
+            Split => {
+                map_as_slice!(strings::split)
+            },
+            SplitInclusive => {
+                map_as_slice!(strings::split_inclusive)
+            },
             #[cfg(feature = "concat_str")]
             ConcatVertical(delimiter) => map!(strings::concat, &delimiter),
             #[cfg(feature = "concat_str")]
@@ -714,8 +740,8 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: BinaryFunction) -> Self {
         use BinaryFunction::*;
         match func {
-            Contains { pat, literal } => {
-                map!(binary::contains, &pat, literal)
+            Contains => {
+                map_as_slice!(binary::contains)
             },
             EndsWith => {
                 map_as_slice!(binary::ends_with)

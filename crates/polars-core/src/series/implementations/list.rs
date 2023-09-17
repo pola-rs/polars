@@ -196,6 +196,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     #[cfg(feature = "group_by_list")]
+    #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
         if !self.inner_dtype().is_numeric() {
             polars_bail!(opq = unique, self.dtype());
@@ -212,6 +213,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     #[cfg(feature = "group_by_list")]
+    #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
         if !self.inner_dtype().is_numeric() {
             polars_bail!(opq = n_unique, self.dtype());
@@ -229,6 +231,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     #[cfg(feature = "group_by_list")]
+    #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         if !self.inner_dtype().is_numeric() {
             polars_bail!(opq = arg_unique, self.dtype());

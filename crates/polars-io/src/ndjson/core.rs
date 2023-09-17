@@ -10,7 +10,6 @@ use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::POOL;
 use rayon::prelude::*;
 
-use crate::csv::utils::*;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::ndjson::buffer::*;
 use crate::prelude::*;

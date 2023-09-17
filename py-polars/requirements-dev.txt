@@ -36,6 +36,9 @@ XlsxWriter
 deltalake == 0.10.1
 # Dataframe interchange protocol
 dataframe-api-compat >= 0.1.6
+# Other
+matplotlib
+gevent
 
 # -------
 # TOOLING

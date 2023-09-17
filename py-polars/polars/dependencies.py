@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Hashable, cast
 _DATAFRAME_API_COMPAT_AVAILABLE = True
 _DELTALAKE_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
+_GEVENT_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
 _NUMPY_AVAILABLE = True
 _PANDAS_AVAILABLE = True
@@ -155,6 +156,7 @@ if TYPE_CHECKING:
     import dataframe_api_compat
     import deltalake
     import fsspec
+    import gevent
     import hypothesis
     import numpy
     import pandas
@@ -189,6 +191,7 @@ else:
         if sys.version_info >= (3, 9)
         else _lazy_import("backports.zoneinfo")
     )
+    gevent, _GEVENT_AVAILABLE = _lazy_import("gevent")
 
 
 @lru_cache(maxsize=None)
@@ -228,6 +231,7 @@ __all__ = [
     "dataframe_api_compat",
     "deltalake",
     "fsspec",
+    "gevent",
     "numpy",
     "pandas",
     "pydantic",
@@ -242,6 +246,7 @@ __all__ = [
     # exported flags/guards
     "_DELTALAKE_AVAILABLE",
     "_FSSPEC_AVAILABLE",
+    "_GEVENT_AVAILABLE",
     "_HYPOTHESIS_AVAILABLE",
     "_NUMPY_AVAILABLE",
     "_PANDAS_AVAILABLE",

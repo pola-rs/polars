@@ -673,7 +673,6 @@ where
 }
 
 #[allow(clippy::type_complexity)]
-#[cfg(feature = "zip_with")]
 pub fn align_chunks_ternary<'a, A, B, C>(
     a: &'a ChunkedArray<A>,
     b: &'a ChunkedArray<B>,

@@ -12,12 +12,14 @@ description = "Lazy query engine for the Polars DataFrame library"
 doctest = false
 
 [dependencies]
-polars-arrow = { version = "0.32.0", path = "../polars-arrow" }
-polars-core = { version = "0.32.0", path = "../polars-core", features = ["lazy", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.32.0", path = "../polars-io", features = ["lazy", "csv"], default-features = false }
-polars-ops = { version = "0.32.0", path = "../polars-ops", default-features = false }
-polars-time = { version = "0.32.0", path = "../polars-time", optional = true }
-polars-utils = { version = "0.32.0", path = "../polars-utils" }
+libloading = { version = "0.8.0", optional = true }
+polars-arrow = { workspace = true }
+polars-core = { workspace = true, features = ["lazy", "zip_with", "random"], default-features = false }
+polars-ffi = { workspace = true, optional = true }
+polars-io = { workspace = true, features = ["lazy"], default-features = false }
+polars-ops = { workspace = true, default-features = false }
+polars-time = { workspace = true, optional = true }
+polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
@@ -40,9 +42,6 @@ version_check = { workspace = true }
 # debugging utility
 debugging = []
 python = ["dep:pyo3", "ciborium"]
-# make sure we don't compile unneeded things even though
-# this dependency gets activated
-compile = []
 serde = [
   "dep:serde",
   "polars-core/serde-lazy",
@@ -50,7 +49,6 @@ serde = [
   "polars-io/serde",
   "polars-ops/serde",
 ]
-default = ["compile"]
 streaming = []
 parquet = ["polars-core/parquet", "polars-io/parquet"]
 async = ["polars-io/async"]
@@ -92,8 +90,8 @@ approx_unique = ["polars-ops/approx_unique"]
 is_in = ["polars-ops/is_in"]
 repeat_by = ["polars-core/repeat_by"]
 round_series = ["polars-core/round_series"]
-is_first = ["polars-core/is_first", "polars-ops/is_first"]
-is_last = ["polars-core/is_last", "polars-ops/is_last"]
+is_first_distinct = ["polars-core/is_first_distinct", "polars-ops/is_first_distinct"]
+is_last_distinct = ["polars-core/is_last_distinct", "polars-ops/is_last_distinct"]
 is_unique = ["polars-ops/is_unique"]
 cross_join = ["polars-core/cross_join"]
 asof_join = ["polars-core/asof_join", "polars-time", "polars-ops/asof_join"]
@@ -140,8 +138,9 @@ list_any_all = ["polars-ops/list_any_all"]
 cutqcut = ["polars-ops/cutqcut"]
 rle = ["polars-ops/rle"]
 extract_groups = ["regex", "dtype-struct", "polars-ops/extract_groups"]
+ffi_plugin = ["libloading", "polars-ffi"]
 
-bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
+bigidx = ["polars-core/bigidx"]
 
 panic_on_schema = []
 

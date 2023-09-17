@@ -3,9 +3,14 @@ use arrow::bitmap::Bitmap;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::{ObjectArray, ObjectValueIter};
+use crate::datatypes::static_array_collect::ArrayFromIterDtype;
 use crate::prelude::*;
 
-pub trait StaticArray: Array {
+pub trait StaticArray:
+    Array
+    + for<'a> ArrayFromIterDtype<Self::ValueT<'a>>
+    + for<'a> ArrayFromIterDtype<Option<Self::ValueT<'a>>>
+{
     type ValueT<'a>
     where
         Self: 'a;
@@ -55,6 +60,10 @@ pub trait StaticArray: Array {
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self;
 }
 
+pub trait ParameterFreeDtypeStaticArray: StaticArray {
+    fn get_dtype() -> DataType;
+}
+
 impl<T: NumericNative> StaticArray for PrimitiveArray<T> {
     type ValueT<'a> = T;
     type ValueIterT<'a> = std::iter::Copied<std::slice::Iter<'a, T>>;
@@ -74,6 +83,12 @@ impl<T: NumericNative> StaticArray for PrimitiveArray<T> {
 
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
+    }
+}
+
+impl<T: NumericNative> ParameterFreeDtypeStaticArray for PrimitiveArray<T> {
+    fn get_dtype() -> DataType {
+        T::PolarsType::get_dtype()
     }
 }
 
@@ -99,6 +114,12 @@ impl StaticArray for BooleanArray {
     }
 }
 
+impl ParameterFreeDtypeStaticArray for BooleanArray {
+    fn get_dtype() -> DataType {
+        DataType::Boolean
+    }
+}
+
 impl StaticArray for Utf8Array<i64> {
     type ValueT<'a> = &'a str;
     type ValueIterT<'a> = Utf8ValuesIter<'a, i64>;
@@ -121,6 +142,12 @@ impl StaticArray for Utf8Array<i64> {
     }
 }
 
+impl ParameterFreeDtypeStaticArray for Utf8Array<i64> {
+    fn get_dtype() -> DataType {
+        DataType::Utf8
+    }
+}
+
 impl StaticArray for BinaryArray<i64> {
     type ValueT<'a> = &'a [u8];
     type ValueIterT<'a> = BinaryValueIter<'a, i64>;
@@ -140,6 +167,12 @@ impl StaticArray for BinaryArray<i64> {
 
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
+    }
+}
+
+impl ParameterFreeDtypeStaticArray for BinaryArray<i64> {
+    fn get_dtype() -> DataType {
+        DataType::Binary
     }
 }
 
