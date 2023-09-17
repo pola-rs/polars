@@ -9,10 +9,10 @@ repository = { workspace = true }
 description = "Core of the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { version = "0.32.0", path = "../polars-arrow", features = ["compute"] }
-polars-error = { version = "0.32.0", path = "../polars-error" }
-polars-row = { version = "0.32.0", path = "../polars-row" }
-polars-utils = { version = "0.32.0", path = "../polars-utils" }
+polars-arrow = { workspace = true, features = ["compute"] }
+polars-error = { workspace = true }
+polars-row = { workspace = true }
+polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
@@ -85,8 +85,8 @@ checked_arithmetic = []
 repeat_by = []
 is_first_distinct = []
 is_last_distinct = []
-asof_join = []
-cross_join = []
+asof_join = ["algorithm_join"]
+cross_join = ["algorithm_join"]
 dot_product = []
 concat_str = []
 row_hash = []
@@ -99,7 +99,7 @@ group_by_list = []
 cum_agg = []
 # rolling window functions
 rolling_window = []
-rank = []
+rank = ["rand"]
 diff = []
 pct_change = ["diff"]
 moment = []
@@ -111,7 +111,7 @@ dataframe_arithmetic = []
 product = []
 unique_counts = []
 partition_by = []
-semi_anti_join = []
+semi_anti_join = ["algorithm_join"]
 chunked_ids = []
 describe = []
 timezones = ["chrono-tz", "arrow/chrono-tz", "polars-arrow/timezones"]
@@ -134,7 +134,7 @@ dtype-struct = []
 parquet = ["arrow/io_parquet"]
 
 # scale to terabytes?
-bigidx = ["polars-arrow/bigidx"]
+bigidx = ["polars-arrow/bigidx", "polars-utils/bigidx"]
 python = []
 
 serde = ["dep:serde", "smartstring/serde", "bitflags/serde"]

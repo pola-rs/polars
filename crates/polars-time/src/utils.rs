@@ -53,7 +53,8 @@ pub(crate) fn localize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> Polars
         TimeUnit::Nanoseconds => {
             Ok(
                 localize_datetime(timestamp_ns_to_datetime(timestamp), &tz, "raise")?
-                    .timestamp_nanos(),
+                    .timestamp_nanos_opt()
+                    .unwrap(),
             )
         },
         TimeUnit::Microseconds => {
@@ -74,9 +75,9 @@ pub(crate) fn localize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> Polars
 #[cfg(feature = "timezones")]
 pub(crate) fn unlocalize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> i64 {
     match tu {
-        TimeUnit::Nanoseconds => {
-            unlocalize_datetime(timestamp_ns_to_datetime(timestamp), &tz).timestamp_nanos()
-        },
+        TimeUnit::Nanoseconds => unlocalize_datetime(timestamp_ns_to_datetime(timestamp), &tz)
+            .timestamp_nanos_opt()
+            .unwrap(),
         TimeUnit::Microseconds => {
             unlocalize_datetime(timestamp_us_to_datetime(timestamp), &tz).timestamp_micros()
         },

@@ -18,8 +18,7 @@ use crate::parquet::mmap::mmap_columns;
 use crate::parquet::predicates::read_this_row_group;
 use crate::parquet::{mmap, ParallelStrategy};
 use crate::predicates::{apply_predicate, arrow_schema_to_empty_df, PhysicalIoExpr};
-use crate::prelude::utils::get_reader_bytes;
-use crate::utils::apply_projection;
+use crate::utils::{apply_projection, get_reader_bytes};
 use crate::RowCount;
 
 fn column_idx_to_series(

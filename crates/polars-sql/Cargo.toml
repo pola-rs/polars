@@ -9,10 +9,10 @@ repository = { workspace = true }
 description = "SQL transpiler for Polars. Converts SQL to Polars logical plans"
 
 [dependencies]
-polars-arrow = { version = "0.32.0", path = "../polars-arrow", features = ["like"] }
-polars-core = { version = "0.32.0", path = "../polars-core", features = [] }
-polars-lazy = { version = "0.32.0", path = "../polars-lazy", features = ["compile", "strings", "cross_join", "trigonometry", "abs", "round_series", "log", "regex", "is_in", "meta", "cum_agg"] }
-polars-plan = { version = "0.32.0", path = "../polars-plan", features = ["compile"] }
+polars-arrow = { workspace = true, features = ["like"] }
+polars-core = { workspace = true }
+polars-lazy = { workspace = true, features = ["strings", "cross_join", "trigonometry", "abs", "round_series", "log", "regex", "is_in", "meta", "cum_agg"] }
+polars-plan = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

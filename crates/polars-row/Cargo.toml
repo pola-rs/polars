@@ -9,7 +9,7 @@ repository = { workspace = true }
 description = "Row encodings for the Polars DataFrame library"
 
 [dependencies]
-polars-error = { version = "0.32.0", path = "../polars-error" }
-polars-utils = { version = "0.32.0", path = "../polars-utils" }
+polars-error = { workspace = true }
+polars-utils = { workspace = true }
 
 arrow = { workspace = true }

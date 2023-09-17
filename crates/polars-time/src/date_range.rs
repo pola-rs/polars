@@ -24,7 +24,10 @@ pub fn date_range(
     tz: Option<TimeZone>,
 ) -> PolarsResult<DatetimeChunked> {
     let (start, end) = match tu {
-        TimeUnit::Nanoseconds => (start.timestamp_nanos(), end.timestamp_nanos()),
+        TimeUnit::Nanoseconds => (
+            start.timestamp_nanos_opt().unwrap(),
+            end.timestamp_nanos_opt().unwrap(),
+        ),
         TimeUnit::Microseconds => (start.timestamp_micros(), end.timestamp_micros()),
         TimeUnit::Milliseconds => (start.timestamp_millis(), end.timestamp_millis()),
     };

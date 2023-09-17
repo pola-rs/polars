@@ -6,7 +6,7 @@ use hashbrown::hash_map::{Entry, RawEntryMut};
 use polars_arrow::trusted_len::TrustedLenPush;
 
 use crate::datatypes::PlHashMap;
-use crate::frame::group_by::hashing::HASHMAP_INIT_SIZE;
+use crate::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::{using_string_cache, StringCache, POOL};
 
