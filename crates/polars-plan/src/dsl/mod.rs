@@ -17,7 +17,6 @@ mod expr;
 mod expr_dyn_fn;
 mod from;
 pub(crate) mod function_expr;
-#[cfg(feature = "compile")]
 pub mod functions;
 mod list;
 #[cfg(feature = "meta")]

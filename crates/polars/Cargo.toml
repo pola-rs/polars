@@ -12,9 +12,9 @@ description = "DataFrame library based on Apache Arrow"
 
 [dependencies]
 polars-algo = { workspace = true, optional = true }
-polars-core = { workspace = true, features = ["docs"], default-features = false }
+polars-core = { workspace = true }
 polars-io = { workspace = true, optional = true }
-polars-lazy = { workspace = true, features = [], default-features = false, optional = true }
+polars-lazy = { workspace = true, default-features = false, optional = true }
 polars-ops = { workspace = true }
 polars-sql = { workspace = true, optional = true }
 polars-time = { workspace = true, optional = true }
