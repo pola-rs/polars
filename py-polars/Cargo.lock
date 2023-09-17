@@ -1392,7 +1392,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "getrandom",
  "polars-core",
@@ -1406,7 +1406,7 @@ dependencies = [
 
 [[package]]
 name = "polars-algo"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "polars-core",
  "polars-lazy",
@@ -1415,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "arrow2",
  "atoi",
@@ -1433,7 +1433,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1466,7 +1466,7 @@ dependencies = [
 
 [[package]]
 name = "polars-error"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "arrow2",
  "regex",
@@ -1475,7 +1475,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ffi"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "arrow2",
  "polars-core",
@@ -1483,7 +1483,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1515,7 +1515,7 @@ dependencies = [
 
 [[package]]
 name = "polars-json"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1531,7 +1531,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "ahash",
  "bitflags 2.4.0",
@@ -1554,7 +1554,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "argminmax",
  "arrow2",
@@ -1579,7 +1579,7 @@ dependencies = [
 
 [[package]]
 name = "polars-pipe"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-queue",
@@ -1600,7 +1600,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1627,7 +1627,7 @@ dependencies = [
 
 [[package]]
 name = "polars-row"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "arrow2",
  "polars-error",
@@ -1636,7 +1636,7 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -1649,7 +1649,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "arrow2",
  "atoi",
@@ -1668,7 +1668,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.33.0"
+version = "0.33.2"
 dependencies = [
  "ahash",
  "bytemuck",

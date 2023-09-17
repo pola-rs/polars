@@ -54,7 +54,7 @@ serde = ["polars-core/serde"]
 serde-lazy = [
   "polars-core/serde-lazy",
   "polars-lazy?/serde",
-  "polars-time/serde",
+  "polars-time?/serde",
   "polars-io/serde",
   "polars-ops/serde",
 ]
@@ -239,7 +239,7 @@ dtype-date = [
   "polars-core/dtype-date",
   "polars-lazy?/dtype-date",
   "polars-io/dtype-date",
-  "polars-time/dtype-date",
+  "polars-time?/dtype-date",
   "polars-core/dtype-date",
   "polars-ops/dtype-date",
 ]
@@ -247,17 +247,17 @@ dtype-datetime = [
   "polars-core/dtype-datetime",
   "polars-lazy?/dtype-datetime",
   "polars-io/dtype-datetime",
-  "polars-time/dtype-datetime",
+  "polars-time?/dtype-datetime",
   "polars-ops/dtype-datetime",
 ]
 dtype-duration = [
   "polars-core/dtype-duration",
   "polars-lazy?/dtype-duration",
-  "polars-time/dtype-duration",
+  "polars-time?/dtype-duration",
   "polars-core/dtype-duration",
   "polars-ops/dtype-duration",
 ]
-dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time", "polars-time/dtype-time", "polars-ops/dtype-time"]
+dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time", "polars-time?/dtype-time", "polars-ops/dtype-time"]
 dtype-array = [
   "polars-core/dtype-array",
   "polars-lazy?/dtype-array",
