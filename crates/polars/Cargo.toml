@@ -58,7 +58,7 @@ serde-lazy = [
   "polars-io/serde",
   "polars-ops/serde",
 ]
-parquet = ["polars-io", "polars-core/parquet", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql/parquet"]
+parquet = ["polars-io", "polars-core/parquet", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql?/parquet"]
 async = ["polars-lazy?/async"]
 cloud = ["polars-lazy?/cloud", "polars-io/cloud"]
 cloud_write = ["cloud", "polars-lazy?/cloud_write"]
@@ -76,10 +76,10 @@ strings = ["polars-core/strings", "polars-lazy?/strings", "polars-ops/strings"]
 object = ["polars-core/object", "polars-lazy?/object", "polars-io/object"]
 
 # support for arrows json parsing
-json = ["polars-io", "polars-io/json", "polars-lazy?/json", "polars-sql/json", "dtype-struct"]
+json = ["polars-io", "polars-io/json", "polars-lazy?/json", "polars-sql?/json", "dtype-struct"]
 
 # support for arrows ipc file parsing
-ipc = ["polars-io", "polars-io/ipc", "polars-lazy?/ipc", "polars-sql/ipc"]
+ipc = ["polars-io", "polars-io/ipc", "polars-lazy?/ipc", "polars-sql?/ipc"]
 
 # support for arrows streaming ipc file parsing
 ipc_streaming = ["polars-io", "polars-io/ipc_streaming", "polars-lazy?/ipc"]
@@ -88,7 +88,7 @@ ipc_streaming = ["polars-io", "polars-io/ipc_streaming", "polars-lazy?/ipc"]
 avro = ["polars-io", "polars-io/avro"]
 
 # support for arrows csv file parsing
-csv = ["polars-io", "polars-io/csv", "polars-lazy?/csv", "polars-sql/csv"]
+csv = ["polars-io", "polars-io/csv", "polars-lazy?/csv", "polars-sql?/csv"]
 
 # slower builds
 performant = [
