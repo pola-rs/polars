@@ -1648,7 +1648,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         polars.set_streaming_chunk_size : Set the size of streaming batches.
         profile : Collect the LazyFrame and time each node in the computation graph.
 
-
         Parameters
         ----------
         type_coercion

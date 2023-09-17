@@ -364,6 +364,12 @@ class Config(contextlib.ContextDecorator):
         fmt : {"mixed", "full"}
             How to format floating point numbers
 
+        Examples
+        --------
+        >>> with pl.Config(set_fmt_float="full"):
+            s = pl.Series([1.2304980958725870923])
+            print(s)
+
         """
         _set_float_fmt(fmt="mixed" if fmt is None else fmt)
         return cls
