@@ -39,7 +39,7 @@ impl PolarsTruncate for DatetimeChunked {
         let out = match (every.len(), ambiguous.len()) {
             (1, 1) => match (every.get(0), ambiguous.get(0)) {
                 (Some(every), Some(ambiguous)) => {
-                    let every = Duration::parse(&every);
+                    let every = Duration::parse(every);
                     let w = Window::new(every, every, offset);
                     self.0
                         .try_apply(|timestamp| func(&w, timestamp, tz, ambiguous))
@@ -48,7 +48,7 @@ impl PolarsTruncate for DatetimeChunked {
             },
             (1, _) => {
                 if let Some(every) = every.get(0) {
-                    let every = Duration::parse(&every);
+                    let every = Duration::parse(every);
                     let w = Window::new(every, every, offset);
                     try_binary_elementwise_values(
                         self,
@@ -64,9 +64,9 @@ impl PolarsTruncate for DatetimeChunked {
                     try_binary_elementwise(self, every, |opt_timestamp, opt_every| {
                         match (opt_timestamp, opt_every) {
                             (Some(timestamp), Some(every)) => {
-                                let every = Duration::parse(&every);
+                                let every = Duration::parse(every);
                                 let w = Window::new(every, every, offset);
-                                func(&w, timestamp, tz, ambiguous).map(|ok| Some(ok))
+                                func(&w, timestamp, tz, ambiguous).map(Some)
                             },
                             _ => Ok(None),
                         }
@@ -98,7 +98,7 @@ impl PolarsTruncate for DateChunked {
             match every.len() {
                 1 => {
                     if let Some(every) = every.get(0) {
-                        let every = Duration::parse(&every);
+                        let every = Duration::parse(every);
                         let w = Window::new(every, every, offset);
                         self.try_apply(|t| {
                             const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
