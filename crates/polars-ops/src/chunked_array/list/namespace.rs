@@ -128,8 +128,9 @@ pub trait ListNameSpaceImpl: AsList {
             Utf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size() + ca.len());
         // SAFETY: unstable series never lives longer than the iterator.
         unsafe {
-            ca.amortized_iter().zip(separator.into_iter()).for_each(
-                |(opt_s, opt_sep)| match opt_sep {
+            ca.amortized_iter()
+                .zip(separator)
+                .for_each(|(opt_s, opt_sep)| match opt_sep {
                     Some(separator) => {
                         let opt_val = opt_s.map(|s| {
                             // make sure that we don't write values of previous iteration
@@ -148,8 +149,7 @@ pub trait ListNameSpaceImpl: AsList {
                         builder.append_option(opt_val)
                     },
                     _ => builder.append_null(),
-                },
-            )
+                })
         }
         Ok(builder.finish())
     }
