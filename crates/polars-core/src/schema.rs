@@ -48,11 +48,19 @@ where
             #[cfg(feature = "dtype-decimal")]
             let fld = match fld.dtype {
                 DataType::Decimal(_, _) => {
-                    if crate::config::decimal_is_active() {
-                        fld
-                    } else {
-                        let mut fld = fld.clone();
-                        fld.coerce(DataType::Float64);
+                    #[cfg(feature = "python")]
+                    {
+                        if crate::config::decimal_is_active() {
+                            fld
+                        } else {
+                            let mut fld = fld.clone();
+                            fld.coerce(DataType::Float64);
+                            fld
+                        }
+                    }
+
+                    #[cfg(not(feature = "python"))]
+                    {
                         fld
                     }
                 },
