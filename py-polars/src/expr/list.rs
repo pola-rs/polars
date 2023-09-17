@@ -49,8 +49,8 @@ impl PyExpr {
         self.inner.clone().list().get(index.inner).into()
     }
 
-    fn list_join(&self, separator: &str) -> Self {
-        self.inner.clone().list().join(separator).into()
+    fn list_join(&self, separator: PyExpr) -> Self {
+        self.inner.clone().list().join(separator.inner).into()
     }
 
     fn list_lengths(&self) -> Self {

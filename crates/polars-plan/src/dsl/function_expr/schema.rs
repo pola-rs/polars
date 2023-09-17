@@ -113,6 +113,7 @@ impl FunctionExpr {
                     Any => mapper.with_dtype(DataType::Boolean),
                     #[cfg(feature = "list_any_all")]
                     All => mapper.with_dtype(DataType::Boolean),
+                    Join => mapper.with_dtype(DataType::Utf8),
                 }
             },
             #[cfg(feature = "dtype-array")]

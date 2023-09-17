@@ -180,6 +180,14 @@ impl ListChunked {
         unsafe { self.amortized_iter().map(f).collect_ca(self.name()) }
     }
 
+    pub fn for_each_amortized<'a, F>(&'a self, f: F)
+    where
+        F: FnMut(Option<UnstableSeries<'a>>),
+    {
+        // SAFETY: unstable series never lives longer than the iterator.
+        unsafe { self.amortized_iter().for_each(f) }
+    }
+
     /// Apply a closure `F` elementwise.
     #[must_use]
     pub fn apply_amortized<'a, F>(&'a self, mut f: F) -> Self
