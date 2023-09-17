@@ -11,6 +11,7 @@ mod bounds;
 mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
+mod coerce;
 mod concat;
 mod correlation;
 mod cum;
@@ -142,6 +143,8 @@ pub enum FunctionExpr {
     ArrayExpr(ArrayFunction),
     #[cfg(feature = "dtype-struct")]
     StructExpr(StructFunction),
+    #[cfg(feature = "dtype-struct")]
+    AsStruct,
     #[cfg(feature = "top_k")]
     TopK {
         k: usize,
@@ -318,6 +321,8 @@ impl Display for FunctionExpr {
             ListExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]
             StructExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-struct")]
+            AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
             TopK { .. } => "top_k",
             Shift(_) => "shift",
@@ -570,6 +575,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     FieldByIndex(index) => map!(struct_::get_by_index, index),
                     FieldByName(name) => map!(struct_::get_by_name, name.clone()),
                 }
+            },
+            #[cfg(feature = "dtype-struct")]
+            AsStruct => {
+                map_as_slice!(coerce::as_struct)
             },
             #[cfg(feature = "top_k")]
             TopK { k, descending } => {

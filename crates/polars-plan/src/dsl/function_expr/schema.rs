@@ -131,6 +131,11 @@ impl FunctionExpr {
                 }
             },
             #[cfg(feature = "dtype-struct")]
+            AsStruct => Ok(Field::new(
+                fields[0].name(),
+                DataType::Struct(fields.to_vec()),
+            )),
+            #[cfg(feature = "dtype-struct")]
             StructExpr(s) => {
                 use polars_core::utils::slice_offsets;
                 use StructFunction::*;
