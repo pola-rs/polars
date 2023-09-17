@@ -273,9 +273,10 @@ def read_database(  # noqa: D417
         An instantiated connection (or cursor/client object) that the query can be
         executed against.
     batch_size
-        The number of rows to fetch each time as data is collected; if this option is
-        supported by the backend it will be passed to the underlying query execution
-        method (if the backend does not have such support it is ignored without error).
+        Enable batched data fetching and set the number of rows to fetch each time as
+        data is collected. If supported by the backend, it will be passed to the
+        underlying query execution method. If the backend does not support changing the
+        batch size, it is ignored without error.
     schema_overrides
         A dictionary mapping column names to dtypes, used to override the schema
         inferred from the query cursor or given by the incoming Arrow data (depending
