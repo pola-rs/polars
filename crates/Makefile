@@ -25,7 +25,7 @@ pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
 
 .PHONY: check-features
 check-features:  ## Run cargo check for feature flag combinations (warning: slow)
-	cargo hack check --each-feature --no-dev-deps
+	cargo hack check -p polars --each-feature --no-dev-deps
 
 .PHONY: miri
 miri:  ## Run miri

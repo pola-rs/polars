@@ -20,9 +20,10 @@ use polars_io::parquet::ParquetReader;
 use polars_io::RowCount;
 #[cfg(feature = "csv")]
 use polars_io::{
-    csv::utils::{get_reader_bytes, infer_file_schema, is_compressed},
+    csv::utils::{infer_file_schema, is_compressed},
     csv::CsvEncoding,
     csv::NullValues,
+    utils::get_reader_bytes,
 };
 
 use super::builder_functions::*;

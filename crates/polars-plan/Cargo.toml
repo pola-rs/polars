@@ -16,7 +16,7 @@ libloading = { version = "0.8.0", optional = true }
 polars-arrow = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"], default-features = false }
 polars-ffi = { workspace = true, optional = true }
-polars-io = { workspace = true, features = ["lazy", "csv"], default-features = false }
+polars-io = { workspace = true, features = ["lazy"], default-features = false }
 polars-ops = { workspace = true, default-features = false }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
@@ -140,7 +140,7 @@ rle = ["polars-ops/rle"]
 extract_groups = ["regex", "dtype-struct", "polars-ops/extract_groups"]
 ffi_plugin = ["libloading", "polars-ffi"]
 
-bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
+bigidx = ["polars-core/bigidx"]
 
 panic_on_schema = []
 
