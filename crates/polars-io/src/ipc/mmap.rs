@@ -67,6 +67,7 @@ impl ArrowReader for MMapChunkIter<'_> {
     }
 }
 
+#[cfg(feature = "ipc")]
 impl<R: MmapBytesReader> IpcReader<R> {
     pub(super) fn finish_memmapped(
         &mut self,

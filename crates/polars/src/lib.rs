@@ -408,8 +408,8 @@ pub mod prelude;
 pub mod sql;
 
 pub use polars_core::{
-    apply_method_all_arrow_series, chunked_array, datatypes, df, doc, error, frame, functions,
-    series, testing,
+    apply_method_all_arrow_series, chunked_array, datatypes, df, error, frame, functions, series,
+    testing,
 };
 #[cfg(feature = "dtype-categorical")]
 pub use polars_core::{enable_string_cache, using_string_cache};

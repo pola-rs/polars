@@ -107,6 +107,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         Ok(())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         let list = self.0.logical().agg_list(groups);
@@ -115,6 +116,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         list.into_series()
     }
 
+    #[cfg(feature = "algorithm_join")]
     unsafe fn zip_outer_join_column(
         &self,
         right_column: &Series,
@@ -300,14 +302,17 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.logical().has_validity()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
         self.0.unique().map(|ca| ca.into_series())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
         self.0.n_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.0.logical().arg_unique()
     }

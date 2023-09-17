@@ -9,15 +9,15 @@ repository = { workspace = true }
 description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { version = "0.32.0", path = "../polars-arrow" }
-polars-core = { version = "0.32.0", path = "../polars-core", features = ["lazy", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.32.0", path = "../polars-io", features = ["lazy", "csv"], default-features = false }
-polars-json = { version = "0.32.0", path = "../polars-json", optional = true }
-polars-ops = { version = "0.32.0", path = "../polars-ops", default-features = false }
-polars-pipe = { version = "0.32.0", path = "../polars-pipe", optional = true }
-polars-plan = { version = "0.32.0", path = "../polars-plan" }
-polars-time = { version = "0.32.0", path = "../polars-time", optional = true }
-polars-utils = { version = "0.32.0", path = "../polars-utils" }
+polars-arrow = { workspace = true }
+polars-core = { workspace = true, features = ["lazy", "zip_with", "random"], default-features = false }
+polars-io = { workspace = true, features = ["lazy"] }
+polars-json = { workspace = true, optional = true }
+polars-ops = { workspace = true }
+polars-pipe = { workspace = true, optional = true }
+polars-plan = { workspace = true }
+polars-time = { workspace = true, optional = true }
+polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 bitflags = { workspace = true }
@@ -35,37 +35,35 @@ version_check = { workspace = true }
 
 [features]
 nightly = ["polars-core/nightly", "polars-pipe/nightly", "polars-plan/nightly"]
-compile = ["polars-plan/compile"]
-streaming = ["chunked_ids", "polars-pipe/compile", "polars-plan/streaming"]
-default = ["compile"]
-parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe/parquet"]
+streaming = ["chunked_ids", "polars-pipe", "polars-plan/streaming"]
+parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe?/parquet"]
 async = [
   "polars-plan/async",
   "polars-io/cloud",
-  "polars-pipe/async",
+  "polars-pipe?/async",
   "streaming",
 ]
-cloud = ["async", "polars-pipe/cloud"]
+cloud = ["async", "polars-pipe?/cloud"]
 cloud_write = ["cloud"]
-ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe/ipc"]
+ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc"]
 json = ["polars-io/json", "polars-plan/json", "polars-json"]
-csv = ["polars-io/csv", "polars-plan/csv", "polars-pipe/csv"]
+csv = ["polars-io/csv", "polars-plan/csv", "polars-pipe?/csv"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time", "dtype-duration", "polars-plan/temporal"]
 # debugging purposes
 fmt = ["polars-core/fmt", "polars-plan/fmt"]
 strings = ["polars-plan/strings"]
 future = []
-dtype-u8 = ["polars-plan/dtype-u8", "polars-pipe/dtype-u8"]
-dtype-u16 = ["polars-plan/dtype-u16", "polars-pipe/dtype-u16"]
-dtype-i8 = ["polars-plan/dtype-i8", "polars-pipe/dtype-i8"]
-dtype-i16 = ["polars-plan/dtype-i16", "polars-pipe/dtype-i16"]
-dtype-decimal = ["polars-plan/dtype-decimal", "polars-pipe/dtype-decimal"]
+dtype-u8 = ["polars-plan/dtype-u8", "polars-pipe?/dtype-u8"]
+dtype-u16 = ["polars-plan/dtype-u16", "polars-pipe?/dtype-u16"]
+dtype-i8 = ["polars-plan/dtype-i8", "polars-pipe?/dtype-i8"]
+dtype-i16 = ["polars-plan/dtype-i16", "polars-pipe?/dtype-i16"]
+dtype-decimal = ["polars-plan/dtype-decimal", "polars-pipe?/dtype-decimal"]
 dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-plan/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
 dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "temporal"]
 dtype-time = ["polars-core/dtype-time", "temporal"]
-dtype-array = ["polars-plan/dtype-array", "polars-pipe/dtype-array", "polars-ops/dtype-array"]
-dtype-categorical = ["polars-plan/dtype-categorical", "polars-pipe/dtype-categorical"]
+dtype-array = ["polars-plan/dtype-array", "polars-pipe?/dtype-array", "polars-ops/dtype-array"]
+dtype-categorical = ["polars-plan/dtype-categorical", "polars-pipe?/dtype-categorical"]
 dtype-struct = ["polars-plan/dtype-struct"]
 object = ["polars-plan/object"]
 date_offset = ["polars-plan/date_offset"]
@@ -86,7 +84,7 @@ round_series = ["polars-plan/round_series", "polars-ops/round_series"]
 is_first_distinct = ["polars-plan/is_first_distinct"]
 is_last_distinct = ["polars-plan/is_last_distinct"]
 is_unique = ["polars-plan/is_unique"]
-cross_join = ["polars-plan/cross_join", "polars-pipe/cross_join", "polars-ops/cross_join"]
+cross_join = ["polars-plan/cross_join", "polars-pipe?/cross_join", "polars-ops/cross_join"]
 asof_join = ["polars-plan/asof_join", "polars-time"]
 concat_str = ["polars-plan/concat_str"]
 range = ["polars-plan/range"]
@@ -132,7 +130,7 @@ serde = [
   "polars-plan/serde",
   "polars-arrow/serde",
   "polars-core/serde-lazy",
-  "polars-time/serde",
+  "polars-time?/serde",
   "polars-io/serde",
   "polars-ops/serde",
 ]

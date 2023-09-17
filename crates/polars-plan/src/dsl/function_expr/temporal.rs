@@ -90,7 +90,7 @@ pub(super) fn datetime(
                     .map(|ndt| match time_unit {
                         TimeUnit::Milliseconds => ndt.timestamp_millis(),
                         TimeUnit::Microseconds => ndt.timestamp_micros(),
-                        TimeUnit::Nanoseconds => ndt.timestamp_nanos(),
+                        TimeUnit::Nanoseconds => ndt.timestamp_nanos_opt().unwrap(),
                     })
             } else {
                 None
