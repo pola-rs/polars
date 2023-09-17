@@ -45,7 +45,7 @@ pub fn get_float_fmt() -> FloatFmt {
 }
 
 pub fn get_float_precision() -> Option<usize> {
-    FLOAT_PRECISION.read().unwrap().clone()
+    *FLOAT_PRECISION.read().unwrap()
 }
 
 pub fn set_float_fmt(fmt: FloatFmt) {
@@ -727,14 +727,11 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
 
     let float_precision = get_float_precision();
 
-    match float_precision {
-        Some(precision) => {
-            if format!("{v:.precision$}", precision = precision).len() > 19 {
-                return write!(f, "{v:>width$.precision$e}", precision = precision);
-            }
-            return write!(f, "{v:>width$.precision$}", precision = precision);
-        },
-        _ => {},
+    if let Some(precision) = float_precision {
+        if format!("{v:.precision$}", precision = precision).len() > 19 {
+            return write!(f, "{v:>width$.precision$e}", precision = precision);
+        }
+        return write!(f, "{v:>width$.precision$}", precision = precision);
     }
 
     if matches!(get_float_fmt(), FloatFmt::Full) {
