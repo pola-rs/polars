@@ -40,6 +40,7 @@ use crate::chunked_array::ops::compare_inner::{
     IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner,
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
+#[cfg(feature = "chunked_ids")]
 use crate::chunked_array::ops::take::TakeChunked;
 use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]

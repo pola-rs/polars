@@ -213,9 +213,7 @@ impl DataFrame {
                 right_idx = slice_slice(right_idx, offset, len);
             }
             unsafe {
-                other.take_opt_iter_unchecked(
-                    right_idx.iter().map(|opt_i| opt_i.map(|i| i as usize)),
-                )
+                other.take_unchecked(&right_idx.iter().copied().collect_ca(""))
             }
         };
         let (df_left, df_right) = POOL.join(materialize_left, materialize_right);

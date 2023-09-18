@@ -5,6 +5,7 @@ use ahash::RandomState;
 
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ops::compare_inner::{IntoPartialEqInner, PartialEqInner};
+#[cfg(feature = "chunked_ids")]
 use crate::chunked_array::ops::take::TakeChunked;
 use crate::chunked_array::Settings;
 #[cfg(feature = "algorithm_group_by")]
