@@ -73,9 +73,8 @@ impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for 
     /// Gather values from ChunkedArray by index.
     unsafe fn take_unchecked(&self, indices: &I) -> Self {
         let targets: Vec<_> = self.downcast_iter().collect();
-        let inner = self.dtype().inner_dtype().unwrap_or(self.dtype());
         let arr = gather_idx_array_unchecked(
-            inner.clone(),
+            self.dtype().clone(),
             &targets,
             self.null_count() > 0,
             indices.as_ref(),
@@ -98,7 +97,7 @@ where
                 a.iter().flatten().all(|i| (*i as usize) < len)
             }
         });
-        polars_ensure!(all_valid, ComputeError: "invalid index in gather");
+        polars_ensure!(all_valid, ComputeError: "take indices are out of bounds");
 
         // SAFETY: we just checked the indices are valid.
         Ok(unsafe { self.take_unchecked(indices) })
@@ -110,12 +109,11 @@ impl<T: PolarsDataType> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
         let targets_have_nulls = self.null_count() > 0;
         let targets: Vec<_> = self.downcast_iter().collect();
-        let inner = self.dtype().inner_dtype().unwrap_or(self.dtype());
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
             if idx_arr.null_count() == 0 {
                 gather_idx_array_unchecked(
-                    inner.clone(),
+                    self.dtype().clone(),
                     &targets,
                     targets_have_nulls,
                     idx_arr.values(),
@@ -127,24 +125,24 @@ impl<T: PolarsDataType> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
                         idx_arr
                             .iter()
                             .map(|i| target.get_unchecked(*i? as usize))
-                            .collect_arr_with_dtype(inner.clone())
+                            .collect_arr_with_dtype(self.dtype().clone())
                     } else {
                         idx_arr
                             .iter()
                             .map(|i| Some(target.value_unchecked(*i? as usize)))
-                            .collect_arr_with_dtype(inner.clone())
+                            .collect_arr_with_dtype(self.dtype().clone())
                     }
                 } else {
                     if targets_have_nulls {
                         idx_arr
                             .iter()
                             .map(|i| target_get_unchecked(&targets, *i?))
-                            .collect_arr_with_dtype(inner.clone())
+                            .collect_arr_with_dtype(self.dtype().clone())
                     } else {
                         idx_arr
                             .iter()
                             .map(|i| Some(target_value_unchecked(&targets, *i?)))
-                            .collect_arr_with_dtype(inner.clone())
+                            .collect_arr_with_dtype(self.dtype().clone())
                     }
                 }
             }
