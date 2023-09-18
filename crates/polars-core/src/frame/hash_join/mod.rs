@@ -36,7 +36,6 @@ pub(crate) use zip_outer::*;
 
 pub use self::multiple_keys::private_left_join_multiple_keys;
 use crate::datatypes::PlHashMap;
-use crate::frame::group_by::hashing::HASHMAP_INIT_SIZE;
 pub use crate::frame::hash_join::multiple_keys::{
     _inner_join_multiple_keys, _left_join_multiple_keys, _outer_join_multiple_keys,
 };
@@ -46,7 +45,7 @@ pub use crate::frame::hash_join::multiple_keys::{
 };
 use crate::hashing::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_partition,
-    AsU64, BytesHash,
+    AsU64, BytesHash, HASHMAP_INIT_SIZE,
 };
 use crate::prelude::*;
 use crate::utils::{_set_partition_size, slice_slice, split_ca};
@@ -374,10 +373,12 @@ impl DataFrame {
             },
         );
 
-        let mut s = s_left
-            .to_physical_repr()
-            .zip_outer_join_column(&s_right.to_physical_repr(), opt_join_tuples);
-        s.rename(s_left.name());
+        let s = unsafe {
+            s_left
+                .to_physical_repr()
+                .zip_outer_join_column(&s_right.to_physical_repr(), opt_join_tuples)
+                .with_name(s_left.name())
+        };
         let s = match s_left.dtype() {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {

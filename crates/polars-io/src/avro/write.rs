@@ -6,7 +6,9 @@ pub use Compression as AvroCompression;
 
 use super::*;
 
-/// Write a DataFrame to Apache Avro format
+/// Write a [`DataFrame`] to [Apache Avro] format
+///
+/// [Apache Avro]: https://avro.apache.org
 ///
 /// # Example
 ///

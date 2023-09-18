@@ -7,8 +7,7 @@ use polars_core::with_match_physical_integer_polars_type;
 fn is_in_helper<'a, T>(ca: &'a ChunkedArray<T>, other: &Series) -> PolarsResult<BooleanChunked>
 where
     T: PolarsDataType,
-    ChunkedArray<T>: HasUnderlyingArray,
-    <<ChunkedArray<T> as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>: Hash + Eq + Copy,
+    T::Physical<'a>: Hash + Eq + Copy,
 {
     let mut set = PlHashSet::with_capacity(other.len());
 

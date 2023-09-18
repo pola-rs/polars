@@ -580,7 +580,9 @@ fn replace_selector_inner(
         },
         Selector::Add(lhs, rhs) => {
             replace_selector_inner(*lhs, members, scratch, schema, keys)?;
-            replace_selector_inner(*rhs, members, scratch, schema, keys)?;
+            let mut rhs_members: PlIndexSet<Expr> = Default::default();
+            replace_selector_inner(*rhs, &mut rhs_members, scratch, schema, keys)?;
+            members.extend(rhs_members)
         },
         Selector::Sub(lhs, rhs) => {
             // fill lhs

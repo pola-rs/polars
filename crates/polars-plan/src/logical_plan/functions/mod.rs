@@ -58,7 +58,8 @@ pub enum FunctionNode {
         columns: Arc<[Arc<str>]>,
     },
     FastProjection {
-        columns: Arc<[Arc<str>]>,
+        columns: Arc<[SmartString]>,
+        duplicate_check: bool,
     },
     DropNulls {
         subset: Arc<[Arc<str>]>,
@@ -98,7 +99,16 @@ impl PartialEq for FunctionNode {
     fn eq(&self, other: &Self) -> bool {
         use FunctionNode::*;
         match (self, other) {
-            (FastProjection { columns: l }, FastProjection { columns: r }) => l == r,
+            (
+                FastProjection {
+                    columns: l,
+                    duplicate_check: dl,
+                },
+                FastProjection {
+                    columns: r,
+                    duplicate_check: dr,
+                },
+            ) => l == r && dl == dr,
             (DropNulls { subset: l }, DropNulls { subset: r }) => l == r,
             (Rechunk, Rechunk) => true,
             (
@@ -172,7 +182,7 @@ impl FunctionNode {
                 .map(|schema| Cow::Owned(schema.clone()))
                 .unwrap_or_else(|| Cow::Borrowed(input_schema))),
             Pipeline { schema, .. } => Ok(Cow::Owned(schema.clone())),
-            FastProjection { columns } => {
+            FastProjection { columns, .. } => {
                 let schema = columns
                     .iter()
                     .map(|name| {
@@ -291,7 +301,16 @@ impl FunctionNode {
                 schema,
                 ..
             } => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
-            FastProjection { columns } => df.select(columns.as_ref()),
+            FastProjection {
+                columns,
+                duplicate_check,
+            } => {
+                if *duplicate_check {
+                    df._select_impl(columns.as_ref())
+                } else {
+                    df._select_impl_unchecked(columns.as_ref())
+                }
+            },
             DropNulls { subset } => df.drop_nulls(Some(subset.as_ref())),
             Rechunk => {
                 df.as_single_chunk_par();
@@ -346,7 +365,7 @@ impl Display for FunctionNode {
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
             #[cfg(feature = "python")]
             OpaquePython { .. } => write!(f, "python dataframe udf"),
-            FastProjection { columns } => {
+            FastProjection { columns, .. } => {
                 write!(f, "FAST_PROJECT: ")?;
                 let columns = columns.as_ref();
                 fmt_column_delimited(f, columns, "[", "]")

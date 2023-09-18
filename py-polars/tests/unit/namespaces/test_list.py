@@ -94,6 +94,19 @@ def test_list_concat() -> None:
     assert out_s[0].to_list() == [1, 2, 4, 1]
 
 
+def test_list_join() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [["ab", "c", "d"], ["e", "f"], ["g"], [], None],
+            "separator": ["&", None, "*", "_", "*"],
+        }
+    )
+    out = df.select(pl.col("a").list.join("-"))
+    assert out.to_dict(False) == {"a": ["ab-c-d", "e-f", "g", "", None]}
+    out = df.select(pl.col("a").list.join(pl.col("separator")))
+    assert out.to_dict(False) == {"a": ["ab&c&d", None, "g", "", None]}
+
+
 def test_list_arr_empty() -> None:
     df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []]})
 
@@ -450,8 +463,13 @@ def test_list_tail_underflow_9087() -> None:
 
 def test_list_count_match_boolean_nulls_9141() -> None:
     a = pl.DataFrame({"a": [[True, None, False]]})
+    assert a.select(pl.col("a").list.count_matches(True))["a"].to_list() == [1]
 
-    assert a.select(pl.col("a").list.count_match(True))["a"].to_list() == [1]
+
+def test_list_count_matches_boolean_nulls_9141() -> None:
+    a = pl.DataFrame({"a": [[True, None, False]]})
+
+    assert a.select(pl.col("a").list.count_matches(True))["a"].to_list() == [1]
 
 
 def test_list_set_operations() -> None:

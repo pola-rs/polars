@@ -3,17 +3,19 @@ use hashbrown::HashMap;
 use rayon::prelude::*;
 
 use super::*;
-use crate::frame::group_by::hashing::{populate_multiple_key_hashmap, HASHMAP_INIT_SIZE};
 use crate::frame::hash_join::{
     get_hash_tbl_threaded_join_mut_partitioned, get_hash_tbl_threaded_join_partitioned,
 };
-use crate::hashing::{df_rows_to_hashes_threaded_vertical, this_partition, IdBuildHasher, IdxHash};
+use crate::hashing::{
+    df_rows_to_hashes_threaded_vertical, populate_multiple_key_hashmap, this_partition,
+    IdBuildHasher, IdxHash, HASHMAP_INIT_SIZE,
+};
 use crate::prelude::*;
 use crate::utils::series::_to_physical_and_bit_repr;
 use crate::utils::{_set_partition_size, split_df};
 use crate::POOL;
 
-/// Compare the rows of two DataFrames
+/// Compare the rows of two [`DataFrame`]s
 pub(crate) unsafe fn compare_df_rows2(
     left: &DataFrame,
     right: &DataFrame,

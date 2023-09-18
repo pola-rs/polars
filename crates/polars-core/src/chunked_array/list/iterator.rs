@@ -96,7 +96,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
 unsafe impl<'a, I: Iterator<Item = Option<ArrayBox>>> TrustedLen for AmortizedListIter<'a, I> {}
 
 impl ListChunked {
-    /// This is an iterator over a ListChunked that save allocations.
+    /// This is an iterator over a [`ListChunked`] that save allocations.
     /// A Series is:
     ///     1. [`Arc<ChunkedArray>`]
     ///     ChunkedArray is:
@@ -173,15 +173,19 @@ impl ListChunked {
     where
         V: PolarsDataType,
         F: FnMut(Option<UnstableSeries<'a>>) -> Option<K> + Copy,
-        K: ArrayFromElementIter,
-        K::ArrayType: StaticallyMatchesPolarsType<V>,
+        V::Array: ArrayFromIter<Option<K>>,
     {
         // TODO! make an amortized iter that does not flatten
-
         // SAFETY: unstable series never lives longer than the iterator.
-        let element_iter = unsafe { self.amortized_iter().map(f) };
-        let array = K::array_from_iter(element_iter);
-        ChunkedArray::from_chunk_iter(self.name(), std::iter::once(array))
+        unsafe { self.amortized_iter().map(f).collect_ca(self.name()) }
+    }
+
+    pub fn for_each_amortized<'a, F>(&'a self, f: F)
+    where
+        F: FnMut(Option<UnstableSeries<'a>>),
+    {
+        // SAFETY: unstable series never lives longer than the iterator.
+        unsafe { self.amortized_iter().for_each(f) }
     }
 
     /// Apply a closure `F` elementwise.

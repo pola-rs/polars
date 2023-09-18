@@ -76,22 +76,62 @@ fn cast_rhs(
 pub trait ListNameSpaceImpl: AsList {
     /// In case the inner dtype [`DataType::Utf8`], the individual items will be joined into a
     /// single string separated by `separator`.
-    fn lst_join(&self, separator: &str) -> PolarsResult<Utf8Chunked> {
+    fn lst_join(&self, separator: &Utf8Chunked) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_list();
         match ca.inner_dtype() {
-            DataType::Utf8 => {
-                // used to amortize heap allocs
-                let mut buf = String::with_capacity(128);
+            DataType::Utf8 => match separator.len() {
+                1 => match separator.get(0) {
+                    Some(separator) => self.join_literal(separator),
+                    _ => Ok(Utf8Chunked::full_null(ca.name(), ca.len())),
+                },
+                _ => self.join_many(separator),
+            },
+            dt => polars_bail!(op = "`lst.join`", got = dt, expected = "Utf8"),
+        }
+    }
 
-                let mut builder = Utf8ChunkedBuilder::new(
-                    ca.name(),
-                    ca.len(),
-                    ca.get_values_size() + separator.len() * ca.len(),
-                );
+    fn join_literal(&self, separator: &str) -> PolarsResult<Utf8Chunked> {
+        let ca = self.as_list();
+        // used to amortize heap allocs
+        let mut buf = String::with_capacity(128);
+        let mut builder = Utf8ChunkedBuilder::new(
+            ca.name(),
+            ca.len(),
+            ca.get_values_size() + separator.len() * ca.len(),
+        );
 
-                // SAFETY: unstable series never lives longer than the iterator.
-                unsafe {
-                    ca.amortized_iter().for_each(|opt_s| {
+        ca.for_each_amortized(|opt_s| {
+            let opt_val = opt_s.map(|s| {
+                // make sure that we don't write values of previous iteration
+                buf.clear();
+                let ca = s.as_ref().utf8().unwrap();
+                let iter = ca.into_iter().map(|opt_v| opt_v.unwrap_or("null"));
+
+                for val in iter {
+                    buf.write_str(val).unwrap();
+                    buf.write_str(separator).unwrap();
+                }
+                // last value should not have a separator, so slice that off
+                // saturating sub because there might have been nothing written.
+                &buf[..buf.len().saturating_sub(separator.len())]
+            });
+            builder.append_option(opt_val)
+        });
+        Ok(builder.finish())
+    }
+
+    fn join_many(&self, separator: &Utf8Chunked) -> PolarsResult<Utf8Chunked> {
+        let ca = self.as_list();
+        // used to amortize heap allocs
+        let mut buf = String::with_capacity(128);
+        let mut builder =
+            Utf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size() + ca.len());
+        // SAFETY: unstable series never lives longer than the iterator.
+        unsafe {
+            ca.amortized_iter()
+                .zip(separator)
+                .for_each(|(opt_s, opt_sep)| match opt_sep {
+                    Some(separator) => {
                         let opt_val = opt_s.map(|s| {
                             // make sure that we don't write values of previous iteration
                             buf.clear();
@@ -107,12 +147,11 @@ pub trait ListNameSpaceImpl: AsList {
                             &buf[..buf.len().saturating_sub(separator.len())]
                         });
                         builder.append_option(opt_val)
-                    })
-                };
-                Ok(builder.finish())
-            },
-            dt => polars_bail!(op = "`lst.join`", got = dt, expected = "Utf8"),
+                    },
+                    _ => builder.append_null(),
+                })
         }
+        Ok(builder.finish())
     }
 
     fn lst_max(&self) -> Series {

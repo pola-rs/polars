@@ -72,8 +72,8 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
 
 impl<T, A> From<A> for ChunkedArray<T>
 where
-    T: PolarsDataType,
-    A: StaticallyMatchesPolarsType<T> + Array,
+    T: PolarsDataType<Array = A>,
+    A: Array,
 {
     fn from(arr: A) -> Self {
         Self::with_chunk("", arr)
@@ -86,7 +86,8 @@ where
 {
     pub fn with_chunk<A>(name: &str, arr: A) -> Self
     where
-        A: StaticallyMatchesPolarsType<T> + Array,
+        A: Array,
+        T: PolarsDataType<Array = A>,
     {
         unsafe { Self::from_chunks(name, vec![Box::new(arr)]) }
     }
@@ -94,7 +95,8 @@ where
     pub fn from_chunk_iter<I>(name: &str, iter: I) -> Self
     where
         I: IntoIterator,
-        <I as IntoIterator>::Item: StaticallyMatchesPolarsType<T> + Array,
+        T: PolarsDataType<Array = <I as IntoIterator>::Item>,
+        <I as IntoIterator>::Item: Array,
     {
         let chunks = iter
             .into_iter()
@@ -106,7 +108,8 @@ where
     pub fn try_from_chunk_iter<I, A, E>(name: &str, iter: I) -> Result<Self, E>
     where
         I: IntoIterator<Item = Result<A, E>>,
-        A: StaticallyMatchesPolarsType<T> + Array,
+        T: PolarsDataType<Array = A>,
+        A: Array,
     {
         let chunks: Result<_, _> = iter
             .into_iter()
@@ -115,7 +118,36 @@ where
         unsafe { Ok(Self::from_chunks(name, chunks?)) }
     }
 
-    /// Create a new ChunkedArray from existing chunks.
+    pub(crate) fn from_chunk_iter_and_field<I>(field: Arc<Field>, chunks: I) -> Self
+    where
+        I: IntoIterator,
+        T: PolarsDataType<Array = <I as IntoIterator>::Item>,
+        <I as IntoIterator>::Item: Array,
+    {
+        assert_eq!(
+            std::mem::discriminant(&T::get_dtype()),
+            std::mem::discriminant(&field.dtype)
+        );
+
+        let mut length = 0;
+        let chunks = chunks
+            .into_iter()
+            .map(|x| {
+                length += x.len();
+                Box::new(x) as Box<dyn Array>
+            })
+            .collect();
+
+        ChunkedArray {
+            field,
+            chunks,
+            phantom: PhantomData,
+            bit_settings: Default::default(),
+            length: length.try_into().unwrap(),
+        }
+    }
+
+    /// Create a new [`ChunkedArray`] from existing chunks.
     ///
     /// # Safety
     /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.

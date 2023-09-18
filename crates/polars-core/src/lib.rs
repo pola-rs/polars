@@ -13,8 +13,6 @@ pub mod chunked_array;
 pub mod cloud;
 pub mod config;
 pub mod datatypes;
-#[cfg(feature = "docs")]
-pub mod doc;
 pub mod error;
 pub mod export;
 pub mod fmt;

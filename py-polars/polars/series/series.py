@@ -35,7 +35,6 @@ from polars.datatypes import (
     Datetime,
     Decimal,
     Duration,
-    Float32,
     Float64,
     Int8,
     Int16,
@@ -287,7 +286,9 @@ class Series:
                 nan_to_null=nan_to_null,
             )
         elif _check_for_numpy(values) and isinstance(values, np.ndarray):
-            self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
+            self._s = numpy_to_pyseries(
+                name, values, strict=strict, nan_to_null=nan_to_null
+            )
             if values.dtype.type == np.datetime64:
                 # cast to appropriate dtype, handling NaT values
                 dtype = _resolve_datetime_dtype(dtype, values.dtype)
@@ -317,8 +318,8 @@ class Series:
                 name,
                 values,
                 dtype=dtype,
-                strict=strict,
                 dtype_if_empty=dtype_if_empty,
+                strict=strict,
             )
         else:
             raise TypeError(
@@ -335,7 +336,7 @@ class Series:
     @classmethod
     def _from_arrow(cls, name: str, values: pa.Array, *, rechunk: bool = True) -> Self:
         """Construct a Series from an Arrow Array."""
-        return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk))
+        return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk=rechunk))
 
     @classmethod
     def _from_pandas(
@@ -423,11 +424,11 @@ class Series:
             " To check if a Series contains any values, use `is_empty()`."
         )
 
-    def __getstate__(self) -> Any:
+    def __getstate__(self) -> bytes:
         return self._s.__getstate__()
 
-    def __setstate__(self, state: Any) -> None:
-        self._s = sequence_to_pyseries("", [], Float32)
+    def __setstate__(self, state: bytes) -> None:
+        self._s = Series()._s  # Initialize with a dummy
         self._s.__setstate__(state)
 
     def __str__(self) -> str:
@@ -923,7 +924,7 @@ class Series:
         return self.clone()
 
     def __contains__(self, item: Any) -> bool:
-        # TODO! optimize via `is_in` and `SORTED` flags
+        # TODO: optimize via `is_in` and `SORTED` flags
         try:
             return (self == item).any()
         except ValueError:
@@ -932,11 +933,11 @@ class Series:
     def __iter__(self) -> Generator[Any, None, None]:
         if self.dtype == List:
             # TODO: either make a change and return py-native list data here, or find
-            #  a faster way to return nested/List series; sequential 'get_idx' calls
+            #  a faster way to return nested/List series; sequential 'get_index' calls
             #  make this path a lot slower (~10x) than it needs to be.
-            get_idx = self._s.get_idx
-            for idx in range(0, self.len()):
-                yield get_idx(idx)
+            get_index = self._s.get_index
+            for idx in range(self.len()):
+                yield get_index(idx)
         else:
             buffer_size = 25_000
             for offset in range(0, self.len(), buffer_size):
@@ -1018,17 +1019,15 @@ class Series:
         elif _check_for_numpy(item) and isinstance(item, np.ndarray):
             return self._take_with_series(numpy_to_idxs(item, self.len()))
 
-        # Integer.
+        # Integer
         elif isinstance(item, int):
-            if item < 0:
-                item = self.len() + item
-            return self._s.get_idx(item)
+            return self._s.get_index_signed(item)
 
-        # Slice.
+        # Slice
         elif isinstance(item, slice):
             return PolarsSlice(self).apply(item)
 
-        # Range.
+        # Range
         elif isinstance(item, range):
             return self[range_to_slice(item)]
 
@@ -1080,7 +1079,7 @@ class Series:
                 self._s = self.set_at_idx(np.argwhere(key)[:, 0], value)._s
             else:
                 s = self._from_pyseries(
-                    PySeries.new_u32("", np.array(key, np.uint32), True)
+                    PySeries.new_u32("", np.array(key, np.uint32), _strict=True)
                 )
                 self.__setitem__(s, value)
         elif isinstance(key, (list, tuple)):
@@ -1190,12 +1189,13 @@ class Series:
         """Format output data in HTML for display in Jupyter Notebooks."""
         return self.to_frame()._repr_html_(from_series=True)
 
-    def item(self, row: int | None = None) -> Any:
+    @deprecate_renamed_parameter("row", "index", version="0.19.3")
+    def item(self, index: int | None = None) -> Any:
         """
-        Return the series as a scalar, or return the element at the given row index.
+        Return the series as a scalar, or return the element at the given index.
 
-        If no row index is provided, this is equivalent to ``s[0]``, with a check
-        that the shape is (1,). With a row index, this is equivalent to ``s[row]``.
+        If no index is provided, this is equivalent to ``s[0]``, with a check
+        that the shape is (1,). With an index, this is equivalent to ``s[index]``.
 
         Examples
         --------
@@ -1207,12 +1207,15 @@ class Series:
         24
 
         """
-        if row is None and len(self) != 1:
-            raise ValueError(
-                f"can only call '.item()' if the series is of length 1, or an"
-                f" explicit row index is provided (series is of length {len(self)})"
-            )
-        return self[row or 0]
+        if index is None:
+            if len(self) != 1:
+                raise ValueError(
+                    "can only call '.item()' if the series is of length 1,"
+                    f" or an explicit index is provided (series is of length {len(self)})"
+                )
+            return self._s.get_index(0)
+
+        return self._s.get_index_signed(index)
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
@@ -1396,11 +1399,59 @@ class Series:
         """
         Drop all null values.
 
-        Creates a new Series that copies data from this Series without null values.
+        The original order of the remaining elements is preserved.
+
+        See Also
+        --------
+        drop_nans
+
+        Notes
+        -----
+        A null value is not the same as a NaN value.
+        To drop NaN values, use :func:`drop_nans`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1.0, None, 3.0, float("nan")])
+        >>> s.drop_nulls()
+        shape: (3,)
+        Series: '' [f64]
+        [
+                1.0
+                3.0
+                NaN
+        ]
+
         """
 
     def drop_nans(self) -> Series:
-        """Drop NaN values."""
+        """
+        Drop all floating point NaN values.
+
+        The original order of the remaining elements is preserved.
+
+        See Also
+        --------
+        drop_nulls
+
+        Notes
+        -----
+        A NaN value is not the same as a null value.
+        To drop null values, use :func:`drop_nulls`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1.0, None, 3.0, float("nan")])
+        >>> s.drop_nans()
+        shape: (3,)
+        Series: '' [f64]
+        [
+                1.0
+                null
+                3.0
+        ]
+
+        """
 
     def to_frame(self, name: str | None = None) -> DataFrame:
         """
@@ -2745,7 +2796,7 @@ class Series:
             if str(exc) == "Already mutably borrowed":
                 self._s.append(other._s.clone())
             else:
-                raise exc
+                raise
         return self
 
     def extend(self, other: Series) -> Self:
@@ -2809,12 +2860,14 @@ class Series:
             if str(exc) == "Already mutably borrowed":
                 self._s.extend(other._s.clone())
             else:
-                raise exc
+                raise
         return self
 
     def filter(self, predicate: Series | list[bool]) -> Self:
         """
         Filter elements by a boolean mask.
+
+        The original order of the remaining elements is preserved.
 
         Parameters
         ----------
@@ -3530,24 +3583,53 @@ class Series:
 
         """
 
-    def is_first(self) -> Series:
+    def is_first_distinct(self) -> Series:
         """
-        Get a mask of the first unique value.
+        Return a boolean mask indicating the first occurrence of each distinct value.
 
         Returns
         -------
         Series
             Series of data type :class:`Boolean`.
 
+        Examples
+        --------
+        >>> s = pl.Series([1, 1, 2, 3, 2])
+        >>> s.is_first_distinct()
+        shape: (5,)
+        Series: '' [bool]
+        [
+                true
+                false
+                true
+                true
+                false
+        ]
+
         """
 
-    def is_last(self) -> Series:
+    def is_last_distinct(self) -> Series:
         """
-        Get a mask of the last unique value.
+        Return a boolean mask indicating the last occurrence of each distinct value.
 
         Returns
         -------
-        Boolean Series
+        Series
+            Series of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 1, 2, 3, 2])
+        >>> s.is_last_distinct()
+        shape: (5,)
+        Series: '' [bool]
+        [
+                false
+                true
+                false
+                true
+                true
+        ]
 
         """
 
@@ -5621,8 +5703,8 @@ class Series:
         shuffle
             Shuffle the order of sampled data points.
         seed
-            Seed for the random number generator. If set to None (default), a random
-            seed is generated using the ``random`` module.
+            Seed for the random number generator. If set to None (default), a
+            random seed is generated for each sample operation.
 
         Examples
         --------
@@ -6260,8 +6342,8 @@ class Series:
         Parameters
         ----------
         seed
-            Seed for the random number generator. If set to None (default), a random
-            seed is generated using the ``random`` module.
+            Seed for the random number generator. If set to None (default), a
+            random seed is generated each time the shuffle is called.
 
         Examples
         --------
@@ -6647,6 +6729,36 @@ class Series:
             a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
+
+        """
+
+    @deprecate_renamed_function("is_first_distinct", version="0.19.3")
+    def is_first(self) -> Series:
+        """
+        Return a boolean mask indicating the first occurrence of each distinct value.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`Series.is_first_distinct`.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
+        """
+
+    @deprecate_renamed_function("is_last_distinct", version="0.19.3")
+    def is_last(self) -> Series:
+        """
+        Return a boolean mask indicating the last occurrence of each distinct value.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`Series.is_last_distinct`.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
 
         """
 

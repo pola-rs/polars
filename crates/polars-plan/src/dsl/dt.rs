@@ -215,10 +215,10 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TimeStamp(tu)))
     }
 
-    pub fn truncate(self, options: TruncateOptions, ambiguous: Expr) -> Expr {
+    pub fn truncate(self, every: Expr, offset: String, ambiguous: Expr) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::TemporalExpr(TemporalFunction::Truncate(options)),
-            &[ambiguous],
+            FunctionExpr::TemporalExpr(TemporalFunction::Truncate(offset)),
+            &[every, ambiguous],
             false,
         )
     }
@@ -263,8 +263,9 @@ impl DateLikeNameSpace {
     /// Offset this `Date/Datetime` by a given offset [`Duration`].
     /// This will take leap years/ months into account.
     #[cfg(feature = "date_offset")]
-    pub fn offset_by(self, by: Duration) -> Expr {
-        self.0.map_private(FunctionExpr::DateOffset(by))
+    pub fn offset_by(self, by: Expr) -> Expr {
+        self.0
+            .map_many_private(FunctionExpr::DateOffset, &[by], false)
     }
 
     #[cfg(feature = "timezones")]

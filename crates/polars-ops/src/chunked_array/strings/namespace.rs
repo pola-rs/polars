@@ -7,7 +7,10 @@ use polars_arrow::export::arrow::{self};
 use polars_arrow::kernels::string::*;
 #[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
-use polars_core::export::regex::{escape, Regex};
+use polars_core::export::regex::Regex;
+use polars_core::prelude::arity::*;
+use polars_utils::cache::FastFixedCache;
+use regex::escape;
 
 use super::*;
 #[cfg(feature = "binary_encoding")]
@@ -85,6 +88,47 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         Ok(out)
     }
 
+    fn contains_chunked(
+        &self,
+        pat: &Utf8Chunked,
+        literal: bool,
+        strict: bool,
+    ) -> PolarsResult<BooleanChunked> {
+        let ca = self.as_utf8();
+        match pat.len() {
+            1 => match pat.get(0) {
+                Some(pat) => {
+                    if literal {
+                        ca.contains_literal(pat)
+                    } else {
+                        ca.contains(pat, strict)
+                    }
+                },
+                None => Ok(BooleanChunked::full_null(ca.name(), ca.len())),
+            },
+            _ => {
+                if literal {
+                    Ok(binary_elementwise_values(ca, pat, |src, pat| {
+                        src.contains(pat)
+                    }))
+                } else if strict {
+                    try_binary_elementwise_values(ca, pat, |src, pat| {
+                        Ok(Regex::new(pat)?.is_match(src))
+                    })
+                } else {
+                    Ok(binary_elementwise(ca, pat, |opt_src, opt_pat| {
+                        match (opt_src, opt_pat) {
+                            (Some(src), Some(pat)) => {
+                                Regex::new(pat).ok().map(|re| re.is_match(src))
+                            },
+                            _ => None,
+                        }
+                    }))
+                }
+            },
+        }
+    }
+
     /// Get the length of the string values as number of chars.
     fn str_n_chars(&self) -> UInt32Chunked {
         let ca = self.as_utf8();
@@ -132,18 +176,11 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         let res_reg = Regex::new(pat);
         let opt_reg = if strict { Some(res_reg?) } else { res_reg.ok() };
 
-        let mut out: BooleanChunked = match (opt_reg, ca.has_validity()) {
-            (Some(reg), false) => ca
-                .into_no_null_iter()
-                .map(|s: &str| reg.is_match(s))
-                .collect(),
-            (Some(reg), true) => ca
-                .into_iter()
-                .map(|opt_s| opt_s.map(|s: &str| reg.is_match(s)))
-                .collect(),
-            (None, _) => ca.into_iter().map(|_| None).collect(),
+        let out: BooleanChunked = if let Some(reg) = opt_reg {
+            ca.apply_values_generic(|s| reg.is_match(s))
+        } else {
+            BooleanChunked::full_null(ca.name(), ca.len())
         };
-        out.rename(ca.name());
         Ok(out)
     }
 
@@ -152,25 +189,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         // note: benchmarking shows that the regex engine is actually
         // faster at finding literal matches than str::contains.
         // ref: https://github.com/pola-rs/polars/pull/6811
-        self.contains(escape(lit).as_str(), true)
-    }
-
-    /// Check if strings ends with a substring
-    fn ends_with(&self, sub: &str) -> BooleanChunked {
-        let ca = self.as_utf8();
-        let f = |s: &str| s.ends_with(sub);
-        let mut out: BooleanChunked = ca.into_iter().map(|opt_s| opt_s.map(f)).collect();
-        out.rename(ca.name());
-        out
-    }
-
-    /// Check if strings starts with a substring
-    fn starts_with(&self, sub: &str) -> BooleanChunked {
-        let ca = self.as_utf8();
-        let f = |s: &str| s.starts_with(sub);
-        let mut out: BooleanChunked = ca.into_iter().map(|opt_s| opt_s.map(f)).collect();
-        out.rename(ca.name());
-        out
+        self.contains(regex::escape(lit).as_str(), true)
     }
 
     /// Replace the leftmost regex-matched (sub)string with another string
@@ -308,6 +327,66 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         Ok(builder.finish())
     }
 
+    fn split(&self, by: &str) -> ListChunked {
+        let ca = self.as_utf8();
+        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+
+        ca.for_each(|opt_v| match opt_v {
+            Some(val) => {
+                let iter = val.split(by);
+                builder.append_values_iter(iter)
+            },
+            _ => builder.append_null(),
+        });
+        builder.finish()
+    }
+
+    fn split_many(&self, by: &Utf8Chunked) -> ListChunked {
+        let ca = self.as_utf8();
+
+        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+
+        binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
+            (Some(s), Some(by)) => {
+                let iter = s.split(by);
+                builder.append_values_iter(iter);
+            },
+            _ => builder.append_null(),
+        });
+
+        builder.finish()
+    }
+
+    fn split_inclusive(&self, by: &str) -> ListChunked {
+        let ca = self.as_utf8();
+        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+
+        ca.for_each(|opt_v| match opt_v {
+            Some(val) => {
+                let iter = val.split_inclusive(by);
+                builder.append_values_iter(iter)
+            },
+            _ => builder.append_null(),
+        });
+        builder.finish()
+    }
+
+    fn split_inclusive_many(&self, by: &Utf8Chunked) -> ListChunked {
+        let ca = self.as_utf8();
+
+        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+
+        binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
+            (Some(s), Some(by)) => {
+                let iter = s.split_inclusive(by);
+                builder.append_values_iter(iter);
+            },
+            _ => builder.append_null(),
+        });
+
+        builder.finish()
+    }
+
     /// Extract each successive non-overlapping regex match in an individual string as an array.
     fn extract_all_many(&self, pat: &Utf8Chunked) -> PolarsResult<ListChunked> {
         let ca = self.as_utf8();
@@ -317,19 +396,14 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             pat.len(), ca.len(),
         );
 
-        // Very simple cache: don't recompile the same regex for multiple values in a row.
-        // TODO: proper LRU cache with reasonable memory limit.
-        let mut reg = Regex::new("").unwrap();
-        let mut lastpat = "";
+        // A sqrt(n) regex cache is not too small, not too large.
+        let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
         let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
         for (opt_s, opt_pat) in ca.into_iter().zip(pat) {
             match (opt_s, opt_pat) {
                 (_, None) | (None, _) => builder.append_null(),
                 (Some(s), Some(pat)) => {
-                    if pat != lastpat {
-                        reg = Regex::new(pat)?;
-                        lastpat = pat;
-                    }
+                    let reg = reg_cache.get_or_insert_with(pat, |p| Regex::new(p).unwrap());
                     builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str()));
                 },
             }
@@ -345,9 +419,13 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     /// Count all successive non-overlapping regex matches.
-    fn count_match(&self, pat: &str) -> PolarsResult<UInt32Chunked> {
+    fn count_matches(&self, pat: &str, literal: bool) -> PolarsResult<UInt32Chunked> {
         let ca = self.as_utf8();
-        let reg = Regex::new(pat)?;
+        let reg = if literal {
+            Regex::new(escape(pat).as_str())?
+        } else {
+            Regex::new(pat)?
+        };
 
         let mut out: UInt32Chunked = ca
             .into_iter()
@@ -355,6 +433,38 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             .collect();
         out.rename(ca.name());
         Ok(out)
+    }
+
+    /// Count all successive non-overlapping regex matches.
+    fn count_matches_many(&self, pat: &Utf8Chunked, literal: bool) -> PolarsResult<UInt32Chunked> {
+        let ca = self.as_utf8();
+        polars_ensure!(
+            ca.len() == pat.len(),
+            ComputeError: "pattern's length: {} does not match that of the argument series: {}",
+            pat.len(), ca.len(),
+        );
+
+        // A sqrt(n) regex cache is not too small, not too large.
+        let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
+        let op = move |opt_s: Option<&str>, opt_pat: Option<&str>| -> PolarsResult<Option<u32>> {
+            match (opt_s, opt_pat) {
+                (Some(s), Some(pat)) => {
+                    let reg = reg_cache.get_or_insert_with(pat, |p| {
+                        if literal {
+                            Regex::new(escape(p).as_str()).unwrap()
+                        } else {
+                            Regex::new(p).unwrap()
+                        }
+                    });
+                    Ok(Some(reg.find_iter(s).count() as u32))
+                },
+                _ => Ok(None),
+            }
+        };
+
+        let out: UInt32Chunked = try_binary_elementwise(ca, pat, op)?;
+
+        Ok(out.with_name(ca.name()))
     }
 
     /// Modify the strings to their lowercase equivalent.

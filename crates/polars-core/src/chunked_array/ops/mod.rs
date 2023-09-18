@@ -29,6 +29,7 @@ mod explode_and_offsets;
 mod extend;
 mod fill_null;
 mod filter;
+mod for_each;
 pub mod full;
 #[cfg(feature = "interpolate")]
 mod interpolate;
@@ -46,6 +47,7 @@ mod shift;
 pub mod sort;
 pub(crate) mod take;
 mod tile;
+#[cfg(feature = "algorithm_group_by")]
 pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
@@ -200,7 +202,19 @@ pub trait TakeRandomUtf8 {
 }
 
 /// Fast access by index.
-pub trait ChunkTake {
+pub trait ChunkTake: ChunkTakeUnchecked {
+    /// Take values from ChunkedArray by index.
+    /// Note that the iterator will be cloned, so prefer an iterator that takes the owned memory
+    /// by reference.
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
+    where
+        Self: Sized,
+        I: TakeIterator,
+        INulls: TakeIteratorNulls;
+}
+
+/// Fast access by index.
+pub trait ChunkTakeUnchecked {
     /// Take values from ChunkedArray by index.
     ///
     /// # Safety
@@ -208,15 +222,6 @@ pub trait ChunkTake {
     /// Doesn't do any bound checking.
     #[must_use]
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
-    where
-        Self: Sized,
-        I: TakeIterator,
-        INulls: TakeIteratorNulls;
-
-    /// Take values from ChunkedArray by index.
-    /// Note that the iterator will be cloned, so prefer an iterator that takes the owned memory
-    /// by reference.
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
     where
         Self: Sized,
         I: TakeIterator,
@@ -589,10 +594,9 @@ macro_rules! impl_chunk_expand {
     }};
 }
 
-impl<T: PolarsDataType> ChunkExpandAtIndex<T> for ChunkedArray<T>
+impl<T: PolarsNumericType> ChunkExpandAtIndex<T> for ChunkedArray<T>
 where
     ChunkedArray<T>: ChunkFull<T::Native> + TakeRandom<Item = T::Native>,
-    T: PolarsNumericType,
 {
     fn new_from_index(&self, index: usize, length: usize) -> ChunkedArray<T> {
         let mut out = impl_chunk_expand!(self, length, index);
@@ -721,19 +725,19 @@ pub trait RepeatBy {
     }
 }
 
-#[cfg(feature = "is_first")]
+#[cfg(feature = "is_first_distinct")]
 /// Mask the first unique values as `true`
-pub trait IsFirst<T: PolarsDataType> {
-    fn is_first(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_first, T::get_dtype());
+pub trait IsFirstDistinct<T: PolarsDataType> {
+    fn is_first_distinct(&self) -> PolarsResult<BooleanChunked> {
+        polars_bail!(opq = is_first_distinct, T::get_dtype());
     }
 }
 
-#[cfg(feature = "is_last")]
+#[cfg(feature = "is_last_distinct")]
 /// Mask the last unique values as `true`
-pub trait IsLast<T: PolarsDataType> {
-    fn is_last(&self) -> PolarsResult<BooleanChunked> {
-        polars_bail!(opq = is_last, T::get_dtype());
+pub trait IsLastDistinct<T: PolarsDataType> {
+    fn is_last_distinct(&self) -> PolarsResult<BooleanChunked> {
+        polars_bail!(opq = is_last_distinct, T::get_dtype());
     }
 }
 

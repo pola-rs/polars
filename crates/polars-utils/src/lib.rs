@@ -1,6 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 pub mod arena;
 pub mod atomic;
+pub mod cache;
 pub mod cell;
 pub mod contention_pool;
 mod error;

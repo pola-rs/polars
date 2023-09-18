@@ -25,7 +25,7 @@ pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
 
 .PHONY: check-features
 check-features:  ## Run cargo check for feature flag combinations (warning: slow)
-	cargo hack check --each-feature --no-dev-deps
+	cargo hack check -p polars --each-feature --no-dev-deps
 
 .PHONY: miri
 miri:  ## Run miri
@@ -35,7 +35,6 @@ miri:  ## Run miri
 	MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows" \
 	POLARS_ALLOW_EXTENSION=1 \
 	cargo miri test \
-	    --no-default-features \
 	    --features object \
 	    -p polars-core \
 	    -p polars-arrow
@@ -54,6 +53,19 @@ test:  ## Run tests
 		-p polars-plan \
 		-- \
 		--test-threads=2
+
+.PHONY: nextest
+nextest:  ## Run tests with nextest
+	cargo nextest run --all-features \
+		-p polars-lazy \
+		-p polars-io \
+		-p polars-core \
+		-p polars-arrow \
+		-p polars-time \
+		-p polars-utils \
+		-p polars-row \
+		-p polars-sql \
+		-p polars-plan \
 
 .PHONY: integration-tests
 integration-tests:  ## Run integration tests
@@ -96,6 +108,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-arrow
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
+	cargo publish --allow-dirty -p polars-ffi
 	cargo publish --allow-dirty -p polars-ops
 	cargo publish --allow-dirty -p polars-time
 	cargo publish --allow-dirty -p polars-io
@@ -118,6 +131,9 @@ check-wasm:  ## Check wasm build without supported features
 		--exclude-features async              \
 		--exclude-features aws                \
 		--exclude-features azure              \
+		--exclude-features cloud              \
+		--exclude-features cloud_write        \
+		--exclude-features decompress         \
 		--exclude-features decompress-fast    \
 		--exclude-features default            \
 		--exclude-features docs-selection     \

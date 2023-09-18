@@ -24,7 +24,7 @@ def test_shuffle_group_by_reseed() -> None:
 
 
 def test_sample_expr() -> None:
-    a = pl.Series("a", range(0, 20))
+    a = pl.Series("a", range(20))
     out = pl.select(
         pl.lit(a).sample(fraction=0.5, with_replacement=False, seed=1)
     ).to_series()

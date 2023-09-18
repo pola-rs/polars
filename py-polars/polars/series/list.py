@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
     from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.type_aliases import NullBehavior, ToStructStrategy
+    from polars.type_aliases import IntoExpr, NullBehavior, ToStructStrategy
 
 
 @expr_dispatch
@@ -198,7 +198,7 @@ class ListNameSpace:
     def __getitem__(self, item: int) -> Series:
         return self.get(item)
 
-    def join(self, separator: str) -> Series:
+    def join(self, separator: IntoExpr) -> Series:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -434,7 +434,7 @@ class ListNameSpace:
 
         """
 
-    def count_match(
+    def count_matches(
         self, element: float | str | bool | int | date | datetime | time | Expr
     ) -> Expr:
         """
@@ -688,3 +688,20 @@ class ListNameSpace:
 
         """  # noqa: W505
         return self.set_symmetric_difference(other)
+
+    @deprecate_renamed_function("count_matches", version="0.19.3")
+    def count_match(
+        self, element: float | str | bool | int | date | datetime | time | Expr
+    ) -> Expr:
+        """
+        Count how often the value produced by ``element`` occurs.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`count_matches`.
+
+        Parameters
+        ----------
+        element
+            An expression that produces a single value
+
+        """

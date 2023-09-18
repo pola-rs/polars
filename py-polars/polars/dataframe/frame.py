@@ -37,7 +37,6 @@ from polars.datatypes import (
     N_INFER_DEFAULT,
     NUMERIC_DTYPES,
     Boolean,
-    DataTypeClass,
     Float64,
     Object,
     Utf8,
@@ -56,7 +55,7 @@ from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
 from polars.functions import col, lit
 from polars.io._utils import _is_glob_pattern, _is_local_file
-from polars.io.excel._write_utils import (
+from polars.io.spreadsheet._write_utils import (
     _unpack_multi_column_dict,
     _xl_apply_conditional_formats,
     _xl_inject_sparklines,
@@ -84,6 +83,7 @@ from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
+    deprecate_nonkeyword_arguments,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
 )
@@ -95,7 +95,7 @@ from polars.utils.various import (
     is_bool_sequence,
     is_int_sequence,
     is_str_sequence,
-    normalise_filepath,
+    normalize_filepath,
     parse_percentiles,
     parse_version,
     range_to_slice,
@@ -104,6 +104,7 @@ from polars.utils.various import (
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
+    from polars.polars import dtype_str_repr as _dtype_str_repr
 
 if TYPE_CHECKING:
     import sys
@@ -148,6 +149,7 @@ if TYPE_CHECKING:
         RowTotalsDefinition,
         SchemaDefinition,
         SchemaDict,
+        SelectorType,
         SizeUnit,
         StartBy,
         UniqueKeepStrategy,
@@ -691,7 +693,7 @@ class DataFrame:
 
         path: str | None
         if isinstance(source, (str, Path)):
-            path = normalise_filepath(source)
+            path = normalize_filepath(source)
         else:
             path = None
             if isinstance(source, BytesIO):
@@ -821,7 +823,7 @@ class DataFrame:
 
         """
         if isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
         if isinstance(columns, str):
             columns = [columns]
 
@@ -891,7 +893,7 @@ class DataFrame:
 
         """
         if isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
         projection, columns = handle_projection_columns(columns)
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_avro(source, columns, projection, n_rows)
@@ -937,7 +939,7 @@ class DataFrame:
 
         """
         if isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
         if isinstance(columns, str):
             columns = [columns]
 
@@ -1015,7 +1017,7 @@ class DataFrame:
 
         """
         if isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
         if isinstance(columns, str):
             columns = [columns]
 
@@ -1052,7 +1054,7 @@ class DataFrame:
         if isinstance(source, StringIO):
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
 
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_json(
@@ -1082,7 +1084,7 @@ class DataFrame:
         if isinstance(source, StringIO):
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
 
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_ndjson(
@@ -1271,7 +1273,7 @@ class DataFrame:
             return self.to_numpy().__array__()
 
     def __dataframe__(
-        self, nan_as_null: bool = False, allow_copy: bool = True
+        self, nan_as_null: bool = False, allow_copy: bool = True  # noqa: FBT001
     ) -> PolarsDataFrame:
         """
         Convert to a dataframe object implementing the dataframe interchange protocol.
@@ -1391,7 +1393,7 @@ class DataFrame:
         else:
             raise ValueError(f"unexpected comparison operator {op!r}")
 
-    def _div(self, other: Any, floordiv: bool) -> DataFrame:
+    def _div(self, other: Any, *, floordiv: bool) -> DataFrame:
         if isinstance(other, pl.Series):
             if floordiv:
                 return self.select(F.all() // lit(other))
@@ -1459,7 +1461,7 @@ class DataFrame:
     def __getstate__(self) -> list[Series]:
         return self.get_columns()
 
-    def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
+    def __setstate__(self, state: list[Series]) -> None:
         self._df = DataFrame(state)._df
 
     def __mul__(self, other: DataFrame | Series | int | float) -> Self:
@@ -1851,10 +1853,11 @@ class DataFrame:
         if row is None and column is None:
             if self.shape != (1, 1):
                 raise ValueError(
-                    f"can only call `.item()` if the dataframe is of shape (1, 1), or if"
-                    f" explicit row/col values are provided; frame has shape {self.shape!r}"
+                    "can only call `.item()` if the dataframe is of shape (1, 1),"
+                    " or if explicit row/col values are provided;"
+                    f" frame has shape {self.shape!r}"
                 )
-            return self._df.select_at_idx(0).get_idx(0)
+            return self._df.select_at_idx(0).get_index(0)
 
         elif row is None or column is None:
             raise ValueError("cannot call `.item()` with only one of `row` or `column`")
@@ -1866,7 +1869,7 @@ class DataFrame:
         )
         if s is None:
             raise IndexError(f"column index {column!r} is out of bounds")
-        return s.get_idx(row)
+        return s.get_index_signed(row)
 
     def to_arrow(self) -> pa.Table:
         """
@@ -1907,12 +1910,13 @@ class DataFrame:
 
     @overload
     def to_dict(
-        self, as_series: bool = True
+        self, as_series: bool  # noqa: FBT001
     ) -> dict[str, Series] | dict[str, list[Any]]:
         ...
 
+    # TODO: Make `as_series` keyword-only
     def to_dict(
-        self, as_series: bool = True
+        self, as_series: bool = True  # noqa: FBT001
     ) -> dict[str, Series] | dict[str, list[Any]]:
         """
         Convert DataFrame to a dictionary mapping column name to values.
@@ -2022,8 +2026,9 @@ class DataFrame:
         """
         return list(self.iter_rows(named=True))
 
+    @deprecate_nonkeyword_arguments(version="0.19.3")
     def to_numpy(
-        self, structured: bool = False, *, order: IndexOrder = "fortran"
+        self, structured: bool = False, *, order: IndexOrder = "fortran"  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
         Convert DataFrame to a 2D NumPy array.
@@ -2077,7 +2082,7 @@ class DataFrame:
         ...optionally zero-copying as a record array view:
 
         >>> import numpy as np
-        >>> df.to_numpy(True).view(np.recarray)
+        >>> df.to_numpy(structured=True).view(np.recarray)
         rec.array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
                   dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
 
@@ -2370,7 +2375,7 @@ class DataFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
@@ -2417,7 +2422,7 @@ class DataFrame:
 
         """
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
@@ -2524,7 +2529,7 @@ class DataFrame:
             ``Float64`` datatypes.
         null_value
             A string representing null values (defaulting to the empty string).
-        quote_style : {'necessary', 'always', 'non_numeric'}
+        quote_style : {'necessary', 'always', 'non_numeric', 'never'}
             Determines the quoting strategy used.
             - necessary (default): This puts quotes around fields only when necessary.
             They are necessary when fields contain a quote,
@@ -2533,6 +2538,8 @@ class DataFrame:
             (which is indistinguishable from a record with one empty field).
             This is the default.
             - always: This puts quotes around every field. Always.
+            - never: This never puts quotes around fields, even if that results in
+            invalid CSV data (e.g.: by not quoting strings containing the separator).
             - non_numeric: This puts quotes around all fields that are non-numeric.
             Namely, when writing a field that does not parse as a valid float
             or integer, then quotes will be used even if they aren`t strictly
@@ -2566,7 +2573,7 @@ class DataFrame:
             buffer = file = BytesIO()
             should_return_buffer = True
         elif isinstance(file, (str, os.PathLike)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
         elif isinstance(file, TextIOWrapper):
             file = cast(TextIOWrapper, file.buffer)
 
@@ -2623,7 +2630,7 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
 
         self._df.write_avro(file, compression)
 
@@ -2649,7 +2656,7 @@ class DataFrame:
         has_header: bool = True,
         autofilter: bool = True,
         autofit: bool = False,
-        hidden_columns: Sequence[str] | None = None,
+        hidden_columns: Sequence[str] | SelectorType | None = None,
         hide_gridlines: bool = False,
         sheet_zoom: int | None = None,
         freeze_panes: (
@@ -3069,9 +3076,10 @@ class DataFrame:
                     has_header=has_header,
                     format_cache=fmt_cache,
                 )
-
         # additional column-level properties
-        hidden_columns = _expand_selectors(df, hidden_columns or ())
+        if hidden_columns is None:
+            hidden_columns = ()
+        hidden_columns = _expand_selectors(df, hidden_columns)
         if isinstance(column_widths, int):
             column_widths = {column: column_widths for column in df.columns}
         else:
@@ -3093,7 +3101,9 @@ class DataFrame:
 
         # finally, inject any sparklines into the table
         for column, params in (sparklines or {}).items():
-            _xl_inject_sparklines(ws, df, table_start, column, has_header, params)
+            _xl_inject_sparklines(
+                ws, df, table_start, column, has_header=has_header, params=params
+            )
 
         # worksheet options
         if hide_gridlines:
@@ -3180,7 +3190,7 @@ class DataFrame:
         if return_bytes:
             file = BytesIO()
         elif isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
 
         if compression is None:
             compression = "uncompressed"
@@ -3241,7 +3251,7 @@ class DataFrame:
         if return_bytes:
             file = BytesIO()
         elif isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
 
         if compression is None:
             compression = "uncompressed"
@@ -3327,9 +3337,9 @@ class DataFrame:
             compression = "uncompressed"
         if isinstance(file, (str, Path)):
             if pyarrow_options is not None and pyarrow_options.get("partition_cols"):
-                file = normalise_filepath(file, check_not_directory=False)
+                file = normalize_filepath(file, check_not_directory=False)
             else:
-                file = normalise_filepath(file)
+                file = normalize_filepath(file)
 
         if use_pyarrow:
             tbl = self.to_arrow()
@@ -3833,7 +3843,7 @@ class DataFrame:
         └───────┴─────┴─────┘
 
         """
-        return self.lazy().rename(mapping).collect(no_optimization=True)
+        return self.lazy().rename(mapping).collect(eager=True)
 
     def insert_at_idx(self, index: int, series: Series) -> Self:
         """
@@ -3896,6 +3906,8 @@ class DataFrame:
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
+        The original order of the remaining rows is preserved.
+
         Parameters
         ----------
         predicate
@@ -3954,30 +3966,52 @@ class DataFrame:
             predicate = pl.Series(predicate)
 
         return (
-            self.lazy()
-            .filter(predicate)  # type: ignore[arg-type]
-            .collect(no_optimization=True)
+            self.lazy().filter(predicate).collect(eager=True)  # type: ignore[arg-type]
         )
 
     @overload
-    def glimpse(self, *, return_as_string: Literal[False]) -> None:
+    def glimpse(
+        self,
+        *,
+        max_items_per_column: int = ...,
+        max_colname_length: int = ...,
+        return_as_string: Literal[False],
+    ) -> None:
         ...
 
     @overload
-    def glimpse(self, *, return_as_string: Literal[True]) -> str:
+    def glimpse(
+        self,
+        *,
+        max_items_per_column: int = ...,
+        max_colname_length: int = ...,
+        return_as_string: Literal[True],
+    ) -> str:
         ...
 
-    def glimpse(self, *, return_as_string: bool = False) -> str | None:
+    def glimpse(
+        self,
+        *,
+        max_items_per_column: int = 10,
+        max_colname_length: int = 50,
+        return_as_string: bool = False,
+    ) -> str | None:
         """
-        Return a dense preview of the dataframe.
+        Return a dense preview of the DataFrame.
 
-        The formatting is done one line per column, so wide dataframes show nicely.
-        Each line will show the column name, the data type and the first few values.
+        The formatting shows one line per column so that wide dataframes display
+        cleanly. Each line shows the column name, the data type, and the first
+        few values.
 
         Parameters
         ----------
+        max_items_per_column
+            Maximum number of items to show per column.
+        max_colname_length
+            Maximum length of the displayed column names; values that exceed this
+            value are truncated with a trailing ellipsis.
         return_as_string
-            If True, return as string rather than printing to stdout.
+            If True, return the preview as a string instead of printing to stdout.
 
         See Also
         --------
@@ -4002,42 +4036,33 @@ class DataFrame:
         $ a  <f64> 1.0, 2.8, 3.0
         $ b  <i64> 4, 5, None
         $ c <bool> True, False, True
-        $ d  <str> None, b, c
-        $ e  <str> usd, eur, None
+        $ d  <str> None, 'b', 'c'
+        $ e  <str> 'usd', 'eur', None
         $ f <date> 2020-01-01, 2021-01-02, 2022-01-01
 
         """
-        # always print at most this number of values, mainly used to ensure
-        # we do not cast long arrays to strings which would be very slow
-        max_num_values = min(10, self.height)
-        max_col_name_trunc = 50
+        # always print at most this number of values (mainly ensures that
+        # we do not cast long arrays to strings, which would be slow)
+        max_n_values = min(max_items_per_column, self.height)
+        schema = self.schema
 
         def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
-            dtype_str = (
-                f"<{DataTypeClass._string_repr(dtype)}>"
-                if isinstance(dtype, DataTypeClass)
-                else f"<{dtype._string_repr()}>"
-            )
-            val = self[:max_num_values][col_name].to_list()
-            val_str = ", ".join(map(str, val))
-            if len(col_name) > max_col_name_trunc:
-                col_name = col_name[: (max_col_name_trunc - 3)] + "..."
-            return col_name, dtype_str, val_str
+            fn = repr if schema[col_name] == Utf8 else str
+            values = self[:max_n_values][col_name].to_list()
+            val_str = ", ".join(fn(v) for v in values)  # type: ignore[operator]
+            if len(col_name) > max_colname_length:
+                col_name = col_name[: (max_colname_length - 1)] + "…"
+            return col_name, f"<{_dtype_str_repr(dtype)}>", val_str
 
         data = [_parse_column(s, dtype) for s, dtype in self.schema.items()]
 
-        # we make the first column as small as possible by taking the longest
-        # column name
+        # determine column layout widths
         max_col_name = max((len(col_name) for col_name, _, _ in data))
-
-        # dtype string
         max_col_dtype = max((len(dtype_str) for _, dtype_str, _ in data))
-
-        # limit the amount of data printed such that total width is fixed
         max_col_values = 100 - max_col_name - max_col_dtype
 
-        output = StringIO()
         # print header
+        output = StringIO()
         output.write(f"Rows: {self.height}\nColumns: {self.width}\n")
 
         # print individual columns: one row per column
@@ -4049,12 +4074,11 @@ class DataFrame:
             )
 
         s = output.getvalue()
-
-        if not return_as_string:
-            print(s, end=None)
-            return None
-        else:
+        if return_as_string:
             return s
+
+        print(s, end=None)
+        return None
 
     def describe(
         self, percentiles: Sequence[float] | float | None = (0.25, 0.75)
@@ -4126,7 +4150,7 @@ class DataFrame:
         # reshape wide result
         n_cols = len(self.columns)
         described = [
-            df_metrics[(n * n_cols) : (n + 1) * n_cols] for n in range(0, len(metrics))
+            df_metrics[(n * n_cols) : (n + 1) * n_cols] for n in range(len(metrics))
         ]
 
         # cast by column type (numeric/bool -> float), (other -> string)
@@ -4296,7 +4320,7 @@ class DataFrame:
         return (
             self.lazy()
             .sort(by, *more_by, descending=descending, nulls_last=nulls_last)
-            .collect(no_optimization=True)
+            .collect(eager=True)
         )
 
     def top_k(
@@ -4724,7 +4748,7 @@ class DataFrame:
         """
         Drop all rows that contain null values.
 
-        Returns a new DataFrame.
+        The original order of the remaining rows is preserved.
 
         Parameters
         ----------
@@ -4824,7 +4848,7 @@ class DataFrame:
         └──────┴──────┘
 
         """
-        return self.lazy().drop_nulls(subset).collect(no_optimization=True)
+        return self.lazy().drop_nulls(subset).collect(eager=True)
 
     def pipe(
         self,
@@ -5203,7 +5227,13 @@ class DataFrame:
 
         """
         return RollingGroupBy(
-            self, index_column, period, offset, closed, by, check_sorted
+            self,
+            index_column=index_column,
+            period=period,
+            offset=offset,
+            closed=closed,
+            by=by,
+            check_sorted=check_sorted,
         )
 
     def group_by_dynamic(
@@ -5224,47 +5254,16 @@ class DataFrame:
         Group based on a time value (or index value of type Int32, Int64).
 
         Time windows are calculated and rows are assigned to windows. Different from a
-        normal group by is that a row can be member of multiple groups. The time/index
-        window could be seen as a rolling window, with a window size determined by
-        dates/times/values instead of slots in the DataFrame.
+        normal group by is that a row can be member of multiple groups.
+        By default, the windows look like:
 
-        A window is defined by:
+        - [start, start + period)
+        - [start + every, start + every + period)
+        - [start + 2*every, start + 2*every + period)
+        - ...
 
-        - every: interval of the window
-        - period: length of the window
-        - offset: offset of the window
-
-        The `every`, `period` and `offset` arguments are created with
-        the following string language:
-
-        - 1ns   (1 nanosecond)
-        - 1us   (1 microsecond)
-        - 1ms   (1 millisecond)
-        - 1s    (1 second)
-        - 1m    (1 minute)
-        - 1h    (1 hour)
-        - 1d    (1 calendar day)
-        - 1w    (1 calendar week)
-        - 1mo   (1 calendar month)
-        - 1q    (1 calendar quarter)
-        - 1y    (1 calendar year)
-        - 1i    (1 index count)
-
-        Or combine them:
-        "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-        Suffix with `"_saturating"` to indicate that dates too large for
-        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-        instead of erroring.
-
-        By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, due to daylight savings). Similarly for "calendar week",
-        "calendar month", "calendar quarter", and "calendar year".
-
-        In case of a group_by_dynamic on an integer column, the windows are defined by:
-
-        - "1i"      # length 1
-        - "10i"     # length 10
+        where `start` is determined by `start_by`, `offset`, and `every` (see parameter
+        descriptions below).
 
         .. warning::
             The index column must be sorted in ascending order. If `by` is passed, then
@@ -5284,10 +5283,10 @@ class DataFrame:
         every
             interval of the window
         period
-            length of the window, if None it is equal to 'every'
+            length of the window, if None it will equal 'every'
         offset
-            offset of the window if None and period is None it will be equal to negative
-            `every`
+            offset of the window, only takes effect if `start_by` is ``'window'``.
+            Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
         include_boundaries
@@ -5301,7 +5300,8 @@ class DataFrame:
         start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
 
-            * 'window': Truncate the start of the window with the 'every' argument.
+            * 'window': Start by taking the earliest timestamp, truncating it with
+              `every`, and then adding `offset`.
               Note that weekly windows start on Monday.
             * 'datapoint': Start from the first encountered data point.
             * a day of the week (only takes effect if `every` contains ``'w'``):
@@ -5324,25 +5324,61 @@ class DataFrame:
             of which will be sorted by `index_column` (but note that if `by` columns are
             passed, it will only be sorted within each `by` group).
 
+        See Also
+        --------
+        group_by_rolling
+
         Notes
         -----
-        If you're coming from pandas, then
+        1) If you're coming from pandas, then
 
-        .. code-block:: python
+           .. code-block:: python
 
-            # polars
-            df.group_by_dynamic("ts", every="1d").agg(pl.col("value").sum())
+               # polars
+               df.group_by_dynamic("ts", every="1d").agg(pl.col("value").sum())
 
-        is equivalent to
+           is equivalent to
 
-        .. code-block:: python
+           .. code-block:: python
 
-            # pandas
-            df.set_index("ts").resample("D")["value"].sum().reset_index()
+               # pandas
+               df.set_index("ts").resample("D")["value"].sum().reset_index()
 
-        though note that, unlike pandas, polars doesn't add extra rows for empty
-        windows. If you need `index_column` to be evenly spaced, then please combine
-        with :func:`DataFrame.upsample`.
+           though note that, unlike pandas, polars doesn't add extra rows for empty
+           windows. If you need `index_column` to be evenly spaced, then please combine
+           with :func:`DataFrame.upsample`.
+
+        2) The `every`, `period` and `offset` arguments are created with
+           the following string language:
+
+           - 1ns   (1 nanosecond)
+           - 1us   (1 microsecond)
+           - 1ms   (1 millisecond)
+           - 1s    (1 second)
+           - 1m    (1 minute)
+           - 1h    (1 hour)
+           - 1d    (1 calendar day)
+           - 1w    (1 calendar week)
+           - 1mo   (1 calendar month)
+           - 1q    (1 calendar quarter)
+           - 1y    (1 calendar year)
+           - 1i    (1 index count)
+
+           Or combine them:
+           "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+           Suffix with `"_saturating"` to indicate that dates too large for
+           their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+           instead of erroring.
+
+           By "calendar day", we mean the corresponding time on the next day (which may
+           not be 24 hours, due to daylight savings). Similarly for "calendar week",
+           "calendar month", "calendar quarter", and "calendar year".
+
+           In case of a group_by_dynamic on an integer column, the windows are defined by:
+
+           - "1i"      # length 1
+           - "10i"     # length 10
 
         Examples
         --------
@@ -5350,7 +5386,7 @@ class DataFrame:
         >>> # create an example dataframe
         >>> df = pl.DataFrame(
         ...     {
-        ...         "time": pl.date_range(
+        ...         "time": pl.datetime_range(
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
@@ -5455,7 +5491,7 @@ class DataFrame:
 
         >>> df = pl.DataFrame(
         ...     {
-        ...         "time": pl.date_range(
+        ...         "time": pl.datetime_range(
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
@@ -5518,12 +5554,13 @@ class DataFrame:
         ...         closed="right",
         ...     ).agg(pl.col("A").alias("A_agg_list"))
         ... )
-        shape: (3, 4)
+        shape: (4, 4)
         ┌─────────────────┬─────────────────┬─────┬─────────────────┐
         │ _lower_boundary ┆ _upper_boundary ┆ idx ┆ A_agg_list      │
         │ ---             ┆ ---             ┆ --- ┆ ---             │
         │ i64             ┆ i64             ┆ i64 ┆ list[str]       │
         ╞═════════════════╪═════════════════╪═════╪═════════════════╡
+        │ -2              ┆ 1               ┆ -2  ┆ ["A", "A"]      │
         │ 0               ┆ 3               ┆ 0   ┆ ["A", "B", "B"] │
         │ 2               ┆ 5               ┆ 2   ┆ ["B", "B", "C"] │
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
@@ -5532,16 +5569,16 @@ class DataFrame:
         """  # noqa: W505
         return DynamicGroupBy(
             self,
-            index_column,
-            every,
-            period,
-            offset,
-            truncate,
-            include_boundaries,
-            closed,
-            by,
-            start_by,
-            check_sorted,
+            index_column=index_column,
+            every=every,
+            period=period,
+            offset=offset,
+            truncate=truncate,
+            include_boundaries=include_boundaries,
+            closed=closed,
+            by=by,
+            start_by=start_by,
+            check_sorted=check_sorted,
         )
 
     def upsample(
@@ -5826,7 +5863,7 @@ class DataFrame:
                 allow_parallel=allow_parallel,
                 force_parallel=force_parallel,
             )
-            .collect(no_optimization=True)
+            .collect(eager=True)
         )
 
     def join(
@@ -5851,6 +5888,9 @@ class DataFrame:
             Name(s) of the join columns in both DataFrames.
         how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
             Join strategy.
+
+            .. note::
+                A left join preserves the row order of the left DataFrame.
         left_on
             Name(s) of the left join column(s).
         right_on
@@ -5975,7 +6015,7 @@ class DataFrame:
                 suffix=suffix,
                 validate=validate,
             )
-            .collect(no_optimization=True)
+            .collect(eager=True)
         )
 
     def map_rows(
@@ -6071,7 +6111,7 @@ class DataFrame:
         >>> df.select(pl.col("foo") * 2 + pl.col("bar"))  # doctest: +IGNORE_RESULT
 
         """
-        # TODO:
+        # TODO: Enable warning for inefficient map
         # from polars.utils.udfs import warn_on_inefficient_map
         # warn_on_inefficient_map(function, columns=self.columns, map_target="frame)
 
@@ -6174,13 +6214,14 @@ class DataFrame:
         if in_place:
             try:
                 self._df.vstack_mut(other._df)
-                return self
             except RuntimeError as exc:
                 if str(exc) == "Already mutably borrowed":
                     self._df.vstack_mut(other._df.clone())
                     return self
                 else:
-                    raise exc
+                    raise
+            else:
+                return self
 
         return self._from_pydf(self._df.vstack(other._df))
 
@@ -6244,7 +6285,7 @@ class DataFrame:
             if str(exc) == "Already mutably borrowed":
                 self._df.extend(other._df.clone())
             else:
-                raise exc
+                raise
         return self
 
     def drop(
@@ -6330,7 +6371,7 @@ class DataFrame:
         └─────┘
 
         """
-        return self.lazy().drop(columns, *more_columns).collect(no_optimization=True)
+        return self.lazy().drop(columns, *more_columns).collect(eager=True)
 
     def drop_in_place(self, name: str) -> Series:
         """
@@ -6433,7 +6474,7 @@ class DataFrame:
         └─────┴─────┴────────────┘
 
         """
-        return self.lazy().cast(dtypes, strict=strict).collect(no_optimization=True)
+        return self.lazy().cast(dtypes, strict=strict).collect(eager=True)
 
     def clear(self, n: int = 0) -> Self:
         """
@@ -6710,7 +6751,7 @@ class DataFrame:
         return (
             self.lazy()
             .fill_null(value, strategy, limit, matches_supertype=matches_supertype)
-            .collect(no_optimization=True)
+            .collect(eager=True)
         )
 
     def fill_nan(self, value: Expr | int | float | None) -> DataFrame:
@@ -6758,7 +6799,7 @@ class DataFrame:
         └──────┴──────┘
 
         """
-        return self.lazy().fill_nan(value).collect(no_optimization=True)
+        return self.lazy().fill_nan(value).collect(eager=True)
 
     def explode(
         self,
@@ -6818,7 +6859,7 @@ class DataFrame:
         └─────────┴─────────┘
 
         """
-        return self.lazy().explode(columns, *more_columns).collect(no_optimization=True)
+        return self.lazy().explode(columns, *more_columns).collect(eager=True)
 
     def pivot(
         self,
@@ -7153,7 +7194,7 @@ class DataFrame:
 
         if n_fill:
             if not isinstance(fill_values, list):
-                fill_values = [fill_values for _ in range(0, df.width)]
+                fill_values = [fill_values for _ in range(df.width)]
 
             df = df.select(
                 [
@@ -7179,7 +7220,7 @@ class DataFrame:
                 s.name + "_" + str(slice_nbr).zfill(zfill_val)
             )
             for s in df
-            for slice_nbr in range(0, n_cols)
+            for slice_nbr in range(n_cols)
         ]
 
         return DataFrame(slices)
@@ -7444,7 +7485,7 @@ class DataFrame:
         return (
             self.lazy()
             .shift_and_fill(fill_value=fill_value, periods=periods)
-            .collect(no_optimization=True)
+            .collect(eager=True)
         )
 
     def is_duplicated(self) -> Series:
@@ -7663,7 +7704,7 @@ class DataFrame:
         └───────────┘
 
         """
-        return self.lazy().select(*exprs, **named_exprs).collect(no_optimization=True)
+        return self.lazy().select(*exprs, **named_exprs).collect(eager=True)
 
     def select_seq(
         self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
@@ -7689,9 +7730,7 @@ class DataFrame:
         select
 
         """
-        return (
-            self.lazy().select_seq(*exprs, **named_exprs).collect(no_optimization=True)
-        )
+        return self.lazy().select_seq(*exprs, **named_exprs).collect(eager=True)
 
     def with_columns(
         self,
@@ -7841,11 +7880,7 @@ class DataFrame:
         └─────┴──────┴─────────────┘
 
         """
-        return (
-            self.lazy()
-            .with_columns(*exprs, **named_exprs)
-            .collect(no_optimization=True)
-        )
+        return self.lazy().with_columns(*exprs, **named_exprs).collect(eager=True)
 
     def with_columns_seq(
         self,
@@ -7880,11 +7915,7 @@ class DataFrame:
         with_columns
 
         """
-        return (
-            self.lazy()
-            .with_columns_seq(*exprs, **named_exprs)
-            .collect(no_optimization=True)
-        )
+        return self.lazy().with_columns_seq(*exprs, **named_exprs).collect(eager=True)
 
     @overload
     def n_chunks(self, strategy: Literal["first"] = ...) -> int:
@@ -8504,7 +8535,7 @@ class DataFrame:
         return (
             self.lazy()
             .unique(subset=subset, keep=keep, maintain_order=maintain_order)
-            .collect(no_optimization=True)
+            .collect(eager=True)
         )
 
     def n_unique(self, subset: str | Expr | Sequence[str | Expr] | None = None) -> int:
@@ -8573,7 +8604,7 @@ class DataFrame:
             struct_fields = F.all() if (subset is None) else subset
             expr = F.struct(struct_fields)  # type: ignore[call-overload]
 
-        df = self.lazy().select(expr.n_unique()).collect(no_optimization=True)
+        df = self.lazy().select(expr.n_unique()).collect(eager=True)
         return 0 if df.is_empty() else df.row(0)[0]
 
     def approx_n_unique(self) -> DataFrame:
@@ -8601,7 +8632,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        return self.lazy().approx_n_unique().collect(no_optimization=True)
+        return self.lazy().approx_n_unique().collect(eager=True)
 
     @deprecate_renamed_function("approx_n_unique", version="0.18.12")
     def approx_unique(self) -> DataFrame:
@@ -8675,8 +8706,8 @@ class DataFrame:
             set to False (default), the order of the returned rows will be
             neither stable nor fully random.
         seed
-            Seed for the random number generator. If set to None (default), a random
-            seed is generated using the ``random`` module.
+            Seed for the random number generator. If set to None (default), a
+            random seed is generated for each sample operation.
 
         Examples
         --------
@@ -9626,7 +9657,7 @@ class DataFrame:
         │ elise  ┆ 44  │
         └────────┴─────┘
         """
-        return self.lazy().merge_sorted(other.lazy(), key).collect(no_optimization=True)
+        return self.lazy().merge_sorted(other.lazy(), key).collect(eager=True)
 
     def set_sorted(
         self,
@@ -9649,7 +9680,7 @@ class DataFrame:
         return (
             self.lazy()
             .set_sorted(column, *more_columns, descending=descending)
-            .collect(no_optimization=True)
+            .collect(eager=True)
         )
 
     def update(
@@ -9732,7 +9763,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        return self.lazy().update(other.lazy(), on, how).collect(no_optimization=True)
+        return self.lazy().update(other.lazy(), on, how).collect(eager=True)
 
     @deprecate_renamed_function("group_by", version="0.19.0")
     def groupby(
@@ -9744,7 +9775,8 @@ class DataFrame:
         """
         Start a group by operation.
 
-        Alias for :func:`DataFrame.group_by`.
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`DataFrame.group_by`.
 
         Parameters
         ----------
@@ -9785,7 +9817,8 @@ class DataFrame:
         """
         Create rolling groups based on a time, Int32, or Int64 column.
 
-        Alias for :func:`DataFrame.group_by_rolling`.
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`DataFrame.group_by_rolling`.
 
         Parameters
         ----------
@@ -9841,7 +9874,8 @@ class DataFrame:
         """
         Group based on a time value (or index value of type Int32, Int64).
 
-        Alias for :func:`DataFrame.group_by_rolling`.
+        .. deprecated:: 0.19.0
+            This method has been renamed to :func:`DataFrame.group_by_dynamic`.
 
         Parameters
         ----------
@@ -9857,10 +9891,10 @@ class DataFrame:
         every
             interval of the window
         period
-            length of the window, if None it is equal to 'every'
+            length of the window, if None it will equal 'every'
         offset
-            offset of the window if None and period is None it will be equal to negative
-            `every`
+            offset of the window, only takes effect if `start_by` is ``'window'``.
+            Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
         include_boundaries
@@ -9874,7 +9908,8 @@ class DataFrame:
         start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
 
-            * 'window': Truncate the start of the window with the 'every' argument.
+            * 'window': Start by taking the earliest timestamp, truncating it with
+              `every`, and then adding `offset`.
               Note that weekly windows start on Monday.
             * 'datapoint': Start from the first encountered data point.
             * a day of the week (only takes effect if `every` contains ``'w'``):

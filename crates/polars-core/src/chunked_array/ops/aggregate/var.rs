@@ -1,9 +1,9 @@
 use super::*;
 
 pub trait VarAggSeries {
-    /// Get the variance of the ChunkedArray as a new Series of length 1.
+    /// Get the variance of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn var_as_series(&self, ddof: u8) -> Series;
-    /// Get the standard deviation of the ChunkedArray as a new Series of length 1.
+    /// Get the standard deviation of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn std_as_series(&self, ddof: u8) -> Series;
 }
 

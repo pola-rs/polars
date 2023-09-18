@@ -128,9 +128,9 @@ impl StringNameSpace {
     }
 
     /// Count all successive non-overlapping regex matches.
-    pub fn count_match(self, pat: &str) -> Expr {
-        let pat = pat.to_string();
-        self.0.map_private(StringFunction::CountMatch(pat).into())
+    pub fn count_matches(self, pat: Expr, literal: bool) -> Expr {
+        self.0
+            .map_many_private(StringFunction::CountMatches(literal).into(), &[pat], false)
     }
 
     /// Convert a Utf8 column into a Date/Datetime/Time column.
@@ -214,53 +214,15 @@ impl StringNameSpace {
     }
 
     /// Split the string by a substring. The resulting dtype is `List<Utf8>`.
-    pub fn split(self, by: &str) -> Expr {
-        let by = by.to_string();
-
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-
-            let mut builder = ListUtf8ChunkedBuilder::new(s.name(), s.len(), ca.get_values_size());
-            ca.into_iter().for_each(|opt_s| match opt_s {
-                None => builder.append_null(),
-                Some(s) => {
-                    let iter = s.split(&by);
-                    builder.append_values_iter(iter);
-                },
-            });
-            Ok(Some(builder.finish().into_series()))
-        };
+    pub fn split(self, by: Expr) -> Expr {
         self.0
-            .map(
-                function,
-                GetOutput::from_type(DataType::List(Box::new(DataType::Utf8))),
-            )
-            .with_fmt("str.split")
+            .map_many_private(StringFunction::Split.into(), &[by], false)
     }
 
     /// Split the string by a substring and keep the substring. The resulting dtype is `List<Utf8>`.
-    pub fn split_inclusive(self, by: &str) -> Expr {
-        let by = by.to_string();
-
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-
-            let mut builder = ListUtf8ChunkedBuilder::new(s.name(), s.len(), ca.get_values_size());
-            ca.into_iter().for_each(|opt_s| match opt_s {
-                None => builder.append_null(),
-                Some(s) => {
-                    let iter = s.split_inclusive(&by);
-                    builder.append_values_iter(iter);
-                },
-            });
-            Ok(Some(builder.finish().into_series()))
-        };
+    pub fn split_inclusive(self, by: Expr) -> Expr {
         self.0
-            .map(
-                function,
-                GetOutput::from_type(DataType::List(Box::new(DataType::Utf8))),
-            )
-            .with_fmt("str.split_inclusive")
+            .map_many_private(StringFunction::SplitInclusive.into(), &[by], false)
     }
 
     #[cfg(feature = "dtype-struct")]
@@ -455,21 +417,43 @@ impl StringNameSpace {
     }
 
     /// Remove leading and trailing characters, or whitespace if matches is None.
-    pub fn strip(self, matches: Option<String>) -> Expr {
+    pub fn strip_chars(self, matches: Option<String>) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::Strip(matches)))
+            .map_private(FunctionExpr::StringExpr(StringFunction::StripChars(
+                matches,
+            )))
     }
 
     /// Remove leading characters, or whitespace if matches is None.
-    pub fn lstrip(self, matches: Option<String>) -> Expr {
+    pub fn strip_chars_start(self, matches: Option<String>) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::LStrip(matches)))
+            .map_private(FunctionExpr::StringExpr(StringFunction::StripCharsStart(
+                matches,
+            )))
     }
 
-    /// Remove trailing characters, or whitespace if matches is None..
-    pub fn rstrip(self, matches: Option<String>) -> Expr {
+    /// Remove trailing characters, or whitespace if matches is None.
+    pub fn strip_chars_end(self, matches: Option<String>) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::RStrip(matches)))
+            .map_private(FunctionExpr::StringExpr(StringFunction::StripCharsEnd(
+                matches,
+            )))
+    }
+
+    /// Remove prefix.
+    pub fn strip_prefix(self, prefix: String) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::StripPrefix(
+                prefix,
+            )))
+    }
+
+    /// Remove suffix.
+    pub fn strip_suffix(self, suffix: String) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::StripSuffix(
+                suffix,
+            )))
     }
 
     /// Convert all characters to lowercase.

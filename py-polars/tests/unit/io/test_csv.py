@@ -15,7 +15,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, NoDataError
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.utils.various import normalise_filepath
+from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -113,11 +113,11 @@ def test_to_from_file(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     assert_frame_equal(df, read_df, categorical_as_str=True)
 
 
-def test_normalise_filepath(io_files_path: Path) -> None:
+def test_normalize_filepath(io_files_path: Path) -> None:
     with pytest.raises(IsADirectoryError):
-        normalise_filepath(io_files_path)
+        normalize_filepath(io_files_path)
 
-    assert normalise_filepath(str(io_files_path), check_not_directory=False) == str(
+    assert normalize_filepath(str(io_files_path), check_not_directory=False) == str(
         io_files_path
     )
 
@@ -1080,7 +1080,7 @@ def test_datetime_format_inferred_precision(
 
 
 def test_inferred_datetime_format_mixed() -> None:
-    ts = pl.date_range(datetime(2000, 1, 1), datetime(2000, 1, 2), eager=True)
+    ts = pl.datetime_range(datetime(2000, 1, 1), datetime(2000, 1, 2), eager=True)
     df = pl.DataFrame({"naive": ts, "aware": ts.dt.replace_time_zone("UTC")})
     result = df.write_csv()
     expected = (
@@ -1463,23 +1463,27 @@ def test_csv_quote_styles() -> None:
     df = pl.DataFrame(
         {
             "float": [1.0, 2.0, None],
-            "string": ["a", "abc", '"hello'],
+            "string": ["a", "a,bc", '"hello'],
             "int": [1, 2, 3],
             "bool": [True, False, None],
         }
     )
 
     assert (
-        df.write_csv(quote_style="necessary")
-        == 'float,string,int,bool\n1.0,a,1,true\n2.0,abc,2,false\n,"""hello",3,\n'
+        df.write_csv(quote_style="always")
+        == '"float","string","int","bool"\n"1.0","a","1","true"\n"2.0","a,bc","2","false"\n"","""hello","3",""\n'
     )
     assert (
-        df.write_csv(quote_style="always")
-        == '"float","string","int","bool"\n"1.0","a","1","true"\n"2.0","abc","2","false"\n"","""hello","3",""\n'
+        df.write_csv(quote_style="necessary")
+        == 'float,string,int,bool\n1.0,a,1,true\n2.0,"a,bc",2,false\n,"""hello",3,\n'
+    )
+    assert (
+        df.write_csv(quote_style="never")
+        == 'float,string,int,bool\n1.0,a,1,true\n2.0,a,bc,2,false\n,"hello,3,\n'
     )
     assert (
         df.write_csv(quote_style="non_numeric", quote="8")
-        == '8float8,8string8,8int8,8bool8\n1.0,8a8,1,8true8\n2.0,8abc8,2,8false8\n,8"hello8,3,\n'
+        == '8float8,8string8,8int8,8bool8\n1.0,8a8,1,8true8\n2.0,8a,bc8,2,8false8\n,8"hello8,3,\n'
     )
 
 

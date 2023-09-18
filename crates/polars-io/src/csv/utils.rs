@@ -16,7 +16,7 @@ use crate::csv::parser::next_line_position_naive;
 use crate::csv::parser::{next_line_position, skip_bom, skip_line_ending, SplitLines};
 use crate::csv::splitfields::SplitFields;
 use crate::csv::CsvEncoding;
-use crate::mmap::{MmapBytesReader, ReaderBytes};
+use crate::mmap::*;
 use crate::prelude::NullValues;
 
 pub(crate) fn get_file_chunks(
@@ -55,37 +55,6 @@ pub(crate) fn get_file_chunks(
     }
     offsets.push((last_pos, total_len));
     offsets
-}
-
-pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
-    reader: &'a mut R,
-) -> PolarsResult<ReaderBytes<'a>> {
-    // we have a file so we can mmap
-    if let Some(file) = reader.to_file() {
-        let mmap = unsafe { memmap::Mmap::map(file)? };
-
-        // somehow bck thinks borrows alias
-        // this is sound as file was already bound to 'a
-        use std::fs::File;
-        let file = unsafe { std::mem::transmute::<&File, &'a File>(file) };
-        Ok(ReaderBytes::Mapped(mmap, file))
-    } else {
-        // we can get the bytes for free
-        if reader.to_bytes().is_some() {
-            // duplicate .to_bytes() is necessary to satisfy the borrow checker
-            Ok(ReaderBytes::Borrowed((*reader).to_bytes().unwrap()))
-        } else {
-            // we have to read to an owned buffer to get the bytes.
-            let mut bytes = Vec::with_capacity(1024 * 128);
-            reader.read_to_end(&mut bytes)?;
-            if !bytes.is_empty()
-                && (bytes[bytes.len() - 1] != b'\n' || bytes[bytes.len() - 1] != b'\r')
-            {
-                bytes.push(b'\n')
-            }
-            Ok(ReaderBytes::Owned(bytes))
-        }
-    }
 }
 
 static FLOAT_RE: Lazy<Regex> = Lazy::new(|| {

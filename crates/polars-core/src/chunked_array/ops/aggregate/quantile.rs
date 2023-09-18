@@ -5,9 +5,9 @@ use polars_utils::slice::Extrema;
 use super::*;
 
 pub trait QuantileAggSeries {
-    /// Get the median of the ChunkedArray as a new Series of length 1.
+    /// Get the median of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn median_as_series(&self) -> Series;
-    /// Get the quantile of the ChunkedArray as a new Series of length 1.
+    /// Get the quantile of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn quantile_as_series(
         &self,
         _quantile: f64,

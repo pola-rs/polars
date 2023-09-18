@@ -12,13 +12,11 @@ use crate::utils::CustomIterTools;
 pub mod default_arrays;
 #[cfg(feature = "dtype-array")]
 pub mod fixed_size_list;
-mod get;
 pub mod list;
 pub mod null;
 pub mod slice;
 pub mod utf8;
 
-pub use get::ArrowGetItem;
 pub use slice::*;
 
 pub trait ValueSize {

@@ -1,4 +1,4 @@
-//! Lazy variant of a [DataFrame](polars_core::frame::DataFrame).
+//! Lazy variant of a [DataFrame].
 #[cfg(feature = "csv")]
 mod csv;
 #[cfg(feature = "ipc")]
@@ -140,6 +140,8 @@ impl LazyFrame {
             #[cfg(feature = "cse")]
             comm_subexpr_elim: false,
             streaming: false,
+            eager: false,
+            fast_projection: false,
         })
     }
 
@@ -190,6 +192,11 @@ impl LazyFrame {
     /// Allow (partial) streaming engine.
     pub fn with_streaming(mut self, toggle: bool) -> Self {
         self.opt_state.streaming = toggle;
+        self
+    }
+
+    pub fn _with_eager(mut self, toggle: bool) -> Self {
+        self.opt_state.eager = toggle;
         self
     }
 
@@ -431,7 +438,14 @@ impl LazyFrame {
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
     {
-        self.select(vec![col("*").exclude(columns)])
+        let to_drop = columns
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<PlHashSet<_>>();
+
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().drop_columns(to_drop).build();
+        Self::from_logical_plan(lp, opt_state)
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -589,9 +603,9 @@ impl LazyFrame {
             None
         };
 
-        // file sink should be replaced
+        // sink should be replaced
         let no_file_sink = if check_sink {
-            !matches!(lp_arena.get(lp_top), ALogicalPlan::FileSink { .. })
+            !matches!(lp_arena.get(lp_top), ALogicalPlan::Sink { .. })
         } else {
             true
         };
@@ -650,9 +664,9 @@ impl LazyFrame {
     #[cfg(feature = "parquet")]
     pub fn sink_parquet(mut self, path: PathBuf, options: ParquetWriteOptions) -> PolarsResult<()> {
         self.opt_state.streaming = true;
-        self.logical_plan = LogicalPlan::FileSink {
+        self.logical_plan = LogicalPlan::Sink {
             input: Box::new(self.logical_plan),
-            payload: FileSinkOptions {
+            payload: SinkType::File {
                 path: Arc::new(path),
                 file_type: FileType::Parquet(options),
             },
@@ -667,15 +681,44 @@ impl LazyFrame {
         Ok(())
     }
 
+    /// Stream a query result into a parquet file on an ObjectStore-compatible cloud service. This is useful if the final result doesn't fit
+    /// into memory, and where you do not want to write to a local file but to a location in the cloud.
+    /// This method will return an error if the query cannot be completely done in a
+    /// streaming fashion.
+    #[cfg(all(feature = "cloud_write", feature = "parquet"))]
+    pub fn sink_parquet_cloud(
+        mut self,
+        uri: String,
+        cloud_options: Option<polars_core::cloud::CloudOptions>,
+        parquet_options: ParquetWriteOptions,
+    ) -> PolarsResult<()> {
+        self.opt_state.streaming = true;
+        self.logical_plan = LogicalPlan::Sink {
+            input: Box::new(self.logical_plan),
+            payload: SinkType::Cloud {
+                uri: Arc::new(uri),
+                cloud_options,
+                file_type: FileType::Parquet(parquet_options),
+            },
+        };
+        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
+        polars_ensure!(
+            is_streaming,
+            ComputeError: "cannot run the whole query in a streaming order"
+        );
+        let _ = physical_plan.execute(&mut state)?;
+        Ok(())
+    }
+
     /// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "ipc")]
     pub fn sink_ipc(mut self, path: PathBuf, options: IpcWriterOptions) -> PolarsResult<()> {
         self.opt_state.streaming = true;
-        self.logical_plan = LogicalPlan::FileSink {
+        self.logical_plan = LogicalPlan::Sink {
             input: Box::new(self.logical_plan),
-            payload: FileSinkOptions {
+            payload: SinkType::File {
                 path: Arc::new(path),
                 file_type: FileType::Ipc(options),
             },
@@ -696,9 +739,9 @@ impl LazyFrame {
     #[cfg(feature = "csv")]
     pub fn sink_csv(mut self, path: PathBuf, options: CsvWriterOptions) -> PolarsResult<()> {
         self.opt_state.streaming = true;
-        self.logical_plan = LogicalPlan::FileSink {
+        self.logical_plan = LogicalPlan::Sink {
             input: Box::new(self.logical_plan),
-            payload: FileSinkOptions {
+            payload: SinkType::File {
                 path: Arc::new(path),
                 file_type: FileType::Csv(options),
             },
@@ -737,7 +780,7 @@ impl LazyFrame {
 
     /// Select (and optionally rename, with [`alias`](crate::dsl::Expr::alias)) columns from the query.
     ///
-    /// Columns can be selected with [`col`](crate::dsl::col);
+    /// Columns can be selected with [`col`];
     /// If you want to select all columns use `col("*")`.
     ///
     /// # Example
@@ -762,7 +805,13 @@ impl LazyFrame {
     /// ```
     pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
         let exprs = exprs.as_ref().to_vec();
-        self.select_impl(exprs, ProjectionOptions { run_parallel: true })
+        self.select_impl(
+            exprs,
+            ProjectionOptions {
+                run_parallel: true,
+                duplicate_check: true,
+            },
+        )
     }
 
     pub fn select_seq<E: AsRef<[Expr]>>(self, exprs: E) -> Self {
@@ -771,6 +820,7 @@ impl LazyFrame {
             exprs,
             ProjectionOptions {
                 run_parallel: false,
+                duplicate_check: true,
             },
         )
     }
@@ -1097,6 +1147,7 @@ impl LazyFrame {
                 vec![expr],
                 ProjectionOptions {
                     run_parallel: false,
+                    duplicate_check: true,
                 },
             )
             .build();
@@ -1119,7 +1170,13 @@ impl LazyFrame {
     /// ```
     pub fn with_columns<E: AsRef<[Expr]>>(self, exprs: E) -> LazyFrame {
         let exprs = exprs.as_ref().to_vec();
-        self.with_columns_impl(exprs, ProjectionOptions { run_parallel: true })
+        self.with_columns_impl(
+            exprs,
+            ProjectionOptions {
+                run_parallel: true,
+                duplicate_check: true,
+            },
+        )
     }
 
     /// Add multiple columns to a DataFrame, but evaluate them sequentially.
@@ -1129,6 +1186,7 @@ impl LazyFrame {
             exprs,
             ProjectionOptions {
                 run_parallel: false,
+                duplicate_check: true,
             },
         )
     }
@@ -1510,7 +1568,7 @@ pub struct LazyGroupBy {
 impl LazyGroupBy {
     /// Group by and aggregate.
     ///
-    /// Select a column with [col](crate::dsl::col) and choose an aggregation.
+    /// Select a column with [col] and choose an aggregation.
     /// If you want to aggregate all columns use `col("*")`.
     ///
     /// # Example

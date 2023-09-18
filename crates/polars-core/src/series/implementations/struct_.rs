@@ -58,10 +58,12 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
         Ok(StructChunked::new_unchecked(self.0.name(), &fields).into_series())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         let df = DataFrame::new_no_checks(vec![]);
         let gb = df
@@ -283,6 +285,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     /// Get unique values in the Series.
+    #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
         // this can called in aggregation, so this fast path can be worth a lot
         if self.len() < 2 {
@@ -296,6 +299,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     /// Get unique values in the Series.
+    #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
         // this can called in aggregation, so this fast path can be worth a lot
         match self.len() {
@@ -311,6 +315,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     /// Get first indexes of unique values.
+    #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         // this can called in aggregation, so this fast path can be worth a lot
         if self.len() == 1 {

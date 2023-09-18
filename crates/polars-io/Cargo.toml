@@ -9,12 +9,12 @@ repository = { workspace = true }
 description = "IO related logic for the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { version = "0.32.0", path = "../polars-arrow" }
-polars-core = { version = "0.32.0", path = "../polars-core", features = [], default-features = false }
-polars-error = { version = "0.32.0", path = "../polars-error", default-features = false }
-polars-json = { version = "0.32.0", optional = true, path = "../polars-json" }
-polars-time = { version = "0.32.0", path = "../polars-time", features = [], default-features = false, optional = true }
-polars-utils = { version = "0.32.0", path = "../polars-utils" }
+polars-arrow = { workspace = true }
+polars-core = { workspace = true }
+polars-error = { workspace = true, default-features = false }
+polars-json = { workspace = true, optional = true }
+polars-time = { workspace = true, features = [], optional = true }
+polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
@@ -28,7 +28,7 @@ futures = { workspace = true }
 lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-integers"] }
 lexical-core = { version = "0.8", optional = true }
 memchr = { workspace = true }
-memmap = { package = "memmap2", version = "0.7", optional = true }
+memmap = { package = "memmap2", version = "0.7" }
 num-traits = { workspace = true }
 object_store = { workspace = true, optional = true }
 once_cell = { workspace = true }
@@ -39,18 +39,20 @@ serde_json = { version = "1", default-features = false, features = ["alloc", "ra
 simd-json = { workspace = true, optional = true }
 simdutf8 = { version = "0.1", optional = true }
 tokio = { version = "1.26", features = ["net", "io-util"] }
-tokio-util = { version = "0.7.8", features = ["io-util"] }
+tokio-util = { version = "0.7.8", features = ["io", "io-util"] }
 url = { workspace = true, optional = true }
 
 [dependencies.opendal]
-version = "0"
+git ="https://github.com/apache/incubator-opendal.git"
 default-features = false
+tag = "v0.40.0-rc.2"
 features = [
   "services-azblob",
-  "services-azdfs",
+  "services-azdls",
   "services-gcs",
   "services-s3",
   "services-http",
+  "services-fs",
   "services-webhdfs",
 ]
 
@@ -67,20 +69,20 @@ json = [
   "arrow/io_json_write",
   "polars-json",
   "simd-json",
-  "memmap",
   "lexical",
   "lexical-core",
   "serde_json",
   "dtype-struct",
+  "csv",
   "arrow/io_json_read",
 ]
 # support for arrows ipc file parsing
-ipc = ["arrow/io_ipc", "arrow/io_ipc_compression", "memmap", "arrow/io_ipc_read_async"]
+ipc = ["arrow/io_ipc", "arrow/io_ipc_compression", "arrow/io_ipc_read_async"]
 # support for arrows streaming ipc file parsing
 ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
 avro = ["arrow/io_avro", "arrow/io_avro_compression", "arrow/io_avro_async"]
-csv = ["memmap", "lexical", "polars-core/rows", "lexical-core", "fast-float", "simdutf8", "arrow/io_csv_read_async"]
+csv = ["lexical", "polars-core/rows", "lexical-core", "fast-float", "simdutf8", "arrow/io_csv_read_async"]
 decompress = ["flate2/rust_backend"]
 decompress-fast = ["flate2/zlib-ng"]
 dtype-categorical = ["polars-core/dtype-categorical"]
@@ -101,7 +103,7 @@ dtype-struct = ["polars-core/dtype-struct"]
 dtype-decimal = ["polars-core/dtype-decimal"]
 fmt = ["polars-core/fmt"]
 lazy = []
-parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "memmap"]
+parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression"]
 async = ["arrow/io_ipc_write_async", "polars-error/regex"]
 cloud = ["object_store", "async", "url"]
 aws = ["object_store/aws", "cloud", "polars-core/aws"]

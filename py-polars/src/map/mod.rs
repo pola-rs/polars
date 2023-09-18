@@ -45,26 +45,23 @@ fn iterator_to_struct<'a>(
         },
     };
 
-    // every item in the struct is kept as its own buffer of anyvalues
-    // so as struct with 2 items: {a, b}
-    // will have
+    // Every item in the struct is kept as its own buffer of AnyValues.
+    // So a struct with 2 items: {a, b} will have:
     // [
     //      [ a values ]
     //      [ b values ]
     // ]
     let mut struct_fields: BTreeMap<&str, Vec<AnyValue>> = BTreeMap::new();
 
-    // as a BTreeMap sorts its keys, we also need to track the original
-    // order of the field names
+    // As a BTreeMap sorts its keys, we also need to track the original
+    // order of the field names.
     let mut field_names_ordered = Vec::with_capacity(flds.len());
 
-    // use the first value and the known null count to initialize the buffers
-    // if we find a new key later on, we make a new entry in the BTree
+    // Use the first value and the known null count to initialize the buffers
+    // if we find a new key later on, we make a new entry in the BTree.
     for (value, fld) in vals.into_iter().zip(flds) {
         let mut buf = Vec::with_capacity(capacity);
-        for _ in 0..init_null_count {
-            buf.push(AnyValue::Null);
-        }
+        buf.extend((0..init_null_count).map(|_| AnyValue::Null));
         buf.push(value);
         field_names_ordered.push(fld.name() as &str);
         struct_fields.insert(fld.name(), buf);
@@ -79,30 +76,27 @@ fn iterator_to_struct<'a>(
             },
             Some(dict) => {
                 let dict = dict.downcast::<PyDict>()?;
-
                 let current_len = struct_fields
                     .values()
                     .next()
                     .map(|buf| buf.len())
                     .unwrap_or(0);
 
-                // we ignore the keys of the rest of the dicts
-                // the first item determines the output name
+                // We ignore the keys of the rest of the dicts,
+                // the first item determines the output name.
                 for (key, val) in dict.iter() {
                     let key = key.str().unwrap().to_str().unwrap();
                     let buf = struct_fields.entry(key).or_insert_with(|| {
                         field_names_ordered.push(key);
                         let mut buf = Vec::with_capacity(capacity);
-                        for _ in 0..(init_null_count + current_len) {
-                            buf.push(AnyValue::Null);
-                        }
+                        buf.extend((0..init_null_count + current_len).map(|_| AnyValue::Null));
                         buf
                     });
                     let item = val.extract::<Wrap<AnyValue>>()?;
                     buf.push(item.0)
                 }
 
-                // add nulls to keys that were not in the dict
+                // Add nulls to keys that were not in the dict.
                 if dict.len() < struct_fields.len() {
                     let current_len = current_len + 1;
                     for buf in struct_fields.values_mut() {
@@ -138,8 +132,8 @@ fn iterator_to_primitive<T>(
 where
     T: PyArrowPrimitiveType,
 {
-    // safety: we know the iterators len
-    let mut ca: ChunkedArray<T> = unsafe {
+    // SAFETY: we know the iterators len.
+    let ca: ChunkedArray<T> = unsafe {
         if init_null_count > 0 {
             (0..init_null_count)
                 .map(|_| None)
@@ -157,8 +151,7 @@ where
         }
     };
     debug_assert_eq!(ca.len(), capacity);
-    ca.rename(name);
-    ca
+    ca.with_name(name)
 }
 
 fn iterator_to_bool(
@@ -168,8 +161,8 @@ fn iterator_to_bool(
     name: &str,
     capacity: usize,
 ) -> ChunkedArray<BooleanType> {
-    // safety: we know the iterators len
-    let mut ca: BooleanChunked = unsafe {
+    // SAFETY: we know the iterators len.
+    let ca: BooleanChunked = unsafe {
         if init_null_count > 0 {
             (0..init_null_count)
                 .map(|_| None)
@@ -187,8 +180,7 @@ fn iterator_to_bool(
         }
     };
     debug_assert_eq!(ca.len(), capacity);
-    ca.rename(name);
-    ca
+    ca.with_name(name)
 }
 
 #[cfg(feature = "object")]
@@ -199,8 +191,8 @@ fn iterator_to_object(
     name: &str,
     capacity: usize,
 ) -> ObjectChunked<ObjectValue> {
-    // safety: we know the iterators len
-    let mut ca: ObjectChunked<ObjectValue> = unsafe {
+    // SAFETY: we know the iterators len.
+    let ca: ObjectChunked<ObjectValue> = unsafe {
         if init_null_count > 0 {
             (0..init_null_count)
                 .map(|_| None)
@@ -218,8 +210,7 @@ fn iterator_to_object(
         }
     };
     debug_assert_eq!(ca.len(), capacity);
-    ca.rename(name);
-    ca
+    ca.with_name(name)
 }
 
 fn iterator_to_utf8<'a>(
@@ -229,8 +220,8 @@ fn iterator_to_utf8<'a>(
     name: &str,
     capacity: usize,
 ) -> Utf8Chunked {
-    // safety: we know the iterators len
-    let mut ca: Utf8Chunked = unsafe {
+    // SAFETY: we know the iterators len.
+    let ca: Utf8Chunked = unsafe {
         if init_null_count > 0 {
             (0..init_null_count)
                 .map(|_| None)
@@ -248,8 +239,7 @@ fn iterator_to_utf8<'a>(
         }
     };
     debug_assert_eq!(ca.len(), capacity);
-    ca.rename(name);
-    ca
+    ca.with_name(name)
 }
 
 fn iterator_to_list(

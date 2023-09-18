@@ -20,23 +20,22 @@ struct Wrap<T>(pub T);
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DynamicGroupOptions {
-    /// Time or index column
+    /// Time or index column.
     pub index_column: SmartString,
-    /// start a window at this interval
+    /// Start a window at this interval.
     pub every: Duration,
-    /// window duration
+    /// Window duration.
     pub period: Duration,
-    /// offset window boundaries
+    /// Offset window boundaries.
     pub offset: Duration,
-    /// truncate the time column values to the window
+    /// Truncate the time column values to the window.
     pub truncate: bool,
-    /// add the boundaries to the dataframe
+    /// Add the boundaries to the dataframe.
     pub include_boundaries: bool,
     pub closed_window: ClosedWindow,
     pub start_by: StartBy,
-    /// In cases sortedness cannot be checked by
-    /// the sorted flag, traverse the data to
-    /// check sortedness
+    /// In cases sortedness cannot be checked by the sorted flag,
+    /// traverse the data to check sortedness.
     pub check_sorted: bool,
 }
 
@@ -59,15 +58,14 @@ impl Default for DynamicGroupOptions {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RollingGroupOptions {
-    /// Time or index column
+    /// Time or index column.
     pub index_column: SmartString,
-    /// window duration
+    /// Window duration.
     pub period: Duration,
     pub offset: Duration,
     pub closed_window: ClosedWindow,
-    /// In cases sortedness cannot be checked by
-    /// the sorted flag, traverse the data to
-    /// check sortedness
+    /// In cases sortedness cannot be checked by the sorted flag,
+    /// traverse the data to check sortedness.
     pub check_sorted: bool,
 }
 
@@ -130,14 +128,14 @@ impl Wrap<&DataFrame> {
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         polars_ensure!(
-                        options.period.duration_ns()>0 && !options.period.negative,
+                        options.period.duration_ns() > 0 && !options.period.negative,
                         ComputeError:
                         "rolling window period should be strictly positive",
         );
         let time = self.0.column(&options.index_column)?.clone();
         if by.is_empty() {
-            // if by is given, the column must be sorted in the 'by' arg, which we can not check now
-            // this will be checked when the groups are materialized
+            // If by is given, the column must be sorted in the 'by' arg, which we can not check now
+            // this will be checked when the groups are materialized.
             ensure_sorted_arg(&time, "group_by_rolling")?;
         }
         let time_type = time.dtype();
@@ -195,7 +193,7 @@ impl Wrap<&DataFrame> {
         }
     }
 
-    /// Returns: time_keys, keys, groupsproxy
+    /// Returns: time_keys, keys, groupsproxy.
     fn group_by_dynamic(
         &self,
         by: Vec<Series>,
@@ -212,8 +210,8 @@ impl Wrap<&DataFrame> {
 
         let time = self.0.column(&options.index_column)?.rechunk();
         if by.is_empty() {
-            // if by is given, the column must be sorted in the 'by' arg, which we can not check now
-            // this will be checked when the groups are materialized
+            // If by is given, the column must be sorted in the 'by' arg, which we can not check now
+            // this will be checked when the groups are materialized.
             ensure_sorted_arg(&time, "group_by_dynamic")?;
         }
         let time_type = time.dtype();
@@ -275,8 +273,7 @@ impl Wrap<&DataFrame> {
             return dt.cast(time_type).map(|s| (s, by, GroupsProxy::default()));
         }
 
-        // a requirement for the index
-        // so we can set this such that downstream code has this info
+        // A requirement for the index so we can set this such that downstream code has this info.
         dt.set_sorted_flag(IsSorted::Ascending);
 
         let w = Window::new(options.every, options.period, options.offset);
@@ -334,7 +331,7 @@ impl Wrap<&DataFrame> {
                 .group_by_with_series(by.clone(), true, true)?
                 .take_groups();
 
-            // include boundaries cannot be parallel (easily)
+            // Include boundaries cannot be parallel (easily).
             if include_lower_bound {
                 POOL.install(|| match groups {
                     GroupsProxy::Idx(groups) => {
@@ -490,8 +487,7 @@ impl Wrap<&DataFrame> {
             if by.is_empty() {
                 lower.set_sorted_flag(IsSorted::Ascending)
             }
-            lower.rename(dt.name());
-            dt = lower;
+            dt = lower.with_name(dt.name());
         }
 
         if let (true, Some(mut lower), Some(upper)) =
@@ -639,9 +635,8 @@ fn update_subgroups_idx(
         .iter()
         .map(|&[first, len]| {
             let new_first = if len == 0 {
-                // in case the group is empty
-                // keep the original first so that the
-                // group_by keys still point to the original group
+                // In case the group is empty, keep the original first so that the
+                // group_by keys still point to the original group.
                 base_g.0
             } else {
                 unsafe { *base_g.1.get_unchecked_release(first as usize) }
@@ -762,7 +757,7 @@ mod test {
         let expected = Series::new("", [3, 3, 3, 3, 2, 1]);
         assert_eq!(min, expected);
 
-        // expected for nulls is equal
+        // Expected for nulls is equality.
         let min = unsafe { nulls.agg_min(&groups) };
         assert_eq!(min, expected);
 
@@ -952,9 +947,8 @@ mod test {
                 },
             )
             .unwrap();
-        let mut lower_bound = keys[1].clone();
         time_key.rename("");
-        lower_bound.rename("");
+        let lower_bound = keys[1].clone().with_name("");
         assert!(time_key.series_equal(&lower_bound));
         Ok(())
     }

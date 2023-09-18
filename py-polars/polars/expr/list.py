@@ -459,7 +459,7 @@ class ExprListNameSpace:
         item = parse_as_expression(item, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_contains(item))
 
-    def join(self, separator: str) -> Expr:
+    def join(self, separator: IntoExpr) -> Expr:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -489,7 +489,21 @@ class ExprListNameSpace:
         │ x y   │
         └───────┘
 
+        >>> df = pl.DataFrame(
+        ...     {"s": [["a", "b", "c"], ["x", "y"]], "separator": ["*", "_"]}
+        ... )
+        >>> df.select(pl.col("s").list.join(pl.col("separator")))
+        shape: (2, 1)
+        ┌───────┐
+        │ s     │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │ a*b*c │
+        │ x_y   │
+        └───────┘
         """
+        separator = parse_as_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_join(separator))
 
     def arg_min(self) -> Expr:
@@ -738,7 +752,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.explode())
 
-    def count_match(self, element: IntoExpr) -> Expr:
+    def count_matches(self, element: IntoExpr) -> Expr:
         """
         Count how often the value produced by ``element`` occurs.
 
@@ -750,7 +764,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"listcol": [[0], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]})
-        >>> df.select(pl.col("listcol").list.count_match(2).alias("number_of_twos"))
+        >>> df.select(pl.col("listcol").list.count_matches(2).alias("number_of_twos"))
         shape: (5, 1)
         ┌────────────────┐
         │ number_of_twos │
@@ -766,7 +780,7 @@ class ExprListNameSpace:
 
         """
         element = parse_as_expression(element, str_as_lit=True)
-        return wrap_expr(self._pyexpr.list_count_match(element))
+        return wrap_expr(self._pyexpr.list_count_matches(element))
 
     def to_struct(
         self,
@@ -1068,3 +1082,19 @@ class ExprListNameSpace:
 
         """  # noqa: W505
         return self.set_symmetric_difference(other)
+
+    @deprecate_renamed_function("count_matches", version="0.19.3")
+    def count_match(self, element: IntoExpr) -> Expr:
+        """
+        Count how often the value produced by ``element`` occurs.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`count_matches`.
+
+        Parameters
+        ----------
+        element
+            An expression that produces a single value
+
+        """
+        return self.count_matches(element)

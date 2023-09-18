@@ -100,7 +100,7 @@ else:
 
 
 @lru_cache(64)
-def is_namedtuple(cls: Any, annotated: bool = False) -> bool:
+def is_namedtuple(cls: Any, *, annotated: bool = False) -> bool:
     """Check whether given class derives from NamedTuple."""
     if all(hasattr(cls, attr) for attr in ("_fields", "_field_defaults", "_replace")):
         if not isinstance(cls._fields, property):
@@ -161,7 +161,7 @@ def series_to_pyseries(name: str, values: Series) -> PySeries:
     return py_s
 
 
-def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySeries:
+def arrow_to_pyseries(name: str, values: pa.Array, *, rechunk: bool = True) -> PySeries:
     """Construct a PySeries from an Arrow array."""
     array = coerce_arrow(values)
 
@@ -204,6 +204,7 @@ def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySe
 def numpy_to_pyseries(
     name: str,
     values: np.ndarray[Any, Any],
+    *,
     strict: bool = True,
     nan_to_null: bool = False,
 ) -> PySeries:
@@ -221,9 +222,11 @@ def numpy_to_pyseries(
         pyseries_container = []
         for row in range(values.shape[0]):
             pyseries_container.append(
-                numpy_to_pyseries("", values[row, :], strict, nan_to_null)
+                numpy_to_pyseries(
+                    "", values[row, :], strict=strict, nan_to_null=nan_to_null
+                )
             )
-        return PySeries.new_series_list(name, pyseries_container, False)
+        return PySeries.new_series_list(name, pyseries_container, _strict=False)
     else:
         return PySeries.new_object(name, values, strict)
 
@@ -250,20 +253,21 @@ def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> PySeri
         return PySeries.new_from_anyvalues(name, values, strict=True)
     # raised if we cannot convert to Wrap<AnyValue>
     except RuntimeError:
-        return PySeries.new_object(name, values, False)
-    except ComputeError as e:
-        if "mixed dtypes" in str(e):
-            return PySeries.new_object(name, values, False)
-        raise e
+        return PySeries.new_object(name, values, _strict=False)
+    except ComputeError as exc:
+        if "mixed dtypes" in str(exc):
+            return PySeries.new_object(name, values, _strict=False)
+        raise
 
 
 def iterable_to_pyseries(
     name: str,
     values: Iterable[Any],
     dtype: PolarsDataType | None = None,
-    strict: bool = True,
+    *,
     dtype_if_empty: PolarsDataType | None = None,
     chunk_size: int = 1_000_000,
+    strict: bool = True,
 ) -> PySeries:
     """Construct a PySeries from an iterable/generator."""
     if not isinstance(values, (Generator, Iterator)):
@@ -305,6 +309,7 @@ def _construct_series_with_fallbacks(
     name: str,
     values: Sequence[Any],
     target_dtype: PolarsDataType | None,
+    *,
     strict: bool,
 ) -> PySeries:
     """Construct Series, with fallbacks for basic type mismatch (eg: bool/int)."""
@@ -341,15 +346,16 @@ def _construct_series_with_fallbacks(
             elif "decimal.Decimal" in str_exc:
                 constructor = py_type_to_constructor(PyDecimal)
             else:
-                raise exc
+                raise
 
 
 def sequence_to_pyseries(
     name: str,
     values: Sequence[Any],
     dtype: PolarsDataType | None = None,
-    strict: bool = True,
+    *,
     dtype_if_empty: PolarsDataType | None = None,
+    strict: bool = True,
     nan_to_null: bool = False,
 ) -> PySeries:
     """Construct a PySeries from a sequence."""
@@ -403,11 +409,11 @@ def sequence_to_pyseries(
     ):
         constructor = polars_type_to_constructor(dtype)
         pyseries = _construct_series_with_fallbacks(
-            constructor, name, values, dtype, strict
+            constructor, name, values, dtype, strict=strict
         )
         if dtype in (Date, Datetime, Duration, Time, Categorical, Boolean):
             if pyseries.dtype() != dtype:
-                pyseries = pyseries.cast(dtype, True)
+                pyseries = pyseries.cast(dtype, strict=True)
         return pyseries
 
     elif dtype == Struct:
@@ -427,7 +433,7 @@ def sequence_to_pyseries(
                     dtype_if_empty if dtype_if_empty else Float32
                 )
                 return _construct_series_with_fallbacks(
-                    constructor, name, values, dtype, strict
+                    constructor, name, values, dtype, strict=strict
                 )
 
             # generic default dtype
@@ -495,7 +501,10 @@ def sequence_to_pyseries(
         ):
             return PySeries.new_series_list(
                 name,
-                [numpy_to_pyseries("", v, strict, nan_to_null) for v in values],
+                [
+                    numpy_to_pyseries("", v, strict=strict, nan_to_null=nan_to_null)
+                    for v in values
+                ],
                 strict,
             )
 
@@ -524,14 +533,15 @@ def sequence_to_pyseries(
                     return sequence_from_anyvalue_or_object(name, values)
 
             return _construct_series_with_fallbacks(
-                constructor, name, values, dtype, strict
+                constructor, name, values, dtype, strict=strict
             )
 
 
 def _pandas_series_to_arrow(
     values: pd.Series[Any] | pd.Index[Any],
-    nan_to_null: bool = True,
+    *,
     length: int | None = None,
+    nan_to_null: bool = True,
 ) -> pa.Array:
     """
     Convert a pandas Series to an Arrow Array.
@@ -571,7 +581,7 @@ def _pandas_series_to_arrow(
 
 
 def pandas_to_pyseries(
-    name: str, values: pd.Series[Any] | pd.DatetimeIndex, nan_to_null: bool = True
+    name: str, values: pd.Series[Any] | pd.DatetimeIndex, *, nan_to_null: bool = True
 ) -> PySeries:
     """Construct a PySeries from a pandas Series or DatetimeIndex."""
     # TODO: Change `if not name` to `if name is not None` once name is Optional[str]
@@ -588,7 +598,10 @@ def pandas_to_pyseries(
 
 
 def _handle_columns_arg(
-    data: list[PySeries], columns: Sequence[str] | None = None, from_dict: bool = False
+    data: list[PySeries],
+    columns: Sequence[str] | None = None,
+    *,
+    from_dict: bool = False,
 ) -> list[PySeries]:
     """Rename data according to columns argument."""
     if not columns:
@@ -630,12 +643,14 @@ def _post_apply_columns(
 
     column_casts = []
     for i, col in enumerate(columns):
-        if dtypes.get(col) == Categorical != pydf_dtypes[i]:
+        dtype = dtypes.get(col)
+        pydf_dtype = pydf_dtypes[i]
+        if dtype == Categorical != pydf_dtype:
             column_casts.append(F.col(col).cast(Categorical)._pyexpr)
-        elif structs and col in structs and structs[col] != pydf_dtypes[i]:
-            column_casts.append(F.col(col).cast(structs[col])._pyexpr)
-        elif dtypes.get(col) not in (None, Unknown) and dtypes[col] != pydf_dtypes[i]:
-            column_casts.append(F.col(col).cast(dtypes[col])._pyexpr)
+        elif structs and (struct := structs.get(col)) and struct != pydf_dtype:
+            column_casts.append(F.col(col).cast(struct)._pyexpr)
+        elif dtype is not None and dtype != Unknown and dtype != pydf_dtype:
+            column_casts.append(F.col(col).cast(dtype)._pyexpr)
 
     if column_casts or column_subset:
         pydf = pydf.lazy()
@@ -650,6 +665,7 @@ def _post_apply_columns(
 
 def _unpack_schema(
     schema: SchemaDefinition | None,
+    *,
     schema_overrides: SchemaDict | None = None,
     n_expected: int | None = None,
     lookup_names: Iterable[str] | None = None,
@@ -661,36 +677,59 @@ def _unpack_schema(
     Works for any (name, dtype) pairs or schema dict input,
     overriding any inferred dtypes with explicit dtypes if supplied.
     """
+    # coerce schema_overrides to dict[str, PolarsDataType]
+    if schema_overrides:
+        schema_overrides = {
+            name: dtype
+            if is_polars_dtype(dtype, include_unknown=True)
+            else py_type_to_dtype(dtype)
+            for name, dtype in schema_overrides.items()
+        }
+    else:
+        schema_overrides = {}
+
+    # fastpath for empty schema
+    if not schema:
+        return (
+            [f"column_{i}" for i in range(n_expected)] if n_expected else [],
+            schema_overrides,
+        )
+
+    # determine column names from schema
     if isinstance(schema, dict):
+        column_names: list[str] = list(schema)
+        # coerce schema to list[str | tuple[str, PolarsDataType | PythonDataType | None]
         schema = list(schema.items())
-    column_names = [
-        (col or f"column_{i}") if isinstance(col, str) else col[0]
-        for i, col in enumerate(schema or [])
-    ]
-    if not column_names and n_expected:
-        column_names = [f"column_{i}" for i in range(n_expected)]
-    lookup = {
-        col: name for col, name in zip_longest(column_names, lookup_names or []) if name
+    else:
+        column_names = [
+            (col or f"column_{i}") if isinstance(col, str) else col[0]
+            for i, col in enumerate(schema)
+        ]
+
+    # determine column dtypes from schema and lookup_names
+    lookup: dict[str, str] | None = (
+        {col: name for col, name in zip_longest(column_names, lookup_names) if name}
+        if lookup_names
+        else None
+    )
+    column_dtypes: dict[str, PolarsDataType] = {
+        lookup.get((name := col[0]), name)
+        if lookup
+        else col[0]: dtype  # type: ignore[misc]
+        if is_polars_dtype(dtype, include_unknown=True)
+        else py_type_to_dtype(dtype)
+        for col in schema
+        if isinstance(col, tuple) and (dtype := col[1]) is not None
     }
-    column_dtypes = {
-        lookup.get(col[0], col[0]): col[1]
-        for col in (schema or [])
-        if not isinstance(col, str) and col[1] is not None
-    }
+
+    # apply schema overrides
     if schema_overrides:
         column_dtypes.update(schema_overrides)
-        if schema and include_overrides_in_columns:
-            column_names = column_names + [
-                col for col in column_dtypes if col not in column_names
-            ]
-    for col, dtype in column_dtypes.items():
-        if not is_polars_dtype(dtype, include_unknown=True) and dtype is not None:
-            column_dtypes[col] = py_type_to_dtype(dtype)
 
-    return (
-        column_names,  # type: ignore[return-value]
-        column_dtypes,
-    )
+        if include_overrides_in_columns:
+            column_names.extend(col for col in column_dtypes if col not in column_names)
+
+    return column_names, column_dtypes
 
 
 def _expand_dict_data(
@@ -712,6 +751,7 @@ def _expand_dict_data(
 
 def _expand_dict_scalars(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    *,
     schema_overrides: SchemaDict | None = None,
     order: Sequence[str] | None = None,
     nan_to_null: bool = False,
@@ -768,6 +808,7 @@ def _expand_dict_scalars(
 def dict_to_pydf(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
     schema: SchemaDefinition | None = None,
+    *,
     schema_overrides: SchemaDict | None = None,
     nan_to_null: bool = False,
 ) -> PyDataFrame:
@@ -827,7 +868,7 @@ def dict_to_pydf(
         data_series = [
             s._s
             for s in _expand_dict_scalars(
-                data, schema_overrides, nan_to_null=nan_to_null
+                data, schema_overrides=schema_overrides, nan_to_null=nan_to_null
             ).values()
         ]
 
@@ -1065,14 +1106,14 @@ def _sequence_of_dict_to_pydf(
     )
     dicts_schema = (
         include_unknowns(schema_overrides, column_names or list(schema_overrides))
-        if schema_overrides and column_names
+        if column_names
         else None
     )
     pydf = PyDataFrame.read_dicts(data, infer_schema_length, dicts_schema)
 
-    if not schema_overrides and set(pydf.columns()) == set(column_names):
-        pass
-    elif column_names or schema_overrides:
+    # TODO: we can remove this `schema_overrides` block completely
+    #  once https://github.com/pola-rs/polars/issues/11044 is fixed
+    if schema_overrides:
         pydf = _post_apply_columns(
             pydf,
             columns=column_names,
@@ -1152,7 +1193,9 @@ def _dataclasses_or_models_to_pydf(
     from_model = kwargs.get("pydantic_model")
     unpack_nested = False
     if schema:
-        column_names, schema_overrides = _unpack_schema(schema, schema_overrides)
+        column_names, schema_overrides = _unpack_schema(
+            schema, schema_overrides=schema_overrides
+        )
         schema_override = {
             col: schema_overrides.get(col, Unknown) for col in column_names
         }
@@ -1210,6 +1253,7 @@ def _dataclasses_or_models_to_pydf(
 def numpy_to_pydf(
     data: np.ndarray[Any, Any],
     schema: SchemaDefinition | None = None,
+    *,
     schema_overrides: SchemaDict | None = None,
     orient: Orientation | None = None,
     nan_to_null: bool = False,
@@ -1327,6 +1371,7 @@ def numpy_to_pydf(
 def arrow_to_pydf(
     data: pa.Table,
     schema: SchemaDefinition | None = None,
+    *,
     schema_overrides: SchemaDict | None = None,
     rechunk: bool = True,
 ) -> PyDataFrame:
@@ -1355,10 +1400,10 @@ def arrow_to_pydf(
 
         column = coerce_arrow(column)
         if pa.types.is_dictionary(column.type):
-            ps = arrow_to_pyseries(name, column, rechunk)
+            ps = arrow_to_pyseries(name, column, rechunk=rechunk)
             dictionary_cols[i] = wrap_s(ps)
         elif isinstance(column.type, pa.StructType) and column.num_chunks > 1:
-            ps = arrow_to_pyseries(name, column, rechunk)
+            ps = arrow_to_pyseries(name, column, rechunk=rechunk)
             struct_cols[i] = wrap_s(ps)
         else:
             data_dict[name] = column
@@ -1423,7 +1468,7 @@ def series_to_pydf(
     if schema_overrides:
         new_dtype = next(iter(schema_overrides.values()))
         if new_dtype != data.dtype:
-            data_series[0] = data_series[0].cast(new_dtype, True)
+            data_series[0] = data_series[0].cast(new_dtype, strict=True)
 
     data_series = _handle_columns_arg(data_series, columns=column_names)
     return PyDataFrame(data_series)
@@ -1536,6 +1581,7 @@ def pandas_has_default_index(df: pd.DataFrame) -> bool:
 def pandas_to_pydf(
     data: pd.DataFrame,
     schema: SchemaDefinition | None = None,
+    *,
     schema_overrides: SchemaDict | None = None,
     rechunk: bool = True,
     nan_to_null: bool = True,
@@ -1564,7 +1610,7 @@ def pandas_to_pydf(
     )
 
 
-def coerce_arrow(array: pa.Array, rechunk: bool = True) -> pa.Array:
+def coerce_arrow(array: pa.Array, *, rechunk: bool = True) -> pa.Array:
     import pyarrow.compute as pc
 
     if hasattr(array, "num_chunks") and array.num_chunks > 1 and rechunk:

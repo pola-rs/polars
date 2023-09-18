@@ -46,12 +46,11 @@ impl PySeries {
         let vals = array.as_slice().unwrap();
         py.allow_threads(|| {
             if nan_is_null {
-                let mut ca: Float32Chunked = vals
+                let ca: Float32Chunked = vals
                     .iter()
                     .map(|&val| if f32::is_nan(val) { None } else { Some(val) })
                     .collect_trusted();
-                ca.rename(name);
-                ca.into_series().into()
+                ca.with_name(name).into_series().into()
             } else {
                 Series::new(name, vals).into()
             }
@@ -64,12 +63,11 @@ impl PySeries {
         let vals = array.as_slice().unwrap();
         py.allow_threads(|| {
             if nan_is_null {
-                let mut ca: Float64Chunked = vals
+                let ca: Float64Chunked = vals
                     .iter()
                     .map(|&val| if f64::is_nan(val) { None } else { Some(val) })
                     .collect_trusted();
-                ca.rename(name);
-                ca.into_series().into()
+                ca.with_name(name).into_series().into()
             } else {
                 Series::new(name, vals).into()
             }
@@ -176,37 +174,32 @@ impl PySeries {
         val: Vec<Wrap<AnyValue<'_>>>,
         strict: bool,
     ) -> PyResult<PySeries> {
+        // From AnyValues is fallible.
         let avs = slice_extract_wrapped(&val);
-        // from anyvalues is fallible
         let s = Series::from_any_values(name, avs, strict).map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
     #[staticmethod]
     fn new_str(name: &str, val: Wrap<Utf8Chunked>, _strict: bool) -> Self {
-        let mut s = val.0.into_series();
-        s.rename(name);
-        s.into()
+        val.0.into_series().with_name(name).into()
     }
 
     #[staticmethod]
     fn new_binary(name: &str, val: Wrap<BinaryChunked>, _strict: bool) -> Self {
-        let mut s = val.0.into_series();
-        s.rename(name);
-        s.into()
+        val.0.into_series().with_name(name).into()
     }
 
     #[staticmethod]
     fn new_null(name: &str, val: &PyAny, _strict: bool) -> PyResult<Self> {
-        let s = Series::new_null(name, val.len()?);
-        Ok(s.into())
+        Ok(Series::new_null(name, val.len()?).into())
     }
 
     #[staticmethod]
     pub fn new_object(name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
         #[cfg(feature = "object")]
         {
-            // object builder must be registered. this is done on import
+            // Object builder must be registered. This is done on import.
             let s = ObjectChunked::<ObjectValue>::new_from_vec(name, val).into_series();
             s.into()
         }
@@ -255,9 +248,9 @@ impl PySeries {
 
     #[staticmethod]
     fn new_decimal(name: &str, val: Vec<Wrap<AnyValue<'_>>>, strict: bool) -> PyResult<PySeries> {
-        // TODO: do we have to respect 'strict' here? it's possible if we want to
+        // TODO: do we have to respect 'strict' here? It's possible if we want to.
         let avs = slice_extract_wrapped(&val);
-        // create a fake dtype with a placeholder "none" scale, to be inferred later
+        // Create a fake dtype with a placeholder "none" scale, to be inferred later.
         let dtype = DataType::Decimal(None, None);
         let s = Series::from_any_values_and_dtype(name, avs, &dtype, strict)
             .map_err(PyPolarsErr::from)?;
@@ -271,16 +264,7 @@ impl PySeries {
         match arr.data_type() {
             ArrowDataType::LargeList(_) => {
                 let array = arr.as_any().downcast_ref::<LargeListArray>().unwrap();
-
-                let mut previous = 0;
-                let mut fast_explode = true;
-                for &o in array.offsets().as_slice()[1..].iter() {
-                    if o == previous {
-                        fast_explode = false;
-                        break;
-                    }
-                    previous = o;
-                }
+                let fast_explode = array.offsets().as_slice().windows(2).all(|w| w[0] != w[1]);
 
                 let mut out = ListChunked::with_chunk(name, array.clone());
                 if fast_explode {

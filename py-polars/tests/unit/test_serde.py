@@ -17,6 +17,12 @@ def test_pickling_simple_expression() -> None:
     assert str(pickle.loads(buf)) == str(e)
 
 
+def test_pickling_as_struct_11100() -> None:
+    e = pl.struct("a")
+    buf = pickle.dumps(e)
+    assert str(pickle.loads(buf)) == str(e)
+
+
 def test_lazyframe_serde() -> None:
     lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
 
@@ -190,3 +196,8 @@ def test_serde_categorical_series_10586() -> None:
     s = pl.Series(["a", "b", "b", "a", "c"], dtype=pl.Categorical)
     loaded_s = pickle.loads(pickle.dumps(s))
     assert_series_equal(loaded_s, s)
+
+
+def test_serde_keep_dtype_empty_list() -> None:
+    s = pl.Series([{"a": None}], dtype=pl.Struct([pl.Field("a", pl.List(pl.Utf8))]))
+    assert s.dtype == pickle.loads(pickle.dumps(s)).dtype

@@ -46,3 +46,9 @@ impl MutableArray for MutableNullArray {
         // no-op
     }
 }
+
+impl MutableNullArray {
+    pub fn extend_nulls(&mut self, null_count: usize) {
+        self.len += null_count;
+    }
+}

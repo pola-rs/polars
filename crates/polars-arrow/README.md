@@ -1,5 +1,5 @@
 # polars-arrow
 
-`polars-arrow` is a sub-crate that provides Arrow interfaces for the Polars dataframe library.
+`polars-arrow` is an **internal sub-crate** of the [Polars](https://crates.io/crates/polars) library, offering Arrow interfaces.
 
-Not intended for external usage
+**Important Note**: This crate is **not intended for external usage**. Please refer to the main [Polars crate](https://crates.io/crates/polars) for intended usage.

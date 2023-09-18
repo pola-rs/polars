@@ -36,7 +36,7 @@ impl From<&AnyValue<'_>> for NaiveTime {
 
 // Used by lazy for literal conversion
 pub fn datetime_to_timestamp_ns(v: NaiveDateTime) -> i64 {
-    v.timestamp_nanos()
+    v.timestamp_nanos_opt().unwrap()
 }
 
 // Used by lazy for literal conversion

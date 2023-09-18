@@ -1,13 +1,9 @@
 //! Implementations of the ChunkApply Trait.
 use std::borrow::Cow;
 use std::convert::TryFrom;
-use std::error::Error;
 
 use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
-use arrow::bitmap::Bitmap;
-use arrow::trusted_len::TrustedLen;
-use arrow::types::NativeType;
 use polars_arrow::bitmap::unary_mut;
 
 use crate::prelude::*;
@@ -17,19 +13,16 @@ use crate::utils::CustomIterTools;
 impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
-    Self: HasUnderlyingArray,
 {
     pub fn apply_values_generic<'a, U, K, F>(&'a self, op: F) -> ChunkedArray<U>
     where
         U: PolarsDataType,
-        F: FnMut(<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>) -> K + Copy,
-        K: ArrayFromElementIter,
-        K::ArrayType: StaticallyMatchesPolarsType<U>,
+        F: FnMut(T::Physical<'a>) -> K + Copy,
+        U::Array: ArrayFromIter<K>,
     {
         let iter = self.downcast_iter().map(|arr| {
-            let element_iter = arr.values_iter().map(op);
-            let array = K::array_from_values_iter(element_iter);
-            array.with_validity_typed(arr.validity().cloned())
+            let out: U::Array = arr.values_iter().map(op).collect_arr();
+            out.with_validity_typed(arr.validity().cloned())
         });
 
         ChunkedArray::from_chunk_iter(self.name(), iter)
@@ -38,35 +31,12 @@ where
     pub fn try_apply_values_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
     where
         U: PolarsDataType,
-        F: FnMut(<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>) -> Result<K, E>
-            + Copy,
-        K: ArrayFromElementIter,
-        K::ArrayType: StaticallyMatchesPolarsType<U>,
-        E: Error,
+        F: FnMut(T::Physical<'a>) -> Result<K, E> + Copy,
+        U::Array: ArrayFromIter<K>,
     {
         let iter = self.downcast_iter().map(|arr| {
             let element_iter = arr.values_iter().map(op);
-            let array = K::try_array_from_values_iter(element_iter)?;
-            Ok(array.with_validity_typed(arr.validity().cloned()))
-        });
-
-        ChunkedArray::try_from_chunk_iter(self.name(), iter)
-    }
-
-    pub fn try_apply_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
-    where
-        U: PolarsDataType,
-        F: FnMut(
-                Option<<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
-            ) -> Result<Option<K>, E>
-            + Copy,
-        K: ArrayFromElementIter,
-        K::ArrayType: StaticallyMatchesPolarsType<U>,
-        E: Error,
-    {
-        let iter = self.downcast_iter().map(|arr| {
-            let element_iter = arr.iter().map(op);
-            let array = K::try_array_from_iter(element_iter)?;
+            let array: U::Array = element_iter.try_collect_arr()?;
             Ok(array.with_validity_typed(arr.validity().cloned()))
         });
 
@@ -76,59 +46,35 @@ where
     pub fn apply_generic<'a, U, K, F>(&'a self, mut op: F) -> ChunkedArray<U>
     where
         U: PolarsDataType,
-        F: FnMut(
-            Option<<<Self as HasUnderlyingArray>::ArrayT as StaticArray>::ValueT<'a>>,
-        ) -> Option<K>,
-        K: ArrayFromElementIter,
-        K::ArrayType: StaticallyMatchesPolarsType<U>,
+        F: FnMut(Option<T::Physical<'a>>) -> Option<K>,
+        U::Array: ArrayFromIter<Option<K>>,
     {
         if self.null_count() == 0 {
-            let iter = self.downcast_iter().map(|arr| {
-                let element_iter = arr.values_iter().map(|x| op(Some(x)));
-                K::array_from_iter(element_iter)
-            });
+            let iter = self
+                .downcast_iter()
+                .map(|arr| arr.values_iter().map(|x| op(Some(x))).collect_arr());
             ChunkedArray::from_chunk_iter(self.name(), iter)
         } else {
-            let iter = self.downcast_iter().map(|arr| {
-                let element_iter = arr.iter().map(&mut op);
-                K::array_from_iter(element_iter)
-            });
+            let iter = self
+                .downcast_iter()
+                .map(|arr| arr.iter().map(&mut op).collect_arr());
             ChunkedArray::from_chunk_iter(self.name(), iter)
         }
     }
-}
 
-fn collect_array<T: NativeType, I: TrustedLen<Item = T>>(
-    iter: I,
-    validity: Option<Bitmap>,
-) -> PrimitiveArray<T> {
-    PrimitiveArray::from_trusted_len_values_iter(iter).with_validity(validity)
-}
+    pub fn try_apply_generic<'a, U, K, F, E>(&'a self, op: F) -> Result<ChunkedArray<U>, E>
+    where
+        U: PolarsDataType,
+        F: FnMut(Option<T::Physical<'a>>) -> Result<Option<K>, E> + Copy,
+        U::Array: ArrayFromIter<Option<K>>,
+    {
+        let iter = self.downcast_iter().map(|arr| {
+            let array: U::Array = arr.iter().map(op).try_collect_arr()?;
+            Ok(array.with_validity_typed(arr.validity().cloned()))
+        });
 
-macro_rules! try_apply {
-    ($self:expr, $f:expr) => {{
-        if !$self.has_validity() {
-            $self.into_no_null_iter().map($f).collect()
-        } else {
-            $self
-                .into_iter()
-                .map(|opt_v| opt_v.map($f).transpose())
-                .collect()
-        }
-    }};
-}
-
-macro_rules! apply {
-    ($self:expr, $f:expr) => {{
-        if !$self.has_validity() {
-            $self.into_no_null_iter().map($f).collect_trusted()
-        } else {
-            $self
-                .into_iter()
-                .map(|opt_v| opt_v.map($f))
-                .collect_trusted()
-        }
-    }};
+        ChunkedArray::try_from_chunk_iter(self.name(), iter)
+    }
 }
 
 fn apply_in_place_impl<S, F>(name: &str, chunks: Vec<ArrayRef>, f: F) -> ChunkedArray<S>
@@ -226,7 +172,8 @@ where
             .data_views()
             .zip(self.iter_validities())
             .map(|(slice, validity)| {
-                collect_array(slice.iter().copied().map(f), validity.cloned())
+                let arr: T::Array = slice.iter().copied().map(f).collect_arr();
+                arr.with_validity(validity.cloned())
             });
         ChunkedArray::from_chunk_iter(self.name(), chunks)
     }
@@ -380,6 +327,21 @@ impl Utf8Chunked {
             new.with_validity(arr.validity().cloned())
         });
         Utf8Chunked::from_chunk_iter(self.name(), chunks)
+    }
+
+    /// Utility that reuses an string buffer to amortize allocations.
+    /// Prefer this over an `apply` that returns an owned `String`.
+    pub fn apply_to_buffer<'a, F>(&'a self, mut f: F) -> Self
+    where
+        F: FnMut(&'a str, &mut String),
+    {
+        let mut buf = String::new();
+        let outer = |s: &'a str| {
+            buf.clear();
+            f(s, &mut buf);
+            unsafe { std::mem::transmute::<&str, &'a str>(buf.as_str()) }
+        };
+        self.apply_mut(outer)
     }
 }
 
@@ -566,7 +528,17 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
             }
             out
         };
-        let mut ca: ListChunked = apply!(self, &mut function);
+        let mut ca: ListChunked = {
+            if !self.has_validity() {
+                self.into_no_null_iter()
+                    .map(&mut function)
+                    .collect_trusted()
+            } else {
+                self.into_iter()
+                    .map(|opt_v| opt_v.map(&mut function))
+                    .collect_trusted()
+            }
+        };
         if fast_explode {
             ca.set_fast_explode()
         }
@@ -591,7 +563,15 @@ impl<'a> ChunkApply<'a, Series> for ListChunked {
             }
             out
         };
-        let ca: PolarsResult<ListChunked> = try_apply!(self, &mut function);
+        let ca: PolarsResult<ListChunked> = {
+            if !self.has_validity() {
+                self.into_no_null_iter().map(&mut function).collect()
+            } else {
+                self.into_iter()
+                    .map(|opt_v| opt_v.map(&mut function).transpose())
+                    .collect()
+            }
+        };
         let mut ca = ca?;
         if fast_explode {
             ca.set_fast_explode()

@@ -162,18 +162,12 @@ impl ListNameSpace {
     /// Join all string items in a sublist and place a separator between them.
     /// # Error
     /// This errors if inner type of list `!= DataType::Utf8`.
-    pub fn join(self, separator: &str) -> Expr {
-        let separator = separator.to_string();
-        self.0
-            .map(
-                move |s| {
-                    s.list()?
-                        .lst_join(&separator)
-                        .map(|ca| Some(ca.into_series()))
-                },
-                GetOutput::from_type(DataType::Utf8),
-            )
-            .with_fmt("list.join")
+    pub fn join(self, separator: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::Join),
+            &[separator],
+            false,
+        )
     }
 
     /// Return the index of the minimal value of every sublist
@@ -310,12 +304,12 @@ impl ListNameSpace {
     }
     #[cfg(feature = "list_count")]
     /// Count how often the value produced by ``element`` occurs.
-    pub fn count_match<E: Into<Expr>>(self, element: E) -> Expr {
+    pub fn count_matches<E: Into<Expr>>(self, element: E) -> Expr {
         let other = element.into();
 
         Expr::Function {
             input: vec![self.0, other],
-            function: FunctionExpr::ListExpr(ListFunction::CountMatch),
+            function: FunctionExpr::ListExpr(ListFunction::CountMatches),
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: true,

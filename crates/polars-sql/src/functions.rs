@@ -345,6 +345,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT unnest(column_1) from df;
     /// ```
     Explode,
+    /// SQL 'array_to_string' function
+    /// ```sql
+    /// SELECT ARRAY_TO_STRING(column_1, ', ') from df;
+    /// ```
+    ArrayToString,
     /// SQL 'array_get' function
     /// Returns the value at the given index in the array
     /// ```sql
@@ -509,6 +514,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "array_mean" => Self::ArrayMean,
             "array_reverse" => Self::ArrayReverse,
             "array_sum" => Self::ArraySum,
+            "array_to_string" => Self::ArrayToString,
             "array_unique" => Self::ArrayUnique,
             "array_upper" => Self::ArrayMax,
             "unnest" => Self::Explode,
@@ -589,8 +595,8 @@ impl SqlFunctionVisitor<'_> {
             Length => self.visit_unary(|e| e.str().n_chars()),
             Lower => self.visit_unary(|e| e.str().to_lowercase()),
             LTrim => match function.args.len() {
-                1 => self.visit_unary(|e| e.str().lstrip(None)),
-                2 => self.visit_binary(|e, s| e.str().lstrip(Some(s))),
+                1 => self.visit_unary(|e| e.str().strip_chars_start(None)),
+                2 => self.visit_binary(|e, s| e.str().strip_chars_start(Some(s))),
                 _ => polars_bail!(InvalidOperation:
                     "Invalid number of arguments for LTrim: {}",
                     function.args.len()
@@ -615,8 +621,8 @@ impl SqlFunctionVisitor<'_> {
                 _ => polars_bail!(InvalidOperation:"Invalid number of arguments for RegexpLike: {}",function.args.len()),
             },
             RTrim => match function.args.len() {
-                1 => self.visit_unary(|e| e.str().rstrip(None)),
-                2 => self.visit_binary(|e, s| e.str().rstrip(Some(s))),
+                1 => self.visit_unary(|e| e.str().strip_chars_end(None)),
+                2 => self.visit_binary(|e, s| e.str().strip_chars_end(Some(s))),
                 _ => polars_bail!(InvalidOperation:
                     "Invalid number of arguments for RTrim: {}",
                     function.args.len()
@@ -675,6 +681,9 @@ impl SqlFunctionVisitor<'_> {
             ArrayMin => self.visit_unary(|e| e.list().min()),
             ArrayReverse => self.visit_unary(|e| e.list().reverse()),
             ArraySum => self.visit_unary(|e| e.list().sum()),
+            ArrayToString => self.try_visit_binary(|e, s| {
+                Ok(e.list().join(s))
+            }),
             ArrayUnique => self.visit_unary(|e| e.list().unique()),
             Explode => self.visit_unary(|e| e.explode()),
         }

@@ -1,5 +1,5 @@
 import re
-from datetime import date
+from datetime import date, datetime
 from tempfile import NamedTemporaryFile
 from typing import Any
 
@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_cse_rename_cross_join_5405() -> None:
@@ -37,6 +38,25 @@ def test_union_duplicates() -> None:
         )
         == 10
     )
+
+
+def test_cse_with_struct_expr_11116() -> None:
+    df = pl.DataFrame([{"s": {"a": 1, "b": 4}, "c": 3}]).lazy()
+    out = df.with_columns(
+        pl.col("s").struct.field("a").alias("s_a"),
+        pl.col("s").struct.field("b").alias("s_b"),
+        (
+            (pl.col("s").struct.field("a") <= pl.col("c"))
+            & (pl.col("s").struct.field("b") > pl.col("c"))
+        ).alias("c_between_a_and_b"),
+    ).collect(comm_subexpr_elim=True)
+    assert out.to_dict(False) == {
+        "s": [{"a": 1, "b": 4}],
+        "c": [3],
+        "s_a": [1],
+        "s_b": [4],
+        "c_between_a_and_b": [True],
+    }
 
 
 def test_cse_schema_6081() -> None:
@@ -379,3 +399,85 @@ def test_cse_nan_10824() -> None:
         )
         == "{'literal': [nan]}"
     )
+
+
+def test_cse_10901() -> None:
+    df = pl.DataFrame(data=range(6), schema={"a": pl.Int64})
+    a = pl.col("a").rolling_sum(window_size=2)
+    b = pl.col("a").rolling_sum(window_size=3)
+    exprs = {
+        "ax1": a,
+        "ax2": a * 2,
+        "bx1": b,
+        "bx2": b * 2,
+    }
+
+    expected = pl.DataFrame(
+        {
+            "a": [0, 1, 2, 3, 4, 5],
+            "ax1": [None, 1, 3, 5, 7, 9],
+            "ax2": [None, 2, 6, 10, 14, 18],
+            "bx1": [None, None, 3, 6, 9, 12],
+            "bx2": [None, None, 6, 12, 18, 24],
+        }
+    )
+
+    assert_frame_equal(df.lazy().with_columns(**exprs).collect(), expected)
+
+
+def test_cse_count_in_group_by() -> None:
+    q = (
+        pl.LazyFrame({"a": [1, 1, 2], "b": [1, 2, 3], "c": [40, 51, 12]})
+        .group_by("a")
+        .agg(pl.all().slice(0, pl.count() - 1))
+    )
+
+    assert "POLARS_CSER" not in q.explain()
+    assert q.collect().sort("a").to_dict(False) == {
+        "a": [1, 2],
+        "b": [[1], []],
+        "c": [[40], []],
+    }
+
+
+def test_no_cse_in_with_context() -> None:
+    df1 = pl.DataFrame(
+        {
+            "timestamp": [
+                datetime(2023, 1, 1, 0, 0),
+                datetime(2023, 5, 1, 0, 0),
+                datetime(2023, 10, 1, 0, 0),
+            ],
+            "value": [2, 5, 9],
+        }
+    )
+    df2 = pl.DataFrame(
+        {
+            "date_start": [
+                datetime(2022, 12, 31, 0, 0),
+                datetime(2023, 1, 2, 0, 0),
+            ],
+            "date_end": [
+                datetime(2023, 4, 30, 0, 0),
+                datetime(2023, 5, 5, 0, 0),
+            ],
+            "label": [0, 1],
+        }
+    )
+
+    assert (
+        df1.lazy()
+        .with_context(df2.lazy())
+        .select(
+            pl.col("date_start", "label").take(
+                pl.col("date_start").search_sorted("timestamp") - 1
+            ),
+        )
+    ).collect().to_dict(False) == {
+        "date_start": [
+            datetime(2022, 12, 31, 0, 0),
+            datetime(2023, 1, 2, 0, 0),
+            datetime(2023, 1, 2, 0, 0),
+        ],
+        "label": [0, 1, 1],
+    }

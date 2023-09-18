@@ -40,31 +40,8 @@ where
     T: PolarsNumericType,
 {
     fn from_iter<I: IntoIterator<Item = Option<T::Native>>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-
-        let arr: PrimitiveArray<T::Native> = match iter.size_hint() {
-            (a, Some(b)) if a == b => {
-                // 2021-02-07: ~40% faster than builder.
-                // It is unsafe because we cannot be certain that the iterators length can be trusted.
-                // For most iterators that report the same upper bound as lower bound it is, but still
-                // somebody can create an iterator that incorrectly gives those bounds.
-                // This will not lead to UB, but will panic.
-                #[cfg(feature = "performant")]
-                unsafe {
-                    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter)
-                        .to(T::get_dtype().to_arrow());
-                    assert_eq!(arr.len(), a);
-                    arr
-                }
-                #[cfg(not(feature = "performant"))]
-                iter.collect::<PrimitiveArray<T::Native>>()
-                    .to(T::get_dtype().to_arrow())
-            },
-            _ => iter
-                .collect::<PrimitiveArray<T::Native>>()
-                .to(T::get_dtype().to_arrow()),
-        };
-        arr.into()
+        // TODO: eliminate this FromIterator implementation entirely.
+        iter.into_iter().collect_ca("")
     }
 }
 

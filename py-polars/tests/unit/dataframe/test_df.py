@@ -1533,22 +1533,22 @@ def test_write_csv() -> None:
 
 def test_from_generator_or_iterable() -> None:
     # generator function
-    def gen(n: int, strkey: bool = True) -> Iterator[Any]:
+    def gen(n: int, *, strkey: bool = True) -> Iterator[Any]:
         for i in range(n):
             yield (str(i) if strkey else i), 1 * i, 2**i, 3**i
 
     # iterable object
     class Rows:
-        def __init__(self, n: int, strkey: bool = True):
+        def __init__(self, n: int, *, strkey: bool = True):
             self._n = n
             self._strkey = strkey
 
         def __iter__(self) -> Iterator[Any]:
-            yield from gen(self._n, self._strkey)
+            yield from gen(self._n, strkey=self._strkey)
 
     # check init from column-oriented generator
     assert_frame_equal(
-        pl.DataFrame(data=gen(4, False), orient="col"),
+        pl.DataFrame(data=gen(4, strkey=False), orient="col"),
         pl.DataFrame(
             data=[(0, 0, 1, 1), (1, 1, 2, 3), (2, 2, 4, 9), (3, 3, 8, 27)], orient="col"
         ),
@@ -1763,7 +1763,7 @@ def test_repeat_by(
 
 
 def test_join_dates() -> None:
-    dts_in = pl.date_range(
+    dts_in = pl.datetime_range(
         datetime(2021, 6, 24),
         datetime(2021, 6, 24, 10, 0, 0),
         interval=timedelta(hours=1),
@@ -3335,21 +3335,21 @@ def test_glimpse(capsys: Any) -> None:
             "c": [True, False, True],
             "d": [None, "b", "c"],
             "e": ["usd", "eur", None],
-            "f": pl.date_range(
+            "f": pl.datetime_range(
                 datetime(2023, 1, 1),
                 datetime(2023, 1, 3),
                 "1d",
                 time_unit="us",
                 eager=True,
             ),
-            "g": pl.date_range(
+            "g": pl.datetime_range(
                 datetime(2023, 1, 1),
                 datetime(2023, 1, 3),
                 "1d",
                 time_unit="ms",
                 eager=True,
             ),
-            "h": pl.date_range(
+            "h": pl.datetime_range(
                 datetime(2023, 1, 1),
                 datetime(2023, 1, 3),
                 "1d",
@@ -3370,8 +3370,8 @@ def test_glimpse(capsys: Any) -> None:
         $ a          <f64> 1.0, 2.8, 3.0
         $ b          <i64> 4, 5, None
         $ c         <bool> True, False, True
-        $ d          <str> None, b, c
-        $ e          <str> usd, eur, None
+        $ d          <str> None, 'b', 'c'
+        $ e          <str> 'usd', 'eur', None
         $ f <datetime[μs]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
         $ g <datetime[ms]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
         $ h <datetime[ns]> 2023-01-01 00:00:00, 2023-01-02 00:00:00, 2023-01-03 00:00:00
@@ -3388,41 +3388,18 @@ def test_glimpse(capsys: Any) -> None:
     assert capsys.readouterr().out[:-1] == expected
 
     colc = "a" * 96
-    df = pl.DataFrame({colc: [11, 22, 33]})
-    result = df.glimpse(return_as_string=True)
+    df = pl.DataFrame({colc: [11, 22, 33, 44, 55, 66]})
+    result = df.glimpse(
+        return_as_string=True, max_colname_length=20, max_items_per_column=4
+    )
     expected = textwrap.dedent(
         """\
-        Rows: 3
+        Rows: 6
         Columns: 1
-        $ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa... <i64> 11, 22, 33
+        $ aaaaaaaaaaaaaaaaaaa… <i64> 11, 22, 33, 44
         """
     )
     assert result == expected
-
-
-def test_item() -> None:
-    df = pl.DataFrame({"a": [1]})
-    assert df.item() == 1
-
-    df = pl.DataFrame({"a": [1, 2]})
-    with pytest.raises(ValueError, match=r".* frame has shape \(2, 1\)"):
-        df.item()
-
-    assert df.item(0, 0) == 1
-    assert df.item(1, "a") == 2
-
-    df = pl.DataFrame({"a": [1], "b": [2]})
-    with pytest.raises(ValueError, match=r".* frame has shape \(1, 2\)"):
-        df.item()
-
-    assert df.item(0, "a") == 1
-    assert df.item(0, "b") == 2
-
-    df = pl.DataFrame({})
-    with pytest.raises(ValueError, match=r".* frame has shape \(0, 0\)"):
-        df.item()
-    with pytest.raises(IndexError, match="column index 10 is out of bounds"):
-        df.item(0, 10)
 
 
 @pytest.mark.parametrize(

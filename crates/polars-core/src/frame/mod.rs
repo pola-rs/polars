@@ -7,6 +7,7 @@ use ahash::AHashSet;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 
+#[cfg(feature = "algorithm_group_by")]
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
 #[cfg(feature = "describe")]
@@ -22,7 +23,9 @@ mod chunks;
 pub(crate) mod cross_join;
 pub mod explode;
 mod from;
+#[cfg(feature = "algorithm_group_by")]
 pub mod group_by;
+#[cfg(feature = "algorithm_join")]
 pub mod hash_join;
 #[cfg(feature = "rows")]
 pub mod row;
@@ -34,6 +37,7 @@ pub use chunks::*;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
+#[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::GroupsIndicator;
 #[cfg(feature = "row_hash")]
 use crate::hashing::df_rows_to_hashes_threaded_vertical;
@@ -477,7 +481,7 @@ impl DataFrame {
         }
     }
 
-    /// Ensure all the chunks in the DataFrame are aligned.
+    /// Ensure all the chunks in the [`DataFrame`] are aligned.
     pub fn align_chunks(&mut self) -> &mut Self {
         if self.should_rechunk() {
             self.as_single_chunk_par()
@@ -486,7 +490,7 @@ impl DataFrame {
         }
     }
 
-    /// Get the `DataFrame` schema.
+    /// Get the [`DataFrame`] schema.
     ///
     /// # Example
     ///
@@ -506,7 +510,7 @@ impl DataFrame {
         self.iter().map(|s| s.field().into_owned()).collect()
     }
 
-    /// Get a reference to the `DataFrame` columns.
+    /// Get a reference to the [`DataFrame`] columns.
     ///
     /// # Example
     ///
@@ -533,7 +537,7 @@ impl DataFrame {
         &mut self.columns
     }
 
-    /// Iterator over the columns as `Series`.
+    /// Iterator over the columns as [`Series`].
     ///
     /// # Example
     ///
@@ -568,7 +572,7 @@ impl DataFrame {
         self.columns.iter().map(|s| s.name()).collect()
     }
 
-    /// Get the `Vec<String>` representing the column names.
+    /// Get the [`Vec<String>`] representing the column names.
     pub fn get_column_names_owned(&self) -> Vec<SmartString> {
         self.columns.iter().map(|s| s.name().into()).collect()
     }
@@ -610,7 +614,7 @@ impl DataFrame {
         Ok(())
     }
 
-    /// Get the data types of the columns in the DataFrame.
+    /// Get the data types of the columns in the [`DataFrame`].
     ///
     /// # Example
     ///
@@ -634,7 +638,7 @@ impl DataFrame {
         }
     }
 
-    /// Get a reference to the schema fields of the `DataFrame`.
+    /// Get a reference to the schema fields of the [`DataFrame`].
     ///
     /// # Example
     ///
@@ -656,7 +660,7 @@ impl DataFrame {
             .collect()
     }
 
-    /// Get (height, width) of the `DataFrame`.
+    /// Get (height, width) of the [`DataFrame`].
     ///
     /// # Example
     ///
@@ -679,7 +683,7 @@ impl DataFrame {
         }
     }
 
-    /// Get the width of the `DataFrame` which is the number of columns.
+    /// Get the width of the [`DataFrame`] which is the number of columns.
     ///
     /// # Example
     ///
@@ -699,7 +703,7 @@ impl DataFrame {
         self.columns.len()
     }
 
-    /// Get the height of the `DataFrame` which is the number of rows.
+    /// Get the height of the [`DataFrame`] which is the number of rows.
     ///
     /// # Example
     ///
@@ -718,7 +722,7 @@ impl DataFrame {
         self.shape().0
     }
 
-    /// Check if the `DataFrame` is empty.
+    /// Check if the [`DataFrame`] is empty.
     ///
     /// # Example
     ///
@@ -747,7 +751,7 @@ impl DataFrame {
         self
     }
 
-    /// Add multiple `Series` to a `DataFrame`.
+    /// Add multiple [`Series`] to a [`DataFrame`].
     /// The added `Series` are required to have the same length.
     ///
     /// # Example
@@ -781,7 +785,7 @@ impl DataFrame {
         Ok(unsafe { self.hstack_mut_unchecked(columns) })
     }
 
-    /// Add multiple `Series` to a `DataFrame`.
+    /// Add multiple [`Series`] to a [`DataFrame`].
     /// The added `Series` are required to have the same length.
     ///
     /// # Example
@@ -820,7 +824,7 @@ impl DataFrame {
         DataFrame::new(new_cols)
     }
 
-    /// Concatenate a `DataFrame` to this `DataFrame` and return as newly allocated `DataFrame`.
+    /// Concatenate a [`DataFrame`] to this [`DataFrame`] and return as newly allocated [`DataFrame`].
     ///
     /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
     ///
@@ -866,7 +870,7 @@ impl DataFrame {
         Ok(df)
     }
 
-    /// Concatenate a DataFrame to this DataFrame
+    /// Concatenate a [`DataFrame`] to this [`DataFrame`]
     ///
     /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
     ///
@@ -991,7 +995,7 @@ impl DataFrame {
         Ok(self.columns.remove(idx))
     }
 
-    /// Return a new `DataFrame` where all null values are dropped.
+    /// Return a new [`DataFrame`] where all null values are dropped.
     ///
     /// # Example
     ///
@@ -1047,7 +1051,7 @@ impl DataFrame {
     }
 
     /// Drop a column by name.
-    /// This is a pure method and will return a new `DataFrame` instead of modifying
+    /// This is a pure method and will return a new [`DataFrame`] instead of modifying
     /// the current one in place.
     ///
     /// # Example
@@ -1079,7 +1083,7 @@ impl DataFrame {
         self.drop_many_amortized(&names)
     }
 
-    /// Drop columns that are in `names` without allocating a `HashSet`.
+    /// Drop columns that are in `names` without allocating a [`HashSet`](std::collections::HashSet).
     pub fn drop_many_amortized(&self, names: &PlHashSet<&str>) -> DataFrame {
         let mut new_cols = Vec::with_capacity(self.columns.len().saturating_sub(names.len()));
         self.columns.iter().for_each(|s| {
@@ -1092,7 +1096,7 @@ impl DataFrame {
     }
 
     /// Insert a new column at a given index without checking for duplicates.
-    /// This can leave the DataFrame at an invalid state
+    /// This can leave the [`DataFrame`] at an invalid state
     fn insert_at_idx_no_name_check(
         &mut self,
         index: usize,
@@ -1127,7 +1131,7 @@ impl DataFrame {
         Ok(())
     }
 
-    /// Add a new column to this `DataFrame` or replace an existing one.
+    /// Add a new column to this [`DataFrame`] or replace an existing one.
     pub fn with_column<S: IntoSeries>(&mut self, column: S) -> PolarsResult<&mut Self> {
         fn inner(df: &mut DataFrame, mut series: Series) -> PolarsResult<&mut DataFrame> {
             let height = df.height();
@@ -1155,7 +1159,7 @@ impl DataFrame {
         inner(self, series)
     }
 
-    /// Adds a column to the `DataFrame` without doing any checks
+    /// Adds a column to the [`DataFrame`] without doing any checks
     /// on length or duplicates.
     ///
     /// # Safety
@@ -1193,7 +1197,7 @@ impl DataFrame {
         Ok(())
     }
 
-    /// Add a new column to this `DataFrame` or replace an existing one.
+    /// Add a new column to this [`DataFrame`] or replace an existing one.
     /// Uses an existing schema to amortize lookups.
     /// If the schema is incorrect, we will fallback to linear search.
     pub fn with_column_and_schema<S: IntoSeries>(
@@ -1225,7 +1229,7 @@ impl DataFrame {
         }
     }
 
-    /// Get a row in the `DataFrame`. Beware this is slow.
+    /// Get a row in the [`DataFrame`]. Beware this is slow.
     ///
     /// # Example
     ///
@@ -1248,7 +1252,7 @@ impl DataFrame {
         unsafe { Some(self.columns.iter().map(|s| s.get_unchecked(idx)).collect()) }
     }
 
-    /// Select a `Series` by index.
+    /// Select a [`Series`] by index.
     ///
     /// # Example
     ///
@@ -1275,7 +1279,7 @@ impl DataFrame {
         self.columns.get_mut(idx)
     }
 
-    /// Select column(s) from this `DataFrame` by range and return a new DataFrame
+    /// Select column(s) from this [`DataFrame`] by range and return a new [`DataFrame`]
     ///
     /// # Examples
     ///
@@ -1334,10 +1338,10 @@ impl DataFrame {
         let colnames = self.get_column_names_owned();
         let range = get_range(range, ..colnames.len());
 
-        self.select_impl(&colnames[range])
+        self._select_impl(&colnames[range])
     }
 
-    /// Get column index of a `Series` by name.
+    /// Get column index of a [`Series`] by name.
     /// # Example
     ///
     /// ```rust
@@ -1358,7 +1362,7 @@ impl DataFrame {
         self.columns.iter().position(|s| s.name() == name)
     }
 
-    /// Get column index of a `Series` by name.
+    /// Get column index of a [`Series`] by name.
     pub fn try_find_idx_by_name(&self, name: &str) -> PolarsResult<usize> {
         self.find_idx_by_name(name)
             .ok_or_else(|| polars_err!(ColumnNotFound: "{}", name))
@@ -1409,7 +1413,7 @@ impl DataFrame {
             .collect()
     }
 
-    /// Select column(s) from this `DataFrame` and return a new `DataFrame`.
+    /// Select column(s) from this [`DataFrame`] and return a new [`DataFrame`].
     ///
     /// # Examples
     ///
@@ -1428,11 +1432,15 @@ impl DataFrame {
             .into_iter()
             .map(|s| SmartString::from(s.as_ref()))
             .collect::<Vec<_>>();
-        self.select_impl(&cols)
+        self._select_impl(&cols)
     }
 
-    fn select_impl(&self, cols: &[SmartString]) -> PolarsResult<Self> {
+    pub fn _select_impl(&self, cols: &[SmartString]) -> PolarsResult<Self> {
         self.select_check_duplicates(cols)?;
+        self._select_impl_unchecked(cols)
+    }
+
+    pub fn _select_impl_unchecked(&self, cols: &[SmartString]) -> PolarsResult<Self> {
         let selected = self.select_series_impl(cols)?;
         Ok(DataFrame::new_no_checks(selected))
     }
@@ -1522,7 +1530,7 @@ impl DataFrame {
         Ok(())
     }
 
-    /// Select column(s) from this `DataFrame` and return them into a `Vec`.
+    /// Select column(s) from this [`DataFrame`] and return them into a [`Vec`].
     ///
     /// # Example
     ///
@@ -1638,7 +1646,7 @@ impl DataFrame {
         }))
     }
 
-    /// Take the `DataFrame` rows by a boolean mask.
+    /// Take the [`DataFrame`] rows by a boolean mask.
     ///
     /// # Example
     ///
@@ -1666,7 +1674,7 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(new_col))
     }
 
-    /// Take `DataFrame` value by indexes from an iterator.
+    /// Take [`DataFrame`] value by indexes from an iterator.
     ///
     /// # Example
     ///
@@ -1689,7 +1697,7 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(new_col))
     }
 
-    /// Take `DataFrame` values by indexes from an iterator.
+    /// Take [`DataFrame`] values by indexes from an iterator.
     ///
     /// # Safety
     ///
@@ -1725,7 +1733,7 @@ impl DataFrame {
         DataFrame::new_no_checks(new_col)
     }
 
-    /// Take `DataFrame` values by indexes from an iterator that may contain None values.
+    /// Take [`DataFrame`] values by indexes from an iterator that may contain None values.
     ///
     /// # Safety
     ///
@@ -1763,7 +1771,7 @@ impl DataFrame {
         DataFrame::new_no_checks(new_col)
     }
 
-    /// Take `DataFrame` rows by index values.
+    /// Take [`DataFrame`] rows by index values.
     ///
     /// # Example
     ///
@@ -1811,7 +1819,7 @@ impl DataFrame {
         DataFrame::new_no_checks(cols)
     }
 
-    /// Rename a column in the `DataFrame`.
+    /// Rename a column in the [`DataFrame`].
     ///
     /// # Example
     ///
@@ -1836,7 +1844,7 @@ impl DataFrame {
         Ok(self)
     }
 
-    /// Sort `DataFrame` in place by a column.
+    /// Sort [`DataFrame`] in place by a column.
     pub fn sort_in_place(
         &mut self,
         by_column: impl IntoVec<SmartString>,
@@ -1955,7 +1963,7 @@ impl DataFrame {
         Ok(df)
     }
 
-    /// Return a sorted clone of this `DataFrame`.
+    /// Return a sorted clone of this [`DataFrame`].
     ///
     /// # Example
     ///
@@ -1980,7 +1988,7 @@ impl DataFrame {
         Ok(df)
     }
 
-    /// Sort the `DataFrame` by a single column with extra options.
+    /// Sort the [`DataFrame`] by a single column with extra options.
     pub fn sort_with_options(&self, by_column: &str, options: SortOptions) -> PolarsResult<Self> {
         let mut df = self.clone();
         let by_column = vec![df.column(by_column)?.clone()];
@@ -1998,7 +2006,7 @@ impl DataFrame {
         Ok(df)
     }
 
-    /// Replace a column with a `Series`.
+    /// Replace a column with a [`Series`].
     ///
     /// # Example
     ///
@@ -2029,7 +2037,7 @@ impl DataFrame {
         self.with_column(new_col)
     }
 
-    /// Replace column at index `idx` with a `Series`.
+    /// Replace column at index `idx` with a [`Series`].
     ///
     /// # Example
     ///
@@ -2300,7 +2308,7 @@ impl DataFrame {
         self.try_apply_at_idx(idx, f)
     }
 
-    /// Slice the `DataFrame` along the rows.
+    /// Slice the [`DataFrame`] along the rows.
     ///
     /// # Example
     ///
@@ -2367,7 +2375,7 @@ impl DataFrame {
         }))
     }
 
-    /// Get the head of the `DataFrame`.
+    /// Get the head of the [`DataFrame`].
     ///
     /// # Example
     ///
@@ -2410,7 +2418,7 @@ impl DataFrame {
         DataFrame::new_no_checks(col)
     }
 
-    /// Get the tail of the `DataFrame`.
+    /// Get the tail of the [`DataFrame`].
     ///
     /// # Example
     ///
@@ -2450,11 +2458,11 @@ impl DataFrame {
         DataFrame::new_no_checks(col)
     }
 
-    /// Iterator over the rows in this `DataFrame` as Arrow RecordBatches.
+    /// Iterator over the rows in this [`DataFrame`] as Arrow RecordBatches.
     ///
     /// # Panics
     ///
-    /// Panics if the `DataFrame` that is passed is not rechunked.
+    /// Panics if the [`DataFrame`] that is passed is not rechunked.
     ///
     /// This responsibility is left to the caller as we don't want to take mutable references here,
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
@@ -2467,11 +2475,11 @@ impl DataFrame {
         }
     }
 
-    /// Iterator over the rows in this `DataFrame` as Arrow RecordBatches as physical values.
+    /// Iterator over the rows in this [`DataFrame`] as Arrow RecordBatches as physical values.
     ///
     /// # Panics
     ///
-    /// Panics if the `DataFrame` that is passed is not rechunked.
+    /// Panics if the [`DataFrame`] that is passed is not rechunked.
     ///
     /// This responsibility is left to the caller as we don't want to take mutable references here,
     /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
@@ -2482,7 +2490,7 @@ impl DataFrame {
         }
     }
 
-    /// Get a `DataFrame` with all the columns in reversed order.
+    /// Get a [`DataFrame`] with all the columns in reversed order.
     #[must_use]
     pub fn reverse(&self) -> Self {
         let col = self.columns.iter().map(|s| s.reverse()).collect::<Vec<_>>();
@@ -3028,7 +3036,7 @@ impl DataFrame {
         f(self, args)
     }
 
-    /// Drop duplicate rows from a `DataFrame`.
+    /// Drop duplicate rows from a [`DataFrame`].
     /// *This fails when there is a column of type List in DataFrame*
     ///
     /// Stable means that the order is maintained. This has a higher cost than an unstable distinct.
@@ -3061,6 +3069,7 @@ impl DataFrame {
     /// | 3   | 3   | "c" |
     /// +-----+-----+-----+
     /// ```
+    #[cfg(feature = "algorithm_group_by")]
     pub fn unique_stable(
         &self,
         subset: Option<&[String]>,
@@ -3071,6 +3080,7 @@ impl DataFrame {
     }
 
     /// Unstable distinct. See [`DataFrame::unique_stable`].
+    #[cfg(feature = "algorithm_group_by")]
     pub fn unique(
         &self,
         subset: Option<&[String]>,
@@ -3080,6 +3090,7 @@ impl DataFrame {
         self.unique_impl(false, subset, keep, slice)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     pub fn unique_impl(
         &self,
         maintain_order: bool,
@@ -3152,7 +3163,7 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(columns))
     }
 
-    /// Get a mask of all the unique rows in the `DataFrame`.
+    /// Get a mask of all the unique rows in the [`DataFrame`].
     ///
     /// # Example
     ///
@@ -3165,6 +3176,7 @@ impl DataFrame {
     /// assert!(ca.all());
     /// # Ok::<(), PolarsError>(())
     /// ```
+    #[cfg(feature = "algorithm_group_by")]
     pub fn is_unique(&self) -> PolarsResult<BooleanChunked> {
         let gb = self.group_by(self.get_column_names())?;
         let groups = gb.take_groups();
@@ -3176,7 +3188,7 @@ impl DataFrame {
         ))
     }
 
-    /// Get a mask of all the duplicated rows in the `DataFrame`.
+    /// Get a mask of all the duplicated rows in the [`DataFrame`].
     ///
     /// # Example
     ///
@@ -3189,6 +3201,7 @@ impl DataFrame {
     /// assert!(!ca.all());
     /// # Ok::<(), PolarsError>(())
     /// ```
+    #[cfg(feature = "algorithm_group_by")]
     pub fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
         let gb = self.group_by(self.get_column_names())?;
         let groups = gb.take_groups();
@@ -3200,7 +3213,7 @@ impl DataFrame {
         ))
     }
 
-    /// Create a new `DataFrame` that shows the null counts per column.
+    /// Create a new [`DataFrame`] that shows the null counts per column.
     #[must_use]
     pub fn null_count(&self) -> Self {
         let cols = self
@@ -3323,7 +3336,7 @@ impl DataFrame {
         self.take_unchecked_impl(&ca, allow_threads)
     }
 
-    #[cfg(feature = "partition_by")]
+    #[cfg(all(feature = "partition_by", feature = "algorithm_group_by"))]
     #[doc(hidden)]
     pub fn _partition_by_impl(
         &self,
