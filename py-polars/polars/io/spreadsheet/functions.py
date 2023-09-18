@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO, Callable, NoReturn, Sequence, o
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import Date, Datetime
-from polars.exceptions import NoDataError
+from polars.exceptions import NoDataError, ParameterCollisionError
 from polars.io.csv.functions import read_csv
 from polars.utils.various import normalize_filepath
 
@@ -506,13 +506,23 @@ def _csv_buffer_to_frame(
             )
         return pl.DataFrame()
 
+    if read_csv_options is None:
+        read_csv_options = {}
+    if schema_overrides:
+        if (csv_dtypes := read_csv_options.get("dtypes", {})) and set(
+            csv_dtypes
+        ).intersection(schema_overrides):
+            raise ParameterCollisionError(
+                "Cannot specify columns in both `schema_overrides` and `read_csv_options['dtypes']`"
+            )
+        read_csv_options["dtypes"] = {**csv_dtypes, **schema_overrides}
+
     # otherwise rewind the buffer and parse as csv
     csv.seek(0)
     df = read_csv(
         csv,
         separator=separator,
-        dtypes=schema_overrides,
-        **(read_csv_options or {}),
+        **read_csv_options,
     )
     return _drop_unnamed_null_columns(df)
 

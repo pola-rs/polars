@@ -9,7 +9,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import NoDataError
+from polars.exceptions import NoDataError, ParameterCollisionError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -181,6 +181,56 @@ def test_write_excel_bytes(engine: Literal["xlsx2csv", "openpyxl"]) -> None:
 
     df_read = pl.read_excel(excel_bytes, engine=engine)
     assert_frame_equal(df, df_read)
+
+
+def test_schema_overrides_11161(excel_file_path: Path) -> None:
+    df1 = pl.read_excel(
+        excel_file_path,
+        sheet_name="test4",
+        schema_overrides={"cardinality": pl.UInt16},
+    ).drop_nulls()
+    assert df1.schema == {
+        "cardinality": pl.UInt16,
+        "rows_by_key": pl.Float64,
+        "iter_groups": pl.Float64,
+    }
+
+    df2 = pl.read_excel(
+        excel_file_path,
+        sheet_name="test4",
+        read_csv_options={"dtypes": {"cardinality": pl.UInt16}},
+    ).drop_nulls()
+    assert df2.schema == {
+        "cardinality": pl.UInt16,
+        "rows_by_key": pl.Float64,
+        "iter_groups": pl.Float64,
+    }
+
+    df3 = pl.read_excel(
+        excel_file_path,
+        sheet_name="test4",
+        schema_overrides={"cardinality": pl.UInt16},
+        read_csv_options={
+            "dtypes": {
+                "rows_by_key": pl.Float32,
+                "iter_groups": pl.Float32,
+            },
+        },
+    ).drop_nulls()
+    assert df3.schema == {
+        "cardinality": pl.UInt16,
+        "rows_by_key": pl.Float32,
+        "iter_groups": pl.Float32,
+    }
+
+    with pytest.raises(ParameterCollisionError):
+        # cannot specify 'cardinality' in both schema_overrides and read_csv_options
+        pl.read_excel(
+            excel_file_path,
+            sheet_name="test4",
+            schema_overrides={"cardinality": pl.UInt16},
+            read_csv_options={"dtypes": {"cardinality": pl.Int32}},
+        )
 
 
 def test_unsupported_engine() -> None:
