@@ -1,13 +1,12 @@
 use avro_schema::schema::{Record, Schema as AvroSchema};
 use avro_schema::write::encode;
 
+use super::super::super::iterator::*;
+use crate::array::*;
 use crate::bitmap::utils::ZipValidity;
-use crate::datatypes::{IntervalUnit, PhysicalType, PrimitiveType};
+use crate::datatypes::{DataType, IntervalUnit, PhysicalType, PrimitiveType};
 use crate::offset::Offset;
 use crate::types::months_days_ns;
-use crate::{array::*, datatypes::DataType};
-
-use super::super::super::iterator::*;
 
 // Zigzag representation of false and true respectively.
 const IS_NULL: u8 = 0;
@@ -225,7 +224,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 },
                 vec![],
             ))
-        }
+        },
         (PhysicalType::Boolean, AvroSchema::Union(_)) => {
             let values = array.as_any().downcast_ref::<BooleanArray>().unwrap();
             Box::new(BufStreamingIterator::new(
@@ -239,37 +238,37 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 },
                 vec![],
             ))
-        }
+        },
         (PhysicalType::Utf8, AvroSchema::Union(_)) => {
             utf8_optional::<i32>(array.as_any().downcast_ref().unwrap())
-        }
+        },
         (PhysicalType::LargeUtf8, AvroSchema::Union(_)) => {
             utf8_optional::<i64>(array.as_any().downcast_ref().unwrap())
-        }
+        },
         (PhysicalType::Utf8, AvroSchema::String(_)) => {
             utf8_required::<i32>(array.as_any().downcast_ref().unwrap())
-        }
+        },
         (PhysicalType::LargeUtf8, AvroSchema::String(_)) => {
             utf8_required::<i64>(array.as_any().downcast_ref().unwrap())
-        }
+        },
         (PhysicalType::Binary, AvroSchema::Union(_)) => {
             binary_optional::<i32>(array.as_any().downcast_ref().unwrap())
-        }
+        },
         (PhysicalType::LargeBinary, AvroSchema::Union(_)) => {
             binary_optional::<i64>(array.as_any().downcast_ref().unwrap())
-        }
+        },
         (PhysicalType::FixedSizeBinary, AvroSchema::Union(_)) => {
             fixed_size_binary_optional(array.as_any().downcast_ref().unwrap())
-        }
+        },
         (PhysicalType::Binary, AvroSchema::Bytes(_)) => {
             binary_required::<i32>(array.as_any().downcast_ref().unwrap())
-        }
+        },
         (PhysicalType::LargeBinary, AvroSchema::Bytes(_)) => {
             binary_required::<i64>(array.as_any().downcast_ref().unwrap())
-        }
+        },
         (PhysicalType::FixedSizeBinary, AvroSchema::Fixed(_)) => {
             fixed_size_binary_required(array.as_any().downcast_ref().unwrap())
-        }
+        },
 
         (PhysicalType::Primitive(PrimitiveType::Int32), AvroSchema::Union(_)) => {
             let values = array
@@ -288,7 +287,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 },
                 vec![],
             ))
-        }
+        },
         (PhysicalType::Primitive(PrimitiveType::Int32), AvroSchema::Int(_)) => {
             let values = array
                 .as_any()
@@ -301,7 +300,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 },
                 vec![],
             ))
-        }
+        },
         (PhysicalType::Primitive(PrimitiveType::Int64), AvroSchema::Union(_)) => {
             let values = array
                 .as_any()
@@ -319,7 +318,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 },
                 vec![],
             ))
-        }
+        },
         (PhysicalType::Primitive(PrimitiveType::Int64), AvroSchema::Long(_)) => {
             let values = array
                 .as_any()
@@ -332,7 +331,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 },
                 vec![],
             ))
-        }
+        },
         (PhysicalType::Primitive(PrimitiveType::Float32), AvroSchema::Union(_)) => {
             let values = array
                 .as_any()
@@ -350,7 +349,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 },
                 vec![],
             ))
-        }
+        },
         (PhysicalType::Primitive(PrimitiveType::Float32), AvroSchema::Float) => {
             let values = array
                 .as_any()
@@ -363,7 +362,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 },
                 vec![],
             ))
-        }
+        },
         (PhysicalType::Primitive(PrimitiveType::Float64), AvroSchema::Union(_)) => {
             let values = array
                 .as_any()
@@ -381,7 +380,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 },
                 vec![],
             ))
-        }
+        },
         (PhysicalType::Primitive(PrimitiveType::Float64), AvroSchema::Double) => {
             let values = array
                 .as_any()
@@ -394,7 +393,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 },
                 vec![],
             ))
-        }
+        },
         (PhysicalType::Primitive(PrimitiveType::Int128), AvroSchema::Bytes(_)) => {
             let values = array
                 .as_any()
@@ -409,7 +408,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 },
                 vec![],
             ))
-        }
+        },
         (PhysicalType::Primitive(PrimitiveType::Int128), AvroSchema::Union(_)) => {
             let values = array
                 .as_any()
@@ -430,7 +429,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 },
                 vec![],
             ))
-        }
+        },
         (PhysicalType::Primitive(PrimitiveType::MonthDayNano), AvroSchema::Fixed(_)) => {
             let values = array
                 .as_any()
@@ -441,7 +440,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 interval_write,
                 vec![],
             ))
-        }
+        },
         (PhysicalType::Primitive(PrimitiveType::MonthDayNano), AvroSchema::Union(_)) => {
             let values = array
                 .as_any()
@@ -459,14 +458,14 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 },
                 vec![],
             ))
-        }
+        },
 
         (PhysicalType::List, AvroSchema::Array(schema)) => {
             list_required::<i32>(array.as_any().downcast_ref().unwrap(), schema.as_ref())
-        }
+        },
         (PhysicalType::LargeList, AvroSchema::Array(schema)) => {
             list_required::<i64>(array.as_any().downcast_ref().unwrap(), schema.as_ref())
-        }
+        },
         (PhysicalType::List, AvroSchema::Union(inner)) => {
             let schema = if let AvroSchema::Array(schema) = &inner[1] {
                 schema.as_ref()
@@ -474,7 +473,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 unreachable!("The schema declaration does not match the deserialization")
             };
             list_optional::<i32>(array.as_any().downcast_ref().unwrap(), schema)
-        }
+        },
         (PhysicalType::LargeList, AvroSchema::Union(inner)) => {
             let schema = if let AvroSchema::Array(schema) = &inner[1] {
                 schema.as_ref()
@@ -482,10 +481,10 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 unreachable!("The schema declaration does not match the deserialization")
             };
             list_optional::<i64>(array.as_any().downcast_ref().unwrap(), schema)
-        }
+        },
         (PhysicalType::Struct, AvroSchema::Record(inner)) => {
             struct_required(array.as_any().downcast_ref().unwrap(), inner)
-        }
+        },
         (PhysicalType::Struct, AvroSchema::Union(inner)) => {
             let inner = if let AvroSchema::Record(inner) = &inner[1] {
                 inner
@@ -493,7 +492,7 @@ pub fn new_serializer<'a>(array: &'a dyn Array, schema: &AvroSchema) -> BoxSeria
                 unreachable!("The schema declaration does not match the deserialization")
             };
             struct_optional(array.as_any().downcast_ref().unwrap(), inner)
-        }
+        },
         (a, b) => todo!("{:?} -> {:?} not supported", a, b),
     }
 }
@@ -505,7 +504,7 @@ pub fn can_serialize(data_type: &DataType) -> bool {
         List(inner) => return can_serialize(&inner.data_type),
         LargeList(inner) => return can_serialize(&inner.data_type),
         Struct(inner) => return inner.iter().all(|inner| can_serialize(&inner.data_type)),
-        _ => {}
+        _ => {},
     };
 
     matches!(

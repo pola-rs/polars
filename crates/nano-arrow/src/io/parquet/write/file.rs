@@ -1,14 +1,12 @@
 use std::io::Write;
 
-use parquet2::metadata::KeyValue;
-use parquet2::metadata::SchemaDescriptor;
-use parquet2::write::RowGroupIter;
-use parquet2::write::WriteOptions as FileWriteOptions;
+use parquet2::metadata::{KeyValue, SchemaDescriptor};
+use parquet2::write::{RowGroupIter, WriteOptions as FileWriteOptions};
 
+use super::schema::schema_to_metadata_key;
+use super::{to_parquet_schema, ThriftFileMetaData, WriteOptions};
 use crate::datatypes::Schema;
 use crate::error::{Error, Result};
-
-use super::{schema::schema_to_metadata_key, to_parquet_schema, ThriftFileMetaData, WriteOptions};
 
 /// Attaches [`Schema`] to `key_value_metadata`
 pub fn add_arrow_schema(

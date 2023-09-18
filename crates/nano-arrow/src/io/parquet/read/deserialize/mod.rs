@@ -13,19 +13,15 @@ mod utils;
 
 use parquet2::read::get_page_iterator as _get_page_iterator;
 use parquet2::schema::types::PrimitiveType;
-
-use crate::{
-    array::{Array, DictionaryKey, FixedSizeListArray, ListArray, MapArray},
-    datatypes::{DataType, Field, IntervalUnit},
-    error::Result,
-    offset::Offsets,
-};
+use simple::page_iter_to_arrays;
 
 pub use self::nested_utils::{init_nested, InitNested, NestedArrayIter, NestedState};
 pub use self::struct_::StructIterator;
-use simple::page_iter_to_arrays;
-
 use super::*;
+use crate::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, MapArray};
+use crate::datatypes::{DataType, Field, IntervalUnit};
+use crate::error::Result;
+use crate::offset::Offsets;
 
 /// Creates a new iterator of compressed pages.
 pub fn get_page_iterator<R: Read + Seek>(
@@ -67,7 +63,7 @@ pub fn create_list(
                 values,
                 validity.and_then(|x| x.into()),
             ))
-        }
+        },
         DataType::LargeList(_) => {
             offsets.push(values.len() as i64);
 
@@ -77,7 +73,7 @@ pub fn create_list(
                 values,
                 validity.and_then(|x| x.into()),
             ))
-        }
+        },
         DataType::FixedSizeList(_, _) => Box::new(FixedSizeListArray::new(
             data_type,
             values,
@@ -109,7 +105,7 @@ pub fn create_map(
                 values,
                 validity.and_then(|x| x.into()),
             ))
-        }
+        },
         _ => unreachable!(),
     }
 }
@@ -173,7 +169,7 @@ pub fn n_columns(data_type: &DataType) -> usize {
             } else {
                 unreachable!()
             }
-        }
+        },
         Map => {
             let a = data_type.to_logical_type();
             if let DataType::Map(inner, _) = a {
@@ -181,14 +177,14 @@ pub fn n_columns(data_type: &DataType) -> usize {
             } else {
                 unreachable!()
             }
-        }
+        },
         Struct => {
             if let DataType::Struct(fields) = data_type.to_logical_type() {
                 fields.iter().map(|inner| n_columns(&inner.data_type)).sum()
             } else {
                 unreachable!()
             }
-        }
+        },
         _ => todo!(),
     }
 }

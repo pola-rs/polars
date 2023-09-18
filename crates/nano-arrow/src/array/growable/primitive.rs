@@ -1,16 +1,11 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{Array, PrimitiveArray},
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-    types::NativeType,
-};
-
-use super::{
-    utils::{build_extend_null_bits, ExtendNullBits},
-    Growable,
-};
+use super::utils::{build_extend_null_bits, ExtendNullBits};
+use super::Growable;
+use crate::array::{Array, PrimitiveArray};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::types::NativeType;
 
 /// Concrete [`Growable`] for the [`PrimitiveArray`].
 pub struct GrowablePrimitive<'a, T: NativeType> {

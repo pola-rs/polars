@@ -1,18 +1,17 @@
-use ahash::AHashMap;
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
+use ahash::AHashMap;
 use arrow_format;
 
+use super::deserialize::{read, skip};
+use super::Dictionaries;
 use crate::array::*;
 use crate::chunk::Chunk;
 use crate::datatypes::{DataType, Field};
 use crate::error::{Error, Result};
 use crate::io::ipc::read::OutOfSpecKind;
 use crate::io::ipc::{IpcField, IpcSchema};
-
-use super::deserialize::{read, skip};
-use super::Dictionaries;
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 enum ProjectionResult<A> {
@@ -145,7 +144,7 @@ pub fn read_record_batch<R: Read + Seek>(
                 ProjectionResult::NotSelected((field, _)) => {
                     skip(&mut field_nodes, &field.data_type, &mut buffers)?;
                     Ok(None)
-                }
+                },
             })
             .filter_map(|x| x.transpose())
             .collect::<Result<Vec<_>>>()?
@@ -186,7 +185,7 @@ fn find_first_dict_field_d<'a>(
         Dictionary(_, inner, _) => find_first_dict_field_d(id, inner.as_ref(), ipc_field),
         List(field) | LargeList(field) | FixedSizeList(field, ..) | Map(field, ..) => {
             find_first_dict_field(id, field.as_ref(), &ipc_field.fields[0])
-        }
+        },
         Union(fields, ..) | Struct(fields) => {
             for (field, ipc_field) in fields.iter().zip(ipc_field.fields.iter()) {
                 if let Some(f) = find_first_dict_field(id, field, ipc_field) {
@@ -194,7 +193,7 @@ fn find_first_dict_field_d<'a>(
                 }
             }
             None
-        }
+        },
         _ => None,
     }
 }

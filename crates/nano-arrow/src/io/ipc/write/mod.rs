@@ -24,9 +24,8 @@ pub mod stream_async;
 #[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_write_async")))]
 pub mod file_async;
 
-use crate::datatypes::{DataType, Field};
-
 use super::IpcField;
+use crate::datatypes::{DataType, Field};
 
 fn default_ipc_field(data_type: &DataType, current_id: &mut i64) -> IpcField {
     use crate::datatypes::DataType::*;
@@ -52,7 +51,7 @@ fn default_ipc_field(data_type: &DataType, current_id: &mut i64) -> IpcField {
                 fields: vec![default_ipc_field(data_type, current_id)],
                 dictionary_id,
             }
-        }
+        },
         // no children => do nothing
         _ => IpcField {
             fields: vec![],

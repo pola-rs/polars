@@ -1,25 +1,20 @@
 use std::collections::VecDeque;
 
-use parquet2::{
-    deserialize::SliceFilteredIter,
-    encoding::Encoding,
-    page::{split_buffer, DataPage, DictPage},
-    schema::Repetition,
-};
+use parquet2::deserialize::SliceFilteredIter;
+use parquet2::encoding::Encoding;
+use parquet2::page::{split_buffer, DataPage, DictPage};
+use parquet2::schema::Repetition;
 
-use crate::{
-    array::BooleanArray,
-    bitmap::{utils::BitmapIter, MutableBitmap},
-    datatypes::DataType,
-    error::Result,
-};
-
-use super::super::utils;
 use super::super::utils::{
     extend_from_decoder, get_selected_rows, next, DecodedState, Decoder,
     FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
 };
-use super::super::Pages;
+use super::super::{utils, Pages};
+use crate::array::BooleanArray;
+use crate::bitmap::utils::BitmapIter;
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::error::Result;
 
 #[derive(Debug)]
 struct Values<'a>(BitmapIter<'a>);
@@ -131,7 +126,7 @@ impl<'a> Decoder<'a> for BooleanDecoder {
             )),
             (Encoding::Plain, false, true) => {
                 Ok(State::FilteredRequired(FilteredRequired::try_new(page)?))
-            }
+            },
             _ => Err(utils::not_implemented(page)),
         }
     }
@@ -162,13 +157,13 @@ impl<'a> Decoder<'a> for BooleanDecoder {
                 let remaining = remaining.min(page.length - page.offset);
                 values.extend_from_slice(page.values, page.offset, remaining);
                 page.offset += remaining;
-            }
+            },
             State::FilteredRequired(page) => {
                 values.reserve(remaining);
                 for item in page.values.by_ref().take(remaining) {
                     values.push(item)
                 }
-            }
+            },
             State::FilteredOptional(page_validity, page_values) => {
                 utils::extend_from_decoder(
                     validity,
@@ -177,7 +172,7 @@ impl<'a> Decoder<'a> for BooleanDecoder {
                     values,
                     page_values.0.by_ref(),
                 );
-            }
+            },
         }
     }
 
@@ -225,7 +220,7 @@ impl<I: Pages> Iterator for Iter<I> {
         match maybe_state {
             MaybeNext::Some(Ok((values, validity))) => {
                 Some(Ok(finish(&self.data_type, values, validity)))
-            }
+            },
             MaybeNext::Some(Err(e)) => Some(Err(e)),
             MaybeNext::None => None,
             MaybeNext::More => self.next(),

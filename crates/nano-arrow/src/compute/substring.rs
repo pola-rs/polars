@@ -17,12 +17,10 @@
 
 //! Defines kernel to extract a substring of a \[Large\]StringArray
 
-use crate::{
-    array::*,
-    datatypes::DataType,
-    error::{Error, Result},
-    offset::{Offset, Offsets},
-};
+use crate::array::*;
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
+use crate::offset::{Offset, Offsets};
 
 /// Returns a Utf8Array<O> with a substring starting from `start` and with optional length `length` of each of the elements in `array`.
 /// `start` can be negative, in which case the start counts from the end of the string.

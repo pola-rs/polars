@@ -1,8 +1,8 @@
-use std::{convert::TryInto, slice::ChunksExact};
-
-use crate::trusted_len::TrustedLen;
+use std::convert::TryInto;
+use std::slice::ChunksExact;
 
 use super::{BitChunk, BitChunkIterExact};
+use crate::trusted_len::TrustedLen;
 
 /// An iterator over a slice of bytes in [`BitChunk`]s.
 #[derive(Debug)]
@@ -63,7 +63,7 @@ impl<'a, T: BitChunk> BitChunksExact<'a, T> {
                     .enumerate()
                     .for_each(|(index, b)| remainder[index] = *b);
                 remainder
-            }
+            },
         };
         T::from_ne_bytes(remainder)
     }

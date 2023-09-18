@@ -1,10 +1,8 @@
 use std::io::Write;
 
-use crate::error::Result;
-
 use super::super::CONTINUATION_MARKER;
-use super::common::pad_to_64;
-use super::common::EncodedData;
+use super::common::{pad_to_64, EncodedData};
+use crate::error::Result;
 
 /// Write a message's IPC data and buffers, returning metadata and buffer data lengths written
 pub fn write_message<W: Write>(writer: &mut W, encoded: &EncodedData) -> Result<(usize, usize)> {

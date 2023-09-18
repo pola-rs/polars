@@ -73,23 +73,23 @@ impl Display for Error {
         match self {
             Error::NotYetImplemented(source) => {
                 write!(f, "Not yet implemented: {}", &source)
-            }
+            },
             Error::External(message, source) => {
                 write!(f, "External error{}: {}", message, &source)
-            }
+            },
             Error::Io(desc) => write!(f, "Io error: {desc}"),
             Error::InvalidArgumentError(desc) => {
                 write!(f, "Invalid argument error: {desc}")
-            }
+            },
             Error::ExternalFormat(desc) => {
                 write!(f, "External format error: {desc}")
-            }
+            },
             Error::Overflow => {
                 write!(f, "Operation overflew the backing container.")
-            }
+            },
             Error::OutOfSpec(message) => {
                 write!(f, "{message}")
-            }
+            },
         }
     }
 }

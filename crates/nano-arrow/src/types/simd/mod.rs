@@ -1,8 +1,7 @@
 //! Contains traits and implementations of multi-data used in SIMD.
 //! The actual representation is driven by the feature flag `"simd"`, which, if set,
 //! uses [`std::simd`].
-use super::{days_ms, f16, i256, months_days_ns};
-use super::{BitChunk, BitChunkIter, NativeType};
+use super::{days_ms, f16, i256, months_days_ns, BitChunk, BitChunkIter, NativeType};
 
 /// Describes the ability to convert itself from a [`BitChunk`].
 pub trait FromMaskChunk<T> {

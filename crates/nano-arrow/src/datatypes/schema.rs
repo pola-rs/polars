@@ -1,7 +1,7 @@
-use super::{Field, Metadata};
-
 #[cfg(feature = "serde_types")]
 use serde_derive::{Deserialize, Serialize};
+
+use super::{Field, Metadata};
 
 /// An ordered sequence of [`Field`]s with associated [`Metadata`].
 ///

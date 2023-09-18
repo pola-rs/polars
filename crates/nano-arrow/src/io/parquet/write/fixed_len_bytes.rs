@@ -1,17 +1,14 @@
-use parquet2::{
-    encoding::Encoding,
-    page::DataPage,
-    schema::types::PrimitiveType,
-    statistics::{serialize_statistics, FixedLenStatistics},
-};
+use parquet2::encoding::Encoding;
+use parquet2::page::DataPage;
+use parquet2::schema::types::PrimitiveType;
+use parquet2::statistics::{serialize_statistics, FixedLenStatistics};
 
-use super::{binary::ord_binary, utils, WriteOptions};
+use super::binary::ord_binary;
+use super::{utils, WriteOptions};
+use crate::array::{Array, FixedSizeBinaryArray, PrimitiveArray};
+use crate::error::Result;
+use crate::io::parquet::read::schema::is_nullable;
 use crate::types::i256;
-use crate::{
-    array::{Array, FixedSizeBinaryArray, PrimitiveArray},
-    error::Result,
-    io::parquet::read::schema::is_nullable,
-};
 
 pub(crate) fn encode_plain(array: &FixedSizeBinaryArray, is_optional: bool, buffer: &mut Vec<u8>) {
     // append the non-null values

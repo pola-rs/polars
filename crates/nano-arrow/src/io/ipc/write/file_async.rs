@@ -2,8 +2,10 @@
 
 use std::task::Poll;
 
-use arrow_format::ipc::{planus::Builder, Block, Footer, MetadataVersion};
-use futures::{future::BoxFuture, AsyncWrite, AsyncWriteExt, FutureExt, Sink};
+use arrow_format::ipc::planus::Builder;
+use arrow_format::ipc::{Block, Footer, MetadataVersion};
+use futures::future::BoxFuture;
+use futures::{AsyncWrite, AsyncWriteExt, FutureExt, Sink};
 
 use super::common::{encode_chunk, DictionaryTracker, EncodedData, WriteOptions};
 use super::common_async::{write_continuation, write_message};
@@ -167,11 +169,11 @@ where
                     }
                     self.dictionary_blocks.append(&mut dictionaries);
                     Poll::Ready(Ok(()))
-                }
+                },
                 Err(error) => {
                     self.task = None;
                     Poll::Ready(Err(error))
-                }
+                },
             }
         } else {
             Poll::Ready(Ok(()))
@@ -243,7 +245,7 @@ where
                 } else {
                     Poll::Ready(Ok(()))
                 }
-            }
+            },
             Err(error) => Poll::Ready(Err(error)),
         }
     }

@@ -1,8 +1,10 @@
 //! Defines generics suitable to perform operations to [`PrimitiveArray`] in-place.
 
-use super::utils::check_same_len;
-use crate::{array::PrimitiveArray, types::NativeType};
 use either::Either;
+
+use super::utils::check_same_len;
+use crate::array::PrimitiveArray;
+use crate::types::NativeType;
 
 /// Applies an unary function to a [`PrimitiveArray`], optionally in-place.
 ///
@@ -65,11 +67,11 @@ where
                     Either::Left(immutable) => {
                         // alloc new region
                         &immutable & rhs
-                    }
+                    },
                     Either::Right(mutable) => {
                         // mutate in place
                         (mutable & rhs).into()
-                    }
+                    },
                 }
             });
         }

@@ -1,19 +1,15 @@
 //! Contains functionality to load an ArrayData from the C Data Interface
 use std::sync::Arc;
 
-use crate::bitmap::utils::count_zeros;
-use crate::buffer::BytesAllocator;
-use crate::{
-    array::*,
-    bitmap::{utils::bytes_for, Bitmap},
-    buffer::{Buffer, Bytes},
-    datatypes::{DataType, PhysicalType},
-    error::{Error, Result},
-    ffi::schema::get_child,
-    types::NativeType,
-};
-
 use super::ArrowArray;
+use crate::array::*;
+use crate::bitmap::utils::{bytes_for, count_zeros};
+use crate::bitmap::Bitmap;
+use crate::buffer::{Buffer, Bytes, BytesAllocator};
+use crate::datatypes::{DataType, PhysicalType};
+use crate::error::{Error, Result};
+use crate::ffi::schema::get_child;
+use crate::types::NativeType;
 
 /// Reads a valid `ffi` interface into a `Box<dyn Array>`
 /// # Errors
@@ -40,7 +36,7 @@ pub unsafe fn try_from<A: ArrowArrayRef>(array: A) -> Result<Box<dyn Array>> {
             match_integer_type!(key_type, |$T| {
                 Box::new(DictionaryArray::<$T>::try_from_ffi(array)?)
             })
-        }
+        },
         Union => Box::new(UnionArray::try_from_ffi(array)?),
         Map => Box::new(MapArray::try_from_ffi(array)?),
     })
@@ -297,7 +293,7 @@ fn buffer_offset(array: &ArrowArray, data_type: &DataType, i: usize) -> usize {
             } else {
                 unreachable!()
             }
-        }
+        },
         _ => array.offset.try_into().expect("Offset to fit in `usize`"),
     }
 }
@@ -311,14 +307,14 @@ unsafe fn buffer_len(array: &ArrowArray, data_type: &DataType, i: usize) -> Resu
             } else {
                 unreachable!()
             }
-        }
+        },
         (PhysicalType::FixedSizeList, 1) => {
             if let DataType::FixedSizeList(_, size) = data_type.to_logical_type() {
                 *size * (array.offset as usize + array.length as usize)
             } else {
                 unreachable!()
             }
-        }
+        },
         (PhysicalType::Utf8, 1)
         | (PhysicalType::LargeUtf8, 1)
         | (PhysicalType::Binary, 1)
@@ -328,7 +324,7 @@ unsafe fn buffer_len(array: &ArrowArray, data_type: &DataType, i: usize) -> Resu
         | (PhysicalType::Map, 1) => {
             // the len of the offset buffer (buffer 1) equals length + 1
             array.offset as usize + array.length as usize + 1
-        }
+        },
         (PhysicalType::Utf8, 2) | (PhysicalType::Binary, 2) => {
             // the len of the data buffer (buffer 2) equals the last value of the offset buffer (buffer 1)
             let len = buffer_len(array, data_type, 1)?;
@@ -339,7 +335,7 @@ unsafe fn buffer_len(array: &ArrowArray, data_type: &DataType, i: usize) -> Resu
             // get last offset
 
             (unsafe { *offset_buffer.add(len - 1) }) as usize
-        }
+        },
         (PhysicalType::LargeUtf8, 2) | (PhysicalType::LargeBinary, 2) => {
             // the len of the data buffer (buffer 2) equals the last value of the offset buffer (buffer 1)
             let len = buffer_len(array, data_type, 1)?;
@@ -349,7 +345,7 @@ unsafe fn buffer_len(array: &ArrowArray, data_type: &DataType, i: usize) -> Resu
             let offset_buffer = offset_buffer as *const i64;
             // get last offset
             (unsafe { *offset_buffer.add(len - 1) }) as usize
-        }
+        },
         // buffer len of primitive types
         _ => array.offset as usize + array.length as usize,
     })

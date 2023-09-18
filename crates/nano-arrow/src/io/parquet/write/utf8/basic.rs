@@ -1,19 +1,14 @@
-use parquet2::{
-    encoding::Encoding,
-    page::DataPage,
-    schema::types::PrimitiveType,
-    statistics::{serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics},
-};
+use parquet2::encoding::Encoding;
+use parquet2::page::DataPage;
+use parquet2::schema::types::PrimitiveType;
+use parquet2::statistics::{serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics};
 
 use super::super::binary::{encode_delta, ord_binary};
-use super::super::utils;
-use super::super::WriteOptions;
-use crate::{
-    array::{Array, Utf8Array},
-    error::{Error, Result},
-    io::parquet::read::schema::is_nullable,
-    offset::Offset,
-};
+use super::super::{utils, WriteOptions};
+use crate::array::{Array, Utf8Array};
+use crate::error::{Error, Result};
+use crate::io::parquet::read::schema::is_nullable;
+use crate::offset::Offset;
 
 pub(crate) fn encode_plain<O: Offset>(
     array: &Utf8Array<O>,
@@ -74,7 +69,7 @@ pub fn array_to_page<O: Offset>(
                 array.data_type(),
                 encoding
             )))
-        }
+        },
     }
 
     let statistics = if options.write_statistics {

@@ -15,11 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::array::growable::GrowableFixedSizeList;
-use crate::array::FixedSizeListArray;
-use crate::array::{growable::Growable, PrimitiveArray};
-
 use super::Index;
+use crate::array::growable::{Growable, GrowableFixedSizeList};
+use crate::array::{FixedSizeListArray, PrimitiveArray};
 
 /// `take` implementation for FixedSizeListArrays
 pub fn take<O: Index>(

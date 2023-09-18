@@ -1,8 +1,8 @@
 use std::any::Any;
 
-use crate::{array::*, datatypes::DataType};
-
 use super::Scalar;
+use crate::array::*;
+use crate::datatypes::DataType;
 
 /// The scalar equivalent of [`MapArray`]. Like [`MapArray`], this struct holds a dynamically-typed
 /// [`Array`]. The only difference is that this has only one element.
@@ -35,7 +35,7 @@ impl MapScalar {
             Some(values) => {
                 assert_eq!(inner_data_type, values.data_type());
                 (true, values)
-            }
+            },
             None => (false, new_empty_array(inner_data_type.clone())),
         };
         Self {

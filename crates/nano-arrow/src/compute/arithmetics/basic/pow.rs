@@ -1,12 +1,9 @@
 //! Definition of basic pow operations with primitive arrays
 use num_traits::{checked_pow, CheckedMul, One, Pow};
 
-use crate::{
-    array::PrimitiveArray,
-    compute::arity::{unary, unary_checked},
-};
-
 use super::NativeArithmetics;
+use crate::array::PrimitiveArray;
+use crate::compute::arity::{unary, unary_checked};
 
 /// Raises an array of primitives to the power of exponent. Panics if one of
 /// the values values overflows.

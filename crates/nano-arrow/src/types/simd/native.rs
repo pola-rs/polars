@@ -1,7 +1,7 @@
-use crate::types::BitChunkIter;
 use std::convert::TryInto;
 
 use super::*;
+use crate::types::BitChunkIter;
 
 native_simd!(u8x64, u8, 64, u64);
 native_simd!(u16x32, u16, 32, u32);

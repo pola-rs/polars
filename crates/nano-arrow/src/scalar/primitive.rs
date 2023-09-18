@@ -1,6 +1,7 @@
-use crate::{datatypes::DataType, error::Error, types::NativeType};
-
 use super::Scalar;
+use crate::datatypes::DataType;
+use crate::error::Error;
+use crate::types::NativeType;
 
 /// The implementation of [`Scalar`] for primitive, semantically equivalent to [`Option<T>`]
 /// with [`DataType`].

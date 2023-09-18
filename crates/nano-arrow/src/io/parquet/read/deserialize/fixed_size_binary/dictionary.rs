@@ -2,17 +2,14 @@ use std::collections::VecDeque;
 
 use parquet2::page::DictPage;
 
-use crate::{
-    array::{Array, DictionaryArray, DictionaryKey, FixedSizeBinaryArray},
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-    error::Result,
-    io::parquet::read::deserialize::nested_utils::{InitNested, NestedState},
-};
-
 use super::super::dictionary::*;
 use super::super::utils::MaybeNext;
 use super::super::Pages;
+use crate::array::{Array, DictionaryArray, DictionaryKey, FixedSizeBinaryArray};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::error::Result;
+use crate::io::parquet::read::deserialize::nested_utils::{InitNested, NestedState};
 
 /// An iterator adapter over [`Pages`] assumed to be encoded as parquet's dictionary-encoded binary representation
 #[derive(Debug)]

@@ -1,21 +1,14 @@
-use crate::{
-    bitmap::{
-        utils::{BitmapIter, ZipValidity},
-        Bitmap,
-    },
-    buffer::Buffer,
-    datatypes::DataType,
-    error::{Error, Result},
-    offset::{Offset, Offsets, OffsetsBuffer},
-    trusted_len::TrustedLen,
-};
-
 use either::Either;
 
-use super::{
-    specification::{try_check_offsets_bounds, try_check_utf8},
-    Array, GenericBinaryArray,
-};
+use super::specification::{try_check_offsets_bounds, try_check_utf8};
+use super::{Array, GenericBinaryArray};
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
+use crate::bitmap::Bitmap;
+use crate::buffer::Buffer;
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
+use crate::offset::{Offset, Offsets, OffsetsBuffer};
+use crate::trusted_len::TrustedLen;
 
 #[cfg(feature = "arrow")]
 mod data;
@@ -278,7 +271,7 @@ impl<O: Offset> Utf8Array<O> {
                                 Some(mutable_bitmap.into()),
                             )
                         })
-                    }
+                    },
                     (Left(values), Right(offsets)) => {
                         // Safety: invariants are preserved
                         Left(unsafe {
@@ -289,7 +282,7 @@ impl<O: Offset> Utf8Array<O> {
                                 Some(mutable_bitmap.into()),
                             )
                         })
-                    }
+                    },
                     (Right(values), Left(offsets)) => {
                         // Safety: invariants are preserved
                         Left(unsafe {
@@ -300,7 +293,7 @@ impl<O: Offset> Utf8Array<O> {
                                 Some(mutable_bitmap.into()),
                             )
                         })
-                    }
+                    },
                     (Right(values), Right(offsets)) => Right(unsafe {
                         MutableUtf8Array::new_unchecked(
                             self.data_type,
@@ -315,7 +308,7 @@ impl<O: Offset> Utf8Array<O> {
             match (self.values.into_mut(), self.offsets.into_mut()) {
                 (Left(values), Left(offsets)) => {
                     Left(unsafe { Utf8Array::new_unchecked(self.data_type, offsets, values, None) })
-                }
+                },
                 (Left(values), Right(offsets)) => Left(unsafe {
                     Utf8Array::new_unchecked(self.data_type, offsets.into(), values, None)
                 }),

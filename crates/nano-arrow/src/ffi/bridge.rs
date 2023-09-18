@@ -34,6 +34,6 @@ pub fn align_to_c_data_interface(array: Box<dyn Array>) -> Box<dyn Array> {
             match_integer_type!(key_type, |$T| {
                 ffi_dyn!(array, DictionaryArray<$T>)
             })
-        }
+        },
     }
 }

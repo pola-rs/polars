@@ -1,23 +1,20 @@
 //! Async reader for Arrow IPC files
-use ahash::AHashMap;
 use std::io::SeekFrom;
 
-use arrow_format::ipc::{planus::ReadAsRoot, Block, MessageHeaderRef};
-use futures::{
-    stream::BoxStream, AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, Stream, StreamExt,
-};
+use ahash::AHashMap;
+use arrow_format::ipc::planus::ReadAsRoot;
+use arrow_format::ipc::{Block, MessageHeaderRef};
+use futures::stream::BoxStream;
+use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, Stream, StreamExt};
 
+use super::common::{apply_projection, prepare_projection, read_dictionary, read_record_batch};
+use super::file::{deserialize_footer, get_record_batch};
+use super::{Dictionaries, FileMetadata, OutOfSpecKind};
 use crate::array::*;
 use crate::chunk::Chunk;
 use crate::datatypes::{Field, Schema};
 use crate::error::{Error, Result};
 use crate::io::ipc::{IpcSchema, ARROW_MAGIC_V2, CONTINUATION_MARKER};
-
-use super::common::{apply_projection, prepare_projection, read_dictionary, read_record_batch};
-use super::file::{deserialize_footer, get_record_batch};
-use super::Dictionaries;
-use super::FileMetadata;
-use super::OutOfSpecKind;
 
 /// Async reader for Arrow IPC files
 pub struct FileStream<'a> {
@@ -293,7 +290,7 @@ where
                     u64::MAX,
                     scratch,
                 )?;
-            }
+            },
             _ => return Err(Error::from(OutOfSpecKind::UnexpectedMessageType)),
         }
     }
@@ -342,11 +339,11 @@ async fn cached_read_dictionaries<R: AsyncRead + AsyncSeek + Unpin>(
             )
             .await?;
             *dictionaries = Some(new_dictionaries);
-        }
+        },
         (None, None) => {
             *dictionaries = Some(Default::default());
-        }
-        _ => {}
+        },
+        _ => {},
     };
     Ok(())
 }

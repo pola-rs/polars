@@ -1,8 +1,9 @@
 use std::any::Any;
 
-use crate::{array::*, datatypes::DataType, offset::Offset};
-
 use super::Scalar;
+use crate::array::*;
+use crate::datatypes::DataType;
+use crate::offset::Offset;
 
 /// The scalar equivalent of [`ListArray`]. Like [`ListArray`], this struct holds a dynamically-typed
 /// [`Array`]. The only difference is that this has only one element.
@@ -35,7 +36,7 @@ impl<O: Offset> ListScalar<O> {
             Some(values) => {
                 assert_eq!(inner_data_type, values.data_type());
                 (true, values)
-            }
+            },
             None => (false, new_empty_array(inner_data_type.clone())),
         };
         Self {

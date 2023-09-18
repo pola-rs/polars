@@ -19,11 +19,9 @@
 use std::any::Any;
 use std::sync::Arc;
 
+use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::datatypes::DataType;
 use crate::error::Result;
-use crate::{
-    bitmap::{Bitmap, MutableBitmap},
-    datatypes::DataType,
-};
 
 pub(self) mod physical_binary;
 
@@ -334,7 +332,7 @@ impl std::fmt::Debug for dyn Array + '_ {
                 match_integer_type!(key_type, |$T| {
                     fmt_dyn!(self, DictionaryArray::<$T>, f)
                 })
-            }
+            },
             Map => fmt_dyn!(self, MapArray, f),
         }
     }
@@ -364,7 +362,7 @@ pub fn new_empty_array(data_type: DataType) -> Box<dyn Array> {
             match_integer_type!(key_type, |$T| {
                 Box::new(DictionaryArray::<$T>::new_empty(data_type))
             })
-        }
+        },
     }
 }
 
@@ -394,7 +392,7 @@ pub fn new_null_array(data_type: DataType, length: usize) -> Box<dyn Array> {
             match_integer_type!(key_type, |$T| {
                 Box::new(DictionaryArray::<$T>::new_null(data_type, length))
             })
-        }
+        },
     }
 }
 
@@ -470,7 +468,7 @@ pub fn to_data(array: &dyn Array) -> arrow_data::ArrayData {
             match_integer_type!(key_type, |$T| {
                 to_data_dyn!(array, DictionaryArray::<$T>)
             })
-        }
+        },
         Map => to_data_dyn!(array, MapArray),
     }
 }
@@ -500,7 +498,7 @@ pub fn from_data(data: &arrow_data::ArrayData) -> Box<dyn Array> {
             match_integer_type!(key_type, |$T| {
                 Box::new(DictionaryArray::<$T>::from_data(data))
             })
-        }
+        },
         Map => Box::new(MapArray::from_data(data)),
     }
 }
@@ -691,7 +689,7 @@ pub fn clone(array: &dyn Array) -> Box<dyn Array> {
             match_integer_type!(key_type, |$T| {
                 clone_dyn!(array, DictionaryArray::<$T>)
             })
-        }
+        },
     }
 }
 
@@ -727,17 +725,15 @@ mod iterator;
 pub mod growable;
 pub mod ord;
 
-pub(crate) use iterator::ArrayAccessor;
-pub use iterator::ArrayValuesIter;
-
-pub use equal::equal;
-pub use fmt::{get_display, get_value_display};
-
 pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
 pub use boolean::{BooleanArray, MutableBooleanArray};
 pub use dictionary::{DictionaryArray, DictionaryKey, MutableDictionaryArray};
+pub use equal::equal;
 pub use fixed_size_binary::{FixedSizeBinaryArray, MutableFixedSizeBinaryArray};
 pub use fixed_size_list::{FixedSizeListArray, MutableFixedSizeListArray};
+pub use fmt::{get_display, get_value_display};
+pub(crate) use iterator::ArrayAccessor;
+pub use iterator::ArrayValuesIter;
 pub use list::{ListArray, ListValuesIter, MutableListArray};
 pub use map::MapArray;
 pub use null::{MutableNullArray, NullArray};
@@ -746,9 +742,7 @@ pub use struct_::{MutableStructArray, StructArray};
 pub use union::UnionArray;
 pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIter};
 
-pub(crate) use self::ffi::offset_buffers_children_dictionary;
-pub(crate) use self::ffi::FromFfi;
-pub(crate) use self::ffi::ToFfi;
+pub(crate) use self::ffi::{offset_buffers_children_dictionary, FromFfi, ToFfi};
 
 /// A trait describing the ability of a struct to create itself from a iterator.
 /// This is similar to [`Extend`], but accepted the creation to error.

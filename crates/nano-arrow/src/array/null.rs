@@ -1,14 +1,10 @@
-use crate::{bitmap::Bitmap, datatypes::DataType};
 use std::any::Any;
 
-use crate::array::MutableArray;
-use crate::bitmap::MutableBitmap;
-use crate::{
-    array::{Array, FromFfi, ToFfi},
-    datatypes::PhysicalType,
-    error::Error,
-    ffi,
-};
+use crate::array::{Array, FromFfi, MutableArray, ToFfi};
+use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::datatypes::{DataType, PhysicalType};
+use crate::error::Error;
+use crate::ffi;
 
 /// The concrete [`Array`] of [`DataType::Null`].
 #[derive(Clone)]
@@ -184,8 +180,9 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for NullArray {
 
 #[cfg(feature = "arrow")]
 mod arrow {
-    use super::*;
     use arrow_data::{ArrayData, ArrayDataBuilder};
+
+    use super::*;
     impl NullArray {
         /// Convert this array into [`arrow_data::ArrayData`]
         pub fn to_data(&self) -> ArrayData {

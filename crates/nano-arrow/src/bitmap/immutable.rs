@@ -1,14 +1,14 @@
-use std::{iter::FromIterator, ops::Deref, sync::Arc};
+use std::iter::FromIterator;
+use std::ops::Deref;
+use std::sync::Arc;
 
 use either::Either;
 
-use crate::{buffer::Bytes, error::Error, trusted_len::TrustedLen};
-
-use super::{
-    chunk_iter_to_vec,
-    utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter},
-    IntoIter, MutableBitmap,
-};
+use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
+use super::{chunk_iter_to_vec, IntoIter, MutableBitmap};
+use crate::buffer::Bytes;
+use crate::error::Error;
+use crate::trusted_len::TrustedLen;
 
 /// An immutable container semantically equivalent to `Arc<Vec<bool>>` but represented as `Arc<Vec<u8>>` where
 /// each boolean is represented as a single bit.
@@ -255,7 +255,7 @@ impl Bitmap {
             (0, Some(v)) => {
                 let data = std::mem::take(v);
                 Either::Right(MutableBitmap::from_vec(data, self.length))
-            }
+            },
             _ => Either::Left(self),
         }
     }
@@ -274,7 +274,7 @@ impl Bitmap {
                 } else {
                     MutableBitmap::from_vec(data.bytes.as_ref().to_vec(), data.length)
                 }
-            }
+            },
             Either::Right(data) => data,
         }
     }

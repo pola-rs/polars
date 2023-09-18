@@ -1,19 +1,13 @@
-use arrow_format::ipc::{
-    planus::ReadAsRoot, FieldRef, FixedSizeListRef, MapRef, TimeRef, TimestampRef, UnionRef,
-};
+use arrow_format::ipc::planus::ReadAsRoot;
+use arrow_format::ipc::{FieldRef, FixedSizeListRef, MapRef, TimeRef, TimestampRef, UnionRef};
 
-use crate::{
-    datatypes::{
-        get_extension, DataType, Extension, Field, IntegerType, IntervalUnit, Metadata, Schema,
-        TimeUnit, UnionMode,
-    },
-    error::{Error, Result},
+use super::super::{IpcField, IpcSchema};
+use super::{OutOfSpecKind, StreamMetadata};
+use crate::datatypes::{
+    get_extension, DataType, Extension, Field, IntegerType, IntervalUnit, Metadata, Schema,
+    TimeUnit, UnionMode,
 };
-
-use super::{
-    super::{IpcField, IpcSchema},
-    OutOfSpecKind, StreamMetadata,
-};
+use crate::error::{Error, Result};
 
 fn try_unzip_vec<A, B, I: Iterator<Item = Result<(A, B)>>>(iter: I) -> Result<(Vec<A>, Vec<B>)> {
     let mut a = vec![];
@@ -98,7 +92,7 @@ fn deserialize_time(time: TimeRef) -> Result<(DataType, IpcField)> {
             return Err(Error::nyi(format!(
                 "Time type with bit width of {bits} and unit of {precision:?}"
             )))
-        }
+        },
     };
     Ok((data_type, IpcField::default()))
 }
@@ -276,7 +270,7 @@ fn get_data_type(
         Int(int) => {
             let data_type = deserialize_integer(int)?.into();
             (data_type, IpcField::default())
-        }
+        },
         Binary(_) => (DataType::Binary, IpcField::default()),
         LargeBinary(_) => (DataType::LargeBinary, IpcField::default()),
         Utf8(_) => (DataType::Utf8, IpcField::default()),
@@ -297,34 +291,34 @@ fn get_data_type(
                 arrow_format::ipc::Precision::Double => DataType::Float64,
             };
             (data_type, IpcField::default())
-        }
+        },
         Date(date) => {
             let data_type = match date.unit()? {
                 arrow_format::ipc::DateUnit::Day => DataType::Date32,
                 arrow_format::ipc::DateUnit::Millisecond => DataType::Date64,
             };
             (data_type, IpcField::default())
-        }
+        },
         Time(time) => deserialize_time(time)?,
         Timestamp(timestamp) => deserialize_timestamp(timestamp)?,
         Interval(interval) => {
             let data_type = match interval.unit()? {
                 arrow_format::ipc::IntervalUnit::YearMonth => {
                     DataType::Interval(IntervalUnit::YearMonth)
-                }
+                },
                 arrow_format::ipc::IntervalUnit::DayTime => {
                     DataType::Interval(IntervalUnit::DayTime)
-                }
+                },
                 arrow_format::ipc::IntervalUnit::MonthDayNano => {
                     DataType::Interval(IntervalUnit::MonthDayNano)
-                }
+                },
             };
             (data_type, IpcField::default())
-        }
+        },
         Duration(duration) => {
             let time_unit = deserialize_timeunit(duration.unit()?)?;
             (DataType::Duration(time_unit), IpcField::default())
-        }
+        },
         Decimal(decimal) => {
             let bit_width: usize = decimal
                 .bit_width()?
@@ -346,7 +340,7 @@ fn get_data_type(
             };
 
             (data_type, IpcField::default())
-        }
+        },
         List(_) => deserialize_list(field)?,
         LargeList(_) => deserialize_large_list(field)?,
         FixedSizeList(list) => deserialize_fixed_size_list(list, field)?,

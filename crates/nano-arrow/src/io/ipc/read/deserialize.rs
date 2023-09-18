@@ -1,16 +1,14 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
-use arrow_format::ipc::BodyCompressionRef;
-use arrow_format::ipc::MetadataVersion;
+use arrow_format::ipc::{BodyCompressionRef, MetadataVersion};
 
+use super::array::*;
+use super::{Dictionaries, IpcBuffer, Node};
 use crate::array::*;
 use crate::datatypes::{DataType, Field, PhysicalType};
 use crate::error::Result;
 use crate::io::ipc::IpcField;
-
-use super::{array::*, Dictionaries};
-use super::{IpcBuffer, Node};
 
 #[allow(clippy::too_many_arguments)]
 pub fn read<R: Read + Seek>(
@@ -195,7 +193,7 @@ pub fn read<R: Read + Seek>(
                 )
                 .map(|x| x.boxed())
             })
-        }
+        },
         Union => read_union(
             field_nodes,
             data_type,

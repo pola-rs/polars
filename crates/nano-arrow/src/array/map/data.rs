@@ -1,7 +1,8 @@
+use arrow_data::{ArrayData, ArrayDataBuilder};
+
 use crate::array::{from_data, to_data, Arrow2Arrow, MapArray};
 use crate::bitmap::Bitmap;
 use crate::offset::OffsetsBuffer;
-use arrow_data::{ArrayData, ArrayDataBuilder};
 
 impl Arrow2Arrow for MapArray {
     fn to_data(&self) -> ArrayData {

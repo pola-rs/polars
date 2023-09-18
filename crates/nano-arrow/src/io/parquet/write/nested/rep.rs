@@ -12,10 +12,10 @@ fn iter<'a>(nested: &'a [Nested]) -> Vec<Box<dyn DebugIter + 'a>> {
             Nested::Primitive(_, _, _) => None,
             Nested::List(nested) => {
                 Some(Box::new(to_length(&nested.offsets)) as Box<dyn DebugIter>)
-            }
+            },
             Nested::LargeList(nested) => {
                 Some(Box::new(to_length(&nested.offsets)) as Box<dyn DebugIter>)
-            }
+            },
             Nested::Struct(_, _, _) => None,
         })
         .collect()
@@ -137,7 +137,6 @@ impl<'a> Iterator for RepLevelsIter<'a> {
 #[cfg(test)]
 mod tests {
     use super::super::super::pages::ListNested;
-
     use super::*;
 
     fn test(nested: Vec<Nested>, expected: Vec<u32>) {

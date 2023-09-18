@@ -1,11 +1,9 @@
 //! This module has entry points, [`parquet_to_arrow_schema`] and the more configurable [`parquet_to_arrow_schema_with_options`].
-use parquet2::schema::{
-    types::{
-        FieldInfo, GroupConvertedType, GroupLogicalType, IntegerType, ParquetType, PhysicalType,
-        PrimitiveConvertedType, PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
-    },
-    Repetition,
+use parquet2::schema::types::{
+    FieldInfo, GroupConvertedType, GroupLogicalType, IntegerType, ParquetType, PhysicalType,
+    PrimitiveConvertedType, PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
 };
+use parquet2::schema::Repetition;
 
 use crate::datatypes::{DataType, Field, IntervalUnit, TimeUnit};
 use crate::io::parquet::read::schema::SchemaInferenceOptions;
@@ -64,7 +62,7 @@ fn from_int32(
         (_, Some(PrimitiveConvertedType::TimeMillis)) => DataType::Time32(TimeUnit::Millisecond),
         (_, Some(PrimitiveConvertedType::Decimal(precision, scale))) => {
             DataType::Decimal(precision, scale)
-        }
+        },
         (_, _) => DataType::Int32,
     }
 }
@@ -108,13 +106,13 @@ fn from_int64(
             match unit {
                 ParquetTimeUnit::Milliseconds => {
                     DataType::Timestamp(TimeUnit::Millisecond, timezone)
-                }
+                },
                 ParquetTimeUnit::Microseconds => {
                     DataType::Timestamp(TimeUnit::Microsecond, timezone)
-                }
+                },
                 ParquetTimeUnit::Nanoseconds => DataType::Timestamp(TimeUnit::Nanosecond, timezone),
             }
-        }
+        },
         (Some(Time { unit, .. }), _) => match unit {
             ParquetTimeUnit::Microseconds => DataType::Time64(TimeUnit::Microsecond),
             ParquetTimeUnit::Nanoseconds => DataType::Time64(TimeUnit::Nanosecond),
@@ -127,15 +125,15 @@ fn from_int64(
         (_, Some(PrimitiveConvertedType::TimeMicros)) => DataType::Time64(TimeUnit::Microsecond),
         (_, Some(PrimitiveConvertedType::TimestampMillis)) => {
             DataType::Timestamp(TimeUnit::Millisecond, None)
-        }
+        },
         (_, Some(PrimitiveConvertedType::TimestampMicros)) => {
             DataType::Timestamp(TimeUnit::Microsecond, None)
-        }
+        },
         (_, Some(PrimitiveConvertedType::Int64)) => DataType::Int64,
         (_, Some(PrimitiveConvertedType::Uint64)) => DataType::UInt64,
         (_, Some(PrimitiveConvertedType::Decimal(precision, scale))) => {
             DataType::Decimal(precision, scale)
-        }
+        },
 
         (_, _) => DataType::Int64,
     }
@@ -166,16 +164,16 @@ fn from_fixed_len_byte_array(
     match (logical_type, converted_type) {
         (Some(PrimitiveLogicalType::Decimal(precision, scale)), _) => {
             DataType::Decimal(precision, scale)
-        }
+        },
         (None, Some(PrimitiveConvertedType::Decimal(precision, scale))) => {
             DataType::Decimal(precision, scale)
-        }
+        },
         (None, Some(PrimitiveConvertedType::Interval)) => {
             // There is currently no reliable way of determining which IntervalUnit
             // to return. Thus without the original Arrow schema, the results
             // would be incorrect if all 12 bytes of the interval are populated
             DataType::Interval(IntervalUnit::DayTime)
-        }
+        },
         _ => DataType::FixedSizeBinary(length),
     }
 }
@@ -189,16 +187,16 @@ fn to_primitive_type_inner(
         PhysicalType::Boolean => DataType::Boolean,
         PhysicalType::Int32 => {
             from_int32(primitive_type.logical_type, primitive_type.converted_type)
-        }
+        },
         PhysicalType::Int64 => {
             from_int64(primitive_type.logical_type, primitive_type.converted_type)
-        }
+        },
         PhysicalType::Int96 => DataType::Timestamp(options.int96_coerce_to_timeunit, None),
         PhysicalType::Float => DataType::Float32,
         PhysicalType::Double => DataType::Float64,
         PhysicalType::ByteArray => {
             from_byte_array(&primitive_type.logical_type, &primitive_type.converted_type)
-        }
+        },
         PhysicalType::FixedLenByteArray(length) => from_fixed_len_byte_array(
             length,
             primitive_type.logical_type,
@@ -238,7 +236,7 @@ fn non_repeated_group(
         (Some(GroupLogicalType::Map), _) => to_list(fields, parent_name, options),
         (None, Some(GroupConvertedType::Map) | Some(GroupConvertedType::MapKeyValue)) => {
             to_map(fields, options)
-        }
+        },
         _ => to_struct(fields, options),
     }
 }
@@ -331,7 +329,7 @@ fn to_list(
             } else {
                 to_struct(fields, options)
             }
-        }
+        },
     }?;
 
     // Check that the name of the list child is "list", in which case we
@@ -347,7 +345,7 @@ fn to_list(
                 &field.get_field_info().name,
                 field.get_field_info().repetition != Repetition::Required,
             )
-        }
+        },
         _ => (
             &item.get_field_info().name,
             item.get_field_info().repetition != Repetition::Required,
@@ -394,7 +392,7 @@ pub(crate) fn to_data_type(
                     options,
                 )
             }
-        }
+        },
     }
 }
 
@@ -403,7 +401,6 @@ mod tests {
     use parquet2::metadata::SchemaDescriptor;
 
     use super::*;
-
     use crate::datatypes::{DataType, Field, TimeUnit};
     use crate::error::Result;
 

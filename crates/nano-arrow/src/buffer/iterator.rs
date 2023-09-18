@@ -1,6 +1,5 @@
-use crate::trusted_len::TrustedLen;
-
 use super::Buffer;
+use crate::trusted_len::TrustedLen;
 
 /// This crates' equivalent of [`std::vec::IntoIter`] for [`Buffer`].
 #[derive(Debug, Clone)]

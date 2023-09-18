@@ -1,14 +1,13 @@
-use ahash::AHashMap;
 use std::io::{Read, Seek};
 
+use ahash::AHashMap;
+
+use super::common::*;
+use super::{read_batch, read_file_dictionaries, Dictionaries, FileMetadata};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::Schema;
 use crate::error::Result;
-
-use super::common::*;
-use super::Dictionaries;
-use super::{read_batch, read_file_dictionaries, FileMetadata};
 
 /// An iterator of [`Chunk`]s from an Arrow IPC file.
 pub struct FileReader<R: Read + Seek> {
@@ -108,7 +107,7 @@ impl<R: Read + Seek> Iterator for FileReader<R> {
         }
 
         match self.read_dictionaries() {
-            Ok(_) => {}
+            Ok(_) => {},
             Err(e) => return Some(Err(e)),
         };
 

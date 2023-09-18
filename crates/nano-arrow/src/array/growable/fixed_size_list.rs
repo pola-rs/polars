@@ -1,16 +1,10 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{Array, FixedSizeListArray},
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-};
-
-use super::{
-    make_growable,
-    utils::{build_extend_null_bits, ExtendNullBits},
-    Growable,
-};
+use super::utils::{build_extend_null_bits, ExtendNullBits};
+use super::{make_growable, Growable};
+use crate::array::{Array, FixedSizeListArray};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
 
 /// Concrete [`Growable`] for the [`FixedSizeListArray`].
 pub struct GrowableFixedSizeList<'a> {

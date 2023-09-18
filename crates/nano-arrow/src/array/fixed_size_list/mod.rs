@@ -1,10 +1,7 @@
-use crate::{
-    bitmap::Bitmap,
-    datatypes::{DataType, Field},
-    error::Error,
-};
-
 use super::{new_empty_array, new_null_array, Array};
+use crate::bitmap::Bitmap;
+use crate::datatypes::{DataType, Field};
+use crate::error::Error;
 
 #[cfg(feature = "arrow")]
 mod data;
@@ -191,7 +188,7 @@ impl FixedSizeListArray {
                     return Err(Error::oos("FixedSizeBinaryArray expects a positive size"));
                 }
                 Ok((child.as_ref(), *size))
-            }
+            },
             _ => Err(Error::oos(
                 "FixedSizeListArray expects DataType::FixedSizeList",
             )),

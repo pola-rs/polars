@@ -34,7 +34,7 @@ pub(super) fn equal(lhs: &StructArray, rhs: &StructArray) -> bool {
                             }
                         })
                     })
-            }
+            },
             (None, Some(r_validity)) => {
                 lhs.values()
                     .iter()
@@ -49,6 +49,6 @@ pub(super) fn equal(lhs: &StructArray, rhs: &StructArray) -> bool {
                             }
                         })
                     })
-            }
+            },
         }
 }

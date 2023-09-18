@@ -1,13 +1,13 @@
-use std::{collections::BTreeMap, convert::TryInto, ffi::CStr, ffi::CString, ptr};
-
-use crate::{
-    datatypes::{
-        DataType, Extension, Field, IntegerType, IntervalUnit, Metadata, TimeUnit, UnionMode,
-    },
-    error::{Error, Result},
-};
+use std::collections::BTreeMap;
+use std::convert::TryInto;
+use std::ffi::{CStr, CString};
+use std::ptr;
 
 use super::ArrowSchema;
+use crate::datatypes::{
+    DataType, Extension, Field, IntegerType, IntervalUnit, Metadata, TimeUnit, UnionMode,
+};
+use crate::error::{Error, Result};
 
 #[allow(dead_code)]
 struct SchemaPrivateData {
@@ -42,11 +42,11 @@ fn schema_children(data_type: &DataType, flags: &mut i64) -> Box<[*mut ArrowSche
     match data_type {
         DataType::List(field) | DataType::FixedSizeList(field, _) | DataType::LargeList(field) => {
             Box::new([Box::into_raw(Box::new(ArrowSchema::new(field.as_ref())))])
-        }
+        },
         DataType::Map(field, is_sorted) => {
             *flags += (*is_sorted as i64) * 4;
             Box::new([Box::into_raw(Box::new(ArrowSchema::new(field.as_ref())))])
-        }
+        },
         DataType::Struct(fields) | DataType::Union(fields, _, _) => fields
             .iter()
             .map(|field| Box::into_raw(Box::new(ArrowSchema::new(field))))
@@ -226,7 +226,7 @@ fn to_integer_type(format: &str) -> Result<IntegerType> {
             return Err(Error::OutOfSpec(
                 "Dictionary indices can only be integers".to_string(),
             ))
-        }
+        },
     })
 }
 
@@ -264,23 +264,23 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> Result<DataType> {
         "+l" => {
             let child = schema.child(0);
             DataType::List(Box::new(to_field(child)?))
-        }
+        },
         "+L" => {
             let child = schema.child(0);
             DataType::LargeList(Box::new(to_field(child)?))
-        }
+        },
         "+m" => {
             let child = schema.child(0);
 
             let is_sorted = (schema.flags & 4) != 0;
             DataType::Map(Box::new(to_field(child)?), is_sorted)
-        }
+        },
         "+s" => {
             let children = (0..schema.n_children as usize)
                 .map(|x| to_field(schema.child(x)))
                 .collect::<Result<Vec<_>>>()?;
             DataType::Struct(children)
-        }
+        },
         other => {
             match other.splitn(2, ':').collect::<Vec<_>>()[..] {
                 // Timestamps with no timezone
@@ -301,7 +301,7 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> Result<DataType> {
                         .parse::<usize>()
                         .map_err(|_| Error::OutOfSpec("size is not a valid integer".to_string()))?;
                     DataType::FixedSizeBinary(size)
-                }
+                },
                 ["+w", size_raw] => {
                     // Example: "+w:123" fixed-sized list [123 items]
                     let size = size_raw
@@ -309,14 +309,14 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> Result<DataType> {
                         .map_err(|_| Error::OutOfSpec("size is not a valid integer".to_string()))?;
                     let child = to_field(schema.child(0))?;
                     DataType::FixedSizeList(Box::new(child), size)
-                }
+                },
                 ["d", raw] => {
                     // Decimal
                     let (precision, scale) = match raw.split(',').collect::<Vec<_>>()[..] {
                         [precision_raw, scale_raw] => {
                             // Example: "d:19,10" decimal128 [precision 19, scale 10]
                             (precision_raw, scale_raw)
-                        }
+                        },
                         [precision_raw, scale_raw, width_raw] => {
                             // Example: "d:19,10,NNN" decimal bitwidth = NNN [precision 19, scale 10]
                             // Only bitwdth of 128 currently supported
@@ -340,12 +340,12 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> Result<DataType> {
                                 ));
                             }
                             (precision_raw, scale_raw)
-                        }
+                        },
                         _ => {
                             return Err(Error::OutOfSpec(
                                 "Decimal must contain 2 or 3 comma-separated values".to_string(),
                             ));
-                        }
+                        },
                     };
 
                     DataType::Decimal(
@@ -356,7 +356,7 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> Result<DataType> {
                             Error::OutOfSpec("Decimal scale is not a valid integer".to_string())
                         })?,
                     )
-                }
+                },
                 [union_type @ "+us", union_parts] | [union_type @ "+ud", union_parts] => {
                     // union, sparse
                     // Example "+us:I,J,..." sparse union with type ids I,J...
@@ -374,14 +374,14 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> Result<DataType> {
                         .map(|x| to_field(schema.child(x)))
                         .collect::<Result<Vec<_>>>()?;
                     DataType::Union(fields, Some(type_ids), mode)
-                }
+                },
                 _ => {
                     return Err(Error::OutOfSpec(format!(
                         "The datatype \"{other}\" is still not supported in Rust implementation",
                     )));
-                }
+                },
             }
-        }
+        },
     })
 }
 
@@ -411,12 +411,12 @@ fn to_format(data_type: &DataType) -> String {
         DataType::Time32(TimeUnit::Millisecond) => "ttm".to_string(),
         DataType::Time32(_) => {
             unreachable!("Time32 is only supported for seconds and milliseconds")
-        }
+        },
         DataType::Time64(TimeUnit::Microsecond) => "ttu".to_string(),
         DataType::Time64(TimeUnit::Nanosecond) => "ttn".to_string(),
         DataType::Time64(_) => {
             unreachable!("Time64 is only supported for micro and nanoseconds")
-        }
+        },
         DataType::Duration(TimeUnit::Second) => "tDs".to_string(),
         DataType::Duration(TimeUnit::Millisecond) => "tDm".to_string(),
         DataType::Duration(TimeUnit::Microsecond) => "tDu".to_string(),
@@ -425,7 +425,7 @@ fn to_format(data_type: &DataType) -> String {
         DataType::Interval(IntervalUnit::DayTime) => "tiD".to_string(),
         DataType::Interval(IntervalUnit::MonthDayNano) => {
             todo!("Spec for FFI for MonthDayNano still not defined.")
-        }
+        },
         DataType::Timestamp(unit, tz) => {
             let unit = match unit {
                 TimeUnit::Second => "s",
@@ -438,7 +438,7 @@ fn to_format(data_type: &DataType) -> String {
                 unit,
                 tz.as_ref().map(|x| x.as_ref()).unwrap_or("")
             )
-        }
+        },
         DataType::Decimal(precision, scale) => format!("d:{precision},{scale}"),
         DataType::Decimal256(precision, scale) => format!("d:{precision},{scale},256"),
         DataType::List(_) => "+l".to_string(),
@@ -458,7 +458,7 @@ fn to_format(data_type: &DataType) -> String {
             let ids = &ids[..ids.len() - 1]; // take away last ","
             r.push_str(ids);
             r
-        }
+        },
         DataType::Map(_, _) => "+m".to_string(),
         DataType::Dictionary(index, _, _) => to_format(&(*index).into()),
         DataType::Extension(_, inner, _) => to_format(inner.as_ref()),
@@ -524,13 +524,13 @@ unsafe fn metadata_from_bytes(data: *const ::std::os::raw::c_char) -> (Metadata,
         match key {
             "ARROW:extension:name" => {
                 extension_name = Some(value.to_string());
-            }
+            },
             "ARROW:extension:metadata" => {
                 extension_metadata = Some(value.to_string());
-            }
+            },
             _ => {
                 result.insert(key.to_string(), value.to_string());
-            }
+            },
         };
     }
     let extension = extension_name.map(|name| (name, extension_metadata));

@@ -1,7 +1,11 @@
-use crate::{array::FromFfi, bitmap::align, error::Result, ffi, offset::OffsetsBuffer};
-
-use super::super::{ffi::ToFfi, Array};
+use super::super::ffi::ToFfi;
+use super::super::Array;
 use super::MapArray;
+use crate::array::FromFfi;
+use crate::bitmap::align;
+use crate::error::Result;
+use crate::ffi;
+use crate::offset::OffsetsBuffer;
 
 unsafe impl ToFfi for MapArray {
     fn buffers(&self) -> Vec<Option<*const u8>> {

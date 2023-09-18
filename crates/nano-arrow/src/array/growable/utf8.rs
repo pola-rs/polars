@@ -1,15 +1,10 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{Array, Utf8Array},
-    bitmap::MutableBitmap,
-    offset::{Offset, Offsets},
-};
-
-use super::{
-    utils::{build_extend_null_bits, extend_offset_values, ExtendNullBits},
-    Growable,
-};
+use super::utils::{build_extend_null_bits, extend_offset_values, ExtendNullBits};
+use super::Growable;
+use crate::array::{Array, Utf8Array};
+use crate::bitmap::MutableBitmap;
+use crate::offset::{Offset, Offsets};
 
 /// Concrete [`Growable`] for the [`Utf8Array`].
 pub struct GrowableUtf8<'a, O: Offset> {

@@ -15,10 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
-
 use super::primitive::take as take_primitive;
 use super::Index;
+use crate::array::{DictionaryArray, DictionaryKey, PrimitiveArray};
 
 /// `take` implementation for dictionary arrays
 ///

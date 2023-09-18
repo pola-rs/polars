@@ -1,9 +1,10 @@
 //! Contains the trait [`Growable`] and corresponding concreate implementations, one per concrete array,
 //! that offer the ability to create a new [`Array`] out of slices of existing [`Array`]s.
 
+use std::sync::Arc;
+
 use crate::array::*;
 use crate::datatypes::*;
-use std::sync::Arc;
 
 mod binary;
 pub use binary::GrowableBinary;
@@ -124,7 +125,7 @@ pub fn make_growable<'a>(
                 .map(|array| array.as_any().downcast_ref().unwrap())
                 .collect::<Vec<_>>();
             Box::new(union::GrowableUnion::new(arrays, capacity))
-        }
+        },
         Map => dyn_growable!(map::GrowableMap, arrays, use_validity, capacity),
         Dictionary(key_type) => {
             match_integer_type!(key_type, |$T| {
@@ -143,6 +144,6 @@ pub fn make_growable<'a>(
                     capacity,
                 ))
             })
-        }
+        },
     }
 }

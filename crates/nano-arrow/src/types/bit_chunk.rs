@@ -1,7 +1,5 @@
-use std::{
-    fmt::Binary,
-    ops::{BitAndAssign, Not, Shl, ShlAssign, ShrAssign},
-};
+use std::fmt::Binary;
+use std::ops::{BitAndAssign, Not, Shl, ShlAssign, ShrAssign};
 
 use num_traits::PrimInt;
 

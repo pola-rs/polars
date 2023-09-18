@@ -1,6 +1,6 @@
-use crate::{datatypes::DataType, offset::Offset};
-
 use super::Scalar;
+use crate::datatypes::DataType;
+use crate::offset::Offset;
 
 /// The implementation of [`Scalar`] for utf8, semantically equivalent to [`Option<String>`].
 #[derive(Debug, Clone, PartialEq, Eq)]

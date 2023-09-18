@@ -1,31 +1,27 @@
-use parquet2::{
-    encoding::{hybrid_rle::encode_u32, Encoding},
-    page::{DictPage, Page},
-    schema::types::PrimitiveType,
-    statistics::{serialize_statistics, ParquetStatistics},
-    write::DynIter,
-};
+use parquet2::encoding::hybrid_rle::encode_u32;
+use parquet2::encoding::Encoding;
+use parquet2::page::{DictPage, Page};
+use parquet2::schema::types::PrimitiveType;
+use parquet2::statistics::{serialize_statistics, ParquetStatistics};
+use parquet2::write::DynIter;
 
+use super::binary::{
+    build_statistics as binary_build_statistics, encode_plain as binary_encode_plain,
+};
+use super::fixed_len_bytes::{
+    build_statistics as fixed_binary_build_statistics, encode_plain as fixed_binary_encode_plain,
+};
+use super::primitive::{
+    build_statistics as primitive_build_statistics, encode_plain as primitive_encode_plain,
+};
+use super::utf8::{build_statistics as utf8_build_statistics, encode_plain as utf8_encode_plain};
+use super::{nested, Nested, WriteOptions};
+use crate::array::{Array, DictionaryArray, DictionaryKey};
+use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
+use crate::io::parquet::read::schema::is_nullable;
 use crate::io::parquet::write::{slice_nested_leaf, utils};
-use crate::{
-    array::{Array, DictionaryArray, DictionaryKey},
-    io::parquet::read::schema::is_nullable,
-};
-use crate::{bitmap::Bitmap, datatypes::DataType};
-use crate::{
-    bitmap::MutableBitmap,
-    error::{Error, Result},
-};
-
-use super::fixed_len_bytes::build_statistics as fixed_binary_build_statistics;
-use super::fixed_len_bytes::encode_plain as fixed_binary_encode_plain;
-use super::primitive::build_statistics as primitive_build_statistics;
-use super::primitive::encode_plain as primitive_encode_plain;
-use super::utf8::build_statistics as utf8_build_statistics;
-use super::utf8::encode_plain as utf8_encode_plain;
-use super::WriteOptions;
-use super::{binary::build_statistics as binary_build_statistics, Nested};
-use super::{binary::encode_plain as binary_encode_plain, nested};
 
 fn serialize_def_levels_simple(
     validity: Option<&Bitmap>,
@@ -96,7 +92,7 @@ fn normalized_validity<K: DictionaryKey>(array: &DictionaryArray<K>) -> Option<B
                 .keys_iter()
                 .map(|x| x.map(|x| rhs.get_bit(x)).unwrap_or(false));
             MutableBitmap::from_trusted_len_iter(projected_validity).into()
-        }
+        },
     }
 }
 
@@ -188,7 +184,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                     DataType::Int16 => dyn_prim!(i16, i32, array, options, type_),
                     DataType::Int32 | DataType::Date32 | DataType::Time32(_) => {
                         dyn_prim!(i32, i32, array, options, type_)
-                    }
+                    },
                     DataType::Int64
                     | DataType::Date64
                     | DataType::Time64(_)
@@ -211,7 +207,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                             None
                         };
                         (DictPage::new(buffer, array.len(), false), stats)
-                    }
+                    },
                     DataType::LargeUtf8 => {
                         let array = array.values().as_any().downcast_ref().unwrap();
 
@@ -223,7 +219,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                             None
                         };
                         (DictPage::new(buffer, array.len(), false), stats)
-                    }
+                    },
                     DataType::Binary => {
                         let array = array.values().as_any().downcast_ref().unwrap();
 
@@ -235,7 +231,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                             None
                         };
                         (DictPage::new(buffer, array.len(), false), stats)
-                    }
+                    },
                     DataType::LargeBinary => {
                         let values = array.values().as_any().downcast_ref().unwrap();
 
@@ -249,7 +245,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                             None
                         };
                         (DictPage::new(buffer, values.len(), false), stats)
-                    }
+                    },
                     DataType::FixedSizeBinary(_) => {
                         let mut buffer = vec![];
                         let array = array.values().as_any().downcast_ref().unwrap();
@@ -262,12 +258,12 @@ pub fn array_to_pages<K: DictionaryKey>(
                             None
                         };
                         (DictPage::new(buffer, array.len(), false), stats)
-                    }
+                    },
                     other => {
                         return Err(Error::NotYetImplemented(format!(
                             "Writing dictionary arrays to parquet only support data type {other:?}"
                         )))
-                    }
+                    },
                 };
             let dict_page = Page::Dict(dict_page);
 
@@ -276,7 +272,7 @@ pub fn array_to_pages<K: DictionaryKey>(
 
             let iter = std::iter::once(Ok(dict_page)).chain(std::iter::once(Ok(data_page)));
             Ok(DynIter::new(Box::new(iter)))
-        }
+        },
         _ => Err(Error::NotYetImplemented(
             "Dictionary arrays only support dictionary encoding".to_string(),
         )),

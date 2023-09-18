@@ -1,10 +1,7 @@
-use crate::{
-    bitmap::utils::{BitmapIter, ZipValidity},
-    scalar::{new_scalar, Scalar},
-    trusted_len::TrustedLen,
-};
-
 use super::StructArray;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
+use crate::scalar::{new_scalar, Scalar};
+use crate::trusted_len::TrustedLen;
 
 pub struct StructValueIter<'a> {
     array: &'a StructArray,

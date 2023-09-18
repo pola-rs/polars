@@ -1,18 +1,14 @@
-use std::{iter::FromIterator, sync::Arc};
-
-use crate::array::physical_binary::extend_validity;
-use crate::array::TryExtendFromSelf;
-use crate::bitmap::Bitmap;
-use crate::{
-    array::{Array, MutableArray, TryExtend, TryPush},
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-    error::Error,
-    trusted_len::TrustedLen,
-    types::NativeType,
-};
+use std::iter::FromIterator;
+use std::sync::Arc;
 
 use super::{check, PrimitiveArray};
+use crate::array::physical_binary::extend_validity;
+use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
+use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::datatypes::DataType;
+use crate::error::Error;
+use crate::trusted_len::TrustedLen;
+use crate::types::NativeType;
 
 /// The Arrow's equivalent to `Vec<Option<T>>` where `T` is byte-size (e.g. `i32`).
 /// Converting a [`MutablePrimitiveArray`] into a [`PrimitiveArray`] is `O(1)`.
@@ -139,18 +135,18 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
                 self.values.push(value);
                 match &mut self.validity {
                     Some(validity) => validity.push(true),
-                    None => {}
+                    None => {},
                 }
-            }
+            },
             None => {
                 self.values.push(T::default());
                 match &mut self.validity {
                     Some(validity) => validity.push(false),
                     None => {
                         self.init_validity();
-                    }
+                    },
                 }
-            }
+            },
         }
     }
 

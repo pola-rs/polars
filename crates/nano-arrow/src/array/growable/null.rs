@@ -1,11 +1,8 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{Array, NullArray},
-    datatypes::DataType,
-};
-
 use super::Growable;
+use crate::array::{Array, NullArray};
+use crate::datatypes::DataType;
 
 /// Concrete [`Growable`] for the [`NullArray`].
 pub struct GrowableNull {

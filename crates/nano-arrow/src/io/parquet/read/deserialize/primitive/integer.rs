@@ -1,29 +1,23 @@
 use std::collections::VecDeque;
 
 use num_traits::AsPrimitive;
-use parquet2::{
-    deserialize::SliceFilteredIter,
-    encoding::{delta_bitpacked::Decoder, Encoding},
-    page::{split_buffer, DataPage, DictPage},
-    schema::Repetition,
-    types::NativeType as ParquetNativeType,
-};
+use parquet2::deserialize::SliceFilteredIter;
+use parquet2::encoding::delta_bitpacked::Decoder;
+use parquet2::encoding::Encoding;
+use parquet2::page::{split_buffer, DataPage, DictPage};
+use parquet2::schema::Repetition;
+use parquet2::types::NativeType as ParquetNativeType;
 
-use crate::{
-    array::MutablePrimitiveArray,
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-    error::{Error, Result},
-    io::parquet::read::deserialize::utils::{
-        get_selected_rows, FilteredOptionalPageValidity, OptionalPageValidity,
-    },
-    types::NativeType,
-};
-
-use super::super::utils;
-use super::super::Pages;
-
+use super::super::{utils, Pages};
 use super::basic::{finish, PrimitiveDecoder, State as PrimitiveState};
+use crate::array::MutablePrimitiveArray;
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
+use crate::io::parquet::read::deserialize::utils::{
+    get_selected_rows, FilteredOptionalPageValidity, OptionalPageValidity,
+};
+use crate::types::NativeType;
 
 /// The state of a [`DataPage`] of an integer parquet type (i32 or i64)
 #[derive(Debug)]
@@ -97,14 +91,14 @@ where
                 Decoder::try_new(values)
                     .map(State::DeltaBinaryPackedRequired)
                     .map_err(Error::from)
-            }
+            },
             (Encoding::DeltaBinaryPacked, _, true, false) => {
                 let (_, _, values) = split_buffer(page)?;
                 Ok(State::DeltaBinaryPackedOptional(
                     OptionalPageValidity::try_new(page)?,
                     Decoder::try_new(values)?,
                 ))
-            }
+            },
             (Encoding::DeltaBinaryPacked, _, false, true) => {
                 let (_, _, values) = split_buffer(page)?;
                 let values = Decoder::try_new(values)?;
@@ -113,7 +107,7 @@ where
                 let values = SliceFilteredIter::new(values, rows);
 
                 Ok(State::FilteredDeltaBinaryPackedRequired(values))
-            }
+            },
             (Encoding::DeltaBinaryPacked, _, true, true) => {
                 let (_, _, values) = split_buffer(page)?;
                 let values = Decoder::try_new(values)?;
@@ -122,7 +116,7 @@ where
                     FilteredOptionalPageValidity::try_new(page)?,
                     values,
                 ))
-            }
+            },
             _ => self.0.build_state(page, dict).map(State::Common),
         }
     }
@@ -148,7 +142,7 @@ where
                         .map(self.0.op)
                         .take(remaining),
                 );
-            }
+            },
             State::DeltaBinaryPackedOptional(page_validity, page_values) => {
                 utils::extend_from_decoder(
                     validity,
@@ -160,7 +154,7 @@ where
                         .map(|x| x.unwrap().as_())
                         .map(self.0.op),
                 )
-            }
+            },
             State::FilteredDeltaBinaryPackedRequired(page) => {
                 values.extend(
                     page.by_ref()
@@ -168,7 +162,7 @@ where
                         .map(self.0.op)
                         .take(remaining),
                 );
-            }
+            },
             State::FilteredDeltaBinaryPackedOptional(page_validity, page_values) => {
                 utils::extend_from_decoder(
                     validity,
@@ -180,7 +174,7 @@ where
                         .map(|x| x.unwrap().as_())
                         .map(self.0.op),
                 );
-            }
+            },
         }
     }
 
@@ -259,7 +253,7 @@ where
         match maybe_state {
             utils::MaybeNext::Some(Ok((values, validity))) => {
                 Some(Ok(finish(&self.data_type, values, validity)))
-            }
+            },
             utils::MaybeNext::Some(Err(e)) => Some(Err(e)),
             utils::MaybeNext::None => None,
             utils::MaybeNext::More => self.next(),

@@ -1,18 +1,15 @@
 use chrono::Datelike;
 
-use crate::{
-    array::*,
-    datatypes::DataType,
-    error::Result,
-    offset::Offset,
-    temporal_conversions::{
-        utf8_to_naive_timestamp_ns as utf8_to_naive_timestamp_ns_,
-        utf8_to_timestamp_ns as utf8_to_timestamp_ns_, EPOCH_DAYS_FROM_CE,
-    },
-    types::NativeType,
-};
-
 use super::CastOptions;
+use crate::array::*;
+use crate::datatypes::DataType;
+use crate::error::Result;
+use crate::offset::Offset;
+use crate::temporal_conversions::{
+    utf8_to_naive_timestamp_ns as utf8_to_naive_timestamp_ns_,
+    utf8_to_timestamp_ns as utf8_to_timestamp_ns_, EPOCH_DAYS_FROM_CE,
+};
+use crate::types::NativeType;
 
 const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 

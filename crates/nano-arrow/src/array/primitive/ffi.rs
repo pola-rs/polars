@@ -1,13 +1,9 @@
-use crate::{
-    array::{FromFfi, ToFfi},
-    bitmap::align,
-    ffi,
-    types::NativeType,
-};
-
-use crate::error::Result;
-
 use super::PrimitiveArray;
+use crate::array::{FromFfi, ToFfi};
+use crate::bitmap::align;
+use crate::error::Result;
+use crate::ffi;
+use crate::types::NativeType;
 
 unsafe impl<T: NativeType> ToFfi for PrimitiveArray<T> {
     fn buffers(&self) -> Vec<Option<*const u8>> {

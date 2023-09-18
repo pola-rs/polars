@@ -1,13 +1,10 @@
 use parquet2::indexes::PageIndex;
 
-use crate::{
-    array::{Array, BinaryArray, PrimitiveArray, Utf8Array},
-    datatypes::{DataType, PhysicalType},
-    error::Error,
-    trusted_len::TrustedLen,
-};
-
 use super::ColumnPageStatistics;
+use crate::array::{Array, BinaryArray, PrimitiveArray, Utf8Array};
+use crate::datatypes::{DataType, PhysicalType};
+use crate::error::Error;
+use crate::trusted_len::TrustedLen;
 
 pub fn deserialize(
     indexes: &[PageIndex<Vec<u8>>],
@@ -33,11 +30,11 @@ fn deserialize_binary_iter<'a, I: TrustedLen<Item = Option<&'a Vec<u8>>>>(
         PhysicalType::Utf8 => {
             let iter = iter.map(|x| x.map(|x| std::str::from_utf8(x)).transpose());
             Ok(Box::new(Utf8Array::<i32>::try_from_trusted_len_iter(iter)?))
-        }
+        },
         PhysicalType::LargeUtf8 => {
             let iter = iter.map(|x| x.map(|x| std::str::from_utf8(x)).transpose());
             Ok(Box::new(Utf8Array::<i64>::try_from_trusted_len_iter(iter)?))
-        }
+        },
         _ => Ok(Box::new(BinaryArray::<i32>::from_iter(iter))),
     }
 }

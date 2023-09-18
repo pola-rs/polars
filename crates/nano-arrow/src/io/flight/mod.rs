@@ -4,21 +4,16 @@ use arrow_format::flight::data::{FlightData, SchemaResult};
 use arrow_format::ipc;
 use arrow_format::ipc::planus::ReadAsRoot;
 
-use crate::{
-    array::Array,
-    chunk::Chunk,
-    datatypes::*,
-    error::{Error, Result},
-    io::ipc::read,
-    io::ipc::write,
-    io::ipc::write::common::{encode_chunk, DictionaryTracker, EncodedData},
-};
-
 use super::ipc::read::Dictionaries;
-use super::ipc::{IpcField, IpcSchema};
-
 pub use super::ipc::write::default_ipc_fields;
+use super::ipc::{IpcField, IpcSchema};
+use crate::array::Array;
+use crate::chunk::Chunk;
+use crate::datatypes::*;
+use crate::error::{Error, Result};
 pub use crate::io::ipc::write::common::WriteOptions;
+use crate::io::ipc::write::common::{encode_chunk, DictionaryTracker, EncodedData};
+use crate::io::ipc::{read, write};
 
 /// Serializes [`Chunk`] to a vector of [`FlightData`] representing the serialized dictionaries
 /// and a [`FlightData`] representing the batch.
@@ -224,7 +219,7 @@ pub fn deserialize_message(
             )?;
 
             Ok(chunk.into())
-        }
+        },
         ipc::MessageHeaderRef::DictionaryBatch(dict_batch) => {
             let length = data_body.len();
             let mut reader = std::io::Cursor::new(data_body);
@@ -240,7 +235,7 @@ pub fn deserialize_message(
                 &mut Default::default(),
             )?;
             Ok(None)
-        }
+        },
         t => Err(Error::nyi(format!(
             "Reading types other than record batches not yet supported, unable to read {t:?}"
         ))),

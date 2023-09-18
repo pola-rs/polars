@@ -1,8 +1,9 @@
+use arrow_data::{ArrayData, ArrayDataBuilder};
+
 use crate::array::{Arrow2Arrow, PrimitiveArray};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
 use crate::types::NativeType;
-use arrow_data::{ArrayData, ArrayDataBuilder};
 
 impl<T: NativeType> Arrow2Arrow for PrimitiveArray<T> {
     fn to_data(&self) -> ArrayData {

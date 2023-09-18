@@ -1,7 +1,7 @@
+use crate::array::*;
 use crate::datatypes::PhysicalType;
-use crate::{array::*, ffi};
-
 use crate::error::Result;
+use crate::ffi;
 
 /// Trait describing how a struct presents itself to the
 /// [C data interface](https://arrow.apache.org/docs/format/CDataInterface.html) (FFI).
@@ -81,6 +81,6 @@ pub fn offset_buffers_children_dictionary(array: &dyn Array) -> BuffersChildren 
                     Some(array.values().clone()),
                 )
             })
-        }
+        },
     }
 }

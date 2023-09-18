@@ -3,10 +3,9 @@ use std::io::Write;
 
 pub use fallible_streaming_iterator::FallibleStreamingIterator;
 
+use super::super::json::write::new_serializer;
 use crate::array::Array;
 use crate::error::Error;
-
-use super::super::json::write::new_serializer;
 
 fn serialize(array: &dyn Array, buffer: &mut Vec<u8>) {
     let mut serializer = new_serializer(array, 0, usize::MAX);

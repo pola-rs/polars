@@ -5,13 +5,12 @@ mod field;
 mod physical_type;
 mod schema;
 
-pub use field::Field;
-pub use physical_type::*;
-pub use schema::Schema;
-
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+pub use field::Field;
+pub use physical_type::*;
+pub use schema::Schema;
 #[cfg(feature = "serde_types")]
 use serde_derive::{Deserialize, Serialize};
 
@@ -163,8 +162,7 @@ pub enum DataType {
 #[cfg(feature = "arrow")]
 impl From<DataType> for arrow_schema::DataType {
     fn from(value: DataType) -> Self {
-        use arrow_schema::Field as ArrowField;
-        use arrow_schema::UnionFields;
+        use arrow_schema::{Field as ArrowField, UnionFields};
 
         match value {
             DataType::Null => Self::Null,
@@ -195,19 +193,19 @@ impl From<DataType> for arrow_schema::DataType {
             DataType::List(f) => Self::List(Arc::new((*f).into())),
             DataType::FixedSizeList(f, size) => {
                 Self::FixedSizeList(Arc::new((*f).into()), size as _)
-            }
+            },
             DataType::LargeList(f) => Self::LargeList(Arc::new((*f).into())),
             DataType::Struct(f) => Self::Struct(f.into_iter().map(ArrowField::from).collect()),
             DataType::Union(fields, Some(ids), mode) => {
                 let ids = ids.into_iter().map(|x| x as _);
                 let fields = fields.into_iter().map(ArrowField::from);
                 Self::Union(UnionFields::new(ids, fields), mode.into())
-            }
+            },
             DataType::Union(fields, None, mode) => {
                 let ids = 0..fields.len() as i8;
                 let fields = fields.into_iter().map(ArrowField::from);
                 Self::Union(UnionFields::new(ids, fields), mode.into())
-            }
+            },
             DataType::Map(f, ordered) => Self::Map(Arc::new((*f).into()), ordered),
             DataType::Dictionary(key, value, _) => Self::Dictionary(
                 Box::new(DataType::from(key).into()),
@@ -240,7 +238,7 @@ impl From<arrow_schema::DataType> for DataType {
             DataType::Float64 => Self::Float64,
             DataType::Timestamp(unit, tz) => {
                 Self::Timestamp(unit.into(), tz.map(|x| x.to_string()))
-            }
+            },
             DataType::Date32 => Self::Date32,
             DataType::Date64 => Self::Date64,
             DataType::Time32(unit) => Self::Time32(unit.into()),
@@ -260,7 +258,7 @@ impl From<arrow_schema::DataType> for DataType {
                 let ids = fields.iter().map(|(x, _)| x as _).collect();
                 let fields = fields.iter().map(|(_, f)| f.into()).collect();
                 Self::Union(fields, Some(ids), mode.into())
-            }
+            },
             DataType::Map(f, ordered) => Self::Map(Box::new(f.into()), ordered),
             DataType::Dictionary(key, value) => {
                 let key = match *key {
@@ -275,7 +273,7 @@ impl From<arrow_schema::DataType> for DataType {
                     d => panic!("illegal dictionary key type: {d}"),
                 };
                 Self::Dictionary(key, Box::new((*value).into()), false)
-            }
+            },
             DataType::Decimal128(precision, scale) => Self::Decimal(precision as _, scale as _),
             DataType::Decimal256(precision, scale) => Self::Decimal256(precision as _, scale as _),
             DataType::RunEndEncoded(_, _) => panic!("Run-end encoding not supported by arrow2"),
@@ -419,10 +417,10 @@ impl DataType {
             Int16 => PhysicalType::Primitive(PrimitiveType::Int16),
             Int32 | Date32 | Time32(_) | Interval(IntervalUnit::YearMonth) => {
                 PhysicalType::Primitive(PrimitiveType::Int32)
-            }
+            },
             Int64 | Date64 | Timestamp(_, _) | Time64(_) | Duration(_) => {
                 PhysicalType::Primitive(PrimitiveType::Int64)
-            }
+            },
             Decimal(_, _) => PhysicalType::Primitive(PrimitiveType::Int128),
             Decimal256(_, _) => PhysicalType::Primitive(PrimitiveType::Int256),
             UInt8 => PhysicalType::Primitive(PrimitiveType::UInt8),
@@ -435,7 +433,7 @@ impl DataType {
             Interval(IntervalUnit::DayTime) => PhysicalType::Primitive(PrimitiveType::DaysMs),
             Interval(IntervalUnit::MonthDayNano) => {
                 PhysicalType::Primitive(PrimitiveType::MonthDayNano)
-            }
+            },
             Binary => PhysicalType::Binary,
             FixedSizeBinary(_) => PhysicalType::FixedSizeBinary,
             LargeBinary => PhysicalType::LargeBinary,

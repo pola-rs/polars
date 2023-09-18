@@ -5,13 +5,12 @@
 // write new footer
 use std::io::{Read, Seek, SeekFrom, Write};
 
-use crate::error::{Error, Result};
-
 use super::endianess::is_native_little_endian;
 use super::read::{self, FileMetadata};
 use super::write::common::DictionaryTracker;
 use super::write::writer::*;
 use super::write::*;
+use crate::error::{Error, Result};
 
 impl<R: Read + Seek + Write> FileWriter<R> {
     /// Creates a new [`FileWriter`] from an existing file, seeking to the last message

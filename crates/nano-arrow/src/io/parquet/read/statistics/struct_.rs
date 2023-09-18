@@ -1,8 +1,7 @@
-use crate::array::{Array, StructArray};
-use crate::error::Result;
-use crate::{array::MutableArray, datatypes::DataType};
-
 use super::make_mutable;
+use crate::array::{Array, MutableArray, StructArray};
+use crate::datatypes::DataType;
+use crate::error::Result;
 
 #[derive(Debug)]
 pub struct DynMutableStructArray {

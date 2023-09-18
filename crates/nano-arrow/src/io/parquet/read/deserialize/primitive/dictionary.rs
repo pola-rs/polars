@@ -1,21 +1,18 @@
 use std::collections::VecDeque;
 
-use parquet2::{page::DictPage, types::NativeType as ParquetNativeType};
+use parquet2::page::DictPage;
+use parquet2::types::NativeType as ParquetNativeType;
 
-use crate::{
-    array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray},
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-    error::Result,
-    types::NativeType,
-};
-
-use super::super::dictionary::nested_next_dict;
-use super::super::dictionary::*;
+use super::super::dictionary::{nested_next_dict, *};
 use super::super::nested_utils::{InitNested, NestedState};
 use super::super::utils::MaybeNext;
 use super::super::Pages;
 use super::basic::deserialize_plain;
+use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::error::Result;
+use crate::types::NativeType;
 
 fn read_dict<P, T, F>(data_type: DataType, op: F, dict: &DictPage) -> Box<dyn Array>
 where

@@ -1,24 +1,18 @@
 use std::collections::VecDeque;
 
-use parquet2::{
-    encoding::{hybrid_rle::HybridRleDecoder, Encoding},
-    page::{DataPage, DictPage, Page},
-    schema::Repetition,
-};
+use parquet2::encoding::hybrid_rle::HybridRleDecoder;
+use parquet2::encoding::Encoding;
+use parquet2::page::{DataPage, DictPage, Page};
+use parquet2::schema::Repetition;
 
+use super::super::super::Pages;
+use super::super::nested_utils::*;
+use super::super::utils::{dict_indices_decoder, not_implemented, MaybeNext, PageState};
+use super::finish_key;
+use crate::array::{Array, DictionaryArray, DictionaryKey};
+use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::{
-    array::{Array, DictionaryArray, DictionaryKey},
-    bitmap::MutableBitmap,
-    error::{Error, Result},
-};
-
-use super::{
-    super::super::Pages,
-    super::nested_utils::*,
-    super::utils::{dict_indices_decoder, not_implemented, MaybeNext, PageState},
-    finish_key,
-};
+use crate::error::{Error, Result};
 
 // The state of a required DataPage with a boolean physical type
 #[derive(Debug)]
@@ -95,10 +89,10 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
         match (page.encoding(), is_optional, is_filtered) {
             (Encoding::RleDictionary | Encoding::PlainDictionary, true, false) => {
                 dict_indices_decoder(page).map(State::Optional)
-            }
+            },
             (Encoding::RleDictionary | Encoding::PlainDictionary, false, false) => {
                 Required::try_new(page).map(State::Required)
-            }
+            },
             _ => Err(not_implemented(page)),
         }
     }
@@ -122,7 +116,7 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
                 };
                 values.push(key);
                 validity.push(true);
-            }
+            },
             State::Required(page_values) => {
                 let key = page_values.values.next().transpose()?;
                 let key = match K::try_from(key.unwrap_or_default() as usize) {
@@ -130,7 +124,7 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
                     Err(_) => todo!(),
                 };
                 values.push(key);
-            }
+            },
         }
         Ok(())
     }
@@ -169,13 +163,13 @@ pub fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn Array>>
                     return MaybeNext::Some(Err(Error::nyi(
                         "dictionary arrays from non-dict-encoded pages",
                     )));
-                }
+                },
                 (_, Page::Dict(dict_page)) => {
                     *dict = Some(read_dict(dict_page));
                     return next_dict(
                         iter, items, remaining, init, dict, data_type, chunk_size, read_dict,
                     );
-                }
+                },
                 (Some(dict), Page::Data(page)) => (page, dict),
             };
 
@@ -189,7 +183,7 @@ pub fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn Array>>
                 chunk_size,
             );
             match error {
-                Ok(_) => {}
+                Ok(_) => {},
                 Err(e) => return MaybeNext::Some(Err(e)),
             };
 
@@ -201,7 +195,7 @@ pub fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn Array>>
                 let dict = DictionaryArray::try_new(data_type, keys, dict.clone());
                 MaybeNext::Some(dict.map(|dict| (nested, dict)))
             }
-        }
+        },
         Ok(None) => {
             if let Some((nested, (values, validity))) = items.pop_front() {
                 // we have a populated item and no more pages
@@ -214,6 +208,6 @@ pub fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn Array>>
             } else {
                 MaybeNext::None
             }
-        }
+        },
     }
 }

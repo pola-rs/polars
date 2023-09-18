@@ -1,10 +1,13 @@
 use std::ffi::{CStr, CString};
 use std::ops::DerefMut;
 
-use crate::{array::Array, datatypes::Field, error::Error};
-
-use super::{export_array_to_c, export_field_to_c, import_array_from_c, import_field_from_c};
-use super::{ArrowArray, ArrowArrayStream, ArrowSchema};
+use super::{
+    export_array_to_c, export_field_to_c, import_array_from_c, import_field_from_c, ArrowArray,
+    ArrowArrayStream, ArrowSchema,
+};
+use crate::array::Array;
+use crate::datatypes::Field;
+use crate::error::Error;
 
 impl Drop for ArrowArrayStream {
     fn drop(&mut self) {
@@ -156,17 +159,17 @@ unsafe extern "C" fn get_next(iter: *mut ArrowArrayStream, array: *mut ArrowArra
 
             private.error = None;
             0
-        }
+        },
         Some(Err(err)) => {
             private.error = Some(CString::new(err.to_string().as_bytes().to_vec()).unwrap());
             2001 // custom application specific error (since this is never a result of this interface)
-        }
+        },
         None => {
             let a = ArrowArray::empty();
             std::ptr::write_unaligned(array, a);
             private.error = None;
             0
-        }
+        },
     }
 }
 

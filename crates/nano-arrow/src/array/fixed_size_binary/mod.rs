@@ -1,6 +1,8 @@
-use crate::{bitmap::Bitmap, buffer::Buffer, datatypes::DataType, error::Error};
-
 use super::Array;
+use crate::bitmap::Bitmap;
+use crate::buffer::Buffer;
+use crate::datatypes::DataType;
+use crate::error::Error;
 
 #[cfg(feature = "arrow")]
 mod data;
@@ -183,7 +185,7 @@ impl FixedSizeBinaryArray {
             self.data_type().to_logical_type(),
         ) {
             (DataType::FixedSizeBinary(size_a), DataType::FixedSizeBinary(size_b))
-                if size_a == size_b => {}
+                if size_a == size_b => {},
             _ => panic!("Wrong DataType"),
         }
 
@@ -209,7 +211,7 @@ impl FixedSizeBinaryArray {
                     return Err(Error::oos("FixedSizeBinaryArray expects a positive size"));
                 }
                 Ok(*size)
-            }
+            },
             _ => Err(Error::oos(
                 "FixedSizeBinaryArray expects DataType::FixedSizeBinary",
             )),

@@ -1,8 +1,7 @@
 use std::iter::FromIterator;
 
-use crate::offset::Offset;
-
 use super::{MutableUtf8Array, Utf8Array};
+use crate::offset::Offset;
 
 impl<O: Offset, P: AsRef<str>> FromIterator<Option<P>> for Utf8Array<O> {
     #[inline]

@@ -1,17 +1,12 @@
 //! Defines the subtract arithmetic kernels for Decimal `PrimitiveArrays`.
 
-use crate::{
-    array::PrimitiveArray,
-    compute::{
-        arithmetics::{ArrayCheckedSub, ArraySaturatingSub, ArraySub},
-        arity::{binary, binary_checked},
-        utils::{check_same_len, combine_validities},
-    },
-    datatypes::DataType,
-    error::{Error, Result},
-};
-
 use super::{adjusted_precision_scale, get_parameters, max_value, number_digits};
+use crate::array::PrimitiveArray;
+use crate::compute::arithmetics::{ArrayCheckedSub, ArraySaturatingSub, ArraySub};
+use crate::compute::arity::{binary, binary_checked};
+use crate::compute::utils::{check_same_len, combine_validities};
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
 
 /// Subtract two decimal primitive arrays with the same precision and scale. If
 /// the precision and scale is different, then an InvalidArgumentError is
@@ -89,7 +84,7 @@ pub fn saturating_sub(
                 } else {
                     -max
                 }
-            }
+            },
             _ => res,
         }
     };

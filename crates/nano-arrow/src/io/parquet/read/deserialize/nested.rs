@@ -1,14 +1,11 @@
 use ethnum::I256;
 use parquet2::schema::types::PrimitiveType;
 
-use crate::array::PrimitiveArray;
-use crate::{
-    datatypes::{DataType, Field},
-    error::{Error, Result},
-};
-
 use super::nested_utils::{InitNested, NestedArrayIter};
 use super::*;
+use crate::array::PrimitiveArray;
+use crate::datatypes::{DataType, Field};
+use crate::error::{Error, Result};
 
 /// Converts an iterator of arrays to a trait object returning trait objects
 #[inline]
@@ -65,7 +62,7 @@ where
                 num_rows,
                 chunk_size,
             ))
-        }
+        },
         Boolean => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
@@ -75,7 +72,7 @@ where
                 num_rows,
                 chunk_size,
             ))
-        }
+        },
         Primitive(Int8) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
@@ -87,7 +84,7 @@ where
                 chunk_size,
                 |x: i32| x as i8,
             ))
-        }
+        },
         Primitive(Int16) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
@@ -99,7 +96,7 @@ where
                 chunk_size,
                 |x: i32| x as i16,
             ))
-        }
+        },
         Primitive(Int32) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
@@ -111,7 +108,7 @@ where
                 chunk_size,
                 |x: i32| x,
             ))
-        }
+        },
         Primitive(Int64) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
@@ -123,7 +120,7 @@ where
                 chunk_size,
                 |x: i64| x,
             ))
-        }
+        },
         Primitive(UInt8) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
@@ -135,7 +132,7 @@ where
                 chunk_size,
                 |x: i32| x as u8,
             ))
-        }
+        },
         Primitive(UInt16) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
@@ -147,7 +144,7 @@ where
                 chunk_size,
                 |x: i32| x as u16,
             ))
-        }
+        },
         Primitive(UInt32) => {
             init.push(InitNested::Primitive(field.is_nullable));
             let type_ = types.pop().unwrap();
@@ -173,9 +170,9 @@ where
                     return Err(Error::nyi(format!(
                         "Deserializing UInt32 from {other:?}'s parquet"
                     )))
-                }
+                },
             }
-        }
+        },
         Primitive(UInt64) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
@@ -187,7 +184,7 @@ where
                 chunk_size,
                 |x: i64| x as u64,
             ))
-        }
+        },
         Primitive(Float32) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
@@ -199,7 +196,7 @@ where
                 chunk_size,
                 |x: f32| x,
             ))
-        }
+        },
         Primitive(Float64) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
@@ -211,7 +208,7 @@ where
                 chunk_size,
                 |x: f64| x,
             ))
-        }
+        },
         Binary | Utf8 => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
@@ -222,7 +219,7 @@ where
                 num_rows,
                 chunk_size,
             ))
-        }
+        },
         LargeBinary | LargeUtf8 => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
@@ -233,7 +230,7 @@ where
                 num_rows,
                 chunk_size,
             ))
-        }
+        },
         _ => match field.data_type().to_logical_type() {
             DataType::Dictionary(key_type, _, _) => {
                 init.push(InitNested::Primitive(field.is_nullable));
@@ -243,7 +240,7 @@ where
                 match_integer_type!(key_type, |$K| {
                     dict_read::<$K, _>(iter, init, type_, data_type, num_rows, chunk_size)
                 })?
-            }
+            },
             DataType::List(inner)
             | DataType::LargeList(inner)
             | DataType::FixedSizeList(inner, _) => {
@@ -262,7 +259,7 @@ where
                     Ok((nested, array))
                 });
                 Box::new(iter) as _
-            }
+            },
             DataType::Decimal(_, _) => {
                 init.push(InitNested::Primitive(field.is_nullable));
                 let type_ = types.pop().unwrap();
@@ -287,7 +284,7 @@ where
                         return Err(Error::InvalidArgumentError(format!(
                             "Can't decode Decimal128 type from `FixedLenByteArray` of len {n}"
                         )))
-                    }
+                    },
                     PhysicalType::FixedLenByteArray(n) => {
                         let iter = fixed_size_binary::NestedIter::new(
                             columns.pop().unwrap(),
@@ -317,15 +314,15 @@ where
                             Ok((nested, array))
                         });
                         Box::new(iter)
-                    }
+                    },
                     _ => {
                         return Err(Error::nyi(format!(
                             "Deserializing type for Decimal {:?} from parquet",
                             type_.physical_type
                         )))
-                    }
+                    },
                 }
-            }
+            },
             DataType::Decimal256(_, _) => {
                 init.push(InitNested::Primitive(field.is_nullable));
                 let type_ = types.pop().unwrap();
@@ -375,7 +372,7 @@ where
                             Ok((nested, array))
                         });
                         Box::new(iter) as _
-                    }
+                    },
 
                     PhysicalType::FixedLenByteArray(n) if n <= 32 => {
                         let iter = fixed_size_binary::NestedIter::new(
@@ -406,20 +403,20 @@ where
                             Ok((nested, array))
                         });
                         Box::new(iter) as _
-                    }
+                    },
                     PhysicalType::FixedLenByteArray(n) => {
                         return Err(Error::InvalidArgumentError(format!(
                             "Can't decode Decimal256 type from from `FixedLenByteArray` of len {n}"
                         )))
-                    }
+                    },
                     _ => {
                         return Err(Error::nyi(format!(
                             "Deserializing type for Decimal {:?} from parquet",
                             type_.physical_type
                         )))
-                    }
+                    },
                 }
-            }
+            },
             DataType::Struct(fields) => {
                 let columns = fields
                     .iter()
@@ -442,7 +439,7 @@ where
                     .collect::<Result<Vec<_>>>()?;
                 let columns = columns.into_iter().rev().collect();
                 Box::new(struct_::StructIterator::new(columns, fields.clone()))
-            }
+            },
             DataType::Map(inner, _) => {
                 init.push(InitNested::List(field.is_nullable));
                 let iter = columns_to_iter_recursive(
@@ -459,12 +456,12 @@ where
                     Ok((nested, array))
                 });
                 Box::new(iter) as _
-            }
+            },
             other => {
                 return Err(Error::nyi(format!(
                     "Deserializing type {other:?} from parquet"
                 )))
-            }
+            },
         },
     })
 }
@@ -534,7 +531,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + Pages>(
                 chunk_size,
                 |x: i32| x,
             ))
-        }
+        },
         Int64 | Date64 | Time64(_) | Duration(_) => {
             primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
                 iter,
@@ -544,7 +541,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + Pages>(
                 chunk_size,
                 |x: i64| x as i32,
             ))
-        }
+        },
         Float32 => primitive(primitive::NestedDictIter::<K, _, _, _, _>::new(
             iter,
             init,
@@ -588,6 +585,6 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + Pages>(
             return Err(Error::nyi(format!(
                 "Reading nested dictionaries of type {other:?}"
             )))
-        }
+        },
     })
 }

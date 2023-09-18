@@ -1,10 +1,7 @@
-use crate::{
-    array::{FromFfi, PrimitiveArray, ToFfi},
-    error::Error,
-    ffi,
-};
-
 use super::{DictionaryArray, DictionaryKey};
+use crate::array::{FromFfi, PrimitiveArray, ToFfi};
+use crate::error::Error;
+use crate::ffi;
 
 unsafe impl<K: DictionaryKey> ToFfi for DictionaryArray<K> {
     fn buffers(&self) -> Vec<Option<*const u8>> {

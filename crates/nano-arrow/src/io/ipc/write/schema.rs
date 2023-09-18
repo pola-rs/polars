@@ -1,11 +1,10 @@
 use arrow_format::ipc::planus::Builder;
 
+use super::super::IpcField;
 use crate::datatypes::{
     DataType, Field, IntegerType, IntervalUnit, Metadata, Schema, TimeUnit, UnionMode,
 };
 use crate::io::ipc::endianess::is_native_little_endian;
-
-use super::super::IpcField;
 
 /// Converts a [Schema] and [IpcField]s to a flatbuffers-encoded [arrow_format::ipc::Message].
 pub fn schema_to_bytes(schema: &Schema, ipc_fields: &[IpcField]) -> Vec<u8> {
@@ -290,7 +289,7 @@ fn serialize_children(data_type: &DataType, ipc_field: &IpcField) -> Vec<arrow_f
         | Decimal256(_, _) => vec![],
         FixedSizeList(inner, _) | LargeList(inner) | List(inner) | Map(inner, _) => {
             vec![serialize_field(inner, &ipc_field.fields[0])]
-        }
+        },
         Union(fields, _, _) | Struct(fields) => fields
             .iter()
             .zip(ipc_field.fields.iter())

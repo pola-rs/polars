@@ -13,8 +13,9 @@ column sequentially, and build the nested struct recursively.
 
 Rows of nested parquet groups are encoded in the repetition and definition levels.
 In arrow, they correspond to:
-* list's offsets and validity
-* struct's validity
+
+- list's offsets and validity
+- struct's validity
 
 The implementation in this module leverages this observation:
 
@@ -28,6 +29,7 @@ When we finish a field, we recursively pop from `nested_info` as we build
 the `StructArray` or `ListArray`.
 
 With this approach, the only difference vs flat is:
+
 1. we do not leverage the bitmap optimization, and instead need to deserialize the repetition
    and definition levels to `i32`.
 2. we deserialize definition levels twice, once to extend the values/nullability and

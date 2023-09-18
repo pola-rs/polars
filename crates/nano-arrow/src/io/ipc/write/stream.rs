@@ -9,7 +9,6 @@ use super::super::IpcField;
 use super::common::{encode_chunk, DictionaryTracker, EncodedData, WriteOptions};
 use super::common_sync::{write_continuation, write_message};
 use super::{default_ipc_fields, schema_to_bytes};
-
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::*;

@@ -1,7 +1,8 @@
+use arrow_data::{ArrayData, ArrayDataBuilder};
+
 use crate::array::{from_data, to_data, Arrow2Arrow, FixedSizeListArray};
 use crate::bitmap::Bitmap;
 use crate::datatypes::DataType;
-use arrow_data::{ArrayData, ArrayDataBuilder};
 
 impl Arrow2Arrow for FixedSizeListArray {
     fn to_data(&self) -> ArrayData {

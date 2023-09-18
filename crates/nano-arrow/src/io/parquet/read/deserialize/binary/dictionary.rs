@@ -2,18 +2,16 @@ use std::collections::VecDeque;
 
 use parquet2::page::DictPage;
 
-use crate::{
-    array::{Array, BinaryArray, DictionaryArray, DictionaryKey, Utf8Array},
-    bitmap::MutableBitmap,
-    datatypes::{DataType, PhysicalType},
-    error::Result,
-    io::parquet::read::deserialize::nested_utils::{InitNested, NestedState},
-    offset::Offset,
-};
-
+use super::super::dictionary::*;
+use super::super::utils::MaybeNext;
 use super::super::Pages;
-use super::{super::dictionary::*, utils::SizedBinaryIter};
-use super::{super::utils::MaybeNext, utils::Binary};
+use super::utils::{Binary, SizedBinaryIter};
+use crate::array::{Array, BinaryArray, DictionaryArray, DictionaryKey, Utf8Array};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::{DataType, PhysicalType};
+use crate::error::Result;
+use crate::io::parquet::read::deserialize::nested_utils::{InitNested, NestedState};
+use crate::offset::Offset;
 
 /// An iterator adapter over [`Pages`] assumed to be encoded as parquet's dictionary-encoded binary representation
 #[derive(Debug)]
@@ -68,10 +66,10 @@ fn read_dict<O: Offset>(data_type: DataType, dict: &DictPage) -> Box<dyn Array> 
     match data_type.to_physical_type() {
         PhysicalType::Utf8 | PhysicalType::LargeUtf8 => {
             Utf8Array::<O>::new(data_type, data.offsets.into(), data.values.into(), None).boxed()
-        }
+        },
         PhysicalType::Binary | PhysicalType::LargeBinary => {
             BinaryArray::<O>::new(data_type, data.offsets.into(), data.values.into(), None).boxed()
-        }
+        },
         _ => unreachable!(),
     }
 }

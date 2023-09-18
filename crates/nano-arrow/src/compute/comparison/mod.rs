@@ -54,15 +54,15 @@ pub mod primitive;
 pub mod utf8;
 
 mod simd;
+pub(crate) use primitive::{
+    compare_values_op as primitive_compare_values_op,
+    compare_values_op_scalar as primitive_compare_values_op_scalar,
+};
 pub use simd::{Simd8, Simd8Lanes, Simd8PartialEq, Simd8PartialOrd};
 
 use super::take::take_boolean;
 use crate::bitmap::{binary, Bitmap};
 use crate::compute;
-pub(crate) use primitive::{
-    compare_values_op as primitive_compare_values_op,
-    compare_values_op_scalar as primitive_compare_values_op_scalar,
-};
 
 macro_rules! match_eq_ord {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
@@ -129,7 +129,7 @@ macro_rules! compare {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
                 let rhs = rhs.as_any().downcast_ref().unwrap();
                 boolean::$op(lhs, rhs)
-            }
+            },
             Primitive(primitive) => $p!(primitive, |$T| {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
                 let rhs = rhs.as_any().downcast_ref().unwrap();
@@ -139,22 +139,22 @@ macro_rules! compare {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
                 let rhs = rhs.as_any().downcast_ref().unwrap();
                 utf8::$op::<i32>(lhs, rhs)
-            }
+            },
             LargeUtf8 => {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
                 let rhs = rhs.as_any().downcast_ref().unwrap();
                 utf8::$op::<i64>(lhs, rhs)
-            }
+            },
             Binary => {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
                 let rhs = rhs.as_any().downcast_ref().unwrap();
                 binary::$op::<i32>(lhs, rhs)
-            }
+            },
             LargeBinary => {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
                 let rhs = rhs.as_any().downcast_ref().unwrap();
                 binary::$op::<i64>(lhs, rhs)
-            }
+            },
             _ => todo!(
                 "Comparison between {:?} are not yet supported",
                 lhs.data_type()
@@ -300,7 +300,7 @@ macro_rules! compare_scalar {
                 let rhs = rhs.as_any().downcast_ref::<BooleanScalar>().unwrap();
                 // validity checked above
                 boolean::$op(lhs, rhs.value().unwrap())
-            }
+            },
             Primitive(primitive) => $p!(primitive, |$T| {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
                 let rhs = rhs.as_any().downcast_ref::<PrimitiveScalar<$T>>().unwrap();
@@ -310,22 +310,22 @@ macro_rules! compare_scalar {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
                 let rhs = rhs.as_any().downcast_ref::<Utf8Scalar<i32>>().unwrap();
                 utf8::$op::<i32>(lhs, rhs.value().unwrap())
-            }
+            },
             LargeUtf8 => {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
                 let rhs = rhs.as_any().downcast_ref::<Utf8Scalar<i64>>().unwrap();
                 utf8::$op::<i64>(lhs, rhs.value().unwrap())
-            }
+            },
             Binary => {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
                 let rhs = rhs.as_any().downcast_ref::<BinaryScalar<i32>>().unwrap();
                 binary::$op::<i32>(lhs, rhs.value().unwrap())
-            }
+            },
             LargeBinary => {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
                 let rhs = rhs.as_any().downcast_ref::<BinaryScalar<i64>>().unwrap();
                 binary::$op::<i64>(lhs, rhs.value().unwrap())
-            }
+            },
             Dictionary(key_type) => {
                 match_integer_type!(key_type, |$T| {
                     let lhs = lhs.as_any().downcast_ref::<DictionaryArray<$T>>().unwrap();
@@ -333,7 +333,7 @@ macro_rules! compare_scalar {
 
                     take_boolean(&values, lhs.keys())
                 })
-            }
+            },
             _ => todo!("Comparisons of {:?} are not yet supported", lhs.data_type()),
         }
     }};
@@ -562,9 +562,9 @@ pub fn finish_eq_validities(
                     } else {
                         equal
                     }
-                }
+                },
             }
-        }
+        },
     }
 }
 
@@ -582,12 +582,12 @@ pub fn finish_neq_validities(
             let lhs_negated =
                 compute::boolean::not(&BooleanArray::new(DataType::Boolean, lhs, None));
             compute::boolean::or(&lhs_negated, &output_without_validities)
-        }
+        },
         (None, Some(rhs)) => {
             let rhs_negated =
                 compute::boolean::not(&BooleanArray::new(DataType::Boolean, rhs, None));
             compute::boolean::or(&output_without_validities, &rhs_negated)
-        }
+        },
         (Some(lhs), Some(rhs)) => {
             let lhs_validity_unset_bits = lhs.unset_bits();
             let rhs_validity_unset_bits = rhs.unset_bits();
@@ -630,8 +630,8 @@ pub fn finish_neq_validities(
                     } else {
                         or
                     }
-                }
+                },
             }
-        }
+        },
     }
 }

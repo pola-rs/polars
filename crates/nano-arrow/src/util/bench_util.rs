@@ -1,9 +1,12 @@
 //! Utilities for benchmarking
 
 use rand::distributions::{Alphanumeric, Distribution, Standard};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
-use crate::{array::*, offset::Offset, types::NativeType};
+use crate::array::*;
+use crate::offset::Offset;
+use crate::types::NativeType;
 
 /// Returns fixed seedable RNG
 pub fn seedable_rng() -> StdRng {

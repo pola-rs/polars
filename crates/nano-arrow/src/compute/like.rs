@@ -4,14 +4,12 @@ use ahash::AHashMap;
 use regex::bytes::Regex as BytesRegex;
 use regex::Regex;
 
-use crate::{
-    array::{BinaryArray, BooleanArray, Utf8Array},
-    bitmap::Bitmap,
-    compute::utils::combine_validities,
-    datatypes::DataType,
-    error::{Error, Result},
-    offset::Offset,
-};
+use crate::array::{BinaryArray, BooleanArray, Utf8Array};
+use crate::bitmap::Bitmap;
+use crate::compute::utils::combine_validities;
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
+use crate::offset::Offset;
 
 #[inline]
 fn is_like_pattern(c: char) -> bool {
@@ -35,11 +33,11 @@ fn replace_pattern(pattern: &str) -> String {
                     result.push(*next);
                     // Skipping the next char as it is already appended
                     chars_iter.next();
-                }
+                },
                 _ => {
                     result.push('\\');
                     result.push('\\');
-                }
+                },
             }
         } else if regex_syntax::is_meta_character(c) {
             result.push('\\');
@@ -88,7 +86,7 @@ fn a_like_utf8<O: Offset, F: Fn(bool) -> bool>(
                         map.get(pattern).unwrap()
                     };
                     Result::Ok(op(pattern.is_match(lhs)))
-                }
+                },
                 _ => Ok(false),
             }
         }))?;
@@ -235,7 +233,7 @@ fn a_like_binary<O: Offset, F: Fn(bool) -> bool>(
                         map.get(pattern).unwrap()
                     };
                     Result::Ok(op(pattern.is_match(lhs)))
-                }
+                },
                 _ => Ok(false),
             }
         }))?;

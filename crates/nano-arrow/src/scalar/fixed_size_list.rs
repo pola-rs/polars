@@ -1,8 +1,8 @@
 use std::any::Any;
 
-use crate::{array::*, datatypes::DataType};
-
 use super::Scalar;
+use crate::array::*;
+use crate::datatypes::DataType;
 
 /// The scalar equivalent of [`FixedSizeListArray`]. Like [`FixedSizeListArray`], this struct holds a dynamically-typed
 /// [`Array`]. The only difference is that this has only one element.

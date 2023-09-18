@@ -8,11 +8,10 @@ use parquet2::indexes::Interval;
 use parquet2::page::{split_buffer, DataPage, DictPage, Page};
 use parquet2::schema::Repetition;
 
+use super::super::Pages;
 use crate::bitmap::utils::BitmapIter;
 use crate::bitmap::MutableBitmap;
 use crate::error::Error;
-
-use super::super::Pages;
 
 pub fn not_implemented(page: &DataPage) -> Error {
     let is_optional = page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
@@ -160,7 +159,7 @@ impl<'a> PageValidity<'a> for FilteredOptionalPageValidity<'a> {
                     offset,
                     length,
                 })
-            }
+            },
             FilteredHybridEncoded::Repeated { is_set, length } => {
                 let run_length = length - own_offset;
 
@@ -173,11 +172,11 @@ impl<'a> PageValidity<'a> for FilteredOptionalPageValidity<'a> {
                 }
 
                 Some(FilteredHybridEncoded::Repeated { is_set, length })
-            }
+            },
             FilteredHybridEncoded::Skipped(set) => {
                 self.current = None;
                 Some(FilteredHybridEncoded::Skipped(set))
-            }
+            },
         }
     }
 }
@@ -264,7 +263,7 @@ impl<'a> OptionalPageValidity<'a> {
                     offset,
                     length,
                 })
-            }
+            },
             HybridEncoded::Repeated(is_set, run_length) => {
                 let run_length = run_length - offset;
 
@@ -277,7 +276,7 @@ impl<'a> OptionalPageValidity<'a> {
                 }
 
                 Some(FilteredHybridEncoded::Repeated { is_set, length })
-            }
+            },
         }
     }
 }
@@ -311,12 +310,12 @@ pub(super) fn extend_from_decoder<T: Default, P: Pushable<T>, I: Iterator<Item =
             FilteredHybridEncoded::Bitmap { length, .. } => {
                 reserve_pushable += length;
                 remaining -= length;
-            }
+            },
             FilteredHybridEncoded::Repeated { length, .. } => {
                 reserve_pushable += length;
                 remaining -= length;
-            }
-            _ => {}
+            },
+            _ => {},
         };
         runs.push(run)
     }
@@ -343,7 +342,7 @@ pub(super) fn extend_from_decoder<T: Default, P: Pushable<T>, I: Iterator<Item =
                     }
                 }
                 validity.extend_from_slice(values, offset, length);
-            }
+            },
             FilteredHybridEncoded::Repeated { is_set, length } => {
                 validity.extend_constant(length, is_set);
                 if is_set {
@@ -353,7 +352,7 @@ pub(super) fn extend_from_decoder<T: Default, P: Pushable<T>, I: Iterator<Item =
                 } else {
                     pushable.extend_constant(length, T::default());
                 }
-            }
+            },
             FilteredHybridEncoded::Skipped(valids) => for _ in values_iter.by_ref().take(valids) {},
         };
     }
@@ -478,7 +477,7 @@ pub(super) fn next<'a, I: Pages, D: Decoder<'a>>(
                 Page::Dict(dict_page) => {
                     *dict = Some(decoder.deserialize_dict(dict_page));
                     return MaybeNext::More;
-                }
+                },
             };
 
             // there is a new page => consume the page from the start
@@ -497,7 +496,7 @@ pub(super) fn next<'a, I: Pages, D: Decoder<'a>>(
                 let decoded = items.pop_front().unwrap();
                 MaybeNext::Some(Ok(decoded))
             }
-        }
+        },
         Ok(None) => {
             if let Some(decoded) = items.pop_front() {
                 // we have a populated item and no more pages
@@ -507,7 +506,7 @@ pub(super) fn next<'a, I: Pages, D: Decoder<'a>>(
             } else {
                 MaybeNext::None
             }
-        }
+        },
     }
 }
 

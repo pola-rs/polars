@@ -1,6 +1,5 @@
-use crate::datatypes::DataType;
-
 use super::Scalar;
+use crate::datatypes::DataType;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// The [`Scalar`] implementation of fixed size binary ([`Option<Box<[u8]>>`]).

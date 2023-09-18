@@ -1,8 +1,9 @@
+use arrow_data::{ArrayData, ArrayDataBuilder};
+
 use crate::array::{
     from_data, to_data, Arrow2Arrow, DictionaryArray, DictionaryKey, PrimitiveArray,
 };
 use crate::datatypes::{DataType, PhysicalType};
-use arrow_data::{ArrayData, ArrayDataBuilder};
 
 impl<K: DictionaryKey> Arrow2Arrow for DictionaryArray<K> {
     fn to_data(&self) -> ArrayData {

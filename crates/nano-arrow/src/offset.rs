@@ -329,7 +329,7 @@ fn try_check_offsets<O: Offset>(offsets: &[O]) -> Result<(), Error> {
             } else {
                 Ok(())
             }
-        }
+        },
     }
 }
 

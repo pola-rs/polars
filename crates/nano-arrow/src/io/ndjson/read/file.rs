@@ -4,12 +4,9 @@ use fallible_streaming_iterator::FallibleStreamingIterator;
 use indexmap::set::IndexSet as HashSet;
 use json_deserializer::parse;
 
-use crate::{
-    datatypes::DataType,
-    error::{Error, Result},
-};
-
 use super::super::super::json::read::{coerce_data_type, infer as infer_json};
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
 
 /// Reads up to a number of lines from `reader` into `rows` bounded by `limit`.
 fn read_rows<R: BufRead>(reader: &mut R, rows: &mut [String], limit: usize) -> Result<usize> {

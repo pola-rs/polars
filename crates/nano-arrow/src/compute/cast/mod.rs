@@ -14,12 +14,10 @@ pub use dictionary_to::*;
 pub use primitive_to::*;
 pub use utf8_to::*;
 
-use crate::{
-    array::*,
-    datatypes::*,
-    error::{Error, Result},
-    offset::{Offset, Offsets},
-};
+use crate::array::*;
+use crate::datatypes::*;
+use crate::error::{Error, Result};
+use crate::offset::{Offset, Offsets};
 
 /// options defining how Cast kernels behave
 #[derive(Clone, Copy, Debug, Default)]
@@ -85,31 +83,31 @@ pub fn can_cast_types(from_type: &DataType, to_type: &DataType) -> bool {
         (_, Struct(_)) => false,
         (FixedSizeList(list_from, _), List(list_to)) => {
             can_cast_types(&list_from.data_type, &list_to.data_type)
-        }
+        },
         (FixedSizeList(list_from, _), LargeList(list_to)) => {
             can_cast_types(&list_from.data_type, &list_to.data_type)
-        }
+        },
         (List(list_from), FixedSizeList(list_to, _)) => {
             can_cast_types(&list_from.data_type, &list_to.data_type)
-        }
+        },
         (LargeList(list_from), FixedSizeList(list_to, _)) => {
             can_cast_types(&list_from.data_type, &list_to.data_type)
-        }
+        },
         (List(list_from), List(list_to)) => {
             can_cast_types(&list_from.data_type, &list_to.data_type)
-        }
+        },
         (LargeList(list_from), LargeList(list_to)) => {
             can_cast_types(&list_from.data_type, &list_to.data_type)
-        }
+        },
         (List(list_from), LargeList(list_to)) if list_from == list_to => true,
         (LargeList(list_from), List(list_to)) if list_from == list_to => true,
         (_, List(list_to)) => can_cast_types(from_type, &list_to.data_type),
         (_, LargeList(list_to)) if from_type != &LargeBinary => {
             can_cast_types(from_type, &list_to.data_type)
-        }
+        },
         (Dictionary(_, from_value_type, _), Dictionary(_, to_value_type, _)) => {
             can_cast_types(from_value_type, to_value_type)
-        }
+        },
         (Dictionary(_, value_type, _), _) => can_cast_types(value_type, to_type),
         (_, Dictionary(_, value_type, _)) => can_cast_types(from_type, value_type),
 
@@ -120,7 +118,7 @@ pub fn can_cast_types(from_type: &DataType, to_type: &DataType) -> bool {
                 || to_type == &LargeUtf8
                 || to_type == &Binary
                 || to_type == &LargeBinary
-        }
+        },
 
         (Utf8, to_type) => {
             is_numeric(to_type)
@@ -128,18 +126,18 @@ pub fn can_cast_types(from_type: &DataType, to_type: &DataType) -> bool {
                     to_type,
                     LargeUtf8 | Binary | Date32 | Date64 | Timestamp(TimeUnit::Nanosecond, _)
                 )
-        }
+        },
         (LargeUtf8, to_type) => {
             is_numeric(to_type)
                 || matches!(
                     to_type,
                     Utf8 | LargeBinary | Date32 | Date64 | Timestamp(TimeUnit::Nanosecond, _)
                 )
-        }
+        },
 
         (Binary, to_type) => {
             is_numeric(to_type) || matches!(to_type, LargeBinary | Utf8 | LargeUtf8)
-        }
+        },
         (LargeBinary, to_type) => {
             is_numeric(to_type)
                 || match to_type {
@@ -147,7 +145,7 @@ pub fn can_cast_types(from_type: &DataType, to_type: &DataType) -> bool {
                     LargeList(field) => matches!(field.data_type, UInt8),
                     _ => false,
                 }
-        }
+        },
         (FixedSizeBinary(_), to_type) => matches!(to_type, Binary | LargeBinary),
         (Timestamp(_, _), Utf8) => true,
         (Timestamp(_, _), LargeUtf8) => true,
@@ -306,7 +304,7 @@ pub fn can_cast_types(from_type: &DataType, to_type: &DataType) -> bool {
         (Time64(TimeUnit::Nanosecond), Time64(TimeUnit::Microsecond)) => true,
         (Time64(_), Time32(to_unit)) => {
             matches!(to_unit, TimeUnit::Second | TimeUnit::Millisecond)
-        }
+        },
         (Timestamp(_, _), Int64) => true,
         (Int64, Timestamp(_, _)) => true,
         (Timestamp(_, _), Timestamp(_, _)) => true,
@@ -413,7 +411,7 @@ fn cast_list_to_fixed_size_list<O: Offset>(
                 new_values,
                 list.validity().cloned(),
             ))
-        }
+        },
     }
 }
 
@@ -487,17 +485,17 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
         (List(_), List(_)) => {
             cast_list::<i32>(array.as_any().downcast_ref().unwrap(), to_type, options)
                 .map(|x| x.boxed())
-        }
+        },
         (LargeList(_), LargeList(_)) => {
             cast_list::<i64>(array.as_any().downcast_ref().unwrap(), to_type, options)
                 .map(|x| x.boxed())
-        }
+        },
         (List(lhs), LargeList(rhs)) if lhs == rhs => {
             Ok(cast_list_to_large_list(array.as_any().downcast_ref().unwrap(), to_type).boxed())
-        }
+        },
         (LargeList(lhs), List(rhs)) if lhs == rhs => {
             Ok(cast_large_to_list(array.as_any().downcast_ref().unwrap(), to_type).boxed())
-        }
+        },
 
         (_, List(to)) => {
             // cast primitive to list's primitive
@@ -510,7 +508,7 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
             let list_array = ListArray::<i32>::new(to_type.clone(), offsets.into(), values, None);
 
             Ok(Box::new(list_array))
-        }
+        },
 
         (_, LargeList(to)) if from_type != &LargeBinary => {
             // cast primitive to list's primitive
@@ -523,7 +521,7 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
             let list_array = ListArray::<i64>::new(to_type.clone(), offsets.into(), values, None);
 
             Ok(Box::new(list_array))
-        }
+        },
 
         (Dictionary(index_type, ..), _) => match_integer_type!(index_type, |$T| {
             dictionary_cast_dyn::<$T>(array, to_type, options)
@@ -590,7 +588,7 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
             Timestamp(TimeUnit::Nanosecond, None) => utf8_to_naive_timestamp_ns_dyn::<i32>(array),
             Timestamp(TimeUnit::Nanosecond, Some(tz)) => {
                 utf8_to_timestamp_ns_dyn::<i32>(array, tz.clone())
-            }
+            },
             _ => Err(Error::NotYetImplemented(format!(
                 "Casting from {from_type:?} to {to_type:?} not supported",
             ))),
@@ -617,7 +615,7 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
             Timestamp(TimeUnit::Nanosecond, None) => utf8_to_naive_timestamp_ns_dyn::<i64>(array),
             Timestamp(TimeUnit::Nanosecond, Some(tz)) => {
                 utf8_to_timestamp_ns_dyn::<i64>(array, tz.clone())
-            }
+            },
             _ => Err(Error::NotYetImplemented(format!(
                 "Casting from {from_type:?} to {to_type:?} not supported",
             ))),
@@ -644,15 +642,15 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
 
                 let array = Utf8Array::<i32>::from_trusted_len_iter(iter);
                 Ok(Box::new(array))
-            }
+            },
             Timestamp(from_unit, Some(tz)) => {
                 let from = array.as_any().downcast_ref().unwrap();
                 Ok(Box::new(timestamp_to_utf8::<i32>(from, *from_unit, tz)?))
-            }
+            },
             Timestamp(from_unit, None) => {
                 let from = array.as_any().downcast_ref().unwrap();
                 Ok(Box::new(naive_timestamp_to_utf8::<i32>(from, *from_unit)))
-            }
+            },
             _ => Err(Error::NotYetImplemented(format!(
                 "Casting from {from_type:?} to {to_type:?} not supported",
             ))),
@@ -674,15 +672,15 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
             LargeBinary => {
                 binary_to_utf8::<i64>(array.as_any().downcast_ref().unwrap(), to_type.clone())
                     .map(|x| x.boxed())
-            }
+            },
             Timestamp(from_unit, Some(tz)) => {
                 let from = array.as_any().downcast_ref().unwrap();
                 Ok(Box::new(timestamp_to_utf8::<i64>(from, *from_unit, tz)?))
-            }
+            },
             Timestamp(from_unit, None) => {
                 let from = array.as_any().downcast_ref().unwrap();
                 Ok(Box::new(naive_timestamp_to_utf8::<i64>(from, *from_unit)))
-            }
+            },
             _ => Err(Error::NotYetImplemented(format!(
                 "Casting from {from_type:?} to {to_type:?} not supported",
             ))),
@@ -726,11 +724,11 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
                 Binary => {
                     binary_large_to_binary(array.as_any().downcast_ref().unwrap(), to_type.clone())
                         .map(|x| x.boxed())
-                }
+                },
                 LargeUtf8 => {
                     binary_to_utf8::<i64>(array.as_any().downcast_ref().unwrap(), to_type.clone())
                         .map(|x| x.boxed())
-                }
+                },
                 LargeList(inner) if matches!(inner.data_type, DataType::UInt8) => Ok(
                     binary_to_list::<i64>(array.as_any().downcast_ref().unwrap(), to_type.clone())
                         .boxed(),
@@ -739,7 +737,7 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
                     "Casting from {from_type:?} to {to_type:?} not supported",
                 ))),
             }
-        }
+        },
         (FixedSizeBinary(_), _) => match to_type {
             Binary => Ok(fixed_size_binary_binary::<i32>(
                 array.as_any().downcast_ref().unwrap(),
@@ -880,7 +878,7 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
         (Float16, Float32) => {
             let from = array.as_any().downcast_ref().unwrap();
             Ok(f16_to_f32(from).boxed())
-        }
+        },
 
         (Float32, UInt8) => primitive_to_primitive_dyn::<f32, u8>(array, to_type, options),
         (Float32, UInt16) => primitive_to_primitive_dyn::<f32, u16>(array, to_type, options),
@@ -922,7 +920,7 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
         (Int32, Time32(TimeUnit::Second)) => primitive_to_same_primitive_dyn::<i32>(array, to_type),
         (Int32, Time32(TimeUnit::Millisecond)) => {
             primitive_to_same_primitive_dyn::<i32>(array, to_type)
-        }
+        },
         // No support for microsecond/nanosecond with i32
         (Date32, Int32) => primitive_to_same_primitive_dyn::<i32>(array, to_type),
         (Date32, Int64) => primitive_to_primitive_dyn::<i32, i64>(array, to_type, options),
@@ -931,10 +929,10 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
         // No support for second/milliseconds with i64
         (Int64, Time64(TimeUnit::Microsecond)) => {
             primitive_to_same_primitive_dyn::<i64>(array, to_type)
-        }
+        },
         (Int64, Time64(TimeUnit::Nanosecond)) => {
             primitive_to_same_primitive_dyn::<i64>(array, to_type)
-        }
+        },
 
         (Date64, Int32) => primitive_to_primitive_dyn::<i64, i32>(array, to_type, options),
         (Date64, Int64) => primitive_to_same_primitive_dyn::<i64>(array, to_type),
@@ -943,27 +941,27 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
         (Date64, Date32) => primitive_dyn!(array, date64_to_date32),
         (Time32(TimeUnit::Second), Time32(TimeUnit::Millisecond)) => {
             primitive_dyn!(array, time32s_to_time32ms)
-        }
+        },
         (Time32(TimeUnit::Millisecond), Time32(TimeUnit::Second)) => {
             primitive_dyn!(array, time32ms_to_time32s)
-        }
+        },
         (Time32(from_unit), Time64(to_unit)) => {
             primitive_dyn!(array, time32_to_time64, *from_unit, *to_unit)
-        }
+        },
         (Time64(TimeUnit::Microsecond), Time64(TimeUnit::Nanosecond)) => {
             primitive_dyn!(array, time64us_to_time64ns)
-        }
+        },
         (Time64(TimeUnit::Nanosecond), Time64(TimeUnit::Microsecond)) => {
             primitive_dyn!(array, time64ns_to_time64us)
-        }
+        },
         (Time64(from_unit), Time32(to_unit)) => {
             primitive_dyn!(array, time64_to_time32, *from_unit, *to_unit)
-        }
+        },
         (Timestamp(_, _), Int64) => primitive_to_same_primitive_dyn::<i64>(array, to_type),
         (Int64, Timestamp(_, _)) => primitive_to_same_primitive_dyn::<i64>(array, to_type),
         (Timestamp(from_unit, _), Timestamp(to_unit, tz)) => {
             primitive_dyn!(array, timestamp_to_timestamp, *from_unit, *to_unit, tz)
-        }
+        },
         (Timestamp(from_unit, _), Date32) => primitive_dyn!(array, timestamp_to_date32, *from_unit),
         (Timestamp(from_unit, _), Date64) => primitive_dyn!(array, timestamp_to_date64, *from_unit),
 
@@ -972,10 +970,10 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
 
         (Interval(IntervalUnit::DayTime), Interval(IntervalUnit::MonthDayNano)) => {
             primitive_dyn!(array, days_ms_to_months_days_ns)
-        }
+        },
         (Interval(IntervalUnit::YearMonth), Interval(IntervalUnit::MonthDayNano)) => {
             primitive_dyn!(array, months_to_months_days_ns)
-        }
+        },
 
         (_, _) => Err(Error::NotYetImplemented(format!(
             "Casting from {from_type:?} to {to_type:?} not supported",

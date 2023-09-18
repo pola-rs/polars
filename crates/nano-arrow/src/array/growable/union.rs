@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use crate::array::{Array, UnionArray};
-
 use super::{make_growable, Growable};
+use crate::array::{Array, UnionArray};
 
 /// Concrete [`Growable`] for the [`UnionArray`].
 pub struct GrowableUnion<'a> {

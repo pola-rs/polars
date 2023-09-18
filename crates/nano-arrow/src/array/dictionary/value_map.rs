@@ -5,15 +5,11 @@ use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
 
-use crate::array::Array;
-use crate::{
-    array::indexable::{AsIndexed, Indexable},
-    array::MutableArray,
-    datatypes::DataType,
-    error::{Error, Result},
-};
-
 use super::DictionaryKey;
+use crate::array::indexable::{AsIndexed, Indexable};
+use crate::array::{Array, MutableArray};
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
 
 /// Hasher for pre-hashed values; similar to `hash_hasher` but with native endianness.
 ///
@@ -101,11 +97,11 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
                     return Err(Error::InvalidArgumentError(
                         "duplicate value in dictionary values array".into(),
                     ))
-                }
+                },
                 RawEntryMut::Vacant(entry) => {
                     // NB: don't use .insert() here!
                     entry.insert_hashed_nocheck(hash, Hashed { hash, key }, ());
-                }
+                },
             }
         }
         Ok(Self { values, map })
@@ -158,7 +154,7 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
                     push(&mut self.values, value)?;
                     debug_assert_eq!(self.values.len(), index + 1);
                     key
-                }
+                },
             },
         )
     }

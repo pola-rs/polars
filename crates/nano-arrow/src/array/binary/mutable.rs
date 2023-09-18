@@ -1,19 +1,15 @@
-use std::{iter::FromIterator, sync::Arc};
-
-use crate::{
-    array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush},
-    bitmap::{
-        utils::{BitmapIter, ZipValidity},
-        Bitmap, MutableBitmap,
-    },
-    datatypes::DataType,
-    error::{Error, Result},
-    offset::{Offset, Offsets},
-    trusted_len::TrustedLen,
-};
+use std::iter::FromIterator;
+use std::sync::Arc;
 
 use super::{BinaryArray, MutableBinaryValuesArray, MutableBinaryValuesIter};
 use crate::array::physical_binary::*;
+use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
+use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
+use crate::offset::{Offset, Offsets};
+use crate::trusted_len::TrustedLen;
 
 /// The Arrow's equivalent to `Vec<Option<Vec<u8>>>`.
 /// Converting a [`MutableBinaryArray`] into a [`BinaryArray`] is `O(1)`.
@@ -443,16 +439,16 @@ impl<O: Offset, T: AsRef<[u8]>> TryPush<Option<T>> for MutableBinaryArray<O> {
 
                 match &mut self.validity {
                     Some(validity) => validity.push(true),
-                    None => {}
+                    None => {},
                 }
-            }
+            },
             None => {
                 self.values.push("");
                 match &mut self.validity {
                     Some(validity) => validity.push(false),
                     None => self.init_validity(),
                 }
-            }
+            },
         }
         Ok(())
     }

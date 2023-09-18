@@ -1,12 +1,8 @@
-use crate::{
-    array::{FromFfi, ToFfi},
-    bitmap::align,
-    ffi,
-};
-
-use crate::error::Result;
-
 use super::BooleanArray;
+use crate::array::{FromFfi, ToFfi};
+use crate::bitmap::align;
+use crate::error::Result;
+use crate::ffi;
 
 unsafe impl ToFfi for BooleanArray {
     fn buffers(&self) -> Vec<Option<*const u8>> {

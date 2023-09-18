@@ -1,10 +1,9 @@
 use std::ops::Add;
 
-use crate::types::simd::*;
-
 use super::super::min_max::SimdOrd;
 use super::super::sum::Sum;
 use super::{simd_add, simd_ord_int};
+use crate::types::simd::*;
 
 simd_add!(u8x64, u8, 64, wrapping_add);
 simd_add!(u16x32, u16, 32, wrapping_add);

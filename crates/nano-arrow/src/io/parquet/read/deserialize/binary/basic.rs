@@ -1,27 +1,22 @@
 use std::collections::VecDeque;
 use std::default::Default;
 
-use parquet2::{
-    deserialize::SliceFilteredIter,
-    encoding::{delta_length_byte_array, hybrid_rle, Encoding},
-    page::{split_buffer, DataPage, DictPage},
-    schema::Repetition,
-};
-
-use crate::{
-    array::{Array, BinaryArray, Utf8Array},
-    bitmap::MutableBitmap,
-    datatypes::{DataType, PhysicalType},
-    error::{Error, Result},
-    offset::Offset,
-};
+use parquet2::deserialize::SliceFilteredIter;
+use parquet2::encoding::{delta_length_byte_array, hybrid_rle, Encoding};
+use parquet2::page::{split_buffer, DataPage, DictPage};
+use parquet2::schema::Repetition;
 
 use super::super::utils::{
     extend_from_decoder, get_selected_rows, next, DecodedState, FilteredOptionalPageValidity,
     MaybeNext, OptionalPageValidity,
 };
-use super::super::Pages;
-use super::{super::utils, utils::*};
+use super::super::{utils, Pages};
+use super::utils::*;
+use crate::array::{Array, BinaryArray, Utf8Array};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::{DataType, PhysicalType};
+use crate::error::{Error, Result};
+use crate::offset::Offset;
 
 #[derive(Debug)]
 pub(super) struct Required<'a> {
@@ -254,17 +249,17 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     OptionalPageValidity::try_new(page)?,
                     ValuesDictionary::try_new(page, dict)?,
                 ))
-            }
+            },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, true) => {
                 FilteredRequiredDictionary::try_new(page, dict)
                     .map(State::FilteredRequiredDictionary)
-            }
+            },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, true) => {
                 Ok(State::FilteredOptionalDictionary(
                     FilteredOptionalPageValidity::try_new(page)?,
                     ValuesDictionary::try_new(page, dict)?,
                 ))
-            }
+            },
             (Encoding::Plain, _, true, false) => {
                 let (_, _, values) = split_buffer(page)?;
 
@@ -274,11 +269,11 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     OptionalPageValidity::try_new(page)?,
                     values,
                 ))
-            }
+            },
             (Encoding::Plain, _, false, false) => Ok(State::Required(Required::try_new(page)?)),
             (Encoding::Plain, _, false, true) => {
                 Ok(State::FilteredRequired(FilteredRequired::new(page)))
-            }
+            },
             (Encoding::Plain, _, true, true) => {
                 let (_, _, values) = split_buffer(page)?;
 
@@ -286,17 +281,17 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     FilteredOptionalPageValidity::try_new(page)?,
                     BinaryIter::new(values),
                 ))
-            }
+            },
             (Encoding::DeltaLengthByteArray, _, false, false) => {
                 Delta::try_new(page).map(State::Delta)
-            }
+            },
             (Encoding::DeltaLengthByteArray, _, true, false) => Ok(State::OptionalDelta(
                 OptionalPageValidity::try_new(page)?,
                 Delta::try_new(page)?,
             )),
             (Encoding::DeltaLengthByteArray, _, false, true) => {
                 FilteredDelta::try_new(page).map(State::FilteredDelta)
-            }
+            },
             (Encoding::DeltaLengthByteArray, _, true, true) => Ok(State::FilteredOptionalDelta(
                 FilteredOptionalPageValidity::try_new(page)?,
                 Delta::try_new(page)?,
@@ -331,10 +326,10 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 for x in page.values.by_ref().take(additional) {
                     values.push(x)
                 }
-            }
+            },
             State::Delta(page) => {
                 values.extend_lengths(page.lengths.by_ref().take(additional), &mut page.values);
-            }
+            },
             State::OptionalDelta(page_validity, page_values) => {
                 let Binary {
                     offsets,
@@ -355,17 +350,17 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 let (consumed, remaining) = page_values.values.split_at(length.to_usize());
                 page_values.values = remaining;
                 values_.extend_from_slice(consumed);
-            }
+            },
             State::FilteredRequired(page) => {
                 for x in page.values.by_ref().take(additional) {
                     values.push(x)
                 }
-            }
+            },
             State::FilteredDelta(page) => {
                 for x in page.values.by_ref().take(additional) {
                     values.push(x)
                 }
-            }
+            },
             State::OptionalDictionary(page_validity, page_values) => {
                 let page_dict = &page_values.dict;
                 utils::extend_from_decoder(
@@ -378,7 +373,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                         .by_ref()
                         .map(|index| page_dict[index.unwrap() as usize].as_ref()),
                 )
-            }
+            },
             State::RequiredDictionary(page) => {
                 let page_dict = &page.dict;
 
@@ -390,7 +385,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 {
                     values.push(x)
                 }
-            }
+            },
             State::FilteredOptional(page_validity, page_values) => {
                 utils::extend_from_decoder(
                     validity,
@@ -399,7 +394,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     values,
                     page_values.by_ref(),
                 );
-            }
+            },
             State::FilteredOptionalDelta(page_validity, page_values) => {
                 utils::extend_from_decoder(
                     validity,
@@ -408,7 +403,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                     values,
                     page_values.by_ref(),
                 );
-            }
+            },
             State::FilteredRequiredDictionary(page) => {
                 let page_dict = &page.dict;
                 for x in page
@@ -419,7 +414,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                 {
                     values.push(x)
                 }
-            }
+            },
             State::FilteredOptionalDictionary(page_validity, page_values) => {
                 let page_dict = &page_values.dict;
                 utils::extend_from_decoder(
@@ -432,7 +427,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
                         .by_ref()
                         .map(|index| page_dict[index.unwrap() as usize].as_ref()),
                 )
-            }
+            },
         }
     }
 
@@ -506,7 +501,7 @@ impl<O: Offset, I: Pages> Iterator for Iter<O, I> {
         match maybe_state {
             MaybeNext::Some(Ok((values, validity))) => {
                 Some(finish(&self.data_type, values, validity))
-            }
+            },
             MaybeNext::Some(Err(e)) => Some(Err(e)),
             MaybeNext::None => None,
             MaybeNext::More => self.next(),

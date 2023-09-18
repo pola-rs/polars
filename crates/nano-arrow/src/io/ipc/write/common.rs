@@ -2,15 +2,14 @@ use std::borrow::{Borrow, Cow};
 
 use arrow_format::ipc::planus::Builder;
 
+use super::super::IpcField;
+use super::{write, write_dictionary};
 use crate::array::*;
 use crate::chunk::Chunk;
 use crate::datatypes::*;
 use crate::error::{Error, Result};
 use crate::io::ipc::endianess::is_native_little_endian;
 use crate::io::ipc::read::Dictionaries;
-
-use super::super::IpcField;
-use super::{write, write_dictionary};
 
 /// Compression codec
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -85,7 +84,7 @@ fn encode_dictionary(
                         encoded_dictionaries,
                     )
                 })
-        }
+        },
         List => {
             let values = array
                 .as_any()
@@ -100,7 +99,7 @@ fn encode_dictionary(
                 dictionary_tracker,
                 encoded_dictionaries,
             )
-        }
+        },
         LargeList => {
             let values = array
                 .as_any()
@@ -115,7 +114,7 @@ fn encode_dictionary(
                 dictionary_tracker,
                 encoded_dictionaries,
             )
-        }
+        },
         FixedSizeList => {
             let values = array
                 .as_any()
@@ -130,7 +129,7 @@ fn encode_dictionary(
                 dictionary_tracker,
                 encoded_dictionaries,
             )
-        }
+        },
         Union => {
             let values = array
                 .as_any()
@@ -156,7 +155,7 @@ fn encode_dictionary(
                         encoded_dictionaries,
                     )
                 })
-        }
+        },
         Map => {
             let values = array.as_any().downcast_ref::<MapArray>().unwrap().field();
             let field = &field.fields[0]; // todo: error instead
@@ -167,7 +166,7 @@ fn encode_dictionary(
                 dictionary_tracker,
                 encoded_dictionaries,
             )
-        }
+        },
     }
 }
 
@@ -357,7 +356,7 @@ impl DictionaryTracker {
                         .unwrap();
                     array.values()
                 })
-            }
+            },
             _ => unreachable!(),
         };
 

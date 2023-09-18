@@ -1,17 +1,13 @@
-use crate::{
-    bitmap::{
-        utils::{BitmapIter, ZipValidity},
-        Bitmap,
-    },
-    buffer::Buffer,
-    datatypes::*,
-    error::Error,
-    trusted_len::TrustedLen,
-    types::{days_ms, f16, i256, months_days_ns, NativeType},
-};
+use either::Either;
 
 use super::Array;
-use either::Either;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
+use crate::bitmap::Bitmap;
+use crate::buffer::Buffer;
+use crate::datatypes::*;
+use crate::error::Error;
+use crate::trusted_len::TrustedLen;
+use crate::types::{days_ms, f16, i256, months_days_ns, NativeType};
 
 #[cfg(feature = "arrow")]
 mod data;
@@ -355,7 +351,7 @@ impl<T: NativeType> PrimitiveArray<T> {
             match self.values.into_mut() {
                 Right(values) => {
                     Right(MutablePrimitiveArray::try_new(self.data_type, values, None).unwrap())
-                }
+                },
                 Left(values) => Left(PrimitiveArray::new(self.data_type, values, None)),
             }
         }

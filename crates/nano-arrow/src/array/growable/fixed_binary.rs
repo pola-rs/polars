@@ -1,14 +1,9 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{Array, FixedSizeBinaryArray},
-    bitmap::MutableBitmap,
-};
-
-use super::{
-    utils::{build_extend_null_bits, ExtendNullBits},
-    Growable,
-};
+use super::utils::{build_extend_null_bits, ExtendNullBits};
+use super::Growable;
+use crate::array::{Array, FixedSizeBinaryArray};
+use crate::bitmap::MutableBitmap;
 
 /// Concrete [`Growable`] for the [`FixedSizeBinaryArray`].
 pub struct GrowableFixedSizeBinary<'a> {

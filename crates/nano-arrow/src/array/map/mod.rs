@@ -1,11 +1,9 @@
-use crate::{
-    bitmap::Bitmap,
-    datatypes::{DataType, Field},
-    error::Error,
-    offset::OffsetsBuffer,
-};
-
-use super::{new_empty_array, specification::try_check_offsets_bounds, Array};
+use super::specification::try_check_offsets_bounds;
+use super::{new_empty_array, Array};
+use crate::bitmap::Bitmap;
+use crate::datatypes::{DataType, Field};
+use crate::error::Error;
+use crate::offset::OffsetsBuffer;
 
 #[cfg(feature = "arrow")]
 mod data;

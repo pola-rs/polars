@@ -1,11 +1,11 @@
 mod nested;
 
+pub(super) use nested::NestedIter;
 use parquet2::page::Page;
 
-use crate::{array::NullArray, datatypes::DataType};
-
 use super::super::{ArrayIter, Pages};
-pub(super) use nested::NestedIter;
+use crate::array::NullArray;
+use crate::datatypes::DataType;
 
 /// Converts [`Pages`] to an [`ArrayIter`]
 pub fn iter_to_arrays<'a, I>(
@@ -28,7 +28,7 @@ where
                 if len == num_rows {
                     break;
                 }
-            }
+            },
         }
     }
 
@@ -54,17 +54,16 @@ where
 
 #[cfg(test)]
 mod tests {
-    use parquet2::{
-        encoding::Encoding,
-        error::Error as ParquetError,
-        metadata::Descriptor,
-        page::{DataPage, DataPageHeader, DataPageHeaderV1, Page},
-        schema::types::{PhysicalType, PrimitiveType},
-    };
-
-    use crate::{array::NullArray, datatypes::DataType, error::Error};
+    use parquet2::encoding::Encoding;
+    use parquet2::error::Error as ParquetError;
+    use parquet2::metadata::Descriptor;
+    use parquet2::page::{DataPage, DataPageHeader, DataPageHeaderV1, Page};
+    use parquet2::schema::types::{PhysicalType, PrimitiveType};
 
     use super::iter_to_arrays;
+    use crate::array::NullArray;
+    use crate::datatypes::DataType;
+    use crate::error::Error;
 
     #[test]
     fn limit() {

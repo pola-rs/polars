@@ -1,6 +1,5 @@
-use crate::datatypes::DataType;
-
 use super::Scalar;
+use crate::datatypes::DataType;
 
 /// The representation of a single entry of a [`crate::array::NullArray`].
 #[derive(Debug, Clone, PartialEq, Eq)]

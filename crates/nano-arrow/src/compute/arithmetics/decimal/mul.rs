@@ -1,19 +1,14 @@
 //! Defines the multiplication arithmetic kernels for Decimal
 //! `PrimitiveArrays`.
 
-use crate::{
-    array::PrimitiveArray,
-    compute::{
-        arithmetics::{ArrayCheckedMul, ArrayMul, ArraySaturatingMul},
-        arity::{binary, binary_checked, unary},
-        utils::{check_same_len, combine_validities},
-    },
-    datatypes::DataType,
-    error::{Error, Result},
-    scalar::{PrimitiveScalar, Scalar},
-};
-
 use super::{adjusted_precision_scale, get_parameters, max_value, number_digits};
+use crate::array::PrimitiveArray;
+use crate::compute::arithmetics::{ArrayCheckedMul, ArrayMul, ArraySaturatingMul};
+use crate::compute::arity::{binary, binary_checked, unary};
+use crate::compute::utils::{check_same_len, combine_validities};
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
+use crate::scalar::{PrimitiveScalar, Scalar};
 
 /// Multiply two decimal primitive arrays with the same precision and scale. If
 /// the precision and scale is different, then an InvalidArgumentError is
@@ -153,10 +148,10 @@ pub fn saturating_mul(
                     } else {
                         -max
                     }
-                }
+                },
                 _ => res,
             }
-        }
+        },
         None => max,
     };
 
@@ -197,7 +192,7 @@ pub fn checked_mul(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> Pr
                 res if res.abs() > max => None,
                 _ => Some(res),
             }
-        }
+        },
         None => None,
     };
 

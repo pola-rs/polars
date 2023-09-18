@@ -1,16 +1,15 @@
 use std::collections::VecDeque;
 
-use parquet2::{
-    encoding::hybrid_rle::HybridRleDecoder,
-    page::{split_buffer, DataPage, DictPage, Page},
-    read::levels::get_bit_width,
-};
+use parquet2::encoding::hybrid_rle::HybridRleDecoder;
+use parquet2::page::{split_buffer, DataPage, DictPage, Page};
+use parquet2::read::levels::get_bit_width;
 
-use crate::{array::Array, bitmap::MutableBitmap, error::Result};
-
+use super::super::Pages;
 pub use super::utils::Zip;
-use super::utils::{DecodedState, MaybeNext};
-use super::{super::Pages, utils::PageState};
+use super::utils::{DecodedState, MaybeNext, PageState};
+use crate::array::Array;
+use crate::bitmap::MutableBitmap;
+use crate::error::Result;
 
 /// trait describing deserialized repetition and definition levels
 pub trait Nested: std::fmt::Debug + Send + Sync {
@@ -282,21 +281,21 @@ pub fn init_nested(init: &[InitNested], capacity: usize) -> NestedState {
         .map(|init| match init {
             InitNested::Primitive(is_nullable) => {
                 Box::new(NestedPrimitive::new(*is_nullable)) as Box<dyn Nested>
-            }
+            },
             InitNested::List(is_nullable) => {
                 if *is_nullable {
                     Box::new(NestedOptional::with_capacity(capacity)) as Box<dyn Nested>
                 } else {
                     Box::new(NestedValid::with_capacity(capacity)) as Box<dyn Nested>
                 }
-            }
+            },
             InitNested::Struct(is_nullable) => {
                 if *is_nullable {
                     Box::new(NestedStruct::with_capacity(capacity)) as Box<dyn Nested>
                 } else {
                     Box::new(NestedStructValid::new()) as Box<dyn Nested>
                 }
-            }
+            },
         })
         .collect();
     NestedState::new(container)
@@ -516,14 +515,14 @@ where
             } else {
                 MaybeNext::None
             }
-        }
+        },
         Ok(Some(page)) => {
             let page = match page {
                 Page::Data(page) => page,
                 Page::Dict(dict_page) => {
                     *dict = Some(decoder.deserialize_dict(dict_page));
                     return MaybeNext::More;
-                }
+                },
             };
 
             // there is a new page => consume the page from the start
@@ -537,7 +536,7 @@ where
                 chunk_size,
             );
             match error {
-                Ok(_) => {}
+                Ok(_) => {},
                 Err(e) => return MaybeNext::Some(Err(e)),
             };
 
@@ -548,7 +547,7 @@ where
             } else {
                 MaybeNext::Some(Ok(items.pop_front().unwrap()))
             }
-        }
+        },
     }
 }
 

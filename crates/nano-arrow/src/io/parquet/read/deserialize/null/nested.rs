@@ -2,13 +2,12 @@ use std::collections::VecDeque;
 
 use parquet2::page::{DataPage, DictPage};
 
-use crate::array::NullArray;
-use crate::io::parquet::read::deserialize::utils::DecodedState;
-use crate::{datatypes::DataType, error::Result};
-
 use super::super::nested_utils::*;
-use super::super::utils;
-use super::super::Pages;
+use super::super::{utils, Pages};
+use crate::array::NullArray;
+use crate::datatypes::DataType;
+use crate::error::Result;
+use crate::io::parquet::read::deserialize::utils::DecodedState;
 
 impl<'a> utils::PageState<'a> for usize {
     fn len(&self) -> usize {
@@ -118,7 +117,7 @@ where
         match maybe_state {
             utils::MaybeNext::Some(Ok((nested, state))) => {
                 Some(Ok((nested, NullArray::new(self.data_type.clone(), state))))
-            }
+            },
             utils::MaybeNext::Some(Err(e)) => Some(Err(e)),
             utils::MaybeNext::None => None,
             utils::MaybeNext::More => self.next(),

@@ -1,22 +1,18 @@
 use std::collections::VecDeque;
 
-use parquet2::{
-    encoding::Encoding,
-    page::{DataPage, DictPage},
-    schema::Repetition,
-    types::decode,
-    types::NativeType as ParquetNativeType,
-};
+use parquet2::encoding::Encoding;
+use parquet2::page::{DataPage, DictPage};
+use parquet2::schema::Repetition;
+use parquet2::types::{decode, NativeType as ParquetNativeType};
 
-use crate::{
-    array::PrimitiveArray, bitmap::MutableBitmap, datatypes::DataType, error::Result,
-    types::NativeType,
-};
-
-use super::super::utils;
-use super::super::Pages;
-use super::basic::{Values, ValuesDictionary};
-use super::{super::nested_utils::*, basic::deserialize_plain};
+use super::super::nested_utils::*;
+use super::super::{utils, Pages};
+use super::basic::{deserialize_plain, Values, ValuesDictionary};
+use crate::array::PrimitiveArray;
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::error::Result;
+use crate::types::NativeType;
 
 // The state of a `DataPage` of `Primitive` parquet primitive type
 #[allow(clippy::large_enum_variant)]
@@ -95,10 +91,10 @@ where
         match (page.encoding(), dict, is_optional, is_filtered) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {
                 ValuesDictionary::try_new(page, dict).map(State::RequiredDictionary)
-            }
+            },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, false) => {
                 ValuesDictionary::try_new(page, dict).map(State::OptionalDictionary)
-            }
+            },
             (Encoding::Plain, _, true, false) => Values::try_new::<P>(page).map(State::Optional),
             (Encoding::Plain, _, false, false) => Values::try_new::<P>(page).map(State::Required),
             _ => Err(utils::not_implemented(page)),
@@ -121,12 +117,12 @@ where
                 // convert unwrap to error
                 values.push(value.unwrap_or_default());
                 validity.push(true);
-            }
+            },
             State::Required(page_values) => {
                 let value = page_values.values.by_ref().next().map(decode).map(self.op);
                 // convert unwrap to error
                 values.push(value.unwrap_or_default());
-            }
+            },
             State::RequiredDictionary(page) => {
                 let value = page
                     .values
@@ -134,7 +130,7 @@ where
                     .map(|index| page.dict[index.unwrap() as usize]);
 
                 values.push(value.unwrap_or_default());
-            }
+            },
             State::OptionalDictionary(page) => {
                 let value = page
                     .values
@@ -143,7 +139,7 @@ where
 
                 values.push(value.unwrap_or_default());
                 validity.push(true);
-            }
+            },
         }
         Ok(())
     }
@@ -239,7 +235,7 @@ where
         match maybe_state {
             utils::MaybeNext::Some(Ok((nested, state))) => {
                 Some(Ok((nested, finish(&self.data_type, state.0, state.1))))
-            }
+            },
             utils::MaybeNext::Some(Err(e)) => Some(Err(e)),
             utils::MaybeNext::None => None,
             utils::MaybeNext::More => self.next(),

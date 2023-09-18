@@ -1,7 +1,8 @@
+use arrow_data::{ArrayData, ArrayDataBuilder};
+
 use crate::array::{from_data, to_data, Arrow2Arrow, UnionArray};
 use crate::buffer::Buffer;
 use crate::datatypes::DataType;
-use arrow_data::{ArrayData, ArrayDataBuilder};
 
 impl Arrow2Arrow for UnionArray {
     fn to_data(&self) -> ArrayData {
@@ -40,7 +41,7 @@ impl Arrow2Arrow for UnionArray {
                 let mut offsets: Buffer<i32> = buffers[1].clone().into();
                 offsets.slice(data.offset(), data.len());
                 Some(offsets)
-            }
+            },
             false => None,
         };
 
@@ -52,7 +53,7 @@ impl Arrow2Arrow for UnionArray {
                     map[id as usize] = pos;
                 }
                 Some(map)
-            }
+            },
             DataType::Union(_, None, _) => None,
             _ => unreachable!("must be Union type"),
         };

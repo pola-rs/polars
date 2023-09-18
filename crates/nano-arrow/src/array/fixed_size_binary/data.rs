@@ -1,8 +1,9 @@
+use arrow_data::{ArrayData, ArrayDataBuilder};
+
 use crate::array::{Arrow2Arrow, FixedSizeBinaryArray};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::DataType;
-use arrow_data::{ArrayData, ArrayDataBuilder};
 
 impl Arrow2Arrow for FixedSizeBinaryArray {
     fn to_data(&self) -> ArrayData {

@@ -2,14 +2,13 @@ use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
 use std::sync::Arc;
 
-use crate::bitmap::utils::{merge_reversed, set_bit_unchecked};
-use crate::error::Error;
-use crate::trusted_len::TrustedLen;
-
 use super::utils::{
     count_zeros, fmt, get_bit, set, set_bit, BitChunk, BitChunksExactMut, BitmapIter,
 };
 use super::Bitmap;
+use crate::bitmap::utils::{merge_reversed, set_bit_unchecked};
+use crate::error::Error;
+use crate::trusted_len::TrustedLen;
 
 /// A container of booleans. [`MutableBitmap`] is semantically equivalent
 /// to [`Vec<bool>`].

@@ -1,8 +1,7 @@
+use super::make_mutable;
 use crate::array::*;
 use crate::datatypes::{DataType, PhysicalType};
 use crate::error::Result;
-
-use super::make_mutable;
 
 #[derive(Debug)]
 pub struct DynMutableDictionary {

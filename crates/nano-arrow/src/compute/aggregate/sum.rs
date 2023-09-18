@@ -2,16 +2,14 @@ use std::ops::Add;
 
 use multiversion::multiversion;
 
+use crate::array::{Array, PrimitiveArray};
 use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact};
+use crate::bitmap::Bitmap;
 use crate::datatypes::{DataType, PhysicalType, PrimitiveType};
 use crate::error::{Error, Result};
 use crate::scalar::*;
 use crate::types::simd::*;
 use crate::types::NativeType;
-use crate::{
-    array::{Array, PrimitiveArray},
-    bitmap::Bitmap,
-};
 
 /// Object that can reduce itself to a number. This is used in the context of SIMD to reduce
 /// a MD (e.g. `[f32; 16]`) into a single number (`f32`).
@@ -156,6 +154,6 @@ pub fn sum(array: &dyn Array) -> Result<Box<dyn Scalar>> {
                 "The `sum` operator does not support type `{:?}`",
                 array.data_type(),
             )))
-        }
+        },
     })
 }

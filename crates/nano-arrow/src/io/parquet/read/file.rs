@@ -2,13 +2,12 @@ use std::io::{Read, Seek};
 
 use parquet2::indexes::FilteredPage;
 
+use super::{RowGroupDeserializer, RowGroupMetaData};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::Schema;
 use crate::error::Result;
 use crate::io::parquet::read::read_columns_many;
-
-use super::{RowGroupDeserializer, RowGroupMetaData};
 
 /// An iterator of [`Chunk`]s coming from row groups of a parquet file.
 ///
@@ -81,11 +80,11 @@ impl<R: Read + Seek> Iterator for FileReader<R> {
                         self.current_row_group = Some(row_group);
                         // new found => pull again
                         self.next()
-                    }
+                    },
                     Ok(None) => {
                         self.current_row_group = None;
                         None
-                    }
+                    },
                     Err(e) => Some(Err(e)),
                 },
                 other => other,
@@ -95,11 +94,11 @@ impl<R: Read + Seek> Iterator for FileReader<R> {
                 Ok(Some(row_group)) => {
                     self.current_row_group = Some(row_group);
                     self.next()
-                }
+                },
                 Ok(None) => {
                     self.current_row_group = None;
                     None
-                }
+                },
                 Err(e) => Some(Err(e)),
             }
         }

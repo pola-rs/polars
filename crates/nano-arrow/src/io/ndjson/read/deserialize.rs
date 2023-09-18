@@ -1,10 +1,9 @@
 use json_deserializer::parse;
 
+use super::super::super::json::read::_deserialize;
 use crate::array::Array;
 use crate::datatypes::DataType;
 use crate::error::Error;
-
-use super::super::super::json::read::_deserialize;
 
 /// Deserializes rows into an [`Array`] of [`DataType`].
 /// # Implementation

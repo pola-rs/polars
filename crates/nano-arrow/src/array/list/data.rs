@@ -1,7 +1,8 @@
+use arrow_data::{ArrayData, ArrayDataBuilder};
+
 use crate::array::{from_data, to_data, Arrow2Arrow, ListArray};
 use crate::bitmap::Bitmap;
 use crate::offset::{Offset, OffsetsBuffer};
-use arrow_data::{ArrayData, ArrayDataBuilder};
 
 impl<O: Offset> Arrow2Arrow for ListArray<O> {
     fn to_data(&self) -> ArrayData {

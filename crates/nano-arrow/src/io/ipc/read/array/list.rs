@@ -2,16 +2,15 @@ use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::io::{Read, Seek};
 
+use super::super::super::IpcField;
+use super::super::deserialize::{read, skip};
+use super::super::read_basic::*;
+use super::super::{Compression, Dictionaries, IpcBuffer, Node, OutOfSpecKind, Version};
 use crate::array::ListArray;
 use crate::buffer::Buffer;
 use crate::datatypes::DataType;
 use crate::error::{Error, Result};
 use crate::offset::Offset;
-
-use super::super::super::IpcField;
-use super::super::deserialize::{read, skip};
-use super::super::read_basic::*;
-use super::super::{Compression, Dictionaries, IpcBuffer, Node, OutOfSpecKind, Version};
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_list<O: Offset, R: Read + Seek>(

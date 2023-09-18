@@ -1,12 +1,9 @@
 //! Comparison functions for [`BooleanArray`]
-use crate::compute::comparison::{finish_eq_validities, finish_neq_validities};
-use crate::{
-    array::BooleanArray,
-    bitmap::{binary, unary, Bitmap},
-    datatypes::DataType,
-};
-
 use super::super::utils::combine_validities;
+use crate::array::BooleanArray;
+use crate::bitmap::{binary, unary, Bitmap};
+use crate::compute::comparison::{finish_eq_validities, finish_neq_validities};
+use crate::datatypes::DataType;
 
 /// Evaluate `op(lhs, rhs)` for [`BooleanArray`]s using a specified
 /// comparison function.

@@ -1,22 +1,17 @@
 use std::collections::VecDeque;
 
-use parquet2::{
-    encoding::Encoding,
-    page::{split_buffer, DataPage, DictPage},
-    schema::Repetition,
-};
-
-use crate::{
-    array::BooleanArray,
-    bitmap::{utils::BitmapIter, MutableBitmap},
-    datatypes::DataType,
-    error::Result,
-};
+use parquet2::encoding::Encoding;
+use parquet2::page::{split_buffer, DataPage, DictPage};
+use parquet2::schema::Repetition;
 
 use super::super::nested_utils::*;
-use super::super::utils;
 use super::super::utils::MaybeNext;
-use super::super::Pages;
+use super::super::{utils, Pages};
+use crate::array::BooleanArray;
+use crate::bitmap::utils::BitmapIter;
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::error::Result;
 
 // The state of a `DataPage` of `Boolean` parquet boolean type
 #[allow(clippy::large_enum_variant)]
@@ -64,13 +59,13 @@ impl<'a> NestedDecoder<'a> for BooleanDecoder {
                 let values = BitmapIter::new(values, 0, values.len() * 8);
 
                 Ok(State::Optional(values))
-            }
+            },
             (Encoding::Plain, false, false) => {
                 let (_, _, values) = split_buffer(page)?;
                 let values = BitmapIter::new(values, 0, values.len() * 8);
 
                 Ok(State::Required(values))
-            }
+            },
             _ => Err(utils::not_implemented(page)),
         }
     }
@@ -89,11 +84,11 @@ impl<'a> NestedDecoder<'a> for BooleanDecoder {
                 let value = page_values.next().unwrap_or_default();
                 values.push(value);
                 validity.push(true);
-            }
+            },
             State::Required(page_values) => {
                 let value = page_values.next().unwrap_or_default();
                 values.push(value);
-            }
+            },
         }
         Ok(())
     }
@@ -149,7 +144,7 @@ impl<I: Pages> Iterator for NestedIter<I> {
         match maybe_state {
             MaybeNext::Some(Ok((nested, (values, validity)))) => {
                 Some(Ok((nested, finish(&DataType::Boolean, values, validity))))
-            }
+            },
             MaybeNext::Some(Err(e)) => Some(Err(e)),
             MaybeNext::None => None,
             MaybeNext::More => self.next(),

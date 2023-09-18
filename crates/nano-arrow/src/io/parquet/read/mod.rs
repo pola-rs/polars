@@ -10,8 +10,12 @@ pub mod statistics;
 
 use std::io::{Read, Seek};
 
+pub use deserialize::{
+    column_iter_to_arrays, create_list, create_map, get_page_iterator, init_nested, n_columns,
+    InitNested, NestedArrayIter, NestedState, StructIterator,
+};
+pub use file::{FileReader, RowGroupReader};
 use futures::{AsyncRead, AsyncSeek};
-
 // re-exports of parquet2's relevant APIs
 pub use parquet2::{
     error::Error as ParquetError,
@@ -31,17 +35,12 @@ pub use parquet2::{
     types::int96_to_i64_ns,
     FallibleStreamingIterator,
 };
-
-use crate::{array::Array, error::Result};
-
-use crate::types::{i256, NativeType};
-pub use deserialize::{
-    column_iter_to_arrays, create_list, create_map, get_page_iterator, init_nested, n_columns,
-    InitNested, NestedArrayIter, NestedState, StructIterator,
-};
-pub use file::{FileReader, RowGroupReader};
 pub use row_group::*;
 pub use schema::{infer_schema, FileMetaData};
+
+use crate::array::Array;
+use crate::error::Result;
+use crate::types::{i256, NativeType};
 
 /// Trait describing a [`FallibleStreamingIterator`] of [`Page`]
 pub trait Pages:

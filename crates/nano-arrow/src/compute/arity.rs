@@ -1,13 +1,11 @@
 //! Defines kernels suitable to perform operations to primitive arrays.
 
 use super::utils::{check_same_len, combine_validities};
-use crate::{
-    array::PrimitiveArray,
-    bitmap::{Bitmap, MutableBitmap},
-    datatypes::DataType,
-    error::Result,
-    types::NativeType,
-};
+use crate::array::PrimitiveArray;
+use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::datatypes::DataType;
+use crate::error::Result;
+use crate::types::NativeType;
 
 /// Applies an unary and infallible function to a [`PrimitiveArray`]. This is the
 /// fastest way to perform an operation on a [`PrimitiveArray`] when the benefits
@@ -109,11 +107,11 @@ where
             Some(val) => {
                 mut_bitmap.push(true);
                 val
-            }
+            },
             None => {
                 mut_bitmap.push(false);
                 O::default()
-            }
+            },
         })
         .collect::<Vec<_>>()
         .into();
@@ -259,11 +257,11 @@ where
             Some(val) => {
                 mut_bitmap.push(true);
                 val
-            }
+            },
             None => {
                 mut_bitmap.push(false);
                 T::default()
-            }
+            },
         })
         .collect::<Vec<_>>()
         .into();

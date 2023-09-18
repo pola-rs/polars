@@ -1,12 +1,8 @@
 use super::FixedSizeListArray;
-use crate::{
-    array::{
-        ffi::{FromFfi, ToFfi},
-        Array,
-    },
-    error::Result,
-    ffi,
-};
+use crate::array::ffi::{FromFfi, ToFfi};
+use crate::array::Array;
+use crate::error::Result;
+use crate::ffi;
 
 unsafe impl ToFfi for FixedSizeListArray {
     fn buffers(&self) -> Vec<Option<*const u8>> {

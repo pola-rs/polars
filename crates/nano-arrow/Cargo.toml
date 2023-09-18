@@ -1,62 +1,50 @@
 [package]
 name = "nano-arrow"
-version = "0.0.0"
-authors.workspace = true
+version = "0.1.0"
+authors = ["Jorge C. Leitao <jorgecarleitao@gmail.com>", "Apache Arrow <dev@arrow.apache.org>", "Ritchie Vink"]
 edition.workspace = true
 homepage.workspace = true
-repository.workspace = true
+licence = "Apache 2.0 and MIT"
 license.workspace = true
-description = "Minimal implementation of the Arrow specification."
-licence = "MIT"
+repository.workspace = true
+description = "Minimal implementation of the Arrow specification forked from arrow2."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-foreign_vec = "0.1.0"
-either.workspace = true
-num-traits.workspace = true
 bytemuck.workspace = true
 chrono.workspace = true
-hashbrown.workspace = true
-simdutf8.workspace = true
 # for timezone support
 chrono-tz = { workspace = true, optional = true }
 dyn-clone = "1"
+either.workspace = true
+foreign_vec = "0.1.0"
+hashbrown.workspace = true
+num-traits.workspace = true
+simdutf8.workspace = true
 
 # for decimal i256
 ethnum = "1"
 
-# We need to Hash values before sending them to an hasher. This
-# crate provides HashMap that assumes pre-hashed values.
-hash_hasher = "^2.0.3"
-
 # To efficiently cast numbers to strings
 lexical-core = { version = "0.8", optional = true }
 
-regex = { version = "1.9", optional = true }
+fallible-streaming-iterator = { version = "0.1", optional = true }
+regex = { workspace = true, optional = true }
 regex-syntax = { version = "0.7", optional = true }
 streaming-iterator = { version = "0.1", optional = true }
-fallible-streaming-iterator = { version = "0.1", optional = true }
 
-json-deserializer = { version = "0.4.4", optional = true, features = ["preserve_order"] }
-indexmap = { version = "^1.6", optional = true }
-
-# used to print columns in a nice columnar format
-comfy-table = { version = "6.0", optional = true, default-features = false }
+indexmap = { workspace = true, optional = true }
 
 arrow-format = { version = "0.8", optional = true, features = ["ipc"] }
 
-hex = { version = "^0.4", optional = true }
+hex = { workspace = true, optional = true }
 
 # for IPC compression
 lz4 = { version = "1.24", optional = true }
 zstd = { version = "0.12", optional = true }
 
-rand = { version = "0.8", optional = true }
-
-itertools = { version = "^0.10", optional = true }
-
-base64 = { version = "0.21.0", optional = true }
+base64 = { workspace = true, optional = true }
 
 # to write to parquet as a stream
 futures = { version = "0.3", optional = true }
@@ -67,31 +55,20 @@ async-stream = { version = "0.3.2", optional = true }
 # avro support
 avro-schema = { version = "0.3", optional = true }
 
-# ORC support
-orc-format = { version = "0.3.0", optional = true }
-
-# Arrow integration tests support
-serde = { version = "^1.0", features = ["rc"], optional = true }
-serde_derive = { version = "^1.0", optional = true }
-serde_json = { version = "^1.0", features = ["preserve_order"], optional = true }
-
 # for division/remainder optimization at runtime
 strength_reduce = { version = "0.2", optional = true }
 
 # For instruction multiversioning
-multiversion = { version = "0.7.3", optional = true }
-
-# For support for odbc
-odbc-api = { version = "0.36", optional = true }
+multiversion = { workspace = true, optional = true }
 
 # Faster hashing
-ahash = "0.8"
+ahash.workspace = true
 
 # Support conversion to/from arrow-rs
-arrow-buffer = { version = ">=40", optional = true }
-arrow-schema = { version = ">=40", optional = true }
-arrow-data = { version = ">=40", optional = true }
 arrow-array = { version = ">=40", optional = true }
+arrow-buffer = { version = ">=40", optional = true }
+arrow-data = { version = ">=40", optional = true }
+arrow-schema = { version = ">=40", optional = true }
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
@@ -104,22 +81,22 @@ default_features = false
 features = ["async"]
 
 [dev-dependencies]
+avro-rs = { version = "0.13", features = ["snappy"] }
 criterion = "0.4"
-flate2 = "1"
-doc-comment = "0.3"
 crossbeam-channel = "0.5.1"
-# used to test async readers
-tokio = { version = "1", features = ["macros", "rt", "fs", "io-util"] }
-tokio-util = { version = "0.7", features = ["compat"] }
+doc-comment = "0.3"
+flate2 = "1"
 # used to run formal property testing
 proptest = { version = "1", default_features = false, features = ["std"] }
-avro-rs = { version = "0.13", features = ["snappy"] }
 # use for flaky testing
 rand = "0.8"
 # use for generating and testing random data samples
 sample-arrow2 = "0.1"
 sample-std = "0.1"
 sample-test = "0.1"
+# used to test async readers
+tokio = { version = "1", features = ["macros", "rt", "fs", "io-util"] }
+tokio-util = { version = "0.7", features = ["compat"] }
 
 [package.metadata.docs.rs]
 features = ["full"]
@@ -128,32 +105,23 @@ rustdoc-args = ["--cfg", "docsrs"]
 [features]
 default = []
 full = [
-    "arrow",
-    "io_odbc",
-    "io_json",
-    "io_ipc",
-    "io_flight",
-    "io_ipc_write_async",
-    "io_ipc_read_async",
-    "io_ipc_compression",
-    "io_json_integration",
-    "io_print",
-    "io_parquet",
-    "io_parquet_compression",
-    "io_avro",
-    "io_orc",
-    "io_avro_compression",
-    "io_avro_async",
-    "regex",
-    "regex-syntax",
-    "compute",
-    # parses timezones used in timestamp conversions
-    "chrono-tz",
+  "arrow",
+  "io_ipc",
+  "io_flight",
+  "io_ipc_write_async",
+  "io_ipc_read_async",
+  "io_ipc_compression",
+  "io_parquet",
+  "io_parquet_compression",
+  "io_avro",
+  "io_avro_compression",
+  "io_avro_async",
+  "regex-syntax",
+  "compute",
+  # parses timezones used in timestamp conversions
+  "chrono-tz",
 ]
 arrow = ["arrow-buffer", "arrow-schema", "arrow-data", "arrow-array"]
-io_odbc = ["odbc-api"]
-io_json = ["io_json_read", "io_json_write"]
-io_json_read = ["json-deserializer", "indexmap", "lexical-core"]
 io_json_write = ["streaming-iterator", "fallible-streaming-iterator", "lexical-core"]
 io_ipc = ["arrow-format"]
 io_ipc_write_async = ["io_ipc", "futures"]
@@ -165,11 +133,11 @@ io_flight = ["io_ipc", "arrow-format/flight-data"]
 io_parquet = ["parquet2", "io_ipc", "base64", "futures", "streaming-iterator", "fallible-streaming-iterator"]
 
 io_parquet_compression = [
-    "io_parquet_zstd",
-    "io_parquet_gzip",
-    "io_parquet_snappy",
-    "io_parquet_lz4",
-    "io_parquet_brotli"
+  "io_parquet_zstd",
+  "io_parquet_gzip",
+  "io_parquet_snappy",
+  "io_parquet_lz4",
+  "io_parquet_brotli",
 ]
 
 # sample testing of generated arrow data
@@ -188,16 +156,10 @@ io_parquet_bloom_filter = ["parquet2/bloom_filter"]
 
 io_avro = ["avro-schema", "streaming-iterator"]
 io_avro_compression = [
-    "avro-schema/compression",
+  "avro-schema/compression",
 ]
 io_avro_async = ["avro-schema/async"]
 
-io_orc = ["orc-format"]
-
-# serde+serde_json: its dependencies + error handling
-# serde_derive: there is some derive around
-io_json_integration = ["hex", "serde", "serde_derive", "serde_json", "io_ipc"]
-io_print = ["comfy-table"]
 # the compute kernels. Disabling this significantly reduces compile time.
 compute_aggregate = ["multiversion"]
 compute_arithmetics_decimal = ["strength_reduce"]
@@ -208,52 +170,34 @@ compute_boolean_kleene = []
 compute_cast = ["lexical-core", "compute_take"]
 compute_comparison = ["compute_take", "compute_boolean"]
 compute_concatenate = []
-compute_contains = []
 compute_filter = []
 compute_hash = ["multiversion"]
 compute_if_then_else = []
-compute_length = []
 compute_like = ["regex", "regex-syntax"]
 compute_limit = []
-compute_merge_sort = ["itertools", "compute_sort"]
-compute_nullif = ["compute_comparison"]
-compute_partition = ["compute_sort"]
 compute_regex_match = ["regex"]
-compute_sort = ["compute_take"]
 compute_substring = []
 compute_take = []
 compute_temporal = []
-compute_window = ["compute_concatenate"]
-compute_utf8 = []
 compute = [
-    "compute_aggregate",
-    "compute_arithmetics",
-    "compute_bitwise",
-    "compute_boolean",
-    "compute_boolean_kleene",
-    "compute_cast",
-    "compute_comparison",
-    "compute_concatenate",
-    "compute_contains",
-    "compute_filter",
-    "compute_hash",
-    "compute_if_then_else",
-    "compute_length",
-    "compute_like",
-    "compute_limit",
-    "compute_merge_sort",
-    "compute_nullif",
-    "compute_partition",
-    "compute_regex_match",
-    "compute_sort",
-    "compute_substring",
-    "compute_take",
-    "compute_temporal",
-    "compute_utf8",
-    "compute_window"
+  "compute_aggregate",
+  "compute_arithmetics",
+  "compute_bitwise",
+  "compute_boolean",
+  "compute_boolean_kleene",
+  "compute_cast",
+  "compute_comparison",
+  "compute_concatenate",
+  "compute_filter",
+  "compute_hash",
+  "compute_if_then_else",
+  "compute_like",
+  "compute_limit",
+  "compute_regex_match",
+  "compute_substring",
+  "compute_take",
+  "compute_temporal",
 ]
-benchmarks = ["rand"]
-serde_types = ["serde", "serde_derive"]
 simd = []
 
 [build-dependencies]

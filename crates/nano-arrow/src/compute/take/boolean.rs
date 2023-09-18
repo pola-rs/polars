@@ -1,9 +1,6 @@
-use crate::{
-    array::{Array, BooleanArray, PrimitiveArray},
-    bitmap::{Bitmap, MutableBitmap},
-};
-
 use super::Index;
+use crate::array::{Array, BooleanArray, PrimitiveArray};
+use crate::bitmap::{Bitmap, MutableBitmap};
 
 // take implementation when neither values nor indices contain nulls
 fn take_no_validity<I: Index>(values: &Bitmap, indices: &[I]) -> (Bitmap, Option<Bitmap>) {
@@ -50,7 +47,7 @@ fn take_indices_validity<I: Index>(
                 } else {
                     panic!("Out-of-bounds index {index}")
                 }
-            }
+            },
         }
     });
 
@@ -74,11 +71,11 @@ fn take_values_indices_validity<I: Index>(
             let index = index.to_usize();
             validity.push(values_validity.get_bit(index));
             values_values.get_bit(index)
-        }
+        },
         None => {
             validity.push(false);
             false
-        }
+        },
     });
     let values = Bitmap::from_trusted_len_iter(values);
     (values, validity.into())
@@ -102,9 +99,8 @@ pub fn take<I: Index>(values: &BooleanArray, indices: &PrimitiveArray<I>) -> Boo
 
 #[cfg(test)]
 mod tests {
-    use crate::array::Int32Array;
-
     use super::*;
+    use crate::array::Int32Array;
 
     fn _all_cases() -> Vec<(Int32Array, BooleanArray, BooleanArray)> {
         vec![

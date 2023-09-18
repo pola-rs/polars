@@ -1,9 +1,7 @@
-use crate::{
-    array::{Array, BinaryArray, BooleanArray, PrimitiveArray, Utf8Array},
-    error::Result,
-    offset::Offset,
-    types::NativeType,
-};
+use crate::array::{Array, BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
+use crate::error::Result;
+use crate::offset::Offset;
+use crate::types::NativeType;
 
 pub(super) fn boolean_to_primitive_dyn<T>(array: &dyn Array) -> Result<Box<dyn Array>>
 where

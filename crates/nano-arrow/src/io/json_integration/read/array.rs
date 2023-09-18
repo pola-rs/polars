@@ -2,19 +2,16 @@ use ahash::AHashMap;
 use num_traits::NumCast;
 use serde_json::Value;
 
-use crate::{
-    array::*,
-    bitmap::{Bitmap, MutableBitmap},
-    buffer::Buffer,
-    chunk::Chunk,
-    datatypes::{DataType, PhysicalType, PrimitiveType, Schema},
-    error::{Error, Result},
-    io::ipc::IpcField,
-    offset::Offset,
-    types::{days_ms, i256, months_days_ns, NativeType},
-};
-
 use super::super::{ArrowJsonBatch, ArrowJsonColumn, ArrowJsonDictionaryBatch};
+use crate::array::*;
+use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::buffer::Buffer;
+use crate::chunk::Chunk;
+use crate::datatypes::{DataType, PhysicalType, PrimitiveType, Schema};
+use crate::error::{Error, Result};
+use crate::io::ipc::IpcField;
+use crate::offset::Offset;
+use crate::types::{days_ms, i256, months_days_ns, NativeType};
 
 fn to_validity(validity: &Option<Vec<u8>>) -> Option<Bitmap> {
     validity.as_ref().and_then(|x| {
@@ -51,7 +48,7 @@ fn to_days_ms(value: &Value) -> days_ms {
                 let days = days.as_i64().unwrap() as i32;
                 let milliseconds = milliseconds.as_i64().unwrap() as i32;
                 days_ms::new(days, milliseconds)
-            }
+            },
             (_, _) => panic!(),
         }
     } else {
@@ -70,7 +67,7 @@ fn to_months_days_ns(value: &Value) -> months_days_ns {
                 let days = days.as_i64().unwrap() as i32;
                 let nanoseconds = nanoseconds.as_i64().unwrap();
                 months_days_ns::new(months, days, nanoseconds)
-            }
+            },
             (_, _, _) => panic!(),
         }
     } else {
@@ -119,7 +116,7 @@ fn to_decimal(json_col: &ArrowJsonColumn, data_type: DataType) -> PrimitiveArray
             Value::String(x) => x.parse::<i128>().unwrap(),
             _ => {
                 panic!()
-            }
+            },
         })
         .collect();
 
@@ -137,7 +134,7 @@ fn to_decimal256(json_col: &ArrowJsonColumn, data_type: DataType) -> PrimitiveAr
             Value::String(x) => i256(x.parse::<ethnum::I256>().unwrap()),
             _ => {
                 panic!()
-            }
+            },
         })
         .collect();
 
@@ -172,7 +169,7 @@ fn to_primitive<T: NativeType + NumCast>(
                     .unwrap(),
                 _ => {
                     panic!()
-                }
+                },
             })
             .collect()
     };
@@ -296,7 +293,7 @@ pub fn to_array(
                 .map(|value| value.as_bool().unwrap())
                 .collect::<Bitmap>();
             Ok(Box::new(BooleanArray::new(data_type, values, validity)))
-        }
+        },
         Primitive(PrimitiveType::Int8) => Ok(Box::new(to_primitive::<i8>(json_col, data_type))),
         Primitive(PrimitiveType::Int16) => Ok(Box::new(to_primitive::<i16>(json_col, data_type))),
         Primitive(PrimitiveType::Int32) => Ok(Box::new(to_primitive::<i32>(json_col, data_type))),
@@ -306,7 +303,7 @@ pub fn to_array(
         Primitive(PrimitiveType::DaysMs) => Ok(Box::new(to_primitive_days_ms(json_col, data_type))),
         Primitive(PrimitiveType::MonthDayNano) => {
             Ok(Box::new(to_primitive_months_days_ns(json_col, data_type)))
-        }
+        },
         Primitive(PrimitiveType::UInt8) => Ok(Box::new(to_primitive::<u8>(json_col, data_type))),
         Primitive(PrimitiveType::UInt16) => Ok(Box::new(to_primitive::<u16>(json_col, data_type))),
         Primitive(PrimitiveType::UInt32) => Ok(Box::new(to_primitive::<u32>(json_col, data_type))),
@@ -331,7 +328,7 @@ pub fn to_array(
             Ok(Box::new(FixedSizeBinaryArray::new(
                 data_type, values, validity,
             )))
-        }
+        },
         List => to_list::<i32>(json_col, data_type, field, dictionaries),
         LargeList => to_list::<i64>(json_col, data_type, field, dictionaries),
         FixedSizeList => {
@@ -350,7 +347,7 @@ pub fn to_array(
             Ok(Box::new(FixedSizeListArray::new(
                 data_type, values, validity,
             )))
-        }
+        },
         Struct => {
             let validity = to_validity(&json_col.validity);
 
@@ -367,12 +364,12 @@ pub fn to_array(
 
             let array = StructArray::new(data_type, values, validity);
             Ok(Box::new(array))
-        }
+        },
         Dictionary(key_type) => {
             match_integer_type!(key_type, |$T| {
                 to_dictionary::<$T>(data_type, field, json_col, dictionaries)
             })
-        }
+        },
         Union => {
             let fields = UnionArray::get_fields(&data_type);
             let fields = fields
@@ -392,11 +389,11 @@ pub fn to_array(
                         .map(|value| match value {
                             Value::Number(x) => {
                                 x.as_i64().and_then(num_traits::cast::<i64, i8>).unwrap()
-                            }
+                            },
                             Value::String(x) => x.parse::<i8>().ok().unwrap(),
                             _ => {
                                 panic!()
-                            }
+                            },
                         })
                         .collect()
                 })
@@ -411,7 +408,7 @@ pub fn to_array(
                             .map(|value| match value {
                                 Value::Number(x) => {
                                     x.as_i64().and_then(num_traits::cast::<i64, i32>).unwrap()
-                                }
+                                },
                                 _ => panic!(),
                             })
                             .collect::<Vec<_>>()
@@ -422,7 +419,7 @@ pub fn to_array(
 
             let array = UnionArray::new(data_type, types, fields, offsets);
             Ok(Box::new(array))
-        }
+        },
         Map => to_map(json_col, data_type, field, dictionaries),
     }
 }

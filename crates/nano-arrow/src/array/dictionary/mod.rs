@@ -1,17 +1,13 @@
 use std::hash::Hash;
 use std::hint::unreachable_unchecked;
 
-use crate::{
-    bitmap::{
-        utils::{BitmapIter, ZipValidity},
-        Bitmap,
-    },
-    datatypes::{DataType, IntegerType},
-    error::Error,
-    scalar::{new_scalar, Scalar},
-    trusted_len::TrustedLen,
-    types::NativeType,
-};
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
+use crate::bitmap::Bitmap;
+use crate::datatypes::{DataType, IntegerType};
+use crate::error::Error;
+use crate::scalar::{new_scalar, Scalar};
+use crate::trusted_len::TrustedLen;
+use crate::types::NativeType;
 
 #[cfg(feature = "arrow")]
 mod data;
@@ -23,12 +19,13 @@ use crate::array::specification::check_indexes_unchecked;
 mod typed_iterator;
 mod value_map;
 
-use crate::array::dictionary::typed_iterator::{DictValue, DictionaryValuesIterTyped};
 pub use iterator::*;
 pub use mutable::*;
 
-use super::{new_empty_array, primitive::PrimitiveArray, Array};
-use super::{new_null_array, specification::check_indexes};
+use super::primitive::PrimitiveArray;
+use super::specification::check_indexes;
+use super::{new_empty_array, new_null_array, Array};
+use crate::array::dictionary::typed_iterator::{DictValue, DictionaryValuesIterTyped};
 
 /// Trait denoting [`NativeType`]s that can be used as keys of a dictionary.
 /// # Safety
@@ -397,7 +394,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
                 return Err(Error::oos(
                     "Dictionaries must be initialized with DataType::Dictionary",
                 ))
-            }
+            },
         })
     }
 }

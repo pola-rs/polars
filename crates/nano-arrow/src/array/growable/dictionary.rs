@@ -1,16 +1,10 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray},
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-};
-
-use super::{
-    make_growable,
-    utils::{build_extend_null_bits, ExtendNullBits},
-    Growable,
-};
+use super::utils::{build_extend_null_bits, ExtendNullBits};
+use super::{make_growable, Growable};
+use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
 
 /// Concrete [`Growable`] for the [`DictionaryArray`].
 /// # Implementation
@@ -125,7 +119,7 @@ impl<'a, T: DictionaryKey> Growable<'a> for GrowableDictionary<'a, T> {
                         // todo: convert this to an error.
                         Err(_) => {
                             panic!("The maximum key is too small")
-                        }
+                        },
                     };
                     x
                 }),

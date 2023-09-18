@@ -1,11 +1,8 @@
-use futures::AsyncWrite;
-use futures::AsyncWriteExt;
-
-use crate::error::Result;
+use futures::{AsyncWrite, AsyncWriteExt};
 
 use super::super::CONTINUATION_MARKER;
-use super::common::pad_to_64;
-use super::common::EncodedData;
+use super::common::{pad_to_64, EncodedData};
+use crate::error::Result;
 
 /// Write a message's IPC data and buffers, returning metadata and buffer data lengths written
 pub async fn write_message<W: AsyncWrite + Unpin + Send>(

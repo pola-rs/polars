@@ -1,8 +1,9 @@
+use arrow_buffer::{BooleanBuffer, NullBuffer};
+use arrow_data::{ArrayData, ArrayDataBuilder};
+
 use crate::array::{Arrow2Arrow, BooleanArray};
 use crate::bitmap::Bitmap;
 use crate::datatypes::DataType;
-use arrow_buffer::{BooleanBuffer, NullBuffer};
-use arrow_data::{ArrayData, ArrayDataBuilder};
 
 impl Arrow2Arrow for BooleanArray {
     fn to_data(&self) -> ArrayData {

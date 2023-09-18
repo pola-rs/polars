@@ -1,18 +1,11 @@
 //! Defines the addition arithmetic kernels for [`PrimitiveArray`] representing decimals.
-use crate::{
-    array::PrimitiveArray,
-    compute::{
-        arithmetics::{ArrayAdd, ArrayCheckedAdd, ArraySaturatingAdd},
-        arity::{binary, binary_checked},
-        utils::{check_same_len, combine_validities},
-    },
-};
-use crate::{
-    datatypes::DataType,
-    error::{Error, Result},
-};
-
 use super::{adjusted_precision_scale, get_parameters, max_value, number_digits};
+use crate::array::PrimitiveArray;
+use crate::compute::arithmetics::{ArrayAdd, ArrayCheckedAdd, ArraySaturatingAdd};
+use crate::compute::arity::{binary, binary_checked};
+use crate::compute::utils::{check_same_len, combine_validities};
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
 
 /// Adds two decimal [`PrimitiveArray`] with the same precision and scale.
 /// # Error

@@ -1,10 +1,9 @@
 use serde_json::{json, Map, Value};
 
+use super::super::{ArrowJsonField, ArrowJsonFieldDictionary, IntegerType};
 use crate::datatypes::{DataType, Field, IntervalUnit, Metadata, Schema, TimeUnit};
 use crate::io::ipc::IpcField;
 use crate::io::json_integration::ArrowJsonSchema;
-
-use super::super::{ArrowJsonField, ArrowJsonFieldDictionary, IntegerType};
 
 fn serialize_data_type(data_type: &DataType) -> Value {
     match data_type {
@@ -27,7 +26,7 @@ fn serialize_data_type(data_type: &DataType) -> Value {
         DataType::LargeBinary => json!({"name": "largebinary"}),
         DataType::FixedSizeBinary(byte_width) => {
             json!({"name": "fixedsizebinary", "byteWidth": byte_width})
-        }
+        },
         DataType::Struct(_) => json!({"name": "struct"}),
         DataType::Union(_, _, _) => json!({"name": "union"}),
         DataType::Map(_, _) => json!({"name": "map"}),
@@ -35,7 +34,7 @@ fn serialize_data_type(data_type: &DataType) -> Value {
         DataType::LargeList(_) => json!({ "name": "largelist"}),
         DataType::FixedSizeList(_, length) => {
             json!({"name":"fixedsizelist", "listSize": length})
-        }
+        },
         DataType::Time32(unit) => {
             json!({"name": "time", "bitWidth": 32, "unit": match unit {
                 TimeUnit::Second => "SECOND",
@@ -43,7 +42,7 @@ fn serialize_data_type(data_type: &DataType) -> Value {
                 TimeUnit::Microsecond => "MICROSECOND",
                 TimeUnit::Nanosecond => "NANOSECOND",
             }})
-        }
+        },
         DataType::Time64(unit) => {
             json!({"name": "time", "bitWidth": 64, "unit": match unit {
                 TimeUnit::Second => "SECOND",
@@ -51,13 +50,13 @@ fn serialize_data_type(data_type: &DataType) -> Value {
                 TimeUnit::Microsecond => "MICROSECOND",
                 TimeUnit::Nanosecond => "NANOSECOND",
             }})
-        }
+        },
         DataType::Date32 => {
             json!({"name": "date", "unit": "DAY"})
-        }
+        },
         DataType::Date64 => {
             json!({"name": "date", "unit": "MILLISECOND"})
-        }
+        },
         DataType::Timestamp(unit, None) => {
             json!({"name": "timestamp", "unit": match unit {
                 TimeUnit::Second => "SECOND",
@@ -65,7 +64,7 @@ fn serialize_data_type(data_type: &DataType) -> Value {
                 TimeUnit::Microsecond => "MICROSECOND",
                 TimeUnit::Nanosecond => "NANOSECOND",
             }})
-        }
+        },
         DataType::Timestamp(unit, Some(tz)) => {
             json!({"name": "timestamp", "unit": match unit {
                 TimeUnit::Second => "SECOND",
@@ -73,7 +72,7 @@ fn serialize_data_type(data_type: &DataType) -> Value {
                 TimeUnit::Microsecond => "MICROSECOND",
                 TimeUnit::Nanosecond => "NANOSECOND",
             }, "timezone": tz})
-        }
+        },
         DataType::Interval(unit) => json!({"name": "interval", "unit": match unit {
             IntervalUnit::YearMonth => "YEAR_MONTH",
             IntervalUnit::DayTime => "DAY_TIME",
@@ -88,10 +87,10 @@ fn serialize_data_type(data_type: &DataType) -> Value {
         DataType::Dictionary(_, _, _) => json!({ "name": "dictionary"}),
         DataType::Decimal(precision, scale) => {
             json!({"name": "decimal", "precision": precision, "scale": scale})
-        }
+        },
         DataType::Decimal256(precision, scale) => {
             json!({"name": "decimal", "precision": precision, "scale": scale, "bit_width": 256})
-        }
+        },
         DataType::Extension(_, inner_data_type, _) => serialize_data_type(inner_data_type),
     }
 }
@@ -108,7 +107,7 @@ fn serialize_field(field: &Field, ipc_field: &IpcField) -> ArrowJsonField {
         | DataType::LargeList(field)
         | DataType::List(field) => {
             vec![serialize_field(field, &ipc_field.fields[0])]
-        }
+        },
         _ => vec![],
     };
     let metadata = serialize_metadata(&field.metadata);

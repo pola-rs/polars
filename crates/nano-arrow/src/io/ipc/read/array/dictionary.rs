@@ -2,13 +2,11 @@ use std::collections::{HashSet, VecDeque};
 use std::convert::TryInto;
 use std::io::{Read, Seek};
 
+use super::super::{Compression, Dictionaries, IpcBuffer, Node};
+use super::{read_primitive, skip_primitive};
 use crate::array::{DictionaryArray, DictionaryKey};
 use crate::datatypes::DataType;
 use crate::error::{Error, Result};
-
-use super::super::Dictionaries;
-use super::super::{Compression, IpcBuffer, Node};
-use super::{read_primitive, skip_primitive};
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_dictionary<T: DictionaryKey, R: Read + Seek>(

@@ -1,18 +1,13 @@
 use std::iter::FromIterator;
 use std::sync::Arc;
 
-use crate::{
-    array::{
-        physical_binary::extend_validity, Array, MutableArray, TryExtend, TryExtendFromSelf,
-        TryPush,
-    },
-    bitmap::MutableBitmap,
-    datatypes::{DataType, PhysicalType},
-    error::Error,
-    trusted_len::TrustedLen,
-};
-
 use super::BooleanArray;
+use crate::array::physical_binary::extend_validity;
+use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::{DataType, PhysicalType};
+use crate::error::Error;
+use crate::trusted_len::TrustedLen;
 
 /// The Arrow's equivalent to `Vec<Option<bool>>`, but with `1/16` of its size.
 /// Converting a [`MutableBooleanArray`] into a [`BooleanArray`] is `O(1)`.
@@ -110,16 +105,16 @@ impl MutableBooleanArray {
                 self.values.push(value);
                 match &mut self.validity {
                     Some(validity) => validity.push(true),
-                    None => {}
+                    None => {},
                 }
-            }
+            },
             None => {
                 self.values.push(false);
                 match &mut self.validity {
                     Some(validity) => validity.push(false),
                     None => self.init_validity(),
                 }
-            }
+            },
         }
     }
 

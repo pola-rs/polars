@@ -1,12 +1,9 @@
 use std::collections::VecDeque;
 
-use crate::{
-    array::NullArray,
-    datatypes::DataType,
-    error::{Error, Result},
-};
-
 use super::super::{Node, OutOfSpecKind};
+use crate::array::NullArray;
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
 
 pub fn read_null(field_nodes: &mut VecDeque<Node>, data_type: DataType) -> Result<NullArray> {
     let field_node = field_nodes.pop_front().ok_or_else(|| {

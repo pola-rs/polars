@@ -1,19 +1,17 @@
-use std::{iter::FromIterator, sync::Arc};
-
-use crate::{
-    array::{
-        specification::try_check_offsets_bounds, Array, ArrayAccessor, ArrayValuesIter,
-        MutableArray, TryExtend, TryExtendFromSelf, TryPush,
-    },
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-    error::{Error, Result},
-    offset::{Offset, Offsets},
-    trusted_len::TrustedLen,
-};
+use std::iter::FromIterator;
+use std::sync::Arc;
 
 use super::{BinaryArray, MutableBinaryArray};
 use crate::array::physical_binary::*;
+use crate::array::specification::try_check_offsets_bounds;
+use crate::array::{
+    Array, ArrayAccessor, ArrayValuesIter, MutableArray, TryExtend, TryExtendFromSelf, TryPush,
+};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
+use crate::offset::{Offset, Offsets};
+use crate::trusted_len::TrustedLen;
 
 /// A [`MutableArray`] that builds a [`BinaryArray`]. It differs
 /// from [`MutableBinaryArray`] in that it builds non-null [`BinaryArray`].

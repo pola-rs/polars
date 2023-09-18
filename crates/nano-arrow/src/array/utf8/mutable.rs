@@ -1,19 +1,15 @@
-use std::{iter::FromIterator, sync::Arc};
-
-use crate::array::{physical_binary::*, TryExtendFromSelf};
-use crate::{
-    array::{Array, MutableArray, TryExtend, TryPush},
-    bitmap::{
-        utils::{BitmapIter, ZipValidity},
-        Bitmap, MutableBitmap,
-    },
-    datatypes::DataType,
-    error::{Error, Result},
-    offset::{Offset, Offsets},
-    trusted_len::TrustedLen,
-};
+use std::iter::FromIterator;
+use std::sync::Arc;
 
 use super::{MutableUtf8ValuesArray, MutableUtf8ValuesIter, StrAsBytes, Utf8Array};
+use crate::array::physical_binary::*;
+use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
+use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
+use crate::offset::{Offset, Offsets};
+use crate::trusted_len::TrustedLen;
 
 /// A [`MutableArray`] that builds a [`Utf8Array`]. It differs
 /// from [`MutableUtf8ValuesArray`] in that it can build nullable [`Utf8Array`]s.
@@ -523,16 +519,16 @@ impl<O: Offset, T: AsRef<str>> TryPush<Option<T>> for MutableUtf8Array<O> {
 
                 match &mut self.validity {
                     Some(validity) => validity.push(true),
-                    None => {}
+                    None => {},
                 }
-            }
+            },
             None => {
                 self.values.push("");
                 match &mut self.validity {
                     Some(validity) => validity.push(false),
                     None => self.init_validity(),
                 }
-            }
+            },
         }
         Ok(())
     }

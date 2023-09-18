@@ -1,10 +1,8 @@
 //! Boolean operators of [Kleene logic](https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics).
+use crate::array::{Array, BooleanArray};
+use crate::bitmap::{binary, quaternary, ternary, unary, Bitmap, MutableBitmap};
 use crate::datatypes::DataType;
 use crate::scalar::BooleanScalar;
-use crate::{
-    array::{Array, BooleanArray},
-    bitmap::{binary, quaternary, ternary, unary, Bitmap, MutableBitmap},
-};
 
 /// Logical 'or' operation on two arrays with [Kleene logic](https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics)
 /// # Panics
@@ -50,7 +48,7 @@ pub fn or(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
                     (!lhs & lhs_v) & (!rhs & rhs_v)
                 },
             ))
-        }
+        },
         (Some(lhs_validity), None) => {
             // B != U
             Some(ternary(
@@ -67,7 +65,7 @@ pub fn or(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
                     (!lhs & lhs_v) & !rhs
                 },
             ))
-        }
+        },
         (None, Some(rhs_validity)) => {
             Some(ternary(
                 lhs_values,
@@ -83,7 +81,7 @@ pub fn or(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
                     !lhs & (!rhs & rhs_v)
                 },
             ))
-        }
+        },
         (None, None) => None,
     };
     BooleanArray::new(DataType::Boolean, lhs_values | rhs_values, validity)
@@ -133,7 +131,7 @@ pub fn and(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
                     (lhs & lhs_v) & (rhs & rhs_v)
                 },
             ))
-        }
+        },
         (Some(lhs_validity), None) => {
             Some(ternary(
                 lhs_values,
@@ -149,7 +147,7 @@ pub fn and(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
                     (lhs & lhs_v) & rhs
                 },
             ))
-        }
+        },
         (None, Some(rhs_validity)) => {
             Some(ternary(
                 lhs_values,
@@ -165,7 +163,7 @@ pub fn and(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
                     lhs & (rhs & rhs_v)
                 },
             ))
-        }
+        },
         (None, None) => None,
     };
     BooleanArray::new(DataType::Boolean, lhs_values & rhs_values, validity)
@@ -190,7 +188,7 @@ pub fn or_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray {
             let mut values = MutableBitmap::new();
             values.extend_constant(array.len(), true);
             BooleanArray::new(DataType::Boolean, values.into(), None)
-        }
+        },
         Some(false) => array.clone(),
         None => {
             let values = array.values();
@@ -199,7 +197,7 @@ pub fn or_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray {
                 None => unary(values, |value| value),
             };
             BooleanArray::new(DataType::Boolean, values.clone(), Some(validity))
-        }
+        },
     }
 }
 
@@ -222,7 +220,7 @@ pub fn and_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray 
         Some(false) => {
             let values = Bitmap::new_zeroed(array.len());
             BooleanArray::new(DataType::Boolean, values, None)
-        }
+        },
         None => {
             let values = array.values();
             let validity = match array.validity() {
@@ -230,7 +228,7 @@ pub fn and_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray 
                 None => unary(values, |value| !value),
             };
             BooleanArray::new(DataType::Boolean, array.values().clone(), Some(validity))
-        }
+        },
     }
 }
 

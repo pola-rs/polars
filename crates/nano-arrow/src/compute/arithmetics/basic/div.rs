@@ -2,21 +2,16 @@
 use std::ops::Div;
 
 use num_traits::{CheckedDiv, NumCast};
-
-use crate::datatypes::PrimitiveType;
-use crate::{
-    array::{Array, PrimitiveArray},
-    compute::{
-        arithmetics::{ArrayCheckedDiv, ArrayDiv},
-        arity::{binary, binary_checked, unary, unary_checked},
-        utils::check_same_len,
-    },
-};
 use strength_reduce::{
     StrengthReducedU16, StrengthReducedU32, StrengthReducedU64, StrengthReducedU8,
 };
 
 use super::NativeArithmetics;
+use crate::array::{Array, PrimitiveArray};
+use crate::compute::arithmetics::{ArrayCheckedDiv, ArrayDiv};
+use crate::compute::arity::{binary, binary_checked, unary, unary_checked};
+use crate::compute::utils::check_same_len;
+use crate::datatypes::PrimitiveType;
 
 /// Divides two primitive arrays with the same type.
 /// Panics if the divisor is zero of one pair of values overflows.
@@ -123,7 +118,7 @@ where
                 .downcast_ref::<PrimitiveArray<T>>()
                 .unwrap()
                 .clone()
-        }
+        },
         PrimitiveType::UInt32 => {
             let lhs = lhs.as_any().downcast_ref::<PrimitiveArray<u32>>().unwrap();
             let rhs = rhs.to_u32().unwrap();
@@ -135,7 +130,7 @@ where
                 .downcast_ref::<PrimitiveArray<T>>()
                 .unwrap()
                 .clone()
-        }
+        },
         PrimitiveType::UInt16 => {
             let lhs = lhs.as_any().downcast_ref::<PrimitiveArray<u16>>().unwrap();
             let rhs = rhs.to_u16().unwrap();
@@ -148,7 +143,7 @@ where
                 .downcast_ref::<PrimitiveArray<T>>()
                 .unwrap()
                 .clone()
-        }
+        },
         PrimitiveType::UInt8 => {
             let lhs = lhs.as_any().downcast_ref::<PrimitiveArray<u8>>().unwrap();
             let rhs = rhs.to_u8().unwrap();
@@ -160,7 +155,7 @@ where
                 .downcast_ref::<PrimitiveArray<T>>()
                 .unwrap()
                 .clone()
-        }
+        },
         _ => unary(lhs, |a| a / rhs, lhs.data_type().clone()),
     }
 }

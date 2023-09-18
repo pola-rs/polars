@@ -1,9 +1,8 @@
 use std::fmt::{Debug, Formatter, Result, Write};
 
-use crate::array::Array;
-
 use super::super::fmt::{get_display, write_vec};
 use super::{DictionaryArray, DictionaryKey};
+use crate::array::Array;
 
 pub fn write_value<K: DictionaryKey, W: Write>(
     array: &DictionaryArray<K>,

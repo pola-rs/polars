@@ -15,13 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::{
-    array::{Array, PrimitiveArray, StructArray},
-    bitmap::{Bitmap, MutableBitmap},
-    error::Result,
-};
-
 use super::Index;
+use crate::array::{Array, PrimitiveArray, StructArray};
+use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::error::Result;
 
 #[inline]
 fn take_validity<I: Index>(
@@ -37,17 +34,17 @@ fn take_validity<I: Index>(
                 validity.get_bit(index)
             });
             Ok(MutableBitmap::from_trusted_len_iter(iter).into())
-        }
+        },
         (Some(validity), _) => {
             let iter = indices.iter().map(|x| match x {
                 Some(index) => {
                     let index = index.to_usize();
                     validity.get_bit(index)
-                }
+                },
                 None => false,
             });
             Ok(MutableBitmap::from_trusted_len_iter(iter).into())
-        }
+        },
     }
 }
 

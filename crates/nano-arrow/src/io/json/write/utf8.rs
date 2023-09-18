@@ -131,7 +131,7 @@ where
                 HEX_DIGITS[(byte & 0xF) as usize],
             ];
             return writer.write_all(bytes);
-        }
+        },
     };
 
     writer.write_all(s)

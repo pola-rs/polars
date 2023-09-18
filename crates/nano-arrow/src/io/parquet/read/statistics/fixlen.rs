@@ -1,12 +1,11 @@
 use ethnum::I256;
 use parquet2::statistics::{FixedLenStatistics, Statistics as ParquetStatistics};
 
+use super::super::{convert_days_ms, convert_i128};
 use crate::array::*;
 use crate::error::Result;
 use crate::io::parquet::read::convert_i256;
 use crate::types::{days_ms, i256};
-
-use super::super::{convert_days_ms, convert_i128};
 
 pub(super) fn push_i128(
     from: Option<&dyn ParquetStatistics>,

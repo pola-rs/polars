@@ -1,12 +1,9 @@
-use crate::{
-    bitmap::Bitmap,
-    buffer::Buffer,
-    datatypes::{DataType, Field, UnionMode},
-    error::Error,
-    scalar::{new_scalar, Scalar},
-};
-
 use super::{new_empty_array, new_null_array, Array};
+use crate::bitmap::Bitmap;
+use crate::buffer::Buffer;
+use crate::datatypes::{DataType, Field, UnionMode};
+use crate::error::Error;
+use crate::scalar::{new_scalar, Scalar};
 
 #[cfg(feature = "arrow")]
 mod data;
@@ -353,7 +350,7 @@ impl UnionArray {
         match data_type.to_logical_type() {
             DataType::Union(fields, ids, mode) => {
                 Ok((fields, ids.as_ref().map(|x| x.as_ref()), *mode))
-            }
+            },
             _ => Err(Error::oos(
                 "The UnionArray requires a logical type of DataType::Union",
             )),

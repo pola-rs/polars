@@ -1,18 +1,13 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{
-        physical_binary::extend_validity, Array, MutableArray, TryExtend, TryExtendFromSelf,
-        TryPush,
-    },
-    bitmap::MutableBitmap,
-    datatypes::{DataType, Field},
-    error::{Error, Result},
-    offset::{Offset, Offsets},
-    trusted_len::TrustedLen,
-};
-
 use super::ListArray;
+use crate::array::physical_binary::extend_validity;
+use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::{DataType, Field};
+use crate::error::{Error, Result};
+use crate::offset::{Offset, Offsets};
+use crate::trusted_len::TrustedLen;
 
 /// The mutable version of [`ListArray`].
 #[derive(Debug, Clone)]

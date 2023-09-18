@@ -1,12 +1,9 @@
-use crate::bitmap::MutableBitmap;
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
+use super::utils::{BitChunk, BitChunkIterExact, BitChunksExact};
+use super::Bitmap;
+use crate::bitmap::MutableBitmap;
 use crate::trusted_len::TrustedLen;
-
-use super::{
-    utils::{BitChunk, BitChunkIterExact, BitChunksExact},
-    Bitmap,
-};
 
 /// Creates a [Vec<u8>] from an [`Iterator`] of [`BitChunk`].
 /// # Safety

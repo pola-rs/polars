@@ -2,7 +2,8 @@
 //! as well as concrete implementations such as [`BooleanScalar`].
 use std::any::Any;
 
-use crate::{array::*, datatypes::*};
+use crate::array::*;
+use crate::datatypes::*;
 
 mod dictionary;
 pub use dictionary::*;
@@ -97,7 +98,7 @@ pub fn new_scalar(array: &dyn Array, index: usize) -> Box<dyn Scalar> {
                 None
             };
             Box::new(BooleanScalar::new(value))
-        }
+        },
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let array = array
                 .as_any()
@@ -128,7 +129,7 @@ pub fn new_scalar(array: &dyn Array, index: usize) -> Box<dyn Scalar> {
             } else {
                 Box::new(StructScalar::new(array.data_type().clone(), None))
             }
-        }
+        },
         FixedSizeBinary => {
             let array = array
                 .as_any()
@@ -140,7 +141,7 @@ pub fn new_scalar(array: &dyn Array, index: usize) -> Box<dyn Scalar> {
                 None
             };
             Box::new(FixedSizeBinaryScalar::new(array.data_type().clone(), value))
-        }
+        },
         FixedSizeList => {
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             let value = if array.is_valid(index) {
@@ -149,7 +150,7 @@ pub fn new_scalar(array: &dyn Array, index: usize) -> Box<dyn Scalar> {
                 None
             };
             Box::new(FixedSizeListScalar::new(array.data_type().clone(), value))
-        }
+        },
         Union => {
             let array = array.as_any().downcast_ref::<UnionArray>().unwrap();
             Box::new(UnionScalar::new(
@@ -157,7 +158,7 @@ pub fn new_scalar(array: &dyn Array, index: usize) -> Box<dyn Scalar> {
                 array.types()[index],
                 array.value(index),
             ))
-        }
+        },
         Map => {
             let array = array.as_any().downcast_ref::<MapArray>().unwrap();
             let value = if array.is_valid(index) {
@@ -166,7 +167,7 @@ pub fn new_scalar(array: &dyn Array, index: usize) -> Box<dyn Scalar> {
                 None
             };
             Box::new(MapScalar::new(array.data_type().clone(), value))
-        }
+        },
         Dictionary(key_type) => match_integer_type!(key_type, |$T| {
             let array = array
                 .as_any()

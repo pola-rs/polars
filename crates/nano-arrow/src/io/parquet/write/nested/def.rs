@@ -1,8 +1,8 @@
-use crate::{bitmap::Bitmap, offset::Offset};
-
 use super::super::pages::{ListNested, Nested};
 use super::rep::num_values;
 use super::to_length;
+use crate::bitmap::Bitmap;
+use crate::offset::Offset;
 
 trait DebugIter: Iterator<Item = (u32, usize)> + std::fmt::Debug {}
 
@@ -16,13 +16,13 @@ fn single_iter<'a>(
     match (is_optional, validity) {
         (false, _) => {
             Box::new(std::iter::repeat((0u32, 1usize)).take(length)) as Box<dyn DebugIter>
-        }
+        },
         (true, None) => {
             Box::new(std::iter::repeat((1u32, 1usize)).take(length)) as Box<dyn DebugIter>
-        }
+        },
         (true, Some(validity)) => {
             Box::new(validity.iter().map(|v| (v as u32, 1usize)).take(length)) as Box<dyn DebugIter>
-        }
+        },
     }
 }
 
@@ -54,12 +54,12 @@ fn iter<'a>(nested: &'a [Nested]) -> Vec<Box<dyn DebugIter + 'a>> {
         .map(|nested| match nested {
             Nested::Primitive(validity, is_optional, length) => {
                 single_iter(validity, *is_optional, *length)
-            }
+            },
             Nested::List(nested) => single_list_iter(nested),
             Nested::LargeList(nested) => single_list_iter(nested),
             Nested::Struct(validity, is_optional, length) => {
                 single_iter(validity, *is_optional, *length)
-            }
+            },
         })
         .collect()
 }

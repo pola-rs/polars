@@ -1,8 +1,6 @@
-use crate::{
-    array::Array,
-    bitmap::Bitmap,
-    error::{Error, Result},
-};
+use crate::array::Array;
+use crate::bitmap::Bitmap;
+use crate::error::{Error, Result};
 
 pub fn combine_validities(lhs: Option<&Bitmap>, rhs: Option<&Bitmap>) -> Option<Bitmap> {
     match (lhs, rhs) {

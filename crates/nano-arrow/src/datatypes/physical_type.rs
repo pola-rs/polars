@@ -1,7 +1,7 @@
-pub use crate::types::PrimitiveType;
-
 #[cfg(feature = "serde_types")]
 use serde_derive::{Deserialize, Serialize};
+
+pub use crate::types::PrimitiveType;
 
 /// The set of physical types: unique in-memory representations of an Arrow array.
 /// A physical type has a one-to-many relationship with a [`crate::datatypes::DataType`] and

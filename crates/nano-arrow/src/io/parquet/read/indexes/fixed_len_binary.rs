@@ -1,13 +1,10 @@
 use parquet2::indexes::PageIndex;
 
-use crate::types::{i256, NativeType};
-use crate::{
-    array::{Array, FixedSizeBinaryArray, MutableFixedSizeBinaryArray, PrimitiveArray},
-    datatypes::{DataType, PhysicalType, PrimitiveType},
-    trusted_len::TrustedLen,
-};
-
 use super::ColumnPageStatistics;
+use crate::array::{Array, FixedSizeBinaryArray, MutableFixedSizeBinaryArray, PrimitiveArray};
+use crate::datatypes::{DataType, PhysicalType, PrimitiveType};
+use crate::trusted_len::TrustedLen;
+use crate::types::{i256, NativeType};
 
 pub fn deserialize(indexes: &[PageIndex<Vec<u8>>], data_type: DataType) -> ColumnPageStatistics {
     ColumnPageStatistics {
@@ -42,7 +39,7 @@ fn deserialize_binary_iter<'a, I: TrustedLen<Item = Option<&'a Vec<u8>>>>(
                     i128::from_be_bytes(bytes) >> (8 * (16 - n))
                 })
             })))
-        }
+        },
         PhysicalType::Primitive(PrimitiveType::Int256) => {
             Box::new(PrimitiveArray::from_trusted_len_iter(iter.map(|v| {
                 v.map(|x| {
@@ -52,7 +49,7 @@ fn deserialize_binary_iter<'a, I: TrustedLen<Item = Option<&'a Vec<u8>>>>(
                     i256::from_be_bytes(bytes)
                 })
             })))
-        }
+        },
         _ => {
             let mut a = MutableFixedSizeBinaryArray::try_new(
                 data_type,
@@ -65,6 +62,6 @@ fn deserialize_binary_iter<'a, I: TrustedLen<Item = Option<&'a Vec<u8>>>>(
             }
             let a: FixedSizeBinaryArray = a.into();
             Box::new(a)
-        }
+        },
     }
 }

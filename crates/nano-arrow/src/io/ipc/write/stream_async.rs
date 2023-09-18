@@ -1,15 +1,16 @@
 //! `async` writing of arrow streams
 
-use std::{pin::Pin, task::Poll};
+use std::pin::Pin;
+use std::task::Poll;
 
-use futures::{future::BoxFuture, AsyncWrite, AsyncWriteExt, FutureExt, Sink};
+use futures::future::BoxFuture;
+use futures::{AsyncWrite, AsyncWriteExt, FutureExt, Sink};
 
 use super::super::IpcField;
 pub use super::common::WriteOptions;
 use super::common::{encode_chunk, DictionaryTracker, EncodedData};
 use super::common_async::{write_continuation, write_message};
 use super::{default_ipc_fields, schema_to_bytes, Record};
-
 use crate::datatypes::*;
 use crate::error::{Error, Result};
 
@@ -132,11 +133,11 @@ where
                     self.writer = writer;
                     self.task = None;
                     Poll::Ready(Ok(()))
-                }
+                },
                 Err(error) => {
                     self.task = None;
                     Poll::Ready(Err(error))
-                }
+                },
             }
         } else {
             Poll::Ready(Ok(()))
@@ -180,7 +181,7 @@ where
                 } else {
                     Poll::Ready(Ok(()))
                 }
-            }
+            },
             res => res,
         }
     }

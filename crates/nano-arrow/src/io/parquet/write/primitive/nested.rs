@@ -1,18 +1,16 @@
+use parquet2::encoding::Encoding;
+use parquet2::page::DataPage;
 use parquet2::schema::types::PrimitiveType;
 use parquet2::statistics::serialize_statistics;
-use parquet2::{encoding::Encoding, page::DataPage, types::NativeType};
+use parquet2::types::NativeType;
 
-use super::super::nested;
-use super::super::utils;
-use super::super::WriteOptions;
+use super::super::{nested, utils, WriteOptions};
 use super::basic::{build_statistics, encode_plain};
+use crate::array::{Array, PrimitiveArray};
+use crate::error::Result;
 use crate::io::parquet::read::schema::is_nullable;
 use crate::io::parquet::write::Nested;
-use crate::{
-    array::{Array, PrimitiveArray},
-    error::Result,
-    types::NativeType as ArrowNativeType,
-};
+use crate::types::NativeType as ArrowNativeType;
 
 pub fn array_to_page<T, R>(
     array: &PrimitiveArray<T>,

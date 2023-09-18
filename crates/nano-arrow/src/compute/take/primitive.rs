@@ -1,11 +1,8 @@
-use crate::{
-    array::{Array, PrimitiveArray},
-    bitmap::{Bitmap, MutableBitmap},
-    buffer::Buffer,
-    types::NativeType,
-};
-
 use super::Index;
+use crate::array::{Array, PrimitiveArray};
+use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::buffer::Buffer;
+use crate::types::NativeType;
 
 // take implementation when neither values nor indices contain nulls
 fn take_no_validity<T: NativeType, I: Index>(
@@ -62,7 +59,7 @@ fn take_indices_validity<T: NativeType, I: Index>(
                     } else {
                         panic!("Out-of-bounds index {index}")
                     }
-                }
+                },
             }
         })
         .collect::<Vec<_>>();
@@ -87,11 +84,11 @@ fn take_values_indices_validity<T: NativeType, I: Index>(
                 let index = index.to_usize();
                 bitmap.push(values_validity.get_bit(index));
                 values_values[index]
-            }
+            },
             None => {
                 bitmap.push(false);
                 T::default()
-            }
+            },
         })
         .collect::<Vec<_>>();
     (values.into(), bitmap.into())

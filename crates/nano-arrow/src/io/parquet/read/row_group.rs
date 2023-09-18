@@ -1,22 +1,17 @@
 use std::io::{Read, Seek};
 
-use futures::{
-    future::{try_join_all, BoxFuture},
-    AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt,
-};
-use parquet2::{
-    indexes::FilteredPage,
-    metadata::ColumnChunkMetaData,
-    read::{BasicDecompressor, IndexedPageReader, PageMetaData, PageReader},
-};
+use futures::future::{try_join_all, BoxFuture};
+use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
+use parquet2::indexes::FilteredPage;
+use parquet2::metadata::ColumnChunkMetaData;
+use parquet2::read::{BasicDecompressor, IndexedPageReader, PageMetaData, PageReader};
 
-use crate::{
-    array::Array, chunk::Chunk, datatypes::Field, error::Result,
-    io::parquet::read::column_iter_to_arrays,
-};
-
-use super::ArrayIter;
-use super::RowGroupMetaData;
+use super::{ArrayIter, RowGroupMetaData};
+use crate::array::Array;
+use crate::chunk::Chunk;
+use crate::datatypes::Field;
+use crate::error::Result;
+use crate::io::parquet::read::column_iter_to_arrays;
 
 /// An [`Iterator`] of [`Chunk`] that (dynamically) adapts a vector of iterators of [`Array`] into
 /// an iterator of [`Chunk`].

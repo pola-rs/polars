@@ -1,8 +1,7 @@
+use super::MapArray;
 use crate::array::Array;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::trusted_len::TrustedLen;
-
-use super::MapArray;
 
 /// Iterator of values of an [`ListArray`].
 #[derive(Clone, Debug)]

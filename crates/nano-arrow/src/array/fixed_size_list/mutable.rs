@@ -1,17 +1,11 @@
 use std::sync::Arc;
 
-use crate::array::PushUnchecked;
-use crate::{
-    array::{
-        physical_binary::extend_validity, Array, MutableArray, TryExtend, TryExtendFromSelf,
-        TryPush,
-    },
-    bitmap::MutableBitmap,
-    datatypes::{DataType, Field},
-    error::{Error, Result},
-};
-
 use super::FixedSizeListArray;
+use crate::array::physical_binary::extend_validity;
+use crate::array::{Array, MutableArray, PushUnchecked, TryExtend, TryExtendFromSelf, TryPush};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::{DataType, Field};
+use crate::error::{Error, Result};
 
 /// The mutable version of [`FixedSizeListArray`].
 #[derive(Debug, Clone)]

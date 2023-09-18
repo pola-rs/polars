@@ -1,18 +1,14 @@
+use parquet2::compression::CompressionOptions;
+use parquet2::encoding::hybrid_rle::encode_bool;
+use parquet2::encoding::Encoding;
+use parquet2::metadata::Descriptor;
+use parquet2::page::{DataPage, DataPageHeader, DataPageHeaderV1, DataPageHeaderV2};
+use parquet2::schema::types::PrimitiveType;
+use parquet2::statistics::ParquetStatistics;
+
+use super::{Version, WriteOptions};
 use crate::bitmap::Bitmap;
-
-use parquet2::{
-    compression::CompressionOptions,
-    encoding::{hybrid_rle::encode_bool, Encoding},
-    metadata::Descriptor,
-    page::{DataPage, DataPageHeader, DataPageHeaderV1, DataPageHeaderV2},
-    schema::types::PrimitiveType,
-    statistics::ParquetStatistics,
-};
-
-use super::WriteOptions;
 use crate::error::Result;
-
-use super::Version;
 
 fn encode_iter_v1<I: Iterator<Item = bool>>(buffer: &mut Vec<u8>, iter: I) -> Result<()> {
     buffer.extend_from_slice(&[0; 4]);

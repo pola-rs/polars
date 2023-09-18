@@ -1,6 +1,5 @@
-use crate::datatypes::DataType;
-
 use super::Scalar;
+use crate::datatypes::DataType;
 
 /// The [`Scalar`] implementation of a boolean.
 #[derive(Debug, Clone, PartialEq, Eq)]

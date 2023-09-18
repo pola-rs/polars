@@ -16,15 +16,14 @@ pub use pow::*;
 mod rem;
 pub use rem::*;
 mod sub;
-pub use sub::*;
-
 use std::ops::Neg;
 
 use num_traits::{CheckedNeg, WrappingNeg};
-
-use crate::{array::PrimitiveArray, types::NativeType};
+pub use sub::*;
 
 use super::super::arity::{unary, unary_checked};
+use crate::array::PrimitiveArray;
+use crate::types::NativeType;
 
 /// Trait describing a [`NativeType`] whose semantics of arithmetic in Arrow equals
 /// the semantics in Rust.

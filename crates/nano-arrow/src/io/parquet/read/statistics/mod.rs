@@ -1,8 +1,8 @@
 //! APIs exposing `parquet2`'s statistics as arrow's statistics.
-use ethnum::I256;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use ethnum::I256;
 use parquet2::metadata::RowGroupMetaData;
 use parquet2::schema::types::{
     PhysicalType as ParquetPhysicalType, PrimitiveType as ParquetPrimitiveType,
@@ -14,10 +14,8 @@ use parquet2::statistics::{
 use parquet2::types::int96_to_i64_ns;
 
 use crate::array::*;
-use crate::datatypes::IntervalUnit;
-use crate::datatypes::{DataType, Field, PhysicalType};
-use crate::error::Error;
-use crate::error::Result;
+use crate::datatypes::{DataType, Field, IntervalUnit, PhysicalType};
+use crate::error::{Error, Result};
 use crate::types::i256;
 
 mod binary;
@@ -32,7 +30,6 @@ mod struct_;
 mod utf8;
 
 use self::list::DynMutableListArray;
-
 use super::get_field_columns;
 
 /// Arrow-deserialized parquet Statistics of a file
@@ -160,27 +157,27 @@ fn make_mutable(data_type: &DataType, capacity: usize) -> Result<Box<dyn Mutable
     Ok(match data_type.to_physical_type() {
         PhysicalType::Boolean => {
             Box::new(MutableBooleanArray::with_capacity(capacity)) as Box<dyn MutableArray>
-        }
+        },
         PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             Box::new(MutablePrimitiveArray::<$T>::with_capacity(capacity).to(data_type.clone()))
                 as Box<dyn MutableArray>
         }),
         PhysicalType::Binary => {
             Box::new(MutableBinaryArray::<i32>::with_capacity(capacity)) as Box<dyn MutableArray>
-        }
+        },
         PhysicalType::LargeBinary => {
             Box::new(MutableBinaryArray::<i64>::with_capacity(capacity)) as Box<dyn MutableArray>
-        }
+        },
         PhysicalType::Utf8 => {
             Box::new(MutableUtf8Array::<i32>::with_capacity(capacity)) as Box<dyn MutableArray>
-        }
+        },
         PhysicalType::LargeUtf8 => {
             Box::new(MutableUtf8Array::<i64>::with_capacity(capacity)) as Box<dyn MutableArray>
-        }
+        },
         PhysicalType::FixedSizeBinary => {
             Box::new(MutableFixedSizeBinaryArray::try_new(data_type.clone(), vec![], None).unwrap())
                 as _
-        }
+        },
         PhysicalType::LargeList | PhysicalType::List => Box::new(
             DynMutableListArray::try_with_capacity(data_type.clone(), capacity)?,
         ) as Box<dyn MutableArray>,
@@ -197,12 +194,12 @@ fn make_mutable(data_type: &DataType, capacity: usize) -> Result<Box<dyn Mutable
         )?),
         PhysicalType::Null => {
             Box::new(MutableNullArray::new(DataType::Null, 0)) as Box<dyn MutableArray>
-        }
+        },
         other => {
             return Err(Error::NotYetImplemented(format!(
                 "Deserializing parquet stats from {other:?} is still not implemented"
             )))
-        }
+        },
     })
 }
 
@@ -267,50 +264,50 @@ fn push_others(
         ParquetPhysicalType::Boolean => {
             let from = from.as_any().downcast_ref::<BooleanStatistics>().unwrap();
             (from.distinct_count, from.null_count)
-        }
+        },
         ParquetPhysicalType::Int32 => {
             let from = from
                 .as_any()
                 .downcast_ref::<PrimitiveStatistics<i32>>()
                 .unwrap();
             (from.distinct_count, from.null_count)
-        }
+        },
         ParquetPhysicalType::Int64 => {
             let from = from
                 .as_any()
                 .downcast_ref::<PrimitiveStatistics<i64>>()
                 .unwrap();
             (from.distinct_count, from.null_count)
-        }
+        },
         ParquetPhysicalType::Int96 => {
             let from = from
                 .as_any()
                 .downcast_ref::<PrimitiveStatistics<[u32; 3]>>()
                 .unwrap();
             (from.distinct_count, from.null_count)
-        }
+        },
         ParquetPhysicalType::Float => {
             let from = from
                 .as_any()
                 .downcast_ref::<PrimitiveStatistics<f32>>()
                 .unwrap();
             (from.distinct_count, from.null_count)
-        }
+        },
         ParquetPhysicalType::Double => {
             let from = from
                 .as_any()
                 .downcast_ref::<PrimitiveStatistics<f64>>()
                 .unwrap();
             (from.distinct_count, from.null_count)
-        }
+        },
         ParquetPhysicalType::ByteArray => {
             let from = from.as_any().downcast_ref::<BinaryStatistics>().unwrap();
             (from.distinct_count, from.null_count)
-        }
+        },
         ParquetPhysicalType::FixedLenByteArray(_) => {
             let from = from.as_any().downcast_ref::<FixedLenStatistics>().unwrap();
             (from.distinct_count, from.null_count)
-        }
+        },
     };
 
     distinct_count.push(distinct.map(|x| x as u64));
@@ -349,7 +346,7 @@ fn push(
                 distinct_count.inner.as_mut(),
                 null_count.inner.as_mut(),
             );
-        }
+        },
         Dictionary(_, _, _) => {
             let min = min
                 .as_mut_any()
@@ -366,7 +363,7 @@ fn push(
                 distinct_count,
                 null_count,
             );
-        }
+        },
         Struct(_) => {
             let min = min
                 .as_mut_any()
@@ -399,7 +396,7 @@ fn push(
                         null_count.as_mut(),
                     )
                 });
-        }
+        },
         Map(_, _) => {
             let min = min
                 .as_mut_any()
@@ -424,8 +421,8 @@ fn push(
                 distinct_count.inner.as_mut(),
                 null_count.inner.as_mut(),
             );
-        }
-        _ => {}
+        },
+        _ => {},
     }
 
     let (from, type_) = stats.pop_front().unwrap();
@@ -465,7 +462,7 @@ fn push(
             // some implementations of parquet write arrow's date64 into i32.
             ParquetPhysicalType::Int32 => {
                 primitive::push(from, min, max, |x: i32| Ok(x as i64 * 86400000))
-            }
+            },
             other => Err(Error::NotYetImplemented(format!(
                 "Can't decode Date64 type from parquet type {other:?}"
             ))),
@@ -509,7 +506,7 @@ fn push(
                     ))
                 })
             }
-        }
+        },
         Float32 => primitive::push::<f32, f32, _>(from, min, max, Ok),
         Float64 => primitive::push::<f64, f64, _>(from, min, max, Ok),
         Decimal(_, _) => match physical_type {
@@ -524,13 +521,13 @@ fn push(
         Decimal256(_, _) => match physical_type {
             ParquetPhysicalType::Int32 => {
                 primitive::push(from, min, max, |x: i32| Ok(i256(I256::new(x.into()))))
-            }
+            },
             ParquetPhysicalType::Int64 => {
                 primitive::push(from, min, max, |x: i64| Ok(i256(I256::new(x.into()))))
-            }
+            },
             ParquetPhysicalType::FixedLenByteArray(n) if *n <= 16 => {
                 fixlen::push_i256_with_i128(from, *n, min, max)
-            }
+            },
             ParquetPhysicalType::FixedLenByteArray(n) if *n > 32 => Err(Error::NotYetImplemented(
                 format!("Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}"),
             )),

@@ -1,9 +1,8 @@
 use std::fmt::{Debug, Formatter, Result, Write};
 
-use crate::offset::Offset;
-
 use super::super::fmt::{get_display, write_vec};
 use super::ListArray;
+use crate::offset::Offset;
 
 pub fn write_value<O: Offset, W: Write>(
     array: &ListArray<O>,

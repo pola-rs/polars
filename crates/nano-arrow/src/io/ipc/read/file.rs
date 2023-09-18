@@ -1,19 +1,18 @@
-use ahash::AHashMap;
 use std::convert::TryInto;
 use std::io::{Read, Seek, SeekFrom};
 
+use ahash::AHashMap;
+use arrow_format::ipc::planus::ReadAsRoot;
+
+use super::super::{ARROW_MAGIC_V1, ARROW_MAGIC_V2, CONTINUATION_MARKER};
+use super::common::*;
+use super::schema::fb_to_schema;
+use super::{Dictionaries, OutOfSpecKind};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::Schema;
 use crate::error::{Error, Result};
 use crate::io::ipc::IpcSchema;
-
-use super::super::{ARROW_MAGIC_V1, ARROW_MAGIC_V2, CONTINUATION_MARKER};
-use super::common::*;
-use super::schema::fb_to_schema;
-use super::Dictionaries;
-use super::OutOfSpecKind;
-use arrow_format::ipc::planus::ReadAsRoot;
 
 /// Metadata of an Arrow IPC file, written in the footer of the file.
 #[derive(Debug, Clone)]

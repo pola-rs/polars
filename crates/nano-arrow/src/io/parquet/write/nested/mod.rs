@@ -1,13 +1,14 @@
 mod def;
 mod rep;
 
-use parquet2::{encoding::hybrid_rle::encode_u32, read::levels::get_bit_width, write::Version};
-
-use crate::{error::Result, offset::Offset};
+use parquet2::encoding::hybrid_rle::encode_u32;
+use parquet2::read::levels::get_bit_width;
+use parquet2::write::Version;
+pub use rep::num_values;
 
 use super::Nested;
-
-pub use rep::num_values;
+use crate::error::Result;
+use crate::offset::Offset;
 
 fn write_levels_v1<F: FnOnce(&mut Vec<u8>) -> Result<()>>(
     buffer: &mut Vec<u8>,
@@ -43,10 +44,10 @@ fn write_rep_levels(buffer: &mut Vec<u8>, nested: &[Nested], version: Version) -
                 encode_u32(buffer, levels, num_bits)?;
                 Ok(())
             })?;
-        }
+        },
         Version::V2 => {
             encode_u32(buffer, levels, num_bits)?;
-        }
+        },
     }
 
     Ok(())

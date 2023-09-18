@@ -19,13 +19,12 @@
 
 use chrono::{Datelike, Timelike};
 
+use super::arity::unary;
 use crate::array::*;
 use crate::datatypes::*;
 use crate::error::{Error, Result};
 use crate::temporal_conversions::*;
 use crate::types::NativeType;
-
-use super::arity::unary;
 
 // Create and implement a trait that converts chrono's `Weekday`
 // type into `u32`
@@ -56,7 +55,7 @@ macro_rules! date_like {
         match $array.data_type().to_logical_type() {
             DataType::Date32 | DataType::Date64 | DataType::Timestamp(_, None) => {
                 date_variants($array, $data_type, |x| x.$extract())
-            }
+            },
             DataType::Timestamp(time_unit, Some(timezone_str)) => {
                 let array = $array.as_any().downcast_ref().unwrap();
 
@@ -65,7 +64,7 @@ macro_rules! date_like {
                 } else {
                     chrono_tz(array, *time_unit, timezone_str, |x| x.$extract())
                 }
-            }
+            },
             dt => Err(Error::NotYetImplemented(format!(
                 "\"{}\" does not support type {:?}",
                 stringify!($extract),
@@ -116,10 +115,10 @@ macro_rules! time_like {
         match $array.data_type().to_logical_type() {
             DataType::Date32 | DataType::Date64 | DataType::Timestamp(_, None) => {
                 date_variants($array, $data_type, |x| x.$extract())
-            }
+            },
             DataType::Time32(_) | DataType::Time64(_) => {
                 time_variants($array, DataType::UInt32, |x| x.$extract())
-            }
+            },
             DataType::Timestamp(time_unit, Some(timezone_str)) => {
                 let array = $array.as_any().downcast_ref().unwrap();
 
@@ -128,7 +127,7 @@ macro_rules! time_like {
                 } else {
                     chrono_tz(array, *time_unit, timezone_str, |x| x.$extract())
                 }
-            }
+            },
             dt => Err(Error::NotYetImplemented(format!(
                 "\"{}\" does not support type {:?}",
                 stringify!($extract),
@@ -177,14 +176,14 @@ where
                 .downcast_ref::<PrimitiveArray<i32>>()
                 .unwrap();
             Ok(unary(array, |x| op(date32_to_datetime(x)), data_type))
-        }
+        },
         DataType::Date64 => {
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<i64>>()
                 .unwrap();
             Ok(unary(array, |x| op(date64_to_datetime(x)), data_type))
-        }
+        },
         DataType::Timestamp(time_unit, None) => {
             let array = array
                 .as_any()
@@ -197,7 +196,7 @@ where
                 TimeUnit::Nanosecond => timestamp_ns_to_datetime,
             };
             Ok(unary(array, |x| op(func(x)), data_type))
-        }
+        },
         _ => unreachable!(),
     }
 }
@@ -214,28 +213,28 @@ where
                 .downcast_ref::<PrimitiveArray<i32>>()
                 .unwrap();
             Ok(unary(array, |x| op(time32s_to_time(x)), data_type))
-        }
+        },
         DataType::Time32(TimeUnit::Millisecond) => {
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<i32>>()
                 .unwrap();
             Ok(unary(array, |x| op(time32ms_to_time(x)), data_type))
-        }
+        },
         DataType::Time64(TimeUnit::Microsecond) => {
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<i64>>()
                 .unwrap();
             Ok(unary(array, |x| op(time64us_to_time(x)), data_type))
-        }
+        },
         DataType::Time64(TimeUnit::Nanosecond) => {
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<i64>>()
                 .unwrap();
             Ok(unary(array, |x| op(time64ns_to_time(x)), data_type))
-        }
+        },
         _ => unreachable!(),
     }
 }
@@ -293,7 +292,7 @@ where
                 ))
             };
             unary(array, op, A::PRIMITIVE.into())
-        }
+        },
         TimeUnit::Millisecond => {
             let op = |x| {
                 let datetime = timestamp_ms_to_datetime(x);
@@ -303,7 +302,7 @@ where
                 ))
             };
             unary(array, op, A::PRIMITIVE.into())
-        }
+        },
         TimeUnit::Microsecond => {
             let op = |x| {
                 let datetime = timestamp_us_to_datetime(x);
@@ -313,7 +312,7 @@ where
                 ))
             };
             unary(array, op, A::PRIMITIVE.into())
-        }
+        },
         TimeUnit::Nanosecond => {
             let op = |x| {
                 let datetime = timestamp_ns_to_datetime(x);
@@ -323,7 +322,7 @@ where
                 ))
             };
             unary(array, op, A::PRIMITIVE.into())
-        }
+        },
     }
 }
 

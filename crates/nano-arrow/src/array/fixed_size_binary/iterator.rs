@@ -1,9 +1,6 @@
-use crate::{
-    array::MutableArray,
-    bitmap::utils::{BitmapIter, ZipValidity},
-};
-
 use super::{FixedSizeBinaryArray, MutableFixedSizeBinaryArray};
+use crate::array::MutableArray;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
 
 impl<'a> IntoIterator for &'a FixedSizeBinaryArray {
     type Item = Option<&'a [u8]>;

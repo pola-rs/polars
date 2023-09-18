@@ -1,24 +1,20 @@
 use std::collections::VecDeque;
 
-use parquet2::{
-    encoding::Encoding,
-    page::{split_buffer, DataPage, DictPage},
-    schema::Repetition,
-};
+use parquet2::encoding::Encoding;
+use parquet2::page::{split_buffer, DataPage, DictPage};
+use parquet2::schema::Repetition;
 
-use crate::{
-    array::Array, bitmap::MutableBitmap, datatypes::DataType, error::Result,
-    io::parquet::read::Pages, offset::Offset,
-};
-
+use super::super::nested_utils::*;
+use super::super::utils;
 use super::super::utils::MaybeNext;
-use super::basic::ValuesDictionary;
+use super::basic::{deserialize_plain, finish, Dict, ValuesDictionary};
 use super::utils::*;
-use super::{super::nested_utils::*, basic::deserialize_plain};
-use super::{
-    super::utils,
-    basic::{finish, Dict},
-};
+use crate::array::Array;
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::error::Result;
+use crate::io::parquet::read::Pages;
+use crate::offset::Offset;
 
 #[derive(Debug)]
 enum State<'a> {
@@ -61,24 +57,24 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
         match (page.encoding(), dict, is_optional, is_filtered) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {
                 ValuesDictionary::try_new(page, dict).map(State::RequiredDictionary)
-            }
+            },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, false) => {
                 ValuesDictionary::try_new(page, dict).map(State::OptionalDictionary)
-            }
+            },
             (Encoding::Plain, _, true, false) => {
                 let (_, _, values) = split_buffer(page)?;
 
                 let values = BinaryIter::new(values);
 
                 Ok(State::Optional(values))
-            }
+            },
             (Encoding::Plain, _, false, false) => {
                 let (_, _, values) = split_buffer(page)?;
 
                 let values = BinaryIter::new(values);
 
                 Ok(State::Required(values))
-            }
+            },
             _ => Err(utils::not_implemented(page)),
         }
     }
@@ -97,11 +93,11 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
                 let value = page.next().unwrap_or_default();
                 values.push(value);
                 validity.push(true);
-            }
+            },
             State::Required(page) => {
                 let value = page.next().unwrap_or_default();
                 values.push(value);
-            }
+            },
             State::RequiredDictionary(page) => {
                 let dict_values = &page.dict;
                 let item = page
@@ -110,7 +106,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
                     .map(|index| dict_values[index.unwrap() as usize].as_ref())
                     .unwrap_or_default();
                 values.push(item);
-            }
+            },
             State::OptionalDictionary(page) => {
                 let dict_values = &page.dict;
                 let item = page
@@ -120,7 +116,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
                     .unwrap_or_default();
                 values.push(item);
                 validity.push(true);
-            }
+            },
         }
         Ok(())
     }
@@ -182,7 +178,7 @@ impl<O: Offset, I: Pages> Iterator for NestedIter<O, I> {
         match maybe_state {
             MaybeNext::Some(Ok((nested, decoded))) => {
                 Some(finish(&self.data_type, decoded.0, decoded.1).map(|array| (nested, array)))
-            }
+            },
             MaybeNext::Some(Err(e)) => Some(Err(e)),
             MaybeNext::None => None,
             MaybeNext::More => self.next(),

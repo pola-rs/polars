@@ -1,13 +1,10 @@
 //! Comparison functions for [`Utf8Array`]
-use crate::compute::comparison::{finish_eq_validities, finish_neq_validities};
-use crate::{
-    array::{BooleanArray, Utf8Array},
-    bitmap::Bitmap,
-    datatypes::DataType,
-    offset::Offset,
-};
-
 use super::super::utils::combine_validities;
+use crate::array::{BooleanArray, Utf8Array};
+use crate::bitmap::Bitmap;
+use crate::compute::comparison::{finish_eq_validities, finish_neq_validities};
+use crate::datatypes::DataType;
+use crate::offset::Offset;
 
 /// Evaluate `op(lhs, rhs)` for [`Utf8Array`]s using a specified
 /// comparison function.

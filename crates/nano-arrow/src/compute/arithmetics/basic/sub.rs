@@ -1,22 +1,18 @@
 //! Definition of basic sub operations with primitive arrays
 use std::ops::Sub;
 
-use num_traits::{ops::overflowing::OverflowingSub, CheckedSub, SaturatingSub, WrappingSub};
-
-use crate::{
-    array::PrimitiveArray,
-    bitmap::Bitmap,
-    compute::{
-        arithmetics::{
-            ArrayCheckedSub, ArrayOverflowingSub, ArraySaturatingSub, ArraySub, ArrayWrappingSub,
-        },
-        arity::{
-            binary, binary_checked, binary_with_bitmap, unary, unary_checked, unary_with_bitmap,
-        },
-    },
-};
+use num_traits::ops::overflowing::OverflowingSub;
+use num_traits::{CheckedSub, SaturatingSub, WrappingSub};
 
 use super::NativeArithmetics;
+use crate::array::PrimitiveArray;
+use crate::bitmap::Bitmap;
+use crate::compute::arithmetics::{
+    ArrayCheckedSub, ArrayOverflowingSub, ArraySaturatingSub, ArraySub, ArrayWrappingSub,
+};
+use crate::compute::arity::{
+    binary, binary_checked, binary_with_bitmap, unary, unary_checked, unary_with_bitmap,
+};
 
 /// Subtracts two primitive arrays with the same type.
 /// Panics if the subtraction of one pair of values overflows.

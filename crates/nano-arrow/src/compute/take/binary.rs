@@ -15,11 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::array::{Array, BinaryArray, PrimitiveArray};
-use crate::offset::Offset;
-
 use super::generic_binary::*;
 use super::Index;
+use crate::array::{Array, BinaryArray, PrimitiveArray};
+use crate::offset::Offset;
 
 /// `take` implementation for utf8 arrays
 pub fn take<O: Offset, I: Index>(
@@ -33,7 +32,7 @@ pub fn take<O: Offset, I: Index>(
     let (offsets, values, validity) = match (values_has_validity, indices_has_validity) {
         (false, false) => {
             take_no_validity::<O, I>(values.offsets(), values.values(), indices.values())
-        }
+        },
         (true, false) => take_values_validity(values, indices.values()),
         (false, true) => take_indices_validity(values.offsets(), values.values(), indices),
         (true, true) => take_values_indices_validity(values, indices),

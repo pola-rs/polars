@@ -13,7 +13,8 @@
 //! assert_eq!(arr.len(), 3);
 //! ```
 
-use crate::array::{growable::make_growable, Array};
+use crate::array::growable::make_growable;
+use crate::array::Array;
 use crate::error::{Error, Result};
 
 /// Concatenate multiple [Array] of the same type into a single [`Array`].

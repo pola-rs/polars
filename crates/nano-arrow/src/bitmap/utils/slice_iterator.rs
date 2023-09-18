@@ -95,14 +95,14 @@ impl<'a> Iterator for SlicesIterator<'a> {
                             self.current_byte = v;
                         };
                         continue;
-                    }
+                    },
                     (false, &0) => {
                         self.len = std::cmp::min(self.max_len - self.start, self.len + 8);
                         if let Some(v) = self.values.next() {
                             self.current_byte = v;
                         };
                         continue;
-                    }
+                    },
                     _ => (), // we need to run over all bits of this byte
                 }
             };
@@ -125,12 +125,12 @@ impl<'a> Iterator for SlicesIterator<'a> {
                         };
                     }
                     return Some(result);
-                }
+                },
                 (false, true) => {
                     self.start += self.len;
                     self.len = 1;
                     self.on_region = true;
-                }
+                },
             }
 
             if self.mask == 1 {

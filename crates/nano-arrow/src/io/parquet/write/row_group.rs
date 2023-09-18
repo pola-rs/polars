@@ -3,17 +3,14 @@ use parquet2::schema::types::ParquetType;
 use parquet2::write::Compressor;
 use parquet2::FallibleStreamingIterator;
 
-use crate::{
-    array::Array,
-    chunk::Chunk,
-    datatypes::Schema,
-    error::{Error, Result},
-};
-
 use super::{
     array_to_columns, to_parquet_schema, DynIter, DynStreamingIterator, Encoding, RowGroupIter,
     SchemaDescriptor, WriteOptions,
 };
+use crate::array::Array;
+use crate::chunk::Chunk;
+use crate::datatypes::Schema;
+use crate::error::{Error, Result};
 
 /// Maps a [`Chunk`] and parquet-specific options to an [`RowGroupIter`] used to
 /// write to parquet

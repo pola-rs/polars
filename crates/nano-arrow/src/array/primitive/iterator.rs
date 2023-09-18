@@ -1,12 +1,9 @@
-use crate::{
-    array::MutableArray,
-    bitmap::utils::{BitmapIter, ZipValidity},
-    bitmap::IntoIter as BitmapIntoIter,
-    buffer::IntoIter,
-    types::NativeType,
-};
-
 use super::{MutablePrimitiveArray, PrimitiveArray};
+use crate::array::MutableArray;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
+use crate::bitmap::IntoIter as BitmapIntoIter;
+use crate::buffer::IntoIter;
+use crate::types::NativeType;
 
 impl<T: NativeType> IntoIterator for PrimitiveArray<T> {
     type Item = Option<T>;

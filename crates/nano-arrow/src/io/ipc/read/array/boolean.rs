@@ -1,12 +1,11 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
+use super::super::read_basic::*;
+use super::super::{Compression, IpcBuffer, Node, OutOfSpecKind};
 use crate::array::BooleanArray;
 use crate::datatypes::DataType;
 use crate::error::{Error, Result};
-
-use super::super::read_basic::*;
-use super::super::{Compression, IpcBuffer, Node, OutOfSpecKind};
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_boolean<R: Read + Seek>(

@@ -1,6 +1,6 @@
-use crate::array::{MutableArray, MutableBooleanArray};
 use parquet2::statistics::{BooleanStatistics, Statistics as ParquetStatistics};
 
+use crate::array::{MutableArray, MutableBooleanArray};
 use crate::error::Result;
 
 pub(super) fn push(

@@ -1,8 +1,9 @@
 use num_traits::{AsPrimitive, Float, NumCast};
 
+use crate::array::*;
+use crate::datatypes::DataType;
 use crate::error::Result;
 use crate::types::NativeType;
-use crate::{array::*, datatypes::DataType};
 
 #[inline]
 fn decimal_to_decimal_impl<F: Fn(i128) -> Option<i128>>(

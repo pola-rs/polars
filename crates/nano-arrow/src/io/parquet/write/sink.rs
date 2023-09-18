@@ -1,15 +1,18 @@
+use std::pin::Pin;
+use std::task::Poll;
+
 use ahash::AHashMap;
-use std::{pin::Pin, task::Poll};
-
-use futures::{future::BoxFuture, AsyncWrite, AsyncWriteExt, FutureExt, Sink, TryFutureExt};
+use futures::future::BoxFuture;
+use futures::{AsyncWrite, AsyncWriteExt, FutureExt, Sink, TryFutureExt};
 use parquet2::metadata::KeyValue;
-use parquet2::write::FileStreamer;
-use parquet2::write::WriteOptions as ParquetWriteOptions;
-
-use crate::{array::Array, chunk::Chunk, datatypes::Schema, error::Error};
+use parquet2::write::{FileStreamer, WriteOptions as ParquetWriteOptions};
 
 use super::file::add_arrow_schema;
 use super::{Encoding, SchemaDescriptor, WriteOptions};
+use crate::array::Array;
+use crate::chunk::Chunk;
+use crate::datatypes::Schema;
+use crate::error::Error;
 
 /// Sink that writes array [`chunks`](Chunk) as a Parquet file.
 ///
@@ -136,11 +139,11 @@ where
                     self.task = None;
                     self.writer = writer;
                     Poll::Ready(Ok(()))
-                }
+                },
                 Err(error) => {
                     self.task = None;
                     Poll::Ready(Err(error))
-                }
+                },
             }
         } else {
             Poll::Ready(Ok(()))
@@ -226,7 +229,7 @@ where
                 } else {
                     Poll::Ready(Ok(()))
                 }
-            }
+            },
             Err(error) => Poll::Ready(Err(error)),
         }
     }

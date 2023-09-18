@@ -1,9 +1,8 @@
+use super::make_mutable;
 use crate::array::*;
 use crate::datatypes::DataType;
 use crate::error::Result;
 use crate::offset::Offsets;
-
-use super::make_mutable;
 
 #[derive(Debug)]
 pub struct DynMutableListArray {
@@ -49,7 +48,7 @@ impl MutableArray for DynMutableListArray {
                     inner,
                     None,
                 ))
-            }
+            },
             DataType::LargeList(_) => {
                 let offsets =
                     Offsets::try_from_lengths(std::iter::repeat(1).take(inner.len())).unwrap();
@@ -59,7 +58,7 @@ impl MutableArray for DynMutableListArray {
                     inner,
                     None,
                 ))
-            }
+            },
             _ => unreachable!(),
         }
     }

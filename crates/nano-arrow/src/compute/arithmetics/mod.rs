@@ -17,13 +17,11 @@ pub mod basic;
 pub mod decimal;
 pub mod time;
 
-use crate::{
-    array::{Array, DictionaryArray, PrimitiveArray},
-    bitmap::Bitmap,
-    datatypes::{DataType, IntervalUnit, TimeUnit},
-    scalar::{PrimitiveScalar, Scalar},
-    types::NativeType,
-};
+use crate::array::{Array, DictionaryArray, PrimitiveArray};
+use crate::bitmap::Bitmap;
+use crate::datatypes::{DataType, IntervalUnit, TimeUnit};
+use crate::scalar::{PrimitiveScalar, Scalar};
+use crate::types::NativeType;
 
 fn binary_dyn<T: NativeType, F: Fn(&PrimitiveArray<T>, &PrimitiveArray<T>) -> PrimitiveArray<T>>(
     lhs: &dyn Array,

@@ -1,13 +1,9 @@
-use crate::{
-    array::{FromFfi, ToFfi},
-    bitmap::align,
-    ffi,
-    offset::{Offset, OffsetsBuffer},
-};
-
-use crate::error::Result;
-
 use super::BinaryArray;
+use crate::array::{FromFfi, ToFfi};
+use crate::bitmap::align;
+use crate::error::Result;
+use crate::ffi;
+use crate::offset::{Offset, OffsetsBuffer};
 
 unsafe impl<O: Offset> ToFfi for BinaryArray<O> {
     fn buffers(&self) -> Vec<Option<*const u8>> {

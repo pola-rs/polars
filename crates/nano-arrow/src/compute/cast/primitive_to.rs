@@ -2,20 +2,15 @@ use std::hash::Hash;
 
 use num_traits::{AsPrimitive, Float, ToPrimitive};
 
-use crate::datatypes::IntervalUnit;
+use super::CastOptions;
+use crate::array::*;
+use crate::bitmap::Bitmap;
+use crate::compute::arity::unary;
+use crate::datatypes::{DataType, IntervalUnit, TimeUnit};
 use crate::error::Result;
 use crate::offset::{Offset, Offsets};
-use crate::types::{days_ms, f16, months_days_ns};
-use crate::{
-    array::*,
-    bitmap::Bitmap,
-    compute::arity::unary,
-    datatypes::{DataType, TimeUnit},
-    temporal_conversions::*,
-    types::NativeType,
-};
-
-use super::CastOptions;
+use crate::temporal_conversions::*;
+use crate::types::{days_ms, f16, months_days_ns, NativeType};
 
 /// Returns a [`BinaryArray`] where every element is the binary representation of the number.
 pub fn primitive_to_binary<T: NativeType + lexical_core::ToLexical, O: Offset>(
@@ -437,7 +432,7 @@ where
                 })
             });
             Utf8Array::from_trusted_len_iter(iter)
-        }
+        },
         TimeUnit::Microsecond => {
             let iter = from.iter().map(|x| {
                 x.map(|x| {
@@ -447,7 +442,7 @@ where
                 })
             });
             Utf8Array::from_trusted_len_iter(iter)
-        }
+        },
         TimeUnit::Millisecond => {
             let iter = from.iter().map(|x| {
                 x.map(|x| {
@@ -457,7 +452,7 @@ where
                 })
             });
             Utf8Array::from_trusted_len_iter(iter)
-        }
+        },
         TimeUnit::Second => {
             let iter = from.iter().map(|x| {
                 x.map(|x| {
@@ -467,7 +462,7 @@ where
                 })
             });
             Utf8Array::from_trusted_len_iter(iter)
-        }
+        },
     }
 }
 
@@ -527,7 +522,7 @@ pub fn naive_timestamp_to_utf8<O: Offset>(
                     .map(|x| x.to_string())
             });
             Utf8Array::from_trusted_len_iter(iter)
-        }
+        },
         TimeUnit::Microsecond => {
             let iter = from.iter().map(|x| {
                 x.copied()
@@ -535,7 +530,7 @@ pub fn naive_timestamp_to_utf8<O: Offset>(
                     .map(|x| x.to_string())
             });
             Utf8Array::from_trusted_len_iter(iter)
-        }
+        },
         TimeUnit::Millisecond => {
             let iter = from.iter().map(|x| {
                 x.copied()
@@ -543,7 +538,7 @@ pub fn naive_timestamp_to_utf8<O: Offset>(
                     .map(|x| x.to_string())
             });
             Utf8Array::from_trusted_len_iter(iter)
-        }
+        },
         TimeUnit::Second => {
             let iter = from.iter().map(|x| {
                 x.copied()
@@ -551,7 +546,7 @@ pub fn naive_timestamp_to_utf8<O: Offset>(
                     .map(|x| x.to_string())
             });
             Utf8Array::from_trusted_len_iter(iter)
-        }
+        },
     }
 }
 

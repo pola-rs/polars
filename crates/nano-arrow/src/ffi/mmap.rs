@@ -1,15 +1,11 @@
 //! Functionality to mmap in-memory data regions.
 use std::sync::Arc;
 
-use crate::array::BooleanArray;
+use super::{ArrowArray, InternalArrowArray};
+use crate::array::{BooleanArray, FromFfi, PrimitiveArray};
 use crate::datatypes::DataType;
 use crate::error::Error;
-use crate::{
-    array::{FromFfi, PrimitiveArray},
-    types::NativeType,
-};
-
-use super::{ArrowArray, InternalArrowArray};
+use crate::types::NativeType;
 
 #[allow(dead_code)]
 struct PrivateData<T> {

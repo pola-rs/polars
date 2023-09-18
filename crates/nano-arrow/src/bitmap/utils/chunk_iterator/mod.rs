@@ -3,11 +3,12 @@ use std::convert::TryInto;
 mod chunks_exact;
 mod merge;
 
-pub use crate::types::BitChunk;
 pub use chunks_exact::BitChunksExact;
-
-use crate::{trusted_len::TrustedLen, types::BitChunkIter};
 pub(crate) use merge::merge_reversed;
+
+use crate::trusted_len::TrustedLen;
+pub use crate::types::BitChunk;
+use crate::types::BitChunkIter;
 
 /// Trait representing an exact iterator over bytes in [`BitChunk`].
 pub trait BitChunkIterExact<B: BitChunk>: TrustedLen<Item = B> {
@@ -126,12 +127,12 @@ impl<'a, T: BitChunk> BitChunks<'a, T> {
                     .for_each(|(i, val)| remainder[i] = *val);
 
                 remainder
-            }
+            },
             (false, false) => {
                 // all remaining bytes
                 copy_with_merge::<T>(&mut remainder, self.remainder_bytes, self.bit_offset);
                 remainder
-            }
+            },
         };
         T::from_ne_bytes(remainder)
     }

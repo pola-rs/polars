@@ -1,8 +1,7 @@
 use std::io::Read;
 
-use crate::error::{Error, Result};
-
 use super::super::avro_decode;
+use crate::error::{Error, Result};
 
 pub fn zigzag_i64<R: Read>(reader: &mut R) -> Result<i64> {
     let z = decode_variable(reader)?;

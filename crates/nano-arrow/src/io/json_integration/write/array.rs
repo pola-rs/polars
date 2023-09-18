@@ -1,10 +1,7 @@
-use crate::{
-    array::{Array, PrimitiveArray},
-    chunk::Chunk,
-    datatypes::DataType,
-};
-
 use super::super::{ArrowJsonBatch, ArrowJsonColumn};
+use crate::array::{Array, PrimitiveArray};
+use crate::chunk::Chunk;
+use crate::datatypes::DataType;
 
 /// Serializes a [`Chunk`] to [`ArrowJsonBatch`].
 pub fn serialize_chunk<A: ToString>(
@@ -35,7 +32,7 @@ pub fn serialize_chunk<A: ToString>(
                     type_id: None,
                     children: None,
                 }
-            }
+            },
             _ => ArrowJsonColumn {
                 name: name.to_string(),
                 count: array.len(),

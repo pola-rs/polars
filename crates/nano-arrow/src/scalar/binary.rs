@@ -1,6 +1,6 @@
-use crate::{datatypes::DataType, offset::Offset};
-
 use super::Scalar;
+use crate::datatypes::DataType;
+use crate::offset::Offset;
 
 /// The [`Scalar`] implementation of binary ([`Option<Vec<u8>>`]).
 #[derive(Debug, Clone, PartialEq, Eq)]

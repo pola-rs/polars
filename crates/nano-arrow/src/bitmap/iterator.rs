@@ -1,6 +1,5 @@
-use crate::trusted_len::TrustedLen;
-
 use super::Bitmap;
+use crate::trusted_len::TrustedLen;
 
 /// This crates' equivalent of [`std::vec::IntoIter`] for [`Bitmap`].
 #[derive(Debug, Clone)]

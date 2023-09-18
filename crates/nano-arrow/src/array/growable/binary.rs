@@ -1,16 +1,11 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{Array, BinaryArray},
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-    offset::{Offset, Offsets},
-};
-
-use super::{
-    utils::{build_extend_null_bits, extend_offset_values, ExtendNullBits},
-    Growable,
-};
+use super::utils::{build_extend_null_bits, extend_offset_values, ExtendNullBits};
+use super::Growable;
+use crate::array::{Array, BinaryArray};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::offset::{Offset, Offsets};
 
 /// Concrete [`Growable`] for the [`BinaryArray`].
 pub struct GrowableBinary<'a, O: Offset> {

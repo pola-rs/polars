@@ -1,19 +1,14 @@
 //! Defines the division arithmetic kernels for Decimal
 //! `PrimitiveArrays`.
 
-use crate::{
-    array::PrimitiveArray,
-    compute::{
-        arithmetics::{ArrayCheckedDiv, ArrayDiv},
-        arity::{binary, binary_checked, unary},
-        utils::{check_same_len, combine_validities},
-    },
-    datatypes::DataType,
-    error::{Error, Result},
-    scalar::{PrimitiveScalar, Scalar},
-};
-
 use super::{adjusted_precision_scale, get_parameters, max_value, number_digits};
+use crate::array::PrimitiveArray;
+use crate::compute::arithmetics::{ArrayCheckedDiv, ArrayDiv};
+use crate::compute::arity::{binary, binary_checked, unary};
+use crate::compute::utils::{check_same_len, combine_validities};
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
+use crate::scalar::{PrimitiveScalar, Scalar};
 
 /// Divide two decimal primitive arrays with the same precision and scale. If
 /// the precision and scale is different, then an InvalidArgumentError is
@@ -149,7 +144,7 @@ pub fn saturating_div(
                     } else {
                         -max
                     }
-                }
+                },
                 _ => res,
             },
             None => 0,

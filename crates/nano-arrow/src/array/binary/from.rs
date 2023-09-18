@@ -1,8 +1,7 @@
 use std::iter::FromIterator;
 
-use crate::offset::Offset;
-
 use super::{BinaryArray, MutableBinaryArray};
+use crate::offset::Offset;
 
 impl<O: Offset, P: AsRef<[u8]>> FromIterator<Option<P>> for BinaryArray<O> {
     #[inline]

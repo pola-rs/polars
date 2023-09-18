@@ -1,9 +1,11 @@
-use std::{iter::FromIterator, ops::Deref, sync::Arc, usize};
+use std::iter::FromIterator;
+use std::ops::Deref;
+use std::sync::Arc;
+use std::usize;
 
 use either::Either;
 
-use super::Bytes;
-use super::IntoIter;
+use super::{Bytes, IntoIter};
 
 /// [`Buffer`] is a contiguous memory region that can be shared across
 /// thread boundaries.

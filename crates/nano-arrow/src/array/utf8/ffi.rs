@@ -1,12 +1,9 @@
-use crate::{
-    array::{FromFfi, ToFfi},
-    bitmap::align,
-    error::Result,
-    ffi,
-    offset::{Offset, OffsetsBuffer},
-};
-
 use super::Utf8Array;
+use crate::array::{FromFfi, ToFfi};
+use crate::bitmap::align;
+use crate::error::Result;
+use crate::ffi;
+use crate::offset::{Offset, OffsetsBuffer};
 
 unsafe impl<O: Offset> ToFfi for Utf8Array<O> {
     fn buffers(&self) -> Vec<Option<*const u8>> {

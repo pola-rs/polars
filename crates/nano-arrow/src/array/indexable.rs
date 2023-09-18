@@ -1,14 +1,11 @@
 use std::borrow::Borrow;
 
-use crate::{
-    array::{
-        MutableArray, MutableBinaryArray, MutableBinaryValuesArray, MutableBooleanArray,
-        MutableFixedSizeBinaryArray, MutablePrimitiveArray, MutableUtf8Array,
-        MutableUtf8ValuesArray,
-    },
-    offset::Offset,
-    types::NativeType,
+use crate::array::{
+    MutableArray, MutableBinaryArray, MutableBinaryValuesArray, MutableBooleanArray,
+    MutableFixedSizeBinaryArray, MutablePrimitiveArray, MutableUtf8Array, MutableUtf8ValuesArray,
 };
+use crate::offset::Offset;
+use crate::types::NativeType;
 
 /// Trait for arrays that can be indexed directly to extract a value.
 pub trait Indexable {

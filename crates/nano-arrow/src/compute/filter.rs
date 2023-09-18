@@ -1,13 +1,13 @@
 //! Contains operators to filter arrays such as [`filter`].
 use crate::array::growable::{make_growable, Growable};
-use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact};
-use crate::bitmap::{utils::SlicesIterator, Bitmap, MutableBitmap};
+use crate::array::*;
+use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact, SlicesIterator};
+use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::chunk::Chunk;
 use crate::datatypes::DataType;
 use crate::error::Result;
 use crate::types::simd::Simd;
-use crate::types::BitChunkOnes;
-use crate::{array::*, types::NativeType};
+use crate::types::{BitChunkOnes, NativeType};
 
 /// Function that can filter arbitrary arrays
 pub type Filter<'a> = Box<dyn Fn(&dyn Array) -> Box<dyn Array> + 'a + Send + Sync>;
@@ -232,21 +232,21 @@ pub fn build_filter(filter: &BooleanArray) -> Result<Filter> {
                 filter_growable(&mut growable, &chunks);
                 let array: Utf8Array<i32> = growable.into();
                 Box::new(array)
-            }
+            },
             LargeUtf8 => {
                 let array = array.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
                 let mut growable = growable::GrowableUtf8::new(vec![array], false, filter_count);
                 filter_growable(&mut growable, &chunks);
                 let array: Utf8Array<i64> = growable.into();
                 Box::new(array)
-            }
+            },
             _ => {
                 let mut mutable = make_growable(&[array], false, filter_count);
                 chunks
                     .iter()
                     .for_each(|(start, len)| mutable.extend(0, *start, *len));
                 mutable.as_box()
-            }
+            },
         }
     }))
 }
@@ -301,7 +301,7 @@ pub fn filter(array: &dyn Array, filter: &BooleanArray) -> Result<Box<dyn Array>
             let mut mutable = make_growable(&[array], false, iter.slots());
             iter.for_each(|(start, len)| mutable.extend(0, start, len));
             Ok(mutable.as_box())
-        }
+        },
     }
 }
 
@@ -318,11 +318,11 @@ pub fn filter_chunk<A: AsRef<dyn Array>>(
     let filtered_arrays = match num_colums {
         1 => {
             vec![filter(columns.arrays()[0].as_ref(), filter_values)?]
-        }
+        },
         _ => {
             let filter = build_filter(filter_values)?;
             arrays.iter().map(|a| filter(a.as_ref())).collect()
-        }
+        },
     };
     Chunk::try_new(filtered_arrays)
 }

@@ -1,18 +1,14 @@
-use crate::{
-    bitmap::{
-        utils::{BitmapIter, ZipValidity},
-        Bitmap,
-    },
-    buffer::Buffer,
-    datatypes::DataType,
-    error::Error,
-    offset::{Offset, Offsets, OffsetsBuffer},
-    trusted_len::TrustedLen,
-};
-
 use either::Either;
 
-use super::{specification::try_check_offsets_bounds, Array, GenericBinaryArray};
+use super::specification::try_check_offsets_bounds;
+use super::{Array, GenericBinaryArray};
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
+use crate::bitmap::Bitmap;
+use crate::buffer::Buffer;
+use crate::datatypes::DataType;
+use crate::error::Error;
+use crate::offset::{Offset, Offsets, OffsetsBuffer};
+use crate::trusted_len::TrustedLen;
 
 mod ffi;
 pub(super) mod fmt;
@@ -280,7 +276,7 @@ impl<O: Offset> BinaryArray<O> {
             match (self.values.into_mut(), self.offsets.into_mut()) {
                 (Left(values), Left(offsets)) => {
                     Left(BinaryArray::new(self.data_type, offsets, values, None))
-                }
+                },
                 (Left(values), Right(offsets)) => Left(BinaryArray::new(
                     self.data_type,
                     offsets.into(),

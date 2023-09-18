@@ -29,7 +29,6 @@ mod native;
 pub use native::*;
 mod offset;
 pub use offset::*;
-
 #[cfg(feature = "serde_types")]
 use serde_derive::{Deserialize, Serialize};
 

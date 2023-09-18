@@ -1,20 +1,18 @@
-use ahash::AHashMap;
 use std::io::Read;
 
+use ahash::AHashMap;
 use arrow_format;
 use arrow_format::ipc::planus::ReadAsRoot;
 
+use super::super::CONTINUATION_MARKER;
+use super::common::*;
+use super::schema::deserialize_stream_metadata;
+use super::{Dictionaries, OutOfSpecKind};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::Schema;
 use crate::error::{Error, Result};
 use crate::io::ipc::IpcSchema;
-
-use super::super::CONTINUATION_MARKER;
-use super::common::*;
-use super::schema::deserialize_stream_metadata;
-use super::Dictionaries;
-use super::OutOfSpecKind;
 
 /// Metadata of an Arrow IPC stream, written at the start of the stream
 #[derive(Debug, Clone)]
@@ -113,7 +111,7 @@ fn read_next<R: Read>(
             } else {
                 Err(Error::from(e))
             };
-        }
+        },
     }
 
     let meta_length = {
@@ -190,7 +188,7 @@ fn read_next<R: Read>(
             } else {
                 chunk.map(|x| Some(StreamState::Some(x)))
             }
-        }
+        },
         arrow_format::ipc::MessageHeaderRef::DictionaryBatch(batch) => {
             data_buffer.clear();
             data_buffer.try_reserve(block_length)?;
@@ -223,7 +221,7 @@ fn read_next<R: Read>(
                 projection,
                 scratch,
             )
-        }
+        },
         _ => Err(Error::from(OutOfSpecKind::UnexpectedMessageType)),
     }
 }

@@ -3,13 +3,12 @@
 use ahash::AHashMap;
 use regex::Regex;
 
+use super::utils::combine_validities;
 use crate::array::{BooleanArray, Utf8Array};
 use crate::bitmap::Bitmap;
 use crate::datatypes::DataType;
 use crate::error::{Error, Result};
 use crate::offset::Offset;
-
-use super::utils::combine_validities;
 
 /// Regex matches
 pub fn regex_match<O: Offset>(values: &Utf8Array<O>, regex: &Utf8Array<O>) -> Result<BooleanArray> {

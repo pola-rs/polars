@@ -1,7 +1,7 @@
-use super::{DataType, Metadata};
-
 #[cfg(feature = "serde_types")]
 use serde_derive::{Deserialize, Serialize};
+
+use super::{DataType, Metadata};
 
 /// Represents Arrow's metadata of a "column".
 ///

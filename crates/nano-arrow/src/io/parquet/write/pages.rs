@@ -1,18 +1,16 @@
-use parquet2::schema::types::{ParquetType, PrimitiveType as ParquetPrimitiveType};
-use parquet2::{page::Page, write::DynIter};
 use std::fmt::Debug;
 
-use crate::array::{ListArray, MapArray, StructArray};
-use crate::bitmap::Bitmap;
-use crate::datatypes::PhysicalType;
-use crate::io::parquet::read::schema::is_nullable;
-use crate::offset::{Offset, OffsetsBuffer};
-use crate::{
-    array::Array,
-    error::{Error, Result},
-};
+use parquet2::page::Page;
+use parquet2::schema::types::{ParquetType, PrimitiveType as ParquetPrimitiveType};
+use parquet2::write::DynIter;
 
 use super::{array_to_pages, Encoding, WriteOptions};
+use crate::array::{Array, ListArray, MapArray, StructArray};
+use crate::bitmap::Bitmap;
+use crate::datatypes::PhysicalType;
+use crate::error::{Error, Result};
+use crate::io::parquet::read::schema::is_nullable;
+use crate::offset::{Offset, OffsetsBuffer};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ListNested<O: Offset> {
@@ -94,7 +92,7 @@ fn to_nested_recursive(
             for (type_, array) in fields.iter().zip(array.values()) {
                 to_nested_recursive(array.as_ref(), type_, nested, parents.clone())?;
             }
-        }
+        },
         List => {
             let array = array.as_any().downcast_ref::<ListArray<i32>>().unwrap();
             let type_ = if let ParquetType::GroupType { fields, .. } = type_ {
@@ -117,7 +115,7 @@ fn to_nested_recursive(
                 is_optional,
             )));
             to_nested_recursive(array.values().as_ref(), type_, nested, parents)?;
-        }
+        },
         LargeList => {
             let array = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
             let type_ = if let ParquetType::GroupType { fields, .. } = type_ {
@@ -140,7 +138,7 @@ fn to_nested_recursive(
                 is_optional,
             )));
             to_nested_recursive(array.values().as_ref(), type_, nested, parents)?;
-        }
+        },
         Map => {
             let array = array.as_any().downcast_ref::<MapArray>().unwrap();
             let type_ = if let ParquetType::GroupType { fields, .. } = type_ {
@@ -163,7 +161,7 @@ fn to_nested_recursive(
                 is_optional,
             )));
             to_nested_recursive(array.field().as_ref(), type_, nested, parents)?;
-        }
+        },
         _ => {
             parents.push(Nested::Primitive(
                 array.validity().cloned(),
@@ -171,7 +169,7 @@ fn to_nested_recursive(
                 array.len(),
             ));
             nested.push(parents)
-        }
+        },
     }
     Ok(())
 }
@@ -192,19 +190,19 @@ fn to_leaves_recursive<'a>(array: &'a dyn Array, leaves: &mut Vec<&'a dyn Array>
                 .values()
                 .iter()
                 .for_each(|a| to_leaves_recursive(a.as_ref(), leaves));
-        }
+        },
         List => {
             let array = array.as_any().downcast_ref::<ListArray<i32>>().unwrap();
             to_leaves_recursive(array.values().as_ref(), leaves);
-        }
+        },
         LargeList => {
             let array = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
             to_leaves_recursive(array.values().as_ref(), leaves);
-        }
+        },
         Map => {
             let array = array.as_any().downcast_ref::<MapArray>().unwrap();
             to_leaves_recursive(array.field().as_ref(), leaves);
-        }
+        },
         Null | Boolean | Primitive(_) | Binary | FixedSizeBinary | LargeBinary | Utf8
         | LargeUtf8 | Dictionary(_) => leaves.push(array),
         other => todo!("Writing {:?} to parquet not yet implemented", other),
@@ -225,7 +223,7 @@ fn to_parquet_leaves_recursive(type_: ParquetType, leaves: &mut Vec<ParquetPrimi
             fields
                 .into_iter()
                 .for_each(|type_| to_parquet_leaves_recursive(type_, leaves));
-        }
+        },
     }
 }
 
@@ -261,13 +259,11 @@ mod tests {
     use parquet2::schema::types::{GroupLogicalType, PrimitiveConvertedType, PrimitiveLogicalType};
     use parquet2::schema::Repetition;
 
+    use super::super::{FieldInfo, ParquetPhysicalType, ParquetPrimitiveType};
     use super::*;
-
     use crate::array::*;
     use crate::bitmap::Bitmap;
     use crate::datatypes::*;
-
-    use super::super::{FieldInfo, ParquetPhysicalType, ParquetPrimitiveType};
 
     #[test]
     fn test_struct() {

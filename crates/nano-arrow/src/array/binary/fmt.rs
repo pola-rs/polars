@@ -1,9 +1,8 @@
 use std::fmt::{Debug, Formatter, Result, Write};
 
-use crate::offset::Offset;
-
 use super::super::fmt::write_vec;
 use super::BinaryArray;
+use crate::offset::Offset;
 
 pub fn write_value<O: Offset, W: Write>(array: &BinaryArray<O>, index: usize, f: &mut W) -> Result {
     let bytes = array.value(index);

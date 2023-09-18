@@ -1,12 +1,13 @@
+use std::collections::VecDeque;
+use std::convert::TryInto;
 use std::io::{Read, Seek};
-use std::{collections::VecDeque, convert::TryInto};
-
-use crate::datatypes::DataType;
-use crate::error::{Error, Result};
-use crate::{array::PrimitiveArray, types::NativeType};
 
 use super::super::read_basic::*;
 use super::super::{Compression, IpcBuffer, Node, OutOfSpecKind};
+use crate::array::PrimitiveArray;
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
+use crate::types::NativeType;
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_primitive<T: NativeType, R: Read + Seek>(

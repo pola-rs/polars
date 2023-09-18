@@ -14,7 +14,7 @@ check:  ## Run cargo check with all features
 
 .PHONY: clippy
 clippy:  ## Run clippy with all features
-	cargo clippy --workspace --all-targets --exclude-nano-arrow --all-features
+	cargo clippy --workspace --all-targets --exclude nano-arrow --all-features
 
 .PHONY: clippy-default
 clippy-default:  ## Run clippy with default features

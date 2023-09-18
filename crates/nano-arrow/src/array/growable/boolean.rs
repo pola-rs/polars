@@ -1,15 +1,10 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{Array, BooleanArray},
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-};
-
-use super::{
-    utils::{build_extend_null_bits, ExtendNullBits},
-    Growable,
-};
+use super::utils::{build_extend_null_bits, ExtendNullBits};
+use super::Growable;
+use crate::array::{Array, BooleanArray};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
 
 /// Concrete [`Growable`] for the [`BooleanArray`].
 pub struct GrowableBoolean<'a> {

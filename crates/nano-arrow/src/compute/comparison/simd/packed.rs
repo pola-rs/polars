@@ -1,10 +1,9 @@
 use std::convert::TryInto;
 use std::simd::{SimdPartialEq, SimdPartialOrd, ToBitMask};
 
+use super::*;
 use crate::types::simd::*;
 use crate::types::{days_ms, f16, i256, months_days_ns};
-
-use super::*;
 
 macro_rules! simd8 {
     ($type:ty, $md:ty) => {

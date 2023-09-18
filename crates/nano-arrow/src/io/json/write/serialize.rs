@@ -1,10 +1,13 @@
+use std::io::Write;
+
 use chrono::{Duration, NaiveDate, NaiveDateTime};
 use lexical_core::ToLexical;
-use std::io::Write;
 use streaming_iterator::StreamingIterator;
 
+use super::utf8;
+use crate::array::*;
 use crate::bitmap::utils::ZipValidity;
-use crate::datatypes::{IntegerType, TimeUnit};
+use crate::datatypes::{DataType, IntegerType, TimeUnit};
 use crate::io::iterator::BufStreamingIterator;
 use crate::offset::Offset;
 #[cfg(feature = "chrono-tz")]
@@ -15,10 +18,8 @@ use crate::temporal_conversions::{
     timestamp_ns_to_datetime, timestamp_s_to_datetime, timestamp_to_datetime,
     timestamp_us_to_datetime,
 };
+use crate::types::NativeType;
 use crate::util::lexical_to_bytes_mut;
-use crate::{array::*, datatypes::DataType, types::NativeType};
-
-use super::utf8;
 
 fn materialize_serializer<'a, I, F, T>(
     f: F,
@@ -331,7 +332,7 @@ fn timestamp_tz_serializer<'a>(
             };
 
             materialize_serializer(f, array.iter(), offset, take)
-        }
+        },
         #[cfg(feature = "chrono-tz")]
         _ => match parse_offset_tz(tz) {
             Ok(parsed_tz) => {
@@ -345,15 +346,15 @@ fn timestamp_tz_serializer<'a>(
                 };
 
                 materialize_serializer(f, array.iter(), offset, take)
-            }
+            },
             _ => {
                 panic!("Timezone {} is invalid or not supported", tz);
-            }
+            },
         },
         #[cfg(not(feature = "chrono-tz"))]
         _ => {
             panic!("Invalid Offset format (must be [-]00:00) or chrono-tz feature not active");
-        }
+        },
     }
 }
 
@@ -365,55 +366,55 @@ pub(crate) fn new_serializer<'a>(
     match array.data_type().to_logical_type() {
         DataType::Boolean => {
             boolean_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::Int8 => {
             primitive_serializer::<i8>(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::Int16 => {
             primitive_serializer::<i16>(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::Int32 => {
             primitive_serializer::<i32>(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::Int64 => {
             primitive_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::UInt8 => {
             primitive_serializer::<u8>(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::UInt16 => {
             primitive_serializer::<u16>(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::UInt32 => {
             primitive_serializer::<u32>(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::UInt64 => {
             primitive_serializer::<u64>(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::Float32 => {
             float_serializer::<f32>(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::Float64 => {
             float_serializer::<f64>(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::Utf8 => {
             utf8_serializer::<i32>(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::LargeUtf8 => {
             utf8_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::Struct(_) => {
             struct_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::FixedSizeList(_, _) => {
             fixed_size_list_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::List(_) => {
             list_serializer::<i32>(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         DataType::LargeList(_) => {
             list_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
-        }
+        },
         other @ DataType::Dictionary(k, v, _) => match (k, &**v) {
             (IntegerType::UInt32, DataType::LargeUtf8) => {
                 let array = array
@@ -421,10 +422,10 @@ pub(crate) fn new_serializer<'a>(
                     .downcast_ref::<DictionaryArray<u32>>()
                     .unwrap();
                 dictionary_utf8_serializer::<u32, i64>(array, offset, take)
-            }
+            },
             _ => {
                 todo!("Writing {:?} to JSON", other)
-            }
+            },
         },
         DataType::Date32 => date_serializer(
             array.as_any().downcast_ref().unwrap(),
@@ -451,7 +452,7 @@ pub(crate) fn new_serializer<'a>(
                 offset,
                 take,
             )
-        }
+        },
         DataType::Timestamp(time_unit, Some(tz)) => timestamp_tz_serializer(
             array.as_any().downcast_ref().unwrap(),
             *time_unit,
@@ -472,7 +473,7 @@ pub(crate) fn new_serializer<'a>(
                 offset,
                 take,
             )
-        }
+        },
         DataType::Null => null_serializer(array.len(), offset, take),
         other => todo!("Writing {:?} to JSON", other),
     }

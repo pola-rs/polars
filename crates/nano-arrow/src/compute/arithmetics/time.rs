@@ -13,15 +13,13 @@ use std::ops::{Add, Sub};
 
 use num_traits::AsPrimitive;
 
-use crate::{
-    array::PrimitiveArray,
-    compute::arity::{binary, unary},
-    datatypes::{DataType, TimeUnit},
-    error::{Error, Result},
-    scalar::{PrimitiveScalar, Scalar},
-    temporal_conversions,
-    types::{months_days_ns, NativeType},
-};
+use crate::array::PrimitiveArray;
+use crate::compute::arity::{binary, unary};
+use crate::datatypes::{DataType, TimeUnit};
+use crate::error::{Error, Result};
+use crate::scalar::{PrimitiveScalar, Scalar};
+use crate::temporal_conversions;
+use crate::types::{months_days_ns, NativeType};
 
 /// Creates the scale required to add or subtract a Duration to a time array
 /// (Timestamp, Time, or Date). The resulting scale always multiplies the rhs
@@ -38,26 +36,26 @@ fn create_scale(lhs: &DataType, rhs: &DataType) -> Result<f64> {
         | (DataType::Time64(timeunit_a), DataType::Duration(timeunit_b)) => {
             // The scale is based on the TimeUnit that each of the numbers have.
             temporal_conversions::timeunit_scale(*timeunit_a, *timeunit_b)
-        }
+        },
         (DataType::Date32, DataType::Duration(timeunit)) => {
             // Date32 represents the time elapsed time since UNIX epoch
             // (1970-01-01) in days (32 bits). The duration value has to be
             // scaled to days to be able to add the value to the Date.
             temporal_conversions::timeunit_scale(TimeUnit::Second, *timeunit)
                 / temporal_conversions::SECONDS_IN_DAY as f64
-        }
+        },
         (DataType::Date64, DataType::Duration(timeunit)) => {
             // Date64 represents the time elapsed time since UNIX epoch
             // (1970-01-01) in milliseconds (64 bits). The duration value has
             // to be scaled to milliseconds to be able to add the value to the
             // Date.
             temporal_conversions::timeunit_scale(TimeUnit::Millisecond, *timeunit)
-        }
+        },
         _ => {
             return Err(Error::InvalidArgumentError(
                 "Incorrect data type for the arguments".to_string(),
             ));
-        }
+        },
     };
 
     Ok(scale)
@@ -270,7 +268,7 @@ pub fn subtract_timestamps(
             let op = move |a, b| a - (b as f64 * scale) as i64;
 
             Ok(binary(lhs, rhs, DataType::Duration(*timeunit_a), op))
-        }
+        },
         _ => Err(Error::InvalidArgumentError(
             "Incorrect data type for the arguments".to_string(),
         )),
@@ -344,14 +342,14 @@ pub fn add_interval(
                             )
                         },
                     ))
-                }
+                },
                 #[cfg(not(feature = "chrono-tz"))]
                 _ => Err(Error::InvalidArgumentError(format!(
                     "timezone \"{}\" cannot be parsed (feature chrono-tz is not active)",
                     timezone_str
                 ))),
             }
-        }
+        },
         DataType::Timestamp(time_unit, None) => {
             let time_unit = *time_unit;
             Ok(binary(
@@ -362,7 +360,7 @@ pub fn add_interval(
                     temporal_conversions::add_naive_interval(timestamp, time_unit, interval)
                 },
             ))
-        }
+        },
         _ => Err(Error::InvalidArgumentError(
             "Adding an interval is only supported for `DataType::Timestamp`".to_string(),
         )),
@@ -409,14 +407,14 @@ pub fn add_interval_scalar(
                         },
                         timestamp.data_type().clone(),
                     ))
-                }
+                },
                 #[cfg(not(feature = "chrono-tz"))]
                 _ => Err(Error::InvalidArgumentError(format!(
                     "timezone \"{}\" cannot be parsed (feature chrono-tz is not active)",
                     timezone_str
                 ))),
             }
-        }
+        },
         DataType::Timestamp(time_unit, None) => {
             let time_unit = *time_unit;
             Ok(unary(
@@ -426,7 +424,7 @@ pub fn add_interval_scalar(
                 },
                 timestamp.data_type().clone(),
             ))
-        }
+        },
         _ => Err(Error::InvalidArgumentError(
             "Adding an interval is only supported for `DataType::Timestamp`".to_string(),
         )),

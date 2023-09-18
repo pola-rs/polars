@@ -1,15 +1,9 @@
 use std::collections::VecDeque;
 
-use parquet2::{
-    deserialize::SliceFilteredIter,
-    encoding::{hybrid_rle, Encoding},
-    page::{split_buffer, DataPage, DictPage},
-    schema::Repetition,
-};
-
-use crate::{
-    array::FixedSizeBinaryArray, bitmap::MutableBitmap, datatypes::DataType, error::Result,
-};
+use parquet2::deserialize::SliceFilteredIter;
+use parquet2::encoding::{hybrid_rle, Encoding};
+use parquet2::page::{split_buffer, DataPage, DictPage};
+use parquet2::schema::Repetition;
 
 use super::super::utils::{
     dict_indices_decoder, extend_from_decoder, get_selected_rows, next, not_implemented,
@@ -18,6 +12,10 @@ use super::super::utils::{
 };
 use super::super::Pages;
 use super::utils::FixedSizeBinary;
+use crate::array::FixedSizeBinaryArray;
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::error::Result;
 
 pub(super) type Dict = Vec<u8>;
 
@@ -169,16 +167,16 @@ impl<'a> Decoder<'a> for BinaryDecoder {
         match (page.encoding(), dict, is_optional, is_filtered) {
             (Encoding::Plain, _, true, false) => {
                 Ok(State::Optional(Optional::try_new(page, self.size)?))
-            }
+            },
             (Encoding::Plain, _, false, false) => {
                 Ok(State::Required(Required::new(page, self.size)))
-            }
+            },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {
                 RequiredDictionary::try_new(page, dict).map(State::RequiredDictionary)
-            }
+            },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, false) => {
                 OptionalDictionary::try_new(page, dict).map(State::OptionalDictionary)
-            }
+            },
             (Encoding::Plain, None, false, true) => Ok(State::FilteredRequired(
                 FilteredRequired::new(page, self.size),
             )),
@@ -189,7 +187,7 @@ impl<'a> Decoder<'a> for BinaryDecoder {
                     FilteredOptionalPageValidity::try_new(page)?,
                     values.chunks_exact(self.size),
                 ))
-            }
+            },
             _ => Err(not_implemented(page)),
         }
     }
@@ -221,12 +219,12 @@ impl<'a> Decoder<'a> for BinaryDecoder {
                 for x in page.values.by_ref().take(remaining) {
                     values.push(x)
                 }
-            }
+            },
             State::FilteredRequired(page) => {
                 for x in page.values.by_ref().take(remaining) {
                     values.push(x)
                 }
-            }
+            },
             State::OptionalDictionary(page) => extend_from_decoder(
                 validity,
                 &mut page.validity,
@@ -249,7 +247,7 @@ impl<'a> Decoder<'a> for BinaryDecoder {
                 {
                     values.push(x)
                 }
-            }
+            },
             State::FilteredOptional(page_validity, page_values) => {
                 extend_from_decoder(
                     validity,
@@ -258,7 +256,7 @@ impl<'a> Decoder<'a> for BinaryDecoder {
                     values,
                     page_values.by_ref(),
                 );
-            }
+            },
         }
     }
 
@@ -315,7 +313,7 @@ impl<I: Pages> Iterator for Iter<I> {
         match maybe_state {
             MaybeNext::Some(Ok((values, validity))) => {
                 Some(Ok(finish(&self.data_type, values, validity)))
-            }
+            },
             MaybeNext::Some(Err(e)) => Some(Err(e)),
             MaybeNext::None => None,
             MaybeNext::More => self.next(),

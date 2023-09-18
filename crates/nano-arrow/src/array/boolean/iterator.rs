@@ -1,8 +1,7 @@
-use crate::bitmap::utils::{BitmapIter, ZipValidity};
-use crate::bitmap::IntoIter;
-
 use super::super::MutableArray;
 use super::{BooleanArray, MutableBooleanArray};
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
+use crate::bitmap::IntoIter;
 
 impl<'a> IntoIterator for &'a BooleanArray {
     type Item = Option<bool>;

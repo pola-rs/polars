@@ -1,19 +1,14 @@
-use parquet2::{
-    encoding::{delta_bitpacked, Encoding},
-    page::DataPage,
-    schema::types::PrimitiveType,
-    statistics::{serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics},
-};
+use parquet2::encoding::{delta_bitpacked, Encoding};
+use parquet2::page::DataPage;
+use parquet2::schema::types::PrimitiveType;
+use parquet2::statistics::{serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics};
 
-use super::super::utils;
-use super::super::WriteOptions;
-use crate::{
-    array::{Array, BinaryArray},
-    bitmap::Bitmap,
-    error::{Error, Result},
-    io::parquet::read::schema::is_nullable,
-    offset::Offset,
-};
+use super::super::{utils, WriteOptions};
+use crate::array::{Array, BinaryArray};
+use crate::bitmap::Bitmap;
+use crate::error::{Error, Result};
+use crate::io::parquet::read::schema::is_nullable;
+use crate::offset::Offset;
 
 pub(crate) fn encode_plain<O: Offset>(
     array: &BinaryArray<O>,
@@ -75,7 +70,7 @@ pub fn array_to_page<O: Offset>(
                 array.data_type(),
                 encoding
             )))
-        }
+        },
     }
 
     let statistics = if options.write_statistics {
@@ -160,7 +155,7 @@ pub(crate) fn ord_binary<'a>(a: &'a [u8], b: &'a [u8]) -> std::cmp::Ordering {
         (true, true) => return Equal,
         (true, false) => return Less,
         (false, true) => return Greater,
-        (false, false) => {}
+        (false, false) => {},
     }
 
     for (v1, v2) in a.iter().zip(b.iter()) {

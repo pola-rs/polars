@@ -1,16 +1,10 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{Array, MapArray},
-    bitmap::MutableBitmap,
-    offset::Offsets,
-};
-
-use super::{
-    make_growable,
-    utils::{build_extend_null_bits, ExtendNullBits},
-    Growable,
-};
+use super::utils::{build_extend_null_bits, ExtendNullBits};
+use super::{make_growable, Growable};
+use crate::array::{Array, MapArray};
+use crate::bitmap::MutableBitmap;
+use crate::offset::Offsets;
 
 fn extend_offset_values(growable: &mut GrowableMap<'_>, index: usize, start: usize, len: usize) {
     let array = growable.arrays[index];

@@ -1,8 +1,7 @@
+use super::ListArray;
 use crate::array::{Array, ArrayAccessor, ArrayValuesIter};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::offset::Offset;
-
-use super::ListArray;
 
 unsafe impl<'a, O: Offset> ArrayAccessor<'a> for ListArray<O> {
     type Item = Box<dyn Array>;

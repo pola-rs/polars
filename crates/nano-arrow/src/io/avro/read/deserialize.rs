@@ -1,18 +1,15 @@
 use std::convert::TryInto;
 
 use avro_schema::file::Block;
-use avro_schema::schema::Record;
-use avro_schema::schema::{Enum, Field as AvroField, Schema as AvroSchema};
-
-use crate::array::*;
-use crate::chunk::Chunk;
-use crate::datatypes::*;
-use crate::error::Error;
-use crate::error::Result;
-use crate::types::months_days_ns;
+use avro_schema::schema::{Enum, Field as AvroField, Record, Schema as AvroSchema};
 
 use super::nested::*;
 use super::util;
+use crate::array::*;
+use crate::chunk::Chunk;
+use crate::datatypes::*;
+use crate::error::{Error, Result};
+use crate::types::months_days_ns;
 
 fn make_mutable(
     data_type: &DataType,
@@ -22,17 +19,17 @@ fn make_mutable(
     Ok(match data_type.to_physical_type() {
         PhysicalType::Boolean => {
             Box::new(MutableBooleanArray::with_capacity(capacity)) as Box<dyn MutableArray>
-        }
+        },
         PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             Box::new(MutablePrimitiveArray::<$T>::with_capacity(capacity).to(data_type.clone()))
                 as Box<dyn MutableArray>
         }),
         PhysicalType::Binary => {
             Box::new(MutableBinaryArray::<i32>::with_capacity(capacity)) as Box<dyn MutableArray>
-        }
+        },
         PhysicalType::Utf8 => {
             Box::new(MutableUtf8Array::<i32>::with_capacity(capacity)) as Box<dyn MutableArray>
-        }
+        },
         PhysicalType::Dictionary(_) => {
             if let Some(AvroSchema::Enum(Enum { symbols, .. })) = avro_field {
                 let values = Utf8Array::<i32>::from_slice(symbols);
@@ -41,7 +38,7 @@ fn make_mutable(
             } else {
                 unreachable!()
             }
-        }
+        },
         _ => match data_type {
             DataType::List(inner) => {
                 let values = make_mutable(inner.data_type(), None, 0)?;
@@ -50,11 +47,11 @@ fn make_mutable(
                     data_type.clone(),
                     capacity,
                 )) as Box<dyn MutableArray>
-            }
+            },
             DataType::FixedSizeBinary(size) => {
                 Box::new(MutableFixedSizeBinaryArray::with_capacity(*size, capacity))
                     as Box<dyn MutableArray>
-            }
+            },
             DataType::Struct(fields) => {
                 let values = fields
                     .iter()
@@ -62,12 +59,12 @@ fn make_mutable(
                     .collect::<Result<Vec<_>>>()?;
                 Box::new(DynMutableStructArray::new(values, data_type.clone()))
                     as Box<dyn MutableArray>
-            }
+            },
             other => {
                 return Err(Error::NotYetImplemented(format!(
                     "Deserializing type {other:#?} is still not implemented"
                 )))
-            }
+            },
         },
     })
 }
@@ -111,7 +108,7 @@ fn deserialize_value<'a>(
                 AvroSchema::Union(u) => match &u.as_slice() {
                     &[AvroSchema::Array(inner), _] | &[_, AvroSchema::Array(inner)] => {
                         inner.as_ref()
-                    }
+                    },
                     _ => unreachable!(),
                 },
                 _ => unreachable!(),
@@ -147,7 +144,7 @@ fn deserialize_value<'a>(
                 }
             }
             array.try_push_valid()?;
-        }
+        },
         DataType::Struct(inner_fields) => {
             let fields = match avro_field {
                 AvroSchema::Record(Record { fields, .. }) => fields,
@@ -173,7 +170,7 @@ fn deserialize_value<'a>(
                 block = deserialize_item(values, *is_nullable, &field.schema, block)?;
             }
             array.try_push_valid()?;
-        }
+        },
         _ => match data_type.to_physical_type() {
             PhysicalType::Boolean => {
                 let is_valid = block[0] == 1;
@@ -183,7 +180,7 @@ fn deserialize_value<'a>(
                     .downcast_mut::<MutableBooleanArray>()
                     .unwrap();
                 array.push(Some(is_valid))
-            }
+            },
             PhysicalType::Primitive(primitive) => match primitive {
                 PrimitiveType::Int32 => {
                     let value = util::zigzag_i64(&mut block)? as i32;
@@ -192,7 +189,7 @@ fn deserialize_value<'a>(
                         .downcast_mut::<MutablePrimitiveArray<i32>>()
                         .unwrap();
                     array.push(Some(value))
-                }
+                },
                 PrimitiveType::Int64 => {
                     let value = util::zigzag_i64(&mut block)?;
                     let array = array
@@ -200,7 +197,7 @@ fn deserialize_value<'a>(
                         .downcast_mut::<MutablePrimitiveArray<i64>>()
                         .unwrap();
                     array.push(Some(value))
-                }
+                },
                 PrimitiveType::Float32 => {
                     let value =
                         f32::from_le_bytes(block[..std::mem::size_of::<f32>()].try_into().unwrap());
@@ -210,7 +207,7 @@ fn deserialize_value<'a>(
                         .downcast_mut::<MutablePrimitiveArray<f32>>()
                         .unwrap();
                     array.push(Some(value))
-                }
+                },
                 PrimitiveType::Float64 => {
                     let value =
                         f64::from_le_bytes(block[..std::mem::size_of::<f64>()].try_into().unwrap());
@@ -220,7 +217,7 @@ fn deserialize_value<'a>(
                         .downcast_mut::<MutablePrimitiveArray<f64>>()
                         .unwrap();
                     array.push(Some(value))
-                }
+                },
                 PrimitiveType::MonthDayNano => {
                     // https://avro.apache.org/docs/current/spec.html#Duration
                     // 12 bytes, months, days, millis in LE
@@ -239,7 +236,7 @@ fn deserialize_value<'a>(
                         .downcast_mut::<MutablePrimitiveArray<months_days_ns>>()
                         .unwrap();
                     array.push(Some(value))
-                }
+                },
                 PrimitiveType::Int128 => {
                     let avro_inner = match avro_field {
                         AvroSchema::Bytes(_) | AvroSchema::Fixed(_) => avro_field,
@@ -256,7 +253,7 @@ fn deserialize_value<'a>(
                                     "Avro format contains a non-usize number of bytes".to_string(),
                                 )
                             })?
-                        }
+                        },
                         AvroSchema::Fixed(b) => b.size,
                         _ => unreachable!(),
                     };
@@ -274,7 +271,7 @@ fn deserialize_value<'a>(
                         .downcast_mut::<MutablePrimitiveArray<i128>>()
                         .unwrap();
                     array.push(Some(data))
-                }
+                },
                 _ => unreachable!(),
             },
             PhysicalType::Utf8 => {
@@ -291,7 +288,7 @@ fn deserialize_value<'a>(
                     .downcast_mut::<MutableUtf8Array<i32>>()
                     .unwrap();
                 array.push(Some(data))
-            }
+            },
             PhysicalType::Binary => {
                 let len: usize = util::zigzag_i64(&mut block)?.try_into().map_err(|_| {
                     Error::ExternalFormat(
@@ -306,7 +303,7 @@ fn deserialize_value<'a>(
                     .downcast_mut::<MutableBinaryArray<i32>>()
                     .unwrap();
                 array.push(Some(data));
-            }
+            },
             PhysicalType::FixedSizeBinary => {
                 let array = array
                     .as_mut_any()
@@ -316,7 +313,7 @@ fn deserialize_value<'a>(
                 let data = &block[..len];
                 block = &block[len..];
                 array.push(Some(data));
-            }
+            },
             PhysicalType::Dictionary(_) => {
                 let index = util::zigzag_i64(&mut block)? as i32;
                 let array = array
@@ -324,7 +321,7 @@ fn deserialize_value<'a>(
                     .downcast_mut::<FixedItemsUtf8Dictionary>()
                     .unwrap();
                 array.push_valid(index);
-            }
+            },
             _ => todo!(),
         },
     };
@@ -346,7 +343,7 @@ fn skip_item<'a>(field: &Field, avro_field: &AvroSchema, mut block: &'a [u8]) ->
                 AvroSchema::Union(u) => match &u.as_slice() {
                     &[AvroSchema::Array(inner), _] | &[_, AvroSchema::Array(inner)] => {
                         inner.as_ref()
-                    }
+                    },
                     _ => unreachable!(),
                 },
                 _ => unreachable!(),
@@ -384,7 +381,7 @@ fn skip_item<'a>(field: &Field, avro_field: &AvroSchema, mut block: &'a [u8]) ->
                     }
                 }
             }
-        }
+        },
         DataType::Struct(inner_fields) => {
             let fields = match avro_field {
                 AvroSchema::Record(Record { fields, .. }) => fields,
@@ -399,28 +396,28 @@ fn skip_item<'a>(field: &Field, avro_field: &AvroSchema, mut block: &'a [u8]) ->
             for (field, avro_field) in inner_fields.iter().zip(fields.iter()) {
                 block = skip_item(field, &avro_field.schema, block)?;
             }
-        }
+        },
         _ => match field.data_type.to_physical_type() {
             PhysicalType::Boolean => {
                 let _ = block[0] == 1;
                 block = &block[1..];
-            }
+            },
             PhysicalType::Primitive(primitive) => match primitive {
                 PrimitiveType::Int32 => {
                     let _ = util::zigzag_i64(&mut block)?;
-                }
+                },
                 PrimitiveType::Int64 => {
                     let _ = util::zigzag_i64(&mut block)?;
-                }
+                },
                 PrimitiveType::Float32 => {
                     block = &block[std::mem::size_of::<f32>()..];
-                }
+                },
                 PrimitiveType::Float64 => {
                     block = &block[std::mem::size_of::<f64>()..];
-                }
+                },
                 PrimitiveType::MonthDayNano => {
                     block = &block[12..];
-                }
+                },
                 PrimitiveType::Int128 => {
                     let avro_inner = match avro_field {
                         AvroSchema::Bytes(_) | AvroSchema::Fixed(_) => avro_field,
@@ -437,12 +434,12 @@ fn skip_item<'a>(field: &Field, avro_field: &AvroSchema, mut block: &'a [u8]) ->
                                     "Avro format contains a non-usize number of bytes".to_string(),
                                 )
                             })?
-                        }
+                        },
                         AvroSchema::Fixed(b) => b.size,
                         _ => unreachable!(),
                     };
                     block = &block[len..];
-                }
+                },
                 _ => unreachable!(),
             },
             PhysicalType::Utf8 | PhysicalType::Binary => {
@@ -452,7 +449,7 @@ fn skip_item<'a>(field: &Field, avro_field: &AvroSchema, mut block: &'a [u8]) ->
                     )
                 })?;
                 block = &block[len..];
-            }
+            },
             PhysicalType::FixedSizeBinary => {
                 let len = if let DataType::FixedSizeBinary(len) = &field.data_type {
                     *len
@@ -461,10 +458,10 @@ fn skip_item<'a>(field: &Field, avro_field: &AvroSchema, mut block: &'a [u8]) ->
                 };
 
                 block = &block[len..];
-            }
+            },
             PhysicalType::Dictionary(_) => {
                 let _ = util::zigzag_i64(&mut block)? as i32;
-            }
+            },
             _ => todo!(),
         },
     }

@@ -1,8 +1,7 @@
+use super::nested_utils::{NestedArrayIter, NestedState};
 use crate::array::{Array, StructArray};
 use crate::datatypes::{DataType, Field};
 use crate::error::Error;
-
-use super::nested_utils::{NestedArrayIter, NestedState};
 
 /// An iterator adapter over [`NestedArrayIter`] assumed to be encoded as Struct arrays
 pub struct StructIterator<'a> {
@@ -40,7 +39,7 @@ impl<'a> Iterator for StructIterator<'a> {
                 Ok((nest, values)) => {
                     new_values.push(values);
                     nested.push(nest);
-                }
+                },
                 Err(e) => return Some(Err(e)),
             }
         }

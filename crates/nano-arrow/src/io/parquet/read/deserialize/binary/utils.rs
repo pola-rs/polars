@@ -1,6 +1,5 @@
-use crate::offset::{Offset, Offsets};
-
 use super::super::utils::Pushable;
+use crate::offset::{Offset, Offsets};
 
 /// [`Pushable`] for variable length binary data.
 #[derive(Debug)]

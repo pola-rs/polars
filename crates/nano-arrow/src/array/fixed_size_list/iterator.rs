@@ -1,9 +1,6 @@
-use crate::{
-    array::{Array, ArrayAccessor, ArrayValuesIter},
-    bitmap::utils::{BitmapIter, ZipValidity},
-};
-
 use super::FixedSizeListArray;
+use crate::array::{Array, ArrayAccessor, ArrayValuesIter};
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
 
 unsafe impl<'a> ArrayAccessor<'a> for FixedSizeListArray {
     type Item = Box<dyn Array>;

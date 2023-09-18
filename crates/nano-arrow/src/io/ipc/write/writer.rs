@@ -2,14 +2,10 @@ use std::io::Write;
 
 use arrow_format::ipc::planus::Builder;
 
-use super::{
-    super::IpcField,
-    super::ARROW_MAGIC_V2,
-    common::{DictionaryTracker, EncodedData, WriteOptions},
-    common_sync::{write_continuation, write_message},
-    default_ipc_fields, schema, schema_to_bytes,
-};
-
+use super::super::{IpcField, ARROW_MAGIC_V2};
+use super::common::{DictionaryTracker, EncodedData, WriteOptions};
+use super::common_sync::{write_continuation, write_message};
+use super::{default_ipc_fields, schema, schema_to_bytes};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::*;

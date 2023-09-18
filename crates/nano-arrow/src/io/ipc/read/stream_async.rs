@@ -2,21 +2,15 @@
 
 use arrow_format::ipc::planus::ReadAsRoot;
 use futures::future::BoxFuture;
-use futures::AsyncRead;
-use futures::AsyncReadExt;
-use futures::FutureExt;
-use futures::Stream;
-
-use crate::array::*;
-use crate::chunk::Chunk;
-use crate::error::{Error, Result};
+use futures::{AsyncRead, AsyncReadExt, FutureExt, Stream};
 
 use super::super::CONTINUATION_MARKER;
 use super::common::{read_dictionary, read_record_batch};
 use super::schema::deserialize_stream_metadata;
-use super::Dictionaries;
-use super::OutOfSpecKind;
-use super::StreamMetadata;
+use super::{Dictionaries, OutOfSpecKind, StreamMetadata};
+use crate::array::*;
+use crate::chunk::Chunk;
+use crate::error::{Error, Result};
 
 /// A (private) state of stream messages
 struct ReadState<R> {
@@ -87,7 +81,7 @@ async fn maybe_next<R: AsyncRead + Unpin + Send>(
             } else {
                 Err(Error::from(e))
             };
-        }
+        },
     }
 
     let meta_length = {
@@ -152,7 +146,7 @@ async fn maybe_next<R: AsyncRead + Unpin + Send>(
                 &mut scratch,
             )
             .map(|chunk| Some(StreamState::Some((state, chunk))))
-        }
+        },
         arrow_format::ipc::MessageHeaderRef::DictionaryBatch(batch) => {
             state.data_buffer.clear();
             state.data_buffer.try_reserve(block_length)?;
@@ -178,7 +172,7 @@ async fn maybe_next<R: AsyncRead + Unpin + Send>(
 
             // read the next message until we encounter a Chunk<Box<dyn Array>> message
             Ok(Some(StreamState::Waiting(state)))
-        }
+        },
         _ => Err(Error::from(OutOfSpecKind::UnexpectedMessageType)),
     }
 }
@@ -225,16 +219,16 @@ impl<'a, R: AsyncRead + Unpin + Send> Stream for AsyncStreamReader<'a, R> {
                 Poll::Ready(Ok(None)) => {
                     me.future = None;
                     Poll::Ready(None)
-                }
+                },
                 Poll::Ready(Ok(Some(StreamState::Some((state, batch))))) => {
                     me.future = Some(Box::pin(maybe_next(state)));
                     Poll::Ready(Some(Ok(batch)))
-                }
+                },
                 Poll::Ready(Ok(Some(StreamState::Waiting(_)))) => Poll::Pending,
                 Poll::Ready(Err(err)) => {
                     me.future = None;
                     Poll::Ready(Some(Err(err)))
-                }
+                },
                 Poll::Pending => Poll::Pending,
             },
             None => Poll::Ready(None),

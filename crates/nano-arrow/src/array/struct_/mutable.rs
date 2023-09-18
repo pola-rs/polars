@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{Array, MutableArray},
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-    error::Error,
-};
-
 use super::StructArray;
+use crate::array::{Array, MutableArray};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::error::Error;
 
 /// Converting a [`MutableStructArray`] into a [`StructArray`] is `O(1)`.
 #[derive(Debug)]

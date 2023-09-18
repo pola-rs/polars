@@ -1,9 +1,8 @@
 use std::fmt::{Debug, Formatter, Result, Write};
 
-use crate::offset::Offset;
-
 use super::super::fmt::write_vec;
 use super::Utf8Array;
+use crate::offset::Offset;
 
 pub fn write_value<O: Offset, W: Write>(array: &Utf8Array<O>, index: usize, f: &mut W) -> Result {
     write!(f, "{}", array.value(index))

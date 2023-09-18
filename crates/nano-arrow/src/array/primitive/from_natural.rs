@@ -1,8 +1,7 @@
 use std::iter::FromIterator;
 
-use crate::types::NativeType;
-
 use super::{MutablePrimitiveArray, PrimitiveArray};
+use crate::types::NativeType;
 
 impl<T: NativeType, P: AsRef<[Option<T>]>> From<P> for PrimitiveArray<T> {
     fn from(slice: P) -> Self {

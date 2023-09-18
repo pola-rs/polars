@@ -18,7 +18,7 @@ impl From<parquet2::error::Error> for Error {
                     Use the cargo feature \"io_parquet_compression\" to read compressed parquet files."
                     .to_string();
                 Error::ExternalFormat(message)
-            }
+            },
             _ => Error::ExternalFormat(error.to_string()),
         }
     }

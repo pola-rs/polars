@@ -1,8 +1,7 @@
 use parquet2::indexes::PageIndex;
 
-use crate::array::{BooleanArray, PrimitiveArray};
-
 use super::ColumnPageStatistics;
+use crate::array::{BooleanArray, PrimitiveArray};
 
 pub fn deserialize(indexes: &[PageIndex<bool>]) -> ColumnPageStatistics {
     ColumnPageStatistics {

@@ -1,13 +1,11 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{physical_binary::extend_validity, Array, MutableArray, TryExtendFromSelf},
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-    error::Error,
-};
-
 use super::{FixedSizeBinaryArray, FixedSizeBinaryValues};
+use crate::array::physical_binary::extend_validity;
+use crate::array::{Array, MutableArray, TryExtendFromSelf};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::error::Error;
 
 /// The Arrow's equivalent to a mutable `Vec<Option<[u8; size]>>`.
 /// Converting a [`MutableFixedSizeBinaryArray`] into a [`FixedSizeBinaryArray`] is `O(1)`.
@@ -121,16 +119,16 @@ impl MutableFixedSizeBinaryArray {
 
                 match &mut self.validity {
                     Some(validity) => validity.push(true),
-                    None => {}
+                    None => {},
                 }
-            }
+            },
             None => {
                 self.values.resize(self.values.len() + self.size, 0);
                 match &mut self.validity {
                     Some(validity) => validity.push(false),
                     None => self.init_validity(),
                 }
-            }
+            },
         }
         Ok(())
     }

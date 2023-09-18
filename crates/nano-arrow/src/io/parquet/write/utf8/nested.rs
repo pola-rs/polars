@@ -1,15 +1,14 @@
+use parquet2::encoding::Encoding;
+use parquet2::page::DataPage;
 use parquet2::schema::types::PrimitiveType;
-use parquet2::{encoding::Encoding, page::DataPage};
 
 use super::super::{nested, utils, WriteOptions};
 use super::basic::{build_statistics, encode_plain};
+use crate::array::{Array, Utf8Array};
+use crate::error::Result;
 use crate::io::parquet::read::schema::is_nullable;
 use crate::io::parquet::write::Nested;
-use crate::{
-    array::{Array, Utf8Array},
-    error::Result,
-    offset::Offset,
-};
+use crate::offset::Offset;
 
 pub fn array_to_page<O>(
     array: &Utf8Array<O>,

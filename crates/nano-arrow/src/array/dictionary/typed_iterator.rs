@@ -1,9 +1,8 @@
+use super::DictionaryKey;
 use crate::array::{Array, PrimitiveArray, Utf8Array};
 use crate::error::{Error, Result};
 use crate::trusted_len::TrustedLen;
 use crate::types::Offset;
-
-use super::DictionaryKey;
 
 pub trait DictValue {
     type IterValue<'this>

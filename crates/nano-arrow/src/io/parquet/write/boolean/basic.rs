@@ -1,14 +1,15 @@
-use parquet2::{
-    encoding::{hybrid_rle::bitpacked_encode, Encoding},
-    page::DataPage,
-    schema::types::PrimitiveType,
-    statistics::{serialize_statistics, BooleanStatistics, ParquetStatistics, Statistics},
+use parquet2::encoding::hybrid_rle::bitpacked_encode;
+use parquet2::encoding::Encoding;
+use parquet2::page::DataPage;
+use parquet2::schema::types::PrimitiveType;
+use parquet2::statistics::{
+    serialize_statistics, BooleanStatistics, ParquetStatistics, Statistics,
 };
 
-use super::super::utils;
-use super::super::WriteOptions;
+use super::super::{utils, WriteOptions};
 use crate::array::*;
-use crate::{error::Result, io::parquet::read::schema::is_nullable};
+use crate::error::Result;
+use crate::io::parquet::read::schema::is_nullable;
 
 fn encode(iterator: impl Iterator<Item = bool>, buffer: &mut Vec<u8>) -> Result<()> {
     // encode values using bitpacking

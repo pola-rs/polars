@@ -4,15 +4,12 @@ use std::sync::Arc;
 use crate::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, StructArray};
 use crate::datatypes::DataType;
 use crate::error::Error;
-use crate::offset::Offset;
-
-use crate::io::ipc::read::{Dictionaries, OutOfSpecKind};
-use crate::io::ipc::read::{IpcBuffer, Node};
-use crate::io::ipc::IpcField;
-use crate::types::NativeType;
-
 use crate::ffi::mmap::create_array;
 use crate::ffi::{export_array_to_c, try_from, ArrowArray, InternalArrowArray};
+use crate::io::ipc::read::{Dictionaries, IpcBuffer, Node, OutOfSpecKind};
+use crate::io::ipc::IpcField;
+use crate::offset::Offset;
+use crate::types::NativeType;
 
 fn get_buffer_bounds(buffers: &mut VecDeque<IpcBuffer>) -> Result<(usize, usize), Error> {
     let buffer = buffers

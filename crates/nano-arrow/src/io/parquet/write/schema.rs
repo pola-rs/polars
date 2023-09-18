@@ -1,24 +1,17 @@
-use base64::{engine::general_purpose, Engine as _};
-use parquet2::{
-    metadata::KeyValue,
-    schema::{
-        types::{
-            GroupConvertedType, GroupLogicalType, IntegerType, ParquetType, PhysicalType,
-            PrimitiveConvertedType, PrimitiveLogicalType, TimeUnit as ParquetTimeUnit,
-        },
-        Repetition,
-    },
+use base64::engine::general_purpose;
+use base64::Engine as _;
+use parquet2::metadata::KeyValue;
+use parquet2::schema::types::{
+    GroupConvertedType, GroupLogicalType, IntegerType, ParquetType, PhysicalType,
+    PrimitiveConvertedType, PrimitiveLogicalType, TimeUnit as ParquetTimeUnit,
 };
-
-use crate::{
-    datatypes::{DataType, Field, Schema, TimeUnit},
-    error::{Error, Result},
-    io::ipc::write::default_ipc_fields,
-    io::ipc::write::schema_to_bytes,
-    io::parquet::write::decimal_length_from_precision,
-};
+use parquet2::schema::Repetition;
 
 use super::super::ARROW_SCHEMA_META_KEY;
+use crate::datatypes::{DataType, Field, Schema, TimeUnit};
+use crate::error::{Error, Result};
+use crate::io::ipc::write::{default_ipc_fields, schema_to_bytes};
+use crate::io::parquet::write::decimal_length_from_precision;
 
 pub fn schema_to_metadata_key(schema: &Schema) -> KeyValue {
     let serialized_schema = schema_to_bytes(schema, &default_ipc_fields(&schema.fields));
@@ -260,11 +253,11 @@ pub fn to_parquet_type(field: &Field) -> Result<ParquetType> {
             Ok(ParquetType::from_group(
                 name, repetition, None, None, fields, None,
             ))
-        }
+        },
         DataType::Dictionary(_, value, _) => {
             let dict_field = Field::new(name.as_str(), value.as_ref().clone(), field.is_nullable);
             to_parquet_type(&dict_field)
-        }
+        },
         DataType::FixedSizeBinary(size) => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::FixedLenByteArray(*size),
@@ -294,7 +287,7 @@ pub fn to_parquet_type(field: &Field) -> Result<ParquetType> {
                 logical_type,
                 None,
             )?)
-        }
+        },
         DataType::Decimal256(precision, scale) => {
             let precision = *precision;
             let scale = *scale;
@@ -338,7 +331,7 @@ pub fn to_parquet_type(field: &Field) -> Result<ParquetType> {
                     None,
                 )?)
             }
-        }
+        },
         DataType::Interval(_) => Ok(ParquetType::try_from_primitive(
             name,
             PhysicalType::FixedLenByteArray(12),
@@ -363,7 +356,7 @@ pub fn to_parquet_type(field: &Field) -> Result<ParquetType> {
                 )],
                 None,
             ))
-        }
+        },
         DataType::Map(f, _) => Ok(ParquetType::from_group(
             name,
             repetition,

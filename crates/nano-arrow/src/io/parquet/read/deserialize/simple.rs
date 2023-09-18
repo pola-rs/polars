@@ -1,25 +1,15 @@
 use ethnum::I256;
-use parquet2::{
-    schema::types::{
-        PhysicalType, PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
-    },
-    types::int96_to_i64_ns,
+use parquet2::schema::types::{
+    PhysicalType, PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
 };
-
-use crate::types::i256;
-use crate::{
-    array::{Array, DictionaryKey, MutablePrimitiveArray, PrimitiveArray},
-    datatypes::{DataType, IntervalUnit, TimeUnit},
-    error::{Error, Result},
-    types::{days_ms, NativeType},
-};
+use parquet2::types::int96_to_i64_ns;
 
 use super::super::{ArrayIter, Pages};
-use super::binary;
-use super::boolean;
-use super::fixed_size_binary;
-use super::null;
-use super::primitive;
+use super::{binary, boolean, fixed_size_binary, null, primitive};
+use crate::array::{Array, DictionaryKey, MutablePrimitiveArray, PrimitiveArray};
+use crate::datatypes::{DataType, IntervalUnit, TimeUnit};
+use crate::error::{Error, Result};
+use crate::types::{days_ms, i256, NativeType};
 
 /// Converts an iterator of arrays to a trait object returning trait objects
 #[inline]
@@ -74,7 +64,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
         (_, Null) => null::iter_to_arrays(pages, data_type, chunk_size, num_rows),
         (PhysicalType::Boolean, Boolean) => {
             dyn_iter(boolean::Iter::new(pages, data_type, chunk_size, num_rows))
-        }
+        },
         (PhysicalType::Int32, UInt8) => dyn_iter(iden(primitive::IntegerIter::new(
             pages,
             data_type,
@@ -131,7 +121,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
                 chunk_size,
                 time_unit,
             );
-        }
+        },
         (PhysicalType::FixedLenByteArray(_), FixedSizeBinary(_)) => dyn_iter(
             fixed_size_binary::Iter::new(pages, data_type, num_rows, chunk_size),
         ),
@@ -159,7 +149,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
             let arrays = pages.map(|x| x.map(|x| x.boxed()));
 
             Box::new(arrays) as _
-        }
+        },
         (PhysicalType::FixedLenByteArray(12), Interval(IntervalUnit::DayTime)) => {
             let n = 12;
             let pages = fixed_size_binary::Iter::new(
@@ -184,7 +174,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
             let arrays = pages.map(|x| x.map(|x| x.boxed()));
 
             Box::new(arrays) as _
-        }
+        },
         (PhysicalType::Int32, Decimal(_, _)) => dyn_iter(iden(primitive::IntegerIter::new(
             pages,
             data_type,
@@ -203,7 +193,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
             return Err(Error::NotYetImplemented(format!(
                 "Can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}"
             )))
-        }
+        },
         (PhysicalType::FixedLenByteArray(n), Decimal(_, _)) => {
             let n = *n;
 
@@ -229,7 +219,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
             let arrays = pages.map(|x| x.map(|x| x.boxed()));
 
             Box::new(arrays) as _
-        }
+        },
         (PhysicalType::Int32, Decimal256(_, _)) => dyn_iter(iden(primitive::IntegerIter::new(
             pages,
             data_type,
@@ -269,7 +259,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
             let arrays = pages.map(|x| x.map(|x| x.boxed()));
 
             Box::new(arrays) as _
-        }
+        },
         (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n <= 32 => {
             let n = *n;
 
@@ -295,12 +285,12 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
             let arrays = pages.map(|x| x.map(|x| x.boxed()));
 
             Box::new(arrays) as _
-        }
+        },
         (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n > 32 => {
             return Err(Error::NotYetImplemented(format!(
                 "Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}"
             )))
-        }
+        },
         (PhysicalType::Int32, Date64) => dyn_iter(iden(primitive::IntegerIter::new(
             pages,
             data_type,
@@ -351,12 +341,12 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
             return match_integer_type!(key_type, |$K| {
                 dict_read::<$K, _>(pages, physical_type, logical_type, data_type, num_rows, chunk_size)
             })
-        }
+        },
         (from, to) => {
             return Err(Error::NotYetImplemented(format!(
                 "Reading parquet type {from:?} to {to:?} still not implemented"
             )))
-        }
+        },
     })
 }
 
@@ -604,7 +594,7 @@ fn dict_read<'a, K: DictionaryKey, I: Pages + 'a>(
                 chunk_size,
                 |x: i32| x,
             ))
-        }
+        },
 
         (PhysicalType::Int64, Timestamp(time_unit, _)) => {
             let time_unit = *time_unit;
@@ -617,7 +607,7 @@ fn dict_read<'a, K: DictionaryKey, I: Pages + 'a>(
                 chunk_size,
                 time_unit,
             );
-        }
+        },
 
         (PhysicalType::Int64, Int64 | Date64 | Time64(_) | Duration(_)) => {
             dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
@@ -627,7 +617,7 @@ fn dict_read<'a, K: DictionaryKey, I: Pages + 'a>(
                 chunk_size,
                 |x: i64| x,
             ))
-        }
+        },
         (PhysicalType::Float, Float32) => dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
             iter,
             data_type,
@@ -656,6 +646,6 @@ fn dict_read<'a, K: DictionaryKey, I: Pages + 'a>(
             return Err(Error::nyi(format!(
                 "Reading dictionaries of type {other:?}"
             )))
-        }
+        },
     })
 }

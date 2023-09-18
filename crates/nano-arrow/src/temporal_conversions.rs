@@ -1,20 +1,13 @@
 //! Conversion methods for dates and times.
 
-use chrono::{
-    format::{parse, Parsed, StrftimeItems},
-    Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime,
-};
+use chrono::format::{parse, Parsed, StrftimeItems};
+use chrono::{Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
 
-use crate::error::Result;
-use crate::{
-    array::{PrimitiveArray, Utf8Array},
-    error::Error,
-    offset::Offset,
-};
-use crate::{
-    datatypes::{DataType, TimeUnit},
-    types::months_days_ns,
-};
+use crate::array::{PrimitiveArray, Utf8Array};
+use crate::datatypes::{DataType, TimeUnit};
+use crate::error::{Error, Result};
+use crate::offset::Offset;
+use crate::types::months_days_ns;
 
 /// Number of seconds in a day
 pub const SECONDS_IN_DAY: i64 = 86_400;

@@ -1,6 +1,5 @@
-use crate::bitmap::{Bitmap, MutableBitmap};
-
 use super::utils::{BitChunk, BitChunkIterExact, BitChunksExact};
+use crate::bitmap::{Bitmap, MutableBitmap};
 
 /// Applies a function to every bit of this [`MutableBitmap`] in chunks
 ///

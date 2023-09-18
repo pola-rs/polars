@@ -1,19 +1,15 @@
-use std::{iter::FromIterator, sync::Arc};
-
-use crate::{
-    array::{
-        specification::{try_check_offsets_bounds, try_check_utf8},
-        Array, ArrayValuesIter, MutableArray, TryExtend, TryExtendFromSelf, TryPush,
-    },
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-    error::{Error, Result},
-    offset::{Offset, Offsets},
-    trusted_len::TrustedLen,
-};
+use std::iter::FromIterator;
+use std::sync::Arc;
 
 use super::{MutableUtf8Array, StrAsBytes, Utf8Array};
 use crate::array::physical_binary::*;
+use crate::array::specification::{try_check_offsets_bounds, try_check_utf8};
+use crate::array::{Array, ArrayValuesIter, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
+use crate::offset::{Offset, Offsets};
+use crate::trusted_len::TrustedLen;
 
 /// A [`MutableArray`] that builds a [`Utf8Array`]. It differs
 /// from [`MutableUtf8Array`] in that it builds non-null [`Utf8Array`].

@@ -2,10 +2,11 @@
 
 use std::cmp::Ordering;
 
+use crate::array::*;
 use crate::datatypes::*;
 use crate::error::{Error, Result};
 use crate::offset::Offset;
-use crate::{array::*, types::NativeType};
+use crate::types::NativeType;
 
 /// Compare the values at two arbitrary indices in two arrays.
 pub type DynComparator = Box<dyn Fn(usize, usize) -> Ordering + Send + Sync>;
@@ -186,7 +187,7 @@ pub fn build_compare(left: &dyn Array, right: &dyn Array) -> Result<DynComparato
             return Err(Error::InvalidArgumentError(
                 "Can't compare arrays of different types".to_string(),
             ));
-        }
+        },
         (Boolean, Boolean) => compare_boolean(left, right),
         (UInt8, UInt8) => compare_primitives::<u8>(left, right),
         (UInt16, UInt16) => compare_primitives::<u16>(left, right),
@@ -232,13 +233,13 @@ pub fn build_compare(left: &dyn Array, right: &dyn Array) -> Result<DynComparato
                     return Err(Error::InvalidArgumentError(format!(
                         "Dictionaries do not support keys of type {lhs:?}"
                     )))
-                }
+                },
             }
-        }
+        },
         (lhs, _) => {
             return Err(Error::InvalidArgumentError(format!(
                 "The data type type {lhs:?} has no natural order"
             )))
-        }
+        },
     })
 }

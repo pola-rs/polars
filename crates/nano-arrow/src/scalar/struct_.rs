@@ -1,6 +1,5 @@
-use crate::datatypes::DataType;
-
 use super::Scalar;
+use crate::datatypes::DataType;
 
 /// A single entry of a [`crate::array::StructArray`].
 #[derive(Debug, Clone)]

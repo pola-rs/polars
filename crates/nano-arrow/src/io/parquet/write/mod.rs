@@ -26,30 +26,27 @@ mod sink;
 mod utf8;
 mod utils;
 
+pub use nested::{num_values, write_rep_and_def};
+pub use pages::{to_leaves, to_nested, to_parquet_leaves};
+pub use parquet2::compression::{BrotliLevel, CompressionOptions, GzipLevel, ZstdLevel};
+pub use parquet2::encoding::Encoding;
+pub use parquet2::metadata::{
+    Descriptor, FileMetaData, KeyValue, SchemaDescriptor, ThriftFileMetaData,
+};
+pub use parquet2::page::{CompressedDataPage, CompressedPage, Page};
+use parquet2::schema::types::PrimitiveType as ParquetPrimitiveType;
+pub use parquet2::schema::types::{FieldInfo, ParquetType, PhysicalType as ParquetPhysicalType};
+pub use parquet2::write::{
+    compress, write_metadata_sidecar, Compressor, DynIter, DynStreamingIterator, RowGroupIter,
+    Version,
+};
+pub use parquet2::{fallible_streaming_iterator, FallibleStreamingIterator};
+pub use utils::write_def_levels;
+
 use crate::array::*;
 use crate::datatypes::*;
 use crate::error::{Error, Result};
-use crate::types::days_ms;
-use crate::types::i256;
-use crate::types::NativeType;
-
-pub use nested::{num_values, write_rep_and_def};
-pub use pages::{to_leaves, to_nested, to_parquet_leaves};
-use parquet2::schema::types::PrimitiveType as ParquetPrimitiveType;
-pub use parquet2::{
-    compression::{BrotliLevel, CompressionOptions, GzipLevel, ZstdLevel},
-    encoding::Encoding,
-    fallible_streaming_iterator,
-    metadata::{Descriptor, FileMetaData, KeyValue, SchemaDescriptor, ThriftFileMetaData},
-    page::{CompressedDataPage, CompressedPage, Page},
-    schema::types::{FieldInfo, ParquetType, PhysicalType as ParquetPhysicalType},
-    write::{
-        compress, write_metadata_sidecar, Compressor, DynIter, DynStreamingIterator, RowGroupIter,
-        Version,
-    },
-    FallibleStreamingIterator,
-};
-pub use utils::write_def_levels;
+use crate::types::{days_ms, i256, NativeType};
 
 /// Currently supported options to write to parquet
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,14 +61,13 @@ pub struct WriteOptions {
     pub data_pagesize_limit: Option<usize>,
 }
 
-use crate::compute::aggregate::estimated_bytes_size;
 pub use file::FileWriter;
+pub use pages::{array_to_columns, Nested};
 pub use row_group::{row_group_iter, RowGroupIterator};
 pub use schema::to_parquet_type;
 pub use sink::FileSink;
 
-pub use pages::array_to_columns;
-pub use pages::Nested;
+use crate::compute::aggregate::estimated_bytes_size;
 
 /// returns offset and length to slice the leaf values
 pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {
@@ -84,14 +80,14 @@ pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {
                 let start = *l_nested.offsets.first();
                 let end = *l_nested.offsets.last();
                 return (start as usize, (end - start) as usize);
-            }
+            },
             Nested::List(l_nested) => {
                 let start = *l_nested.offsets.first();
                 let end = *l_nested.offsets.last();
                 return (start as usize, (end - start) as usize);
-            }
+            },
             Nested::Primitive(_, _, len) => out = (0, *len),
-            _ => {}
+            _ => {},
         }
     }
     out
@@ -175,7 +171,7 @@ pub fn slice_parquet_array(
 
                 current_length = l_nested.offsets.range() as usize;
                 current_offset = *l_nested.offsets.first() as usize;
-            }
+            },
             Nested::List(l_nested) => {
                 l_nested.offsets.slice(current_offset, current_length + 1);
                 if let Some(validity) = l_nested.validity.as_mut() {
@@ -184,20 +180,20 @@ pub fn slice_parquet_array(
 
                 current_length = l_nested.offsets.range() as usize;
                 current_offset = *l_nested.offsets.first() as usize;
-            }
+            },
             Nested::Struct(validity, _, length) => {
                 *length = current_length;
                 if let Some(validity) = validity.as_mut() {
                     validity.slice(current_offset, current_length)
                 };
-            }
+            },
             Nested::Primitive(validity, _, length) => {
                 *length = current_length;
                 if let Some(validity) = validity.as_mut() {
                     validity.slice(current_offset, current_length)
                 };
                 primitive_array.slice(current_offset, current_length);
-            }
+            },
         }
     }
 }
@@ -209,7 +205,7 @@ pub fn get_max_length(nested: &[Nested]) -> usize {
         match nested {
             Nested::LargeList(l_nested) => length += l_nested.offsets.range() as usize,
             Nested::List(l_nested) => length += l_nested.offsets.range() as usize,
-            _ => {}
+            _ => {},
         }
     }
     length
@@ -311,7 +307,7 @@ pub fn array_to_page_simple(
     match data_type.to_logical_type() {
         DataType::Boolean => {
             boolean::array_to_page(array.as_any().downcast_ref().unwrap(), options, type_)
-        }
+        },
         // casts below MUST match the casts done at the metadata (field -> parquet type).
         DataType::UInt8 => primitive::array_to_page_integer::<u8, i32>(
             array.as_any().downcast_ref().unwrap(),
@@ -356,7 +352,7 @@ pub fn array_to_page_simple(
                 type_,
                 encoding,
             )
-        }
+        },
         DataType::Int64
         | DataType::Date64
         | DataType::Time64(_)
@@ -404,7 +400,7 @@ pub fn array_to_page_simple(
         DataType::Null => {
             let array = Int32Array::new_null(DataType::Int32, array.len());
             primitive::array_to_page_plain::<i32, i32>(&array, options, type_)
-        }
+        },
         DataType::Interval(IntervalUnit::YearMonth) => {
             let type_ = type_;
             let array = array
@@ -428,7 +424,7 @@ pub fn array_to_page_simple(
                 None
             };
             fixed_len_bytes::array_to_page(&array, options, type_, statistics)
-        }
+        },
         DataType::Interval(IntervalUnit::DayTime) => {
             let type_ = type_;
             let array = array
@@ -452,7 +448,7 @@ pub fn array_to_page_simple(
                 None
             };
             fixed_len_bytes::array_to_page(&array, options, type_, statistics)
-        }
+        },
         DataType::FixedSizeBinary(_) => {
             let type_ = type_;
             let array = array.as_any().downcast_ref().unwrap();
@@ -463,7 +459,7 @@ pub fn array_to_page_simple(
             };
 
             fixed_len_bytes::array_to_page(array, options, type_, statistics)
-        }
+        },
         DataType::Decimal256(precision, _) => {
             let type_ = type_;
             let precision = *precision;
@@ -543,7 +539,7 @@ pub fn array_to_page_simple(
 
                 fixed_len_bytes::array_to_page(&array, options, type_, statistics)
             }
-        }
+        },
         DataType::Decimal(precision, _) => {
             let type_ = type_;
             let precision = *precision;
@@ -596,7 +592,7 @@ pub fn array_to_page_simple(
                 );
                 fixed_len_bytes::array_to_page(&array, options, type_, statistics)
             }
-        }
+        },
         other => Err(Error::NotYetImplemented(format!(
             "Writing parquet pages for data type {other:?}"
         ))),
@@ -616,67 +612,67 @@ fn array_to_page_nested(
         Null => {
             let array = Int32Array::new_null(DataType::Int32, array.len());
             primitive::nested_array_to_page::<i32, i32>(&array, options, type_, nested)
-        }
+        },
         Boolean => {
             let array = array.as_any().downcast_ref().unwrap();
             boolean::nested_array_to_page(array, options, type_, nested)
-        }
+        },
         Utf8 => {
             let array = array.as_any().downcast_ref().unwrap();
             utf8::nested_array_to_page::<i32>(array, options, type_, nested)
-        }
+        },
         LargeUtf8 => {
             let array = array.as_any().downcast_ref().unwrap();
             utf8::nested_array_to_page::<i64>(array, options, type_, nested)
-        }
+        },
         Binary => {
             let array = array.as_any().downcast_ref().unwrap();
             binary::nested_array_to_page::<i32>(array, options, type_, nested)
-        }
+        },
         LargeBinary => {
             let array = array.as_any().downcast_ref().unwrap();
             binary::nested_array_to_page::<i64>(array, options, type_, nested)
-        }
+        },
         UInt8 => {
             let array = array.as_any().downcast_ref().unwrap();
             primitive::nested_array_to_page::<u8, i32>(array, options, type_, nested)
-        }
+        },
         UInt16 => {
             let array = array.as_any().downcast_ref().unwrap();
             primitive::nested_array_to_page::<u16, i32>(array, options, type_, nested)
-        }
+        },
         UInt32 => {
             let array = array.as_any().downcast_ref().unwrap();
             primitive::nested_array_to_page::<u32, i32>(array, options, type_, nested)
-        }
+        },
         UInt64 => {
             let array = array.as_any().downcast_ref().unwrap();
             primitive::nested_array_to_page::<u64, i64>(array, options, type_, nested)
-        }
+        },
         Int8 => {
             let array = array.as_any().downcast_ref().unwrap();
             primitive::nested_array_to_page::<i8, i32>(array, options, type_, nested)
-        }
+        },
         Int16 => {
             let array = array.as_any().downcast_ref().unwrap();
             primitive::nested_array_to_page::<i16, i32>(array, options, type_, nested)
-        }
+        },
         Int32 | Date32 | Time32(_) => {
             let array = array.as_any().downcast_ref().unwrap();
             primitive::nested_array_to_page::<i32, i32>(array, options, type_, nested)
-        }
+        },
         Int64 | Date64 | Time64(_) | Timestamp(_, _) | Duration(_) => {
             let array = array.as_any().downcast_ref().unwrap();
             primitive::nested_array_to_page::<i64, i64>(array, options, type_, nested)
-        }
+        },
         Float32 => {
             let array = array.as_any().downcast_ref().unwrap();
             primitive::nested_array_to_page::<f32, f32>(array, options, type_, nested)
-        }
+        },
         Float64 => {
             let array = array.as_any().downcast_ref().unwrap();
             primitive::nested_array_to_page::<f64, f64>(array, options, type_, nested)
-        }
+        },
         Decimal(precision, _) => {
             let type_ = type_;
             let precision = *precision;
@@ -729,7 +725,7 @@ fn array_to_page_nested(
                 );
                 fixed_len_bytes::array_to_page(&array, options, type_, statistics)
             }
-        }
+        },
         Decimal256(precision, _) => {
             let type_ = type_;
             let precision = *precision;
@@ -809,7 +805,7 @@ fn array_to_page_nested(
 
                 fixed_len_bytes::array_to_page(&array, options, type_, statistics)
             }
-        }
+        },
         other => Err(Error::NotYetImplemented(format!(
             "Writing nested parquet pages for data type {other:?}"
         ))),
@@ -837,7 +833,7 @@ fn transverse_recursive<T, F: Fn(&DataType) -> T + Clone>(
             } else {
                 unreachable!()
             }
-        }
+        },
         Struct => {
             if let DataType::Struct(fields) = data_type.to_logical_type() {
                 for field in fields {
@@ -846,7 +842,7 @@ fn transverse_recursive<T, F: Fn(&DataType) -> T + Clone>(
             } else {
                 unreachable!()
             }
-        }
+        },
         Map => {
             if let DataType::Map(field, _) = data_type.to_logical_type() {
                 if let DataType::Struct(fields) = field.data_type.to_logical_type() {
@@ -859,7 +855,7 @@ fn transverse_recursive<T, F: Fn(&DataType) -> T + Clone>(
             } else {
                 unreachable!()
             }
-        }
+        },
         Union => todo!(),
     }
 }

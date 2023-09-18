@@ -1,14 +1,13 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
+use super::super::read_basic::*;
+use super::super::{Compression, IpcBuffer, Node, OutOfSpecKind};
 use crate::array::Utf8Array;
 use crate::buffer::Buffer;
 use crate::datatypes::DataType;
 use crate::error::{Error, Result};
 use crate::offset::Offset;
-
-use super::super::read_basic::*;
-use super::super::{Compression, IpcBuffer, Node, OutOfSpecKind};
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_utf8<O: Offset, R: Read + Seek>(

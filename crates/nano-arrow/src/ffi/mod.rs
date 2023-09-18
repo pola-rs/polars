@@ -7,17 +7,14 @@ pub mod mmap;
 mod schema;
 mod stream;
 
-pub(crate) use array::try_from;
-pub(crate) use array::{ArrowArrayRef, InternalArrowArray};
+pub(crate) use array::{try_from, ArrowArrayRef, InternalArrowArray};
+pub use generated::{ArrowArray, ArrowArrayStream, ArrowSchema};
+pub use stream::{export_iterator, ArrowArrayStreamReader};
 
+use self::schema::to_field;
 use crate::array::Array;
 use crate::datatypes::{DataType, Field};
 use crate::error::Result;
-
-use self::schema::to_field;
-
-pub use generated::{ArrowArray, ArrowArrayStream, ArrowSchema};
-pub use stream::{export_iterator, ArrowArrayStreamReader};
 
 /// Exports an [`Box<dyn Array>`] to the C data interface.
 pub fn export_array_to_c(array: Box<dyn Array>) -> ArrowArray {

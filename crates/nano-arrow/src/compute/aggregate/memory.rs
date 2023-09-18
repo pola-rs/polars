@@ -40,7 +40,7 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
         Boolean => {
             let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
             array.values().as_slice().0.len() + validity_size(array.validity())
-        }
+        },
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let array = array
                 .as_any()
@@ -56,7 +56,7 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
                 .downcast_ref::<FixedSizeBinaryArray>()
                 .unwrap();
             array.values().len() + validity_size(array.validity())
-        }
+        },
         LargeBinary => dyn_binary!(array, BinaryArray<i64>, i64),
         Utf8 => dyn_binary!(array, Utf8Array<i32>, i32),
         LargeUtf8 => dyn_binary!(array, Utf8Array<i64>, i64),
@@ -65,17 +65,17 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
             estimated_bytes_size(array.values().as_ref())
                 + array.offsets().len_proxy() * std::mem::size_of::<i32>()
                 + validity_size(array.validity())
-        }
+        },
         FixedSizeList => {
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             estimated_bytes_size(array.values().as_ref()) + validity_size(array.validity())
-        }
+        },
         LargeList => {
             let array = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
             estimated_bytes_size(array.values().as_ref())
                 + array.offsets().len_proxy() * std::mem::size_of::<i64>()
                 + validity_size(array.validity())
-        }
+        },
         Struct => {
             let array = array.as_any().downcast_ref::<StructArray>().unwrap();
             array
@@ -85,7 +85,7 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
                 .map(estimated_bytes_size)
                 .sum::<usize>()
                 + validity_size(array.validity())
-        }
+        },
         Union => {
             let array = array.as_any().downcast_ref::<UnionArray>().unwrap();
             let types = array.types().len() * std::mem::size_of::<i8>();
@@ -101,7 +101,7 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
                 .map(estimated_bytes_size)
                 .sum::<usize>();
             types + offsets + fields
-        }
+        },
         Dictionary(key_type) => match_integer_type!(key_type, |$T| {
             let array = array
                 .as_any()
@@ -113,6 +113,6 @@ pub fn estimated_bytes_size(array: &dyn Array) -> usize {
             let array = array.as_any().downcast_ref::<MapArray>().unwrap();
             let offsets = array.offsets().len_proxy() * std::mem::size_of::<i32>();
             offsets + estimated_bytes_size(array.field().as_ref()) + validity_size(array.validity())
-        }
+        },
     }
 }

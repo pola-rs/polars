@@ -1,15 +1,11 @@
-use crate::{
-    bitmap::{
-        utils::{BitmapIter, ZipValidity},
-        Bitmap, MutableBitmap,
-    },
-    datatypes::{DataType, PhysicalType},
-    error::Error,
-    trusted_len::TrustedLen,
-};
 use either::Either;
 
 use super::Array;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
+use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::datatypes::{DataType, PhysicalType};
+use crate::error::Error;
+use crate::trusted_len::TrustedLen;
 
 #[cfg(feature = "arrow")]
 mod data;
@@ -255,7 +251,7 @@ impl BooleanArray {
                 Left(immutable) => Left(BooleanArray::new(self.data_type, immutable, None)),
                 Right(mutable) => {
                     Right(MutableBooleanArray::try_new(self.data_type, mutable, None).unwrap())
-                }
+                },
             }
         }
     }

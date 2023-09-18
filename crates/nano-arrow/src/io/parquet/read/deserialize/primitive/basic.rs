@@ -1,22 +1,18 @@
 use std::collections::VecDeque;
 
-use parquet2::{
-    deserialize::SliceFilteredIter,
-    encoding::{hybrid_rle, Encoding},
-    page::{split_buffer, DataPage, DictPage},
-    schema::Repetition,
-    types::decode,
-    types::NativeType as ParquetNativeType,
-};
+use parquet2::deserialize::SliceFilteredIter;
+use parquet2::encoding::{hybrid_rle, Encoding};
+use parquet2::page::{split_buffer, DataPage, DictPage};
+use parquet2::schema::Repetition;
+use parquet2::types::{decode, NativeType as ParquetNativeType};
 
-use crate::{
-    array::MutablePrimitiveArray, bitmap::MutableBitmap, datatypes::DataType, error::Result,
-    types::NativeType,
-};
-
-use super::super::utils;
 use super::super::utils::{get_selected_rows, FilteredOptionalPageValidity, OptionalPageValidity};
-use super::super::Pages;
+use super::super::{utils, Pages};
+use crate::array::MutablePrimitiveArray;
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::error::Result;
+use crate::types::NativeType;
 
 #[derive(Debug)]
 pub(super) struct FilteredRequiredValues<'a> {
@@ -169,23 +165,23 @@ where
         match (page.encoding(), dict, is_optional, is_filtered) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), false, false) => {
                 ValuesDictionary::try_new(page, dict).map(State::RequiredDictionary)
-            }
+            },
             (Encoding::PlainDictionary | Encoding::RleDictionary, Some(dict), true, false) => {
                 Ok(State::OptionalDictionary(
                     OptionalPageValidity::try_new(page)?,
                     ValuesDictionary::try_new(page, dict)?,
                 ))
-            }
+            },
             (Encoding::Plain, _, true, false) => {
                 let validity = OptionalPageValidity::try_new(page)?;
                 let values = Values::try_new::<P>(page)?;
 
                 Ok(State::Optional(validity, values))
-            }
+            },
             (Encoding::Plain, _, false, false) => Ok(State::Required(Values::try_new::<P>(page)?)),
             (Encoding::Plain, _, false, true) => {
                 FilteredRequiredValues::try_new::<P>(page).map(State::FilteredRequired)
-            }
+            },
             (Encoding::Plain, _, true, true) => Ok(State::FilteredOptional(
                 FilteredOptionalPageValidity::try_new(page)?,
                 Values::try_new::<P>(page)?,
@@ -224,7 +220,7 @@ where
                         .map(self.op)
                         .take(remaining),
                 );
-            }
+            },
             State::OptionalDictionary(page_validity, page_values) => {
                 let op1 = |index: u32| page_values.dict[index as usize];
                 utils::extend_from_decoder(
@@ -234,7 +230,7 @@ where
                     values,
                     &mut page_values.values.by_ref().map(|x| x.unwrap()).map(op1),
                 )
-            }
+            },
             State::RequiredDictionary(page) => {
                 let op1 = |index: u32| page.dict[index as usize];
                 values.extend(
@@ -244,7 +240,7 @@ where
                         .map(op1)
                         .take(remaining),
                 );
-            }
+            },
             State::FilteredRequired(page) => {
                 values.extend(
                     page.values
@@ -253,7 +249,7 @@ where
                         .map(self.op)
                         .take(remaining),
                 );
-            }
+            },
             State::FilteredOptional(page_validity, page_values) => {
                 utils::extend_from_decoder(
                     validity,
@@ -262,7 +258,7 @@ where
                     values,
                     page_values.values.by_ref().map(decode).map(self.op),
                 );
-            }
+            },
         }
     }
 
@@ -352,7 +348,7 @@ where
         match maybe_state {
             utils::MaybeNext::Some(Ok((values, validity))) => {
                 Some(Ok(finish(&self.data_type, values, validity)))
-            }
+            },
             utils::MaybeNext::Some(Err(e)) => Some(Err(e)),
             utils::MaybeNext::None => None,
             utils::MaybeNext::More => self.next(),

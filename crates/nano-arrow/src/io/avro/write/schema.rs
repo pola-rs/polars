@@ -75,15 +75,15 @@ fn _type_to_schema(data_type: &DataType, name_counter: &mut i32) -> Result<AvroS
         DataType::Time64(TimeUnit::Microsecond) => AvroSchema::Long(Some(LongLogical::Time)),
         DataType::Timestamp(TimeUnit::Millisecond, None) => {
             AvroSchema::Long(Some(LongLogical::LocalTimestampMillis))
-        }
+        },
         DataType::Timestamp(TimeUnit::Microsecond, None) => {
             AvroSchema::Long(Some(LongLogical::LocalTimestampMicros))
-        }
+        },
         DataType::Interval(IntervalUnit::MonthDayNano) => {
             let mut fixed = Fixed::new("", 12);
             fixed.logical = Some(FixedLogical::Duration);
             AvroSchema::Fixed(fixed)
-        }
+        },
         DataType::FixedSizeBinary(size) => AvroSchema::Fixed(Fixed::new("", *size)),
         DataType::Decimal(p, s) => AvroSchema::Bytes(Some(BytesLogical::Decimal(*p, *s))),
         other => return Err(Error::NotYetImplemented(format!("write {other:?} to avro"))),

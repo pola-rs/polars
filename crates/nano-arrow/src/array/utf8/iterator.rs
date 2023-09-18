@@ -1,8 +1,7 @@
+use super::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array};
 use crate::array::{ArrayAccessor, ArrayValuesIter};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::offset::Offset;
-
-use super::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array};
 
 unsafe impl<'a, O: Offset> ArrayAccessor<'a> for Utf8Array<O> {
     type Item = &'a str;

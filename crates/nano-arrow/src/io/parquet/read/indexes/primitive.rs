@@ -3,12 +3,11 @@ use parquet2::indexes::PageIndex;
 use parquet2::schema::types::{PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit};
 use parquet2::types::int96_to_i64_ns;
 
+use super::ColumnPageStatistics;
 use crate::array::{Array, MutablePrimitiveArray, PrimitiveArray};
 use crate::datatypes::{DataType, TimeUnit};
 use crate::trusted_len::TrustedLen;
 use crate::types::{i256, NativeType};
-
-use super::ColumnPageStatistics;
 
 #[inline]
 fn deserialize_int32<I: TrustedLen<Item = Option<i32>>>(
@@ -69,7 +68,7 @@ fn timestamp(
             .iter_mut()
             .for_each(|x| *x /= 1_000_000_000),
 
-        (ParquetTimeUnit::Milliseconds, TimeUnit::Millisecond) => {}
+        (ParquetTimeUnit::Milliseconds, TimeUnit::Millisecond) => {},
         (ParquetTimeUnit::Microseconds, TimeUnit::Millisecond) => array
             .values_mut_slice()
             .iter_mut()
@@ -83,7 +82,7 @@ fn timestamp(
             .values_mut_slice()
             .iter_mut()
             .for_each(|x| *x *= 1_000),
-        (ParquetTimeUnit::Microseconds, TimeUnit::Microsecond) => {}
+        (ParquetTimeUnit::Microseconds, TimeUnit::Microsecond) => {},
         (ParquetTimeUnit::Nanoseconds, TimeUnit::Microsecond) => array
             .values_mut_slice()
             .iter_mut()
@@ -97,7 +96,7 @@ fn timestamp(
             .values_mut_slice()
             .iter_mut()
             .for_each(|x| *x /= 1_000),
-        (ParquetTimeUnit::Nanoseconds, TimeUnit::Nanosecond) => {}
+        (ParquetTimeUnit::Nanoseconds, TimeUnit::Nanosecond) => {},
     }
 }
 
@@ -132,7 +131,7 @@ fn deserialize_int64<I: TrustedLen<Item = Option<i64>>>(
             let array: PrimitiveArray<i64> = array.into();
 
             Box::new(array)
-        }
+        },
         _ => Box::new(PrimitiveArray::<i64>::from_trusted_len_iter(iter).to(data_type)),
     }
 }

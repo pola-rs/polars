@@ -1,13 +1,14 @@
+use std::collections::VecDeque;
+use std::convert::TryInto;
 use std::io::{Read, Seek, SeekFrom};
-use std::{collections::VecDeque, convert::TryInto};
-
-use crate::buffer::Buffer;
-use crate::error::{Error, Result};
-use crate::{bitmap::Bitmap, types::NativeType};
 
 use super::super::compression;
 use super::super::endianess::is_native_little_endian;
 use super::{Compression, IpcBuffer, Node, OutOfSpecKind};
+use crate::bitmap::Bitmap;
+use crate::buffer::Buffer;
+use crate::error::{Error, Result};
+use crate::types::NativeType;
 
 fn read_swapped<T: NativeType, R: Read + Seek>(
     reader: &mut R,
@@ -122,10 +123,10 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
     match compression {
         arrow_format::ipc::CompressionType::Lz4Frame => {
             compression::decompress_lz4(&scratch[8..], out_slice)?;
-        }
+        },
         arrow_format::ipc::CompressionType::Zstd => {
             compression::decompress_zstd(&scratch[8..], out_slice)?;
-        }
+        },
     }
     Ok(buffer)
 }
@@ -212,10 +213,10 @@ fn read_compressed_bitmap<R: Read + Seek>(
     match compression {
         arrow_format::ipc::CompressionType::Lz4Frame => {
             compression::decompress_lz4(&scratch[8..], &mut buffer)?;
-        }
+        },
         arrow_format::ipc::CompressionType::Zstd => {
             compression::decompress_zstd(&scratch[8..], &mut buffer)?;
-        }
+        },
     }
     Ok(buffer)
 }

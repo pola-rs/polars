@@ -1,10 +1,7 @@
-use crate::{
-    array::{Array, MapArray, MutableArray},
-    datatypes::DataType,
-    error::Error,
-};
-
 use super::make_mutable;
+use crate::array::{Array, MapArray, MutableArray};
+use crate::datatypes::DataType;
+use crate::error::Error;
 
 #[derive(Debug)]
 pub struct DynMutableMapArray {

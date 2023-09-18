@@ -16,17 +16,12 @@ mod primitive;
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
-use crate::array::UInt64Array;
-use crate::datatypes::{Field, PrimitiveType};
-use crate::{
-    array::Array,
-    datatypes::{DataType, PhysicalType},
-    error::Error,
-};
+pub use parquet2::indexes::{FilteredPage, Interval};
 
 use super::get_field_pages;
-
-pub use parquet2::indexes::{FilteredPage, Interval};
+use crate::array::{Array, UInt64Array};
+use crate::datatypes::{DataType, Field, PhysicalType, PrimitiveType};
+use crate::error::Error;
 
 /// Page statistics of an Arrow field.
 #[derive(Debug, PartialEq)]
@@ -80,14 +75,14 @@ fn deserialize(
                 .downcast_ref::<BooleanIndex>()
                 .unwrap();
             Ok(boolean::deserialize(&index.indexes).into())
-        }
+        },
         PhysicalType::Primitive(PrimitiveType::Int128) => {
             let index = indexes.pop_front().unwrap();
             match index.physical_type() {
                 ParquetPhysicalType::Int32 => {
                     let index = index.as_any().downcast_ref::<NativeIndex<i32>>().unwrap();
                     Ok(primitive::deserialize_i32(&index.indexes, data_type).into())
-                }
+                },
                 parquet2::schema::types::PhysicalType::Int64 => {
                     let index = index.as_any().downcast_ref::<NativeIndex<i64>>().unwrap();
                     Ok(
@@ -98,23 +93,23 @@ fn deserialize(
                         )
                         .into(),
                     )
-                }
+                },
                 parquet2::schema::types::PhysicalType::FixedLenByteArray(_) => {
                     let index = index.as_any().downcast_ref::<FixedLenByteIndex>().unwrap();
                     Ok(fixed_len_binary::deserialize(&index.indexes, data_type).into())
-                }
+                },
                 other => Err(Error::nyi(format!(
                     "Deserialize {other:?} to arrow's int64"
                 ))),
             }
-        }
+        },
         PhysicalType::Primitive(PrimitiveType::Int256) => {
             let index = indexes.pop_front().unwrap();
             match index.physical_type() {
                 ParquetPhysicalType::Int32 => {
                     let index = index.as_any().downcast_ref::<NativeIndex<i32>>().unwrap();
                     Ok(primitive::deserialize_i32(&index.indexes, data_type).into())
-                }
+                },
                 parquet2::schema::types::PhysicalType::Int64 => {
                     let index = index.as_any().downcast_ref::<NativeIndex<i64>>().unwrap();
                     Ok(
@@ -125,16 +120,16 @@ fn deserialize(
                         )
                         .into(),
                     )
-                }
+                },
                 parquet2::schema::types::PhysicalType::FixedLenByteArray(_) => {
                     let index = index.as_any().downcast_ref::<FixedLenByteIndex>().unwrap();
                     Ok(fixed_len_binary::deserialize(&index.indexes, data_type).into())
-                }
+                },
                 other => Err(Error::nyi(format!(
                     "Deserialize {other:?} to arrow's int64"
                 ))),
             }
-        }
+        },
         PhysicalType::Primitive(PrimitiveType::UInt8)
         | PhysicalType::Primitive(PrimitiveType::UInt16)
         | PhysicalType::Primitive(PrimitiveType::UInt32)
@@ -146,7 +141,7 @@ fn deserialize(
                 .downcast_ref::<NativeIndex<i32>>()
                 .unwrap();
             Ok(primitive::deserialize_i32(&index.indexes, data_type).into())
-        }
+        },
         PhysicalType::Primitive(PrimitiveType::UInt64)
         | PhysicalType::Primitive(PrimitiveType::Int64) => {
             let index = indexes.pop_front().unwrap();
@@ -161,19 +156,19 @@ fn deserialize(
                         )
                         .into(),
                     )
-                }
+                },
                 parquet2::schema::types::PhysicalType::Int96 => {
                     let index = index
                         .as_any()
                         .downcast_ref::<NativeIndex<[u32; 3]>>()
                         .unwrap();
                     Ok(primitive::deserialize_i96(&index.indexes, data_type).into())
-                }
+                },
                 other => Err(Error::nyi(format!(
                     "Deserialize {other:?} to arrow's int64"
                 ))),
             }
-        }
+        },
         PhysicalType::Primitive(PrimitiveType::Float32) => {
             let index = indexes
                 .pop_front()
@@ -182,7 +177,7 @@ fn deserialize(
                 .downcast_ref::<NativeIndex<f32>>()
                 .unwrap();
             Ok(primitive::deserialize_id(&index.indexes, data_type).into())
-        }
+        },
         PhysicalType::Primitive(PrimitiveType::Float64) => {
             let index = indexes
                 .pop_front()
@@ -191,7 +186,7 @@ fn deserialize(
                 .downcast_ref::<NativeIndex<f64>>()
                 .unwrap();
             Ok(primitive::deserialize_id(&index.indexes, data_type).into())
-        }
+        },
         PhysicalType::Binary
         | PhysicalType::LargeBinary
         | PhysicalType::Utf8
@@ -203,7 +198,7 @@ fn deserialize(
                 .downcast_ref::<ByteIndex>()
                 .unwrap();
             binary::deserialize(&index.indexes, &data_type).map(|x| x.into())
-        }
+        },
         PhysicalType::FixedSizeBinary => {
             let index = indexes
                 .pop_front()
@@ -212,35 +207,35 @@ fn deserialize(
                 .downcast_ref::<FixedLenByteIndex>()
                 .unwrap();
             Ok(fixed_len_binary::deserialize(&index.indexes, data_type).into())
-        }
+        },
         PhysicalType::Dictionary(_) => {
             if let DataType::Dictionary(_, inner, _) = data_type.to_logical_type() {
                 deserialize(indexes, (**inner).clone())
             } else {
                 unreachable!()
             }
-        }
+        },
         PhysicalType::List => {
             if let DataType::List(inner) = data_type.to_logical_type() {
                 deserialize(indexes, inner.data_type.clone())
             } else {
                 unreachable!()
             }
-        }
+        },
         PhysicalType::LargeList => {
             if let DataType::LargeList(inner) = data_type.to_logical_type() {
                 deserialize(indexes, inner.data_type.clone())
             } else {
                 unreachable!()
             }
-        }
+        },
         PhysicalType::Map => {
             if let DataType::Map(inner, _) = data_type.to_logical_type() {
                 deserialize(indexes, inner.data_type.clone())
             } else {
                 unreachable!()
             }
-        }
+        },
         PhysicalType::Struct => {
             let children_fields = if let DataType::Struct(children) = data_type.to_logical_type() {
                 children
@@ -253,7 +248,7 @@ fn deserialize(
                 .collect::<Result<Vec<_>, Error>>()?;
 
             Ok(FieldPageStatistics::Multiple(children))
-        }
+        },
 
         other => Err(Error::nyi(format!(
             "Deserialize into arrow's {other:?} page index"

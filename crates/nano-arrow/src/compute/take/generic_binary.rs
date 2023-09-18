@@ -1,11 +1,8 @@
-use crate::{
-    array::{GenericBinaryArray, PrimitiveArray},
-    bitmap::{Bitmap, MutableBitmap},
-    buffer::Buffer,
-    offset::{Offset, Offsets, OffsetsBuffer},
-};
-
 use super::Index;
+use crate::array::{GenericBinaryArray, PrimitiveArray};
+use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::buffer::Buffer;
+use crate::offset::{Offset, Offsets, OffsetsBuffer};
 
 pub fn take_values<O: Offset>(
     length: O,
@@ -97,7 +94,7 @@ pub fn take_indices_validity<O: Offset, I: Index>(
                 let start = offsets[index];
                 length += next - start;
                 starts.push(start);
-            }
+            },
             None => starts.push(O::default()),
         };
         length
@@ -138,11 +135,11 @@ pub fn take_values_indices_validity<O: Offset, I: Index, A: GenericBinaryArray<O
                     validity.push(false);
                     starts.push(O::default());
                 }
-            }
+            },
             None => {
                 validity.push(false);
                 starts.push(O::default());
-            }
+            },
         };
         length
     });

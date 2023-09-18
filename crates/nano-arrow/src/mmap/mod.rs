@@ -4,18 +4,18 @@ use std::sync::Arc;
 
 mod array;
 
+use arrow_format::ipc::planus::ReadAsRoot;
+use arrow_format::ipc::{Block, MessageRef, RecordBatchRef};
+
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::{DataType, Field};
 use crate::error::Error;
-
 use crate::io::ipc::read::file::{get_dictionary_batch, get_record_batch};
-use crate::io::ipc::read::{first_dict_field, Dictionaries, FileMetadata};
-use crate::io::ipc::read::{IpcBuffer, Node, OutOfSpecKind};
+use crate::io::ipc::read::{
+    first_dict_field, Dictionaries, FileMetadata, IpcBuffer, Node, OutOfSpecKind,
+};
 use crate::io::ipc::{IpcField, CONTINUATION_MARKER};
-
-use arrow_format::ipc::planus::ReadAsRoot;
-use arrow_format::ipc::{Block, MessageRef, RecordBatchRef};
 
 fn read_message(
     mut bytes: &[u8],

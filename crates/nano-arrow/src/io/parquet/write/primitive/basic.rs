@@ -1,20 +1,16 @@
-use parquet2::{
-    encoding::delta_bitpacked::encode,
-    encoding::Encoding,
-    page::DataPage,
-    schema::types::PrimitiveType,
-    statistics::{serialize_statistics, PrimitiveStatistics},
-    types::NativeType as ParquetNativeType,
-};
+use parquet2::encoding::delta_bitpacked::encode;
+use parquet2::encoding::Encoding;
+use parquet2::page::DataPage;
+use parquet2::schema::types::PrimitiveType;
+use parquet2::statistics::{serialize_statistics, PrimitiveStatistics};
+use parquet2::types::NativeType as ParquetNativeType;
 
-use super::super::utils;
-use super::super::WriteOptions;
-use crate::{
-    array::{Array, PrimitiveArray},
-    error::Error,
-    io::parquet::{read::schema::is_nullable, write::utils::ExactSizedIter},
-    types::NativeType,
-};
+use super::super::{utils, WriteOptions};
+use crate::array::{Array, PrimitiveArray};
+use crate::error::Error;
+use crate::io::parquet::read::schema::is_nullable;
+use crate::io::parquet::write::utils::ExactSizedIter;
+use crate::types::NativeType;
 
 pub(crate) fn encode_plain<T, P>(
     array: &PrimitiveArray<T>,

@@ -1,13 +1,11 @@
 use std::fmt::{Debug, Formatter, Result, Write};
 
-use crate::array::Array;
-use crate::datatypes::{IntervalUnit, TimeUnit};
-use crate::types::{days_ms, i256, months_days_ns};
-
 use super::PrimitiveArray;
 use crate::array::fmt::write_vec;
+use crate::array::Array;
+use crate::datatypes::{IntervalUnit, TimeUnit};
 use crate::temporal_conversions;
-use crate::types::NativeType;
+use crate::types::{days_ms, i256, months_days_ns, NativeType};
 
 macro_rules! dyn_primitive {
     ($array:expr, $ty:ty, $expr:expr) => {{
@@ -37,23 +35,23 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
         Float64 => Box::new(|f, index| write!(f, "{}", array.value(index))),
         Date32 => {
             dyn_primitive!(array, i32, temporal_conversions::date32_to_date)
-        }
+        },
         Date64 => {
             dyn_primitive!(array, i64, temporal_conversions::date64_to_date)
-        }
+        },
         Time32(TimeUnit::Second) => {
             dyn_primitive!(array, i32, temporal_conversions::time32s_to_time)
-        }
+        },
         Time32(TimeUnit::Millisecond) => {
             dyn_primitive!(array, i32, temporal_conversions::time32ms_to_time)
-        }
+        },
         Time32(_) => unreachable!(), // remaining are not valid
         Time64(TimeUnit::Microsecond) => {
             dyn_primitive!(array, i64, temporal_conversions::time64us_to_time)
-        }
+        },
         Time64(TimeUnit::Nanosecond) => {
             dyn_primitive!(array, i64, temporal_conversions::time64ns_to_time)
-        }
+        },
         Time64(_) => unreachable!(), // remaining are not valid
         Timestamp(time_unit, tz) => {
             if let Some(tz) = tz {
@@ -63,7 +61,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                         dyn_primitive!(array, i64, |time| {
                             temporal_conversions::timestamp_to_datetime(time, *time_unit, &timezone)
                         })
-                    }
+                    },
                     #[cfg(feature = "chrono-tz")]
                     Err(_) => {
                         let timezone = temporal_conversions::parse_offset_tz(tz);
@@ -78,31 +76,31 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                                 Box::new(move |f, index| {
                                     write!(f, "{} ({})", array.value(index), tz)
                                 })
-                            }
+                            },
                         }
-                    }
+                    },
                     #[cfg(not(feature = "chrono-tz"))]
                     _ => {
                         let tz = tz.clone();
                         Box::new(move |f, index| write!(f, "{} ({})", array.value(index), tz))
-                    }
+                    },
                 }
             } else {
                 dyn_primitive!(array, i64, |time| {
                     temporal_conversions::timestamp_to_naive_datetime(time, *time_unit)
                 })
             }
-        }
+        },
         Interval(IntervalUnit::YearMonth) => {
             dyn_primitive!(array, i32, |x| format!("{x}m"))
-        }
+        },
         Interval(IntervalUnit::DayTime) => {
             dyn_primitive!(array, days_ms, |x: days_ms| format!(
                 "{}d{}ms",
                 x.days(),
                 x.milliseconds()
             ))
-        }
+        },
         Interval(IntervalUnit::MonthDayNano) => {
             dyn_primitive!(array, months_days_ns, |x: months_days_ns| format!(
                 "{}m{}d{}ns",
@@ -110,7 +108,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                 x.days(),
                 x.ns()
             ))
-        }
+        },
         Duration(TimeUnit::Second) => dyn_primitive!(array, i64, |x| format!("{x}s")),
         Duration(TimeUnit::Millisecond) => dyn_primitive!(array, i64, |x| format!("{x}ms")),
         Duration(TimeUnit::Microsecond) => dyn_primitive!(array, i64, |x| format!("{x}us")),
@@ -125,7 +123,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                 format!("{base}.{decimals}")
             };
             dyn_primitive!(array, i128, display)
-        }
+        },
         Decimal256(_, scale) => {
             let scale = *scale as u32;
             let factor = (ethnum::I256::ONE * 10).pow(scale);
@@ -135,7 +133,7 @@ pub fn get_write_value<'a, T: NativeType, F: Write>(
                 format!("{base}.{decimals}")
             };
             dyn_primitive!(array, i256, display)
-        }
+        },
         _ => unreachable!(),
     }
 }

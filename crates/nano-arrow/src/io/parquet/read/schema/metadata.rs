@@ -1,11 +1,11 @@
-use base64::{engine::general_purpose, Engine as _};
+use base64::engine::general_purpose;
+use base64::Engine as _;
 pub use parquet2::metadata::KeyValue;
 
+use super::super::super::ARROW_SCHEMA_META_KEY;
 use crate::datatypes::{Metadata, Schema};
 use crate::error::{Error, Result};
 use crate::io::ipc::read::deserialize_schema;
-
-use super::super::super::ARROW_SCHEMA_META_KEY;
 
 /// Reads an arrow schema from Parquet's file metadata. Returns `None` if no schema was found.
 /// # Errors
@@ -28,13 +28,13 @@ fn get_arrow_schema_from_metadata(encoded_meta: &str) -> Result<Schema> {
                 bytes.as_slice()
             };
             deserialize_schema(slice).map(|x| x.0)
-        }
+        },
         Err(err) => {
             // The C++ implementation returns an error if the schema can't be parsed.
             Err(Error::InvalidArgumentError(format!(
                 "Unable to decode the encoded schema stored in {ARROW_SCHEMA_META_KEY}, {err:?}"
             )))
-        }
+        },
     }
 }
 

@@ -1,10 +1,7 @@
-use crate::{
-    array::{ArrayAccessor, ArrayValuesIter},
-    bitmap::utils::{BitmapIter, ZipValidity},
-    offset::Offset,
-};
-
 use super::{BinaryArray, MutableBinaryValuesArray};
+use crate::array::{ArrayAccessor, ArrayValuesIter};
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
+use crate::offset::Offset;
 
 unsafe impl<'a, O: Offset> ArrayAccessor<'a> for BinaryArray<O> {
     type Item = &'a [u8];

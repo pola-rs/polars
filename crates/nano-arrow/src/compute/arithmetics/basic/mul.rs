@@ -1,22 +1,18 @@
 //! Definition of basic mul operations with primitive arrays
 use std::ops::Mul;
 
-use num_traits::{ops::overflowing::OverflowingMul, CheckedMul, SaturatingMul, WrappingMul};
-
-use crate::{
-    array::PrimitiveArray,
-    bitmap::Bitmap,
-    compute::{
-        arithmetics::{
-            ArrayCheckedMul, ArrayMul, ArrayOverflowingMul, ArraySaturatingMul, ArrayWrappingMul,
-        },
-        arity::{
-            binary, binary_checked, binary_with_bitmap, unary, unary_checked, unary_with_bitmap,
-        },
-    },
-};
+use num_traits::ops::overflowing::OverflowingMul;
+use num_traits::{CheckedMul, SaturatingMul, WrappingMul};
 
 use super::NativeArithmetics;
+use crate::array::PrimitiveArray;
+use crate::bitmap::Bitmap;
+use crate::compute::arithmetics::{
+    ArrayCheckedMul, ArrayMul, ArrayOverflowingMul, ArraySaturatingMul, ArrayWrappingMul,
+};
+use crate::compute::arity::{
+    binary, binary_checked, binary_with_bitmap, unary, unary_checked, unary_with_bitmap,
+};
 
 /// Multiplies two primitive arrays with the same type.
 /// Panics if the multiplication of one pair of values overflows.

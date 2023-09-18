@@ -1,8 +1,8 @@
 use std::any::Any;
 
-use crate::{array::*, datatypes::DataType};
-
 use super::Scalar;
+use crate::array::*;
+use crate::datatypes::DataType;
 
 /// The [`DictionaryArray`] equivalent of [`Array`] for [`Scalar`].
 #[derive(Debug, Clone)]

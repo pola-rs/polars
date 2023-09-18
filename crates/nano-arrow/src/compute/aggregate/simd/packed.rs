@@ -1,9 +1,8 @@
 use std::simd::{SimdFloat as _, SimdInt as _, SimdOrd as _, SimdUint as _};
 
-use crate::types::simd::*;
-
 use super::super::min_max::SimdOrd;
 use super::super::sum::Sum;
+use crate::types::simd::*;
 
 macro_rules! simd_sum {
     ($simd:tt, $type:ty, $sum:tt) => {

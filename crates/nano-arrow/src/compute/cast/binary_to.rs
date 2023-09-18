@@ -1,8 +1,9 @@
+use super::CastOptions;
+use crate::array::*;
+use crate::datatypes::DataType;
 use crate::error::Result;
 use crate::offset::{Offset, Offsets};
-use crate::{array::*, datatypes::DataType, types::NativeType};
-
-use super::CastOptions;
+use crate::types::NativeType;
 
 /// Conversion of binary
 pub fn binary_to_large_binary(from: &BinaryArray<i32>, to_data_type: DataType) -> BinaryArray<i64> {

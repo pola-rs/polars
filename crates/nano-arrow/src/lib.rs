@@ -43,7 +43,6 @@ pub mod util;
 mod docs;
 
 // re-exported because we return `Either` in our public API
-pub use either::Either;
-
 // re-exported to construct dictionaries
 pub use ahash::AHashMap;
+pub use either::Either;

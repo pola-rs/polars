@@ -1,11 +1,8 @@
-use crate::{
-    array::{FromFfi, ToFfi},
-    bitmap::align,
-    error::Result,
-    ffi,
-};
-
 use super::FixedSizeBinaryArray;
+use crate::array::{FromFfi, ToFfi};
+use crate::bitmap::align;
+use crate::error::Result;
+use crate::ffi;
 
 unsafe impl ToFfi for FixedSizeBinaryArray {
     fn buffers(&self) -> Vec<Option<*const u8>> {

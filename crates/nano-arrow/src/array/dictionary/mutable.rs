@@ -1,16 +1,14 @@
 use std::hash::Hash;
 use std::sync::Arc;
 
-use crate::array::indexable::{AsIndexed, Indexable};
-use crate::{
-    array::{primitive::MutablePrimitiveArray, Array, MutableArray, TryExtend, TryPush},
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-    error::Result,
-};
-
 use super::value_map::ValueMap;
 use super::{DictionaryArray, DictionaryKey};
+use crate::array::indexable::{AsIndexed, Indexable};
+use crate::array::primitive::MutablePrimitiveArray;
+use crate::array::{Array, MutableArray, TryExtend, TryPush};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::error::Result;
 
 /// A mutable, strong-typed version of [`DictionaryArray`].
 ///

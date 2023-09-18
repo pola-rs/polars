@@ -15,13 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::array::{
-    growable::{Growable, GrowableList},
-    ListArray, PrimitiveArray,
-};
-use crate::offset::Offset;
-
 use super::Index;
+use crate::array::growable::{Growable, GrowableList};
+use crate::array::{ListArray, PrimitiveArray};
+use crate::offset::Offset;
 
 /// `take` implementation for ListArrays
 pub fn take<I: Offset, O: Index>(

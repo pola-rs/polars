@@ -2,27 +2,21 @@ mod nested;
 
 use std::collections::VecDeque;
 
-use parquet2::{
-    deserialize::SliceFilteredIter,
-    encoding::{hybrid_rle::HybridRleDecoder, Encoding},
-    page::{DataPage, DictPage, Page},
-    schema::Repetition,
-};
+use parquet2::deserialize::SliceFilteredIter;
+use parquet2::encoding::hybrid_rle::HybridRleDecoder;
+use parquet2::encoding::Encoding;
+use parquet2::page::{DataPage, DictPage, Page};
+use parquet2::schema::Repetition;
 
-use crate::{
-    array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray},
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-    error::{Error, Result},
+use super::utils::{
+    self, dict_indices_decoder, extend_from_decoder, get_selected_rows, DecodedState, Decoder,
+    FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
 };
-
-use super::{
-    utils::{
-        self, dict_indices_decoder, extend_from_decoder, get_selected_rows, DecodedState, Decoder,
-        FilteredOptionalPageValidity, MaybeNext, OptionalPageValidity,
-    },
-    Pages,
-};
+use super::Pages;
+use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
+use crate::bitmap::MutableBitmap;
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
 
 // The state of a `DataPage` of `Primitive` parquet primitive type
 #[derive(Debug)]
@@ -125,19 +119,19 @@ where
         match (page.encoding(), is_optional, is_filtered) {
             (Encoding::PlainDictionary | Encoding::RleDictionary, false, false) => {
                 Required::try_new(page).map(State::Required)
-            }
+            },
             (Encoding::PlainDictionary | Encoding::RleDictionary, true, false) => {
                 Optional::try_new(page).map(State::Optional)
-            }
+            },
             (Encoding::PlainDictionary | Encoding::RleDictionary, false, true) => {
                 FilteredRequired::try_new(page).map(State::FilteredRequired)
-            }
+            },
             (Encoding::PlainDictionary | Encoding::RleDictionary, true, true) => {
                 Ok(State::FilteredOptional(
                     FilteredOptionalPageValidity::try_new(page)?,
                     dict_indices_decoder(page)?,
                 ))
-            }
+            },
             _ => Err(utils::not_implemented(page)),
         }
     }
@@ -184,13 +178,13 @@ where
                                 // todo: convert this to an error.
                                 Err(_) => {
                                     panic!("The maximum key is too small")
-                                }
+                                },
                             };
                             x
                         })
                         .take(remaining),
                 );
-            }
+            },
             State::FilteredOptional(page_validity, page_values) => extend_from_decoder(
                 validity,
                 page_validity,
@@ -204,7 +198,7 @@ where
                         // todo: convert this to an error.
                         Err(_) => {
                             panic!("The maximum key is too small")
-                        }
+                        },
                     };
                     x
                 }),
@@ -221,13 +215,13 @@ where
                                 // todo: convert this to an error.
                                 Err(_) => {
                                     panic!("The maximum key is too small")
-                                }
+                                },
                             };
                             x
                         })
                         .take(remaining),
                 );
-            }
+            },
         }
     }
 
@@ -265,13 +259,13 @@ pub(super) fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn 
                     return MaybeNext::Some(Err(Error::nyi(
                         "dictionary arrays from non-dict-encoded pages",
                     )));
-                }
+                },
                 (_, Page::Dict(dict_page)) => {
                     *dict = Some(read_dict(dict_page));
                     return next_dict(
                         iter, items, dict, data_type, remaining, chunk_size, read_dict,
                     );
-                }
+                },
                 (Some(dict), Page::Data(page)) => (page, dict),
             };
 
@@ -297,7 +291,7 @@ pub(super) fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn 
                 let keys = finish_key(values, validity);
                 MaybeNext::Some(DictionaryArray::try_new(data_type, keys, dict.clone()))
             }
-        }
+        },
         Ok(None) => {
             if let Some((values, validity)) = items.pop_front() {
                 // we have a populated item and no more pages
@@ -313,7 +307,7 @@ pub(super) fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn 
             } else {
                 MaybeNext::None
             }
-        }
+        },
     }
 }
 

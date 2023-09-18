@@ -1,14 +1,11 @@
 //! Comparison functions for [`PrimitiveArray`]
-use crate::compute::comparison::{finish_eq_validities, finish_neq_validities};
-use crate::{
-    array::{BooleanArray, PrimitiveArray},
-    bitmap::MutableBitmap,
-    datatypes::DataType,
-    types::NativeType,
-};
-
 use super::super::utils::combine_validities;
 use super::simd::{Simd8, Simd8Lanes, Simd8PartialEq, Simd8PartialOrd};
+use crate::array::{BooleanArray, PrimitiveArray};
+use crate::bitmap::MutableBitmap;
+use crate::compute::comparison::{finish_eq_validities, finish_neq_validities};
+use crate::datatypes::DataType;
+use crate::types::NativeType;
 
 pub(crate) fn compare_values_op<T, F>(lhs: &[T], rhs: &[T], op: F) -> MutableBitmap
 where

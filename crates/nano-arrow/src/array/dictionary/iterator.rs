@@ -1,8 +1,7 @@
+use super::{DictionaryArray, DictionaryKey};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::scalar::Scalar;
 use crate::trusted_len::TrustedLen;
-
-use super::{DictionaryArray, DictionaryKey};
 
 /// Iterator of values of an `ListArray`.
 pub struct DictionaryValuesIter<'a, K: DictionaryKey> {

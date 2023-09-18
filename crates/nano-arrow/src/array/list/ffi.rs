@@ -1,9 +1,11 @@
-use crate::{array::FromFfi, bitmap::align, error::Result, ffi};
-
-use crate::offset::{Offset, OffsetsBuffer};
-
-use super::super::{ffi::ToFfi, Array};
+use super::super::ffi::ToFfi;
+use super::super::Array;
 use super::ListArray;
+use crate::array::FromFfi;
+use crate::bitmap::align;
+use crate::error::Result;
+use crate::ffi;
+use crate::offset::{Offset, OffsetsBuffer};
 
 unsafe impl<O: Offset> ToFfi for ListArray<O> {
     fn buffers(&self) -> Vec<Option<*const u8>> {

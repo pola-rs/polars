@@ -1,7 +1,9 @@
-use crate::{array::FromFfi, error::Result, ffi};
-
-use super::super::{ffi::ToFfi, Array};
+use super::super::ffi::ToFfi;
+use super::super::Array;
 use super::UnionArray;
+use crate::array::FromFfi;
+use crate::error::Result;
+use crate::ffi;
 
 unsafe impl ToFfi for UnionArray {
     fn buffers(&self) -> Vec<Option<*const u8>> {

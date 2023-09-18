@@ -1,7 +1,6 @@
+use super::*;
 use crate::offset::Offset;
 use crate::types::NativeType;
-
-use super::*;
 
 mod binary;
 mod boolean;
@@ -211,12 +210,12 @@ pub fn equal(lhs: &dyn Array, rhs: &dyn Array) -> bool {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
             null::equal(lhs, rhs)
-        }
+        },
         Boolean => {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
             boolean::equal(lhs, rhs)
-        }
+        },
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
@@ -226,63 +225,63 @@ pub fn equal(lhs: &dyn Array, rhs: &dyn Array) -> bool {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
             utf8::equal::<i32>(lhs, rhs)
-        }
+        },
         LargeUtf8 => {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
             utf8::equal::<i64>(lhs, rhs)
-        }
+        },
         Binary => {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
             binary::equal::<i32>(lhs, rhs)
-        }
+        },
         LargeBinary => {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
             binary::equal::<i64>(lhs, rhs)
-        }
+        },
         List => {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
             list::equal::<i32>(lhs, rhs)
-        }
+        },
         LargeList => {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
             list::equal::<i64>(lhs, rhs)
-        }
+        },
         Struct => {
             let lhs = lhs.as_any().downcast_ref::<StructArray>().unwrap();
             let rhs = rhs.as_any().downcast_ref::<StructArray>().unwrap();
             struct_::equal(lhs, rhs)
-        }
+        },
         Dictionary(key_type) => {
             match_integer_type!(key_type, |$T| {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
                 let rhs = rhs.as_any().downcast_ref().unwrap();
                 dictionary::equal::<$T>(lhs, rhs)
             })
-        }
+        },
         FixedSizeBinary => {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
             fixed_size_binary::equal(lhs, rhs)
-        }
+        },
         FixedSizeList => {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
             fixed_size_list::equal(lhs, rhs)
-        }
+        },
         Union => {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
             union::equal(lhs, rhs)
-        }
+        },
         Map => {
             let lhs = lhs.as_any().downcast_ref().unwrap();
             let rhs = rhs.as_any().downcast_ref().unwrap();
             map::equal(lhs, rhs)
-        }
+        },
     }
 }

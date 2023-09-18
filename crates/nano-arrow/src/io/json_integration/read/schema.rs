@@ -1,15 +1,12 @@
 use serde_derive::Deserialize;
 use serde_json::Value;
 
-use crate::{
-    error::{Error, Result},
-    io::ipc::IpcField,
-};
-
 use crate::datatypes::{
     get_extension, DataType, Field, IntegerType, IntervalUnit, Metadata, Schema, TimeUnit,
     UnionMode,
 };
+use crate::error::{Error, Result};
+use crate::io::ipc::IpcField;
 
 fn to_time_unit(item: Option<&Value>) -> Result<TimeUnit> {
     match item {
@@ -33,13 +30,13 @@ fn to_int(item: &Value) -> Result<IntegerType> {
                     return Err(Error::OutOfSpec(
                         "int bitWidth missing or invalid".to_string(),
                     ))
-                }
+                },
             },
             _ => {
                 return Err(Error::OutOfSpec(
                     "int bitWidth missing or invalid".to_string(),
                 ))
-            }
+            },
         },
         Some(&Value::Bool(false)) => match item.get("bitWidth") {
             Some(Value::Number(n)) => match n.as_u64() {
@@ -51,19 +48,19 @@ fn to_int(item: &Value) -> Result<IntegerType> {
                     return Err(Error::OutOfSpec(
                         "int bitWidth missing or invalid".to_string(),
                     ))
-                }
+                },
             },
             _ => {
                 return Err(Error::OutOfSpec(
                     "int bitWidth missing or invalid".to_string(),
                 ))
-            }
+            },
         },
         _ => {
             return Err(Error::OutOfSpec(
                 "int signed missing or invalid".to_string(),
             ))
-        }
+        },
     })
 }
 
@@ -109,16 +106,16 @@ fn read_metadata(metadata: &Value) -> Result<Metadata> {
                                     .to_string(),
                             ));
                         }
-                    }
+                    },
                     _ => {
                         return Err(Error::OutOfSpec(
                             "Field 'metadata' contains non-object key-value pair".to_string(),
                         ));
-                    }
+                    },
                 }
             }
             Ok(res)
-        }
+        },
         Value::Object(ref values) => {
             let mut res = Metadata::new();
             for (k, v) in values {
@@ -131,7 +128,7 @@ fn read_metadata(metadata: &Value) -> Result<Metadata> {
                 }
             }
             Ok(res)
-        }
+        },
         _ => Err(Error::OutOfSpec(
             "Invalid json value type for field".to_string(),
         )),
@@ -164,7 +161,7 @@ fn to_data_type(item: &Value, mut children: Vec<Field>) -> Result<DataType> {
                     "Expecting a byteWidth for fixedsizebinary".to_string(),
                 ));
             }
-        }
+        },
         "utf8" => Utf8,
         "largeutf8" => LargeUtf8,
         "decimal" => {
@@ -191,7 +188,7 @@ fn to_data_type(item: &Value, mut children: Vec<Field>) -> Result<DataType> {
                 256 => DataType::Decimal256(precision, scale),
                 _ => todo!(),
             }
-        }
+        },
         "floatingpoint" => match item.get("precision") {
             Some(p) if p == "HALF" => DataType::Float16,
             Some(p) if p == "SINGLE" => DataType::Float32,
@@ -200,7 +197,7 @@ fn to_data_type(item: &Value, mut children: Vec<Field>) -> Result<DataType> {
                 return Err(Error::OutOfSpec(
                     "floatingpoint precision missing or invalid".to_string(),
                 ))
-            }
+            },
         },
         "timestamp" => {
             let unit = to_time_unit(item.get("unit"))?;
@@ -210,7 +207,7 @@ fn to_data_type(item: &Value, mut children: Vec<Field>) -> Result<DataType> {
                 _ => Err(Error::OutOfSpec("timezone must be a string".to_string())),
             }?;
             DataType::Timestamp(unit, tz)
-        }
+        },
         "date" => match item.get("unit") {
             Some(p) if p == "DAY" => DataType::Date32,
             Some(p) if p == "MILLISECOND" => DataType::Date64,
@@ -225,13 +222,13 @@ fn to_data_type(item: &Value, mut children: Vec<Field>) -> Result<DataType> {
                     return Err(Error::OutOfSpec(
                         "time bitWidth missing or invalid".to_string(),
                     ))
-                }
+                },
             }
-        }
+        },
         "duration" => {
             let unit = to_time_unit(item.get("unit"))?;
             DataType::Duration(unit)
-        }
+        },
         "interval" => match item.get("unit") {
             Some(p) if p == "DAY_TIME" => DataType::Interval(IntervalUnit::DayTime),
             Some(p) if p == "YEAR_MONTH" => DataType::Interval(IntervalUnit::YearMonth),
@@ -240,7 +237,7 @@ fn to_data_type(item: &Value, mut children: Vec<Field>) -> Result<DataType> {
                 return Err(Error::OutOfSpec(
                     "interval unit missing or invalid".to_string(),
                 ))
-            }
+            },
         },
         "int" => to_int(item).map(|x| x.into())?,
         "list" => DataType::List(Box::new(children.pop().unwrap())),
@@ -256,7 +253,7 @@ fn to_data_type(item: &Value, mut children: Vec<Field>) -> Result<DataType> {
                     "Expecting a listSize for fixedsizelist".to_string(),
                 ));
             }
-        }
+        },
         "struct" => DataType::Struct(children),
         "union" => {
             let mode = if let Some(Value::String(mode)) = item.get("mode") {
@@ -270,7 +267,7 @@ fn to_data_type(item: &Value, mut children: Vec<Field>) -> Result<DataType> {
                 return Err(Error::OutOfSpec("union requires ids".to_string()));
             };
             DataType::Union(children, ids, mode)
-        }
+        },
         "map" => {
             let sorted_keys = if let Some(Value::Bool(sorted_keys)) = item.get("keysSorted") {
                 *sorted_keys
@@ -278,12 +275,12 @@ fn to_data_type(item: &Value, mut children: Vec<Field>) -> Result<DataType> {
                 return Err(Error::OutOfSpec("sorted keys not defined".to_string()));
             };
             DataType::Map(Box::new(children.pop().unwrap()), sorted_keys)
-        }
+        },
         other => {
             return Err(Error::NotYetImplemented(format!(
                 "invalid json value type \"{other}\""
             )))
-        }
+        },
     })
 }
 
@@ -315,7 +312,7 @@ fn deserialize_ipc_field(value: &Value) -> Result<IpcField> {
             Some(Value::Number(n)) => Some(n.as_i64().unwrap()),
             _ => {
                 return Err(Error::OutOfSpec("Field missing 'id' attribute".to_string()));
-            }
+            },
         }
     } else {
         None
@@ -341,7 +338,7 @@ fn deserialize_field(value: &Value) -> Result<Field> {
             return Err(Error::OutOfSpec(
                 "Field missing 'name' attribute".to_string(),
             ));
-        }
+        },
     };
     let is_nullable = match map.get("nullable") {
         Some(&Value::Bool(b)) => b,
@@ -349,7 +346,7 @@ fn deserialize_field(value: &Value) -> Result<Field> {
             return Err(Error::OutOfSpec(
                 "Field missing 'nullable' attribute".to_string(),
             ));
-        }
+        },
     };
 
     let metadata = if let Some(metadata) = map.get("metadata") {
@@ -380,7 +377,7 @@ fn deserialize_field(value: &Value) -> Result<Field> {
                 return Err(Error::OutOfSpec(
                     "Field missing 'indexType' attribute".to_string(),
                 ));
-            }
+            },
         };
         let is_ordered = match dictionary.get("isOrdered") {
             Some(&Value::Bool(n)) => n,
@@ -388,7 +385,7 @@ fn deserialize_field(value: &Value) -> Result<Field> {
                 return Err(Error::OutOfSpec(
                     "Field missing 'isOrdered' attribute".to_string(),
                 ));
-            }
+            },
         };
         DataType::Dictionary(index_type, Box::new(data_type), is_ordered)
     } else {
@@ -419,7 +416,7 @@ fn from_metadata(json: &Value) -> Result<Metadata> {
                 .into_iter()
                 .map(|key_value| (key_value.key, key_value.value))
                 .collect())
-        }
+        },
         Value::Object(md) => md
             .iter()
             .map(|(k, v)| {

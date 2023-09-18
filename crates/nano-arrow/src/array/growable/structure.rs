@@ -1,15 +1,9 @@
 use std::sync::Arc;
 
-use crate::{
-    array::{Array, StructArray},
-    bitmap::MutableBitmap,
-};
-
-use super::{
-    make_growable,
-    utils::{build_extend_null_bits, ExtendNullBits},
-    Growable,
-};
+use super::utils::{build_extend_null_bits, ExtendNullBits};
+use super::{make_growable, Growable};
+use crate::array::{Array, StructArray};
+use crate::bitmap::MutableBitmap;
 
 /// Concrete [`Growable`] for the [`StructArray`].
 pub struct GrowableStruct<'a> {

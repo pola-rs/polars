@@ -1,18 +1,15 @@
 #![allow(clippy::ptr_arg)] // false positive in clippy, see https://github.com/rust-lang/rust-clippy/issues/8463
 use arrow_format::ipc;
 
-use crate::{
-    array::*,
-    bitmap::Bitmap,
-    datatypes::PhysicalType,
-    offset::{Offset, OffsetsBuffer},
-    trusted_len::TrustedLen,
-    types::NativeType,
-};
-
 use super::super::compression;
 use super::super::endianess::is_native_little_endian;
 use super::common::{pad_to_64, Compression};
+use crate::array::*;
+use crate::bitmap::Bitmap;
+use crate::datatypes::PhysicalType;
+use crate::offset::{Offset, OffsetsBuffer};
+use crate::trusted_len::TrustedLen;
+use crate::types::NativeType;
 
 fn write_primitive<T: NativeType>(
     array: &PrimitiveArray<T>,
@@ -554,7 +551,7 @@ pub fn write(
                 is_little_endian,
                 compression,
             );
-        }
+        },
         Map => {
             write_map(
                 array.as_any().downcast_ref().unwrap(),
@@ -565,7 +562,7 @@ pub fn write(
                 is_little_endian,
                 compression,
             );
-        }
+        },
     }
 }
 
@@ -589,10 +586,10 @@ fn write_bytes(
         match compression {
             Compression::LZ4 => {
                 compression::compress_lz4(bytes, arrow_data).unwrap();
-            }
+            },
             Compression::ZSTD => {
                 compression::compress_zstd(bytes, arrow_data).unwrap();
-            }
+            },
         }
     } else {
         arrow_data.extend_from_slice(bytes);
@@ -621,13 +618,13 @@ fn write_bitmap(
             } else {
                 write_bytes(slice, buffers, arrow_data, offset, compression)
             }
-        }
+        },
         None => {
             buffers.push(ipc::Buffer {
                 offset: *offset,
                 length: 0,
             });
-        }
+        },
     }
 }
 
@@ -691,10 +688,10 @@ fn _write_compressed_buffer_from_iter<T: NativeType, I: TrustedLen<Item = T>>(
     match compression {
         Compression::LZ4 => {
             compression::compress_lz4(&swapped, arrow_data).unwrap();
-        }
+        },
         Compression::ZSTD => {
             compression::compress_zstd(&swapped, arrow_data).unwrap();
-        }
+        },
     }
 }
 
@@ -720,10 +717,10 @@ fn _write_compressed_buffer<T: NativeType>(
         match compression {
             Compression::LZ4 => {
                 compression::compress_lz4(bytes, arrow_data).unwrap();
-            }
+            },
             Compression::ZSTD => {
                 compression::compress_zstd(bytes, arrow_data).unwrap();
-            }
+            },
         }
     } else {
         todo!()

@@ -1,10 +1,9 @@
 use super::{primitive_as_primitive, primitive_to_primitive, CastOptions};
-use crate::{
-    array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray},
-    compute::{cast::cast, take::take},
-    datatypes::DataType,
-    error::{Error, Result},
-};
+use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
+use crate::compute::cast::cast;
+use crate::compute::take::take;
+use crate::datatypes::DataType;
+use crate::error::{Error, Result};
 
 macro_rules! key_cast {
     ($keys:expr, $values:expr, $array:expr, $to_keys_type:expr, $to_type:ty, $to_datatype:expr) => {{
@@ -145,7 +144,7 @@ pub(super) fn dictionary_cast_dyn<K: DictionaryKey + num_traits::NumCast>(
             match_integer_type!(to_keys_type, |$T| {
                 key_cast!(keys, values, array, &to_key_type, $T, to_type.clone())
             })
-        }
+        },
         _ => unpack_dictionary::<K>(keys, values.as_ref(), to_type, options),
     }
 }

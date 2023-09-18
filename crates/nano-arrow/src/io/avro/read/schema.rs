@@ -13,8 +13,8 @@ fn external_props(schema: &AvroSchema) -> Metadata {
             doc: Some(ref doc), ..
         }) => {
             props.insert("avro::doc".to_string(), doc.clone());
-        }
-        _ => {}
+        },
+        _ => {},
     }
     props
 }
@@ -53,16 +53,16 @@ fn schema_to_field(schema: &AvroSchema, name: Option<&str>, props: Metadata) -> 
                 avro_schema::schema::LongLogical::Time => DataType::Time64(TimeUnit::Microsecond),
                 avro_schema::schema::LongLogical::TimestampMillis => {
                     DataType::Timestamp(TimeUnit::Millisecond, Some("00:00".to_string()))
-                }
+                },
                 avro_schema::schema::LongLogical::TimestampMicros => {
                     DataType::Timestamp(TimeUnit::Microsecond, Some("00:00".to_string()))
-                }
+                },
                 avro_schema::schema::LongLogical::LocalTimestampMillis => {
                     DataType::Timestamp(TimeUnit::Millisecond, None)
-                }
+                },
                 avro_schema::schema::LongLogical::LocalTimestampMicros => {
                     DataType::Timestamp(TimeUnit::Microsecond, None)
-                }
+                },
             },
             None => DataType::Int64,
         },
@@ -72,7 +72,7 @@ fn schema_to_field(schema: &AvroSchema, name: Option<&str>, props: Metadata) -> 
             Some(logical) => match logical {
                 avro_schema::schema::BytesLogical::Decimal(precision, scale) => {
                     DataType::Decimal(*precision, *scale)
-                }
+                },
             },
             None => DataType::Binary,
         },
@@ -105,7 +105,7 @@ fn schema_to_field(schema: &AvroSchema, name: Option<&str>, props: Metadata) -> 
                     .collect::<Result<Vec<Field>>>()?;
                 DataType::Union(fields, None, UnionMode::Dense)
             }
-        }
+        },
         AvroSchema::Record(Record { fields, .. }) => {
             let fields = fields
                 .iter()
@@ -118,22 +118,22 @@ fn schema_to_field(schema: &AvroSchema, name: Option<&str>, props: Metadata) -> 
                 })
                 .collect::<Result<_>>()?;
             DataType::Struct(fields)
-        }
+        },
         AvroSchema::Enum { .. } => {
             return Ok(Field::new(
                 name.unwrap_or_default(),
                 DataType::Dictionary(IntegerType::Int32, Box::new(DataType::Utf8), false),
                 false,
             ))
-        }
+        },
         AvroSchema::Fixed(Fixed { size, logical, .. }) => match logical {
             Some(logical) => match logical {
                 avro_schema::schema::FixedLogical::Decimal(precision, scale) => {
                     DataType::Decimal(*precision, *scale)
-                }
+                },
                 avro_schema::schema::FixedLogical::Duration => {
                     DataType::Interval(IntervalUnit::MonthDayNano)
-                }
+                },
             },
             None => DataType::FixedSizeBinary(*size),
         },

@@ -1,15 +1,14 @@
+use multiversion::multiversion;
+
+use crate::array::{Array, BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
 use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact};
+use crate::bitmap::Bitmap;
 use crate::datatypes::{DataType, PhysicalType, PrimitiveType};
 use crate::error::{Error, Result};
 use crate::offset::Offset;
 use crate::scalar::*;
 use crate::types::simd::*;
 use crate::types::NativeType;
-use crate::{
-    array::{Array, BinaryArray, BooleanArray, PrimitiveArray, Utf8Array},
-    bitmap::Bitmap,
-};
-use multiversion::multiversion;
 
 /// Trait describing a type describing multiple lanes with an order relationship
 /// consistent with the same order of `T`.
@@ -221,7 +220,7 @@ macro_rules! min_max_binary_utf8 {
                         } else {
                             Some(v1)
                         }
-                    }
+                    },
                 })
                 .unwrap_or(None)
         } else {
@@ -354,16 +353,16 @@ pub fn max(array: &dyn Array) -> Result<Box<dyn Scalar>> {
         PhysicalType::LargeUtf8 => dyn_generic!(Utf8Array<i64>, Utf8Scalar<i64>, array, max_string),
         PhysicalType::Binary => {
             dyn_generic!(BinaryArray<i32>, BinaryScalar<i32>, array, max_binary)
-        }
+        },
         PhysicalType::LargeBinary => {
             dyn_generic!(BinaryArray<i64>, BinaryScalar<i64>, array, min_binary)
-        }
+        },
         _ => {
             return Err(Error::InvalidArgumentError(format!(
                 "The `max` operator does not support type `{:?}`",
                 array.data_type(),
             )))
-        }
+        },
     })
 }
 
@@ -382,16 +381,16 @@ pub fn min(array: &dyn Array) -> Result<Box<dyn Scalar>> {
         PhysicalType::LargeUtf8 => dyn_generic!(Utf8Array<i64>, Utf8Scalar<i64>, array, min_string),
         PhysicalType::Binary => {
             dyn_generic!(BinaryArray<i32>, BinaryScalar<i32>, array, min_binary)
-        }
+        },
         PhysicalType::LargeBinary => {
             dyn_generic!(BinaryArray<i64>, BinaryScalar<i64>, array, min_binary)
-        }
+        },
         _ => {
             return Err(Error::InvalidArgumentError(format!(
                 "The `max` operator does not support type `{:?}`",
                 array.data_type(),
             )))
-        }
+        },
     })
 }
 

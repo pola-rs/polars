@@ -1,10 +1,7 @@
-use crate::{
-    bitmap::Bitmap,
-    datatypes::{DataType, Field},
-    error::Error,
-};
-
 use super::{new_empty_array, new_null_array, Array};
+use crate::bitmap::Bitmap;
+use crate::datatypes::{DataType, Field};
+use crate::error::Error;
 
 #[cfg(feature = "arrow")]
 mod data;

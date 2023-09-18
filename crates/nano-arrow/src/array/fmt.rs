@@ -1,8 +1,7 @@
 use std::fmt::{Result, Write};
 
-use crate::bitmap::Bitmap;
-
 use super::Array;
+use crate::bitmap::Bitmap;
 
 /// Returns a function that writes the value of the element of `array`
 /// at position `index` to a [`Write`],
