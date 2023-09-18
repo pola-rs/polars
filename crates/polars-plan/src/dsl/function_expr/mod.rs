@@ -556,6 +556,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Any => map!(list::lst_any),
                     #[cfg(feature = "list_any_all")]
                     All => map!(list::lst_all),
+                    Join => map_as_slice!(list::join),
                 }
             },
             #[cfg(feature = "dtype-array")]
