@@ -1,8 +1,9 @@
 #[cfg(feature = "dtype-date")]
 use polars_arrow::export::arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 use polars_arrow::time_zone::Tz;
-use polars_core::chunked_array::ops::arity::try_binary_elementwise_values;
-use polars_core::prelude::arity::try_binary_elementwise;
+use polars_core::chunked_array::ops::arity::{
+    try_binary_elementwise, try_binary_elementwise_values, try_ternary_elementwise,
+};
 use polars_core::prelude::*;
 
 use crate::prelude::*;
@@ -75,10 +76,23 @@ impl PolarsTruncate for DatetimeChunked {
                     Ok(Int64Chunked::full_null(self.name(), self.len()))
                 }
             },
-            _ => {
-                polars_bail!(
-            ComputeError: "At least one of ambiguous and every requires a length of 1. Length of ambiguous `{}`, every `{}`", ambiguous.len(), every.len())
-            },
+            _ => try_ternary_elementwise(
+                self,
+                every,
+                ambiguous,
+                |opt_timestamp, opt_every, opt_ambiguous| match (
+                    opt_timestamp,
+                    opt_every,
+                    opt_ambiguous,
+                ) {
+                    (Some(timestamp), Some(every), Some(ambiguous)) => {
+                        let every = Duration::parse(every);
+                        let w = Window::new(every, every, offset);
+                        func(&w, timestamp, tz, ambiguous).map(Some)
+                    },
+                    _ => Ok(None),
+                },
+            ),
         };
         Ok(out?.into_datetime(self.time_unit(), self.time_zone().clone()))
     }
