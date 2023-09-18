@@ -396,7 +396,7 @@ where
                 .get_unchecked(arr_idx)
         }
     }
-    
+
     /// # Safety
     /// It is the callers responsibility that the `idx < self.len()`.
     #[inline]

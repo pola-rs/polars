@@ -155,7 +155,6 @@ struct GlobalCategorical<'a> {
     cats: &'a UInt32Chunked,
 }
 
-
 #[cfg(feature = "dtype-categorical")]
 impl<'a> GetInner for GlobalCategorical<'a> {
     type Item = Option<&'a str>;
