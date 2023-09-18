@@ -17,6 +17,10 @@ either.workspace = true
 num-traits.workspace = true
 bytemuck.workspace = true
 chrono.workspace = true
+hashbrown.workspace = true
+simdutf8.workspace = true
+# for timezone support
+chrono-tz = { workspace = true, optional = true }
 dyn-clone = "1"
 
 # for decimal i256
@@ -25,23 +29,9 @@ ethnum = "1"
 # We need to Hash values before sending them to an hasher. This
 # crate provides HashMap that assumes pre-hashed values.
 hash_hasher = "^2.0.3"
-# For SIMD utf8 validation
-simdutf8 = "0.1.4"
 
-# A Rust port of SwissTable
-hashbrown = { version = "0.14", default-features = false, features = ["ahash"] }
-
-# for timezone support
-chrono-tz = { version = "0.8", optional = true }
 # To efficiently cast numbers to strings
 lexical-core = { version = "0.8", optional = true }
-
-# for csv io
-csv = { version = "^1.1", optional = true }
-csv-core = { version = "0.1", optional = true }
-
-# for csv async io
-csv-async = { version = "^1.1", optional = true }
 
 regex = { version = "1.9", optional = true }
 regex-syntax = { version = "0.7", optional = true }
@@ -131,10 +121,6 @@ sample-arrow2 = "0.1"
 sample-std = "0.1"
 sample-test = "0.1"
 
-# ugly hack needed to match this library in sample_arrow2
-[patch.crates-io]
-arrow2 = { path = "." }
-
 [package.metadata.docs.rs]
 features = ["full"]
 rustdoc-args = ["--cfg", "docsrs"]
@@ -144,8 +130,6 @@ default = []
 full = [
     "arrow",
     "io_odbc",
-    "io_csv",
-    "io_csv_async",
     "io_json",
     "io_ipc",
     "io_flight",
@@ -168,11 +152,6 @@ full = [
 ]
 arrow = ["arrow-buffer", "arrow-schema", "arrow-data", "arrow-array"]
 io_odbc = ["odbc-api"]
-io_csv = ["io_csv_read", "io_csv_write"]
-io_csv_async = ["io_csv_read_async"]
-io_csv_read = ["csv", "lexical-core"]
-io_csv_read_async = ["csv-async", "lexical-core", "futures"]
-io_csv_write = ["csv-core", "streaming-iterator", "lexical-core"]
 io_json = ["io_json_read", "io_json_write"]
 io_json_read = ["json-deserializer", "indexmap", "lexical-core"]
 io_json_write = ["streaming-iterator", "fallible-streaming-iterator", "lexical-core"]

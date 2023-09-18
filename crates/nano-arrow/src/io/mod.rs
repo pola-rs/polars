@@ -9,21 +9,6 @@ pub mod odbc;
 #[cfg_attr(docsrs, doc(cfg(feature = "io_orc")))]
 pub mod orc;
 
-#[cfg(any(
-    feature = "io_csv_read",
-    feature = "io_csv_read_async",
-    feature = "io_csv_write",
-))]
-#[cfg_attr(
-    docsrs,
-    doc(cfg(any(
-        feature = "io_csv_read",
-        feature = "io_csv_read_async",
-        feature = "io_csv_write",
-    )))
-)]
-pub mod csv;
-
 #[cfg(any(feature = "io_json_read", feature = "io_json_write"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_json")))]
 pub mod json;
