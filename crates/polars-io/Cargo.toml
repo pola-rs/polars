@@ -38,14 +38,16 @@ serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { version = "1", default-features = false, features = ["alloc", "raw_value"], optional = true }
 simd-json = { workspace = true, optional = true }
 simdutf8 = { version = "0.1", optional = true }
-tokio = { version = "1.26", features = ["net", "io-util"] }
+tokio = { version = "1.26", features = ["net", "io-util", "rt-multi-thread"] }
 tokio-util = { version = "0.7.8", features = ["io", "io-util"] }
-url = { workspace = true, optional = true }
+url = { workspace = true }
+glob = { version = "0.3" }
+percent-encoding = { version = "2.3" }
+itertools = { version = "0" }
 
 [dependencies.opendal]
-git ="https://github.com/apache/incubator-opendal.git"
+version = "0.40"
 default-features = false
-tag = "v0.40.0-rc.2"
 features = [
   "services-azblob",
   "services-azdls",
@@ -105,7 +107,7 @@ fmt = ["polars-core/fmt"]
 lazy = []
 parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression"]
 async = ["arrow/io_ipc_write_async", "polars-error/regex"]
-cloud = ["object_store", "async", "url"]
+cloud = ["object_store", "async" ]
 aws = ["object_store/aws", "cloud", "polars-core/aws"]
 azure = ["object_store/azure", "cloud", "polars-core/azure"]
 gcp = ["object_store/gcp", "cloud", "polars-core/gcp"]

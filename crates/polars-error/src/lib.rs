@@ -67,6 +67,8 @@ pub enum PolarsError {
     StringCacheMismatch(ErrString),
     #[error("field not found: {0}")]
     StructFieldNotFound(ErrString),
+    #[error("generic error: {0}")]
+    Generic(Box<dyn Error + Send + Sync>),
 }
 
 impl From<ArrowError> for PolarsError {
@@ -113,6 +115,7 @@ impl PolarsError {
             ShapeMismatch(msg) => ShapeMismatch(func(msg).into()),
             StringCacheMismatch(msg) => StringCacheMismatch(func(msg).into()),
             StructFieldNotFound(msg) => StructFieldNotFound(func(msg).into()),
+            Generic(err) => ComputeError(func(&format!("IO: {err}")).into()),
         }
     }
 }
