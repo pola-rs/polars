@@ -126,13 +126,17 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
             .unwrap();
     }
 
+    let row_idx_width = levels.len().to_string().len();
+    let col_idx_width = n_cols.to_string().len();
+    let space=" ";
+
     const COL_SPACING: usize = 2;
 
     for (row_count, row) in levels.iter().enumerate() {
         if row_count == 0 {
             // write the col numbers
             writeln!(f)?;
-            write!(f, "   ")?;
+            write!(f, "{space:>row_idx_width$}  ")?;
             for (col_i, (_, col_width)) in levels.last().unwrap().iter().zip(&col_widths).enumerate() {
                 let mut col_spacing = COL_SPACING;
                 if col_i > 0 {
@@ -147,8 +151,8 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
                     write!(f, " ")?;
                 }
                 // col num
-                remaining -= 1;
-                write!(f, "{}", col_i)?;
+                remaining -= col_idx_width;
+                write!(f, "{col_i:^col_idx_width$}")?;
 
                 for _ in 0..remaining {
                     write!(f, " ")?
@@ -157,7 +161,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
             write!(f, "\n")?;
 
             // write the horizontal line
-            write!(f, "  ┌")?;
+            write!(f, "{space:>row_idx_width$} ┌")?;
             for (col_i, (_, col_width)) in levels.last().unwrap().iter().zip(&col_widths).enumerate() {
                 let mut col_spacing = COL_SPACING;
                 if col_i > 0 {
@@ -167,10 +171,10 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
                     write!(f, "─")?
                 }
             }
-            write!(f, "\n  |\n")?;
+            write!(f, "\n{space:>row_idx_width$} |\n")?;
         } else {
             // write connecting lines
-            write!(f, "  |")?;
+            write!(f, "{space:>row_idx_width$} |")?;
             let mut last_empty = true;
             let mut before = "";
             for ((col_i, col_name), col_width) in row.iter().enumerate().zip(&col_widths) {
@@ -227,7 +231,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
             writeln!(f)?;
             // write vertical bars x 2
             for _ in 0..2 {
-                write!(f, "  |")?;
+                write!(f, "{space:>row_idx_width$} |")?;
                 for ((col_i, col_name), col_width) in row.iter().enumerate().zip(&col_widths) {
                     let mut col_spacing = COL_SPACING;
                     if col_i > 0 {
@@ -256,7 +260,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
         }
 
         // write the top of the boxes
-        write!(f, "  |")?;
+        write!(f, "{space:>row_idx_width$} |")?;
         for (col_repr, col_width) in row.iter().zip(&col_widths) {
             for _ in 0..COL_SPACING {
                 write!(f, " ")?
@@ -278,7 +282,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
         writeln!(f)?;
 
         // write column names and spacing
-        write!(f, "{} |", row_count)?;
+        write!(f, "{row_count:>row_idx_width$} |")?;
         for (col_repr, col_width) in row.iter().zip(&col_widths) {
             for _ in 0..COL_SPACING {
                 write!(f, " ")?
@@ -296,7 +300,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
         writeln!(f)?;
 
         // write the bottom of the boxes
-        write!(f, "  |")?;
+        write!(f, "{space:>row_idx_width$} |")?;
         for (col_repr, col_width) in row.iter().zip(&col_widths) {
             for _ in 0..COL_SPACING {
                 write!(f, " ")?
