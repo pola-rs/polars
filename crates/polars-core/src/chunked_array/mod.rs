@@ -396,6 +396,19 @@ where
                 .get_unchecked(arr_idx)
         }
     }
+    
+    /// # Safety
+    /// It is the callers responsibility that the `idx < self.len()`.
+    #[inline]
+    pub unsafe fn value_unchecked(&self, idx: usize) -> T::Physical<'_> {
+        let (chunk_idx, arr_idx) = self.index_to_chunked_index(idx);
+
+        unsafe {
+            // SAFETY: up to the caller to make sure the index is valid.
+            self.downcast_get_unchecked(chunk_idx)
+                .value_unchecked(arr_idx)
+        }
+    }
 
     #[inline]
     pub fn last(&self) -> Option<T::Physical<'_>> {

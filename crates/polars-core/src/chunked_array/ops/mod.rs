@@ -2,7 +2,6 @@
 use arrow::offset::OffsetsBuffer;
 use polars_arrow::prelude::QuantileInterpolOptions;
 
-pub use self::take::*;
 #[cfg(feature = "object")]
 use crate::datatypes::ObjectType;
 use crate::prelude::*;
