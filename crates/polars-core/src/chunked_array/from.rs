@@ -118,6 +118,35 @@ where
         unsafe { Ok(Self::from_chunks(name, chunks?)) }
     }
 
+    pub(crate) fn from_chunk_iter_and_field<I>(field: Arc<Field>, chunks: I) -> Self
+    where
+        I: IntoIterator,
+        T: PolarsDataType<Array = <I as IntoIterator>::Item>,
+        <I as IntoIterator>::Item: Array,
+    {
+        assert_eq!(
+            std::mem::discriminant(&T::get_dtype()),
+            std::mem::discriminant(&field.dtype)
+        );
+
+        let mut length = 0;
+        let chunks = chunks
+            .into_iter()
+            .map(|x| {
+                length += x.len();
+                Box::new(x) as Box<dyn Array>
+            })
+            .collect();
+
+        ChunkedArray {
+            field,
+            chunks,
+            phantom: PhantomData,
+            bit_settings: Default::default(),
+            length: length.try_into().unwrap(),
+        }
+    }
+
     /// Create a new [`ChunkedArray`] from existing chunks.
     ///
     /// # Safety

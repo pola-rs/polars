@@ -457,8 +457,8 @@ def test_contains_expr() -> None:
             .alias("contains_lit"),
         ]
     ).to_dict(False) == {
-        "contains": [True, True, False, False, False, None],
-        "contains_lit": [False, True, False, False, False, False],
+        "contains": [True, True, False, None, None, None],
+        "contains_lit": [False, True, False, None, None, False],
     }
 
     with pytest.raises(pl.ComputeError):
@@ -762,7 +762,10 @@ def test_ljust_and_rjust() -> None:
 
 def test_starts_ends_with() -> None:
     df = pl.DataFrame(
-        {"a": ["hamburger", "nuts", "lollypop"], "sub": ["ham", "ts", None]}
+        {
+            "a": ["hamburger", "nuts", "lollypop", None],
+            "sub": ["ham", "ts", None, "anything"],
+        }
     )
 
     assert df.select(
@@ -775,12 +778,12 @@ def test_starts_ends_with() -> None:
             pl.col("a").str.starts_with(pl.col("sub")).alias("starts_sub"),
         ]
     ).to_dict(False) == {
-        "ends_pop": [False, False, True],
-        "ends_None": [False, False, False],
-        "ends_sub": [False, True, False],
-        "starts_ham": [True, False, False],
-        "starts_None": [False, False, False],
-        "starts_sub": [True, False, False],
+        "ends_pop": [False, False, True, None],
+        "ends_None": [None, None, None, None],
+        "ends_sub": [False, True, None, None],
+        "starts_ham": [True, False, False, None],
+        "starts_None": [None, None, None, None],
+        "starts_sub": [True, False, None, None],
     }
 
 
@@ -841,6 +844,31 @@ def test_split() -> None:
 
     assert_frame_equal(out, expected)
     assert_frame_equal(df["x"].str.split("_", inclusive=True).to_frame(), expected)
+
+
+def test_split_expr() -> None:
+    df = pl.DataFrame({"x": ["a_a", None, "b", "c*c*c"], "by": ["_", "#", "^", "*"]})
+    out = df.select([pl.col("x").str.split(pl.col("by"))])
+    expected = pl.DataFrame(
+        [
+            {"x": ["a", "a"]},
+            {"x": None},
+            {"x": ["b"]},
+            {"x": ["c", "c", "c"]},
+        ]
+    )
+    assert_frame_equal(out, expected)
+
+    out = df.select([pl.col("x").str.split(pl.col("by"), inclusive=True)])
+    expected = pl.DataFrame(
+        [
+            {"x": ["a_", "a"]},
+            {"x": None},
+            {"x": ["b"]},
+            {"x": ["c*", "c*", "c"]},
+        ]
+    )
+    assert_frame_equal(out, expected)
 
 
 def test_split_exact() -> None:

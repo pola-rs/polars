@@ -25,7 +25,7 @@ pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
 
 .PHONY: check-features
 check-features:  ## Run cargo check for feature flag combinations (warning: slow)
-	cargo hack check --each-feature --no-dev-deps
+	cargo hack check -p polars --each-feature --no-dev-deps
 
 .PHONY: miri
 miri:  ## Run miri
@@ -108,6 +108,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-arrow
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
+	cargo publish --allow-dirty -p polars-ffi
 	cargo publish --allow-dirty -p polars-ops
 	cargo publish --allow-dirty -p polars-time
 	cargo publish --allow-dirty -p polars-io

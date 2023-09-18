@@ -9,12 +9,12 @@ repository = { workspace = true }
 description = "IO related logic for the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { version = "0.32.0", path = "../polars-arrow" }
-polars-core = { version = "0.32.0", path = "../polars-core", features = [], default-features = false }
-polars-error = { version = "0.32.0", path = "../polars-error", default-features = false }
-polars-json = { version = "0.32.0", optional = true, path = "../polars-json" }
-polars-time = { version = "0.32.0", path = "../polars-time", features = [], default-features = false, optional = true }
-polars-utils = { version = "0.32.0", path = "../polars-utils" }
+polars-arrow = { workspace = true }
+polars-core = { workspace = true }
+polars-error = { workspace = true, default-features = false }
+polars-json = { workspace = true, optional = true }
+polars-time = { workspace = true, features = [], optional = true }
+polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
@@ -28,7 +28,7 @@ futures = { workspace = true, optional = true }
 lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-integers"] }
 lexical-core = { version = "0.8", optional = true }
 memchr = { workspace = true }
-memmap = { package = "memmap2", version = "0.7", optional = true }
+memmap = { package = "memmap2", version = "0.7" }
 num-traits = { workspace = true }
 object_store = { workspace = true, optional = true }
 once_cell = { workspace = true }
@@ -55,19 +55,19 @@ json = [
   "arrow/io_json_write",
   "polars-json",
   "simd-json",
-  "memmap",
   "lexical",
   "lexical-core",
   "serde_json",
   "dtype-struct",
+  "csv",
 ]
 # support for arrows ipc file parsing
-ipc = ["arrow/io_ipc", "arrow/io_ipc_compression", "memmap"]
+ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrows streaming ipc file parsing
 ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
 avro = ["arrow/io_avro", "arrow/io_avro_compression"]
-csv = ["memmap", "lexical", "polars-core/rows", "lexical-core", "fast-float", "simdutf8"]
+csv = ["lexical", "polars-core/rows", "lexical-core", "fast-float", "simdutf8"]
 decompress = ["flate2/rust_backend"]
 decompress-fast = ["flate2/zlib-ng"]
 dtype-categorical = ["polars-core/dtype-categorical"]
@@ -88,7 +88,7 @@ dtype-struct = ["polars-core/dtype-struct"]
 dtype-decimal = ["polars-core/dtype-decimal"]
 fmt = ["polars-core/fmt"]
 lazy = []
-parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "memmap"]
+parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression"]
 async = ["async-trait", "futures", "tokio", "tokio-util", "arrow/io_ipc_write_async", "polars-error/regex"]
 cloud = ["object_store", "async", "polars-core/async", "polars-error/object_store", "url"]
 aws = ["object_store/aws", "cloud", "polars-core/aws"]

@@ -17,6 +17,12 @@ def test_pickling_simple_expression() -> None:
     assert str(pickle.loads(buf)) == str(e)
 
 
+def test_pickling_as_struct_11100() -> None:
+    e = pl.struct("a")
+    buf = pickle.dumps(e)
+    assert str(pickle.loads(buf)) == str(e)
+
+
 def test_lazyframe_serde() -> None:
     lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
 

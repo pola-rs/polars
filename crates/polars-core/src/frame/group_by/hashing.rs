@@ -11,16 +11,12 @@ use crate::datatypes::PlHashMap;
 use crate::frame::group_by::{GroupsIdx, IdxItem};
 use crate::hashing::{
     df_rows_to_hashes_threaded_vertical, series_to_hashes, this_partition, AsU64, IdBuildHasher,
-    IdxHash,
+    IdxHash, *,
 };
 use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
 use crate::utils::{flatten, split_df, CustomIterTools};
 use crate::POOL;
-
-// We must strike a balance between cache coherence and resizing costs.
-// Overallocation seems a lot more expensive than resizing so we start reasonable small.
-pub(crate) const HASHMAP_INIT_SIZE: usize = 512;
 
 fn get_init_size() -> usize {
     // we check if this is executed from the main thread
@@ -317,75 +313,6 @@ where
             .collect::<Vec<_>>()
     });
     finish_group_order(out, sorted)
-}
-
-/// Utility function used as comparison function in the hashmap.
-/// The rationale is that equality is an AND operation and therefore its probability of success
-/// declines rapidly with the number of keys. Instead of first copying an entire row from both
-/// sides and then do the comparison, we do the comparison value by value catching early failures
-/// eagerly.
-///
-/// # Safety
-/// Doesn't check any bounds
-#[inline]
-pub(crate) unsafe fn compare_df_rows(keys: &DataFrame, idx_a: usize, idx_b: usize) -> bool {
-    for s in keys.get_columns() {
-        if !s.equal_element(idx_a, idx_b, s) {
-            return false;
-        }
-    }
-    true
-}
-
-/// Populate a multiple key hashmap with row indexes.
-/// Instead of the keys (which could be very large), the row indexes are stored.
-/// To check if a row is equal the original DataFrame is also passed as ref.
-/// When a hash collision occurs the indexes are ptrs to the rows and the rows are compared
-/// on equality.
-pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
-    hash_tbl: &mut HashMap<IdxHash, V, H>,
-    // row index
-    idx: IdxSize,
-    // hash
-    original_h: u64,
-    // keys of the hash table (will not be inserted, the indexes will be used)
-    // the keys are needed for the equality check
-    keys: &DataFrame,
-    // value to insert
-    vacant_fn: G,
-    // function that gets a mutable ref to the occupied value in the hash table
-    mut occupied_fn: F,
-) where
-    G: Fn() -> V,
-    F: FnMut(&mut V),
-    H: BuildHasher,
-{
-    let entry = hash_tbl
-        .raw_entry_mut()
-        // uses the idx to probe rows in the original DataFrame with keys
-        // to check equality to find an entry
-        // this does not invalidate the hashmap as this equality function is not used
-        // during rehashing/resize (then the keys are already known to be unique).
-        // Only during insertion and probing an equality function is needed
-        .from_hash(original_h, |idx_hash| {
-            // first check the hash values
-            // before we incur a cache miss
-            idx_hash.hash == original_h && {
-                let key_idx = idx_hash.idx;
-                // Safety:
-                // indices in a group_by operation are always in bounds.
-                unsafe { compare_df_rows(keys, key_idx as usize, idx as usize) }
-            }
-        });
-    match entry {
-        RawEntryMut::Vacant(entry) => {
-            entry.insert_hashed_nocheck(original_h, IdxHash::new(idx, original_h), vacant_fn());
-        },
-        RawEntryMut::Occupied(mut entry) => {
-            let (_k, v) = entry.get_key_value_mut();
-            occupied_fn(v);
-        },
-    }
 }
 
 #[inline]

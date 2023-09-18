@@ -17,7 +17,6 @@ mod expr;
 mod expr_dyn_fn;
 mod from;
 pub(crate) mod function_expr;
-#[cfg(feature = "compile")]
 pub mod functions;
 mod list;
 #[cfg(feature = "meta")]
@@ -41,6 +40,7 @@ pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
 pub use expr::*;
+pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;
@@ -1098,18 +1098,18 @@ impl Expr {
         self.repeat_by_impl(by.into())
     }
 
-    #[cfg(feature = "is_first")]
+    #[cfg(feature = "is_first_distinct")]
     #[allow(clippy::wrong_self_convention)]
     /// Get a mask of the first unique value.
-    pub fn is_first(self) -> Expr {
-        self.apply_private(BooleanFunction::IsFirst.into())
+    pub fn is_first_distinct(self) -> Expr {
+        self.apply_private(BooleanFunction::IsFirstDistinct.into())
     }
 
-    #[cfg(feature = "is_last")]
+    #[cfg(feature = "is_last_distinct")]
     #[allow(clippy::wrong_self_convention)]
     /// Get a mask of the last unique value.
-    pub fn is_last(self) -> Expr {
-        self.apply_private(BooleanFunction::IsLast.into())
+    pub fn is_last_distinct(self) -> Expr {
+        self.apply_private(BooleanFunction::IsLastDistinct.into())
     }
 
     fn dot_impl(self, other: Expr) -> Expr {

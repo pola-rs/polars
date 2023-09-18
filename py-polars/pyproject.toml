@@ -96,7 +96,10 @@ module = [
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["IPython.*"]
+module = [
+  "IPython.*",
+  "matplotlib.*",
+]
 follow_imports = "skip"
 
 [[tool.mypy.overrides]]
@@ -188,7 +191,7 @@ addopts = [
   "--strict-markers",
   "--import-mode=importlib",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
-  "-m not slow and not hypothesis and not benchmark and not write_disk",
+  "-m not slow and not hypothesis and not benchmark and not write_disk and not docs",
 ]
 markers = [
   "write_disk: Tests that write to disk",
@@ -202,7 +205,7 @@ filterwarnings = [
   # ...except where it prevents test debugging in an IPython console
   "ignore:.*unrecognized arguments.*PyDevIPCompleter:DeprecationWarning",
   "ignore:.*is_sparse is deprecated.*:FutureWarning",
-  "ignore:Matplotlib is currently using agg:UserWarning",
+  "ignore:FigureCanvasAgg is non-interactive:UserWarning",
 ]
 xfail_strict = true
 

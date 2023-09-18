@@ -3583,24 +3583,53 @@ class Series:
 
         """
 
-    def is_first(self) -> Series:
+    def is_first_distinct(self) -> Series:
         """
-        Get a mask of the first unique value.
+        Return a boolean mask indicating the first occurrence of each distinct value.
 
         Returns
         -------
         Series
             Series of data type :class:`Boolean`.
 
+        Examples
+        --------
+        >>> s = pl.Series([1, 1, 2, 3, 2])
+        >>> s.is_first_distinct()
+        shape: (5,)
+        Series: '' [bool]
+        [
+                true
+                false
+                true
+                true
+                false
+        ]
+
         """
 
-    def is_last(self) -> Series:
+    def is_last_distinct(self) -> Series:
         """
-        Get a mask of the last unique value.
+        Return a boolean mask indicating the last occurrence of each distinct value.
 
         Returns
         -------
-        Boolean Series
+        Series
+            Series of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 1, 2, 3, 2])
+        >>> s.is_last_distinct()
+        shape: (5,)
+        Series: '' [bool]
+        [
+                false
+                true
+                false
+                true
+                true
+        ]
 
         """
 
@@ -6700,6 +6729,36 @@ class Series:
             a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
+
+        """
+
+    @deprecate_renamed_function("is_first_distinct", version="0.19.3")
+    def is_first(self) -> Series:
+        """
+        Return a boolean mask indicating the first occurrence of each distinct value.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`Series.is_first_distinct`.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
+        """
+
+    @deprecate_renamed_function("is_last_distinct", version="0.19.3")
+    def is_last(self) -> Series:
+        """
+        Return a boolean mask indicating the last occurrence of each distinct value.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`Series.is_last_distinct`.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
 
         """
 

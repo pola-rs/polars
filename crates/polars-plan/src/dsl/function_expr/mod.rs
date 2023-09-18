@@ -11,6 +11,7 @@ mod bounds;
 mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
+mod coerce;
 mod concat;
 mod correlation;
 mod cum;
@@ -24,6 +25,8 @@ mod list;
 #[cfg(feature = "log")]
 mod log;
 mod nan;
+#[cfg(feature = "ffi_plugin")]
+mod plugin;
 mod pow;
 #[cfg(feature = "random")]
 mod random;
@@ -35,7 +38,7 @@ mod rolling;
 mod round;
 #[cfg(feature = "row_hash")]
 mod row_hash;
-mod schema;
+pub(super) mod schema;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
 mod shift_and_fill;
@@ -140,6 +143,8 @@ pub enum FunctionExpr {
     ArrayExpr(ArrayFunction),
     #[cfg(feature = "dtype-struct")]
     StructExpr(StructFunction),
+    #[cfg(feature = "dtype-struct")]
+    AsStruct,
     #[cfg(feature = "top_k")]
     TopK {
         k: usize,
@@ -230,6 +235,11 @@ pub enum FunctionExpr {
         seed: Option<u64>,
     },
     SetSortedFlag(IsSorted),
+    #[cfg(feature = "ffi_plugin")]
+    FfiPlugin {
+        lib: Arc<str>,
+        symbol: Arc<str>,
+    },
 }
 
 impl Hash for FunctionExpr {
@@ -256,6 +266,11 @@ impl Hash for FunctionExpr {
             FunctionExpr::Interpolate(f) => f.hash(state),
             #[cfg(feature = "dtype-categorical")]
             FunctionExpr::Categorical(f) => f.hash(state),
+            #[cfg(feature = "ffi_plugin")]
+            FunctionExpr::FfiPlugin { lib, symbol } => {
+                lib.hash(state);
+                symbol.hash(state);
+            },
             _ => {},
         }
     }
@@ -306,6 +321,8 @@ impl Display for FunctionExpr {
             ListExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]
             StructExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-struct")]
+            AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
             TopK { .. } => "top_k",
             Shift(_) => "shift",
@@ -367,6 +384,8 @@ impl Display for FunctionExpr {
             #[cfg(feature = "random")]
             Random { method, .. } => method.into(),
             SetSortedFlag(_) => "set_sorted",
+            #[cfg(feature = "ffi_plugin")]
+            FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
         };
         write!(f, "{s}")
     }
@@ -537,6 +556,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Any => map!(list::lst_any),
                     #[cfg(feature = "list_any_all")]
                     All => map!(list::lst_all),
+                    Join => map_as_slice!(list::join),
                 }
             },
             #[cfg(feature = "dtype-array")]
@@ -556,6 +576,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     FieldByIndex(index) => map!(struct_::get_by_index, index),
                     FieldByName(name) => map!(struct_::get_by_name, name.clone()),
                 }
+            },
+            #[cfg(feature = "dtype-struct")]
+            AsStruct => {
+                map_as_slice!(coerce::as_struct)
             },
             #[cfg(feature = "top_k")]
             TopK { k, descending } => {
@@ -638,6 +662,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "random")]
             Random { method, seed } => map!(random::random, method, seed),
             SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
+            #[cfg(feature = "ffi_plugin")]
+            FfiPlugin { lib, symbol, .. } => unsafe {
+                map_as_slice!(plugin::call_plugin, lib.as_ref(), symbol.as_ref())
+            },
         }
     }
 }
@@ -681,6 +709,12 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "temporal")]
             Strptime(dtype, options) => {
                 map_as_slice!(strings::strptime, dtype.clone(), &options)
+            },
+            Split => {
+                map_as_slice!(strings::split)
+            },
+            SplitInclusive => {
+                map_as_slice!(strings::split_inclusive)
             },
             #[cfg(feature = "concat_str")]
             ConcatVertical(delimiter) => map!(strings::concat, &delimiter),
@@ -753,8 +787,8 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Microsecond => map!(datetime::microsecond),
             Nanosecond => map!(datetime::nanosecond),
             TimeStamp(tu) => map!(datetime::timestamp, tu),
-            Truncate(truncate_options) => {
-                map_as_slice!(datetime::truncate, &truncate_options)
+            Truncate(offset) => {
+                map_as_slice!(datetime::truncate, &offset)
             },
             #[cfg(feature = "date_offset")]
             MonthStart => map!(datetime::month_start),

@@ -4,7 +4,8 @@ use arrow::compute::cast::utf8_to_large_utf8;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-datetime",
-    feature = "dtype-time"
+    feature = "dtype-time",
+    feature = "dtype-duration"
 ))]
 use arrow::temporal_conversions::*;
 use polars_arrow::compute::cast::cast;

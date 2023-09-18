@@ -85,12 +85,6 @@ def test_filter_where() -> None:
     assert_frame_equal(result_filter, expected)
 
 
-def test_list_join_strings() -> None:
-    s = pl.Series("a", [["ab", "c", "d"], ["e", "f"], ["g"], []])
-    expected = pl.Series("a", ["ab-c-d", "e-f", "g", ""])
-    assert_series_equal(s.list.join("-"), expected)
-
-
 def test_count_expr() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 3, 3], "b": ["a", "a", "b", "a", "a"]})
 

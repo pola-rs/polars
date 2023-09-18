@@ -287,24 +287,6 @@ def test_is_unique() -> None:
     assert_series_equal(result, pl.Series("a", [False, True, False]))
 
 
-def test_is_first() -> None:
-    ldf = pl.LazyFrame({"a": [4, 1, 4]})
-    result = ldf.select(pl.col("a").is_first()).collect()["a"]
-    assert_series_equal(result, pl.Series("a", [True, True, False]))
-
-    # struct
-    ldf = pl.LazyFrame({"a": [1, 2, 3, 2, None, 2, 1], "b": [0, 2, 3, 2, None, 2, 0]})
-
-    assert ldf.select(pl.struct(["a", "b"]).is_first()).collect().to_dict(False) == {
-        "a": [True, True, True, False, True, False, False]
-    }
-
-    ldf = pl.LazyFrame({"a": [[1, 2], [3], [1, 2], [4, 5], [4, 5]]})
-    assert ldf.select(pl.col("a").is_first()).collect().to_dict(False) == {
-        "a": [True, True, False, True, False]
-    }
-
-
 def test_is_duplicated() -> None:
     ldf = pl.LazyFrame({"a": [4, 1, 4]}).select(pl.col("a").is_duplicated())
     assert_series_equal(ldf.collect()["a"], pl.Series("a", [True, False, True]))

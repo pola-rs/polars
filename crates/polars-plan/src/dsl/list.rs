@@ -162,18 +162,12 @@ impl ListNameSpace {
     /// Join all string items in a sublist and place a separator between them.
     /// # Error
     /// This errors if inner type of list `!= DataType::Utf8`.
-    pub fn join(self, separator: &str) -> Expr {
-        let separator = separator.to_string();
-        self.0
-            .map(
-                move |s| {
-                    s.list()?
-                        .lst_join(&separator)
-                        .map(|ca| Some(ca.into_series()))
-                },
-                GetOutput::from_type(DataType::Utf8),
-            )
-            .with_fmt("list.join")
+    pub fn join(self, separator: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::Join),
+            &[separator],
+            false,
+        )
     }
 
     /// Return the index of the minimal value of every sublist
