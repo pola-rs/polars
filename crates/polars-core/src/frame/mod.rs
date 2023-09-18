@@ -1696,6 +1696,8 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(new_col))
     }
 
+    /// # Safety
+    /// The indices must be in-bounds.
     pub unsafe fn take_unchecked(&self, idx: &IdxCa) -> Self {
         self.take_unchecked_impl(idx, true)
     }
