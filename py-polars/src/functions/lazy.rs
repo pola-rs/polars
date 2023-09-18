@@ -71,7 +71,7 @@ pub fn arg_where(condition: PyExpr) -> PyExpr {
 #[pyfunction]
 pub fn as_struct(exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
-    dsl::as_struct(&exprs).into()
+    dsl::as_struct(exprs).into()
 }
 
 #[pyfunction]
