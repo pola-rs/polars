@@ -157,7 +157,7 @@ pub(crate) fn call_lambda_with_series_slice(
     // call the lambda and get a python side Series wrapper
     match lambda.call1(py, (wrapped_s,)) {
         Ok(pyobj) => pyobj,
-        Err(e) => panic!("python apply failed: {}", e.value(py)),
+        Err(e) => panic!("python function failed: {}", e.value(py)),
     }
 }
 
