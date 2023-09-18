@@ -36,7 +36,7 @@ XlsxWriter
 deltalake == 0.10.1
 # Dataframe interchange protocol
 dataframe-api-compat >= 0.1.6
-pyiceberg >= 0.5.0rc3
+pyiceberg >= 0.5.0
 # Other
 matplotlib
 gevent
