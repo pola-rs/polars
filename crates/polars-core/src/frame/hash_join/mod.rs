@@ -212,9 +212,7 @@ impl DataFrame {
             if let Some((offset, len)) = args.slice {
                 right_idx = slice_slice(right_idx, offset, len);
             }
-            unsafe {
-                other.take_unchecked(&right_idx.iter().copied().collect_ca(""))
-            }
+            unsafe { other.take_unchecked(&right_idx.iter().copied().collect_ca("")) }
         };
         let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
 
