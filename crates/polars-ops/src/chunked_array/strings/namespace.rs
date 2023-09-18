@@ -112,14 +112,23 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                         src.contains(pat)
                     }))
                 } else if strict {
-                    try_binary_elementwise_values(ca, pat, |src, pat| {
-                        Ok(Regex::new(pat)?.is_match(src))
+                    // A sqrt(n) regex cache is not too small, not too large.
+                    let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
+                    try_binary_elementwise(ca, pat, |opt_src, opt_pat| match (opt_src, opt_pat) {
+                        (Some(src), Some(pat)) => {
+                            let reg = reg_cache.try_get_or_insert_with(pat, |p| Regex::new(p))?;
+                            Ok(Some(reg.is_match(src)))
+                        },
+                        _ => Ok(None),
                     })
                 } else {
+                    // A sqrt(n) regex cache is not too small, not too large.
+                    let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
                     Ok(binary_elementwise(ca, pat, |opt_src, opt_pat| {
                         match (opt_src, opt_pat) {
                             (Some(src), Some(pat)) => {
-                                Regex::new(pat).ok().map(|re| re.is_match(src))
+                                let reg = reg_cache.try_get_or_insert_with(pat, |p| Regex::new(p));
+                                reg.ok().map(|re| re.is_match(src))
                             },
                             _ => None,
                         }
@@ -399,15 +408,13 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         // A sqrt(n) regex cache is not too small, not too large.
         let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
         let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
-        for (opt_s, opt_pat) in ca.into_iter().zip(pat) {
-            match (opt_s, opt_pat) {
-                (_, None) | (None, _) => builder.append_null(),
-                (Some(s), Some(pat)) => {
-                    let reg = reg_cache.get_or_insert_with(pat, |p| Regex::new(p).unwrap());
-                    builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str()));
-                },
-            }
-        }
+        binary_elementwise_for_each(ca, pat, |opt_s, opt_pat| match (opt_s, opt_pat) {
+            (_, None) | (None, _) => builder.append_null(),
+            (Some(s), Some(pat)) => {
+                let reg = reg_cache.get_or_insert_with(pat, |p| Regex::new(p).unwrap());
+                builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str()));
+            },
+        });
         Ok(builder.finish())
     }
 
@@ -427,12 +434,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             Regex::new(pat)?
         };
 
-        let mut out: UInt32Chunked = ca
-            .into_iter()
-            .map(|opt_s| opt_s.map(|s| reg.find_iter(s).count() as u32))
-            .collect();
-        out.rename(ca.name());
-        Ok(out)
+        Ok(ca.apply_generic(|opt_s| opt_s.map(|s| reg.find_iter(s).count() as u32)))
     }
 
     /// Count all successive non-overlapping regex matches.
