@@ -14,6 +14,9 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
+    // Applies a function to all elements , regardless of whether they
+    // are null or not, after which the null mask is copied from the
+    // original array.
     pub fn apply_values_generic<'a, U, K, F>(&'a self, mut op: F) -> ChunkedArray<U>
     where
         U: PolarsDataType,
@@ -28,6 +31,9 @@ where
         ChunkedArray::from_chunk_iter(self.name(), iter)
     }
 
+    /// Applies a function to all elements, regardless of whether they
+    /// are null or not, after which the null mask is copied from the
+    /// original array.
     pub fn try_apply_values_generic<'a, U, K, F, E>(
         &'a self,
         mut op: F,
@@ -46,7 +52,7 @@ where
         ChunkedArray::try_from_chunk_iter(self.name(), iter)
     }
 
-    // Applies a function only to the non-null elements, propagating nulls.
+    /// Applies a function only to the non-null elements, propagating nulls.
     pub fn apply_nonnull_values_generic<'a, U, K, F>(
         &'a self,
         dtype: DataType,
@@ -76,7 +82,7 @@ where
         ChunkedArray::from_chunk_iter(self.name(), iter)
     }
 
-    // Applies a function only to the non-null elements, propagating nulls.
+    /// Applies a function only to the non-null elements, propagating nulls.
     pub fn try_apply_nonnull_values_generic<'a, U, K, F, E>(
         &'a self,
         mut op: F,
