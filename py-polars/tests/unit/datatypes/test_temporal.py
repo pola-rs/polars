@@ -590,8 +590,13 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
             "idx", every="2i", period="3i", include_boundaries=True
         ).agg(pl.col("A"))
 
-        assert out.shape == (3, 4)
-        assert out["A"].to_list() == [["A", "A", "B"], ["B", "B", "B"], ["B", "C"]]
+        assert out.shape == (4, 4)
+        assert out["A"].to_list() == [
+            ["A"],
+            ["A", "A", "B"],
+            ["B", "B", "B"],
+            ["B", "C"],
+        ]
 
 
 def test_to_arrow() -> None:
@@ -658,13 +663,14 @@ def test_groupy_by_dynamic_median_10695() -> None:
         pl.col("foo").median()
     ).to_dict(False) == {
         "timestamp": [
+            datetime(2023, 8, 22, 15, 43),
             datetime(2023, 8, 22, 15, 44),
             datetime(2023, 8, 22, 15, 45),
             datetime(2023, 8, 22, 15, 46),
             datetime(2023, 8, 22, 15, 47),
             datetime(2023, 8, 22, 15, 48),
         ],
-        "foo": [1.0, 1.0, 1.0, 1.0, 1.0],
+        "foo": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
     }
 
 
