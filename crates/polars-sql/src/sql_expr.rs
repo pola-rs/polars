@@ -61,7 +61,7 @@ pub enum SubqueryRestriction {
     // SingleValue,
     SingleColumn,
     // SingleRow,
-    // Array
+    // Any
 }
 
 /// Recursively walks a SQL Expr to create a polars Expr
@@ -153,15 +153,12 @@ impl SqlExprVisitor<'_> {
             let mut new_names: Vec<String> = vec![];
             schema.iter_names().for_each(|name| {
                 let mut tmp_str: String = Default::default();
-                // tmpStr = rand_string + &name.to_string();
                 tmp_str.push_str(name);
                 tmp_str.push_str(&rand_string.clone());
                 old_names.push((*name).to_string());
                 new_names.push(tmp_str);
             });
-            lf = lf.rename(old_names, new_names.clone()).cache();
-
-            print!("\n\n SubQuery:{}", lf.explain(false)?);
+            lf = lf.rename(old_names, new_names.clone());
 
             return Ok(Expr::SubPlan(Box::new(lf.logical_plan), new_names));
         };
@@ -497,8 +494,6 @@ impl SqlExprVisitor<'_> {
         let expr = self.visit_expr(expr)?;
 
         let subquery_result = self.visit_subquery(subquery, SubqueryRestriction::SingleColumn)?;
-
-        // subquery_result.
 
         if negated {
             Ok(expr.is_in(subquery_result).not())
