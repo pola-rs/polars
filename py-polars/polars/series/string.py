@@ -872,7 +872,7 @@ class StringNameSpace:
 
         """
 
-    def split(self, by: str, *, inclusive: bool = False) -> Series:
+    def split(self, by: str | Expr, *, inclusive: bool = False) -> Series:
         """
         Split the string by a substring.
 

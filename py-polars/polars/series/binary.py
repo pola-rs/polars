@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from polars import Series
+    from polars import Expr, Series
     from polars.polars import PySeries
     from polars.type_aliases import TransferEncoding
 
@@ -19,7 +19,7 @@ class BinaryNameSpace:
     def __init__(self, series: Series):
         self._s: PySeries = series._s
 
-    def contains(self, literal: bytes) -> Series:
+    def contains(self, literal: bytes | Expr) -> Series:
         """
         Check if binaries in Series contain a binary substring.
 
@@ -35,7 +35,7 @@ class BinaryNameSpace:
 
         """
 
-    def ends_with(self, suffix: bytes) -> Series:
+    def ends_with(self, suffix: bytes | Expr) -> Series:
         """
         Check if string values end with a binary substring.
 
@@ -46,7 +46,7 @@ class BinaryNameSpace:
 
         """
 
-    def starts_with(self, prefix: bytes) -> Series:
+    def starts_with(self, prefix: bytes | Expr) -> Series:
         """
         Check if values start with a binary substring.
 
