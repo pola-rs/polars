@@ -22,6 +22,27 @@ where
     }
 }
 
+impl<T: PolarsDataType> ChunkTake<IdxCa> for ChunkedArray<T>
+where
+    ChunkedArray<T>: ChunkTakeUnchecked<IdxCa>,
+{
+    /// Gather values from ChunkedArray by index.
+    fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
+        let len = self.len();
+        let all_valid = indices.downcast_iter().all(|a| {
+            if a.null_count() == 0 {
+                a.values_iter().all(|i| (*i as usize) < len)
+            } else {
+                a.iter().flatten().all(|i| (*i as usize) < len)
+            }
+        });
+        polars_ensure!(all_valid, ComputeError: "take indices are out of bounds");
+
+        // SAFETY: we just checked the indices are valid.
+        Ok(unsafe { self.take_unchecked(indices) })
+    }
+}
+
 unsafe fn target_value_unchecked<'a, A: StaticArray>(
     targets: &[&'a A],
     idx: IdxSize,
@@ -80,27 +101,6 @@ impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for 
             indices.as_ref(),
         );
         ChunkedArray::from_chunk_iter_like(self, [arr])
-    }
-}
-
-impl<T: PolarsDataType> ChunkTake<IdxCa> for ChunkedArray<T>
-where
-    ChunkedArray<T>: ChunkTakeUnchecked<IdxCa>,
-{
-    /// Gather values from ChunkedArray by index.
-    fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
-        let len = self.len();
-        let all_valid = indices.downcast_iter().all(|a| {
-            if a.null_count() == 0 {
-                a.values_iter().all(|i| (*i as usize) < len)
-            } else {
-                a.iter().flatten().all(|i| (*i as usize) < len)
-            }
-        });
-        polars_ensure!(all_valid, ComputeError: "take indices are out of bounds");
-
-        // SAFETY: we just checked the indices are valid.
-        Ok(unsafe { self.take_unchecked(indices) })
     }
 }
 

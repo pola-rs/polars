@@ -20,7 +20,6 @@ pub mod collect;
 pub mod comparison;
 pub mod float;
 pub mod iterator;
-pub mod kernels;
 #[cfg(feature = "ndarray")]
 pub(crate) mod ndarray;
 
