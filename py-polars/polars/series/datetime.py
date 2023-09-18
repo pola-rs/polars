@@ -1435,7 +1435,7 @@ class DateTimeNameSpace:
 
     def truncate(
         self,
-        every: str | dt.timedelta,
+        every: str | dt.timedelta | Expr,
         offset: str | dt.timedelta | None = None,
         *,
         use_earliest: bool | None = None,

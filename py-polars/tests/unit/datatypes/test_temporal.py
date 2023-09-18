@@ -2576,6 +2576,125 @@ def test_asof_join_by_forward() -> None:
     }
 
 
+def test_truncate_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [
+                datetime(2022, 11, 14),
+                datetime(2023, 10, 11),
+                datetime(2022, 3, 20, 5, 7, 18),
+                datetime(2022, 4, 3, 13, 30, 32),
+            ],
+            "every": ["1y", "1mo", "1m", "1s"],
+            "ambiguous": ["earliest", "latest", "latest", "raise"],
+        }
+    )
+
+    every_expr = df.select(
+        pl.col("date").dt.truncate(every=pl.col("every"), ambiguous=pl.lit("raise"))
+    )
+    assert every_expr.to_dict(False) == {
+        "date": [
+            datetime(2022, 1, 1),
+            datetime(2023, 10, 1),
+            datetime(2022, 3, 20, 5, 7),
+            datetime(2022, 4, 3, 13, 30, 32),
+        ]
+    }
+
+    all_lit = df.select(
+        pl.col("date").dt.truncate(every=pl.lit("1mo"), ambiguous=pl.lit("raise"))
+    )
+    assert all_lit.to_dict(False) == {
+        "date": [
+            datetime(2022, 11, 1),
+            datetime(2023, 10, 1),
+            datetime(2022, 3, 1),
+            datetime(2022, 4, 1),
+        ]
+    }
+
+    df = pl.DataFrame(
+        {
+            "date": pl.datetime_range(
+                date(2020, 10, 25),
+                datetime(2020, 10, 25, 2),
+                "30m",
+                eager=True,
+                time_zone="Europe/London",
+            ).dt.offset_by("15m"),
+            "every": ["30m", "15m", "30m", "15m", "30m", "15m", "30m"],
+            "ambiguous": [
+                "raise",
+                "earliest",
+                "earliest",
+                "latest",
+                "latest",
+                "latest",
+                "raise",
+            ],
+        }
+    )
+
+    ambiguous_expr = df.select(
+        pl.col("date").dt.truncate(every=pl.lit("30m"), ambiguous=pl.col("ambiguous"))
+    )
+    assert ambiguous_expr.to_dict(False) == {
+        "date": [
+            datetime(2020, 10, 25, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 0, 30, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 0, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 0, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 2, 0, tzinfo=ZoneInfo(key="Europe/London")),
+        ]
+    }
+
+    all_expr = df.select(
+        pl.col("date").dt.truncate(every=pl.col("every"), ambiguous=pl.col("ambiguous"))
+    )
+    assert all_expr.to_dict(False) == {
+        "date": [
+            datetime(2020, 10, 25, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 0, 45, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 0, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 45, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 0, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 45, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 2, 0, tzinfo=ZoneInfo(key="Europe/London")),
+        ]
+    }
+
+
+def test_truncate_propagate_null() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [
+                None,
+                datetime(2022, 11, 14),
+                datetime(2022, 3, 20, 5, 7, 18),
+            ],
+            "every": ["1y", None, "1m"],
+            "ambiguous": ["earliest", "latest", None],
+        }
+    )
+    assert df.select(
+        pl.col("date").dt.truncate(every=pl.col("every"), ambiguous="raise")
+    ).to_dict(False) == {"date": [None, None, datetime(2022, 3, 20, 5, 7, 0)]}
+    assert df.select(
+        pl.col("date").dt.truncate(every="1mo", ambiguous=pl.col("ambiguous"))
+    ).to_dict(False) == {"date": [None, datetime(2022, 11, 1), None]}
+    assert df.select(
+        pl.col("date").dt.truncate(every=pl.col("every"), ambiguous=pl.col("ambiguous"))
+    ).to_dict(False) == {"date": [None, None, None]}
+    assert df.select(
+        pl.col("date").dt.truncate(
+            every=pl.lit(None, dtype=pl.Utf8), ambiguous=pl.lit(None, dtype=pl.Utf8)
+        )
+    ).to_dict(False) == {"date": [None, None, None]}
+
+
 def test_truncate_by_calendar_weeks() -> None:
     # 5557
     start = datetime(2022, 11, 14, 0, 0, 0)
