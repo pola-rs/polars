@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from polars import Expr
     from polars.type_aliases import (
         Ambiguous,
+        IntoExpr,
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
@@ -1511,7 +1512,7 @@ class ExprStringNameSpace:
         pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_count_matches(pattern, literal))
 
-    def split(self, by: str | Expr, *, inclusive: bool = False) -> Expr:
+    def split(self, by: IntoExpr, *, inclusive: bool = False) -> Expr:
         """
         Split the string by a substring.
 

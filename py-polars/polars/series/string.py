@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from polars.polars import PySeries
     from polars.type_aliases import (
         Ambiguous,
+        IntoExpr,
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
@@ -872,7 +873,7 @@ class StringNameSpace:
 
         """
 
-    def split(self, by: str, *, inclusive: bool = False) -> Series:
+    def split(self, by: IntoExpr, *, inclusive: bool = False) -> Series:
         """
         Split the string by a substring.
 
