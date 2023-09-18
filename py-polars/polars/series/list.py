@@ -198,7 +198,7 @@ class ListNameSpace:
     def __getitem__(self, item: int) -> Series:
         return self.get(item)
 
-    def join(self, separator: str) -> Series:
+    def join(self, separator: str | Expr) -> Series:
         """
         Join all string items in a sublist and place a separator between them.
 
