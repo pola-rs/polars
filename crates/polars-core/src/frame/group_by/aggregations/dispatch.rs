@@ -86,7 +86,7 @@ impl Series {
                 if idx.is_empty() {
                     None
                 } else {
-                    let take = self.take_slice_unchecked(&idx);
+                    let take = self.take_slice_unchecked(idx);
                     take.n_unique().ok().map(|v| v as IdxSize)
                 }
             }),

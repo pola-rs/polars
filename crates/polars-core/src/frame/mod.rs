@@ -1688,8 +1688,8 @@ impl DataFrame {
     pub fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
         let new_col = POOL.install(|| {
             self.try_apply_columns_par(&|s| match s.dtype() {
-                DataType::Utf8 => s.take_threaded(&indices, true),
-                _ => s.take(&indices),
+                DataType::Utf8 => s.take_threaded(indices, true),
+                _ => s.take(indices),
             })
         })?;
 

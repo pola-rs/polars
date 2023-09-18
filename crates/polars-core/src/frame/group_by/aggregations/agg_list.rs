@@ -157,7 +157,7 @@ impl AggList for BooleanChunked {
                 let mut builder =
                     ListBooleanChunkedBuilder::new(self.name(), groups.len(), self.len());
                 for idx in groups.all().iter() {
-                    let ca = { self.take_unchecked(idx.into()) };
+                    let ca = { self.take_unchecked(idx) };
                     builder.append(&ca)
                 }
                 builder.finish().into_series()
@@ -183,7 +183,7 @@ impl AggList for Utf8Chunked {
                 let mut builder =
                     ListUtf8ChunkedBuilder::new(self.name(), groups.len(), self.len());
                 for idx in groups.all().iter() {
-                    let ca = { self.take_unchecked(idx.into()) };
+                    let ca = { self.take_unchecked(idx) };
                     builder.append(&ca)
                 }
                 builder.finish().into_series()
@@ -208,7 +208,7 @@ impl AggList for BinaryChunked {
                 let mut builder =
                     ListBinaryChunkedBuilder::new(self.name(), groups.len(), self.len());
                 for idx in groups.all().iter() {
-                    let ca = { self.take_unchecked(idx.into()) };
+                    let ca = { self.take_unchecked(idx) };
                     builder.append(&ca)
                 }
                 builder.finish().into_series()
@@ -292,7 +292,7 @@ impl AggList for ListChunked {
                         // SAFETY:
                         // group tuples are in bounds
                         {
-                            let mut s = ca.take_unchecked(idx.into());
+                            let mut s = ca.take_unchecked(idx);
                             let arr = s.chunks.pop().unwrap_unchecked_release();
                             list_values.push_unchecked(arr);
 
@@ -362,7 +362,7 @@ impl AggList for ArrayChunked {
 
                         // SAFETY: group tuples are in bounds
                         {
-                            let mut s = ca.take_unchecked(idx.into());
+                            let mut s = ca.take_unchecked(idx);
                             let arr = s.chunks.pop().unwrap_unchecked_release();
                             list_values.push_unchecked(arr);
                         }

@@ -79,14 +79,12 @@ unsafe fn gather_idx_array_unchecked<A: StaticArray>(
             it.map(|i| arr.value_unchecked(i as usize))
                 .collect_arr_with_dtype(dtype)
         }
+    } else if has_nulls {
+        it.map(|i| target_get_unchecked(targets, i))
+            .collect_arr_with_dtype(dtype)
     } else {
-        if has_nulls {
-            it.map(|i| target_get_unchecked(targets, i))
-                .collect_arr_with_dtype(dtype)
-        } else {
-            it.map(|i| target_value_unchecked(targets, i))
-                .collect_arr_with_dtype(dtype)
-        }
+        it.map(|i| target_value_unchecked(targets, i))
+            .collect_arr_with_dtype(dtype)
     }
 }
 
@@ -118,33 +116,29 @@ impl<T: PolarsDataType> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
                     targets_have_nulls,
                     idx_arr.values(),
                 )
-            } else {
-                if targets.len() == 1 {
-                    let target = targets.iter().next().unwrap();
-                    if targets_have_nulls {
-                        idx_arr
-                            .iter()
-                            .map(|i| target.get_unchecked(*i? as usize))
-                            .collect_arr_with_dtype(self.dtype().clone())
-                    } else {
-                        idx_arr
-                            .iter()
-                            .map(|i| Some(target.value_unchecked(*i? as usize)))
-                            .collect_arr_with_dtype(self.dtype().clone())
-                    }
+            } else if targets.len() == 1 {
+                let target = targets.first().unwrap();
+                if targets_have_nulls {
+                    idx_arr
+                        .iter()
+                        .map(|i| target.get_unchecked(*i? as usize))
+                        .collect_arr_with_dtype(self.dtype().clone())
                 } else {
-                    if targets_have_nulls {
-                        idx_arr
-                            .iter()
-                            .map(|i| target_get_unchecked(&targets, *i?))
-                            .collect_arr_with_dtype(self.dtype().clone())
-                    } else {
-                        idx_arr
-                            .iter()
-                            .map(|i| Some(target_value_unchecked(&targets, *i?)))
-                            .collect_arr_with_dtype(self.dtype().clone())
-                    }
+                    idx_arr
+                        .iter()
+                        .map(|i| Some(target.value_unchecked(*i? as usize)))
+                        .collect_arr_with_dtype(self.dtype().clone())
                 }
+            } else if targets_have_nulls {
+                idx_arr
+                    .iter()
+                    .map(|i| target_get_unchecked(&targets, *i?))
+                    .collect_arr_with_dtype(self.dtype().clone())
+            } else {
+                idx_arr
+                    .iter()
+                    .map(|i| Some(target_value_unchecked(&targets, *i?)))
+                    .collect_arr_with_dtype(self.dtype().clone())
             }
         });
 
