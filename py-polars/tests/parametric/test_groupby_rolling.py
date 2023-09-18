@@ -166,17 +166,7 @@ def test_rolling_aggs(
         if window.is_empty():
             expected_dict["value"].append(None)
         else:
-            try:
-                value = getattr(window["value"], aggregation)()
-            except pl.exceptions.PolarsPanicError as exc:
-                assert any(  # noqa: PT017
-                    msg in str(exc)
-                    for msg in (
-                        "attempt to multiply with overflow",
-                        "attempt to add with overflow",
-                    )
-                )
-                reject()
+            value = getattr(window["value"], aggregation)()
             expected_dict["value"].append(value)
     expected = pl.DataFrame(expected_dict).select(
         pl.col("ts").cast(pl.Datetime(time_unit)),
