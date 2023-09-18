@@ -165,10 +165,10 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
                 }
                 write!(f, "{dash:─^width$}", width=col_width + col_spacing + 4)?;
             }
-            write!(f, "\n{space:>row_idx_width$} |\n")?;
+            write!(f, "\n{space:>row_idx_width$} │\n")?;
         } else {
             // write connecting lines
-            write!(f, "{space:>row_idx_width$} |")?;
+            write!(f, "{space:>row_idx_width$} │")?;
             let mut last_empty = true;
             let mut before = "";
             for ((col_i, col_name), col_width) in row.iter().enumerate().zip(&col_widths) {
@@ -186,9 +186,9 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
                     if col_name.is_empty() {
                         write!(f, " ")?;
                     } else {
-                        write!(f, "|")?;
+                        write!(f, "│")?;
                         last_empty = false;
-                        before = "|";
+                        before = "│";
                     }
 
                 } else {
@@ -201,7 +201,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
                 if (col_i == row.len()-1) | col_name.is_empty(){
                     write!(f, "{space:^remaining$}")?;
                 } else {
-                    if before == "|" {
+                    if before == "│" {
                         write!(f, " ╰")?;
                     } else {
                         write!(f, "──")?;
@@ -212,7 +212,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
             writeln!(f)?;
             // write vertical bars x 2
             for _ in 0..2 {
-                write!(f, "{space:>row_idx_width$} |")?;
+                write!(f, "{space:>row_idx_width$} │")?;
                 for ((col_i, col_name), col_width) in row.iter().enumerate().zip(&col_widths) {
                     let mut col_spacing = COL_SPACING;
                     if col_i > 0 {
@@ -225,7 +225,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
                     // left_half
                     write!(f, "{space:^half$}")?;
                     // bar
-                    let val = if col_name.is_empty() { ' ' } else { '|' };
+                    let val = if col_name.is_empty() { ' ' } else { '│' };
                     write!(f, "{}", val)?;
 
                     write!(f, "{space:^remaining$}")?;
@@ -235,7 +235,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
         }
 
         // write the top of the boxes
-        write!(f, "{space:>row_idx_width$} |")?;
+        write!(f, "{space:>row_idx_width$} │")?;
         for (col_i,(col_repr, col_width)) in row.iter().zip(&col_widths).enumerate() {
             let mut col_spacing = COL_SPACING;
             if col_i > 0 {
@@ -259,7 +259,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
         writeln!(f)?;
 
         // write column names and spacing
-        write!(f, "{row_count:>row_idx_width$} |")?;
+        write!(f, "{row_count:>row_idx_width$} │")?;
         for (col_i,(col_repr, col_width)) in row.iter().zip(&col_widths).enumerate() {
             let mut col_spacing = COL_SPACING;
             if col_i > 0 {
@@ -272,7 +272,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
             write!(f, "{space:^half$}")?;
 
             if col_repr != "" {
-                write!(f, "| {} |", col_repr)?;
+                write!(f, "│ {} │", col_repr)?;
             } else {
                 write!(f, "    ")?;
             }
@@ -281,7 +281,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
         writeln!(f)?;
 
         // write the bottom of the boxes
-        write!(f, "{space:>row_idx_width$} |")?;
+        write!(f, "{space:>row_idx_width$} │")?;
         for (col_i,(col_repr, col_width)) in row.iter().zip(&col_widths).enumerate() {
             let mut col_spacing = COL_SPACING;
             if col_i > 0 {
