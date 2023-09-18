@@ -643,9 +643,7 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Se
 
     #[cfg(not(feature = "chunked_ids"))]
     unsafe {
-        out_column.take_opt_iter_unchecked(
-            &mut join_opt_ids.iter().map(|&opt_i| opt_i.map(|i| i as usize)),
-        )
+        out_column.take_unchecked(&join_opt_ids.iter().copied().collect_ca(""))
     }
 }
 
