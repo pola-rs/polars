@@ -148,7 +148,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
                 }
                 // col num
                 remaining -= 1;
-                write!(f, "{}", col_i+1)?;
+                write!(f, "{}", col_i)?;
 
                 for _ in 0..remaining {
                     write!(f, " ")?
@@ -278,7 +278,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
         writeln!(f)?;
 
         // write column names and spacing
-        write!(f, "{} |", row_count+1)?;
+        write!(f, "{} |", row_count)?;
         for (col_repr, col_width) in row.iter().zip(&col_widths) {
             for _ in 0..COL_SPACING {
                 write!(f, " ")?
