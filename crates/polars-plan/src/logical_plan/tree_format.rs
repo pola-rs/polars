@@ -126,44 +126,190 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
             .unwrap();
     }
 
-    const COL_SPACING: usize = 4;
+    const COL_SPACING: usize = 2;
 
     for (row_count, row) in levels.iter().enumerate() {
-        // write vertical bars
-        if row_count != 0 {
+        if row_count == 0 {
+            // write the col numbers
             writeln!(f)?;
-            for ((col_i, col_name), col_width) in row.iter().enumerate().zip(&col_widths) {
+            write!(f, "   ")?;
+            for (col_i, (_, col_width)) in levels.last().unwrap().iter().zip(&col_widths).enumerate() {
                 let mut col_spacing = COL_SPACING;
                 if col_i > 0 {
                     col_spacing *= 2;
                 }
-
-                let mut remaining = col_width + col_spacing;
-                let half = (*col_width + col_spacing) / 2;
+                let mut remaining = col_width + col_spacing + 4;
+                let half = (*col_width + col_spacing + 4) / 2;
 
                 // left_half
                 for _ in 0..half {
                     remaining -= 1;
                     write!(f, " ")?;
                 }
-                // bar
+                // col num
                 remaining -= 1;
-                let val = if col_name.is_empty() { ' ' } else { '|' };
-                write!(f, "{}", val)?;
+                write!(f, "{}", col_i+1)?;
 
                 for _ in 0..remaining {
                     write!(f, " ")?
                 }
             }
-            write!(f, "\n\n")?;
+            write!(f, "\n")?;
+
+            // write the horizontal line
+            write!(f, "  ┌")?;
+            for (col_i, (_, col_width)) in levels.last().unwrap().iter().zip(&col_widths).enumerate() {
+                let mut col_spacing = COL_SPACING;
+                if col_i > 0 {
+                    col_spacing *= 2;
+                }
+                for _ in 0..col_width + col_spacing + 4 {
+                    write!(f, "─")?
+                }
+            }
+            write!(f, "\n  |\n")?;
+        } else {
+            // write connecting lines
+            write!(f, "  |")?;
+            let mut last_empty = true;
+            let mut before = "";
+            for ((col_i, col_name), col_width) in row.iter().enumerate().zip(&col_widths) {
+                let mut col_spacing = COL_SPACING;
+                if col_i > 0 {
+                    col_spacing *= 2;
+                }
+
+                let mut remaining = col_width + col_spacing + 4;
+                let half = (*col_width + col_spacing + 4) / 2;
+                if last_empty {
+                    // left_half
+                    for _ in 0..half {
+                        remaining -= 1;
+                        write!(f, " ")?;
+                    }
+                    // bar
+                    remaining -= 1;
+                    if col_name.is_empty() {
+                        write!(f, " ")?;
+                    } else {
+                        write!(f, "|")?;
+                        last_empty = false;
+                        before = "|";
+                    }
+
+                } else {
+                    // left_half
+                    for _ in 0..half {
+                        remaining -= 1;
+                        write!(f, "-")?;
+                    }
+                    // bar
+                    remaining -= 1;
+                    write!(f, "╮")?;
+                    before = "╮"
+                }
+                if (col_i == row.len()-1) | col_name.is_empty(){
+                    for _ in 0..remaining {
+                        write!(f, " ")?
+                    }
+                } else {
+                    remaining -= 2;
+                    if before == "|" {
+                        write!(f, " ╰")?;
+                    } else {
+                        write!(f, "--")?;
+                    }
+                    for _ in 0..remaining {
+                        write!(f, "-")?
+                    }
+                }
+            }
+            writeln!(f)?;
+            // write vertical bars x 2
+            for _ in 0..2 {
+                write!(f, "  |")?;
+                for ((col_i, col_name), col_width) in row.iter().enumerate().zip(&col_widths) {
+                    let mut col_spacing = COL_SPACING;
+                    if col_i > 0 {
+                        col_spacing *= 2;
+                    }
+
+                    let mut remaining = col_width + col_spacing + 4;
+                    let half = (*col_width + col_spacing + 4) / 2;
+
+                    // left_half
+                    for _ in 0..half {
+                        remaining -= 1;
+                        write!(f, " ")?;
+                    }
+                    // bar
+                    remaining -= 1;
+                    let val = if col_name.is_empty() { ' ' } else { '|' };
+                    write!(f, "{}", val)?;
+
+                    for _ in 0..remaining {
+                        write!(f, " ")?
+                    }
+                }
+                write!(f, "\n")?;
+            }
         }
 
-        // write column names and spacing
+        // write the top of the boxes
+        write!(f, "  |")?;
         for (col_repr, col_width) in row.iter().zip(&col_widths) {
             for _ in 0..COL_SPACING {
                 write!(f, " ")?
             }
-            write!(f, "{}", col_repr)?;
+            if col_repr != "" {
+                write!(f, "╭")?;
+                for _ in 0..col_repr.chars().count()+2 {
+                    write!(f, "─")?
+                }
+                write!(f, "╮")?;
+            } else {
+                write!(f,"    ")?;
+            }
+            let remaining = *col_width - col_repr.chars().count();
+            for _ in 0..remaining + COL_SPACING {
+                write!(f, " ")?
+            }
+        }
+        writeln!(f)?;
+
+        // write column names and spacing
+        write!(f, "{} |", row_count+1)?;
+        for (col_repr, col_width) in row.iter().zip(&col_widths) {
+            for _ in 0..COL_SPACING {
+                write!(f, " ")?
+            }
+            if col_repr != "" {
+                write!(f, "| {} |", col_repr)?;
+            } else {
+                write!(f, "    ")?;
+            }
+            let remaining = *col_width - col_repr.chars().count();
+            for _ in 0..remaining + COL_SPACING {
+                write!(f, " ")?
+            }
+        }
+        writeln!(f)?;
+
+        // write the bottom of the boxes
+        write!(f, "  |")?;
+        for (col_repr, col_width) in row.iter().zip(&col_widths) {
+            for _ in 0..COL_SPACING {
+                write!(f, " ")?
+            }
+            if col_repr != "" {
+                write!(f, "╰")?;
+                for _ in 0..col_repr.chars().count() + 2 {
+                    write!(f, "─")?
+                }
+                write!(f, "╯")?;
+            } else {
+                write!(f, "    ")?;
+            }
             let remaining = *col_width - col_repr.chars().count();
             for _ in 0..remaining + COL_SPACING {
                 write!(f, " ")?
