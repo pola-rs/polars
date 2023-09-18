@@ -146,34 +146,6 @@ pub trait ChunkRollApply: AsRefDataType {
     }
 }
 
-/// Random access
-pub trait TakeRandom {
-    type Item;
-
-    /// Get a nullable value by index.
-    ///
-    /// # Panics
-    /// Panics if `index >= self.len()`
-    fn get(&self, index: usize) -> Option<Self::Item>;
-
-    /// Get a value by index and ignore the null bit.
-    ///
-    /// # Safety
-    ///
-    /// Does not do bound checks.
-    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item>
-    where
-        Self: Sized,
-    {
-        self.get(index)
-    }
-
-    /// This is much faster if we have many chunks as we don't have to compute the index
-    /// # Panics
-    /// Panics if `index >= self.len()`
-    fn last(&self) -> Option<Self::Item>;
-}
-
 pub trait ChunkTake<Idx: ?Sized>: ChunkTakeUnchecked<Idx> {
     /// Gather values from ChunkedArray by index.
     fn take(&self, indices: &Idx) -> PolarsResult<Self>
@@ -188,35 +160,6 @@ pub trait ChunkTakeUnchecked<Idx: ?Sized> {
     /// The non-null indices must be valid.
     unsafe fn take_unchecked(&self, indices: &Idx) -> Self;
 }
-
-/*
-/// Fast access by index.
-pub trait ChunkTake: ChunkTakeUnchecked {
-    /// Take values from ChunkedArray by index.
-    /// Note that the iterator will be cloned, so prefer an iterator that takes the owned memory
-    /// by reference.
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
-    where
-        Self: Sized,
-        I: TakeIterator,
-        INulls: TakeIteratorNulls;
-}
-
-/// Fast access by index.
-pub trait ChunkTakeUnchecked {
-    /// Take values from ChunkedArray by index.
-    ///
-    /// # Safety
-    ///
-    /// Doesn't do any bound checking.
-    #[must_use]
-    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
-    where
-        Self: Sized,
-        I: TakeIterator,
-        INulls: TakeIteratorNulls;
-}
-*/
 
 /// Create a `ChunkedArray` with new values by index or by boolean mask.
 /// Note that these operations clone data. This is however the only way we can modify at mask or
