@@ -83,7 +83,7 @@ impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<
         I::IntoIter: TrustedLen,
     {
         debug_assert!(std::mem::discriminant(&dtype) == std::mem::discriminant(&A::get_dtype()));
-        Self::arr_from_iter_with_dtype(dtype, iter)
+        Self::arr_from_iter_trusted(iter)
     }
 
     #[inline(always)]
@@ -102,7 +102,7 @@ impl<T, A: ParameterFreeDtypeStaticArray + ArrayFromIter<T>> ArrayFromIterDtype<
         I::IntoIter: TrustedLen,
     {
         debug_assert!(std::mem::discriminant(&dtype) == std::mem::discriminant(&A::get_dtype()));
-        Self::try_arr_from_iter_with_dtype(dtype, iter)
+        Self::try_arr_from_iter_trusted(iter)
     }
 }
 
