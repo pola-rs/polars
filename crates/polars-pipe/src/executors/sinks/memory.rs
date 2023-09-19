@@ -30,7 +30,6 @@ impl MemTracker {
             .ok()
             .map(|s| s.parse::<usize>().expect("integer") * TO_MB);
 
-
         let mut out = Self {
             available_mem: Default::default(),
             used_by_node: Default::default(),
@@ -48,8 +47,10 @@ impl MemTracker {
     /// This shouldn't be called often as this is expensive.
     fn refresh_memory(&self) {
         let free = MEMINFO.free() as usize;
-        self.available_mem
-            .store(self.available_mem_max.unwrap_or(free).min(free), Ordering::Relaxed);
+        self.available_mem.store(
+            self.available_mem_max.unwrap_or(free).min(free),
+            Ordering::Relaxed,
+        );
     }
 
     /// Get available memory of the system measured on latest refresh.
