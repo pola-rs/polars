@@ -51,6 +51,9 @@ thiserror = "1"
 url = "2.3.1"
 version_check = "0.9.4"
 simdutf8 = "0.1.4"
+hex = "0.4.3"
+base64 = "0.21.2"
+
 
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 polars-core = { version = "0.33.2", path = "crates/polars-core", default-features = false }
@@ -72,7 +75,7 @@ polars = { version = "0.33.2", path = "crates/polars", default-features = false 
 
 [workspace.dependencies.arrow]
 package = "nano-arrow"
-version = "0.0.0"
+version = "0.1.0"
 path = "crates/nano-arrow"
 default-features = false
 features = [
