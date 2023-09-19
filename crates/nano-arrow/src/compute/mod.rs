@@ -43,9 +43,6 @@ pub mod filter;
 #[cfg(feature = "compute_if_then_else")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_if_then_else")))]
 pub mod if_then_else;
-#[cfg(feature = "compute_like")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compute_like")))]
-pub mod like;
 #[cfg(feature = "compute_regex_match")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_regex_match")))]
 pub mod regex_match;
