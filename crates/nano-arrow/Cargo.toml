@@ -172,8 +172,6 @@ compute_concatenate = []
 compute_filter = []
 compute_hash = ["multiversion"]
 compute_if_then_else = []
-compute_limit = []
-compute_regex_match = ["regex"]
 compute_take = []
 compute_temporal = []
 compute = [
@@ -188,8 +186,6 @@ compute = [
   "compute_filter",
   "compute_hash",
   "compute_if_then_else",
-  "compute_limit",
-  "compute_regex_match",
   "compute_take",
   "compute_temporal",
 ]
