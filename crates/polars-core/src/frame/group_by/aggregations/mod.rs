@@ -355,7 +355,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = { ca.take_unchecked(idx.into()) };
+                let take = { ca.take_unchecked(idx) };
                 // checked with invalid quantile check
                 take._quantile(quantile, interpol).unwrap_unchecked()
             })
@@ -429,7 +429,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = { ca.take_unchecked(idx.into()) };
+                let take = { ca.take_unchecked(idx) };
                 take._median()
             })
         },
@@ -984,7 +984,7 @@ where
                                 })
                             },
                             _ => {
-                                let take = { self.take_unchecked(idx.into()) };
+                                let take = { self.take_unchecked(idx) };
                                 take.mean()
                             },
                         }
@@ -1111,5 +1111,3 @@ where
         agg_median_generic::<_, Float64Type>(self, groups)
     }
 }
-
-impl<T: PolarsDataType> ChunkedArray<T> where ChunkedArray<T>: ChunkTake + IntoSeries {}

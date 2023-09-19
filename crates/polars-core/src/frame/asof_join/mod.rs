@@ -194,15 +194,8 @@ impl DataFrame {
             take_idx = slice_slice(take_idx, offset, len);
         }
 
-        // Safety:
-        // join tuples are in bounds
-        let right_df = unsafe {
-            other.take_opt_iter_unchecked(
-                take_idx
-                    .iter()
-                    .map(|opt_idx| opt_idx.map(|idx| idx as usize)),
-            )
-        };
+        // SAFETY: join tuples are in bounds.
+        let right_df = unsafe { other.take_unchecked(&take_idx.iter().copied().collect_ca("")) };
 
         _finish_join(left, right_df, suffix.as_deref())
     }

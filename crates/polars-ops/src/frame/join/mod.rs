@@ -295,17 +295,19 @@ pub trait DataFrameJoinOps: IntoDf {
                 // Take the left and right dataframes by join tuples
                 let (df_left, df_right) = POOL.join(
                     || unsafe {
-                        remove_selected(left_df, &selected_left).take_opt_iter_unchecked(
-                            opt_join_tuples
+                        remove_selected(left_df, &selected_left).take_unchecked(
+                            &opt_join_tuples
                                 .iter()
-                                .map(|(left, _right)| left.map(|i| i as usize)),
+                                .map(|(left, _right)| *left)
+                                .collect_ca(""),
                         )
                     },
                     || unsafe {
-                        remove_selected(other, &selected_right).take_opt_iter_unchecked(
-                            opt_join_tuples
+                        remove_selected(other, &selected_right).take_unchecked(
+                            &opt_join_tuples
                                 .iter()
-                                .map(|(_left, right)| right.map(|i| i as usize)),
+                                .map(|(_left, right)| *right)
+                                .collect_ca(""),
                         )
                     },
                 );

@@ -287,41 +287,33 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        let ca = self.0.deref().take(indices.into())?;
-        Ok(ca.into_duration(self.0.time_unit()).into_series())
+        Ok(self
+            .0
+            .take(indices)?
+            .into_duration(self.0.time_unit())
+            .into_series())
     }
 
-    fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        let ca = self.0.deref().take(iter.into())?;
-        Ok(ca.into_duration(self.0.time_unit()).into_series())
+    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+        self.0
+            .take_unchecked(indices)
+            .into_duration(self.0.time_unit())
+            .into_series()
     }
 
-    unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        let ca = self.0.deref().take_unchecked(iter.into());
-        ca.into_duration(self.0.time_unit()).into_series()
+    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+        Ok(self
+            .0
+            .take(indices)?
+            .into_duration(self.0.time_unit())
+            .into_series())
     }
 
-    unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-        let mut out = self.0.deref().take_unchecked(idx.into());
-
-        if self.0.is_sorted_ascending_flag()
-            && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
-        {
-            out.set_sorted_flag(idx.is_sorted_flag())
-        }
-
-        Ok(out.into_duration(self.0.time_unit()).into_series())
-    }
-
-    unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        let ca = self.0.deref().take_unchecked(iter.into());
-        ca.into_duration(self.0.time_unit()).into_series()
-    }
-
-    #[cfg(feature = "take_opt_iter")]
-    fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-        let ca = self.0.deref().take(iter.into())?;
-        Ok(ca.into_duration(self.0.time_unit()).into_series())
+    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+        self.0
+            .take_unchecked(indices)
+            .into_duration(self.0.time_unit())
+            .into_series()
     }
 
     fn len(&self) -> usize {

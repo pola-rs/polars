@@ -703,7 +703,12 @@ impl<T: AsArray> ArrayFromIterDtype<T> for ListArray<i64> {
         for arr in &iter_values {
             builder.push(arr.as_array());
         }
-        builder.finish(Some(&dtype.to_arrow())).unwrap()
+        let inner = dtype
+            .inner_dtype()
+            .expect("expected nested type in ListArray collect");
+        builder
+            .finish(Some(&inner.to_physical().to_arrow()))
+            .unwrap()
     }
 
     fn try_arr_from_iter_with_dtype<E, I: IntoIterator<Item = Result<T, E>>>(
@@ -725,7 +730,12 @@ impl<T: AsArray> ArrayFromIterDtype<Option<T>> for ListArray<i64> {
         for arr in &iter_values {
             builder.push_opt(arr.as_ref().map(|a| a.as_array()));
         }
-        builder.finish(Some(&dtype.to_arrow())).unwrap()
+        let inner = dtype
+            .inner_dtype()
+            .expect("expected nested type in ListArray collect");
+        builder
+            .finish(Some(&inner.to_physical().to_arrow()))
+            .unwrap()
     }
 
     fn try_arr_from_iter_with_dtype<E, I: IntoIterator<Item = Result<Option<T>, E>>>(
@@ -751,7 +761,12 @@ impl ArrayFromIterDtype<Box<dyn Array>> for FixedSizeListArray {
         for arr in iter_values {
             builder.push(arr.into_boxed_array());
         }
-        builder.finish(Some(&dtype.to_arrow())).unwrap()
+        let inner = dtype
+            .inner_dtype()
+            .expect("expected nested type in ListArray collect");
+        builder
+            .finish(Some(&inner.to_physical().to_arrow()))
+            .unwrap()
     }
 
     fn try_arr_from_iter_with_dtype<E, I: IntoIterator<Item = Result<Box<dyn Array>, E>>>(
@@ -780,7 +795,12 @@ impl ArrayFromIterDtype<Option<Box<dyn Array>>> for FixedSizeListArray {
                 None => builder.push_null(),
             }
         }
-        builder.finish(Some(&dtype.to_arrow())).unwrap()
+        let inner = dtype
+            .inner_dtype()
+            .expect("expected nested type in ListArray collect");
+        builder
+            .finish(Some(&inner.to_physical().to_arrow()))
+            .unwrap()
     }
 
     fn try_arr_from_iter_with_dtype<

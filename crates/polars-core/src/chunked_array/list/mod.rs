@@ -29,13 +29,6 @@ impl ListChunked {
         self.bit_settings.contains(Settings::FAST_EXPLODE_LIST)
     }
 
-    pub(crate) fn is_nested(&self) -> bool {
-        match self.dtype() {
-            DataType::List(inner) => matches!(&**inner, DataType::List(_)),
-            _ => unreachable!(),
-        }
-    }
-
     /// Set the logical type of the [`ListChunked`].
     pub fn to_logical(&mut self, inner_dtype: DataType) {
         debug_assert_eq!(inner_dtype.to_physical(), self.inner_dtype());

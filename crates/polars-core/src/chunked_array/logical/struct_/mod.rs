@@ -11,7 +11,7 @@ use smartstring::alias::String as SmartString;
 
 use super::*;
 use crate::datatypes::*;
-use crate::utils::index_to_chunked_index2;
+use crate::utils::index_to_chunked_index;
 
 /// This is logical type [`StructChunked`] that
 /// dispatches most logic to the `fields` implementations
@@ -425,7 +425,7 @@ impl LogicalType for StructChunked {
     }
 
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
-        let (chunk_idx, idx) = index_to_chunked_index2(&self.chunks, i);
+        let (chunk_idx, idx) = index_to_chunked_index(self.chunks.iter().map(|c| c.len()), i);
         if let DataType::Struct(flds) = self.dtype() {
             // safety: we already have a single chunk and we are
             // guarded by the type system.

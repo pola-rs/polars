@@ -15,8 +15,7 @@ pub(super) fn update_sorted_flag_before_append<'a, T>(
     other: &'a ChunkedArray<T>,
 ) where
     T: PolarsDataType,
-    &'a ChunkedArray<T>: TakeRandom,
-    <&'a ChunkedArray<T> as TakeRandom>::Item: PartialOrd,
+    T::Physical<'a>: PartialOrd,
 {
     let get_start_end = || {
         let end = {
