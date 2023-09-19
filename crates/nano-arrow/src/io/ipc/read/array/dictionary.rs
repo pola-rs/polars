@@ -1,4 +1,5 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{VecDeque};
+use ahash::HashSet;
 use std::convert::TryInto;
 use std::io::{Read, Seek};
 

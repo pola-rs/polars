@@ -1,3 +1,4 @@
+#![allow(clippy::redundant_closure_call)]
 use std::fmt::{Debug, Formatter, Result, Write};
 
 use super::PrimitiveArray;

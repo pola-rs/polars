@@ -93,7 +93,7 @@ pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {
     out
 }
 
-pub(self) fn decimal_length_from_precision(precision: usize) -> usize {
+fn decimal_length_from_precision(precision: usize) -> usize {
     // digits = floor(log_10(2^(8*n - 1) - 1))
     // ceil(digits) = log10(2^(8*n - 1) - 1)
     // 10^ceil(digits) = 2^(8*n - 1) - 1
@@ -402,7 +402,6 @@ pub fn array_to_page_simple(
             primitive::array_to_page_plain::<i32, i32>(&array, options, type_)
         },
         DataType::Interval(IntervalUnit::YearMonth) => {
-            let type_ = type_;
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<i32>>()
@@ -426,7 +425,6 @@ pub fn array_to_page_simple(
             fixed_len_bytes::array_to_page(&array, options, type_, statistics)
         },
         DataType::Interval(IntervalUnit::DayTime) => {
-            let type_ = type_;
             let array = array
                 .as_any()
                 .downcast_ref::<PrimitiveArray<days_ms>>()
@@ -450,7 +448,6 @@ pub fn array_to_page_simple(
             fixed_len_bytes::array_to_page(&array, options, type_, statistics)
         },
         DataType::FixedSizeBinary(_) => {
-            let type_ = type_;
             let array = array.as_any().downcast_ref().unwrap();
             let statistics = if options.write_statistics {
                 Some(fixed_len_bytes::build_statistics(array, type_.clone()))
@@ -461,7 +458,6 @@ pub fn array_to_page_simple(
             fixed_len_bytes::array_to_page(array, options, type_, statistics)
         },
         DataType::Decimal256(precision, _) => {
-            let type_ = type_;
             let precision = *precision;
             let array = array
                 .as_any()
@@ -541,7 +537,6 @@ pub fn array_to_page_simple(
             }
         },
         DataType::Decimal(precision, _) => {
-            let type_ = type_;
             let precision = *precision;
             let array = array
                 .as_any()
@@ -674,7 +669,6 @@ fn array_to_page_nested(
             primitive::nested_array_to_page::<f64, f64>(array, options, type_, nested)
         },
         Decimal(precision, _) => {
-            let type_ = type_;
             let precision = *precision;
             let array = array
                 .as_any()
@@ -727,7 +721,6 @@ fn array_to_page_nested(
             }
         },
         Decimal256(precision, _) => {
-            let type_ = type_;
             let precision = *precision;
             let array = array
                 .as_any()

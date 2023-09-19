@@ -30,8 +30,8 @@ pub fn row_group_iter<A: AsRef<dyn Array> + 'static + Send + Sync>(
         chunk
             .into_arrays()
             .into_iter()
-            .zip(fields.into_iter())
-            .zip(encodings.into_iter())
+            .zip(fields)
+            .zip(encodings)
             .flat_map(move |((array, type_), encoding)| {
                 let encoded_columns = array_to_columns(array, type_, options, &encoding).unwrap();
                 encoded_columns

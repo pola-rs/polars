@@ -54,10 +54,6 @@ pub mod primitive;
 pub mod utf8;
 
 mod simd;
-pub(crate) use primitive::{
-    compare_values_op as primitive_compare_values_op,
-    compare_values_op_scalar as primitive_compare_values_op_scalar,
-};
 pub use simd::{Simd8, Simd8Lanes, Simd8PartialEq, Simd8PartialOrd};
 
 use super::take::take_boolean;

@@ -1,3 +1,4 @@
+#![allow(clippy::redundant_closure_call)]
 use multiversion::multiversion;
 
 use crate::array::{Array, BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};

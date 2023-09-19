@@ -195,7 +195,7 @@ pub fn to_deserializer<'a>(
     let (columns, types) = if let Some(pages) = pages {
         let (columns, types): (Vec<_>, Vec<_>) = columns
             .into_iter()
-            .zip(pages.into_iter())
+            .zip(pages)
             .map(|((column_meta, chunk), mut pages)| {
                 // de-offset the start, since we read in chunks (and offset is from start of file)
                 let mut meta: PageMetaData = column_meta.into();
@@ -285,7 +285,7 @@ pub fn read_columns_many<'a, R: Read + Seek>(
     } else {
         field_columns
             .into_iter()
-            .zip(fields.into_iter())
+            .zip(fields)
             .map(|(columns, field)| to_deserializer(columns, field, num_rows, chunk_size, None))
             .collect()
     }

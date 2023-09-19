@@ -8,7 +8,7 @@ pub(crate) mod writer;
 pub use common::{Compression, Record, WriteOptions};
 pub use schema::schema_to_bytes;
 pub use serialize::write;
-pub(self) use serialize::write_dictionary;
+use serialize::write_dictionary;
 pub use stream::StreamWriter;
 pub use writer::FileWriter;
 
