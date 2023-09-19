@@ -352,7 +352,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
 
 /// Unify the timestamp unit from parquet TimeUnit into arrow's TimeUnit
 /// Returns (a int64 factor, is_multiplier)
-fn unifiy_timestmap_unit(
+fn unify_timestamp_unit(
     logical_type: &Option<PrimitiveLogicalType>,
     time_unit: TimeUnit,
 ) -> (i64, bool) {
@@ -468,7 +468,7 @@ fn timestamp<'a, I: Pages + 'a>(
     }
 
     let iter = primitive::IntegerIter::new(pages, data_type, num_rows, chunk_size, |x: i64| x);
-    let (factor, is_multiplier) = unifiy_timestmap_unit(logical_type, time_unit);
+    let (factor, is_multiplier) = unify_timestamp_unit(logical_type, time_unit);
     match (factor, is_multiplier) {
         (1, _) => Ok(dyn_iter(iden(iter))),
         (a, true) => Ok(dyn_iter(op(iter, move |x| x * a))),
@@ -490,7 +490,7 @@ fn timestamp_dict<'a, K: DictionaryKey, I: Pages + 'a>(
             unit: ParquetTimeUnit::Nanoseconds,
             is_adjusted_to_utc: false,
         };
-        let (factor, is_multiplier) = unifiy_timestmap_unit(&Some(logical_type), time_unit);
+        let (factor, is_multiplier) = unify_timestamp_unit(&Some(logical_type), time_unit);
         return match (factor, is_multiplier) {
             (a, true) => Ok(dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
                 pages,
@@ -509,7 +509,7 @@ fn timestamp_dict<'a, K: DictionaryKey, I: Pages + 'a>(
         };
     };
 
-    let (factor, is_multiplier) = unifiy_timestmap_unit(logical_type, time_unit);
+    let (factor, is_multiplier) = unify_timestamp_unit(logical_type, time_unit);
     match (factor, is_multiplier) {
         (a, true) => Ok(dyn_iter(primitive::DictIter::<K, _, _, _, _>::new(
             pages,

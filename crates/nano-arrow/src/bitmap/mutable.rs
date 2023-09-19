@@ -225,7 +225,7 @@ impl MutableBitmap {
 
     /// Returns the number of unset bits on this [`MutableBitmap`].
     ///
-    /// Guaranted to be `<= self.len()`.
+    /// Guaranteed to be `<= self.len()`.
     /// # Implementation
     /// This function is `O(N)`
     pub fn unset_bits(&self) -> usize {

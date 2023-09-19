@@ -306,16 +306,16 @@ pub fn filter(array: &dyn Array, filter: &BooleanArray) -> Result<Box<dyn Array>
 }
 
 /// Returns a new [Chunk] with arrays containing only values matching the filter.
-/// This is a convenience function: filter multiple columns is embarassingly parallel.
+/// This is a convenience function: filter multiple columns is embarrassingly parallel.
 pub fn filter_chunk<A: AsRef<dyn Array>>(
     columns: &Chunk<A>,
     filter_values: &BooleanArray,
 ) -> Result<Chunk<Box<dyn Array>>> {
     let arrays = columns.arrays();
 
-    let num_colums = arrays.len();
+    let num_columns = arrays.len();
 
-    let filtered_arrays = match num_colums {
+    let filtered_arrays = match num_columns {
         1 => {
             vec![filter(columns.arrays()[0].as_ref(), filter_values)?]
         },

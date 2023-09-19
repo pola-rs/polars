@@ -2,7 +2,7 @@
 use arrow_format::ipc;
 
 use super::super::compression;
-use super::super::endianess::is_native_little_endian;
+use super::super::endianness::is_native_little_endian;
 use super::common::{pad_to_64, Compression};
 use crate::array::*;
 use crate::bitmap::Bitmap;
@@ -697,7 +697,7 @@ fn _write_compressed_buffer_from_iter<T: NativeType, I: TrustedLen<Item = T>>(
 
 fn _write_buffer<T: NativeType>(buffer: &[T], arrow_data: &mut Vec<u8>, is_little_endian: bool) {
     if is_little_endian == is_native_little_endian() {
-        // in native endianess we can use the bytes directly.
+        // in native endianness we can use the bytes directly.
         let buffer = bytemuck::cast_slice(buffer);
         arrow_data.extend_from_slice(buffer);
     } else {

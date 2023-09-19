@@ -5,7 +5,7 @@ use super::{Field, Metadata};
 
 /// An ordered sequence of [`Field`]s with associated [`Metadata`].
 ///
-/// [`Schema`] is an abstration used to read from, and write to, Arrow IPC format,
+/// [`Schema`] is an abstraction used to read from, and write to, Arrow IPC format,
 /// Apache Parquet, and Apache Avro. All these formats have a concept of a schema
 /// with fields and metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

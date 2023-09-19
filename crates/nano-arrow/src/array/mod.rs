@@ -2,7 +2,7 @@
 //! as well as concrete arrays (such as [`Utf8Array`] and [`MutableUtf8Array`]).
 //!
 //! Fixed-length containers with optional values
-//! that are layed in memory according to the Arrow specification.
+//! that are laid in memory according to the Arrow specification.
 //! Each array type has its own `struct`. The following are the main array types:
 //! * [`PrimitiveArray`] and [`MutablePrimitiveArray`], an array of values with a fixed length such as integers, floats, etc.
 //! * [`BooleanArray`] and [`MutableBooleanArray`], an array of boolean values (stored as a bitmap)
@@ -14,7 +14,7 @@
 //! to a concrete struct based on [`PhysicalType`](crate::datatypes::PhysicalType) available from [`Array::data_type`].
 //! All immutable arrays are backed by [`Buffer`](crate::buffer::Buffer) and thus cloning and slicing them is `O(1)`.
 //!
-//! Most arrays contain a [`MutableArray`] counterpart that is neither clonable nor slicable, but
+//! Most arrays contain a [`MutableArray`] counterpart that is neither clonable nor sliceable, but
 //! can be operated in-place.
 use std::any::Any;
 use std::sync::Arc;

@@ -1,4 +1,4 @@
-//! Contains arithemtic functions for [`PrimitiveArray`]s.
+//! Contains arithmetic functions for [`PrimitiveArray`]s.
 //!
 //! Each operation has four variants, like the rest of Rust's ecosystem:
 //! * usual, that [`panic!`]s on overflow

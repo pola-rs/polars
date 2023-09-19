@@ -209,7 +209,7 @@ pub fn add(lhs: &dyn Array, rhs: &dyn Array) -> Box<dyn Array> {
 /// Adds an [`Array`] and a [`Scalar`].
 /// # Panic
 /// This function panics iff
-/// * the opertion is not supported for the logical types (use [`can_add`] to check)
+/// * the operation is not supported for the logical types (use [`can_add`] to check)
 /// * the arrays have a different length
 /// * one of the arrays is a timestamp with timezone and the timezone is not valid.
 pub fn add_scalar(lhs: &dyn Array, rhs: &dyn Scalar) -> Box<dyn Array> {
@@ -253,7 +253,7 @@ pub fn can_add(lhs: &DataType, rhs: &DataType) -> bool {
 /// Subtracts two [`Array`]s.
 /// # Panic
 /// This function panics iff
-/// * the opertion is not supported for the logical types (use [`can_sub`] to check)
+/// * the operation is not supported for the logical types (use [`can_sub`] to check)
 /// * the arrays have a different length
 /// * one of the arrays is a timestamp with timezone and the timezone is not valid.
 pub fn sub(lhs: &dyn Array, rhs: &dyn Array) -> Box<dyn Array> {
@@ -270,7 +270,7 @@ pub fn sub(lhs: &dyn Array, rhs: &dyn Array) -> Box<dyn Array> {
 /// Adds an [`Array`] and a [`Scalar`].
 /// # Panic
 /// This function panics iff
-/// * the opertion is not supported for the logical types (use [`can_sub`] to check)
+/// * the operation is not supported for the logical types (use [`can_sub`] to check)
 /// * the arrays have a different length
 /// * one of the arrays is a timestamp with timezone and the timezone is not valid.
 pub fn sub_scalar(lhs: &dyn Array, rhs: &dyn Scalar) -> Box<dyn Array> {
@@ -314,7 +314,7 @@ pub fn can_sub(lhs: &DataType, rhs: &DataType) -> bool {
 /// Multiply two [`Array`]s.
 /// # Panic
 /// This function panics iff
-/// * the opertion is not supported for the logical types (use [`can_mul`] to check)
+/// * the operation is not supported for the logical types (use [`can_mul`] to check)
 /// * the arrays have a different length
 pub fn mul(lhs: &dyn Array, rhs: &dyn Array) -> Box<dyn Array> {
     arith!(lhs, rhs, mul, decimal = mul)
@@ -323,7 +323,7 @@ pub fn mul(lhs: &dyn Array, rhs: &dyn Array) -> Box<dyn Array> {
 /// Multiply an [`Array`] with a [`Scalar`].
 /// # Panic
 /// This function panics iff
-/// * the opertion is not supported for the logical types (use [`can_mul`] to check)
+/// * the operation is not supported for the logical types (use [`can_mul`] to check)
 pub fn mul_scalar(lhs: &dyn Array, rhs: &dyn Scalar) -> Box<dyn Array> {
     arith_scalar!(lhs, rhs, mul_scalar, decimal = mul_scalar)
 }
@@ -350,7 +350,7 @@ pub fn can_mul(lhs: &DataType, rhs: &DataType) -> bool {
 /// Divide of two [`Array`]s.
 /// # Panic
 /// This function panics iff
-/// * the opertion is not supported for the logical types (use [`can_div`] to check)
+/// * the operation is not supported for the logical types (use [`can_div`] to check)
 /// * the arrays have a different length
 pub fn div(lhs: &dyn Array, rhs: &dyn Array) -> Box<dyn Array> {
     arith!(lhs, rhs, div, decimal = div)
@@ -359,7 +359,7 @@ pub fn div(lhs: &dyn Array, rhs: &dyn Array) -> Box<dyn Array> {
 /// Divide an [`Array`] with a [`Scalar`].
 /// # Panic
 /// This function panics iff
-/// * the opertion is not supported for the logical types (use [`can_div`] to check)
+/// * the operation is not supported for the logical types (use [`can_div`] to check)
 pub fn div_scalar(lhs: &dyn Array, rhs: &dyn Scalar) -> Box<dyn Array> {
     arith_scalar!(lhs, rhs, div_scalar, decimal = div_scalar)
 }
@@ -372,7 +372,7 @@ pub fn can_div(lhs: &DataType, rhs: &DataType) -> bool {
 /// Remainder of two [`Array`]s.
 /// # Panic
 /// This function panics iff
-/// * the opertion is not supported for the logical types (use [`can_rem`] to check)
+/// * the operation is not supported for the logical types (use [`can_rem`] to check)
 /// * the arrays have a different length
 pub fn rem(lhs: &dyn Array, rhs: &dyn Array) -> Box<dyn Array> {
     arith!(lhs, rhs, rem)
@@ -420,7 +420,7 @@ macro_rules! with_match_negatable {(
 /// Negates an [`Array`].
 /// # Panic
 /// This function panics iff either
-/// * the opertion is not supported for the logical type (use [`can_neg`] to check)
+/// * the operation is not supported for the logical type (use [`can_neg`] to check)
 /// * the operation overflows
 pub fn neg(array: &dyn Array) -> Box<dyn Array> {
     use crate::datatypes::PhysicalType::*;

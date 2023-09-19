@@ -4,7 +4,7 @@ use super::super::IpcField;
 use crate::datatypes::{
     DataType, Field, IntegerType, IntervalUnit, Metadata, Schema, TimeUnit, UnionMode,
 };
-use crate::io::ipc::endianess::is_native_little_endian;
+use crate::io::ipc::endianness::is_native_little_endian;
 
 /// Converts a [Schema] and [IpcField]s to a flatbuffers-encoded [arrow_format::ipc::Message].
 pub fn schema_to_bytes(schema: &Schema, ipc_fields: &[IpcField]) -> Vec<u8> {

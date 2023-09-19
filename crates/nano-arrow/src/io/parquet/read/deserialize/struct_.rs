@@ -31,7 +31,7 @@ impl<'a> Iterator for StructIterator<'a> {
             return None;
         }
 
-        // todo: unzip of Result not yet supportted in stable Rust
+        // todo: unzip of Result not yet supported in stable Rust
         let mut nested = vec![];
         let mut new_values = vec![];
         for x in values {

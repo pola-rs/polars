@@ -180,7 +180,7 @@ fn a_like_utf8_scalar<O: Offset, F: Fn(bool) -> bool>(
 /// use arrow2::array::{Utf8Array, BooleanArray};
 /// use arrow2::compute::like::like_utf8_scalar;
 ///
-/// let array = Utf8Array::<i32>::from_slice(&["Arrow", "Arrow", "Arrow", "BA"]);
+/// let array = Utf8Array::<i32>::from_slice(&["Arrow", "Arrow", "Arrow", "BAR"]);
 ///
 /// let result = like_utf8_scalar(&array, &"A%").unwrap();
 /// assert_eq!(result, BooleanArray::from_slice(&[true, true, true, false]));
@@ -331,7 +331,7 @@ fn a_like_binary_scalar<O: Offset, F: Fn(bool) -> bool>(
 /// use arrow2::array::{BinaryArray, BooleanArray};
 /// use arrow2::compute::like::like_binary_scalar;
 ///
-/// let array = BinaryArray::<i32>::from_slice(&["Arrow", "Arrow", "Arrow", "BA"]);
+/// let array = BinaryArray::<i32>::from_slice(&["Arrow", "Arrow", "Arrow", "BAR"]);
 ///
 /// let result = like_binary_scalar(&array, b"A%").unwrap();
 /// assert_eq!(result, BooleanArray::from_slice(&[true, true, true, false]));

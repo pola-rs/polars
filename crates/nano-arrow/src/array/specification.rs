@@ -84,7 +84,7 @@ pub(crate) fn try_check_utf8<O: Offset, C: OffsetsContainer<O>>(
             return Ok(());
         };
 
-        // trucate to relevant offsets. Note: `=last` because last was computed skipping the first item
+        // truncate to relevant offsets. Note: `=last` because last was computed skipping the first item
         // following the example: starts = [0, 5]
         let starts = unsafe { offsets.get_unchecked(..=last) };
 

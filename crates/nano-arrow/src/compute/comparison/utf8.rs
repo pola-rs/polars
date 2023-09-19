@@ -72,7 +72,7 @@ pub fn eq_scalar<O: Offset>(lhs: &Utf8Array<O>, rhs: &str) -> BooleanArray {
     compare_op_scalar(lhs, rhs, |a, b| a == b)
 }
 
-/// Perform `lhs == rhs` operation on [`Utf8Array`] and a scalar. Also includes null values in comparisson.
+/// Perform `lhs == rhs` operation on [`Utf8Array`] and a scalar. Also includes null values in comparison.
 pub fn eq_scalar_and_validity<O: Offset>(lhs: &Utf8Array<O>, rhs: &str) -> BooleanArray {
     let validity = lhs.validity().cloned();
     let lhs = lhs.clone().with_validity(None);
@@ -81,7 +81,7 @@ pub fn eq_scalar_and_validity<O: Offset>(lhs: &Utf8Array<O>, rhs: &str) -> Boole
     finish_eq_validities(out, validity, None)
 }
 
-/// Perform `lhs != rhs` operation on [`Utf8Array`] and a scalar. Also includes null values in comparisson.
+/// Perform `lhs != rhs` operation on [`Utf8Array`] and a scalar. Also includes null values in comparison.
 pub fn neq_scalar_and_validity<O: Offset>(lhs: &Utf8Array<O>, rhs: &str) -> BooleanArray {
     let validity = lhs.validity().cloned();
     let lhs = lhs.clone().with_validity(None);

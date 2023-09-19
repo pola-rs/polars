@@ -8,7 +8,7 @@ use crate::array::*;
 use crate::chunk::Chunk;
 use crate::datatypes::*;
 use crate::error::{Error, Result};
-use crate::io::ipc::endianess::is_native_little_endian;
+use crate::io::ipc::endianness::is_native_little_endian;
 use crate::io::ipc::read::Dictionaries;
 
 /// Compression codec

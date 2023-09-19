@@ -101,7 +101,7 @@ unsafe impl DictionaryKey for u64 {
 /// # Safety
 /// This struct guarantees that each item of [`DictionaryArray::keys`] is castable to `usize` and
 /// its value is smaller than [`DictionaryArray::values`]`.len()`. In other words, you can safely
-/// use `unchecked` calls to retrive the values
+/// use `unchecked` calls to retrieve the values
 #[derive(Clone)]
 pub struct DictionaryArray<K: DictionaryKey> {
     data_type: DataType,

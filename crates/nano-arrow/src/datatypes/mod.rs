@@ -16,7 +16,7 @@ use serde_derive::{Deserialize, Serialize};
 
 /// typedef for [BTreeMap<String, String>] denoting [`Field`]'s and [`Schema`]'s metadata.
 pub type Metadata = BTreeMap<String, String>;
-/// typedef fpr [Option<(String, Option<String>)>] descr
+/// typedef for [Option<(String, Option<String>)>] descr
 pub(crate) type Extension = Option<(String, Option<String>)>;
 
 /// The set of supported logical types in this crate.
@@ -26,7 +26,7 @@ pub(crate) type Extension = Option<(String, Option<String>)>;
 /// Each variant has a corresponding [`PhysicalType`], obtained via [`DataType::to_physical_type`],
 /// which declares the in-memory representation of data.
 /// The [`DataType::Extension`] is special in that it augments a [`DataType`] with metadata to support custom types.
-/// Use `to_logical_type` to desugar such type and return its correspoding logical type.
+/// Use `to_logical_type` to desugar such type and return its corresponding logical type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
 pub enum DataType {

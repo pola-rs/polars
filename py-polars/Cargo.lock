@@ -279,8 +279,10 @@ checksum = "7f2c685bad3eb3d45a01354cedb7d5faa66194d1d58ba6e267a8de788f79db38"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-targets",
 ]
 
@@ -1509,15 +1511,18 @@ name = "polars-json"
 version = "0.33.2"
 dependencies = [
  "ahash",
+ "chrono",
  "fallible-streaming-iterator",
  "hashbrown 0.14.0",
  "indexmap",
+ "lexical-core",
  "nano-arrow",
  "num-traits",
  "polars-arrow",
  "polars-error",
  "polars-utils",
  "simd-json",
+ "streaming-iterator",
 ]
 
 [[package]]

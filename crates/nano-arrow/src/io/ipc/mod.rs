@@ -74,7 +74,7 @@
 //! [3](https://github.com/jorgecarleitao/arrow2/tree/main/examples/ipc_pyarrow)).
 
 mod compression;
-mod endianess;
+mod endianness;
 
 pub mod append;
 pub mod read;

@@ -226,7 +226,7 @@ impl MutableBooleanArray {
         self.values.set(index, value.unwrap_or_default());
 
         if value.is_none() && self.validity.is_none() {
-            // When the validity is None, all elements so far are valid. When one of the elements is set fo null,
+            // When the validity is None, all elements so far are valid. When one of the elements is set of null,
             // the validity must be initialized.
             self.validity = Some(MutableBitmap::from_trusted_len_iter(
                 std::iter::repeat(true).take(self.len()),

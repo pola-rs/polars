@@ -3,7 +3,7 @@ use std::convert::TryInto;
 use std::io::{Read, Seek, SeekFrom};
 
 use super::super::compression;
-use super::super::endianess::is_native_little_endian;
+use super::super::endianness::is_native_little_endian;
 use super::{Compression, IpcBuffer, Node, OutOfSpecKind};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;

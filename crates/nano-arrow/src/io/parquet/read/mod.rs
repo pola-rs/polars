@@ -53,7 +53,7 @@ impl<I: FallibleStreamingIterator<Item = Page, Error = ParquetError> + Send + Sy
 /// Type def for a sharable, boxed dyn [`Iterator`] of arrays
 pub type ArrayIter<'a> = Box<dyn Iterator<Item = Result<Box<dyn Array>>> + Send + Sync + 'a>;
 
-/// Reads parquets' metadata syncronously.
+/// Reads parquets' metadata synchronously.
 pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> Result<FileMetaData> {
     Ok(_read_metadata(reader)?)
 }

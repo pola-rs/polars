@@ -349,7 +349,7 @@ fn cast_list_to_large_list(array: &ListArray<i32>, to_type: &DataType) -> ListAr
 }
 
 fn cast_large_to_list(array: &ListArray<i64>, to_type: &DataType) -> ListArray<i32> {
-    let offsets = array.offsets().try_into().expect("Conver me to error");
+    let offsets = array.offsets().try_into().expect("Convertme to error");
 
     ListArray::<i32>::new(
         to_type.clone(),
