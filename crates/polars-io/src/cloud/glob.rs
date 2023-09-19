@@ -95,7 +95,9 @@ impl CloudLocation {
             let key = parsed.path();
             let bucket = parsed
                 .host()
-                .ok_or(polars_err!(ComputeError: "cannot parse bucket (host) from url: {}", url))?
+                .ok_or_else(
+                    || polars_err!(ComputeError: "cannot parse bucket (host) from url: {}", url),
+                )?
                 .to_string();
             (bucket, key)
         };

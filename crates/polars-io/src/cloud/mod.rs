@@ -1,5 +1,6 @@
 //! Interface with cloud storage through the object_store crate.
 
+use std::borrow::Cow;
 use std::str::FromStr;
 
 use object_store::local::LocalFileSystem;
@@ -28,6 +29,7 @@ fn err_missing_configuration(feature: &str, scheme: &str) -> BuildResult {
         "configuration '{}' must be provided in order to use '{}' cloud urls", feature, scheme,
     );
 }
+
 /// Build an [`ObjectStore`] based on the URL and passed in url. Return the cloud location and an implementation of the object store.
 pub fn build(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
     let cloud_location = CloudLocation::new(url)?;
@@ -38,12 +40,12 @@ pub fn build(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
         },
         CloudType::Aws => {
             #[cfg(feature = "aws")]
-            match _options {
-                Some(options) => {
-                    let store = options.build_aws(&cloud_location.bucket)?;
-                    Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)
-                },
-                _ => return err_missing_configuration("aws", &cloud_location.scheme),
+            {
+                let options = _options
+                    .map(Cow::Borrowed)
+                    .unwrap_or_else(|| Cow::Owned(Default::default()));
+                let store = options.build_aws(&cloud_location.bucket)?;
+                Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)
             }
             #[cfg(not(feature = "aws"))]
             return err_missing_feature("aws", &cloud_location.scheme);

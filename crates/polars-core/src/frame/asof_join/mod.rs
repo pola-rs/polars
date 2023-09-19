@@ -10,6 +10,7 @@ use smartstring::alias::String as SmartString;
 
 use crate::prelude::*;
 use crate::utils::{ensure_sorted_arg, slice_slice};
+use crate::frame::hash_join::_finish_join;
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

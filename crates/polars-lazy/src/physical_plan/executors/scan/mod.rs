@@ -41,8 +41,8 @@ fn prepare_scan_args(
     schema: &mut SchemaRef,
     n_rows: Option<usize>,
     has_row_count: bool,
-) -> (std::fs::File, Projection, StopNRows, Predicate) {
-    let file = std::fs::File::open(path).unwrap();
+) -> (Option<std::fs::File>, Projection, StopNRows, Predicate) {
+    let file = std::fs::File::open(path).ok();
 
     let with_columns = mem::take(with_columns);
     let schema = mem::take(schema);

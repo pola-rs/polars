@@ -5,7 +5,6 @@ authors = ["Jorge C. Leitao <jorgecarleitao@gmail.com>", "Apache Arrow <dev@arro
 edition.workspace = true
 homepage.workspace = true
 licence = "Apache 2.0 and MIT"
-license.workspace = true
 repository.workspace = true
 description = "Minimal implementation of the Arrow specification forked from arrow2."
 
