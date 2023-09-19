@@ -738,8 +738,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             StripChars(matches) => map!(strings::strip_chars, matches.as_deref()),
             StripCharsStart(matches) => map!(strings::strip_chars_start, matches.as_deref()),
             StripCharsEnd(matches) => map!(strings::strip_chars_end, matches.as_deref()),
-            StripPrefix(prefix) => map!(strings::strip_prefix, &prefix),
-            StripSuffix(suffix) => map!(strings::strip_suffix, &suffix),
+            StripPrefix => map_as_slice!(strings::strip_prefix),
+            StripSuffix => map_as_slice!(strings::strip_suffix),
             #[cfg(feature = "string_from_radix")]
             FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
             Slice(start, length) => map!(strings::str_slice, start, length),

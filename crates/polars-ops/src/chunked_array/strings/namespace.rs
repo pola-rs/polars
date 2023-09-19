@@ -334,6 +334,46 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         Ok(builder.finish())
     }
 
+    fn strip_prefix(&self, prefix: &Utf8Chunked) -> Utf8Chunked {
+        let ca = self.as_utf8();
+        match prefix.len() {
+            1 => match prefix.get(0) {
+                Some(prefix) => {
+                    ca.apply_generic(|opt_s| opt_s.map(|s| s.strip_prefix(prefix).unwrap_or(s)))
+                },
+                _ => Utf8Chunked::full_null(ca.name(), ca.len()),
+            },
+            _ => binary_elementwise(
+                ca,
+                prefix,
+                |opt_s: Option<&str>, opt_prefix: Option<&str>| match (opt_s, opt_prefix) {
+                    (Some(s), Some(prefix)) => Some(s.strip_prefix(prefix).unwrap_or(s)),
+                    _ => None,
+                },
+            ),
+        }
+    }
+
+    fn strip_suffix(&self, suffix: &Utf8Chunked) -> Utf8Chunked {
+        let ca = self.as_utf8();
+        match suffix.len() {
+            1 => match suffix.get(0) {
+                Some(suffix) => {
+                    ca.apply_generic(|opt_s| opt_s.map(|s| s.strip_suffix(suffix).unwrap_or(s)))
+                },
+                _ => Utf8Chunked::full_null(ca.name(), ca.len()),
+            },
+            _ => binary_elementwise(
+                ca,
+                suffix,
+                |opt_s: Option<&str>, opt_suffix: Option<&str>| match (opt_s, opt_suffix) {
+                    (Some(s), Some(suffix)) => Some(s.strip_suffix(suffix).unwrap_or(s)),
+                    _ => None,
+                },
+            ),
+        }
+    }
+
     fn split(&self, by: &str) -> ListChunked {
         let ca = self.as_utf8();
         let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());

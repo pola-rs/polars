@@ -7,8 +7,11 @@ use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter, StaticArray};
 use crate::prelude::{ChunkedArray, PolarsDataType};
 use crate::utils::{align_chunks_binary, align_chunks_ternary};
 
+pub trait Helper<G1, G2, H>: FnMut(G1, G2) -> H {}
+impl<T, G1, G2, H> Helper<G1, G2, H> for T where T: FnMut(G1, G2) -> H {}
+
 #[inline]
-pub fn binary_elementwise<T, U, V, F, K>(
+pub fn binary_elementwise<T, U, V, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
@@ -17,8 +20,8 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType,
-    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> Option<K>,
-    V::Array: ArrayFromIter<Option<K>>,
+    F: for<'a> Helper<Option<T::Physical<'a>>, Option<U::Physical<'a>>, Option<V::Physical<'a>>>,
+    V::Array: for<'a> ArrayFromIter<Option<V::Physical<'a>>>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
