@@ -1152,8 +1152,6 @@ dependencies = [
  "multiversion",
  "num-traits",
  "parquet2",
- "regex",
- "regex-syntax",
  "rustc_version",
  "simdutf8",
  "streaming-iterator",
