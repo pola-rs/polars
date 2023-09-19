@@ -85,6 +85,7 @@ jobs:
           "matplotlib"
           "backports.zoneinfo"
           "connectorx"
+          "pyiceberg"
           "deltalake"
           "xlsx2csv"
           )

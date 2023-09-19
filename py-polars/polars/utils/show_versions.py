@@ -69,6 +69,7 @@ def _get_dependency_info() -> dict[str, str]:
         "pandas",
         "pyarrow",
         "pydantic",
+        "pyiceberg",
         "sqlalchemy",
         "xlsx2csv",
         "xlsxwriter",
