@@ -250,7 +250,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
 
             write!(f, "{space:^half$}")?;
 
-            if col_repr != "" {
+            if !col_repr.is_empty() {
                 write!(f, "╭")?;
                 write!(f, "{dash:─^width$}", width = char_count - 2)?;
                 write!(f, "╮")?;
@@ -274,7 +274,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
 
             write!(f, "{space:^half$}")?;
 
-            if col_repr != "" {
+            if !col_repr.is_empty() {
                 write!(f, "│ {} │", col_repr)?;
             } else {
                 write!(f, "    ")?;
@@ -296,7 +296,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
 
             write!(f, "{space:^half$}")?;
 
-            if col_repr != "" {
+            if !col_repr.is_empty() {
                 write!(f, "╰")?;
                 write!(f, "{dash:─^width$}", width = char_count - 2)?;
                 write!(f, "╯")?;
