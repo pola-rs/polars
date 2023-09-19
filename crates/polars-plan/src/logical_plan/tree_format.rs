@@ -156,7 +156,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
 
                 write!(f, "{space:^remaining$}")?;
             }
-            write!(f, "\n")?;
+            writeln!(f)?;
 
             // write the horizontal line
             write!(f, "{space:>row_idx_width$} ┌")?;
@@ -233,7 +233,7 @@ fn format_levels(f: &mut Formatter<'_>, levels: &[Vec<String>]) -> std::fmt::Res
 
                     write!(f, "{space:^remaining$}")?;
                 }
-                write!(f, "\n")?;
+                writeln!(f)?;
             }
         }
 
