@@ -5,13 +5,14 @@ use std::str::FromStr;
 
 use object_store::local::LocalFileSystem;
 use object_store::ObjectStore;
-use polars_core::cloud::{CloudOptions, CloudType};
 use polars_core::prelude::{polars_bail, PolarsError, PolarsResult};
 
 mod adaptors;
 mod glob;
+pub mod options;
 pub use adaptors::*;
 pub use glob::*;
+pub use options::*;
 
 type BuildResult = PolarsResult<(CloudLocation, Box<dyn ObjectStore>)>;
 

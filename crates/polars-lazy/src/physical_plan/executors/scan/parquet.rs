@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use polars_core::cloud::CloudOptions;
+use polars_io::cloud::CloudOptions;
 use polars_io::is_cloud_url;
 
 use super::*;

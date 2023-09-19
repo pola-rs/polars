@@ -1,10 +1,10 @@
 #[cfg(feature = "csv")]
 use std::io::{Read, Seek};
 
-#[cfg(feature = "parquet")]
-use polars_core::cloud::CloudOptions;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
+#[cfg(feature = "parquet")]
+use polars_io::cloud::CloudOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcReader;
 #[cfg(all(feature = "parquet", feature = "async"))]

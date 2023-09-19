@@ -3,8 +3,6 @@ use std::sync::Arc;
 
 use arrow::io::parquet::read;
 use arrow::io::parquet::write::FileMetaData;
-#[cfg(feature = "cloud")]
-use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
 #[cfg(feature = "cloud")]
 use polars_core::utils::concat_df;
@@ -12,6 +10,8 @@ use polars_core::utils::concat_df;
 use serde::{Deserialize, Serialize};
 
 use super::read_impl::FetchRowGroupsFromMmapReader;
+#[cfg(feature = "cloud")]
+use crate::cloud::CloudOptions;
 use crate::mmap::MmapBytesReader;
 #[cfg(feature = "cloud")]
 use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;

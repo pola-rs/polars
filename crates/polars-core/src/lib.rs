@@ -10,7 +10,6 @@ extern crate core;
 #[macro_use]
 pub mod utils;
 pub mod chunked_array;
-pub mod cloud;
 pub mod config;
 pub mod datatypes;
 pub mod error;

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
+use polars_io::cloud::CloudOptions;
 use polars_io::parquet::ParallelStrategy;
 use polars_io::RowCount;
 

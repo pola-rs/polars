@@ -14,13 +14,13 @@ use object_store::gcp::GoogleCloudStorageBuilder;
 pub use object_store::gcp::GoogleConfigKey;
 #[cfg(feature = "async")]
 use object_store::ObjectStore;
+use polars_core::error::{PolarsError, PolarsResult};
 use polars_error::*;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "async")]
 use url::Url;
-
-use crate::error::{PolarsError, PolarsResult};
 
 /// The type of the config keys must satisfy the following requirements:
 /// 1. must be easily collected into a HashMap, the type required by the object_crate API.
@@ -31,8 +31,7 @@ use crate::error::{PolarsError, PolarsResult};
 #[allow(dead_code)]
 type Configs<T> = Vec<(T, String)>;
 
-#[derive(Clone, Debug, Default, PartialEq)]
-#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 /// Options to connect to various cloud providers.
 pub struct CloudOptions {
     #[cfg(feature = "aws")]
