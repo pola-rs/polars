@@ -14,18 +14,29 @@ from ast import (
     Gt,
     Invert,
     List,
+    Name,
     UnaryOp,
 )
 from functools import partial, singledispatch
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import polars._reexport as pl
 from polars.dependencies import pyiceberg
+from polars.utils.convert import _to_python_date, _to_python_datetime
 
 if TYPE_CHECKING:
+    from datetime import date, datetime
+
     from pyiceberg.table import Table
 
     from polars import DataFrame, LazyFrame, Series
+
+__all__ = ["scan_iceberg"]
+
+_temporal_conversions: dict[str, Callable[..., datetime | date]] = {
+    "_to_python_date": _to_python_date,
+    "_to_python_datetime": _to_python_datetime,
+}
 
 
 def scan_iceberg(
@@ -215,6 +226,11 @@ def _(a: Constant) -> Any:
     return a.value
 
 
+@_convert_predicate.register(Name)
+def _(a: Name) -> Any:
+    return a.id
+
+
 @_convert_predicate.register(UnaryOp)
 def _(a: UnaryOp) -> Any:
     if isinstance(a.op, Invert):
@@ -229,6 +245,9 @@ def _(a: Call) -> Any:
     f = _convert_predicate(a.func)
     if f == "field":
         return args
+    elif f in _temporal_conversions:
+        # convert from polars-native i64 to ISO8601 string
+        return _temporal_conversions[f](*args).isoformat()
     else:
         ref = _convert_predicate(a.func.value)[0]  # type: ignore[attr-defined]
         if f == "isin":
@@ -238,7 +257,7 @@ def _(a: Call) -> Any:
         elif f == "is_nan":
             return pyiceberg.expressions.IsNaN(ref)
 
-    raise ValueError(f"Unknown call: {f}")
+    raise ValueError(f"Unknown call: {f!r}")
 
 
 @_convert_predicate.register(Attribute)
