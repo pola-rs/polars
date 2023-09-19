@@ -195,7 +195,10 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.neq(self._to_expr(other)._pyexpr))
 
     def __neg__(self) -> Expr:
-        return F.lit(0) - self
+        neg_expr = F.lit(0) - self
+        if (name := self.meta.output_name(raise_if_undetermined=False)) is not None:
+            neg_expr = neg_expr.alias(name)
+        return neg_expr
 
     def __or__(self, other: Expr | int | bool) -> Self:
         return self._from_pyexpr(self._pyexpr._or(self._to_pyexpr(other)))
@@ -204,7 +207,10 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other)._or(self._pyexpr))
 
     def __pos__(self) -> Expr:
-        return F.lit(0) + self
+        pos_expr = F.lit(0) + self
+        if (name := self.meta.output_name(raise_if_undetermined=False)) is not None:
+            pos_expr = pos_expr.alias(name)
+        return pos_expr
 
     def __pow__(self, power: int | float | Series | Expr) -> Self:
         return self.pow(power)

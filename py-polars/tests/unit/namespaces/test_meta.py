@@ -43,6 +43,8 @@ def test_root_and_output_names() -> None:
     ):
         pl.all().suffix("_").meta.output_name()
 
+    assert pl.all().suffix("_").meta.output_name(raise_if_undetermined=False) is None
+
 
 def test_undo_aliases() -> None:
     e = pl.col("foo").alias("bar")
