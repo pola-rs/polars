@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::ops::{Deref, DerefMut};
+use std::ops::{Deref, DerefMut, Mul};
 
 use ahash::RandomState;
 
@@ -176,6 +176,24 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.add_to(&rhs)?.into_duration(*tu).into_series())
+            },
+            (DataType::Duration(tu), DataType::Date) => {
+                let one_day_in_tu: i64 = match tu {
+                    TimeUnit::Milliseconds => 86_400_000,
+                    TimeUnit::Microseconds => 86_400_000_000,
+                    TimeUnit::Nanoseconds => 86_400_000_000_000,
+                };
+                let lhs = self.cast(&DataType::Int64).unwrap() / one_day_in_tu;
+                let rhs = rhs
+                    .cast(&DataType::Int32)
+                    .unwrap()
+                    .cast(&DataType::Int64)
+                    .unwrap();
+                Ok(lhs
+                    .add_to(&rhs)?
+                    .cast(&DataType::Int32)?
+                    .into_date()
+                    .into_series())
             },
             (DataType::Duration(tu), DataType::Datetime(tur, tz)) => {
                 polars_ensure!(tu == tur, InvalidOperation: "units are different");
