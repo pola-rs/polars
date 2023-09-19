@@ -14,12 +14,22 @@ use arrow::temporal_conversions::{
     timestamp_us_to_datetime,
 };
 use arrow::types::NativeType;
-use arrow::util::lexical_to_bytes_mut;
 use chrono::{Duration, NaiveDate, NaiveDateTime};
-use lexical_core::ToLexical;
 use streaming_iterator::StreamingIterator;
 
 use super::utf8;
+
+fn write_integer<I: itoa::Integer>(buf: &mut Vec<u8>, val: I) {
+    let mut buffer = itoa::Buffer::new();
+    let value = buffer.format(val);
+    buf.extend_from_slice(value.as_bytes())
+}
+
+fn write_float<I: ryu::Float>(f: &mut Vec<u8>, val: I) {
+    let mut buffer = ryu::Buffer::new();
+    let value = buffer.format(val);
+    f.extend_from_slice(value.as_bytes())
+}
 
 fn materialize_serializer<'a, I, F, T>(
     f: F,
@@ -65,14 +75,14 @@ fn null_serializer(
     materialize_serializer(f, std::iter::repeat(()).take(len), offset, take)
 }
 
-fn primitive_serializer<'a, T: NativeType + ToLexical>(
+fn primitive_serializer<'a, T: NativeType + itoa::Integer>(
     array: &'a PrimitiveArray<T>,
     offset: usize,
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
     let f = |x: Option<&T>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
-            lexical_to_bytes_mut(*x, buf)
+            write_integer(buf, *x)
         } else {
             buf.extend(b"null")
         }
@@ -86,14 +96,14 @@ fn float_serializer<'a, T>(
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync>
 where
-    T: num_traits::Float + NativeType + ToLexical,
+    T: num_traits::Float + NativeType + ryu::Float,
 {
     let f = |x: Option<&T>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
             if T::is_nan(*x) || T::is_infinite(*x) {
                 buf.extend(b"null")
             } else {
-                lexical_to_bytes_mut(*x, buf)
+                write_float(buf, *x)
             }
         } else {
             buf.extend(b"null")

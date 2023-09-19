@@ -55,7 +55,9 @@ hex = "0.4.3"
 base64 = "0.21.2"
 fallible-streaming-iterator = "0.1.9"
 streaming-iterator = "0.1.9"
-
+itoa = "1.0.6"
+ryu = "1.0.13"
+lexical-core = "0.8.5"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 polars-core = { version = "0.33.2", path = "crates/polars-core", default-features = false }
 polars-arrow = { version = "0.33.2", path = "crates/polars-arrow", default-features = false }
