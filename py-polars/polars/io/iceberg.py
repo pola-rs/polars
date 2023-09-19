@@ -246,7 +246,7 @@ def _(a: Call) -> Any:
     if f == "field":
         return args
     elif f in _temporal_conversions:
-        # convert from polars-native i64 to ISO8601 strings
+        # convert from polars-native i64 to ISO8601 string
         return _temporal_conversions[f](*args).isoformat()
     else:
         ref = _convert_predicate(a.func.value)[0]  # type: ignore[attr-defined]
