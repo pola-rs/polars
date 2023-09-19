@@ -283,7 +283,12 @@ impl JsonSink {
     }
 }
 
-#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv", feature = "json"))]
+#[cfg(any(
+    feature = "parquet",
+    feature = "ipc",
+    feature = "csv",
+    feature = "json"
+))]
 fn init_writer_thread(
     receiver: Receiver<Option<DataChunk>>,
     mut writer: Box<dyn SinkWriter + Send>,

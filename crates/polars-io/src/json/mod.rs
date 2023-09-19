@@ -67,11 +67,11 @@ use std::ops::Deref;
 
 use arrow::array::StructArray;
 use arrow::legacy::conversion::chunk_to_struct;
-use polars_json::json::write::FallibleStreamingIterator;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_json::json::infer;
+use polars_json::json::write::FallibleStreamingIterator;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use polars_json::{json, ndjson};
@@ -195,7 +195,7 @@ where
         let batches = df
             .iter_chunks()
             .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
-        let mut serializer = json::write::Serializer::new(batches, vec![]);
+        let mut serializer = polars_json::json::write::Serializer::new(batches, vec![]);
 
         while let Some(block) = serializer.next()? {
             if self.is_first_row {
@@ -242,7 +242,7 @@ where
         let batches = df
             .iter_chunks()
             .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
-        let mut serializer = ndjson::write::Serializer::new(batches, vec![]);
+        let mut serializer = polars_json::ndjson::write::Serializer::new(batches, vec![]);
         while let Some(block) = serializer.next()? {
             self.writer.write_all(block)?;
         }
