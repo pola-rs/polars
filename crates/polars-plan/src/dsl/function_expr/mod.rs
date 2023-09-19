@@ -246,14 +246,21 @@ impl Hash for FunctionExpr {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
+            FunctionExpr::Pow(f) => f.hash(state),
+            #[cfg(feature = "search_sorted")]
+            FunctionExpr::SearchSorted(f) => f.hash(state),
             FunctionExpr::BinaryExpr(f) => f.hash(state),
             FunctionExpr::Boolean(f) => f.hash(state),
             #[cfg(feature = "strings")]
             FunctionExpr::StringExpr(f) => f.hash(state),
+            FunctionExpr::ListExpr(f) => f.hash(state),
+            #[cfg(feature = "dtype-array")]
+            FunctionExpr::ArrayExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-struct")]
             FunctionExpr::StructExpr(f) => f.hash(state),
             #[cfg(feature = "random")]
             FunctionExpr::Random { method, .. } => method.hash(state),
+            FunctionExpr::Correlation { method, .. } => method.hash(state),
             #[cfg(feature = "range")]
             FunctionExpr::Range(f) => f.hash(state),
             #[cfg(feature = "temporal")]
@@ -262,6 +269,8 @@ impl Hash for FunctionExpr {
             FunctionExpr::Trigonometry(f) => f.hash(state),
             #[cfg(feature = "fused")]
             FunctionExpr::Fused(f) => f.hash(state),
+            #[cfg(feature = "diff")]
+            FunctionExpr::Diff(_, null_behavior) => null_behavior.hash(state),
             #[cfg(feature = "interpolate")]
             FunctionExpr::Interpolate(f) => f.hash(state),
             #[cfg(feature = "dtype-categorical")]
