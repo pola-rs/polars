@@ -6,6 +6,7 @@ use arrow::io::parquet::write::FileMetaData;
 #[cfg(feature = "cloud")]
 use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
+#[cfg(feature = "cloud")]
 use polars_core::utils::concat_df;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -18,7 +19,9 @@ use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
 use crate::parquet::async_impl::ParquetObjectStore;
 use crate::parquet::read_impl::read_parquet;
 pub use crate::parquet::read_impl::BatchedParquetReader;
-use crate::predicates::{apply_predicate, PhysicalIoExpr};
+#[cfg(feature = "cloud")]
+use crate::predicates::apply_predicate;
+use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowCount;
 

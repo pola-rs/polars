@@ -10,6 +10,7 @@ pub struct ParquetExec {
     schema: SchemaRef,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     options: ParquetOptions,
+    #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
 }
