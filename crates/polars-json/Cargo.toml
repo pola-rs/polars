@@ -15,8 +15,11 @@ polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
+chrono = { workpace = true }
 fallible-streaming-iterator = { version = "0.1" }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
+lexical-core = { version = "0.8" }
 num-traits = { workspace = true }
 simd-json = { workspace = true }
+streaming-iterator = { workspace = true }

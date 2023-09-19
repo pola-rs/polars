@@ -1,7 +1,8 @@
-use std::collections::{VecDeque};
-use ahash::HashSet;
+use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::io::{Read, Seek};
+
+use ahash::HashSet;
 
 use super::super::{Compression, Dictionaries, IpcBuffer, Node};
 use super::{read_primitive, skip_primitive};

@@ -2,13 +2,6 @@
 //! Contains modules to interface with other formats such as [`csv`],
 //! [`parquet`], [`json`], [`ipc`], [`mod@print`] and [`avro`].
 
-#[cfg(any(feature = "io_json_read", feature = "io_json_write"))]
-#[cfg_attr(docsrs, doc(cfg(feature = "io_json")))]
-pub mod json;
-#[cfg(any(feature = "io_json_read", feature = "io_json_write"))]
-#[cfg_attr(docsrs, doc(cfg(feature = "io_json")))]
-pub mod ndjson;
-
 #[cfg(feature = "io_ipc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_ipc")))]
 pub mod ipc;
@@ -16,10 +9,6 @@ pub mod ipc;
 #[cfg(feature = "io_flight")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_flight")))]
 pub mod flight;
-
-#[cfg(feature = "io_json_integration")]
-#[cfg_attr(docsrs, doc(cfg(feature = "io_json_integration")))]
-pub mod json_integration;
 
 #[cfg(feature = "io_parquet")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_parquet")))]
@@ -29,9 +18,4 @@ pub mod parquet;
 #[cfg_attr(docsrs, doc(cfg(feature = "io_avro")))]
 pub mod avro;
 
-#[cfg(any(
-    feature = "io_avro",
-    feature = "io_json_write",
-    feature = "io_json_read"
-))]
-mod iterator;
+pub mod iterator;

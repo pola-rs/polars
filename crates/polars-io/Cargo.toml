@@ -52,7 +52,6 @@ tempdir = "0.3.7"
 default = ["decompress"]
 # support for arrows json parsing
 json = [
-  "arrow/io_json_write",
   "polars-json",
   "simd-json",
   "lexical",

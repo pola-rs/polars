@@ -53,7 +53,8 @@ version_check = "0.9.4"
 simdutf8 = "0.1.4"
 hex = "0.4.3"
 base64 = "0.21.2"
-
+fallible-streaming-iterator = "0.1.9"
+streaming-iterator = "0.1.9"
 
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 polars-core = { version = "0.33.2", path = "crates/polars-core", default-features = false }

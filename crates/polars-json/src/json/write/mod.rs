@@ -4,15 +4,14 @@ mod utf8;
 
 use std::io::Write;
 
+use arrow::array::Array;
+use arrow::chunk::Chunk;
+use arrow::datatypes::Schema;
+use arrow::error::Error;
+use arrow::io::iterator::StreamingIterator;
 pub use fallible_streaming_iterator::*;
 pub(crate) use serialize::new_serializer;
 use serialize::serialize;
-
-use crate::array::Array;
-use crate::chunk::Chunk;
-use crate::datatypes::Schema;
-use crate::error::Error;
-use crate::io::iterator::StreamingIterator;
 
 /// [`FallibleStreamingIterator`] that serializes an [`Array`] to bytes of valid JSON
 /// # Implementation

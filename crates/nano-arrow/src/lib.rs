@@ -1,4 +1,3 @@
-#![doc = include_str!("doc/lib.md")]
 // So that we have more control over what is `unsafe` inside an `unsafe` block
 #![allow(unused_unsafe)]
 //
@@ -36,10 +35,6 @@ pub mod datatypes;
 
 pub mod ffi;
 pub mod util;
-
-// so that documentation gets test
-#[cfg(any(test, doctest))]
-mod docs;
 
 // re-exported because we return `Either` in our public API
 // re-exported to construct dictionaries

@@ -1,11 +1,11 @@
 //! APIs to serialize and write to [NDJSON](http://ndjson.org/).
 use std::io::Write;
 
+use arrow::array::Array;
+use arrow::error::Error;
 pub use fallible_streaming_iterator::FallibleStreamingIterator;
 
 use super::super::json::write::new_serializer;
-use crate::array::Array;
-use crate::error::Error;
 
 fn serialize(array: &dyn Array, buffer: &mut Vec<u8>) {
     let mut serializer = new_serializer(array, 0, usize::MAX);
