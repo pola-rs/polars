@@ -27,7 +27,7 @@ simdutf8.workspace = true
 ethnum = "1"
 
 # To efficiently cast numbers to strings
-lexical-core = { version = "0.8", optional = true }
+lexical-core = { workspace = true, optional = true }
 
 fallible-streaming-iterator = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }

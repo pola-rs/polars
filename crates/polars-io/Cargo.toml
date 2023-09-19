@@ -25,8 +25,9 @@ chrono-tz = { workspace = true, optional = true }
 fast-float = { version = "0.2", optional = true }
 flate2 = { version = "1", optional = true, default-features = false }
 futures = { workspace = true, optional = true }
+itoa = { workspace = true, optional = true }
 lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-integers"] }
-lexical-core = { version = "0.8", optional = true }
+lexical-core = { workspace = true, optional = true }
 memchr = { workspace = true }
 memmap = { package = "memmap2", version = "0.7" }
 num-traits = { workspace = true }
@@ -34,6 +35,7 @@ object_store = { workspace = true, optional = true }
 once_cell = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
+ryu = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { version = "1", default-features = false, features = ["alloc", "raw_value"], optional = true }
 simd-json = { workspace = true, optional = true }
@@ -66,7 +68,7 @@ ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
 avro = ["arrow/io_avro", "arrow/io_avro_compression"]
-csv = ["lexical", "polars-core/rows", "lexical-core", "fast-float", "simdutf8"]
+csv = ["lexical", "polars-core/rows", "itoa", "ryu", "fast-float", "simdutf8"]
 decompress = ["flate2/rust_backend"]
 decompress-fast = ["flate2/zlib-ng"]
 dtype-categorical = ["polars-core/dtype-categorical"]

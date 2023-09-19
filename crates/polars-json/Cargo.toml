@@ -19,7 +19,8 @@ chrono = { workpace = true }
 fallible-streaming-iterator = { version = "0.1" }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
-lexical-core = { version = "0.8" }
+itoa = { workspace = true }
 num-traits = { workspace = true }
+ryu = { workspace = true }
 simd-json = { workspace = true }
 streaming-iterator = { workspace = true }
