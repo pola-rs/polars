@@ -14,6 +14,7 @@ from ast import (
     Gt,
     Invert,
     List,
+    Name,
     UnaryOp,
 )
 from functools import partial, singledispatch
@@ -21,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars.dependencies import pyiceberg
+from polars.utils.convert import _to_python_date, _to_python_datetime
 
 if TYPE_CHECKING:
     from pyiceberg.table import Table
@@ -215,6 +217,11 @@ def _(a: Constant) -> Any:
     return a.value
 
 
+@_convert_predicate.register(Name)
+def _(a: Name) -> Any:
+    return a.id
+
+
 @_convert_predicate.register(UnaryOp)
 def _(a: UnaryOp) -> Any:
     if isinstance(a.op, Invert):
@@ -229,6 +236,10 @@ def _(a: Call) -> Any:
     f = _convert_predicate(a.func)
     if f == "field":
         return args
+    elif f == "_to_python_datetime":
+        return _to_python_datetime(*args).isoformat()
+    elif f == "_to_python_date":
+        return _to_python_date(*args).isoformat()
     else:
         ref = _convert_predicate(a.func.value)[0]  # type: ignore[attr-defined]
         if f == "isin":

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -41,18 +42,51 @@ def test_scan_iceberg_plain(iceberg_path: str) -> None:
     "ignore:No preferred file implementation for scheme*:UserWarning"
 )
 def test_scan_iceberg_filter_on_partition(iceberg_path: str) -> None:
-    df = pl.scan_iceberg(iceberg_path)
-    df = df.filter(pl.col("ts") > "2023-03-02T00:00:00")
-    assert len(df.collect()) == 1
+    ts1 = datetime(2023, 3, 1, 18, 15)
+    ts2 = datetime(2023, 3, 1, 19, 25)
+    ts3 = datetime(2023, 3, 2, 22, 0)
+
+    lf = pl.scan_iceberg(iceberg_path)
+
+    res = lf.filter(pl.col("ts") >= ts2)
+    assert len(res.collect()) == 2
+
+    res = lf.filter(pl.col("ts") > ts2).select(pl.col("id"))
+    assert res.collect().rows() == [(3,)]
+
+    res = lf.filter(pl.col("ts") <= ts2).select("id", "ts")
+    assert res.collect().rows(named=True) == [
+        {"id": 1, "ts": ts1},
+        {"id": 2, "ts": ts2},
+    ]
+
+    res = lf.filter(pl.col("ts") > ts3)
+    assert len(res.collect()) == 0
+
+    for constraint in (
+        (pl.col("ts") == ts1) | (pl.col("ts") == ts3),
+        pl.col("ts").is_in([ts1, ts3]),
+    ):
+        res = lf.filter(constraint).select("id")
+        assert res.collect().rows() == [(1,), (3,)]
 
 
 @pytest.mark.filterwarnings(
     "ignore:No preferred file implementation for scheme*:UserWarning"
 )
 def test_scan_iceberg_filter_on_column(iceberg_path: str) -> None:
-    df = pl.scan_iceberg(iceberg_path)
-    df = df.filter(pl.col("id") < 2)
-    assert len(df.collect()) == 1
+    lf = pl.scan_iceberg(iceberg_path)
+    res = lf.filter(pl.col("id") < 2)
+    assert res.collect().rows() == [(1, "1", datetime(2023, 3, 1, 18, 15))]
+
+    res = lf.filter(pl.col("id") == 2)
+    assert res.collect().rows() == [(2, "2", datetime(2023, 3, 1, 19, 25))]
+
+    res = lf.filter(pl.col("id").is_in([1, 3]))
+    assert res.collect().rows() == [
+        (1, "1", datetime(2023, 3, 1, 18, 15)),
+        (3, "3", datetime(2023, 3, 2, 22, 0)),
+    ]
 
 
 def test_is_null_expression() -> None:

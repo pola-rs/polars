@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 use polars_core::datatypes::AnyValue;
+use polars_core::prelude::{TimeUnit, TimeZone};
 
 use crate::prelude::*;
 
@@ -9,6 +10,15 @@ pub(super) struct Args {
     // pyarrow doesn't allow `filter([True, False])`
     // but does allow `filter(field("a").isin([True, False]))`
     allow_literal_series: bool,
+}
+
+fn to_py_datetime(v: i64, tu: &TimeUnit, tz: Option<&TimeZone>) -> String {
+    // note: `_to_python_datetime` and the `Datetime`
+    // dtype have to be in-scope on the python side
+    match tz {
+        None => format!("_to_python_datetime({},'{}')", v, tu.to_ascii()),
+        Some(tz) => format!("_to_python_datetime({},'{}',{})", v, tu.to_ascii(), tz),
+    }
 }
 
 // convert to a pyarrow expression that can be evaluated with pythons eval
@@ -39,15 +49,18 @@ pub(super) fn predicate_to_pa(
                     if let AnyValue::Boolean(v) = av {
                         let s = if v { "True" } else { "False" };
                         write!(list_repr, "{},", s).unwrap();
+                    } else if let AnyValue::Datetime(v, tu, tz) = av {
+                        let dtm = to_py_datetime(v, &tu, tz.as_ref());
+                        write!(list_repr, "{dtm},").unwrap();
+                    } else if let AnyValue::Date(v) = av {
+                        write!(list_repr, "_to_python_date({v}),").unwrap();
                     } else {
                         write!(list_repr, "{av},").unwrap();
                     }
                 }
-
                 // pop last comma
                 list_repr.pop();
                 list_repr.push(']');
-
                 Some(list_repr)
             }
         },
@@ -68,26 +81,10 @@ pub(super) fn predicate_to_pa(
                 AnyValue::Date(v) => {
                     // the function `_to_python_date` and the `Date`
                     // dtype have to be in scope on the python side
-                    Some(format!("_to_python_date(value={v})"))
+                    Some(format!("_to_python_date({v})"))
                 },
                 #[cfg(feature = "dtype-datetime")]
-                AnyValue::Datetime(v, tu, tz) => {
-                    // the function `_to_python_datetime` and the `Datetime`
-                    // dtype have to be in scope on the python side
-                    match tz {
-                        None => Some(format!(
-                            "_to_python_datetime(value={}, tu='{}')",
-                            v,
-                            tu.to_ascii()
-                        )),
-                        Some(tz) => Some(format!(
-                            "_to_python_datetime(value={}, tu='{}', tz={})",
-                            v,
-                            tu.to_ascii(),
-                            tz
-                        )),
-                    }
-                },
+                AnyValue::Datetime(v, tu, tz) => Some(to_py_datetime(v, &tu, tz.as_ref())),
                 // Activate once pyarrow supports them
                 // #[cfg(feature = "dtype-time")]
                 // AnyValue::Time(v) => {
