@@ -123,10 +123,7 @@ class ConnectionExecutor:
         result: Cursor, fetch_method: str, batch_size: int | None
     ) -> Iterable[pa.RecordBatch | pa.Table]:
         """Iterate over the result set, fetching arrow data in batches."""
-        size = (batch_size,) if batch_size else ()
-        while result:  # type: ignore[truthy-bool]
-            result = getattr(result, fetch_method)(*size)
-            yield result
+        yield from getattr(result, fetch_method)(batch_size)
 
     @staticmethod
     def _fetchall_rows(result: Cursor) -> Iterable[Sequence[Any]]:
@@ -156,27 +153,35 @@ class ConnectionExecutor:
         self, batch_size: int | None, schema_overrides: SchemaDict | None
     ) -> DataFrame | None:
         """Return resultset data in Arrow format for frame init."""
-        from polars import DataFrame
+        from polars import from_arrow
 
-        for driver, driver_properties in _ARROW_DRIVER_REGISTRY_.items():
-            if re.match(f"^{driver}$", self.driver_name):
-                size = batch_size if driver_properties["exact_batch_size"] else None
-                fetch_batches = driver_properties["fetch_batches"]
-                return DataFrame(
-                    data=(
-                        self._fetch_arrow(self.result, fetch_batches, size)
-                        if batch_size and fetch_batches is not None
-                        else getattr(self.result, driver_properties["fetch_all"])()
-                    ),
+        try:
+            for driver, driver_properties in _ARROW_DRIVER_REGISTRY_.items():
+                if re.match(f"^{driver}$", self.driver_name):
+                    size = batch_size if driver_properties["exact_batch_size"] else None
+                    fetch_batches = driver_properties["fetch_batches"]
+                    return from_arrow(  # type: ignore[return-value]
+                        data=(
+                            self._fetch_arrow(self.result, fetch_batches, size)
+                            if batch_size and fetch_batches is not None
+                            else getattr(self.result, driver_properties["fetch_all"])()
+                        ),
+                        schema_overrides=schema_overrides,
+                    )
+
+            if self.driver_name == "duckdb":
+                exec_kwargs = {"rows_per_batch": batch_size} if batch_size else {}
+                return from_arrow(  # type: ignore[return-value]
+                    self.result.arrow(**exec_kwargs),
                     schema_overrides=schema_overrides,
                 )
-
-        if self.driver_name == "duckdb":
-            exec_kwargs = {"rows_per_batch": batch_size} if batch_size else {}
-            return DataFrame(
-                self.result.arrow(**exec_kwargs),
-                schema_overrides=schema_overrides,
-            )
+        except Exception as err:
+            if (
+                self.driver_name != "turbodbc"
+                # eg: turbodbc compiled without arrow support...
+                or "does not support Apache Arrow" not in str(err)
+            ):
+                raise
 
         return None
 

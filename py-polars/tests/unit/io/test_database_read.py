@@ -199,10 +199,12 @@ def test_read_database(
 
 
 def test_read_database_mocked() -> None:
+    arr = pl.DataFrame({"x": [1, 2, 3], "y": ["aa", "bb", "cc"]}).to_arrow()
+
     class MockConnection:
-        def __init__(self, driver: str) -> None:
+        def __init__(self, driver: str, batch_size: int | None = None) -> None:
             self.__class__.__module__ = driver
-            self._cursor = MockCursor()
+            self._cursor = MockCursor(batched=batch_size is not None)
 
         def close(self) -> None:
             pass
@@ -211,13 +213,19 @@ def test_read_database_mocked() -> None:
             return self._cursor
 
     class MockCursor:
-        def __init__(self) -> None:
+        def __init__(self, batched: bool) -> None:
             self.called: list[str] = []
+            self.batched = batched
 
         def __getattr__(self, item: str) -> Any:
             if "fetch" in item:
+                res = (
+                    (lambda *args, **kwargs: (arr for _ in range(1)))
+                    if self.batched
+                    else (lambda *args, **kwargs: arr)
+                )
                 self.called.append(item)
-                return lambda *args, **kwargs: []
+                return res
             super().__getattr__(item)  # type: ignore[misc]
 
         def close(self) -> Any:
@@ -238,13 +246,14 @@ def test_read_database_mocked() -> None:
         ("adbc_driver_postgresql", None, "fetch_arrow_table"),
         ("adbc_driver_postgresql", 75_000, "fetch_arrow_table"),
     ):
-        mc = MockConnection(driver)
-        pl.read_database(
+        mc = MockConnection(driver, batch_size)
+        df = pl.read_database(
             connection=mc,
             query="SELECT * FROM test_data",
             batch_size=batch_size,
         )
         assert expected_call in mc.cursor().called
+        assert df.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
 
 
 @pytest.mark.parametrize(
