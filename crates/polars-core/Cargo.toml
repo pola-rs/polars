@@ -64,7 +64,7 @@ lazy = []
 performant = ["polars-arrow/performant", "reinterpret"]
 
 # extra utilities for Utf8Chunked
-strings = ["regex", "polars-arrow/strings", "arrow/compute_substring", "polars-error/regex"]
+strings = ["regex", "polars-arrow/strings", "polars-error/regex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
 

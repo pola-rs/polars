@@ -28,7 +28,7 @@ bytemuck = { version = "1", features = ["derive", "extern_crate_alloc"] }
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = "0.8.1"
 ciborium = "0.2"
-either = "1.8"
+either = "1.9"
 futures = "0.3.25"
 hashbrown = { version = "0.14", features = ["rayon", "ahash"] }
 indexmap = { version = "2", features = ["std"] }
@@ -50,6 +50,12 @@ strum_macros = "0.25"
 thiserror = "1"
 url = "2.3.1"
 version_check = "0.9.4"
+simdutf8 = "0.1.4"
+hex = "0.4.3"
+base64 = "0.21.2"
+fallible-streaming-iterator = "0.1.9"
+streaming-iterator = "0.1.9"
+
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 polars-core = { version = "0.33.2", path = "crates/polars-core", default-features = false }
 polars-arrow = { version = "0.33.2", path = "crates/polars-arrow", default-features = false }
@@ -69,11 +75,9 @@ polars-json = { version = "0.33.2", path = "crates/polars-json", default-feature
 polars = { version = "0.33.2", path = "crates/polars", default-features = false }
 
 [workspace.dependencies.arrow]
-package = "arrow2"
-# git = "https://github.com/jorgecarleitao/arrow2"
-# rev = "7c93e358fc400bf3c0c0219c22eefc6b38fc2d12"
-# branch = ""
-version = "0.18.0"
+package = "nano-arrow"
+version = "0.1.0"
+path = "crates/nano-arrow"
 default-features = false
 features = [
   "compute_aggregate",

@@ -37,7 +37,7 @@ regex = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { version = "1", default-features = false, features = ["alloc", "raw_value"], optional = true }
 simd-json = { workspace = true, optional = true }
-simdutf8 = { version = "0.1", optional = true }
+simdutf8 = { workspace = true, optional = true }
 tokio = { version = "1.26", features = ["net"], optional = true }
 tokio-util = { version = "0.7.8", features = ["io", "io-util"], optional = true }
 url = { workspace = true, optional = true }
@@ -52,7 +52,6 @@ tempdir = "0.3.7"
 default = ["decompress"]
 # support for arrows json parsing
 json = [
-  "arrow/io_json_write",
   "polars-json",
   "simd-json",
   "lexical",

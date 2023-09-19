@@ -744,7 +744,7 @@ pub(super) fn from_radix(s: &Series, radix: u32, strict: bool) -> PolarsResult<S
 }
 pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
-    ca.str_slice(start, length).map(|ca| ca.into_series())
+    Ok(ca.str_slice(start, length).into_series())
 }
 
 pub(super) fn explode(s: &Series) -> PolarsResult<Series> {

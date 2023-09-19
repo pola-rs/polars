@@ -97,42 +97,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arrow2"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "963fef509b757bcbbf9e5ffa23bcb345614d99f4f6f531f97417b27b8604d389"
-dependencies = [
- "ahash",
- "arrow-format",
- "avro-schema",
- "base64",
- "bytemuck",
- "chrono",
- "chrono-tz",
- "dyn-clone",
- "either",
- "ethnum",
- "fallible-streaming-iterator",
- "foreign_vec",
- "futures",
- "getrandom",
- "hash_hasher",
- "hashbrown 0.14.0",
- "lexical-core",
- "lz4",
- "multiversion",
- "num-traits",
- "parquet2",
- "regex",
- "regex-syntax",
- "rustc_version",
- "simdutf8",
- "streaming-iterator",
- "strength_reduce",
- "zstd",
-]
-
-[[package]]
 name = "async-stream"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -315,8 +279,10 @@ checksum = "7f2c685bad3eb3d45a01354cedb7d5faa66194d1d58ba6e267a8de788f79db38"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-targets",
 ]
 
@@ -717,12 +683,6 @@ dependencies = [
  "hashbrown 0.13.2",
  "serde",
 ]
-
-[[package]]
-name = "hash_hasher"
-version = "2.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74721d007512d0cb3338cd20f0654ac913920061a4c4d0d8708edb3f2a698c0c"
 
 [[package]]
 name = "hashbrown"
@@ -1169,6 +1129,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "nano-arrow"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "arrow-format",
+ "avro-schema",
+ "base64",
+ "bytemuck",
+ "chrono",
+ "chrono-tz",
+ "dyn-clone",
+ "either",
+ "ethnum",
+ "fallible-streaming-iterator",
+ "foreign_vec",
+ "futures",
+ "getrandom",
+ "hashbrown 0.14.0",
+ "lexical-core",
+ "lz4",
+ "multiversion",
+ "num-traits",
+ "parquet2",
+ "rustc_version",
+ "simdutf8",
+ "streaming-iterator",
+ "strength_reduce",
+ "zstd",
+]
+
+[[package]]
 name = "ndarray"
 version = "0.15.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1417,13 +1408,13 @@ dependencies = [
 name = "polars-arrow"
 version = "0.33.2"
 dependencies = [
- "arrow2",
  "atoi",
  "chrono",
  "chrono-tz",
  "ethnum",
  "hashbrown 0.14.0",
  "multiversion",
+ "nano-arrow",
  "num-traits",
  "polars-error",
  "serde",
@@ -1436,7 +1427,6 @@ name = "polars-core"
 version = "0.33.2"
 dependencies = [
  "ahash",
- "arrow2",
  "bitflags 2.4.0",
  "chrono",
  "chrono-tz",
@@ -1445,6 +1435,7 @@ dependencies = [
  "hashbrown 0.14.0",
  "indexmap",
  "itoap",
+ "nano-arrow",
  "ndarray",
  "num-traits",
  "once_cell",
@@ -1468,7 +1459,7 @@ dependencies = [
 name = "polars-error"
 version = "0.33.2"
 dependencies = [
- "arrow2",
+ "nano-arrow",
  "regex",
  "thiserror",
 ]
@@ -1477,7 +1468,7 @@ dependencies = [
 name = "polars-ffi"
 version = "0.33.2"
 dependencies = [
- "arrow2",
+ "nano-arrow",
  "polars-core",
 ]
 
@@ -1486,7 +1477,6 @@ name = "polars-io"
 version = "0.33.2"
 dependencies = [
  "ahash",
- "arrow2",
  "bytes",
  "chrono",
  "chrono-tz",
@@ -1497,6 +1487,7 @@ dependencies = [
  "lexical-core",
  "memchr",
  "memmap2",
+ "nano-arrow",
  "num-traits",
  "once_cell",
  "polars-arrow",
@@ -1518,15 +1509,18 @@ name = "polars-json"
 version = "0.33.2"
 dependencies = [
  "ahash",
- "arrow2",
+ "chrono",
  "fallible-streaming-iterator",
  "hashbrown 0.14.0",
  "indexmap",
+ "lexical-core",
+ "nano-arrow",
  "num-traits",
  "polars-arrow",
  "polars-error",
  "polars-utils",
  "simd-json",
+ "streaming-iterator",
 ]
 
 [[package]]
@@ -1557,7 +1551,6 @@ name = "polars-ops"
 version = "0.33.2"
 dependencies = [
  "argminmax",
- "arrow2",
  "base64",
  "chrono",
  "chrono-tz",
@@ -1566,6 +1559,7 @@ dependencies = [
  "indexmap",
  "jsonpath_lib",
  "memchr",
+ "nano-arrow",
  "polars-arrow",
  "polars-core",
  "polars-json",
@@ -1603,11 +1597,11 @@ name = "polars-plan"
 version = "0.33.2"
 dependencies = [
  "ahash",
- "arrow2",
  "chrono",
  "chrono-tz",
  "ciborium",
  "libloading",
+ "nano-arrow",
  "once_cell",
  "polars-arrow",
  "polars-core",
@@ -1629,7 +1623,7 @@ dependencies = [
 name = "polars-row"
 version = "0.33.2"
 dependencies = [
- "arrow2",
+ "nano-arrow",
  "polars-error",
  "polars-utils",
 ]
@@ -1651,10 +1645,10 @@ dependencies = [
 name = "polars-time"
 version = "0.33.2"
 dependencies = [
- "arrow2",
  "atoi",
  "chrono",
  "chrono-tz",
+ "nano-arrow",
  "now",
  "once_cell",
  "polars-arrow",

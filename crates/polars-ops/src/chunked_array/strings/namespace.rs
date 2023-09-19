@@ -2,8 +2,6 @@
 use base64::engine::general_purpose;
 #[cfg(feature = "string_encoding")]
 use base64::Engine as _;
-use polars_arrow::export::arrow::compute::substring::substring;
-use polars_arrow::export::arrow::{self};
 use polars_arrow::kernels::string::*;
 #[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
@@ -502,14 +500,12 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     ///
     /// Determines a substring starting from `start` and with optional length `length` of each of the elements in `array`.
     /// `start` can be negative, in which case the start counts from the end of the string.
-    fn str_slice(&self, start: i64, length: Option<u64>) -> PolarsResult<Utf8Chunked> {
+    fn str_slice(&self, start: i64, length: Option<u64>) -> Utf8Chunked {
         let ca = self.as_utf8();
-        let chunks = ca
+        let iter = ca
             .downcast_iter()
-            .map(|c| substring(c, start, &length))
-            .collect::<arrow::error::Result<_>>()?;
-        // SAFETY: these are all the same type.
-        unsafe { Ok(Utf8Chunked::from_chunks(ca.name(), chunks)) }
+            .map(|c| substring::utf8_substring(c, start, &length));
+        Utf8Chunked::from_chunk_iter_like(ca, iter)
     }
 }
 
