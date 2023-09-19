@@ -111,6 +111,25 @@ impl<K: Hash + Eq, V> FastFixedCache<K, V> {
         }
     }
 
+    pub fn try_get_or_insert_with<Q, F, E>(&mut self, key: &Q, f: F) -> Result<&mut V, E>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        F: FnOnce(&K) -> Result<V, E>,
+    {
+        unsafe {
+            let h = self.hash(key);
+            if let Some(slot_idx) = self.raw_get(self.hash(&key), key) {
+                let slot = self.slots.get_unchecked_mut(slot_idx);
+                return Ok(slot.value.assume_init_mut());
+            }
+
+            let key = key.to_owned();
+            let val = f(&key)?;
+            Ok(self.raw_insert(h, key, val))
+        }
+    }
+
     unsafe fn raw_get<Q: Eq + ?Sized>(&self, h: HashResult, key: &Q) -> Option<usize>
     where
         K: Borrow<Q>,
