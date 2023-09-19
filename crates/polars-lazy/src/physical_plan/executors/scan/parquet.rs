@@ -53,15 +53,22 @@ impl ParquetExec {
                 .use_statistics(self.options.use_statistics)
                 ._finish_with_scan_ops(predicate, projection.as_ref().map(|v| v.as_ref()))
         } else if is_cloud_url(self.path.as_path()) {
-            let reader = ParquetAsyncReader::from_uri(
-                &self.path.to_string_lossy(),
-                self.cloud_options.as_ref(),
-            )?
-            .with_n_rows(n_rows)
-            .with_row_count(mem::take(&mut self.file_options.row_count))
-            .use_statistics(self.options.use_statistics);
+            #[cfg(feature = "cloud")]
+            {
+                let reader = ParquetAsyncReader::from_uri(
+                    &self.path.to_string_lossy(),
+                    self.cloud_options.as_ref(),
+                )?
+                .with_n_rows(n_rows)
+                .with_row_count(mem::take(&mut self.file_options.row_count))
+                .use_statistics(self.options.use_statistics);
 
-            reader.finish(predicate)
+                reader.finish(predicate)
+            }
+            #[cfg(not(feature = "cloud"))]
+            {
+                panic!("activate cloud feature")
+            }
         } else {
             polars_bail!(ComputeError: "could not read {}", self.path.display())
         }
