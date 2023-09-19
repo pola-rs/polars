@@ -38,8 +38,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy with all features enabled
-        # not all features can combine with each other for nano-arrow
-        run: cargo clippy --workspace --all-targets --exclude nano-arrow --all-features -- -D warnings
+        run: cargo clippy -p polars --all-features -- -D warnings
 
   # Default feature set should compile on the stable toolchain
   clippy-stable:
@@ -59,7 +58,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy
-        run: cargo clippy --workspace --all-targets --exclude nano-arrow -- -D warnings
+        run: cargo clippy -p polars -- -D warnings
 
   rustfmt:
     if: github.ref_name != 'main'

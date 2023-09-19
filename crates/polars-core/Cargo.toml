@@ -26,7 +26,6 @@ indexmap = { workspace = true }
 itoap = { version = "1", optional = true, features = ["simd"] }
 ndarray = { version = "0.15", optional = true, default_features = false }
 num-traits = { workspace = true }
-object_store = { workspace = true, optional = true }
 once_cell = { workspace = true }
 rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
@@ -37,7 +36,6 @@ serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
 thiserror = { workspace = true }
-url = { workspace = true, optional = true }
 xxhash-rust = { workspace = true }
 
 [dev-dependencies]
@@ -181,12 +179,6 @@ docs-selection = [
   "algorithm_join",
   "algorithm_group_by",
 ]
-
-# Cloud support.
-"async" = ["url", "object_store"]
-"aws" = ["async", "object_store/aws"]
-"azure" = ["async", "object_store/azure"]
-"gcp" = ["async", "object_store/gcp"]
 
 [package.metadata.docs.rs]
 # not all because arrow 4.3 does not compile with simd

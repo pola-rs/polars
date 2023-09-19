@@ -8,6 +8,7 @@ use num_traits::Bounded;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
+use crate::frame::hash_join::_finish_join;
 use crate::prelude::*;
 use crate::utils::{ensure_sorted_arg, slice_slice};
 

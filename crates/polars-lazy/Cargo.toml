@@ -34,16 +34,15 @@ serde_json = { workspace = true }
 version_check = { workspace = true }
 
 [features]
-nightly = ["polars-core/nightly", "polars-pipe/nightly", "polars-plan/nightly"]
+nightly = ["polars-core/nightly", "polars-pipe?/nightly", "polars-plan/nightly"]
 streaming = ["chunked_ids", "polars-pipe", "polars-plan/streaming"]
 parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe?/parquet"]
 async = [
   "polars-plan/async",
   "polars-io/cloud",
   "polars-pipe?/async",
-  "streaming",
 ]
-cloud = ["async", "polars-pipe?/cloud"]
+cloud = ["async", "polars-pipe?/cloud", "polars-plan/cloud"]
 cloud_write = ["cloud"]
 ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc"]
 json = ["polars-io/json", "polars-plan/json", "polars-json"]

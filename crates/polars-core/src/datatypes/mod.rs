@@ -270,6 +270,3 @@ impl NumericNative for f32 {
 impl NumericNative for f64 {
     type PolarsType = Float64Type;
 }
-
-// Provide options to cloud providers (credentials, region).
-pub type CloudOptions = PlHashMap<String, String>;

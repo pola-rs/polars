@@ -510,9 +510,9 @@ impl BatchedParquetReader {
     }
 
     /// Turn the batched reader into an iterator.
-    pub fn iter(self, batch_size: usize) -> BatchedParquetIter {
+    pub fn iter(self, batches_per_iter: usize) -> BatchedParquetIter {
         BatchedParquetIter {
-            batch_size,
+            batches_per_iter,
             inner: self,
             current_batch: vec![].into_iter(),
         }
@@ -520,7 +520,7 @@ impl BatchedParquetReader {
 }
 
 pub struct BatchedParquetIter {
-    batch_size: usize,
+    batches_per_iter: usize,
     inner: BatchedParquetReader,
     current_batch: std::vec::IntoIter<DataFrame>,
 }
@@ -531,7 +531,7 @@ impl Iterator for BatchedParquetIter {
     fn next(&mut self) -> Option<Self::Item> {
         match self.current_batch.next() {
             Some(df) => Some(Ok(df)),
-            None => match self.inner.next_batches(self.batch_size) {
+            None => match self.inner.next_batches(self.batches_per_iter) {
                 Err(e) => Some(Err(e)),
                 Ok(opt_batch) => {
                     let batch = opt_batch?;

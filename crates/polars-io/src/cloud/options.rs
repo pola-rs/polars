@@ -14,13 +14,12 @@ use object_store::gcp::GoogleCloudStorageBuilder;
 pub use object_store::gcp::GoogleConfigKey;
 #[cfg(feature = "async")]
 use object_store::ObjectStore;
-use polars_error::{polars_bail, polars_err};
-#[cfg(feature = "serde-lazy")]
+use polars_core::error::{PolarsError, PolarsResult};
+use polars_error::*;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "async")]
 use url::Url;
-
-use crate::error::{PolarsError, PolarsResult};
 
 /// The type of the config keys must satisfy the following requirements:
 /// 1. must be easily collected into a HashMap, the type required by the object_crate API.
@@ -32,7 +31,7 @@ use crate::error::{PolarsError, PolarsResult};
 type Configs<T> = Vec<(T, String)>;
 
 #[derive(Clone, Debug, Default, PartialEq)]
-#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Options to connect to various cloud providers.
 pub struct CloudOptions {
     #[cfg(feature = "aws")]
@@ -110,15 +109,26 @@ impl CloudOptions {
     /// Build the [`ObjectStore`] implementation for AWS.
     #[cfg(feature = "aws")]
     pub fn build_aws(&self, bucket_name: &str) -> PolarsResult<impl ObjectStore> {
-        let options = self
-            .aws
-            .as_ref()
-            .ok_or_else(|| polars_err!(ComputeError: "`aws` configuration missing"))?;
+        let options = self.aws.as_ref();
 
-        let mut builder = AmazonS3Builder::new();
-        for (key, value) in options.iter() {
-            builder = builder.with_config(*key, value);
-        }
+        let builder = match options {
+            Some(options) => {
+                let mut builder = AmazonS3Builder::new();
+                for (key, value) in options.iter() {
+                    builder = builder.with_config(*key, value);
+                }
+                builder
+            },
+            None => {
+                let builder = AmazonS3Builder::from_env();
+                polars_ensure!(
+                    builder.get_config_value(&AmazonS3ConfigKey::AccessKeyId).is_some() &&
+                    builder.get_config_value(&AmazonS3ConfigKey::SecretAccessKey).is_some(),
+                    ComputeError: "`aws` configuration and env vars missing");
+                builder
+            },
+        };
+
         builder
             .with_bucket_name(bucket_name)
             .build()

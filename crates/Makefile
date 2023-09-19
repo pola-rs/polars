@@ -14,11 +14,11 @@ check:  ## Run cargo check with all features
 
 .PHONY: clippy
 clippy:  ## Run clippy with all features
-	cargo clippy --workspace --all-targets --exclude nano-arrow --all-features
+	cargo clippy -p polars --all-features
 
 .PHONY: clippy-default
 clippy-default:  ## Run clippy with default features
-	cargo clippy --workspace --all-targets
+	cargo clippy -p polars
 
 .PHONY: pre-commit
 pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting

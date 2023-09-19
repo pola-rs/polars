@@ -44,8 +44,6 @@ pub(crate) use crate::frame::group_by::aggregations::*;
 #[cfg(feature = "algorithm_group_by")]
 pub use crate::frame::group_by::{GroupsIdx, GroupsProxy, GroupsSlice, IntoGroupsProxy};
 #[cfg(feature = "algorithm_join")]
-pub(crate) use crate::frame::hash_join::*;
-#[cfg(feature = "algorithm_join")]
 pub use crate::frame::hash_join::{JoinArgs, JoinType};
 pub use crate::frame::{DataFrame, UniqueKeepStrategy};
 pub use crate::hashing::{FxHash, VecHash};
@@ -58,4 +56,4 @@ pub use crate::series::{IntoSeries, Series, SeriesTrait};
 pub use crate::testing::*;
 pub(crate) use crate::utils::CustomIterTools;
 pub use crate::utils::IntoVec;
-pub use crate::{cloud, datatypes, df};
+pub use crate::{datatypes, df};

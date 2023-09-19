@@ -33,9 +33,9 @@ impl<O: Offset> DictValue for Utf8Array<O> {
         array
             .as_any()
             .downcast_ref::<Self>()
-            .ok_or(Error::InvalidArgumentError(
-                "could not convert array to dictionary value".into(),
-            ))
+            .ok_or_else(|| {
+                Error::InvalidArgumentError("could not convert array to dictionary value".into())
+            })
             .map(|arr| {
                 assert_eq!(
                     arr.null_count(),
