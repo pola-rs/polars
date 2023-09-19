@@ -226,13 +226,6 @@ pub fn build_filter(filter: &BooleanArray) -> Result<Filter> {
                 let array: PrimitiveArray<$T> = growable.into();
                 Box::new(array)
             }),
-            Utf8 => {
-                let array = array.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
-                let mut growable = growable::GrowableUtf8::new(vec![array], false, filter_count);
-                filter_growable(&mut growable, &chunks);
-                let array: Utf8Array<i32> = growable.into();
-                Box::new(array)
-            },
             LargeUtf8 => {
                 let array = array.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
                 let mut growable = growable::GrowableUtf8::new(vec![array], false, filter_count);

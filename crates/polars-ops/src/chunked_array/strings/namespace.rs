@@ -501,7 +501,6 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     /// Determines a substring starting from `start` and with optional length `length` of each of the elements in `array`.
     /// `start` can be negative, in which case the start counts from the end of the string.
     fn str_slice(&self, start: i64, length: Option<u64>) -> Utf8Chunked {
-
         let ca = self.as_utf8();
         let iter = ca
             .downcast_iter()

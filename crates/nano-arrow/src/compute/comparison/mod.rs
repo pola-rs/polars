@@ -131,20 +131,10 @@ macro_rules! compare {
                 let rhs = rhs.as_any().downcast_ref().unwrap();
                 primitive::$op::<$T>(lhs, rhs)
             }),
-            Utf8 => {
-                let lhs = lhs.as_any().downcast_ref().unwrap();
-                let rhs = rhs.as_any().downcast_ref().unwrap();
-                utf8::$op::<i32>(lhs, rhs)
-            },
             LargeUtf8 => {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
                 let rhs = rhs.as_any().downcast_ref().unwrap();
                 utf8::$op::<i64>(lhs, rhs)
-            },
-            Binary => {
-                let lhs = lhs.as_any().downcast_ref().unwrap();
-                let rhs = rhs.as_any().downcast_ref().unwrap();
-                binary::$op::<i32>(lhs, rhs)
             },
             LargeBinary => {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
@@ -302,20 +292,10 @@ macro_rules! compare_scalar {
                 let rhs = rhs.as_any().downcast_ref::<PrimitiveScalar<$T>>().unwrap();
                 primitive::$op::<$T>(lhs, rhs.value().unwrap())
             }),
-            Utf8 => {
-                let lhs = lhs.as_any().downcast_ref().unwrap();
-                let rhs = rhs.as_any().downcast_ref::<Utf8Scalar<i32>>().unwrap();
-                utf8::$op::<i32>(lhs, rhs.value().unwrap())
-            },
             LargeUtf8 => {
                 let lhs = lhs.as_any().downcast_ref().unwrap();
                 let rhs = rhs.as_any().downcast_ref::<Utf8Scalar<i64>>().unwrap();
                 utf8::$op::<i64>(lhs, rhs.value().unwrap())
-            },
-            Binary => {
-                let lhs = lhs.as_any().downcast_ref().unwrap();
-                let rhs = rhs.as_any().downcast_ref::<BinaryScalar<i32>>().unwrap();
-                binary::$op::<i32>(lhs, rhs.value().unwrap())
             },
             LargeBinary => {
                 let lhs = lhs.as_any().downcast_ref().unwrap();

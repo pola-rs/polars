@@ -55,17 +55,9 @@ pub fn take<O: Index>(values: &dyn Array, indices: &PrimitiveArray<O>) -> Result
             let values = values.as_any().downcast_ref().unwrap();
             Ok(Box::new(primitive::take::<$T, _>(&values, indices)))
         }),
-        Utf8 => {
-            let values = values.as_any().downcast_ref().unwrap();
-            Ok(Box::new(utf8::take::<i32, _>(values, indices)))
-        },
         LargeUtf8 => {
             let values = values.as_any().downcast_ref().unwrap();
             Ok(Box::new(utf8::take::<i64, _>(values, indices)))
-        },
-        Binary => {
-            let values = values.as_any().downcast_ref().unwrap();
-            Ok(Box::new(binary::take::<i32, _>(values, indices)))
         },
         LargeBinary => {
             let values = values.as_any().downcast_ref().unwrap();
@@ -80,10 +72,6 @@ pub fn take<O: Index>(values: &dyn Array, indices: &PrimitiveArray<O>) -> Result
         Struct => {
             let array = values.as_any().downcast_ref().unwrap();
             Ok(Box::new(structure::take::<_>(array, indices)?))
-        },
-        List => {
-            let array = values.as_any().downcast_ref().unwrap();
-            Ok(Box::new(list::take::<i32, O>(array, indices)))
         },
         LargeList => {
             let array = values.as_any().downcast_ref().unwrap();

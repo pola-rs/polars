@@ -41,11 +41,8 @@ fn equal(lhs: &dyn Scalar, rhs: &dyn Scalar) -> bool {
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             dyn_eq!(PrimitiveScalar<$T>, lhs, rhs)
         }),
-        Utf8 => dyn_eq!(Utf8Scalar<i32>, lhs, rhs),
         LargeUtf8 => dyn_eq!(Utf8Scalar<i64>, lhs, rhs),
-        Binary => dyn_eq!(BinaryScalar<i32>, lhs, rhs),
         LargeBinary => dyn_eq!(BinaryScalar<i64>, lhs, rhs),
-        List => dyn_eq!(ListScalar<i32>, lhs, rhs),
         LargeList => dyn_eq!(ListScalar<i64>, lhs, rhs),
         Dictionary(key_type) => match_integer_type!(key_type, |$T| {
             dyn_eq!(DictionaryScalar<$T>, lhs, rhs)
@@ -55,5 +52,6 @@ fn equal(lhs: &dyn Scalar, rhs: &dyn Scalar) -> bool {
         FixedSizeList => dyn_eq!(FixedSizeListScalar, lhs, rhs),
         Union => dyn_eq!(UnionScalar, lhs, rhs),
         Map => dyn_eq!(MapScalar, lhs, rhs),
+        _ => unimplemented!(),
     }
 }
