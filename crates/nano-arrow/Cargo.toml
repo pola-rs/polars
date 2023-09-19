@@ -32,7 +32,7 @@ lexical-core = { version = "0.8", optional = true }
 fallible-streaming-iterator = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
 regex-syntax = { version = "0.7", optional = true }
-streaming-iterator = { workspace = true, optional = true }
+streaming-iterator = { workspace = true }
 
 indexmap = { workspace = true, optional = true }
 
@@ -129,7 +129,7 @@ io_ipc_compression = ["lz4", "zstd"]
 io_flight = ["io_ipc", "arrow-format/flight-data"]
 
 # base64 + io_ipc because arrow schemas are stored as base64-encoded ipc format.
-io_parquet = ["parquet2", "io_ipc", "base64", "futures", "streaming-iterator", "fallible-streaming-iterator"]
+io_parquet = ["parquet2", "io_ipc", "base64", "futures", "fallible-streaming-iterator"]
 
 io_parquet_compression = [
   "io_parquet_zstd",
@@ -153,7 +153,7 @@ io_parquet_brotli = ["parquet2/brotli"]
 # parquet bloom filter functions
 io_parquet_bloom_filter = ["parquet2/bloom_filter"]
 
-io_avro = ["avro-schema", "streaming-iterator"]
+io_avro = ["avro-schema"]
 io_avro_compression = [
   "avro-schema/compression",
 ]
@@ -175,7 +175,6 @@ compute_if_then_else = []
 compute_like = ["regex", "regex-syntax"]
 compute_limit = []
 compute_regex_match = ["regex"]
-compute_substring = []
 compute_take = []
 compute_temporal = []
 compute = [
@@ -193,7 +192,6 @@ compute = [
   "compute_like",
   "compute_limit",
   "compute_regex_match",
-  "compute_substring",
   "compute_take",
   "compute_temporal",
 ]

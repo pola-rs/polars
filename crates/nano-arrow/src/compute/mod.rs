@@ -49,9 +49,6 @@ pub mod like;
 #[cfg(feature = "compute_regex_match")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_regex_match")))]
 pub mod regex_match;
-#[cfg(feature = "compute_substring")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compute_substring")))]
-pub mod substring;
 #[cfg(feature = "compute_take")]
 #[cfg_attr(docsrs, doc(cfg(feature = "compute_take")))]
 pub mod take;
