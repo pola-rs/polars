@@ -16,8 +16,7 @@ pub use object_store::gcp::GoogleConfigKey;
 use object_store::ObjectStore;
 use polars_core::error::{PolarsError, PolarsResult};
 use polars_error::*;
-#[cfg(feature = "serde-lazy")]
-use serde::{Deserialize, Serialize};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "async")]
 use url::Url;
@@ -31,7 +30,8 @@ use url::Url;
 #[allow(dead_code)]
 type Configs<T> = Vec<(T, String)>;
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Options to connect to various cloud providers.
 pub struct CloudOptions {
     #[cfg(feature = "aws")]

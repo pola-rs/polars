@@ -1,22 +1,33 @@
 //! Interface with cloud storage through the object_store crate.
 
+#[cfg(feature = "cloud")]
 use std::borrow::Cow;
+#[cfg(feature = "cloud")]
 use std::str::FromStr;
 
+#[cfg(feature = "cloud")]
 use object_store::local::LocalFileSystem;
+#[cfg(feature = "cloud")]
 use object_store::ObjectStore;
+#[cfg(feature = "cloud")]
 use polars_core::prelude::{polars_bail, PolarsError, PolarsResult};
 
+#[cfg(feature = "cloud")]
 mod adaptors;
+#[cfg(feature = "cloud")]
 mod glob;
 pub mod options;
+#[cfg(feature = "cloud")]
 pub use adaptors::*;
+#[cfg(feature = "cloud")]
 pub use glob::*;
 pub use options::*;
 
+#[cfg(feature = "cloud")]
 type BuildResult = PolarsResult<(CloudLocation, Box<dyn ObjectStore>)>;
 
 #[allow(dead_code)]
+#[cfg(feature = "cloud")]
 fn err_missing_feature(feature: &str, scheme: &str) -> BuildResult {
     polars_bail!(
         ComputeError:
@@ -32,6 +43,7 @@ fn err_missing_configuration(feature: &str, scheme: &str) -> BuildResult {
 }
 
 /// Build an [`ObjectStore`] based on the URL and passed in url. Return the cloud location and an implementation of the object store.
+#[cfg(feature = "cloud")]
 pub fn build(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
     let cloud_location = CloudLocation::new(url)?;
     let store = match CloudType::from_str(url)? {

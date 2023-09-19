@@ -1,8 +1,6 @@
 #[cfg(test)]
 use polars_core::prelude::*;
 
-#[cfg(feature = "cloud")]
-pub use crate::cloud;
 #[cfg(feature = "csv")]
 pub use crate::csv::*;
 #[cfg(any(feature = "ipc", feature = "ipc_streaming"))]
@@ -14,7 +12,7 @@ pub use crate::ndjson::core::*;
 #[cfg(feature = "parquet")]
 pub use crate::parquet::*;
 pub use crate::utils::*;
-pub use crate::{SerReader, SerWriter};
+pub use crate::{cloud, SerReader, SerWriter};
 
 #[cfg(test)]
 pub(crate) fn create_df() -> DataFrame {

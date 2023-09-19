@@ -4,7 +4,6 @@
 
 #[cfg(feature = "avro")]
 pub mod avro;
-#[cfg(feature = "cloud")]
 pub mod cloud;
 #[cfg(any(feature = "csv", feature = "json"))]
 pub mod csv;
