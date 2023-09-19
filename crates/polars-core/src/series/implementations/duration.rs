@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::ops::{Deref, DerefMut, Mul};
+use std::ops::{Deref, DerefMut};
 
 use ahash::RandomState;
 
