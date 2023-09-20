@@ -91,6 +91,12 @@ def _timedelta_to_pl_duration(td: timedelta | str | None) -> str | None:
         return f"{d}{s}{us}"
 
 
+def _negate_duration(duration: str) -> str:
+    if duration.startswith("-"):
+        return duration[1:]
+    return f"-{duration}"
+
+
 def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
     """Convert a python datetime to a timestamp in nanoseconds."""
     dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo != timezone.utc else dt

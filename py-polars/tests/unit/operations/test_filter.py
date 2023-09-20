@@ -1,4 +1,7 @@
+import pytest
+
 import polars as pl
+from polars import PolarsDataType
 from polars.testing import assert_frame_equal
 
 
@@ -10,6 +13,11 @@ def test_simplify_expression_lit_true_4376() -> None:
     assert df.lazy().filter((pl.col("column_0") == 1) | pl.lit(True)).collect(
         simplify_expression=True
     ).rows() == [(1, 2, 3), (4, 5, 6), (7, 8, 9)]
+
+
+def test_filter_contains_nth_11205() -> None:
+    df = pl.DataFrame({"x": [False]})
+    assert df.filter(pl.first()).is_empty()
 
 
 def test_melt_values_predicate_pushdown() -> None:
@@ -48,6 +56,15 @@ def test_filter_is_in_4572() -> None:
         .agg(pl.col("k").filter(pl.col("k").is_in(["a"])).implode())
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "dtype", [pl.Int32, pl.Boolean, pl.Utf8, pl.Binary, pl.List(pl.Int64), pl.Object]
+)
+def test_filter_on_empty(dtype: PolarsDataType) -> None:
+    df = pl.DataFrame({"a": []}, schema={"a": dtype})
+    out = df.filter(pl.col("a").is_null())
+    assert out.is_empty()
 
 
 def test_filter_aggregation_any() -> None:

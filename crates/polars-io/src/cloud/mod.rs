@@ -1,20 +1,33 @@
 //! Interface with cloud storage through the object_store crate.
 
+#[cfg(feature = "cloud")]
+use std::borrow::Cow;
+#[cfg(feature = "cloud")]
 use std::str::FromStr;
 
+#[cfg(feature = "cloud")]
 use object_store::local::LocalFileSystem;
+#[cfg(feature = "cloud")]
 use object_store::ObjectStore;
-use polars_core::cloud::{CloudOptions, CloudType};
+#[cfg(feature = "cloud")]
 use polars_core::prelude::{polars_bail, PolarsError, PolarsResult};
 
+#[cfg(feature = "cloud")]
 mod adaptors;
+#[cfg(feature = "cloud")]
 mod glob;
+pub mod options;
+#[cfg(feature = "cloud")]
 pub use adaptors::*;
+#[cfg(feature = "cloud")]
 pub use glob::*;
+pub use options::*;
 
+#[cfg(feature = "cloud")]
 type BuildResult = PolarsResult<(CloudLocation, Box<dyn ObjectStore>)>;
 
 #[allow(dead_code)]
+#[cfg(feature = "cloud")]
 fn err_missing_feature(feature: &str, scheme: &str) -> BuildResult {
     polars_bail!(
         ComputeError:
@@ -28,7 +41,9 @@ fn err_missing_configuration(feature: &str, scheme: &str) -> BuildResult {
         "configuration '{}' must be provided in order to use '{}' cloud urls", feature, scheme,
     );
 }
+
 /// Build an [`ObjectStore`] based on the URL and passed in url. Return the cloud location and an implementation of the object store.
+#[cfg(feature = "cloud")]
 pub fn build(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
     let cloud_location = CloudLocation::new(url)?;
     let store = match CloudType::from_str(url)? {
@@ -38,12 +53,12 @@ pub fn build(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
         },
         CloudType::Aws => {
             #[cfg(feature = "aws")]
-            match _options {
-                Some(options) => {
-                    let store = options.build_aws(&cloud_location.bucket)?;
-                    Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)
-                },
-                _ => return err_missing_configuration("aws", &cloud_location.scheme),
+            {
+                let options = _options
+                    .map(Cow::Borrowed)
+                    .unwrap_or_else(|| Cow::Owned(Default::default()));
+                let store = options.build_aws(&cloud_location.bucket)?;
+                Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)
             }
             #[cfg(not(feature = "aws"))]
             return err_missing_feature("aws", &cloud_location.scheme);

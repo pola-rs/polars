@@ -1,10 +1,10 @@
 #[cfg(feature = "csv")]
 use std::io::{Read, Seek};
 
-#[cfg(feature = "parquet")]
-use polars_core::cloud::CloudOptions;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
+#[cfg(feature = "parquet")]
+use polars_io::cloud::CloudOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
@@ -20,9 +20,10 @@ use polars_io::parquet::ParquetReader;
 use polars_io::RowCount;
 #[cfg(feature = "csv")]
 use polars_io::{
-    csv::utils::{get_reader_bytes, infer_file_schema, is_compressed},
+    csv::utils::{infer_file_schema, is_compressed},
     csv::CsvEncoding,
     csv::NullValues,
+    utils::get_reader_bytes,
 };
 
 use super::builder_functions::*;
@@ -523,9 +524,11 @@ impl LogicalPlanBuilder {
     pub fn filter(self, predicate: Expr) -> Self {
         let predicate = if has_expr(&predicate, |e| match e {
             Expr::Column(name) => is_regex_projection(name),
-            Expr::Wildcard | Expr::RenameAlias { .. } | Expr::Columns(_) | Expr::DtypeColumn(_) => {
-                true
-            },
+            Expr::Wildcard
+            | Expr::RenameAlias { .. }
+            | Expr::Columns(_)
+            | Expr::DtypeColumn(_)
+            | Expr::Nth(_) => true,
             _ => false,
         }) {
             let schema = try_delayed!(self.0.schema(), &self.0, into);

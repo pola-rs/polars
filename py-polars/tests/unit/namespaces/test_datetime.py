@@ -690,6 +690,80 @@ def test_offset_by_truncate_sorted_flag() -> None:
     assert s2.flags["SORTED_ASC"]
 
 
+def test_offset_by_broadcasting() -> None:
+    # test broadcast lhs
+    df = pl.DataFrame(
+        {
+            "offset": ["1d", "10d", "3d", None],
+        }
+    )
+    result = df.select(
+        d1=pl.lit(datetime(2020, 10, 25)).dt.offset_by(pl.col("offset")),
+        d2=pl.lit(datetime(2020, 10, 25))
+        .dt.cast_time_unit("ms")
+        .dt.offset_by(pl.col("offset")),
+        d3=pl.lit(datetime(2020, 10, 25))
+        .dt.replace_time_zone("Europe/London")
+        .dt.offset_by(pl.col("offset")),
+        d4=pl.lit(datetime(2020, 10, 25)).dt.date().dt.offset_by(pl.col("offset")),
+        d5=pl.lit(None, dtype=pl.Datetime).dt.offset_by(pl.col("offset")),
+    )
+    expected_dict = {
+        "d1": [
+            datetime(2020, 10, 26),
+            datetime(2020, 11, 4),
+            datetime(2020, 10, 28),
+            None,
+        ],
+        "d2": [
+            datetime(2020, 10, 26),
+            datetime(2020, 11, 4),
+            datetime(2020, 10, 28),
+            None,
+        ],
+        "d3": [
+            datetime(2020, 10, 26, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 11, 4, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 28, tzinfo=ZoneInfo(key="Europe/London")),
+            None,
+        ],
+        "d4": [
+            datetime(2020, 10, 26).date(),
+            datetime(2020, 11, 4).date(),
+            datetime(2020, 10, 28).date(),
+            None,
+        ],
+        "d5": [None, None, None, None],
+    }
+    assert result.to_dict(False) == expected_dict
+
+    # test broadcast rhs
+    df = pl.DataFrame({"dt": [datetime(2020, 10, 25), datetime(2021, 1, 2), None]})
+    result = df.select(
+        d1=pl.col("dt").dt.offset_by(pl.lit("1mo3d")),
+        d2=pl.col("dt").dt.cast_time_unit("ms").dt.offset_by(pl.lit("1y1mo")),
+        d3=pl.col("dt")
+        .dt.replace_time_zone("Europe/London")
+        .dt.offset_by(pl.lit("3d")),
+        d4=pl.col("dt").dt.date().dt.offset_by(pl.lit("1y1mo1d")),
+    )
+    expected_dict = {
+        "d1": [datetime(2020, 11, 28), datetime(2021, 2, 5), None],
+        "d2": [datetime(2021, 11, 25), datetime(2022, 2, 2), None],
+        "d3": [
+            datetime(2020, 10, 28, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2021, 1, 5, tzinfo=ZoneInfo(key="Europe/London")),
+            None,
+        ],
+        "d4": [datetime(2021, 11, 26).date(), datetime(2022, 2, 3).date(), None],
+    }
+    assert result.to_dict(False) == expected_dict
+
+    # test all literal
+    result = df.select(d=pl.lit(datetime(2021, 11, 26)).dt.offset_by("1mo1d"))
+    assert result.to_dict(False) == {"d": [datetime(2021, 12, 27)]}
+
+
 def test_offset_by_expressions() -> None:
     df = pl.DataFrame(
         {

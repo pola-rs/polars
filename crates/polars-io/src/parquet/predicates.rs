@@ -26,9 +26,14 @@ impl ColumnStats {
             _ => {
                 // the array holds the null count for every row group
                 // so we sum them to get them of the whole file.
-                Series::try_from(("", self.0.null_count.clone()))
-                    .unwrap()
-                    .sum()
+                let s = Series::try_from(("", self.0.null_count.clone())).unwrap();
+
+                // if all null, there are no statistics.
+                if s.null_count() != s.len() {
+                    s.sum()
+                } else {
+                    None
+                }
             },
         }
     }

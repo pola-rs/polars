@@ -1,5 +1,7 @@
 #![allow(ambiguous_glob_reexports)]
 //! Domain specific language for the Lazy API.
+#[cfg(feature = "rolling_window")]
+use polars_core::utils::ensure_sorted_arg;
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
 #[cfg(feature = "dtype-categorical")]
@@ -15,7 +17,6 @@ mod expr;
 mod expr_dyn_fn;
 mod from;
 pub(crate) mod function_expr;
-#[cfg(feature = "compile")]
 pub mod functions;
 mod list;
 #[cfg(feature = "meta")]
@@ -39,6 +40,7 @@ pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
 pub use expr::*;
+pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;
@@ -1096,18 +1098,18 @@ impl Expr {
         self.repeat_by_impl(by.into())
     }
 
-    #[cfg(feature = "is_first")]
+    #[cfg(feature = "is_first_distinct")]
     #[allow(clippy::wrong_self_convention)]
     /// Get a mask of the first unique value.
-    pub fn is_first(self) -> Expr {
-        self.apply_private(BooleanFunction::IsFirst.into())
+    pub fn is_first_distinct(self) -> Expr {
+        self.apply_private(BooleanFunction::IsFirstDistinct.into())
     }
 
-    #[cfg(feature = "is_last")]
+    #[cfg(feature = "is_last_distinct")]
     #[allow(clippy::wrong_self_convention)]
     /// Get a mask of the last unique value.
-    pub fn is_last(self) -> Expr {
-        self.apply_private(BooleanFunction::IsLast.into())
+    pub fn is_last_distinct(self) -> Expr {
+        self.apply_private(BooleanFunction::IsLastDistinct.into())
     }
 
     fn dot_impl(self, other: Expr) -> Expr {
@@ -1239,6 +1241,7 @@ impl Expr {
                         },
                         _ => (by.clone(), &None),
                     };
+                    ensure_sorted_arg(&by, expr_name)?;
                     let by = by.datetime().unwrap();
                     let by_values = by.cont_slice().map_err(|_| {
                         polars_err!(

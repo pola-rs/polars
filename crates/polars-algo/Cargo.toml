@@ -9,9 +9,9 @@ repository = { workspace = true }
 description = "Algorithms built upon Polars primitives"
 
 [dependencies]
-polars-core = { version = "0.32.0", path = "../polars-core", features = ["dtype-categorical", "asof_join"], default-features = false }
-polars-lazy = { version = "0.32.0", path = "../polars-lazy", features = ["asof_join", "concat_str", "strings"] }
-polars-ops = { version = "0.32.0", path = "../polars-ops", features = ["dtype-categorical", "asof_join"], default-features = false }
+polars-core = { workspace = true, features = ["dtype-categorical", "asof_join"] }
+polars-lazy = { workspace = true, features = ["asof_join", "concat_str", "strings"], default-features = true }
+polars-ops = { workspace = true, features = ["dtype-categorical", "asof_join"] }
 
 [package.metadata.docs.rs]
 all-features = true

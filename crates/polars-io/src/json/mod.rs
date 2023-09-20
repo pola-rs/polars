@@ -67,7 +67,6 @@ use std::ops::Deref;
 
 use arrow::array::StructArray;
 pub use arrow::error::Result as ArrowResult;
-pub use arrow::io::json;
 use polars_arrow::conversion::chunk_to_struct;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::error::to_compute_err;
@@ -141,13 +140,14 @@ where
 
         match self.json_format {
             JsonFormat::JsonLines => {
-                let serializer = arrow_ndjson::write::Serializer::new(batches, vec![]);
-                let writer = arrow_ndjson::write::FileWriter::new(&mut self.buffer, serializer);
+                let serializer = polars_json::ndjson::write::Serializer::new(batches, vec![]);
+                let writer =
+                    polars_json::ndjson::write::FileWriter::new(&mut self.buffer, serializer);
                 writer.collect::<ArrowResult<()>>()?;
             },
             JsonFormat::Json => {
-                let serializer = json::write::Serializer::new(batches, vec![]);
-                json::write::write(&mut self.buffer, serializer)?;
+                let serializer = polars_json::json::write::Serializer::new(batches, vec![]);
+                polars_json::json::write::write(&mut self.buffer, serializer)?;
             },
         }
 

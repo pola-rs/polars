@@ -13,9 +13,10 @@ use futures::lock::Mutex;
 use futures::{AsyncRead, AsyncSeek, Future, TryFutureExt};
 use object_store::path::Path;
 use object_store::{MultipartId, ObjectStore};
-use polars_core::cloud::CloudOptions;
 use polars_error::{PolarsError, PolarsResult};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
+
+use super::*;
 
 type OptionalFuture = Arc<Mutex<Option<BoxFuture<'static, std::io::Result<Vec<u8>>>>>>;
 

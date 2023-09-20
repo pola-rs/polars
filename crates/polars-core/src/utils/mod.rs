@@ -673,7 +673,6 @@ where
 }
 
 #[allow(clippy::type_complexity)]
-#[cfg(feature = "zip_with")]
 pub fn align_chunks_ternary<'a, A, B, C>(
     a: &'a ChunkedArray<A>,
     b: &'a ChunkedArray<B>,
@@ -804,22 +803,6 @@ pub(crate) fn index_to_chunked_index<
         } else {
             index_remainder -= chunk_len;
             current_chunk_idx += One::one();
-        }
-    }
-    (current_chunk_idx, index_remainder)
-}
-
-#[cfg(feature = "dtype-struct")]
-pub(crate) fn index_to_chunked_index2(chunks: &[ArrayRef], index: usize) -> (usize, usize) {
-    let mut index_remainder = index;
-    let mut current_chunk_idx = 0;
-
-    for chunk in chunks {
-        if chunk.len() > index_remainder {
-            break;
-        } else {
-            index_remainder -= chunk.len();
-            current_chunk_idx += 1;
         }
     }
     (current_chunk_idx, index_remainder)

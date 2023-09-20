@@ -8,7 +8,9 @@ use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{IntoPartialOrdInner, PartialOrdInner};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
+#[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
+#[cfg(feature = "algorithm_join")]
 use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
@@ -105,6 +107,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         Ok(())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         let list = self.0.logical().agg_list(groups);
@@ -113,6 +116,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         list.into_series()
     }
 
+    #[cfg(feature = "algorithm_join")]
     unsafe fn zip_outer_join_column(
         &self,
         right_column: &Series,
@@ -137,6 +141,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
             CategoricalChunked::from_cats_and_rev_map_unchecked(cats, new_rev_map).into_series()
         }
     }
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         #[cfg(feature = "performant")]
         {
@@ -214,45 +219,23 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        let indices = if indices.chunks.len() > 1 {
-            Cow::Owned(indices.rechunk())
-        } else {
-            Cow::Borrowed(indices)
-        };
-        self.try_with_state(false, |cats| cats.take((&*indices).into()))
+        self.try_with_state(false, |cats| cats.take(indices))
             .map(|ca| ca.into_series())
     }
 
-    fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        let cats = self.0.logical().take(iter.into())?;
-        Ok(self.finish_with_state(false, cats).into_series())
+    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+        self.with_state(false, |cats| cats.take_unchecked(indices))
+            .into_series()
     }
 
-    unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        let cats = self.0.logical().take_unchecked(iter.into());
-        self.finish_with_state(false, cats).into_series()
+    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+        self.try_with_state(false, |cats| cats.take(indices))
+            .map(|ca| ca.into_series())
     }
 
-    unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-        let idx = if idx.chunks.len() > 1 {
-            Cow::Owned(idx.rechunk())
-        } else {
-            Cow::Borrowed(idx)
-        };
-        Ok(self
-            .with_state(false, |cats| cats.take_unchecked((&*idx).into()))
-            .into_series())
-    }
-
-    unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        let cats = self.0.logical().take_unchecked(iter.into());
-        self.finish_with_state(false, cats).into_series()
-    }
-
-    #[cfg(feature = "take_opt_iter")]
-    fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-        let cats = self.0.logical().take(iter.into())?;
-        Ok(self.finish_with_state(false, cats).into_series())
+    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+        self.with_state(false, |cats| cats.take_unchecked(indices))
+            .into_series()
     }
 
     fn len(&self) -> usize {
@@ -297,14 +280,17 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.logical().has_validity()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
         self.0.unique().map(|ca| ca.into_series())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
         self.0.n_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.0.logical().arg_unique()
     }

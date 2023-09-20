@@ -313,7 +313,7 @@ pub enum SinkType {
     Cloud {
         uri: Arc<String>,
         file_type: FileType,
-        cloud_options: Option<polars_core::cloud::CloudOptions>,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
     },
 }
 

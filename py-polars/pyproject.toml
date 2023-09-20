@@ -49,12 +49,14 @@ deltalake = ["deltalake >= 0.10.0"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 matplotlib = ["matplotlib"]
 pydantic = ["pydantic"]
+pyiceberg = ["pyiceberg >= 0.5.0"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 xlsxwriter = ["xlsxwriter"]
 adbc = ["adbc_driver_sqlite"]
 cloudpickle = ["cloudpickle"]
+gevent = ["gevent"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,sqlalchemy,xlsxwriter,adbc,cloudpickle]",
+  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
 ]
 
 [tool.mypy]
@@ -77,22 +79,27 @@ module = [
   "backports",
   "connectorx",
   "deltalake.*",
+  "ezodf.*",
   "fsspec.*",
+  "gevent",
   "matplotlib.*",
   "moto.server",
+  "openpyxl",
   "polars.polars",
   "pyarrow.*",
   "pydantic",
   "sqlalchemy.*",
   "xlsx2csv",
   "xlsxwriter.*",
-  "openpyxl",
   "zoneinfo",
 ]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["IPython.*"]
+module = [
+  "IPython.*",
+  "matplotlib.*",
+]
 follow_imports = "skip"
 
 [[tool.mypy.overrides]]
@@ -184,12 +191,13 @@ addopts = [
   "--strict-markers",
   "--import-mode=importlib",
   # Default to running fast tests only. To run ALL tests, run: pytest -m ""
-  "-m not slow and not hypothesis and not benchmark and not write_disk",
+  "-m not slow and not hypothesis and not benchmark and not write_disk and not docs",
 ]
 markers = [
   "write_disk: Tests that write to disk",
   "slow: Tests with a longer than average runtime.",
   "benchmark: Tests that should be run on a Polars release build.",
+  "docs: Documentation code snippets",
 ]
 filterwarnings = [
   # Fail on warnings...
@@ -197,6 +205,7 @@ filterwarnings = [
   # ...except where it prevents test debugging in an IPython console
   "ignore:.*unrecognized arguments.*PyDevIPCompleter:DeprecationWarning",
   "ignore:.*is_sparse is deprecated.*:FutureWarning",
+  "ignore:FigureCanvasAgg is non-interactive:UserWarning",
 ]
 xfail_strict = true
 

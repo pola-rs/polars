@@ -8,7 +8,6 @@ use std::io::Write;
 use arrow::temporal_conversions;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
-use lexical_core::{FormattedSize, ToLexical};
 use memchr::{memchr, memchr2};
 use polars_arrow::time_zone::Tz;
 use polars_core::prelude::*;
@@ -22,11 +21,12 @@ use serde::{Deserialize, Serialize};
 use super::write::QuoteStyle;
 
 fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> std::io::Result<()> {
-    if v.is_empty() {
+    if options.quote_style == QuoteStyle::Never {
+        write!(f, "{v}")
+    } else if v.is_empty() {
         write!(f, "\"\"")
     } else {
         let needs_escaping = memchr(options.quote, v.as_bytes()).is_some();
-
         if needs_escaping {
             let replaced = unsafe {
                 // Replace from single quote " to double quote "".
@@ -40,6 +40,7 @@ fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> s
         let surround_with_quotes = match options.quote_style {
             QuoteStyle::Always | QuoteStyle::NonNumeric => true,
             QuoteStyle::Necessary => memchr2(options.delimiter, b'\n', v.as_bytes()).is_some(),
+            QuoteStyle::Never => false,
         };
 
         let quote = options.quote as char;
@@ -51,15 +52,16 @@ fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> s
     }
 }
 
-fn fast_float_write<N: ToLexical>(f: &mut Vec<u8>, n: N, write_size: usize) -> std::io::Result<()> {
-    let len = f.len();
-    f.reserve(write_size);
-    unsafe {
-        let buffer = std::slice::from_raw_parts_mut(f.as_mut_ptr().add(len), write_size);
-        let written_n = n.to_lexical(buffer).len();
-        f.set_len(len + written_n);
-    }
-    Ok(())
+fn fast_float_write<I: ryu::Float>(f: &mut Vec<u8>, val: I) {
+    let mut buffer = ryu::Buffer::new();
+    let value = buffer.format(val);
+    f.extend_from_slice(value.as_bytes())
+}
+
+fn write_integer<I: itoa::Integer>(f: &mut Vec<u8>, val: I) {
+    let mut buffer = itoa::Buffer::new();
+    let value = buffer.format(val);
+    f.extend_from_slice(value.as_bytes())
 }
 
 unsafe fn write_anyvalue(
@@ -94,20 +96,50 @@ unsafe fn write_anyvalue(
 
             match value {
                 AnyValue::Null => write!(f, "{}", &options.null),
-                AnyValue::Int8(v) => write!(f, "{v}"),
-                AnyValue::Int16(v) => write!(f, "{v}"),
-                AnyValue::Int32(v) => write!(f, "{v}"),
-                AnyValue::Int64(v) => write!(f, "{v}"),
-                AnyValue::UInt8(v) => write!(f, "{v}"),
-                AnyValue::UInt16(v) => write!(f, "{v}"),
-                AnyValue::UInt32(v) => write!(f, "{v}"),
-                AnyValue::UInt64(v) => write!(f, "{v}"),
+                AnyValue::Int8(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
+                AnyValue::Int16(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
+                AnyValue::Int32(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
+                AnyValue::Int64(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
+                AnyValue::UInt8(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
+                AnyValue::UInt16(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
+                AnyValue::UInt32(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
+                AnyValue::UInt64(v) => {
+                    write_integer(f, v);
+                    Ok(())
+                },
                 AnyValue::Float32(v) => match &options.float_precision {
-                    None => fast_float_write(f, v, f32::FORMATTED_SIZE_DECIMAL),
+                    None => {
+                        fast_float_write(f, v);
+                        Ok(())
+                    },
                     Some(precision) => write!(f, "{v:.precision$}"),
                 },
                 AnyValue::Float64(v) => match &options.float_precision {
-                    None => fast_float_write(f, v, f64::FORMATTED_SIZE_DECIMAL),
+                    None => {
+                        fast_float_write(f, v);
+                        Ok(())
+                    },
                     Some(precision) => write!(f, "{v:.precision$}"),
                 },
                 _ => {

@@ -10,7 +10,7 @@ use polars_io::csv::CsvWriter;
 use polars_io::parquet::ParquetWriter;
 #[cfg(feature = "ipc")]
 use polars_io::prelude::IpcWriter;
-#[cfg(feature = "ipc")]
+#[cfg(any(feature = "ipc", feature = "csv"))]
 use polars_io::SerWriter;
 use polars_plan::prelude::*;
 
@@ -106,7 +106,7 @@ impl ParquetCloudSink {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(
         uri: &str,
-        cloud_options: Option<&polars_core::cloud::CloudOptions>,
+        cloud_options: Option<&polars_io::cloud::CloudOptions>,
         parquet_options: ParquetWriteOptions,
         schema: &Schema,
     ) -> PolarsResult<FilesSink> {
@@ -259,7 +259,7 @@ impl CsvCloudSink {
     }
 }
 
-#[cfg(any(feature = "parquet", feature = "ipc"))]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 fn init_writer_thread(
     receiver: Receiver<Option<DataChunk>>,
     mut writer: Box<dyn SinkWriter + Send>,

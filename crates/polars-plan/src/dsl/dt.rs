@@ -215,10 +215,10 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TimeStamp(tu)))
     }
 
-    pub fn truncate(self, options: TruncateOptions, ambiguous: Expr) -> Expr {
+    pub fn truncate(self, every: Expr, offset: String, ambiguous: Expr) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::TemporalExpr(TemporalFunction::Truncate(options)),
-            &[ambiguous],
+            FunctionExpr::TemporalExpr(TemporalFunction::Truncate(offset)),
+            &[every, ambiguous],
             false,
         )
     }

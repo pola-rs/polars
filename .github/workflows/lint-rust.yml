@@ -38,7 +38,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy with all features enabled
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy -p polars --all-features -- -D warnings
 
   # Default feature set should compile on the stable toolchain
   clippy-stable:
@@ -58,7 +58,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy -p polars -- -D warnings
 
   rustfmt:
     if: github.ref_name != 'main'
@@ -90,7 +90,6 @@ jobs:
           POLARS_ALLOW_EXTENSION: '1'
         run: >
           cargo miri test
-          --no-default-features
           --features object
           -p polars-core
           -p polars-arrow

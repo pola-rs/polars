@@ -6,7 +6,9 @@ use ahash::RandomState;
 use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
+#[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
+#[cfg(feature = "algorithm_join")]
 use crate::frame::hash_join::*;
 use crate::prelude::*;
 
@@ -84,6 +86,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         Ok(())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         self.0
             .agg_min(groups)
@@ -91,12 +94,14 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
         self.0
             .agg_max(groups)
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
     }
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         self.0
@@ -105,6 +110,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             .unwrap()
     }
 
+    #[cfg(feature = "algorithm_join")]
     unsafe fn zip_outer_join_column(
         &self,
         right_column: &Series,
@@ -160,6 +166,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         polars_bail!(opq = rem, self.dtype(), rhs.dtype());
     }
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         self.0.group_tuples(multithreaded, sorted)
     }
@@ -243,51 +250,29 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        self.0.deref().take(indices.into()).map(|ca| {
-            ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-                .into_series()
-        })
-    }
-
-    fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        self.0.deref().take(iter.into()).map(|ca| {
-            ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-                .into_series()
-        })
-    }
-
-    unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        let ca = self.0.deref().take_unchecked(iter.into());
-        ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-            .into_series()
-    }
-
-    unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-        let mut out = self.0.deref().take_unchecked(idx.into());
-
-        if self.0.is_sorted_ascending_flag()
-            && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
-        {
-            out.set_sorted_flag(idx.is_sorted_flag())
-        }
-
-        Ok(out
+        let ca = self.0.take(indices)?;
+        Ok(ca
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series())
     }
 
-    unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        let ca = self.0.deref().take_unchecked(iter.into());
+    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+        let ca = self.0.take_unchecked(indices);
         ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
     }
 
-    #[cfg(feature = "take_opt_iter")]
-    fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-        self.0.deref().take(iter.into()).map(|ca| {
-            ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-                .into_series()
-        })
+    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+        let ca = self.0.take(indices)?;
+        Ok(ca
+            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_series())
+    }
+
+    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+        let ca = self.0.take_unchecked(indices);
+        ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_series()
     }
 
     fn len(&self) -> usize {
@@ -351,6 +336,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.has_validity()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
         self.0.unique().map(|ca| {
             ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
@@ -358,10 +344,12 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         })
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
         self.0.n_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.0.arg_unique()
     }

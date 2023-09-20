@@ -515,7 +515,7 @@ impl<'a> CoreReader<'a> {
         for i in projection {
             let (_, dtype) = self.schema.get_at_index(*i).ok_or_else(|| {
                 polars_err!(
-                    ComputeError:
+                    OutOfBounds:
                     "projection index {} is out of bounds for CSV schema with {} columns",
                     i, self.schema.len(),
                 )

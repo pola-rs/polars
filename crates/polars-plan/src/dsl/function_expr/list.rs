@@ -22,6 +22,7 @@ pub enum ListFunction {
     Any,
     #[cfg(feature = "list_any_all")]
     All,
+    Join,
 }
 
 impl Display for ListFunction {
@@ -45,6 +46,7 @@ impl Display for ListFunction {
             Any => "any",
             #[cfg(feature = "list_any_all")]
             All => "all",
+            Join => "join",
         };
         write!(f, "{name}")
     }
@@ -219,7 +221,7 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Option<Series>> {
                 })
                 .collect::<IdxCa>();
             let s = Series::try_from((ca.name(), arr.values().clone())).unwrap();
-            unsafe { s.take_unchecked(&take_by) }.map(Some)
+            unsafe { Ok(Some(s.take_unchecked(&take_by))) }
         },
         len => polars_bail!(
             ComputeError:
@@ -278,4 +280,10 @@ pub(super) fn lst_any(s: &Series) -> PolarsResult<Series> {
 #[cfg(feature = "list_any_all")]
 pub(super) fn lst_all(s: &Series) -> PolarsResult<Series> {
     s.list()?.lst_all()
+}
+
+pub(super) fn join(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].list()?;
+    let separator = s[1].utf8()?;
+    Ok(ca.lst_join(separator)?.into_series())
 }

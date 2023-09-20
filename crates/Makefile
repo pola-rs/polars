@@ -10,22 +10,22 @@ fmt:  ## Run rustfmt and dprint
 
 .PHONY: check
 check:  ## Run cargo check with all features
-	cargo check --workspace --all-targets --all-features
+	cargo check --workspace --all-targets --exclude nano-arrow --all-features
 
 .PHONY: clippy
 clippy:  ## Run clippy with all features
-	cargo clippy --workspace --all-targets --all-features
+	cargo clippy -p polars --all-features
 
 .PHONY: clippy-default
 clippy-default:  ## Run clippy with default features
-	cargo clippy --workspace --all-targets
+	cargo clippy -p polars
 
 .PHONY: pre-commit
 pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
 
 .PHONY: check-features
 check-features:  ## Run cargo check for feature flag combinations (warning: slow)
-	cargo hack check --each-feature --no-dev-deps
+	cargo hack check -p polars --each-feature --no-dev-deps
 
 .PHONY: miri
 miri:  ## Run miri
@@ -35,7 +35,6 @@ miri:  ## Run miri
 	MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows" \
 	POLARS_ALLOW_EXTENSION=1 \
 	cargo miri test \
-	    --no-default-features \
 	    --features object \
 	    -p polars-core \
 	    -p polars-arrow
@@ -109,6 +108,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-arrow
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
+	cargo publish --allow-dirty -p polars-ffi
 	cargo publish --allow-dirty -p polars-ops
 	cargo publish --allow-dirty -p polars-time
 	cargo publish --allow-dirty -p polars-io

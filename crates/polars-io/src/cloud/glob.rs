@@ -2,11 +2,12 @@ use futures::future::ready;
 use futures::{StreamExt, TryStreamExt};
 use object_store::path::Path;
 use polars_arrow::error::polars_bail;
-use polars_core::cloud::CloudOptions;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::{polars_ensure, polars_err, PolarsError, PolarsResult};
 use regex::Regex;
 use url::Url;
+
+use super::*;
 
 const DELIMITER: char = '/';
 
@@ -95,7 +96,9 @@ impl CloudLocation {
             let key = parsed.path();
             let bucket = parsed
                 .host()
-                .ok_or(polars_err!(ComputeError: "cannot parse bucket (host) from url: {}", url))?
+                .ok_or_else(
+                    || polars_err!(ComputeError: "cannot parse bucket (host) from url: {}", url),
+                )?
                 .to_string();
             (bucket, key)
         };

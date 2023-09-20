@@ -8,10 +8,10 @@ use arrow::bitmap::MutableBitmap;
 #[cfg(feature = "object")]
 use crate::datatypes::ObjectType;
 use crate::datatypes::PlHashSet;
-use crate::frame::group_by::hashing::HASHMAP_INIT_SIZE;
 use crate::frame::group_by::GroupsProxy;
 #[cfg(feature = "mode")]
 use crate::frame::group_by::IntoGroupsProxy;
+use crate::hashing::HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -112,7 +112,7 @@ fn mode_indices(groups: GroupsProxy) -> Vec<IdxSize> {
 #[cfg(feature = "mode")]
 fn mode<T: PolarsDataType>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
 where
-    ChunkedArray<T>: IntoGroupsProxy + ChunkTake,
+    ChunkedArray<T>: IntoGroupsProxy + ChunkTake<[IdxSize]>,
 {
     if ca.is_empty() {
         return ca.clone();
@@ -122,7 +122,7 @@ where
 
     // Safety:
     // group indices are in bounds
-    unsafe { ca.take_unchecked(idx.as_slice().into()) }
+    unsafe { ca.take_unchecked(idx.as_slice()) }
 }
 
 macro_rules! arg_unique_ca {

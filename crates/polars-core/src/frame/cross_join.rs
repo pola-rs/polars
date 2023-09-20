@@ -1,5 +1,6 @@
 use smartstring::alias::String as SmartString;
 
+use crate::frame::hash_join::_finish_join;
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::{concat_df_unchecked, slice_offsets, CustomIterTools, NoNull};

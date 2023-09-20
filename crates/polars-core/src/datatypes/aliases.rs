@@ -1,12 +1,15 @@
+pub use polars_arrow::index::{IdxArr, IdxSize};
+
 use super::*;
+use crate::hashing::IdBuildHasher;
+
+/// [ChunkIdx, DfIdx]
+pub type ChunkId = [IdxSize; 2];
 
 #[cfg(not(feature = "bigidx"))]
 pub type IdxCa = UInt32Chunked;
 #[cfg(feature = "bigidx")]
 pub type IdxCa = UInt64Chunked;
-pub use polars_arrow::index::{IdxArr, IdxSize};
-
-use crate::hashing::IdBuildHasher;
 
 #[cfg(not(feature = "bigidx"))]
 pub const IDX_DTYPE: DataType = DataType::UInt32;

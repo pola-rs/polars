@@ -644,14 +644,13 @@ def _post_apply_columns(
     column_casts = []
     for i, col in enumerate(columns):
         dtype = dtypes.get(col)
-        if dtype == Categorical != pydf_dtypes[i]:
+        pydf_dtype = pydf_dtypes[i]
+        if dtype == Categorical != pydf_dtype:
             column_casts.append(F.col(col).cast(Categorical)._pyexpr)
-        elif structs and col in structs and structs[col] != pydf_dtypes[i]:
-            column_casts.append(F.col(col).cast(structs[col])._pyexpr)
-        elif dtype not in (None, Unknown) and dtype != pydf_dtypes[i]:
-            column_casts.append(
-                F.col(col).cast(dtype)._pyexpr,  # type: ignore[arg-type]
-            )
+        elif structs and (struct := structs.get(col)) and struct != pydf_dtype:
+            column_casts.append(F.col(col).cast(struct)._pyexpr)
+        elif dtype is not None and dtype != Unknown and dtype != pydf_dtype:
+            column_casts.append(F.col(col).cast(dtype)._pyexpr)
 
     if column_casts or column_subset:
         pydf = pydf.lazy()
@@ -678,42 +677,59 @@ def _unpack_schema(
     Works for any (name, dtype) pairs or schema dict input,
     overriding any inferred dtypes with explicit dtypes if supplied.
     """
-    if isinstance(schema, dict):
-        schema = list(schema.items())
-    column_names = [
-        (col or f"column_{i}") if isinstance(col, str) else col[0]
-        for i, col in enumerate(schema or [])
-    ]
-    if not column_names and n_expected:
-        column_names = [f"column_{i}" for i in range(n_expected)]
-    lookup = (
-        {
-            col: name
-            for col, name in zip_longest(column_names, lookup_names or [])
-            if name
+    # coerce schema_overrides to dict[str, PolarsDataType]
+    if schema_overrides:
+        schema_overrides = {
+            name: dtype
+            if is_polars_dtype(dtype, include_unknown=True)
+            else py_type_to_dtype(dtype)
+            for name, dtype in schema_overrides.items()
         }
+    else:
+        schema_overrides = {}
+
+    # fastpath for empty schema
+    if not schema:
+        return (
+            [f"column_{i}" for i in range(n_expected)] if n_expected else [],
+            schema_overrides,
+        )
+
+    # determine column names from schema
+    if isinstance(schema, dict):
+        column_names: list[str] = list(schema)
+        # coerce schema to list[str | tuple[str, PolarsDataType | PythonDataType | None]
+        schema = list(schema.items())
+    else:
+        column_names = [
+            (col or f"column_{i}") if isinstance(col, str) else col[0]
+            for i, col in enumerate(schema)
+        ]
+
+    # determine column dtypes from schema and lookup_names
+    lookup: dict[str, str] | None = (
+        {col: name for col, name in zip_longest(column_names, lookup_names) if name}
         if lookup_names
         else None
     )
-    column_dtypes = {
-        lookup.get(col[0], col[0]) if lookup else col[0]: col[1]
-        for col in (schema or [])
-        if not isinstance(col, str) and col[1] is not None
+    column_dtypes: dict[str, PolarsDataType] = {
+        lookup.get((name := col[0]), name)
+        if lookup
+        else col[0]: dtype  # type: ignore[misc]
+        if is_polars_dtype(dtype, include_unknown=True)
+        else py_type_to_dtype(dtype)
+        for col in schema
+        if isinstance(col, tuple) and (dtype := col[1]) is not None
     }
+
+    # apply schema overrides
     if schema_overrides:
         column_dtypes.update(schema_overrides)
-        if schema and include_overrides_in_columns:
-            column_names = column_names + [
-                col for col in column_dtypes if col not in column_names
-            ]
-    for col, dtype in column_dtypes.items():
-        if not is_polars_dtype(dtype, include_unknown=True) and dtype is not None:
-            column_dtypes[col] = py_type_to_dtype(dtype)
 
-    return (
-        column_names,  # type: ignore[return-value]
-        column_dtypes,
-    )
+        if include_overrides_in_columns:
+            column_names.extend(col for col in column_dtypes if col not in column_names)
+
+    return column_names, column_dtypes
 
 
 def _expand_dict_data(
@@ -1090,14 +1106,14 @@ def _sequence_of_dict_to_pydf(
     )
     dicts_schema = (
         include_unknowns(schema_overrides, column_names or list(schema_overrides))
-        if schema_overrides and column_names
+        if column_names
         else None
     )
     pydf = PyDataFrame.read_dicts(data, infer_schema_length, dicts_schema)
 
-    if not schema_overrides and set(pydf.columns()) == set(column_names):
-        pass
-    elif column_names or schema_overrides:
+    # TODO: we can remove this `schema_overrides` block completely
+    #  once https://github.com/pola-rs/polars/issues/11044 is fixed
+    if schema_overrides:
         pydf = _post_apply_columns(
             pydf,
             columns=column_names,

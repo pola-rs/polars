@@ -24,6 +24,7 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
 
 /// Reinterprets the type of a [`ListChunked`]. T and U must have the same size
 /// and alignment.
+#[cfg(feature = "reinterpret")]
 fn reinterpret_list_chunked<T: PolarsNumericType, U: PolarsNumericType>(
     ca: &ListChunked,
 ) -> ListChunked {

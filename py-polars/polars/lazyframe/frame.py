@@ -50,13 +50,13 @@ from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.selectors import _expand_selectors, expand_selector
 from polars.slice import LazyPolarsSlice
-from polars.utils._async import _AsyncDataFrameResult
+from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_df, wrap_expr
-from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.convert import _negate_duration, _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_renamed_function,
@@ -75,8 +75,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from io import IOBase
-    from queue import Queue
-    from typing import Literal
+    from typing import Awaitable, Literal
 
     import pyarrow as pa
 
@@ -1703,10 +1702,44 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return wrap_df(ldf.collect())
 
+    @overload
     def collect_async(
         self,
-        queue: Queue[DataFrame | Exception],
         *,
+        gevent: Literal[True],
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = True,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        streaming: bool = True,
+    ) -> _GeventDataFrameResult[DataFrame]:
+        ...
+
+    @overload
+    def collect_async(
+        self,
+        *,
+        gevent: Literal[False] = False,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = True,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        streaming: bool = True,
+    ) -> Awaitable[DataFrame]:
+        ...
+
+    def collect_async(
+        self,
+        *,
+        gevent: bool = False,
         type_coercion: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
@@ -1716,33 +1749,44 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = False,
-    ) -> _AsyncDataFrameResult[DataFrame]:
+    ) -> Awaitable[DataFrame] | _GeventDataFrameResult[DataFrame]:
         """
         Collect DataFrame asynchronously in thread pool.
 
-        Collects into a DataFrame, like :func:`collect`
-        but instead of returning DataFrame directly its collected inside thread pool
-        and gets put into `queue` with `put_nowait` method,
+        Collects into a DataFrame (like :func:`collect`), but instead of returning
+        dataframe directly, they are scheduled to be collected inside thread pool,
         while this method returns almost instantly.
 
         May be useful if you use gevent or asyncio and want to release control to other
         greenlets/tasks while LazyFrames are being collected.
-        You must use correct queue in that case.
-        Given `queue` must be thread safe!
 
-        For gevent use
-        [`gevent.queue.Queue`](https://www.gevent.org/api/gevent.queue.html#gevent.queue.Queue).
-
-        For asyncio
-        [`asyncio.queues.Queue`](https://docs.python.org/3/library/asyncio-queue.html#queue)
-        can not be used, since it's not thread safe!
-        For that purpose use [janus](https://github.com/aio-libs/janus) library.
+        Parameters
+        ----------
+        gevent
+            Return wrapper to `gevent.event.AsyncResult` instead of Awaitable
+        type_coercion
+            Do type coercion optimization.
+        predicate_pushdown
+            Do predicate pushdown optimization.
+        projection_pushdown
+            Do projection pushdown optimization.
+        simplify_expression
+            Run simplify expressions optimization.
+        no_optimization
+            Turn off (certain) optimizations.
+        slice_pushdown
+            Slice pushdown optimization.
+        comm_subplan_elim
+            Will try to cache branching subplans that occur on self-joins or unions.
+        comm_subexpr_elim
+            Common subexpressions will be cached and reused.
+        streaming
+            Run parts of the query in a streaming fashion (this is in an alpha state)
 
         Notes
         -----
-        Results are put in queue exactly once using `put_nowait`.
-        If error occurred then Exception will be put in the queue instead of result
-        which is then raised by returned wrapper `get` method.
+        In case of error `set_exception` is used on
+        `asyncio.Future`/`gevent.event.AsyncResult` and will be reraised by them.
 
         Warnings
         --------
@@ -1756,12 +1800,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Returns
         -------
-        Wrapper that has `get` method and `queue` attribute with given queue.
-        `get` accepts kwargs that are passed down to `queue.get`.
+        If `gevent=False` (default) then returns awaitable.
+
+        If `gevent=True` then returns wrapper that has
+        `.get(block=True, timeout=None)` method.
 
         Examples
         --------
-        >>> import queue
+        >>> import asyncio
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": ["a", "b", "a", "b", "b", "c"],
@@ -1769,12 +1815,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> a = (
-        ...     lf.group_by("a", maintain_order=True)
-        ...     .agg(pl.all().sum())
-        ...     .collect_async(queue.Queue())
-        ... )
-        >>> a.get()
+        >>> async def main():
+        ...     return await (
+        ...         lf.group_by("a", maintain_order=True)
+        ...         .agg(pl.all().sum())
+        ...         .collect_async()
+        ...     )
+        ...
+        >>> asyncio.run(main())
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -1785,7 +1833,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b   ┆ 11  ┆ 10  │
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
-
         """
         if no_optimization:
             predicate_pushdown = False
@@ -1809,9 +1856,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             eager=False,
         )
 
-        result = _AsyncDataFrameResult(queue)
-        ldf.collect_with_callback(result._callback)
-        return result
+        result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+        ldf.collect_with_callback(result._callback)  # type: ignore[attr-defined]
+        return result  # type: ignore[return-value]
 
     def sink_parquet(
         self,
@@ -2033,7 +2080,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ``Float64`` datatypes.
         null_value
             A string representing null values (defaulting to the empty string).
-        quote_style : {'necessary', 'always', 'non_numeric'}
+        quote_style : {'necessary', 'always', 'non_numeric', 'never'}
             Determines the quoting strategy used.
             - necessary (default): This puts quotes around fields only when necessary.
             They are necessary when fields contain a quote,
@@ -2042,6 +2089,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             (which is indistinguishable from a record with one empty field).
             This is the default.
             - always: This puts quotes around every field. Always.
+            - never: This never puts quotes around fields, even if that results in
+            invalid CSV data (e.g.: by not quoting strings containing the separator).
             - non_numeric: This puts quotes around all fields that are non-numeric.
             Namely, when writing a field that does not parse as a valid float
             or integer, then quotes will be used even if they aren`t strictly
@@ -2151,14 +2200,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Collect a small number of rows for debugging purposes.
 
-        Fetch is like a :func:`collect` operation, but it overwrites the number of rows
-        read by every scan operation. This is a utility that helps debug a query on a
-        smaller number of rows.
-
-        Note that the fetch does not guarantee the final number of rows in the
-        DataFrame. Filter, join operations and a lower number of rows available in the
-        scanned file influence the final number of rows.
-
         Parameters
         ----------
         n_rows
@@ -2181,6 +2222,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
+
+        Notes
+        -----
+        This is similar to a :func:`collect` operation, but it overwrites the number of
+        rows read by *every* scan operation. Be aware that ``fetch`` does not guarantee
+        the final number of rows in the DataFrame. Filters, join operations and fewer
+        rows being available in the scanned data will all influence the final number
+        of rows (joins are especially susceptible to this, and may return no data
+        at all if ``n_rows`` is too small as the join keys may not be present).
+
+        Warnings
+        --------
+        This is strictly a utility function that can help to debug queries using a
+        smaller number of rows, and should *not* be used in production code.
 
         Returns
         -------
@@ -2853,7 +2908,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         index_column = parse_as_expression(index_column)
         if offset is None:
-            offset = f"-{_timedelta_to_pl_duration(period)}"
+            offset = _negate_duration(_timedelta_to_pl_duration(period))
 
         pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
         period = _timedelta_to_pl_duration(period)
@@ -2882,47 +2937,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Group based on a time value (or index value of type Int32, Int64).
 
         Time windows are calculated and rows are assigned to windows. Different from a
-        normal group by is that a row can be member of multiple groups. The time/index
-        window could be seen as a rolling window, with a window size determined by
-        dates/times/values instead of slots in the DataFrame.
+        normal group by is that a row can be member of multiple groups.
+        By default, the windows look like:
 
-        A window is defined by:
+        - [start, start + period)
+        - [start + every, start + every + period)
+        - [start + 2*every, start + 2*every + period)
+        - ...
 
-        - every: interval of the window
-        - period: length of the window
-        - offset: offset of the window
-
-        The `every`, `period` and `offset` arguments are created with
-        the following string language:
-
-        - 1ns   (1 nanosecond)
-        - 1us   (1 microsecond)
-        - 1ms   (1 millisecond)
-        - 1s    (1 second)
-        - 1m    (1 minute)
-        - 1h    (1 hour)
-        - 1d    (1 calendar day)
-        - 1w    (1 calendar week)
-        - 1mo   (1 calendar month)
-        - 1q    (1 calendar quarter)
-        - 1y    (1 calendar year)
-        - 1i    (1 index count)
-
-        Or combine them:
-        "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-        Suffix with `"_saturating"` to indicate that dates too large for
-        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-        instead of erroring.
-
-        By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, due to daylight savings). Similarly for "calendar week",
-        "calendar month", "calendar quarter", and "calendar year".
-
-        In case of a group_by_dynamic on an integer column, the windows are defined by:
-
-        - "1i"      # length 1
-        - "10i"     # length 10
+        where `start` is determined by `start_by`, `offset`, and `every` (see parameter
+        descriptions below).
 
         .. warning::
             The index column must be sorted in ascending order. If `by` is passed, then
@@ -2942,10 +2966,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every
             interval of the window
         period
-            length of the window, if None it is equal to 'every'
+            length of the window, if None it will equal 'every'
         offset
-            offset of the window if None and period is None it will be equal to negative
-            `every`
+            offset of the window, only takes effect if `start_by` is `'window'`.
+            Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
         include_boundaries
@@ -2959,7 +2983,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
 
-            * 'window': Truncate the start of the window with the 'every' argument.
+            * 'window': Start by taking the earliest timestamp, truncating it with
+              `every`, and then adding `offset`.
               Note that weekly windows start on Monday.
             * 'datapoint': Start from the first encountered data point.
             * a day of the week (only takes effect if `every` contains ``'w'``):
@@ -2988,23 +3013,55 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        If you're coming from pandas, then
+        1) If you're coming from pandas, then
 
-        .. code-block:: python
+           .. code-block:: python
 
-            # polars
-            df.group_by_dynamic("ts", every="1d").agg(pl.col("value").sum())
+               # polars
+               df.group_by_dynamic("ts", every="1d").agg(pl.col("value").sum())
 
-        is equivalent to
+           is equivalent to
 
-        .. code-block:: python
+           .. code-block:: python
 
-            # pandas
-            df.set_index("ts").resample("D")["value"].sum().reset_index()
+               # pandas
+               df.set_index("ts").resample("D")["value"].sum().reset_index()
 
-        though note that, unlike pandas, polars doesn't add extra rows for empty
-        windows. If you need `index_column` to be evenly spaced, then please combine
-        with :func:`DataFrame.upsample`.
+           though note that, unlike pandas, polars doesn't add extra rows for empty
+           windows. If you need `index_column` to be evenly spaced, then please combine
+           with :func:`DataFrame.upsample`.
+
+        2) The `every`, `period` and `offset` arguments are created with
+           the following string language:
+
+           - 1ns   (1 nanosecond)
+           - 1us   (1 microsecond)
+           - 1ms   (1 millisecond)
+           - 1s    (1 second)
+           - 1m    (1 minute)
+           - 1h    (1 hour)
+           - 1d    (1 calendar day)
+           - 1w    (1 calendar week)
+           - 1mo   (1 calendar month)
+           - 1q    (1 calendar quarter)
+           - 1y    (1 calendar year)
+           - 1i    (1 index count)
+
+           Or combine them:
+           "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+           Suffix with `"_saturating"` to indicate that dates too large for
+           their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+           instead of erroring.
+
+           By "calendar day", we mean the corresponding time on the next day (which may
+           not be 24 hours, due to daylight savings). Similarly for "calendar week",
+           "calendar month", "calendar quarter", and "calendar year".
+
+           In case of a group_by_dynamic on an integer column, the windows are defined by:
+
+           - "1i"      # length 1
+           - "10i"     # length 10
 
         Examples
         --------
@@ -3180,12 +3237,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     include_boundaries=True,
         ...     closed="right",
         ... ).agg(pl.col("A").alias("A_agg_list")).collect()
-        shape: (3, 4)
+        shape: (4, 4)
         ┌─────────────────┬─────────────────┬─────┬─────────────────┐
         │ _lower_boundary ┆ _upper_boundary ┆ idx ┆ A_agg_list      │
         │ ---             ┆ ---             ┆ --- ┆ ---             │
         │ i64             ┆ i64             ┆ i64 ┆ list[str]       │
         ╞═════════════════╪═════════════════╪═════╪═════════════════╡
+        │ -2              ┆ 1               ┆ -2  ┆ ["A", "A"]      │
         │ 0               ┆ 3               ┆ 0   ┆ ["A", "B", "B"] │
         │ 2               ┆ 5               ┆ 2   ┆ ["B", "B", "C"] │
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
@@ -3194,7 +3252,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """  # noqa: W505
         index_column = parse_as_expression(index_column)
         if offset is None:
-            offset = f"-{_timedelta_to_pl_duration(every)}" if period is None else "0ns"
+            offset = _negate_duration(_timedelta_to_pl_duration(every))
 
         if period is None:
             period = every
@@ -5660,10 +5718,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every
             interval of the window
         period
-            length of the window, if None it is equal to 'every'
+            length of the window, if None it will equal 'every'
         offset
-            offset of the window if None and period is None it will be equal to negative
-            `every`
+            offset of the window, only takes effect if `start_by` is ``'window'``.
+            Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
         include_boundaries
@@ -5677,7 +5735,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
 
-            * 'window': Truncate the start of the window with the 'every' argument.
+            * 'window': Start by taking the earliest timestamp, truncating it with
+              `every`, and then adding `offset`.
               Note that weekly windows start on Monday.
             * 'datapoint': Start from the first encountered data point.
             * a day of the week (only takes effect if `every` contains ``'w'``):

@@ -689,7 +689,7 @@ impl LazyFrame {
     pub fn sink_parquet_cloud(
         mut self,
         uri: String,
-        cloud_options: Option<polars_core::cloud::CloudOptions>,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
         parquet_options: ParquetWriteOptions,
     ) -> PolarsResult<()> {
         self.opt_state.streaming = true;

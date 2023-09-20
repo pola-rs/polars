@@ -1,15 +1,16 @@
 use std::path::PathBuf;
 
-use polars_core::cloud::CloudOptions;
+use polars_io::cloud::CloudOptions;
+use polars_io::is_cloud_url;
 
 use super::*;
 
-#[allow(dead_code)]
 pub struct ParquetExec {
     path: PathBuf,
     schema: SchemaRef,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     options: ParquetOptions,
+    #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
 }
@@ -43,14 +44,35 @@ impl ParquetExec {
             self.file_options.row_count.is_some(),
         );
 
-        ParquetReader::new(file)
-            .with_n_rows(n_rows)
-            .read_parallel(self.options.parallel)
-            .with_row_count(mem::take(&mut self.file_options.row_count))
-            .set_rechunk(self.file_options.rechunk)
-            .set_low_memory(self.options.low_memory)
-            .use_statistics(self.options.use_statistics)
-            ._finish_with_scan_ops(predicate, projection.as_ref().map(|v| v.as_ref()))
+        if let Some(file) = file {
+            ParquetReader::new(file)
+                .with_n_rows(n_rows)
+                .read_parallel(self.options.parallel)
+                .with_row_count(mem::take(&mut self.file_options.row_count))
+                .set_rechunk(self.file_options.rechunk)
+                .set_low_memory(self.options.low_memory)
+                .use_statistics(self.options.use_statistics)
+                ._finish_with_scan_ops(predicate, projection.as_ref().map(|v| v.as_ref()))
+        } else if is_cloud_url(self.path.as_path()) {
+            #[cfg(feature = "cloud")]
+            {
+                let reader = ParquetAsyncReader::from_uri(
+                    &self.path.to_string_lossy(),
+                    self.cloud_options.as_ref(),
+                )?
+                .with_n_rows(n_rows)
+                .with_row_count(mem::take(&mut self.file_options.row_count))
+                .use_statistics(self.options.use_statistics);
+
+                reader.finish(predicate)
+            }
+            #[cfg(not(feature = "cloud"))]
+            {
+                panic!("activate cloud feature")
+            }
+        } else {
+            polars_bail!(ComputeError: "could not read {}", self.path.display())
+        }
     }
 }
 

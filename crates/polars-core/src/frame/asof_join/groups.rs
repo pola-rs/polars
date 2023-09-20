@@ -9,13 +9,12 @@ use rayon::prelude::*;
 use smartstring::alias::String as SmartString;
 
 use super::*;
-use crate::frame::group_by::hashing::HASHMAP_INIT_SIZE;
 #[cfg(feature = "dtype-categorical")]
 use crate::frame::hash_join::_check_categorical_src;
 use crate::frame::hash_join::{
     build_tables, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_bytes,
 };
-use crate::hashing::{df_rows_to_hashes_threaded_vertical, AsU64};
+use crate::hashing::{df_rows_to_hashes_threaded_vertical, AsU64, HASHMAP_INIT_SIZE};
 use crate::utils::{split_ca, split_df};
 use crate::POOL;
 
@@ -846,15 +845,9 @@ impl DataFrame {
             right_join_tuples = slice_slice(right_join_tuples, offset, len);
         }
 
-        // Safety:
-        // join tuples are in bounds
-        let right_df = unsafe {
-            other.take_opt_iter_unchecked(
-                right_join_tuples
-                    .iter()
-                    .map(|opt_idx| opt_idx.map(|idx| idx as usize)),
-            )
-        };
+        // SAFETY: join tuples are in bounds.
+        let right_df =
+            unsafe { other.take_unchecked(&right_join_tuples.iter().copied().collect_ca("")) };
 
         _finish_join(left, right_df, suffix)
     }

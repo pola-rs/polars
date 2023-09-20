@@ -682,14 +682,7 @@ impl SqlFunctionVisitor<'_> {
             ArrayReverse => self.visit_unary(|e| e.list().reverse()),
             ArraySum => self.visit_unary(|e| e.list().sum()),
             ArrayToString => self.try_visit_binary(|e, s| {
-                let sep = match s {
-                    Expr::Literal(LiteralValue::Utf8(ref sep)) => sep,
-                    _ => {
-                        polars_bail!(InvalidOperation: "Invalid 'separator' for ArrayToString: {}", function.args[1]);
-                    }
-                };
-
-                Ok(e.list().join(sep))
+                Ok(e.list().join(s))
             }),
             ArrayUnique => self.visit_unary(|e| e.list().unique()),
             Explode => self.visit_unary(|e| e.explode()),

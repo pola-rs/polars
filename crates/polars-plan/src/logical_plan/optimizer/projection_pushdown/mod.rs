@@ -149,17 +149,11 @@ fn update_scan_schema(
     Ok(new_schema)
 }
 
-pub struct ProjectionPushDown {
-    pub(crate) has_joins_or_unions: bool,
-    pub(crate) has_cache: bool,
-}
+pub struct ProjectionPushDown {}
 
 impl ProjectionPushDown {
     pub(super) fn new() -> Self {
-        Self {
-            has_joins_or_unions: false,
-            has_cache: false,
-        }
+        Self {}
     }
 
     /// Projection will be done at this node, but we continue optimization
@@ -675,18 +669,15 @@ impl ProjectionPushDown {
                 lp_arena,
                 expr_arena,
             ),
-            lp @ Union { .. } => {
-                self.has_joins_or_unions = true;
-                process_generic(
-                    self,
-                    lp,
-                    acc_projections,
-                    projected_names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )
-            },
+            lp @ Union { .. } => process_generic(
+                self,
+                lp,
+                acc_projections,
+                projected_names,
+                projections_seen,
+                lp_arena,
+                expr_arena,
+            ),
             // These nodes only have inputs and exprs, so we can use same logic.
             lp @ Slice { .. } | lp @ Sink { .. } => process_generic(
                 self,
@@ -698,7 +689,6 @@ impl ProjectionPushDown {
                 expr_arena,
             ),
             Cache { .. } => {
-                self.has_cache = true;
                 // projections above this cache will be accumulated and pushed down
                 // later
                 // the redundant projection will be cleaned in the fast projection optimization

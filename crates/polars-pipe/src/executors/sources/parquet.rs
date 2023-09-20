@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
-use polars_core::cloud::CloudOptions;
 use polars_core::error::PolarsResult;
 use polars_core::schema::*;
 use polars_core::POOL;
+use polars_io::cloud::CloudOptions;
 use polars_io::parquet::{BatchedParquetReader, ParquetReader};
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
