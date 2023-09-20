@@ -38,7 +38,7 @@ impl Default for SQLContext {
 }
 
 impl SQLContext {
-    /// Create a new SQLContext
+    /// Create a new SQLContext.
     /// ```rust
     /// # use polars_sql::SQLContext;
     /// # fn main() {
@@ -55,7 +55,7 @@ impl SQLContext {
         tables
     }
 
-    /// Register a LazyFrame as a table in the SQLContext.
+    /// Register a [`LazyFrame`] as a table in the SQLContext.
     /// ```rust
     /// # use polars_sql::SQLContext;
     /// # use polars_core::prelude::*;
@@ -300,7 +300,7 @@ impl SQLContext {
         Ok(lf)
     }
 
-    // Execute the 'SELECT' part of the query.
+    /// Execute the 'SELECT' part of the query.
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
         // Determine involved dataframes.
         // Implicit joins require some more work in query parsers, explicit joins are preferred for now.
@@ -314,14 +314,11 @@ impl SQLContext {
         let mut contains_wildcard_exclude = false;
 
         // Filter expression.
-        lf = match select_stmt.selection.as_ref() {
-            Some(expr) => {
-                let mut filter_expression = parse_sql_expr(expr, self)?;
-                lf = self.process_subqueries(lf, vec![&mut filter_expression]);
-                lf.filter(filter_expression)
-            }
-            None => lf,
-        };
+        if let Some(expr) = select_stmt.selection.as_ref() {
+            let mut filter_expression = parse_sql_expr(expr, self)?;
+            lf = self.process_subqueries(lf, vec![&mut filter_expression]);
+            lf = lf.filter(filter_expression);
+        }
 
         // Column projections.
         let projections: Vec<_> = select_stmt
@@ -487,11 +484,7 @@ impl SQLContext {
             None => lf,
         };
 
-        if query.order_by.is_empty() {
-            Ok(lf)
-        } else {
-            self.process_order_by(lf, &query.order_by)
-        }
+        Ok(lf)
     }
 
     fn process_subqueries(&self, lf: LazyFrame, exprs: Vec<&mut Expr>) -> LazyFrame

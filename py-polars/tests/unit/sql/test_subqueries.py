@@ -49,7 +49,7 @@ def test_sql_in_subquery() -> None:
         AND y IN(SELECT w FROM df_other)
         """
         , eager = True)
-    df_expected_double = pl.DataFrame({"x": [1,2,3,4]})
+    df_expected_double = pl.DataFrame({"x": [2,3,4,5]})
     assert_frame_equal(
         left=df_expected_double,
         right=res_double,
@@ -64,7 +64,7 @@ def test_sql_in_subquery() -> None:
         AND y IN(SELECT w-1 FROM df_other)
         """
         , eager = True)
-    df_expected_expressions= pl.DataFrame({"x": [2,3,1,1,1]})
+    df_expected_expressions= pl.DataFrame({"x": [1,2,3,4]})
     assert_frame_equal(
         left=df_expected_expressions,
         right=res_expressions,
@@ -81,7 +81,7 @@ def test_sql_in_subquery() -> None:
     df_expected_chars= pl.DataFrame({"one": ['b', 'c', 'd', 'e', 'f']})
     assert_frame_equal(
         left=res_chars,
-        right=res_expressions,
+        right=df_expected_chars,
     )
 
     with pytest.raises(

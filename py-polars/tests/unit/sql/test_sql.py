@@ -1030,24 +1030,3 @@ def test_sql_expr() -> None:
         pl.InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
     ):
         pl.sql_expr("xyz.*")
-
-def test_sql_expr() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": ["xyz", "abcde", None]})
-    sql_exprs = pl.sql_expr(
-        [
-            "MIN(a)",
-            "POWER(a,a) AS aa",
-            "SUBSTR(b,1,2) AS b2",
-        ]
-    )
-    expected = pl.DataFrame(
-        {"a": [1, 1, 1], "aa": [1, 4, 27], "b2": ["yz", "bc", None]}
-    )
-    assert df.select(*sql_exprs).frame_equal(expected)
-
-    # expect expressions that can't reasonably be parsed as expressions to raise
-    # (for example: those that explicitly reference tables and/or use wildcards)
-    with pytest.raises(
-        pl.InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
-    ):
-        pl.sql_expr("xyz.*")
