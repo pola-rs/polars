@@ -37,6 +37,22 @@ def test_melt_values_predicate_pushdown() -> None:
     ).to_dict(False) == {"id": [1], "variable": ["asset_key_1"], "value": ["123"]}
 
 
+def test_group_by_filter_all_true() -> None:
+    df = pl.DataFrame(
+        {
+            "name": ["a", "a", "b", "b"],
+            "type": [None, 1, 1, None],
+            "order": [1, 2, 3, 4],
+        }
+    )
+    out = (
+        df.group_by("name")
+        .agg([pl.col("order").filter(pl.col("type") == 1).n_unique().alias("n_unique")])
+        .select("n_unique")
+    )
+    assert out.to_dict(False) == {"n_unique": [1, 1]}
+
+
 def test_filter_is_in_4572() -> None:
     df = pl.DataFrame({"id": [1, 2, 1, 2], "k": ["a"] * 2 + ["b"] * 2})
     expected = (
