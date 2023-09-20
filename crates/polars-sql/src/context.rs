@@ -505,7 +505,10 @@ impl SQLContext {
             expr.mutate().apply(|e| {
                 if let Expr::SubPlan(lp, names) = e {
                     contexts.push(<LazyFrame>::from((**lp).clone()));
-                    *e = Expr::Columns(names.clone());
+
+                    if names.len() == 1 {
+                        *e = Expr::Column(names[0].as_str().into());
+                    }
                 };
             true
             })
