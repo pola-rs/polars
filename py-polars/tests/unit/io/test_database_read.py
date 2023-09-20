@@ -77,6 +77,7 @@ def create_temp_sqlite_db(test_db: str) -> None:
         "expected_dtypes",
         "expected_dates",
         "schema_overrides",
+        "batch_size",
     ),
     [
         pytest.param(
@@ -90,6 +91,7 @@ def create_temp_sqlite_db(test_db: str) -> None:
             },
             [date(2020, 1, 1), date(2021, 12, 31)],
             {"id": pl.UInt8},
+            None,
             id="uri: connectorx",
         ),
         pytest.param(
@@ -103,6 +105,7 @@ def create_temp_sqlite_db(test_db: str) -> None:
             },
             ["2020-01-01", "2021-12-31"],
             {"id": pl.UInt8},
+            None,
             marks=pytest.mark.skipif(
                 sys.version_info < (3, 9) or sys.platform == "win32",
                 reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
@@ -120,6 +123,7 @@ def create_temp_sqlite_db(test_db: str) -> None:
             },
             [date(2020, 1, 1), date(2021, 12, 31)],
             {"id": pl.UInt8, "value": pl.Float32},
+            None,
             id="conn: sqlite3",
         ),
         pytest.param(
@@ -136,6 +140,7 @@ def create_temp_sqlite_db(test_db: str) -> None:
             },
             [date(2020, 1, 1), date(2021, 12, 31)],
             None,
+            None,
             id="conn: sqlalchemy",
         ),
         pytest.param(
@@ -149,11 +154,30 @@ def create_temp_sqlite_db(test_db: str) -> None:
             },
             ["2020-01-01", "2021-12-31"],
             None,
+            None,
             marks=pytest.mark.skipif(
                 sys.version_info < (3, 9) or sys.platform == "win32",
                 reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
             ),
-            id="conn: adbc",
+            id="conn: adbc (fetchall)",
+        ),
+        pytest.param(
+            "read_database",
+            adbc_sqlite_connect,
+            {
+                "id": pl.Int64,
+                "name": pl.Utf8,
+                "value": pl.Float64,
+                "date": pl.Utf8,
+            },
+            ["2020-01-01", "2021-12-31"],
+            None,
+            1,
+            marks=pytest.mark.skipif(
+                sys.version_info < (3, 9) or sys.platform == "win32",
+                reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+            ),
+            id="conn: adbc (batched)",
         ),
     ],
 )
@@ -163,6 +187,7 @@ def test_read_database(
     expected_dtypes: dict[str, pl.DataType],
     expected_dates: list[date | str],
     schema_overrides: SchemaDict | None,
+    batch_size: int | None,
     tmp_path: Path,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -184,6 +209,7 @@ def test_read_database(
                 connection=conn,
                 query="SELECT * FROM test_data",
                 schema_overrides=schema_overrides,
+                batch_size=batch_size,
             )
     else:
         # other user-supplied connections
@@ -191,6 +217,7 @@ def test_read_database(
             connection=engine_or_connection_init(test_db),
             query="SELECT * FROM test_data WHERE name NOT LIKE '%polars%'",
             schema_overrides=schema_overrides,
+            batch_size=batch_size,
         )
 
     assert df.schema == expected_dtypes
@@ -199,10 +226,12 @@ def test_read_database(
 
 
 def test_read_database_mocked() -> None:
+    arr = pl.DataFrame({"x": [1, 2, 3], "y": ["aa", "bb", "cc"]}).to_arrow()
+
     class MockConnection:
-        def __init__(self, driver: str) -> None:
+        def __init__(self, driver: str, batch_size: int | None = None) -> None:
             self.__class__.__module__ = driver
-            self._cursor = MockCursor()
+            self._cursor = MockCursor(batched=batch_size is not None)
 
         def close(self) -> None:
             pass
@@ -211,13 +240,19 @@ def test_read_database_mocked() -> None:
             return self._cursor
 
     class MockCursor:
-        def __init__(self) -> None:
+        def __init__(self, batched: bool) -> None:
             self.called: list[str] = []
+            self.batched = batched
 
         def __getattr__(self, item: str) -> Any:
             if "fetch" in item:
+                res = (
+                    (lambda *args, **kwargs: (arr for _ in range(1)))
+                    if self.batched
+                    else (lambda *args, **kwargs: arr)
+                )
                 self.called.append(item)
-                return lambda *args, **kwargs: []
+                return res
             super().__getattr__(item)  # type: ignore[misc]
 
         def close(self) -> Any:
@@ -238,13 +273,14 @@ def test_read_database_mocked() -> None:
         ("adbc_driver_postgresql", None, "fetch_arrow_table"),
         ("adbc_driver_postgresql", 75_000, "fetch_arrow_table"),
     ):
-        mc = MockConnection(driver)
-        pl.read_database(
+        mc = MockConnection(driver, batch_size)
+        df = pl.read_database(
             connection=mc,
             query="SELECT * FROM test_data",
             batch_size=batch_size,
         )
         assert expected_call in mc.cursor().called
+        assert df.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
 
 
 @pytest.mark.parametrize(
