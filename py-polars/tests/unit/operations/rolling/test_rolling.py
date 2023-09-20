@@ -78,6 +78,15 @@ def test_rolling_kernels_and_group_by_rolling(
     assert_frame_equal(out1, out2)
 
 
+def test_group_by_rolling_with_dupes_11150() -> None:
+    df = pl.DataFrame({"ts": [datetime(2000, 1, 1)] * 2, "value": [0, 1]})
+    result = df.sort("ts").with_columns(
+        pl.col("value").rolling_max("1d", by="ts", closed="right")
+    )
+    expected = pl.DataFrame({"ts": [datetime(2000, 1, 1)] * 2, "value": [1, 1]})
+    assert_frame_equal(result, expected)
+
+
 @pytest.mark.parametrize(
     ("offset", "closed", "expected_values"),
     [

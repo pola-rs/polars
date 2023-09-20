@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use polars_arrow::time_zone::Tz;
 use polars_arrow::trusted_len::TrustedLen;
 use polars_core::export::rayon::prelude::*;
@@ -9,6 +11,7 @@ use polars_core::POOL;
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
+use crate::windows::group_by::datatypes::PlHashSet;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -453,6 +456,16 @@ pub(crate) fn group_by_values_iter_full_lookahead(
         })
 }
 
+// source: https://stackoverflow.com/a/46767732/4451315
+fn _has_unique_elements<T>(iter: T) -> bool
+where
+    T: IntoIterator,
+    T::Item: Eq + Hash,
+{
+    let mut uniq = PlHashSet::new();
+    iter.into_iter().all(move |x| uniq.insert(x))
+}
+
 #[cfg(feature = "rolling_window")]
 pub(crate) fn group_by_values_iter<'a>(
     period: Duration,
@@ -463,9 +476,15 @@ pub(crate) fn group_by_values_iter<'a>(
 ) -> Box<dyn TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + 'a> {
     let mut offset = period;
     offset.negative = true;
-    // t is at the right endpoint of the window
-    let iter = group_by_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0);
-    Box::new(iter)
+    if _has_unique_elements(time) {
+        // t is at the right endpoint of the window
+        let iter = group_by_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0);
+        Box::new(iter)
+    } else {
+        let iter =
+            group_by_values_iter_partial_lookbehind(period, offset, time, closed_window, tu, tz);
+        Box::new(iter)
+    }
 }
 
 /// Different from `group_by_windows`, where define window buckets and search which values fit that
@@ -486,7 +505,7 @@ pub fn group_by_values(
     // we have a (partial) lookbehind window
     if offset.negative {
         // lookbehind
-        if offset.duration_ns() == period.duration_ns() {
+        if (offset.duration_ns() == period.duration_ns()) && (_has_unique_elements(time)) {
             // t is right at the end of the window
             // ------t---
             // [------]
