@@ -460,12 +460,19 @@ pub(crate) fn group_by_values_iter<'a>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
+    by_unique_values: Option<bool>,
 ) -> Box<dyn TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + 'a> {
     let mut offset = period;
     offset.negative = true;
-    // t is at the right endpoint of the window
-    let iter = group_by_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0);
-    Box::new(iter)
+    if by_unique_values == Some(true) {
+        // t is at the right endpoint of the window
+        let iter = group_by_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0);
+        Box::new(iter)
+    } else {
+        let iter = group_by_values_iter_partial_lookbehind(period, offset, time, closed_window, tu, tz);
+        Box::new(iter)
+
+    }
 }
 
 /// Different from `group_by_windows`, where define window buckets and search which values fit that

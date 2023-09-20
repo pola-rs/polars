@@ -72,6 +72,7 @@ pub struct RollingOptionsImpl<'a> {
     pub tz: Option<&'a TimeZone>,
     pub closed_window: Option<ClosedWindow>,
     pub fn_params: DynArgs,
+    pub by_unique_values: Option<bool>,
 }
 
 #[cfg(feature = "rolling_window")]
@@ -93,6 +94,7 @@ impl From<RollingOptions> for RollingOptionsImpl<'static> {
             tz: None,
             closed_window: None,
             fn_params: options.fn_params,
+            by_unique_values: None,
         }
     }
 }
@@ -129,6 +131,7 @@ impl Default for RollingOptionsImpl<'static> {
             tz: None,
             closed_window: None,
             fn_params: None,
+            by_unique_values: None,
         }
     }
 }
@@ -244,6 +247,7 @@ fn rolling_agg<T>(
             ClosedWindow,
             TimeUnit,
             Option<&TimeZone>,
+            Option<bool>,
             DynArgs,
         ) -> PolarsResult<ArrayRef>,
     >,
@@ -301,6 +305,7 @@ where
             closed_window,
             tu,
             options.tz,
+            options.by_unique_values,
             options.fn_params,
         )
     }?;
