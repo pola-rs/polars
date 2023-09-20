@@ -1,4 +1,5 @@
 use arrow::array::Array;
+use arrow::bitmap::bitmask::BitMask;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 use polars_utils::index::check_bounds;
 
@@ -8,6 +9,22 @@ use crate::datatypes::{IdxCa, PolarsDataType, StaticArray};
 use crate::prelude::*;
 
 const BINARY_SEARCH_LIMIT: usize = 8;
+
+pub fn check_bounds_nulls(idx: &PrimitiveArray<IdxSize>, len: IdxSize) -> PolarsResult<()> {
+    let mask = BitMask::from_bitmap(idx.validity().unwrap());
+
+    // We iterate in chunks to make the inner loop branch-free.
+    for (block_idx, block) in idx.values().chunks(32).enumerate() {
+        let mut in_bounds = 0;
+        for (i, x) in block.iter().enumerate() {
+            in_bounds |= ((*x < len) as u32) << i;
+        }
+        let m = mask.get_u32(32 * block_idx);
+        polars_ensure!(m == m & in_bounds, ComputeError: "indices are out of bounds");
+    }
+    Ok(())
+}
+
 
 impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTake<I> for ChunkedArray<T>
 where
@@ -23,6 +40,7 @@ where
     }
 }
 
+
 impl<T: PolarsDataType> ChunkTake<IdxCa> for ChunkedArray<T>
 where
     ChunkedArray<T>: ChunkTakeUnchecked<IdxCa>,
@@ -34,7 +52,7 @@ where
             if a.null_count() == 0 {
                 check_bounds(a.values(), len as IdxSize).is_ok()
             } else {
-                a.iter().flatten().all(|i| (*i as usize) < len)
+                check_bounds_nulls(a, len as IdxSize).is_ok()
             }
         });
         polars_ensure!(all_valid, ComputeError: "take indices are out of bounds");
@@ -103,8 +121,13 @@ unsafe fn gather_idx_array_unchecked<A: StaticArray>(
         if has_nulls {
             it.map(|i| target.get_unchecked(i as usize))
                 .collect_arr_trusted_with_dtype(dtype)
+        } else if let Some(sl) = target.as_slice() {
+            // Avoid the Arc overhead from value_unchecked.
+            it.map(|i| sl.get_unchecked(i as usize).clone())
+                .collect_arr_trusted_with_dtype(dtype)
         } else {
-            target.gather_unchecked_trusted(indices.iter().map(|i| *i as usize), dtype)
+            it.map(|i| target.value_unchecked(i as usize))
+                .collect_arr_trusted_with_dtype(dtype)
         }
     } else {
         let cumlens = cumulative_lengths(targets);

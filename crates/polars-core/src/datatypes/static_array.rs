@@ -1,6 +1,5 @@
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::bitmap::Bitmap;
-use polars_arrow::trusted_len::TrustedLenPush;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::{ObjectArray, ObjectValueIter};
@@ -12,7 +11,7 @@ pub trait StaticArray:
     + for<'a> ArrayFromIterDtype<Self::ValueT<'a>>
     + for<'a> ArrayFromIterDtype<Option<Self::ValueT<'a>>>
 {
-    type ValueT<'a>
+    type ValueT<'a>: Clone
     where
         Self: 'a;
     type ValueIterT<'a>: Iterator<Item = Self::ValueT<'a>>
@@ -55,17 +54,10 @@ pub trait StaticArray:
     /// # Safety
     /// It is the callers responsibility that the `idx < self.len()`.
     unsafe fn value_unchecked(&self, idx: usize) -> Self::ValueT<'_>;
-
-    /// # Safety
-    /// The indices must be in-bounds.
-    #[inline]
-    unsafe fn gather_unchecked_trusted<I: Iterator<Item = usize> + TrustedLen>(
-        &self,
-        it: I,
-        dtype: DataType,
-    ) -> Self {
-        it.map(|i| self.value_unchecked(i))
-            .collect_arr_trusted_with_dtype(dtype)
+    
+    #[inline(always)]
+    fn as_slice(&self) -> Option<&[Self::ValueT<'_>]> {
+        None
     }
 
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter>;
@@ -90,15 +82,9 @@ impl<T: NumericNative> StaticArray for PrimitiveArray<T> {
         self.values_iter().copied()
     }
 
-    #[inline]
-    unsafe fn gather_unchecked_trusted<I: Iterator<Item = usize> + TrustedLen>(
-        &self,
-        it: I,
-        _dtype: DataType,
-    ) -> Self {
-        let arr: &[T] = self.values();
-        let v = Vec::from_trusted_len_iter(it.map(|i| *arr.get_unchecked(i)));
-        PrimitiveArray::from_vec(v)
+    #[inline(always)]
+    fn as_slice(&self) -> Option<&[Self::ValueT<'_>]> {
+        Some(self.values().as_slice())
     }
 
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {

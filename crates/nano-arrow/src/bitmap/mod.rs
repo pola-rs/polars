@@ -15,3 +15,5 @@ mod assign_ops;
 pub use assign_ops::*;
 
 pub mod utils;
+
+pub mod bitmask;
