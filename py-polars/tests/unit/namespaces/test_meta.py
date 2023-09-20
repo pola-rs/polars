@@ -69,7 +69,9 @@ def test_meta_is_regex_projection() -> None:
 
 
 def test_meta_tree_format() -> None:
-    with Path("tests/unit/namespaces/test_tree_fmt.txt").open("r", encoding="utf-8") as f:
+    with Path("tests/unit/namespaces/test_tree_fmt.txt").open(
+        "r", encoding="utf-8"
+    ) as f:
         test_sets = f.read().split("---")
     for test_set in test_sets:
         expression = test_set.strip().split("\n")[0]
