@@ -43,6 +43,11 @@ _ARROW_DRIVER_REGISTRY_: dict[str, _DriverProperties_] = {
         "fetch_batches": "fetchmany_arrow",
         "exact_batch_size": True,
     },
+    "duckdb": {
+        "fetch_all": "fetch_arrow_table",
+        "fetch_batches": "fetch_record_batch",
+        "exact_batch_size": True,
+    },
     "snowflake": {
         "fetch_all": "fetch_arrow_all",
         "fetch_batches": "fetch_arrow_batches",
@@ -168,13 +173,6 @@ class ConnectionExecutor:
                         ),
                         schema_overrides=schema_overrides,
                     )
-
-            if self.driver_name == "duckdb":
-                exec_kwargs = {"rows_per_batch": batch_size} if batch_size else {}
-                return from_arrow(  # type: ignore[return-value]
-                    self.result.arrow(**exec_kwargs),
-                    schema_overrides=schema_overrides,
-                )
         except Exception as err:
             if (
                 self.driver_name != "turbodbc"
