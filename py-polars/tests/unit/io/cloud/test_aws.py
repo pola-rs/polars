@@ -28,6 +28,7 @@ def monkeypatch_module() -> Any:
 def s3_base(monkeypatch_module: Any) -> Iterator[str]:
     monkeypatch_module.setenv("AWS_ACCESS_KEY_ID", "accesskey")
     monkeypatch_module.setenv("AWS_SECRET_ACCESS_KEY", "secretkey")
+    monkeypatch_module.setenv("AWS_DEFAULT_REGION", "us-west-2")
 
     host = "127.0.0.1"
     port = 5000
