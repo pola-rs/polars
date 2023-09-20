@@ -106,6 +106,7 @@ impl SqlExprVisitor<'_> {
                 subquery,
                 negated,
             } => self.visit_in_subquery(expr, subquery, *negated),
+            SqlExpr::Subquery( _ ) => polars_bail!(InvalidOperation: "Unexpected SQL Subquery"),
             SqlExpr::IsDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
             },
