@@ -7396,7 +7396,7 @@ class Expr:
         variance. If Fisher's definition is used, then 3.0 is subtracted from
         the result to give 0.0 for a normal distribution.
         If bias is False then the kurtosis is calculated using k statistics to
-        eliminate bias coming from biased moment estimators
+        eliminate bias coming from biased moment estimators.
 
         See scipy.stats for more information
 
