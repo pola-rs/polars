@@ -55,10 +55,17 @@ pub trait StaticArray:
     /// # Safety
     /// It is the callers responsibility that the `idx < self.len()`.
     unsafe fn value_unchecked(&self, idx: usize) -> Self::ValueT<'_>;
-    
+
+    /// # Safety
+    /// The indices must be in-bounds.
     #[inline]
-    unsafe fn gather_unchecked_trusted<I: Iterator<Item=usize> + TrustedLen>(&self, it: I, dtype: DataType) -> Self {
-        it.map(|i| self.value_unchecked(i)).collect_arr_with_dtype(dtype)
+    unsafe fn gather_unchecked_trusted<I: Iterator<Item = usize> + TrustedLen>(
+        &self,
+        it: I,
+        dtype: DataType,
+    ) -> Self {
+        it.map(|i| self.value_unchecked(i))
+            .collect_arr_with_dtype(dtype)
     }
 
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter>;
@@ -84,7 +91,11 @@ impl<T: NumericNative> StaticArray for PrimitiveArray<T> {
     }
 
     #[inline]
-    unsafe fn gather_unchecked_trusted<I: Iterator<Item=usize> + TrustedLen>(&self, it: I, _dtype: DataType) -> Self {
+    unsafe fn gather_unchecked_trusted<I: Iterator<Item = usize> + TrustedLen>(
+        &self,
+        it: I,
+        _dtype: DataType,
+    ) -> Self {
         let arr: &[T] = self.values();
         let v = Vec::from_trusted_len_iter(it.map(|i| *arr.get_unchecked(i)));
         PrimitiveArray::from_vec(v)
