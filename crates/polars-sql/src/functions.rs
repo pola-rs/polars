@@ -806,7 +806,7 @@ impl SqlFunctionVisitor<'_> {
         let args = extract_args(function);
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr)] => {
-                let expr = parse_sql_expr(sql_expr, &mut self.ctx)?;
+                let expr = parse_sql_expr(sql_expr, self.ctx)?;
                 // apply the function on the inner expr -- e.g. SUM(a) -> SUM
                 Ok(f(expr))
             },

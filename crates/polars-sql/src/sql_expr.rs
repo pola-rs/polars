@@ -143,7 +143,7 @@ impl SqlExprVisitor<'_> {
             polars_bail!(InvalidOperation: "SQL subquery cannot be given CTEs");
         }
 
-        let mut lf = self.ctx.execute_query_no_ctes(&subquery)?;
+        let mut lf = self.ctx.execute_query_no_ctes(subquery)?;
 
         let schema = lf.schema()?;
         if restriction == SubqueryRestriction::SingleColumn {
