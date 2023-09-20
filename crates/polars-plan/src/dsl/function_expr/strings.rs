@@ -12,6 +12,9 @@ use serde::{Deserialize, Serialize};
 static TZ_AWARE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
 
+#[cfg(feature = "dtype-struct")]
+use polars_utils::format_smartstring;
+
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -73,6 +76,21 @@ pub enum StringFunction {
     StripCharsEnd(Option<String>),
     StripPrefix,
     StripSuffix,
+    #[cfg(feature = "dtype-struct")]
+    SplitExact {
+        by: String,
+        n: usize,
+    },
+    #[cfg(feature = "dtype-struct")]
+    SplitExactInclusive {
+        by: String,
+        n: usize,
+    },
+    #[cfg(feature = "dtype-struct")]
+    SplitN {
+        by: String,
+        n: usize,
+    },
     #[cfg(feature = "temporal")]
     Strptime(DataType, StrptimeOptions),
     Split,
@@ -126,6 +144,22 @@ impl StringFunction {
             | Slice(_, _) => mapper.with_same_dtype(),
             #[cfg(feature = "string_justify")]
             Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "dtype-struct")]
+            SplitExact { by: _, n } | SplitExactInclusive { by: _, n } => {
+                mapper.with_dtype(DataType::Struct(
+                    (0..n + 1)
+                        .map(|i| {
+                            Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8)
+                        })
+                        .collect(),
+                ))
+            },
+            #[cfg(feature = "dtype-struct")]
+            SplitN { by: _, n } => mapper.with_dtype(DataType::Struct(
+                (0..*n)
+                    .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8))
+                    .collect(),
+            )),
         }
     }
 }
@@ -166,6 +200,12 @@ impl Display for StringFunction {
             StringFunction::StripCharsEnd(_) => "strip_chars_end",
             StringFunction::StripPrefix => "strip_prefix",
             StringFunction::StripSuffix => "strip_suffix",
+            #[cfg(feature = "dtype-struct")]
+            StringFunction::SplitExact { .. } => "split_exact",
+            #[cfg(feature = "dtype-struct")]
+            StringFunction::SplitExactInclusive { .. } => "split_exact_inclusive",
+            #[cfg(feature = "dtype-struct")]
+            StringFunction::SplitN { .. } => "splitn",
             #[cfg(feature = "temporal")]
             StringFunction::Strptime(_, _) => "strptime",
             StringFunction::Split => "split",
@@ -391,6 +431,24 @@ pub(super) fn strptime(
         DataType::Time => to_time(&s[0], options),
         dt => polars_bail!(ComputeError: "not implemented for dtype {}", dt),
     }
+}
+
+#[cfg(feature = "dtype-struct")]
+pub(super) fn split_exact(s: &Series, by: &str, n: usize) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.split_exact(by, n).map(|ca| ca.into_series())
+}
+
+#[cfg(feature = "dtype-struct")]
+pub(super) fn split_exact_inclusive(s: &Series, by: &str, n: usize) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.split_exact_inclusive(by, n).map(|ca| ca.into_series())
+}
+
+#[cfg(feature = "dtype-struct")]
+pub(super) fn splitn(s: &Series, by: &str, n: usize) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.splitn(by, n).map(|ca| ca.into_series())
 }
 
 pub(super) fn split(s: &[Series]) -> PolarsResult<Series> {

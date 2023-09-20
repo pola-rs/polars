@@ -2,6 +2,8 @@
 use base64::engine::general_purpose;
 #[cfg(feature = "string_encoding")]
 use base64::Engine as _;
+#[cfg(feature = "dtype-struct")]
+use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
 use polars_arrow::kernels::string::*;
 #[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
@@ -374,6 +376,119 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             },
             _ => binary_elementwise(ca, suffix, opt_strip_suffix),
         }
+    }
+
+    #[cfg(feature = "dtype-struct")]
+    fn split_exact(&self, by: &str, n: usize) -> PolarsResult<StructChunked> {
+        let ca = self.as_utf8();
+
+        let mut arrs = (0..n + 1)
+            .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
+            .collect::<Vec<_>>();
+
+        ca.for_each(|opt_s| match opt_s {
+            None => {
+                for arr in &mut arrs {
+                    arr.push_null()
+                }
+            },
+            Some(s) => {
+                let mut arr_iter = arrs.iter_mut();
+                let split_iter = s.split(by);
+                (split_iter)
+                    .zip(&mut arr_iter)
+                    .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                // fill the remaining with null
+                for arr in arr_iter {
+                    arr.push_null()
+                }
+            },
+        });
+
+        let fields = arrs
+            .into_iter()
+            .enumerate()
+            .map(|(i, mut arr)| {
+                Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        StructChunked::new(ca.name(), &fields)
+    }
+
+    #[cfg(feature = "dtype-struct")]
+    fn split_exact_inclusive(&self, by: &str, n: usize) -> PolarsResult<StructChunked> {
+        let ca = self.as_utf8();
+
+        let mut arrs = (0..n + 1)
+            .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
+            .collect::<Vec<_>>();
+
+        ca.for_each(|opt_s| match opt_s {
+            None => {
+                for arr in &mut arrs {
+                    arr.push_null()
+                }
+            },
+            Some(s) => {
+                let mut arr_iter = arrs.iter_mut();
+                let split_iter = s.split_inclusive(by);
+                (split_iter)
+                    .zip(&mut arr_iter)
+                    .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                // fill the remaining with null
+                for arr in arr_iter {
+                    arr.push_null()
+                }
+            },
+        });
+
+        let fields = arrs
+            .into_iter()
+            .enumerate()
+            .map(|(i, mut arr)| {
+                Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        StructChunked::new(ca.name(), &fields)
+    }
+
+    #[cfg(feature = "dtype-struct")]
+    fn splitn(&self, by: &str, n: usize) -> PolarsResult<StructChunked> {
+        let ca = self.as_utf8();
+
+        let mut arrs = (0..n)
+            .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
+            .collect::<Vec<_>>();
+
+        ca.for_each(|opt_s| match opt_s {
+            None => {
+                for arr in &mut arrs {
+                    arr.push_null()
+                }
+            },
+            Some(s) => {
+                let mut arr_iter = arrs.iter_mut();
+                let split_iter = s.splitn(n, &by);
+                (split_iter)
+                    .zip(&mut arr_iter)
+                    .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                // fill the remaining with null
+                for arr in arr_iter {
+                    arr.push_null()
+                }
+            },
+        });
+        let fields = arrs
+            .into_iter()
+            .enumerate()
+            .map(|(i, mut arr)| {
+                Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        StructChunked::new(ca.name(), &fields)
     }
 
     fn split(&self, by: &str) -> ListChunked {

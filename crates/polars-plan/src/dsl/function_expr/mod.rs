@@ -726,6 +726,12 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             SplitInclusive => {
                 map_as_slice!(strings::split_inclusive)
             },
+            #[cfg(feature = "dtype-struct")]
+            SplitExact { by, n } => map!(strings::split_exact, &by, n),
+            #[cfg(feature = "dtype-struct")]
+            SplitExactInclusive { by, n } => map!(strings::split_exact_inclusive, &by, n),
+            #[cfg(feature = "dtype-struct")]
+            SplitN { by, n } => map!(strings::splitn, &by, n),
             #[cfg(feature = "concat_str")]
             ConcatVertical(delimiter) => map!(strings::concat, &delimiter),
             #[cfg(feature = "concat_str")]
