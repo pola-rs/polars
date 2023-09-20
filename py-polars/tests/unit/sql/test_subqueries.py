@@ -5,28 +5,28 @@ from polars.testing import assert_frame_equal
 
 
 def test_sql_in_subquery() -> None:
-    pl.DataFrame(
+    df = pl.DataFrame(
         {
             "x": [1, 2, 3, 4, 5, 6],
             "y": [2, 3, 4, 5, 6, 7],
         }
     )
 
-    pl.DataFrame(
+    df_other = pl.DataFrame(
         {
             "w": [1, 2, 3, 4, 5, 6],
             "z": [2, 3, 4, 5, 6, 7],
         }
     )
 
-    pl.DataFrame(
+    df_chars = pl.DataFrame(
         {
             "one": ["a", "b", "c", "d", "e", "f"],
             "two": ["b", "c", "d", "e", "f", "g"],
         }
     )
 
-    sql = pl.SQLContext(register_globals=True)
+    sql = pl.SQLContext(df=df, df_other=df_other, df_chars=df_chars)
     res_same = sql.execute(
         """
         SELECT
