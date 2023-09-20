@@ -99,13 +99,12 @@ unsafe fn gather_idx_array_unchecked<A: StaticArray>(
 ) -> A {
     let it = indices.iter().copied();
     if targets.len() == 1 {
-        let arr = targets.iter().next().unwrap();
+        let target = targets.first().unwrap();
         if has_nulls {
-            it.map(|i| arr.get_unchecked(i as usize))
+            it.map(|i| target.get_unchecked(i as usize))
                 .collect_arr_trusted_with_dtype(dtype)
         } else {
-            it.map(|i| arr.value_unchecked(i as usize))
-                .collect_arr_trusted_with_dtype(dtype)
+            target.gather_unchecked_trusted(indices.iter().map(|i| *i as usize), dtype)
         }
     } else {
         let cumlens = cumulative_lengths(targets);
@@ -152,25 +151,21 @@ impl<T: PolarsDataType> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
         let targets: Vec<_> = ca.downcast_iter().collect();
 
         let chunks = indices.downcast_iter().map(|idx_arr| {
+            let dtype = ca.dtype().clone();
             if idx_arr.null_count() == 0 {
-                gather_idx_array_unchecked(
-                    ca.dtype().clone(),
-                    &targets,
-                    targets_have_nulls,
-                    idx_arr.values(),
-                )
+                gather_idx_array_unchecked(dtype, &targets, targets_have_nulls, idx_arr.values())
             } else if targets.len() == 1 {
                 let target = targets.first().unwrap();
                 if targets_have_nulls {
                     idx_arr
                         .iter()
                         .map(|i| target.get_unchecked(*i? as usize))
-                        .collect_arr_trusted_with_dtype(ca.dtype().clone())
+                        .collect_arr_trusted_with_dtype(dtype)
                 } else {
                     idx_arr
                         .iter()
                         .map(|i| Some(target.value_unchecked(*i? as usize)))
-                        .collect_arr_trusted_with_dtype(ca.dtype().clone())
+                        .collect_arr_trusted_with_dtype(dtype)
                 }
             } else {
                 let cumlens = cumulative_lengths(&targets);
@@ -178,12 +173,12 @@ impl<T: PolarsDataType> ChunkTakeUnchecked<IdxCa> for ChunkedArray<T> {
                     idx_arr
                         .iter()
                         .map(|i| target_get_unchecked(&targets, &cumlens, *i?))
-                        .collect_arr_trusted_with_dtype(ca.dtype().clone())
+                        .collect_arr_trusted_with_dtype(dtype)
                 } else {
                     idx_arr
                         .iter()
                         .map(|i| Some(target_value_unchecked(&targets, &cumlens, *i?)))
-                        .collect_arr_trusted_with_dtype(ca.dtype().clone())
+                        .collect_arr_trusted_with_dtype(dtype)
                 }
             }
         });
