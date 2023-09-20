@@ -15,6 +15,11 @@ def test_simplify_expression_lit_true_4376() -> None:
     ).rows() == [(1, 2, 3), (4, 5, 6), (7, 8, 9)]
 
 
+def test_filter_contains_nth_11205() -> None:
+    df = pl.DataFrame({"x": [False]})
+    assert df.filter(pl.first()).is_empty()
+
+
 def test_melt_values_predicate_pushdown() -> None:
     lf = pl.DataFrame(
         {

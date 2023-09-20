@@ -524,9 +524,11 @@ impl LogicalPlanBuilder {
     pub fn filter(self, predicate: Expr) -> Self {
         let predicate = if has_expr(&predicate, |e| match e {
             Expr::Column(name) => is_regex_projection(name),
-            Expr::Wildcard | Expr::RenameAlias { .. } | Expr::Columns(_) | Expr::DtypeColumn(_) => {
-                true
-            },
+            Expr::Wildcard
+            | Expr::RenameAlias { .. }
+            | Expr::Columns(_)
+            | Expr::DtypeColumn(_)
+            | Expr::Nth(_) => true,
             _ => false,
         }) {
             let schema = try_delayed!(self.0.schema(), &self.0, into);
