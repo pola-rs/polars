@@ -236,7 +236,7 @@ def scan_parquet(
     ...     "aws_access_key_id": "<secret>",
     ...     "aws_secret_access_key": "<secret>",
     ... }
-    >>> pl.scan_parquet(source, storage_options=storage_options)
+    >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
 
     See Also
     --------
