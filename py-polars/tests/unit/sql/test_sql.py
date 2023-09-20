@@ -13,7 +13,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 # TODO: Do not rely on I/O for these tests
 @pytest.fixture()
 def foods_ipc_path() -> Path:
-    return Path(__file__).parent / "io" / "files" / "foods1.ipc"
+    return Path(__file__).parent.parent / "io" / "files" / "foods1.ipc"
 
 
 def test_sql_cast() -> None:
@@ -1051,38 +1051,3 @@ def test_sql_expr() -> None:
         pl.InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
     ):
         pl.sql_expr("xyz.*")
-
-        # import polars as pl
-# from polars.testing import assert_frame_equal, assert_series_equal
-
-# def test_sql_in_subquery() -> None:
-#     df = pl.DataFrame(
-#         {
-#             "x": [1, 2, 3],
-#             "y": [2, 3, 4],
-#         }
-#     )
-
-#     df_other = pl.DataFrame(
-#         {
-#             "x": [1, 2, 3],
-#             "y": [2, 3, 4],
-#         }
-#     )
-
-#     sql = pl.SQLContext(register_globals=True)
-
-#     res_1 = sql.execute(
-#         """
-#         SELECT
-#         df.x as x
-#         FROM df
-#         WHERE x IN (SELECT y FROM df)
-#         """
-#         , eager = True)
-    
-#     df_expected_1 = pl.DataFrame({"x": [2,3]})
-#     assert_frame_equal(
-#         left=df_expected_1,
-#         right=res,
-#     )
