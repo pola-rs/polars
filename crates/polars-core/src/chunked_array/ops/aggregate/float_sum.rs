@@ -2,7 +2,8 @@ use std::ops::{Add, IndexMut};
 #[cfg(feature = "simd")]
 use std::simd::{Mask, Simd, SimdElement};
 
-use arrow::bitmap::{Bitmap, bitmask::BitMask};
+use arrow::bitmap::bitmask::BitMask;
+use arrow::bitmap::Bitmap;
 
 const STRIPE: usize = 16;
 const PAIRWISE_RECURSION_LIMIT: usize = 128;

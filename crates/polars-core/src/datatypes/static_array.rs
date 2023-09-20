@@ -54,7 +54,7 @@ pub trait StaticArray:
     /// # Safety
     /// It is the callers responsibility that the `idx < self.len()`.
     unsafe fn value_unchecked(&self, idx: usize) -> Self::ValueT<'_>;
-    
+
     #[inline(always)]
     fn as_slice(&self) -> Option<&[Self::ValueT<'_>]> {
         None

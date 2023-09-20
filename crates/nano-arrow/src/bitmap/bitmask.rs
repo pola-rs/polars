@@ -1,9 +1,10 @@
 #[cfg(feature = "simd")]
 use std::simd::ToBitMask;
 
-use crate::bitmap::Bitmap;
 #[cfg(feature = "simd")]
 use num_traits::AsPrimitive;
+
+use crate::bitmap::Bitmap;
 
 // Loads a u64 from the given byteslice, as if it were padded with zeros.
 fn load_padded_le_u64(bytes: &[u8]) -> u64 {
@@ -41,7 +42,7 @@ impl<'a> BitMask<'a> {
         assert!(bytes.len() * 8 >= len + offset);
         Self { bytes, offset, len }
     }
-    
+
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
@@ -53,6 +54,8 @@ impl<'a> BitMask<'a> {
         unsafe { self.split_at_unchecked(idx) }
     }
 
+    /// # Safety
+    /// The index must be in-bounds.
     #[inline]
     pub unsafe fn split_at_unchecked(&self, idx: usize) -> (Self, Self) {
         debug_assert!(idx <= self.len);

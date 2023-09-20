@@ -25,7 +25,6 @@ pub fn check_bounds_nulls(idx: &PrimitiveArray<IdxSize>, len: IdxSize) -> Polars
     Ok(())
 }
 
-
 impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTake<I> for ChunkedArray<T>
 where
     ChunkedArray<T>: ChunkTakeUnchecked<I>,
@@ -39,7 +38,6 @@ where
         Ok(unsafe { self.take_unchecked(indices) })
     }
 }
-
 
 impl<T: PolarsDataType> ChunkTake<IdxCa> for ChunkedArray<T>
 where
