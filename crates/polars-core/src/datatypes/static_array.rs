@@ -65,7 +65,7 @@ pub trait StaticArray:
         dtype: DataType,
     ) -> Self {
         it.map(|i| self.value_unchecked(i))
-            .collect_arr_with_dtype(dtype)
+            .collect_arr_trusted_with_dtype(dtype)
     }
 
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter>;
