@@ -415,6 +415,9 @@ class LazyFrame:
                 scan = scan.with_row_count(row_count_name, row_count_offset)
             return scan  # type: ignore[return-value]
 
+        if storage_options is not None:
+            storage_options = list(storage_options.items())  #  type: ignore[assignment]
+
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(
             source,
