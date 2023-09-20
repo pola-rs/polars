@@ -1,5 +1,6 @@
 use arrow::array::Array;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use polars_utils::index::check_bounds;
 
 use crate::chunked_array::ops::{ChunkTake, ChunkTakeUnchecked};
 use crate::chunked_array::ChunkedArray;
@@ -15,8 +16,7 @@ where
     /// Gather values from ChunkedArray by index.
     fn take(&self, indices: &I) -> PolarsResult<Self> {
         let len = self.len();
-        let all_valid = indices.as_ref().iter().all(|i| (*i as usize) < len);
-        polars_ensure!(all_valid, ComputeError: "invalid index in gather");
+        check_bounds(indices.as_ref(), len as IdxSize)?;
 
         // SAFETY: we just checked the indices are valid.
         Ok(unsafe { self.take_unchecked(indices) })
@@ -32,7 +32,7 @@ where
         let len = self.len();
         let all_valid = indices.downcast_iter().all(|a| {
             if a.null_count() == 0 {
-                a.values_iter().all(|i| (*i as usize) < len)
+                check_bounds(a.values(), len as IdxSize).is_ok()
             } else {
                 a.iter().flatten().all(|i| (*i as usize) < len)
             }
