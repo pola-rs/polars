@@ -191,7 +191,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("string").str().strptime(
                 DataType::Datetime(TimeUnit::Microseconds, None),
                 StrptimeOptions::default(),
-                lit("raise")
+                lit("raise"),
             ),
         ])
         .collect()?;
