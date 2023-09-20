@@ -1,4 +1,4 @@
-use polars_core::prelude::{polars_bail, polars_err, PolarsError, PolarsResult};
+use polars_core::prelude::{polars_bail, polars_err, PolarsResult};
 use polars_lazy::dsl::Expr;
 use polars_plan::dsl::count;
 use polars_plan::logical_plan::LiteralValue;
@@ -362,6 +362,7 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT ARRAY_CONTAINS(column_1, 'foo') from df;
     /// ```
     ArrayContains,
+    Udf(String),
 }
 
 impl PolarsSqlFunctions {
@@ -435,9 +436,8 @@ impl PolarsSqlFunctions {
     }
 }
 
-impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
-    type Error = PolarsError;
-    fn try_from(function: &'_ SQLFunction) -> Result<Self, Self::Error> {
+impl PolarsSqlFunctions {
+    fn try_from_sql(function: &'_ SQLFunction, ctx: &'_ SQLContext) -> PolarsResult<Self> {
         let function_name = function.name.0[0].value.to_lowercase();
         Ok(match function_name.as_str() {
             // ----
@@ -519,7 +519,13 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "array_upper" => Self::ArrayMax,
             "unnest" => Self::Explode,
 
-            other => polars_bail!(InvalidOperation: "unsupported SQL function: {}", other),
+            other => {
+                if ctx.function_registry.contains(other) {
+                    Self::Udf(other.to_string())
+                } else {
+                    polars_bail!(InvalidOperation: "unsupported SQL function: {}", other);
+                }
+            },
         })
     }
 }
@@ -527,8 +533,8 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
 impl SqlFunctionVisitor<'_> {
     pub(crate) fn visit_function(&self) -> PolarsResult<Expr> {
         let function = self.func;
+        let function_name = PolarsSqlFunctions::try_from_sql(function, self.ctx)?;
 
-        let function_name: PolarsSqlFunctions = function.try_into()?;
         use PolarsSqlFunctions::*;
 
         match function_name {
@@ -686,6 +692,28 @@ impl SqlFunctionVisitor<'_> {
             }),
             ArrayUnique => self.visit_unary(|e| e.list().unique()),
             Explode => self.visit_unary(|e| e.explode()),
+            Udf(func_name) => self.visit_udf(&func_name)
+        }
+    }
+
+    fn visit_udf(&self, func_name: &str) -> PolarsResult<Expr> {
+        let function = self.func;
+
+        let args = extract_args(function);
+        let args = args
+            .into_iter()
+            .map(|arg| {
+                if let FunctionArgExpr::Expr(e) = arg {
+                    parse_sql_expr(e, self.ctx)
+                } else {
+                    polars_bail!(ComputeError: "Only expressions are supported in UDFs")
+                }
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        if let Some(expr) = self.ctx.function_registry.get_udf(func_name)? {
+            expr.call(args)
+        } else {
+            polars_bail!(ComputeError: "UDF {} not found", func_name)
         }
     }
 

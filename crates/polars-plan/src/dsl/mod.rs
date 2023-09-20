@@ -32,7 +32,7 @@ mod selector;
 pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
-
+pub mod udf;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -58,6 +58,7 @@ use polars_time::series::SeriesOpsTime;
 pub(crate) use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
+pub use udf::UserDefinedFunction;
 
 use crate::constants::MAP_LIST_NAME;
 pub use crate::logical_plan::lit;

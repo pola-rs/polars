@@ -11,6 +11,10 @@ use super::*;
 
 /// A wrapper trait for any closure `Fn(Vec<Series>) -> PolarsResult<Series>`
 pub trait SeriesUdf: Send + Sync {
+    fn as_any(&self) -> &dyn std::any::Any {
+        unimplemented!("as_any not implemented for this 'opaque' function")
+    }
+
     fn call_udf(&self, s: &mut [Series]) -> PolarsResult<Option<Series>>;
 
     fn try_serialize(&self, _buf: &mut Vec<u8>) -> PolarsResult<()> {
