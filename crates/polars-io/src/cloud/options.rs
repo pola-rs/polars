@@ -74,7 +74,7 @@ impl FromStr for CloudType {
 
     #[cfg(feature = "async")]
     fn from_str(url: &str) -> Result<Self, Self::Err> {
-        let parsed = Url::parse(url).map_err(polars_error::to_compute_err)?;
+        let parsed = Url::parse(url).map_err(to_compute_err)?;
         Ok(match parsed.scheme() {
             "s3" => Self::Aws,
             "az" | "adl" | "abfs" => Self::Azure,
@@ -132,7 +132,7 @@ impl CloudOptions {
         builder
             .with_bucket_name(bucket_name)
             .build()
-            .map_err(polars_error::to_compute_err)
+            .map_err(to_compute_err)
     }
 
     /// Set the configuration for Azure connections. This is the preferred API from rust.
@@ -153,19 +153,29 @@ impl CloudOptions {
     /// Build the [`ObjectStore`] implementation for Azure.
     #[cfg(feature = "azure")]
     pub fn build_azure(&self, container_name: &str) -> PolarsResult<impl ObjectStore> {
-        let options = self
-            .azure
-            .as_ref()
-            .ok_or_else(|| polars_err!(ComputeError: "`azure` configuration missing"))?;
+        let options = self.azure.as_ref();
 
-        let mut builder = MicrosoftAzureBuilder::new();
-        for (key, value) in options.iter() {
-            builder = builder.with_config(*key, value);
-        }
+        let builder = match options {
+            Some(options) => {
+                let mut builder = MicrosoftAzureBuilder::new();
+                for (key, value) in options.iter() {
+                    builder = builder.with_config(*key, value);
+                }
+                builder
+            },
+            None => {
+                let builder = MicrosoftAzureBuilder::from_env();
+                polars_ensure!(
+                    builder.get_config_value(&AzureConfigKey::AccessKey).is_some() &&
+                    builder.get_config_value(&AzureConfigKey::ClientSecret).is_some(),
+                    ComputeError: "`azure` configuration and env vars missing");
+                builder
+            },
+        };
         builder
             .with_container_name(container_name)
             .build()
-            .map_err(polars_error::to_compute_err)
+            .map_err(to_compute_err)
     }
 
     /// Set the configuration for GCP connections. This is the preferred API from rust.
@@ -186,19 +196,30 @@ impl CloudOptions {
     /// Build the [`ObjectStore`] implementation for GCP.
     #[cfg(feature = "gcp")]
     pub fn build_gcp(&self, bucket_name: &str) -> PolarsResult<impl ObjectStore> {
-        let options = self
-            .gcp
-            .as_ref()
-            .ok_or_else(|| polars_err!(ComputeError: "`gcp` configuration missing"))?;
+        let options = self.gcp.as_ref();
 
-        let mut builder = GoogleCloudStorageBuilder::new();
-        for (key, value) in options.iter() {
-            builder = builder.with_config(*key, value);
-        }
+        let builder = match options {
+            Some(options) => {
+                let mut builder = GoogleCloudStorageBuilder::new();
+                for (key, value) in options.iter() {
+                    builder = builder.with_config(*key, value);
+                }
+                builder
+            },
+            None => {
+                let builder = GoogleCloudStorageBuilder::from_env();
+                polars_ensure!(
+                    builder.get_config_value(&GoogleConfigKey::ApplicationCredentials).is_some() &&
+                    builder.get_config_value(&GoogleConfigKey::ServiceAccount).is_some(),
+                    ComputeError: "`gcp` configuration and env vars missing");
+                builder
+            },
+        };
+
         builder
             .with_bucket_name(bucket_name)
             .build()
-            .map_err(polars_error::to_compute_err)
+            .map_err(to_compute_err)
     }
 
     /// Parse a configuration from a Hashmap. This is the interface from Python.
