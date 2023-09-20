@@ -722,7 +722,7 @@ impl SqlFunctionVisitor<'_> {
         }
     }
 
-    fn visit_udf(&self, func_name: &str) -> PolarsResult<Expr> {
+    fn visit_udf(&mut self, func_name: &str) -> PolarsResult<Expr> {
         let function = self.func;
 
         let args = extract_args(function);
@@ -814,7 +814,10 @@ impl SqlFunctionVisitor<'_> {
         }
     }
 
-    fn visit_binary<Arg: FromSqlExpr>(&mut self, f: impl Fn(Expr, Arg) -> Expr) -> PolarsResult<Expr> {
+    fn visit_binary<Arg: FromSqlExpr>(
+        &mut self,
+        f: impl Fn(Expr, Arg) -> Expr,
+    ) -> PolarsResult<Expr> {
         self.try_visit_binary(|e, a| Ok(f(e, a)))
     }
 

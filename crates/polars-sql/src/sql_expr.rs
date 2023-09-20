@@ -4,12 +4,12 @@ use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::*;
 use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{col, lit, when};
-use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
 use sqlparser::ast::{
     ArrayAgg, BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType,
-    Expr as SqlExpr, Function as SQLFunction, Ident, JoinConstraint, OrderByExpr, Query as Subquery, SelectItem,
-    TrimWhereField, UnaryOperator, Value as SqlValue,
+    Expr as SqlExpr, Function as SQLFunction, Ident, JoinConstraint, OrderByExpr,
+    Query as Subquery, SelectItem, TrimWhereField, UnaryOperator, Value as SqlValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -101,7 +101,11 @@ impl SqlExprVisitor<'_> {
                 list,
                 negated,
             } => self.visit_in_list(expr, list, *negated),
-            SqlExpr::InSubquery { expr, subquery, negated } => self.visit_in_subquery(expr, subquery, *negated),
+            SqlExpr::InSubquery {
+                expr,
+                subquery,
+                negated,
+            } => self.visit_in_subquery(expr, subquery, *negated),
             SqlExpr::IsDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
             },
@@ -129,18 +133,20 @@ impl SqlExprVisitor<'_> {
         }
     }
 
-    fn visit_subquery(&mut self, subquery: &Subquery, restriction: SubqueryRestriction) -> PolarsResult<Expr>
-    {
-        if subquery.with.is_some()  {
+    fn visit_subquery(
+        &mut self,
+        subquery: &Subquery,
+        restriction: SubqueryRestriction,
+    ) -> PolarsResult<Expr> {
+        if subquery.with.is_some() {
             polars_bail!(InvalidOperation: "SQL subquery cannot be given CTEs");
         }
-        
+
         let mut lf = self.ctx.execute_query_no_ctes(&subquery)?;
-        
+
         let schema = lf.schema()?;
         if restriction == SubqueryRestriction::SingleColumn {
-            if  schema.len() != 1 
-            {
+            if schema.len() != 1 {
                 polars_bail!(InvalidOperation: "SQL subquery will return more than one column");
             }
             let rand_string: String = thread_rng()
@@ -153,7 +159,7 @@ impl SqlExprVisitor<'_> {
             if let Some((old_name, _)) = schema_entry {
                 let new_name = String::from(old_name.as_str()) + rand_string.as_str();
                 lf = lf.rename([old_name.to_string()], [new_name.clone()]);
-    
+
                 return Ok(Expr::SubPlan(Box::new(lf.logical_plan), vec![new_name]));
             }
         };
@@ -462,7 +468,12 @@ impl SqlExprVisitor<'_> {
     }
 
     /// Visit a SQL `IN` expression
-    fn visit_in_list(&mut self, expr: &SqlExpr, list: &[SqlExpr], negated: bool) -> PolarsResult<Expr> {
+    fn visit_in_list(
+        &mut self,
+        expr: &SqlExpr,
+        list: &[SqlExpr],
+        negated: bool,
+    ) -> PolarsResult<Expr> {
         let expr = self.visit_expr(expr)?;
         let list = list
             .iter()
@@ -484,7 +495,12 @@ impl SqlExprVisitor<'_> {
         }
     }
 
-    fn visit_in_subquery(&mut self, expr: &SqlExpr, subquery: &Subquery, negated: bool) -> PolarsResult<Expr> {
+    fn visit_in_subquery(
+        &mut self,
+        expr: &SqlExpr,
+        subquery: &Subquery,
+        negated: bool,
+    ) -> PolarsResult<Expr> {
         let expr = self.visit_expr(expr)?;
 
         let subquery_result = self.visit_subquery(subquery, SubqueryRestriction::SingleColumn)?;

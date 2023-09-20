@@ -487,11 +487,9 @@ impl SQLContext {
         Ok(lf)
     }
 
-    fn process_subqueries(&self, lf: LazyFrame, exprs: Vec<&mut Expr>) -> LazyFrame
-    {
+    fn process_subqueries(&self, lf: LazyFrame, exprs: Vec<&mut Expr>) -> LazyFrame {
         let mut contexts = vec![];
-        for expr in exprs
-        {
+        for expr in exprs {
             expr.mutate().apply(|e| {
                 if let Expr::SubPlan(lp, names) = e {
                     contexts.push(<LazyFrame>::from((**lp).clone()));
@@ -500,12 +498,15 @@ impl SQLContext {
                         *e = Expr::Column(names[0].as_str().into());
                     }
                 };
-            true
+                true
             })
-        };
+        }
 
-        if contexts.is_empty() {lf}
-        else {lf.with_context(contexts)}
+        if contexts.is_empty() {
+            lf
+        } else {
+            lf.with_context(contexts)
+        }
     }
 
     fn execute_create_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {

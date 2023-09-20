@@ -257,10 +257,8 @@ pub enum LogicalPlan {
     },
 }
 
-impl PartialEq for LogicalPlan 
-{
-    fn eq(&self, _other: &LogicalPlan) -> bool
-    {
+impl PartialEq for LogicalPlan {
+    fn eq(&self, _other: &LogicalPlan) -> bool {
         return false;
     }
 }
