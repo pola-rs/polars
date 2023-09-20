@@ -270,26 +270,23 @@ impl SQLContext {
         if !tbl_expr.joins.is_empty() {
             for tbl in &tbl_expr.joins {
                 let (join_tbl_name, join_tbl) = self.get_table(&tbl.relation)?;
-                match &tbl.join_operator {
+                lf = match &tbl.join_operator {
                     JoinOperator::Inner(constraint) => {
-                        let (mut left_on, mut right_on) =
+                        let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
-                        lf = self.process_subqueries(lf, vec![&mut left_on, &mut right_on]);
-                        lf = lf.inner_join(join_tbl, left_on, right_on)
+                        lf.inner_join(join_tbl, left_on, right_on)
                     },
                     JoinOperator::LeftOuter(constraint) => {
-                        let (mut left_on, mut right_on) =
+                        let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
-                        lf = self.process_subqueries(lf, vec![&mut left_on, &mut right_on]);
-                        lf = lf.left_join(join_tbl, left_on, right_on)
+                        lf.left_join(join_tbl, left_on, right_on)
                     },
                     JoinOperator::FullOuter(constraint) => {
-                        let (mut left_on, mut right_on) =
+                        let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
-                        lf = self.process_subqueries(lf, vec![&mut left_on, &mut right_on]);
-                        lf = lf.outer_join(join_tbl, left_on, right_on)
+                        lf.outer_join(join_tbl, left_on, right_on)
                     },
-                    JoinOperator::CrossJoin => lf = lf.cross_join(join_tbl),
+                    JoinOperator::CrossJoin => lf.cross_join(join_tbl),
                     join_type => {
                         polars_bail!(
                             InvalidOperation:
@@ -512,58 +509,9 @@ impl SQLContext {
                 };
             true
             })
-
-            // expr.mutate().apply(|e| {
-            //     for down_expr in e.into_iter()
-            //     {
-            //         if let Expr::SubPlan(lp, names) = down_expr {
-            //             contexts.push(<LazyFrame>::from((**lp).clone()));
-            //             *down_expr = Expr::Columns(names.clone());
-            //         };
-            //     }
-            // true
-            // })
-
-            // // let mut subplans : Vec<> = vec![];
-            // for down_expr in expr.into_iter() {
-            // //     |e| *e = match e {
-            // //     Expr::SubPlan(lp, names) => {
-            // //         contexts.push(lp);
-            // //         Expr::Columns(*names)
-            // //     }
-            // //     _ => {e}
-            // // }
-
-            //     // if let Expr::SubPlan(lp, names) = down_expr {
-            //     //     contexts.push(<LazyFrame>::from((**lp).clone()));
-            //     //     // *down_expr = Expr::Columns(*names);
-            //     //     down_expr.mutate().apply(|e| {
-            //     //         *e = Expr::Columns(*names);
-            //     //         true })
-            //     // };
-
-            //     down_expr.mutate().apply(|e| {
-            //         if let Expr::SubPlan(lp, names) = down_expr {
-            //             contexts.push(<LazyFrame>::from((**lp).clone()));
-            //             *e = Expr::Columns(names.clone());
-            //         };
-            //     true
-            //     })
-            // };
-
-            // expr.into_iter().for_each(|down_expr: &mut Expr| {
-            //     if let Expr::SubPlan(lp, names) = down_expr {
-            //         contexts.push(<LazyFrame>::from((**lp).clone()));
-            //         *down_expr = Expr::Columns(*names);
-            //     };
-            // })
         };
 
         if contexts.is_empty() {lf}
-        // else {lf.with_context(contexts
-        //                       .iter()
-        //                       .map(|lp| <LazyFrame>::from(***lp)))
-        //                       .collect::<Vec<LazyFrame>>()}
         else {lf.with_context(contexts)}
     }
 

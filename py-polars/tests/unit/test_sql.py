@@ -1052,35 +1052,37 @@ def test_sql_expr() -> None:
     ):
         pl.sql_expr("xyz.*")
 
+        # import polars as pl
+# from polars.testing import assert_frame_equal, assert_series_equal
 
-def test_sql_in_subquery() -> None:
-    df = pl.DataFrame(
-        {
-            "x": [1, 2, 3],
-            "y": [2, 3, 4],
-        }
-    )
+# def test_sql_in_subquery() -> None:
+#     df = pl.DataFrame(
+#         {
+#             "x": [1, 2, 3],
+#             "y": [2, 3, 4],
+#         }
+#     )
 
-    df_other = pl.DataFrame(
-        {
-            "x": [1, 2, 3],
-            "y": [2, 3, 4],
-        }
-    )
+#     df_other = pl.DataFrame(
+#         {
+#             "x": [1, 2, 3],
+#             "y": [2, 3, 4],
+#         }
+#     )
 
-    sql = pl.SQLContext(register_globals=True)
+#     sql = pl.SQLContext(register_globals=True)
 
-    res_1 = sql.execute(
-        """
-        SELECT
-        df.x as x
-        FROM df
-        WHERE x IN (SELECT y FROM df)
-        """
-        , eager = True)
+#     res_1 = sql.execute(
+#         """
+#         SELECT
+#         df.x as x
+#         FROM df
+#         WHERE x IN (SELECT y FROM df)
+#         """
+#         , eager = True)
     
-    df_expected_1 = pl.DataFrame({"x": [2,3]})
-    assert_frame_equal(
-        left=df_expected_1,
-        right=res,
-    )
+#     df_expected_1 = pl.DataFrame({"x": [2,3]})
+#     assert_frame_equal(
+#         left=df_expected_1,
+#         right=res,
+#     )

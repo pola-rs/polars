@@ -149,21 +149,9 @@ impl SqlExprVisitor<'_> {
                 .map(char::from)
                 .collect();
 
-            // let mut old_names: Vec<String> = vec![];
-            // let mut new_names: Vec<String> = vec![];
-            // schema.iter_names().for_each(|name| {
-            //     let mut tmp_str: String = Default::default();
-            //     tmp_str.push_str(name);
-            //     tmp_str.push_str(&rand_string.clone());
-            //     old_names.push((*name).to_string());
-            //     new_names.push(tmp_str);
-            // });
-            // lf = lf.rename(old_names, new_names.clone());
-
             let schema_entry = schema.get_at_index(0);
             if let Some((old_name, _)) = schema_entry {
                 let new_name = String::from(old_name.as_str()) + rand_string.as_str();
-                // let new_name = old_name + rand_string;
                 lf = lf.rename([old_name.to_string()], [new_name.clone()]);
     
                 return Ok(Expr::SubPlan(Box::new(lf.logical_plan), vec![new_name]));
@@ -171,7 +159,6 @@ impl SqlExprVisitor<'_> {
         };
 
         polars_bail!(InvalidOperation: "SQL subquery type not supported");
-
     }
 
     /// Visit a compound identifier
