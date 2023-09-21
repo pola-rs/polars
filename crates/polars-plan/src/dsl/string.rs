@@ -205,13 +205,13 @@ impl StringNameSpace {
     /// Split the string by a substring. The resulting dtype is `List<Utf8>`.
     pub fn split(self, by: Expr) -> Expr {
         self.0
-            .map_many_private(StringFunction::Split.into(), &[by], false)
+            .map_many_private(StringFunction::Split(false).into(), &[by], false)
     }
 
     /// Split the string by a substring and keep the substring. The resulting dtype is `List<Utf8>`.
     pub fn split_inclusive(self, by: Expr) -> Expr {
         self.0
-            .map_many_private(StringFunction::SplitInclusive.into(), &[by], false)
+            .map_many_private(StringFunction::Split(true).into(), &[by], false)
     }
 
     #[cfg(feature = "dtype-struct")]
@@ -219,8 +219,14 @@ impl StringNameSpace {
     pub fn split_exact(self, by: &str, n: usize) -> Expr {
         let by = by.to_string();
 
-        self.0
-            .map_private(StringFunction::SplitExact { by, n }.into())
+        self.0.map_private(
+            StringFunction::SplitExact {
+                by,
+                n,
+                inclusive: false,
+            }
+            .into(),
+        )
     }
 
     #[cfg(feature = "dtype-struct")]
@@ -229,8 +235,14 @@ impl StringNameSpace {
     pub fn split_exact_inclusive(self, by: &str, n: usize) -> Expr {
         let by = by.to_string();
 
-        self.0
-            .map_private(StringFunction::SplitExactInclusive { by, n }.into())
+        self.0.map_private(
+            StringFunction::SplitExact {
+                by,
+                n,
+                inclusive: true,
+            }
+            .into(),
+        )
     }
 
     #[cfg(feature = "dtype-struct")]
