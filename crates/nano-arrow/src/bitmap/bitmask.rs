@@ -120,6 +120,38 @@ impl<'a> BitMask<'a> {
         }
     }
 
+    /// Computes the index of the nth set bit after start.
+    ///
+    /// Both are zero-indexed, so nth_set_bit_idx(0, 0) finds the index of the
+    /// first bit set (which can be 0 as well). The returned index is absolute,
+    /// not relative to start.
+    pub fn nth_set_bit_idx(&self, mut n: usize, mut start: usize) -> Option<usize> {
+        // Skip blocks of 32 until the next 32 bits of the mask contains the nth.
+        let mut next_u32_mask = self.get_u32(start);
+        while n >= next_u32_mask.count_ones() as usize {
+            n -= next_u32_mask.count_ones() as usize;
+            next_u32_mask = self.get_u32(start);
+            start += 32;
+            if start >= self.len {
+                return None;
+            }
+        }
+
+        // Happy fast path for dense non-null section.
+        if next_u32_mask == u32::MAX {
+            return Some(start + n);
+        }
+
+        while n > 0 {
+            let step = next_u32_mask.trailing_zeros() as usize + 1;
+            start += step;
+            next_u32_mask >>= step;
+            n -= 1;
+        }
+
+        Some(start + next_u32_mask.trailing_zeros() as usize)
+    }
+
     #[inline]
     pub fn get(&self, idx: usize) -> bool {
         let byte_idx = (self.offset + idx) / 8;
