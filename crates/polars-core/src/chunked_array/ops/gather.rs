@@ -25,14 +25,25 @@ pub fn check_bounds_nulls(idx: &PrimitiveArray<IdxSize>, len: IdxSize) -> Polars
     Ok(())
 }
 
+pub fn check_bounds_ca(indices: &IdxCa, len: IdxSize) -> PolarsResult<()> {
+    let all_valid = indices.downcast_iter().all(|a| {
+        if a.null_count() == 0 {
+            check_bounds(a.values(), len).is_ok()
+        } else {
+            check_bounds_nulls(a, len).is_ok()
+        }
+    });
+    polars_ensure!(all_valid, ComputeError: "take indices are out of bounds");
+    Ok(())
+}
+
 impl<T: PolarsDataType, I: AsRef<[IdxSize]> + ?Sized> ChunkTake<I> for ChunkedArray<T>
 where
     ChunkedArray<T>: ChunkTakeUnchecked<I>,
 {
     /// Gather values from ChunkedArray by index.
     fn take(&self, indices: &I) -> PolarsResult<Self> {
-        let len = self.len();
-        check_bounds(indices.as_ref(), len as IdxSize)?;
+        check_bounds(indices.as_ref(), self.len() as IdxSize)?;
 
         // SAFETY: we just checked the indices are valid.
         Ok(unsafe { self.take_unchecked(indices) })
@@ -45,15 +56,7 @@ where
 {
     /// Gather values from ChunkedArray by index.
     fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
-        let len = self.len();
-        let all_valid = indices.downcast_iter().all(|a| {
-            if a.null_count() == 0 {
-                check_bounds(a.values(), len as IdxSize).is_ok()
-            } else {
-                check_bounds_nulls(a, len as IdxSize).is_ok()
-            }
-        });
-        polars_ensure!(all_valid, ComputeError: "take indices are out of bounds");
+        check_bounds_ca(indices, self.len() as IdxSize)?;
 
         // SAFETY: we just checked the indices are valid.
         Ok(unsafe { self.take_unchecked(indices) })
