@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 import polars as pl
-from polars import col
 
 
 def test_meta_pop_and_cmp() -> None:
@@ -70,8 +71,14 @@ def test_meta_is_regex_projection() -> None:
 
 
 def test_meta_tree_format() -> None:
-    e = (col("foo") * col("bar")).sum().over(col("ham")) / 2
-    assert (
-        e.meta.tree_format(return_as_string=True)
-        == """    binary: /    \n\n      |              |       \n\n    lit(2)           window      \n\n                     |               |        \n\n                     col(ham)        sum          \n\n                                     |        \n\n                                     binary: *    \n\n                                     |                |       \n\n                                     col(bar)         col(foo)    \n"""
-    )
+    with Path("tests/unit/namespaces/test_tree_fmt.txt").open(
+        "r", encoding="utf-8"
+    ) as f:
+        test_sets = f.read().split("---")
+    for test_set in test_sets:
+        expression = test_set.strip().split("\n")[0]
+        tree_fmt = "\n".join(test_set.strip().split("\n")[1:])
+        e = eval(expression)
+        result = e.meta.tree_format(return_as_string=True)
+        result = "\n".join(s.rstrip() for s in result.split("\n"))
+        assert result.strip() == tree_fmt.strip()
