@@ -1,22 +1,8 @@
 mod zip_outer;
 
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::{BuildHasher, Hash, Hasher};
-
-#[cfg(feature = "chunked_ids")]
-use arrow::Either;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 pub(crate) use zip_outer::*;
 
-use crate::datatypes::PlHashMap;
-use crate::hashing::{
-    create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_partition,
-    AsU64, BytesHash, _HASHMAP_INIT_SIZE,
-};
 use crate::prelude::*;
-use crate::utils::{_set_partition_size, slice_slice, split_ca};
-use crate::POOL;
 
 pub fn _join_suffix_name(name: &str, suffix: &str) -> String {
     format!("{name}{suffix}")

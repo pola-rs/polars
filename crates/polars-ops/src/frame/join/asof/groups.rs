@@ -14,8 +14,6 @@ use polars_core::hashing::{
     _df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
 use polars_core::utils::{split_ca, split_df};
 use polars_core::POOL;
-use polars_core::prelude::*;
-use rayon::prelude::*;
 use crate::frame::IntoDf;
 
 pub(super) unsafe fn join_asof_backward_with_indirection_and_tolerance<

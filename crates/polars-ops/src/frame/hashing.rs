@@ -10,14 +10,12 @@ use hashbrown::HashMap;
 use polars_arrow::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use polars_arrow::utils::CustomIterTools;
 use rayon::prelude::*;
-use xxhash_rust::xxh3::xxh3_64_with_seed;
 
 use ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::POOL;
 use std::hash::{Hash, Hasher, BuildHasher};
 use polars_arrow::trusted_len::TrustedLen;
-use polars_core::hashing::_boost_hash_combine;
 use polars_core::hashing::partition::{this_partition, AsU64};
 
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(
@@ -111,20 +109,3 @@ pub(crate) fn create_hash_and_keys_threaded_vectorized<I, T>(
     (hashes, build_hasher)
 }
 
-pub(crate) fn series_to_hashes(
-    keys: &[Series],
-    build_hasher: Option<RandomState>,
-    hashes: &mut Vec<u64>,
-) -> PolarsResult<RandomState> {
-    let build_hasher = build_hasher.unwrap_or_default();
-
-    let mut iter = keys.iter();
-    let first = iter.next().expect("at least one key");
-    first.vec_hash(build_hasher.clone(), hashes)?;
-
-    for keys in iter {
-        keys.vec_hash_combine(build_hasher.clone(), hashes)?;
-    }
-
-    Ok(build_hasher)
-}

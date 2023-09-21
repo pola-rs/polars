@@ -13,7 +13,6 @@ use std::borrow::Cow;
 
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
-use polars_core::frame::hash_join::*;
 use polars_core::prelude::*;
 use polars_core::utils::{_to_physical_and_bit_repr, slice_slice};
 use polars_core::POOL;
@@ -28,6 +27,7 @@ use hashbrown::HashMap;
 use polars_arrow::utils::CustomIterTools;
 use rayon::prelude::*;
 use polars_arrow::trusted_len::TrustedLen;
+use ahash::RandomState;
 pub(super) use polars_core::{
     series::IsSorted,
     with_match_physical_numeric_polars_type
@@ -48,8 +48,6 @@ pub use {
     general::_finish_join,
     hash_join::*,
 };
-
-use hash_join::*;
 
 macro_rules! det_hash_prone_order {
     ($self:expr, $other:expr) => {{

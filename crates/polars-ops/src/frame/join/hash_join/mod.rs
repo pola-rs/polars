@@ -1,4 +1,4 @@
-pub mod multiple_keys;
+pub(super) mod multiple_keys;
 pub(super) mod single_keys;
 mod single_keys_dispatch;
 mod single_keys_inner;
@@ -7,31 +7,18 @@ mod single_keys_outer;
 #[cfg(feature = "semi_anti_join")]
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
-mod zip_outer;
 
 
-use polars_error::*;
-use polars_utils::IdxSize;
-use ahash::RandomState;
 pub use args::*;
-#[cfg(feature = "chunked_ids")]
-use arrow::Either;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-#[cfg(feature = "asof_join")]
-pub(crate) use single_keys::build_tables;
-#[cfg(feature = "asof_join")]
-pub(crate) use single_keys_dispatch::prepare_bytes;
 use single_keys_left::*;
 use single_keys_outer::*;
 #[cfg(feature = "semi_anti_join")]
 use single_keys_semi_anti::*;
 pub use sort_merge::*;
-pub(crate) use zip_outer::*;
-pub(self) use super::*;
+pub use super::*;
 pub(super) use single_keys::*;
 pub(super) use multiple_keys::*;
-use single_keys_dispatch::*;
+pub(super) use single_keys_dispatch::*;
 
 pub use {
     multiple_keys::private_left_join_multiple_keys,
