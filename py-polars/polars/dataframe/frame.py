@@ -1819,11 +1819,6 @@ class DataFrame:
         """
         Return the dataframe as a scalar, or return the element at the given row/column.
 
-        Notes
-        -----
-        If row/col not provided, this is equivalent to ``df[0,0]``, with a check that
-        the shape is (1,1). With row/col, this is equivalent to ``df[row,col]``.
-
         Parameters
         ----------
         row
@@ -1834,6 +1829,11 @@ class DataFrame:
         See Also
         --------
         row: Get the values of a single row, either by index or by predicate.
+
+        Notes
+        -----
+        If row/col not provided, this is equivalent to ``df[0,0]``, with a check that
+        the shape is (1,1). With row/col, this is equivalent to ``df[row,col]``.
 
         Examples
         --------
