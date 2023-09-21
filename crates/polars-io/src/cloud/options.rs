@@ -108,7 +108,7 @@ impl CloudOptions {
 
     /// Build the [`ObjectStore`] implementation for AWS.
     #[cfg(feature = "aws")]
-    pub fn build_aws(&self, bucket_name: &str) -> PolarsResult<impl ObjectStore> {
+    pub fn build_aws(&self, url: &str) -> PolarsResult<impl ObjectStore> {
         let options = self.aws.as_ref();
         let mut builder = AmazonS3Builder::from_env();
         if let Some(options) = options {
@@ -117,10 +117,7 @@ impl CloudOptions {
             }
         }
 
-        builder
-            .with_bucket_name(bucket_name)
-            .build()
-            .map_err(to_compute_err)
+        builder.with_url(url).build().map_err(to_compute_err)
     }
 
     /// Set the configuration for Azure connections. This is the preferred API from rust.
@@ -140,7 +137,7 @@ impl CloudOptions {
 
     /// Build the [`ObjectStore`] implementation for Azure.
     #[cfg(feature = "azure")]
-    pub fn build_azure(&self, container_name: &str) -> PolarsResult<impl ObjectStore> {
+    pub fn build_azure(&self, url: &str) -> PolarsResult<impl ObjectStore> {
         let options = self.azure.as_ref();
         let mut builder = MicrosoftAzureBuilder::from_env();
         if let Some(options) = options {
@@ -149,10 +146,7 @@ impl CloudOptions {
             }
         }
 
-        builder
-            .with_container_name(container_name)
-            .build()
-            .map_err(to_compute_err)
+        builder.with_url(url).build().map_err(to_compute_err)
     }
 
     /// Set the configuration for GCP connections. This is the preferred API from rust.
@@ -172,7 +166,7 @@ impl CloudOptions {
 
     /// Build the [`ObjectStore`] implementation for GCP.
     #[cfg(feature = "gcp")]
-    pub fn build_gcp(&self, bucket_name: &str) -> PolarsResult<impl ObjectStore> {
+    pub fn build_gcp(&self, url: &str) -> PolarsResult<impl ObjectStore> {
         let options = self.gcp.as_ref();
         let mut builder = GoogleCloudStorageBuilder::from_env();
         if let Some(options) = options {
@@ -181,10 +175,7 @@ impl CloudOptions {
             }
         }
 
-        builder
-            .with_bucket_name(bucket_name)
-            .build()
-            .map_err(to_compute_err)
+        builder.with_url(url).build().map_err(to_compute_err)
     }
 
     /// Parse a configuration from a Hashmap. This is the interface from Python.

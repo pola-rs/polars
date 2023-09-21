@@ -27,7 +27,7 @@ pub struct CloudReader {
     // The total size of the object is required when seeking from the end of the file.
     length: Option<u64>,
     // Hold an reference to the store in a thread safe way.
-    object_store: Arc<Box<dyn ObjectStore>>,
+    object_store: Arc<dyn ObjectStore>,
     // The path in the object_store of the current object being read.
     path: Path,
     // If a read is pending then `active` will point to its future.
@@ -35,7 +35,7 @@ pub struct CloudReader {
 }
 
 impl CloudReader {
-    pub fn new(length: Option<u64>, object_store: Arc<Box<dyn ObjectStore>>, path: Path) -> Self {
+    pub fn new(length: Option<u64>, object_store: Arc<dyn ObjectStore>, path: Path) -> Self {
         Self {
             pos: 0,
             length,
