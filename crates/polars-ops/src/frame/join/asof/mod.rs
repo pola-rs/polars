@@ -12,9 +12,11 @@ use polars_core::with_match_physical_numeric_polars_type;
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
+#[cfg(feature = "dtype-categorical")]
+use super::_check_categorical_src;
 use super::{
-    _check_categorical_src, _finish_join, build_tables2, get_hash_tbl_threaded_join_partitioned,
-    multiple_keys as mk, prepare_bytes,
+    _finish_join, build_tables2, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk,
+    prepare_bytes,
 };
 use crate::frame::IntoDf;
 
