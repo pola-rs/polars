@@ -14,6 +14,23 @@ use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
 
+// We need this to infer the right lifetimes for the match closure.
+#[inline(always)]
+fn infer_re_match<F>(f: F) -> F
+where
+    F: for<'a, 'b> FnMut(Option<&'a str>, Option<&'b str>) -> Option<bool>,
+{
+    f
+}
+
+fn opt_strip_prefix<'a>(s: Option<&'a str>, prefix: Option<&str>) -> Option<&'a str> {
+    Some(s?.strip_prefix(prefix?).unwrap_or(s?))
+}
+
+fn opt_strip_suffix<'a>(s: Option<&'a str>, suffix: Option<&str>) -> Option<&'a str> {
+    Some(s?.strip_suffix(suffix?).unwrap_or(s?))
+}
+
 pub trait Utf8NameSpaceImpl: AsUtf8 {
     #[cfg(not(feature = "binary_encoding"))]
     fn hex_decode(&self) -> PolarsResult<Utf8Chunked> {
@@ -122,15 +139,14 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                 } else {
                     // A sqrt(n) regex cache is not too small, not too large.
                     let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
-                    Ok(binary_elementwise(ca, pat, |opt_src, opt_pat| {
-                        match (opt_src, opt_pat) {
-                            (Some(src), Some(pat)) => {
-                                let reg = reg_cache.try_get_or_insert_with(pat, |p| Regex::new(p));
-                                reg.ok().map(|re| re.is_match(src))
-                            },
-                            _ => None,
-                        }
-                    }))
+                    Ok(binary_elementwise(
+                        ca,
+                        pat,
+                        infer_re_match(|src, pat| {
+                            let reg = reg_cache.try_get_or_insert_with(pat?, |p| Regex::new(p));
+                            Some(reg.ok()?.is_match(src?))
+                        }),
+                    ))
                 }
             },
         }
@@ -332,6 +348,32 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             }
         }
         Ok(builder.finish())
+    }
+
+    fn strip_prefix(&self, prefix: &Utf8Chunked) -> Utf8Chunked {
+        let ca = self.as_utf8();
+        match prefix.len() {
+            1 => match prefix.get(0) {
+                Some(prefix) => {
+                    ca.apply_generic(|opt_s| opt_s.map(|s| s.strip_prefix(prefix).unwrap_or(s)))
+                },
+                _ => Utf8Chunked::full_null(ca.name(), ca.len()),
+            },
+            _ => binary_elementwise(ca, prefix, opt_strip_prefix),
+        }
+    }
+
+    fn strip_suffix(&self, suffix: &Utf8Chunked) -> Utf8Chunked {
+        let ca = self.as_utf8();
+        match suffix.len() {
+            1 => match suffix.get(0) {
+                Some(suffix) => {
+                    ca.apply_generic(|opt_s| opt_s.map(|s| s.strip_suffix(suffix).unwrap_or(s)))
+                },
+                _ => Utf8Chunked::full_null(ca.name(), ca.len()),
+            },
+            _ => binary_elementwise(ca, suffix, opt_strip_suffix),
+        }
     }
 
     fn split(&self, by: &str) -> ListChunked {

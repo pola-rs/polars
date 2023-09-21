@@ -260,16 +260,40 @@ def test_str_strip_deprecated() -> None:
         pl.Series(["a", "b", "c"]).str.rstrip()
 
 
-def test_str_strip_prefix() -> None:
-    s = pl.Series(["foo:bar", "foofoo:bar", "bar:bar", "foo", ""])
-    expected = pl.Series([":bar", "foo:bar", "bar:bar", "", ""])
+def test_str_strip_prefix_literal() -> None:
+    s = pl.Series(["foo:bar", "foofoo:bar", "bar:bar", "foo", "", None])
+    expected = pl.Series([":bar", "foo:bar", "bar:bar", "", "", None])
     assert_series_equal(s.str.strip_prefix("foo"), expected)
+    # test null literal
+    expected = pl.Series([None, None, None, None, None, None], dtype=pl.Utf8)
+    assert_series_equal(s.str.strip_prefix(pl.lit(None, dtype=pl.Utf8)), expected)
+
+
+def test_str_strip_prefix_suffix_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["foo-bar", "foobarbar", "barfoo", "", "anything", None],
+            "prefix": ["foo", "foobar", "foo", "", None, "bar"],
+            "suffix": ["bar", "barbar", "bar", "", None, "foo"],
+        }
+    )
+    out = df.select(
+        pl.col("s").str.strip_prefix(pl.col("prefix")).alias("strip_prefix"),
+        pl.col("s").str.strip_suffix(pl.col("suffix")).alias("strip_suffix"),
+    )
+    assert out.to_dict(False) == {
+        "strip_prefix": ["-bar", "bar", "barfoo", "", None, None],
+        "strip_suffix": ["foo-", "foo", "barfoo", "", None, None],
+    }
 
 
 def test_str_strip_suffix() -> None:
-    s = pl.Series(["foo:bar", "foo:barbar", "foo:foo", "bar", ""])
-    expected = pl.Series(["foo:", "foo:bar", "foo:foo", "", ""])
+    s = pl.Series(["foo:bar", "foo:barbar", "foo:foo", "bar", "", None])
+    expected = pl.Series(["foo:", "foo:bar", "foo:foo", "", "", None])
     assert_series_equal(s.str.strip_suffix("bar"), expected)
+    # test null literal
+    expected = pl.Series([None, None, None, None, None, None], dtype=pl.Utf8)
+    assert_series_equal(s.str.strip_suffix(pl.lit(None, dtype=pl.Utf8)), expected)
 
 
 def test_str_split() -> None:

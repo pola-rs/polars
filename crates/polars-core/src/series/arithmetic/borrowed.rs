@@ -177,10 +177,8 @@ pub mod checked {
             // see check_div for chunkedarray<T>
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
 
-            Ok(arity::binary_elementwise::<_, _, Float32Type, _, _>(
-                lhs,
-                rhs,
-                |opt_l, opt_r| match (opt_l, opt_r) {
+            let ca: Float32Chunked =
+                arity::binary_elementwise(lhs, rhs, |opt_l, opt_r| match (opt_l, opt_r) {
                     (Some(l), Some(r)) => {
                         if r.is_zero() {
                             None
@@ -189,9 +187,8 @@ pub mod checked {
                         }
                     },
                     _ => None,
-                },
-            )
-            .into_series())
+                });
+            Ok(ca.into_series())
         }
     }
 
@@ -201,10 +198,8 @@ pub mod checked {
             // see check_div
             let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
 
-            Ok(arity::binary_elementwise::<_, _, Float64Type, _, _>(
-                lhs,
-                rhs,
-                |opt_l, opt_r| match (opt_l, opt_r) {
+            let ca: Float64Chunked =
+                arity::binary_elementwise(lhs, rhs, |opt_l, opt_r| match (opt_l, opt_r) {
                     (Some(l), Some(r)) => {
                         if r.is_zero() {
                             None
@@ -213,9 +208,8 @@ pub mod checked {
                         }
                     },
                     _ => None,
-                },
-            )
-            .into_series())
+                });
+            Ok(ca.into_series())
         }
     }
 

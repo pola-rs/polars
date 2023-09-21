@@ -71,8 +71,8 @@ pub enum StringFunction {
     StripChars(Option<String>),
     StripCharsStart(Option<String>),
     StripCharsEnd(Option<String>),
-    StripPrefix(String),
-    StripSuffix(String),
+    StripPrefix,
+    StripSuffix,
     #[cfg(feature = "temporal")]
     Strptime(DataType, StrptimeOptions),
     Split,
@@ -121,8 +121,8 @@ impl StringFunction {
             | StripChars(_)
             | StripCharsStart(_)
             | StripCharsEnd(_)
-            | StripPrefix(_)
-            | StripSuffix(_)
+            | StripPrefix
+            | StripSuffix
             | Slice(_, _) => mapper.with_same_dtype(),
             #[cfg(feature = "string_justify")]
             Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
@@ -164,8 +164,8 @@ impl Display for StringFunction {
             StringFunction::StripChars(_) => "strip_chars",
             StringFunction::StripCharsStart(_) => "strip_chars_start",
             StringFunction::StripCharsEnd(_) => "strip_chars_end",
-            StringFunction::StripPrefix(_) => "strip_prefix",
-            StringFunction::StripSuffix(_) => "strip_suffix",
+            StringFunction::StripPrefix => "strip_prefix",
+            StringFunction::StripSuffix => "strip_suffix",
             #[cfg(feature = "temporal")]
             StringFunction::Strptime(_, _) => "strptime",
             StringFunction::Split => "split",
@@ -325,18 +325,16 @@ pub(super) fn strip_chars_end(s: &Series, matches: Option<&str>) -> PolarsResult
     }
 }
 
-pub(super) fn strip_prefix(s: &Series, prefix: &str) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    Ok(ca
-        .apply_values(|s| Cow::Borrowed(s.strip_prefix(prefix).unwrap_or(s)))
-        .into_series())
+pub(super) fn strip_prefix(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+    let prefix = s[1].utf8()?;
+    Ok(ca.strip_prefix(prefix).into_series())
 }
 
-pub(super) fn strip_suffix(s: &Series, suffix: &str) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    Ok(ca
-        .apply_values(|s| Cow::Borrowed(s.strip_suffix(suffix).unwrap_or(s)))
-        .into_series())
+pub(super) fn strip_suffix(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+    let suffix = s[1].utf8()?;
+    Ok(ca.strip_suffix(suffix).into_series())
 }
 
 pub(super) fn extract_all(args: &[Series]) -> PolarsResult<Series> {

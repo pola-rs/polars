@@ -1208,7 +1208,7 @@ class StringNameSpace:
 
         """
 
-    def strip_prefix(self, prefix: str) -> Series:
+    def strip_prefix(self, prefix: IntoExpr) -> Series:
         """
         Remove prefix.
 
@@ -1234,7 +1234,7 @@ class StringNameSpace:
 
         """
 
-    def strip_suffix(self, suffix: str) -> Series:
+    def strip_suffix(self, suffix: IntoExpr) -> Series:
         """
         Remove suffix.
 
