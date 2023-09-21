@@ -364,7 +364,7 @@ where
         .map(|ca| ca.cont_slice().unwrap())
         .collect::<Vec<_>>();
 
-    let hash_tbls = build_tables(vals_right);
+    let hash_tbls = build_tables2(vals_right);
 
     // we determine the offset so that we later know which index to store in the join tuples
     let offsets = vals_left
@@ -492,7 +492,7 @@ where
     let vals_left = prepare_bytes(&splitted_by_left, &hb);
     let vals_right = prepare_bytes(&splitted_right, &hb);
 
-    let hash_tbls = build_tables(vals_right);
+    let hash_tbls = build_tables2(vals_right);
 
     // we determine the offset so that we later know which index to store in the join tuples
     let offsets = vals_left

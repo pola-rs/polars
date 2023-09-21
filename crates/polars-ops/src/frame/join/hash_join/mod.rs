@@ -15,8 +15,9 @@ use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, slice_slice, split_ca};
 use polars_core::POOL;
 pub(super) use single_keys::*;
+#[cfg(feature = "asof_join")]
+pub(super) use single_keys_dispatch::prepare_bytes;
 pub use single_keys_dispatch::SeriesJoin;
-pub(super) use single_keys_dispatch::*;
 use single_keys_inner::*;
 use single_keys_left::*;
 use single_keys_outer::*;
@@ -60,7 +61,7 @@ pub(super) use det_hash_prone_order;
 use polars_arrow::conversion::primitive_to_vec;
 use polars_utils::hash_to_partition;
 
-pub unsafe fn get_hash_tbl_threaded_join_partitioned<Item>(
+pub(super) unsafe fn get_hash_tbl_threaded_join_partitioned<Item>(
     h: u64,
     hash_tables: &[Item],
     len: u64,

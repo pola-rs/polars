@@ -1,19 +1,20 @@
-mod asof;
+mod default;
 mod groups;
 use std::borrow::Cow;
 
-use asof::*;
+use default::*;
 pub(super) use groups::AsofJoinBy;
 use num_traits::Bounded;
 use polars_core::prelude::*;
 use polars_core::utils::{ensure_sorted_arg, slice_slice};
+use polars_core::with_match_physical_numeric_polars_type;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
 use super::{
-    _check_categorical_src, _finish_join, build_tables, get_hash_tbl_threaded_join_partitioned,
-    multiple_keys as mk, prepare_bytes, with_match_physical_numeric_polars_type,
+    _check_categorical_src, _finish_join, build_tables2, get_hash_tbl_threaded_join_partitioned,
+    multiple_keys as mk, prepare_bytes,
 };
 use crate::frame::IntoDf;
 

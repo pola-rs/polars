@@ -175,9 +175,7 @@ where
 }
 
 fn get_arrays<T: PolarsDataType>(cas: &[ChunkedArray<T>]) -> Vec<&T::Array> {
-    cas.into_iter()
-        .flat_map(|arr| arr.downcast_iter())
-        .collect()
+    cas.iter().flat_map(|arr| arr.downcast_iter()).collect()
 }
 
 fn group_join_inner<'b, T>(
