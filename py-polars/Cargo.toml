@@ -12,7 +12,7 @@ polars-algo = { path = "../crates/polars-algo", default-features = false }
 polars-core = { path = "../crates/polars-core", default-features = false, features = ["python"] }
 polars-error = { path = "../crates/polars-error" }
 polars-lazy = { path = "../crates/polars-lazy", default-features = false, features = ["python"] }
-polars-ops = { path = "../crates/polars-ops", default-features = false }
+polars-ops = { path = "../crates/polars-ops", default-features = false, features = ["convert_index"] }
 polars-plan = { path = "../crates/polars-plan", default-features = false }
 
 ahash = "0.8"
@@ -141,6 +141,7 @@ cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
 ffi_plugin = ["polars-plan/ffi_plugin"]
+cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure"]
 
 all = [
   "dtype-i8",
@@ -186,8 +187,8 @@ all = [
   "cutqcut",
   "rle",
   "extract_groups",
-  "polars-ops/convert_index",
   "ffi_plugin",
+  "cloud",
 ]
 
 # we cannot conditionally activate simd

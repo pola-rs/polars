@@ -17,7 +17,7 @@ use polars_core::error::{to_compute_err, PolarsResult};
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
 
-use super::cloud::{build, CloudLocation, CloudReader};
+use super::cloud::{build_object_store, CloudLocation, CloudReader};
 use super::mmap;
 use super::mmap::ColumnStore;
 use super::read_impl::FetchRowGroups;
@@ -32,7 +32,7 @@ pub struct ParquetObjectStore {
 
 impl ParquetObjectStore {
     pub fn from_uri(uri: &str, options: Option<&CloudOptions>) -> PolarsResult<Self> {
-        let (CloudLocation { prefix, .. }, store) = build(uri, options)?;
+        let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options)?;
         let store = Arc::new(Mutex::from(store));
 
         Ok(ParquetObjectStore {

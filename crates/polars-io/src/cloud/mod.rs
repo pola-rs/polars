@@ -44,7 +44,7 @@ fn err_missing_configuration(feature: &str, scheme: &str) -> BuildResult {
 
 /// Build an [`ObjectStore`] based on the URL and passed in url. Return the cloud location and an implementation of the object store.
 #[cfg(feature = "cloud")]
-pub fn build(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
+pub fn build_object_store(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
     let cloud_location = CloudLocation::new(url)?;
     let store = match CloudType::from_str(url)? {
         CloudType::File => {

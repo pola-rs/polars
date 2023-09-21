@@ -46,3 +46,6 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy --locked -- -D warnings
+
+      - name: Compile without default features
+        run: cargo check --no-default-features

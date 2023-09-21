@@ -188,7 +188,7 @@ impl CloudWriter {
     /// Wrapper around `CloudWriter::new_with_object_store` that is useful if you only have a single write task.
     /// TODO: Naming?
     pub fn new(uri: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<Self> {
-        let (cloud_location, object_store) = crate::cloud::build(uri, cloud_options)?;
+        let (cloud_location, object_store) = crate::cloud::build_object_store(uri, cloud_options)?;
         let object_store = Arc::from(object_store);
         Self::new_with_object_store(object_store, cloud_location.prefix.into())
     }

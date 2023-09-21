@@ -211,14 +211,32 @@ def scan_parquet(
     row_count_offset
         Offset to start the row_count column (only use if the name is set)
     storage_options
-        Extra options that make sense for ``fsspec.open()`` or a
-        particular storage connection.
-        e.g. host, port, username, password, etc.
+        Options that inform use how to connect to the cloud provider.
+        If the cloud provider is not supported by us, the storage options
+        are passed to ``fsspec.open()``.
+        Currently supported providers are: {'aws', 'gcp', 'azure' }.
+        See supported keys here:
+
+        * `aws <https://docs.rs/object_store/0.7.0/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+        * `gcp <https://docs.rs/object_store/0.7.0/object_store/gcp/enum.GoogleConfigKey.html>`_
+        * `azure <https://docs.rs/object_store/0.7.0/object_store/azure/enum.AzureConfigKey.html>`_
+
+        If ``storage_options`` are not provided we will try to infer them from the
+        environment variables.
     low_memory
         Reduce memory pressure at the expense of performance.
     use_statistics
         Use statistics in the parquet to determine if pages
         can be skipped from reading.
+
+    Examples
+    --------
+    >>> source = "s3://bucket/*.parquet"
+    >>> storage_options = {
+    ...     "aws_access_key_id": "<secret>",
+    ...     "aws_secret_access_key": "<secret>",
+    ... }
+    >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
 
     See Also
     --------
