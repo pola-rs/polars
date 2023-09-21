@@ -15,6 +15,9 @@ pub type ChunkJoinOptIds = Vec<Option<IdxSize>>;
 #[cfg(not(feature = "chunked_ids"))]
 pub type ChunkJoinIds = Vec<IdxSize>;
 
+#[cfg(feature = "serde")]
+use serde::{Serialize, Deserialize};
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinArgs {

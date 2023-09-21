@@ -3,8 +3,7 @@ use polars_utils::sync::SyncPtr;
 
 use super::single_keys::build_tables;
 use super::*;
-use crate::frame::hash_join::single_keys::probe_to_offsets;
-use crate::utils::flatten;
+use polars_core::utils::flatten;
 
 /// Probe the build table and add tuples to the results (inner join)
 pub(super) fn probe_inner<T, F>(

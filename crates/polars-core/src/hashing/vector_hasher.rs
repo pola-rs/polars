@@ -423,7 +423,7 @@ where
 /// During rehashes, we will rehash the hash instead of the string, that makes rehashing
 /// cheap and allows cache coherent small hash tables.
 #[derive(Eq, Copy, Clone, Debug)]
-pub(crate) struct BytesHash<'a> {
+pub struct BytesHash<'a> {
     payload: Option<&'a [u8]>,
     pub(super) hash: u64,
 }
@@ -539,7 +539,7 @@ where
     (hashes, build_hasher)
 }
 
-pub(crate) fn df_rows_to_hashes_threaded_vertical(
+pub fn _df_rows_to_hashes_threaded_vertical(
     keys: &[DataFrame],
     hasher_builder: Option<RandomState>,
 ) -> PolarsResult<(Vec<UInt64Chunked>, RandomState)> {

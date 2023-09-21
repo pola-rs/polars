@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 use smartstring::{LazyCompact, SmartString};
 
 use crate::datatypes::PlIdHashMap;
-use crate::hashing::HASHMAP_INIT_SIZE;
+use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::InitHashMaps;
 
 /// We use atomic reference counting
@@ -179,9 +179,9 @@ impl SCacheInner {
 impl Default for SCacheInner {
     fn default() -> Self {
         Self {
-            map: PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE),
+            map: PlIdHashMap::with_capacity(_HASHMAP_INIT_SIZE),
             uuid: STRING_CACHE_UUID_CTR.fetch_add(1, Ordering::AcqRel),
-            payloads: Vec::with_capacity(HASHMAP_INIT_SIZE),
+            payloads: Vec::with_capacity(_HASHMAP_INIT_SIZE),
         }
     }
 }

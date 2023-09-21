@@ -1,6 +1,7 @@
-mod join;
+pub(crate) mod join;
 #[cfg(feature = "pivot")]
 pub mod pivot;
+mod hashing;
 
 pub use join::*;
 #[cfg(feature = "to_dummies")]

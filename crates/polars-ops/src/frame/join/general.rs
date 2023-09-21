@@ -1,22 +1,4 @@
-mod zip_outer;
-
-use std::fmt::{Debug, Display, Formatter};
-use std::hash::{BuildHasher, Hash, Hasher};
-
-#[cfg(feature = "chunked_ids")]
-use arrow::Either;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-pub(crate) use zip_outer::*;
-
-use crate::datatypes::PlHashMap;
-use crate::hashing::{
-    create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_partition,
-    AsU64, BytesHash, _HASHMAP_INIT_SIZE,
-};
-use crate::prelude::*;
-use crate::utils::{_set_partition_size, slice_slice, split_ca};
-use crate::POOL;
+use super::*;
 
 pub fn _join_suffix_name(name: &str, suffix: &str) -> String {
     format!("{name}{suffix}")
@@ -24,20 +6,20 @@ pub fn _join_suffix_name(name: &str, suffix: &str) -> String {
 
 /// Utility method to finish a join.
 #[doc(hidden)]
-pub(crate) fn _finish_join(
+pub fn _finish_join(
     mut df_left: DataFrame,
     mut df_right: DataFrame,
     suffix: Option<&str>,
 ) -> PolarsResult<DataFrame> {
     let mut left_names = PlHashSet::with_capacity(df_left.width());
 
-    df_left.columns.iter().for_each(|series| {
+    df_left.get_columns().iter().for_each(|series| {
         left_names.insert(series.name());
     });
 
     let mut rename_strs = Vec::with_capacity(df_right.width());
 
-    df_right.columns.iter().for_each(|series| {
+    df_right.get_columns().iter().for_each(|series| {
         if left_names.contains(series.name()) {
             rename_strs.push(series.name().to_owned())
         }
@@ -49,7 +31,18 @@ pub(crate) fn _finish_join(
     }
 
     drop(left_names);
-    df_left.hstack_mut(&df_right.columns)?;
+    df_left.hstack_mut(df_right.get_columns())?;
     Ok(df_left)
+}
+
+#[cfg(feature = "chunked_ids")]
+pub(crate) fn create_chunked_index_mapping(chunks: &[ArrayRef], len: usize) -> Vec<ChunkId> {
+    let mut vals = Vec::with_capacity(len);
+
+    for (chunk_i, chunk) in chunks.iter().enumerate() {
+        vals.extend((0..chunk.len()).map(|array_i| [chunk_i as IdxSize, array_i as IdxSize]))
+    }
+
+    vals
 }
 

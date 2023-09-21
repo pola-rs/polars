@@ -1,5 +1,13 @@
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
+#[cfg(feature = "asof_join")]
+mod asof;
+mod hash_join;
+mod args;
+mod checks;
+mod general;
+
+use either::Either;
 #[cfg(feature = "chunked_ids")]
 use std::borrow::Cow;
 
@@ -9,8 +17,31 @@ use polars_core::frame::hash_join::*;
 use polars_core::prelude::*;
 use polars_core::utils::{_to_physical_and_bit_repr, slice_slice};
 use polars_core::POOL;
+pub use args::*;
+pub(crate) use checks::*;
+use general::*;
 
-use super::*;
+use std::fmt::{Debug, Display, Formatter};
+use std::hash::{BuildHasher, Hash, Hasher};
+use hashbrown::hash_map::{Entry, RawEntryMut};
+use hashbrown::HashMap;
+use polars_arrow::utils::CustomIterTools;
+use rayon::prelude::*;
+use polars_arrow::trusted_len::TrustedLen;
+use polars_core::series::IsSorted;
+use super::IntoDf;
+use asof::{AsofJoin, AsofJoinBy};
+use super::hashing::{
+    create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded,
+};
+use polars_core::hashing::{
+    BytesHash,
+    _df_rows_to_hashes_threaded_vertical,
+    partition::{AsU64, this_partition},
+    _HASHMAP_INIT_SIZE,
+};
+
+use hash_join::*;
 
 macro_rules! det_hash_prone_order {
     ($self:expr, $other:expr) => {{

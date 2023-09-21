@@ -1,5 +1,4 @@
 use super::*;
-use crate::frame::hash_join::single_keys::probe_to_offsets;
 
 /// Only keeps track of membership in right table
 pub(super) fn create_probe_table_semi_anti<T, IntoSlice>(keys: Vec<IntoSlice>) -> Vec<PlHashSet<T>>
@@ -16,7 +15,7 @@ where
         (0..n_partitions).into_par_iter().map(|partition_no| {
             let partition_no = partition_no as u64;
 
-            let mut hash_tbl: PlHashSet<T> = PlHashSet::with_capacity(HASHMAP_INIT_SIZE);
+            let mut hash_tbl: PlHashSet<T> = PlHashSet::with_capacity(_HASHMAP_INIT_SIZE);
 
             let n_partitions = n_partitions as u64;
             for keys in &keys {

@@ -3,9 +3,9 @@ use polars_arrow::kernels::sorted_join;
 
 use super::*;
 #[cfg(feature = "performant")]
-use crate::utils::_split_offsets;
+use polars_core::utils::_split_offsets;
 #[cfg(feature = "performant")]
-use crate::utils::flatten::flatten_par;
+use polars_core::utils::flatten::flatten_par;
 
 #[cfg(feature = "performant")]
 fn par_sorted_merge_left_impl<T>(

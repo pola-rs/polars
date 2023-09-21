@@ -1,37 +1,38 @@
 use num_traits::NumCast;
 
-use super::single_keys_inner::hash_join_tuples_inner;
 use super::*;
-#[cfg(feature = "chunked_ids")]
-use crate::utils::create_chunked_index_mapping;
+use crate::series::SeriesSealed;
 
-impl Series {
+pub trait SeriesJoin: SeriesSealed + Sized{
     #[doc(hidden)]
-    pub fn hash_join_left(
+    fn hash_join_left(
         &self,
         other: &Series,
         validate: JoinValidation,
     ) -> PolarsResult<LeftJoinIds> {
-        let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
+        let s_self = self.as_series();
+        let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
         validate.validate_probe(&lhs, &rhs, false)?;
 
         use DataType::*;
         match lhs.dtype() {
             Utf8 => {
-                let lhs = lhs.utf8().unwrap();
-                let rhs = rhs.utf8().unwrap();
-
-                let lhs = lhs.as_binary();
-                let rhs = rhs.as_binary();
-                lhs.hash_join_left(&rhs, validate)
+                todo!()
+                // let lhs = lhs.utf8().unwrap();
+                // let rhs = rhs.utf8().unwrap();
+                //
+                // let lhs = lhs.as_binary();
+                // let rhs = rhs.as_binary();
+                // lhs.hash_join_left(&rhs, validate)
             },
             Binary => {
-                let lhs = lhs.binary().unwrap();
-                let rhs = rhs.binary().unwrap();
-                lhs.hash_join_left(rhs, validate)
+                todo!()
+                // let lhs = lhs.binary().unwrap();
+                // let rhs = rhs.binary().unwrap();
+                // lhs.hash_join_left(rhs, validate)
             },
             _ => {
-                if self.bit_repr_is_large() {
+                if s_self.bit_repr_is_large() {
                     let lhs = lhs.bit_repr_large();
                     let rhs = rhs.bit_repr_large();
                     num_group_join_left(&lhs, &rhs, validate)
@@ -45,26 +46,29 @@ impl Series {
     }
 
     #[cfg(feature = "semi_anti_join")]
-    pub(super) fn hash_join_semi_anti(&self, other: &Series, anti: bool) -> Vec<IdxSize> {
-        let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
+    fn hash_join_semi_anti(&self, other: &Series, anti: bool) -> Vec<IdxSize> {
+        let s_self = self.as_series();
+        let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
 
         use DataType::*;
         match lhs.dtype() {
             Utf8 => {
-                let lhs = lhs.cast(&Binary).unwrap();
-                let rhs = rhs.cast(&Binary).unwrap();
-
-                let lhs = lhs.binary().unwrap();
-                let rhs = rhs.binary().unwrap();
-                lhs.hash_join_semi_anti(rhs, anti)
+                todo!()
+                // let lhs = lhs.cast(&Binary).unwrap();
+                // let rhs = rhs.cast(&Binary).unwrap();
+                //
+                // let lhs = lhs.binary().unwrap();
+                // let rhs = rhs.binary().unwrap();
+                // lhs.hash_join_semi_anti(rhs, anti)
             },
             Binary => {
-                let lhs = lhs.binary().unwrap();
-                let rhs = rhs.binary().unwrap();
-                lhs.hash_join_semi_anti(rhs, anti)
+                todo!()
+                // let lhs = lhs.binary().unwrap();
+                // let rhs = rhs.binary().unwrap();
+                // lhs.hash_join_semi_anti(rhs, anti)
             },
             _ => {
-                if self.bit_repr_is_large() {
+                if s_self.bit_repr_is_large() {
                     let lhs = lhs.bit_repr_large();
                     let rhs = rhs.bit_repr_large();
                     num_group_join_anti_semi(&lhs, &rhs, anti)
@@ -78,36 +82,39 @@ impl Series {
     }
 
     // returns the join tuples and whether or not the lhs tuples are sorted
-    pub(super) fn hash_join_inner(
+    fn hash_join_inner(
         &self,
         other: &Series,
         validate: JoinValidation,
     ) -> PolarsResult<(InnerJoinIds, bool)> {
-        let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
+        let s_self = self.as_series();
+        let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
         validate.validate_probe(&lhs, &rhs, true)?;
 
         use DataType::*;
         match lhs.dtype() {
             Utf8 => {
-                let lhs = lhs.utf8().unwrap();
-                let rhs = rhs.utf8().unwrap();
-
-                let lhs = lhs.as_binary();
-                let rhs = rhs.as_binary();
-                lhs.hash_join_inner(&rhs, validate)
+                todo!()
+                // let lhs = lhs.utf8().unwrap();
+                // let rhs = rhs.utf8().unwrap();
+                //
+                // let lhs = lhs.as_binary();
+                // let rhs = rhs.as_binary();
+                // lhs.hash_join_inner(&rhs, validate)
             },
             Binary => {
-                let lhs = lhs.binary().unwrap();
-                let rhs = rhs.binary().unwrap();
-                lhs.hash_join_inner(rhs, validate)
+                todo!()
+                // let lhs = lhs.binary().unwrap();
+                // let rhs = rhs.binary().unwrap();
+                // lhs.hash_join_inner(rhs, validate)
             },
             _ => {
-                if self.bit_repr_is_large() {
-                    let lhs = self.bit_repr_large();
+                if s_self.bit_repr_is_large() {
+                    let lhs = s_self.bit_repr_large();
                     let rhs = other.bit_repr_large();
                     num_group_join_inner(&lhs, &rhs, validate)
                 } else {
-                    let lhs = self.bit_repr_small();
+                    let lhs = s_self.bit_repr_small();
                     let rhs = other.bit_repr_small();
                     num_group_join_inner(&lhs, &rhs, validate)
                 }
@@ -115,43 +122,48 @@ impl Series {
         }
     }
 
-    pub(super) fn hash_join_outer(
+    fn hash_join_outer(
         &self,
         other: &Series,
         validate: JoinValidation,
     ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>> {
-        let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
+        let s_self = self.as_series();
+        let (lhs, rhs) = (s_self.to_physical_repr(), other.to_physical_repr());
         validate.validate_probe(&lhs, &rhs, true)?;
 
         use DataType::*;
         match lhs.dtype() {
             Utf8 => {
-                let lhs = lhs.utf8().unwrap();
-                let rhs = rhs.utf8().unwrap();
-
-                let lhs = lhs.as_binary();
-                let rhs = rhs.as_binary();
-                lhs.hash_join_outer(&rhs, validate)
+                todo!()
+                // let lhs = lhs.utf8().unwrap();
+                // let rhs = rhs.utf8().unwrap();
+                //
+                // let lhs = lhs.as_binary();
+                // let rhs = rhs.as_binary();
+                // lhs.hash_join_outer(&rhs, validate)
             },
             Binary => {
-                let lhs = lhs.binary().unwrap();
-                let rhs = rhs.binary().unwrap();
-                lhs.hash_join_outer(rhs, validate)
+                todo!()
+                // let lhs = lhs.binary().unwrap();
+                // let rhs = rhs.binary().unwrap();
+                // lhs.hash_join_outer(rhs, validate)
             },
             _ => {
-                if self.bit_repr_is_large() {
-                    let lhs = self.bit_repr_large();
+                if s_self.bit_repr_is_large() {
+                    let lhs = s_self.bit_repr_large();
                     let rhs = other.bit_repr_large();
-                    lhs.hash_join_outer(&rhs, validate)
+                    hash_join_outer(&lhs, &rhs, validate)
                 } else {
-                    let lhs = self.bit_repr_small();
+                    let lhs = s_self.bit_repr_small();
                     let rhs = other.bit_repr_small();
-                    lhs.hash_join_outer(&rhs, validate)
+                    hash_join_outer(&lhs, &rhs, validate)
                 }
             },
         }
     }
 }
+
+impl SeriesJoin for Series{}
 
 fn splitted_to_slice<T>(splitted: &[ChunkedArray<T>]) -> Vec<&[T::Native]>
 where
@@ -200,8 +212,8 @@ where
     match (
         left.null_count() == 0,
         right.null_count() == 0,
-        left.chunks.len(),
-        right.chunks.len(),
+        left.chunks().len(),
+        right.chunks().len(),
     ) {
         (true, true, 1, 1) => {
             let keys_a = splitted_to_slice(&splitted_a);
@@ -282,8 +294,8 @@ where
     match (
         left.null_count(),
         right.null_count(),
-        left.chunks.len(),
-        right.chunks.len(),
+        left.chunks().len(),
+        right.chunks().len(),
     ) {
         (0, 0, 1, 1) => {
             let keys_a = splitted_to_slice(&splitted_a);
@@ -320,17 +332,16 @@ where
     }
 }
 
-impl<T> ChunkedArray<T>
-where
-    T: PolarsIntegerType + Sync,
-    T::Native: Eq + Hash + NumCast,
-{
-    fn hash_join_outer(
-        &self,
+    fn hash_join_outer<T>(
+        ca_in: &ChunkedArray<T>,
         other: &ChunkedArray<T>,
         validate: JoinValidation,
-    ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>> {
-        let (a, b, swapped) = det_hash_prone_order!(self, other);
+    ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>>
+        where
+            T: PolarsIntegerType + Sync,
+            T::Native: Eq + Hash + NumCast,
+    {
+        let (a, b, swapped) = det_hash_prone_order!(ca_in, other);
 
         let n_partitions = _set_partition_size();
         let splitted_a = split_ca(a, n_partitions).unwrap();
@@ -360,10 +371,9 @@ where
                 hash_join_tuples_outer(iters_a, iters_b, swapped, validate)
             },
         }
-    }
 }
 
-pub(crate) fn prepare_bytes<'a>(
+pub fn prepare_bytes<'a>(
     been_split: &'a [BinaryChunked],
     hb: &RandomState,
 ) -> Vec<Vec<BytesHash<'a>>> {
@@ -384,113 +394,113 @@ pub(crate) fn prepare_bytes<'a>(
     })
 }
 
-impl BinaryChunked {
-    fn prepare(
-        &self,
-        other: &BinaryChunked,
-        // In inner join and outer join, the shortest relation will be used to create a hash table.
-        // In left join, always use the right side to create.
-        build_shortest_table: bool,
-    ) -> (Vec<Self>, Vec<Self>, bool, RandomState) {
-        let n_threads = POOL.current_num_threads();
-
-        let (a, b, swapped) = if build_shortest_table {
-            det_hash_prone_order!(self, other)
-        } else {
-            (self, other, false)
-        };
-
-        let hb = RandomState::default();
-        let splitted_a = split_ca(a, n_threads).unwrap();
-        let splitted_b = split_ca(b, n_threads).unwrap();
-
-        (splitted_a, splitted_b, swapped, hb)
-    }
-
-    // returns the join tuples and whether or not the lhs tuples are sorted
-    fn hash_join_inner(
-        &self,
-        other: &BinaryChunked,
-        validate: JoinValidation,
-    ) -> PolarsResult<(InnerJoinIds, bool)> {
-        let (splitted_a, splitted_b, swapped, hb) = self.prepare(other, true);
-        let str_hashes_a = prepare_bytes(&splitted_a, &hb);
-        let str_hashes_b = prepare_bytes(&splitted_b, &hb);
-        Ok((
-            hash_join_tuples_inner(str_hashes_a, str_hashes_b, swapped, validate)?,
-            !swapped,
-        ))
-    }
-
-    fn hash_join_left(
-        &self,
-        other: &BinaryChunked,
-        validate: JoinValidation,
-    ) -> PolarsResult<LeftJoinIds> {
-        let (splitted_a, splitted_b, _, hb) = self.prepare(other, false);
-        let str_hashes_a = prepare_bytes(&splitted_a, &hb);
-        let str_hashes_b = prepare_bytes(&splitted_b, &hb);
-
-        let (mapping_left, mapping_right) =
-            create_mappings(self.chunks(), other.chunks(), self.len(), other.len());
-        hash_join_tuples_left(
-            str_hashes_a,
-            str_hashes_b,
-            mapping_left.as_deref(),
-            mapping_right.as_deref(),
-            validate,
-        )
-    }
-
-    #[cfg(feature = "semi_anti_join")]
-    fn hash_join_semi_anti(&self, other: &BinaryChunked, anti: bool) -> Vec<IdxSize> {
-        let (splitted_a, splitted_b, _, hb) = self.prepare(other, false);
-        let str_hashes_a = prepare_bytes(&splitted_a, &hb);
-        let str_hashes_b = prepare_bytes(&splitted_b, &hb);
-        if anti {
-            hash_join_tuples_left_anti(str_hashes_a, str_hashes_b)
-        } else {
-            hash_join_tuples_left_semi(str_hashes_a, str_hashes_b)
-        }
-    }
-
-    fn hash_join_outer(
-        &self,
-        other: &BinaryChunked,
-        validate: JoinValidation,
-    ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>> {
-        let (a, b, swapped) = det_hash_prone_order!(self, other);
-
-        let n_partitions = _set_partition_size();
-        let splitted_a = split_ca(a, n_partitions).unwrap();
-        let splitted_b = split_ca(b, n_partitions).unwrap();
-
-        match (a.has_validity(), b.has_validity()) {
-            (false, false) => {
-                let iters_a = splitted_a
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect::<Vec<_>>();
-                let iters_b = splitted_b
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swapped, validate)
-            },
-            _ => {
-                let iters_a = splitted_a
-                    .iter()
-                    .map(|ca| ca.into_iter())
-                    .collect::<Vec<_>>();
-                let iters_b = splitted_b
-                    .iter()
-                    .map(|ca| ca.into_iter())
-                    .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swapped, validate)
-            },
-        }
-    }
-}
+// impl BinaryChunked {
+//     fn prepare(
+//         &self,
+//         other: &BinaryChunked,
+//         // In inner join and outer join, the shortest relation will be used to create a hash table.
+//         // In left join, always use the right side to create.
+//         build_shortest_table: bool,
+//     ) -> (Vec<Self>, Vec<Self>, bool, RandomState) {
+//         let n_threads = POOL.current_num_threads();
+//
+//         let (a, b, swapped) = if build_shortest_table {
+//             det_hash_prone_order!(self, other)
+//         } else {
+//             (self, other, false)
+//         };
+//
+//         let hb = RandomState::default();
+//         let splitted_a = split_ca(a, n_threads).unwrap();
+//         let splitted_b = split_ca(b, n_threads).unwrap();
+//
+//         (splitted_a, splitted_b, swapped, hb)
+//     }
+//
+//     // returns the join tuples and whether or not the lhs tuples are sorted
+//     fn hash_join_inner(
+//         &self,
+//         other: &BinaryChunked,
+//         validate: JoinValidation,
+//     ) -> PolarsResult<(InnerJoinIds, bool)> {
+//         let (splitted_a, splitted_b, swapped, hb) = self.prepare(other, true);
+//         let str_hashes_a = prepare_bytes(&splitted_a, &hb);
+//         let str_hashes_b = prepare_bytes(&splitted_b, &hb);
+//         Ok((
+//             hash_join_tuples_inner(str_hashes_a, str_hashes_b, swapped, validate)?,
+//             !swapped,
+//         ))
+//     }
+//
+//     fn hash_join_left(
+//         &self,
+//         other: &BinaryChunked,
+//         validate: JoinValidation,
+//     ) -> PolarsResult<LeftJoinIds> {
+//         let (splitted_a, splitted_b, _, hb) = self.prepare(other, false);
+//         let str_hashes_a = prepare_bytes(&splitted_a, &hb);
+//         let str_hashes_b = prepare_bytes(&splitted_b, &hb);
+//
+//         let (mapping_left, mapping_right) =
+//             create_mappings(self.chunks(), other.chunks(), self.len(), other.len());
+//         hash_join_tuples_left(
+//             str_hashes_a,
+//             str_hashes_b,
+//             mapping_left.as_deref(),
+//             mapping_right.as_deref(),
+//             validate,
+//         )
+//     }
+//
+//     #[cfg(feature = "semi_anti_join")]
+//     fn hash_join_semi_anti(&self, other: &BinaryChunked, anti: bool) -> Vec<IdxSize> {
+//         let (splitted_a, splitted_b, _, hb) = self.prepare(other, false);
+//         let str_hashes_a = prepare_bytes(&splitted_a, &hb);
+//         let str_hashes_b = prepare_bytes(&splitted_b, &hb);
+//         if anti {
+//             hash_join_tuples_left_anti(str_hashes_a, str_hashes_b)
+//         } else {
+//             hash_join_tuples_left_semi(str_hashes_a, str_hashes_b)
+//         }
+//     }
+//
+//     fn hash_join_outer(
+//         &self,
+//         other: &BinaryChunked,
+//         validate: JoinValidation,
+//     ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>> {
+//         let (a, b, swapped) = det_hash_prone_order!(self, other);
+//
+//         let n_partitions = _set_partition_size();
+//         let splitted_a = split_ca(a, n_partitions).unwrap();
+//         let splitted_b = split_ca(b, n_partitions).unwrap();
+//
+//         match (a.has_validity(), b.has_validity()) {
+//             (false, false) => {
+//                 let iters_a = splitted_a
+//                     .iter()
+//                     .map(|ca| ca.into_no_null_iter())
+//                     .collect::<Vec<_>>();
+//                 let iters_b = splitted_b
+//                     .iter()
+//                     .map(|ca| ca.into_no_null_iter())
+//                     .collect::<Vec<_>>();
+//                 hash_join_tuples_outer(iters_a, iters_b, swapped, validate)
+//             },
+//             _ => {
+//                 let iters_a = splitted_a
+//                     .iter()
+//                     .map(|ca| ca.into_iter())
+//                     .collect::<Vec<_>>();
+//                 let iters_b = splitted_b
+//                     .iter()
+//                     .map(|ca| ca.into_iter())
+//                     .collect::<Vec<_>>();
+//                 hash_join_tuples_outer(iters_a, iters_b, swapped, validate)
+//             },
+//         }
+//     }
+// }
 
 #[cfg(feature = "semi_anti_join")]
 fn num_group_join_anti_semi<T>(
@@ -509,8 +519,8 @@ where
     match (
         left.null_count(),
         right.null_count(),
-        left.chunks.len(),
-        right.chunks.len(),
+        left.chunks().len(),
+        right.chunks().len(),
     ) {
         (0, 0, 1, 1) => {
             let keys_a = splitted_to_slice(&splitted_a);

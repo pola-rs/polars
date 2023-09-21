@@ -2,7 +2,7 @@
 use std::hash::Hash;
 
 #[cfg(feature = "unique_counts")]
-use crate::hashing::HASHMAP_INIT_SIZE;
+use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 #[cfg(feature = "unique_counts")]
 use crate::utils::NoNull;
@@ -13,7 +13,7 @@ where
     I: Iterator<Item = J>,
     J: Hash + Eq,
 {
-    let mut map = PlIndexMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+    let mut map = PlIndexMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
     for item in items {
         map.entry(item)
             .and_modify(|cnt| {

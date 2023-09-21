@@ -6,7 +6,7 @@ use hashbrown::hash_map::{Entry, RawEntryMut};
 use polars_arrow::trusted_len::TrustedLenPush;
 
 use crate::datatypes::PlHashMap;
-use crate::hashing::HASHMAP_INIT_SIZE;
+use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::{using_string_cache, StringCache, POOL};
 
@@ -288,7 +288,7 @@ impl<'a> CategoricalChunkedBuilder<'a> {
         }
         // It is important that we use the same hash builder as the global `StringCache` does.
         self.local_mapping =
-            PlHashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, StringCache::get_hash_builder());
+            PlHashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, StringCache::get_hash_builder());
         for opt_s in &mut iter {
             match opt_s {
                 Some(s) => self.push_impl(s, store_hashes),
@@ -484,7 +484,7 @@ impl CategoricalChunked {
     pub unsafe fn from_global_indices_unchecked(cats: UInt32Chunked) -> CategoricalChunked {
         let cache = crate::STRING_CACHE.read_map();
 
-        let cap = std::cmp::min(std::cmp::min(cats.len(), cache.len()), HASHMAP_INIT_SIZE);
+        let cap = std::cmp::min(std::cmp::min(cats.len(), cache.len()), _HASHMAP_INIT_SIZE);
         let mut rev_map = PlHashMap::with_capacity(cap);
         let mut str_values = MutableUtf8Array::with_capacities(cap, cap * 24);
 

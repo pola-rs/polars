@@ -13,6 +13,7 @@ polars-arrow = { workspace = true, default-features = false }
 polars-core = { workspace = true, features = ["algorithm_group_by", "algorithm_join"], default-features = false }
 polars-json = { workspace = true, optional = true }
 polars-utils = { workspace = true, default-features = false }
+polars-error = { workspace = true }
 
 argminmax = { version = "0.6.1", default-features = false, features = ["float"] }
 arrow = { workspace = true }
@@ -28,6 +29,11 @@ regex = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
+num-traits = { workspace = true }
+ahash = {workspace = true }
+rayon = {workspace = true }
+xxhash-rust = { workspace = true }
+hashbrown = { workspace = true }
 
 [build-dependencies]
 version_check = { workspace = true }

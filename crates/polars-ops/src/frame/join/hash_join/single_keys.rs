@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) fn build_tables<T, IntoSlice>(keys: Vec<IntoSlice>) -> Vec<PlHashMap<T, Vec<IdxSize>>>
+pub fn build_tables<T, IntoSlice>(keys: Vec<IntoSlice>) -> Vec<PlHashMap<T, Vec<IdxSize>>>
 where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
     IntoSlice: AsRef<[T]> + Send + Sync,
@@ -17,7 +17,7 @@ where
                 let partition_no = partition_no as u64;
 
                 let mut hash_tbl: PlHashMap<T, Vec<IdxSize>> =
-                    PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+                    PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
 
                 let n_partitions = n_partitions as u64;
                 let mut offset = 0;
@@ -54,9 +54,9 @@ where
 
 // we determine the offset so that we later know which index to store in the join tuples
 pub(super) fn probe_to_offsets<T, IntoSlice>(probe: &[IntoSlice]) -> Vec<usize>
-where
-    IntoSlice: AsRef<[T]> + Send + Sync,
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    where
+        IntoSlice: AsRef<[T]> + Send + Sync,
+        T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     probe
         .iter()

@@ -1,7 +1,6 @@
 use super::single_keys::build_tables;
 use super::*;
-use crate::frame::hash_join::single_keys::probe_to_offsets;
-use crate::utils::flatten::flatten_par;
+use polars_core::utils::flatten::flatten_par;
 
 #[cfg(feature = "chunked_ids")]
 unsafe fn apply_mapping(idx: Vec<IdxSize>, chunk_mapping: &[ChunkId]) -> Vec<ChunkId> {
