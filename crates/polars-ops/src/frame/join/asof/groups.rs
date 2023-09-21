@@ -5,15 +5,14 @@ use std::ops::{Add, Sub};
 use ahash::RandomState;
 use arrow::types::NativeType;
 use num_traits::{Bounded, Zero};
+use polars_core::hashing::partition::AsU64;
+use polars_core::hashing::{_df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
+use polars_core::utils::{split_ca, split_df};
+use polars_core::POOL;
 use rayon::prelude::*;
 use smartstring::alias::String as SmartString;
 
 use super::*;
-use polars_core::hashing::{
-    partition::AsU64,
-    _df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
-use polars_core::utils::{split_ca, split_df};
-use polars_core::POOL;
 use crate::frame::IntoDf;
 
 pub(super) unsafe fn join_asof_backward_with_indirection_and_tolerance<
@@ -755,8 +754,6 @@ fn dispatch_join<T: PolarsNumericType>(
     };
     Ok(out)
 }
-
-
 
 pub trait AsofJoinBy: IntoDf {
     #[allow(clippy::too_many_arguments)]

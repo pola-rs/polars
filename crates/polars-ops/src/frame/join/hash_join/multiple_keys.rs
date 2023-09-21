@@ -1,14 +1,12 @@
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
-use rayon::prelude::*;
-
-use super::*;
 use polars_core::hashing::{
-    populate_multiple_key_hashmap,
-    IdBuildHasher, IdxHash, _HASHMAP_INIT_SIZE,
+    populate_multiple_key_hashmap, IdBuildHasher, IdxHash, _HASHMAP_INIT_SIZE,
 };
 use polars_core::utils::{_set_partition_size, split_df};
 use polars_core::POOL;
+
+use super::*;
 
 /// Compare the rows of two [`DataFrame`]s
 pub(crate) unsafe fn compare_df_rows2(

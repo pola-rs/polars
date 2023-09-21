@@ -1,53 +1,42 @@
-#[cfg(feature = "merge_sorted")]
-mod merge_sorted;
+mod args;
 #[cfg(feature = "asof_join")]
 mod asof;
-mod hash_join;
-mod args;
 mod checks;
 mod general;
+mod hash_join;
+#[cfg(feature = "merge_sorted")]
+mod merge_sorted;
 
-use either::Either;
 #[cfg(feature = "chunked_ids")]
 use std::borrow::Cow;
-
-#[cfg(feature = "merge_sorted")]
-pub use merge_sorted::_merge_sorted_dfs;
-use polars_core::prelude::*;
-use polars_core::utils::{_to_physical_and_bit_repr, slice_slice};
-use polars_core::POOL;
-pub use args::*;
-pub(crate) use checks::*;
-use general::*;
-
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{BuildHasher, Hash, Hasher};
+
+use ahash::RandomState;
+pub use args::*;
+use asof::AsofJoinBy;
+pub use asof::{AsOfOptions, AsofJoin, AsofStrategy};
+pub(crate) use checks::*;
+use either::Either;
+pub use general::_finish_join;
+use general::*;
+pub use hash_join::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
-use polars_arrow::utils::CustomIterTools;
-use rayon::prelude::*;
+#[cfg(feature = "merge_sorted")]
+pub use merge_sorted::_merge_sorted_dfs;
 use polars_arrow::trusted_len::TrustedLen;
-use ahash::RandomState;
-pub(super) use polars_core::{
-    series::IsSorted,
-    with_match_physical_numeric_polars_type
-};
+use polars_core::hashing::partition::{this_partition, AsU64};
+use polars_core::hashing::{BytesHash, _df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
+use polars_core::prelude::*;
+pub(super) use polars_core::series::IsSorted;
+use polars_core::utils::{_to_physical_and_bit_repr, slice_slice};
+pub(super) use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::POOL;
+use rayon::prelude::*;
+
+use super::hashing::{create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded};
 use super::IntoDf;
-use asof::{AsofJoinBy};
-use super::hashing::{
-    create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded,
-};
-use polars_core::hashing::{
-    BytesHash,
-    _df_rows_to_hashes_threaded_vertical,
-    partition::{AsU64, this_partition},
-    _HASHMAP_INIT_SIZE,
-};
-pub use {
-    asof::{AsofJoin, AsofStrategy, AsOfOptions},
-    general::_finish_join,
-    hash_join::*,
-};
 
 macro_rules! det_hash_prone_order {
     ($self:expr, $other:expr) => {{

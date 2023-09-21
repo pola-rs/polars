@@ -1,10 +1,10 @@
 use super::*;
 
 pub fn build_tables2<T, I>(keys: Vec<I>) -> Vec<PlHashMap<T, Vec<IdxSize>>>
-    where
-        T: Send + Hash + Eq + Sync + Copy + AsU64,
-    I: IntoIterator<Item=T> + Send + Sync + Copy,
-        // <I as IntoIterator>::IntoIter: TrustedLen,
+where
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    I: IntoIterator<Item = T> + Send + Sync + Clone,
+    // <I as IntoIterator>::IntoIter: TrustedLen,
 {
     let n_partitions = _set_partition_size();
 
@@ -23,7 +23,7 @@ pub fn build_tables2<T, I>(keys: Vec<I>) -> Vec<PlHashMap<T, Vec<IdxSize>>>
                 let n_partitions = n_partitions as u64;
                 let mut offset = 0;
                 for keys in &keys {
-                    let keys = keys.into_iter();
+                    let keys = keys.clone().into_iter();
                     let len = keys.size_hint().1.unwrap() as IdxSize;
 
                     let mut cnt = 0;
@@ -106,34 +106,15 @@ where
 }
 
 // we determine the offset so that we later know which index to store in the join tuples
-pub(super) fn probe_to_offsets<T, IntoSlice>(probe: &[IntoSlice]) -> Vec<usize>
-    where
-        IntoSlice: AsRef<[T]> + Send + Sync,
-        T: Send + Hash + Eq + Sync + Copy + AsU64,
-{
-    probe
-        .iter()
-        .map(|ph| ph.as_ref().len())
-        .scan(0, |state, val| {
-            let out = *state;
-            *state += val;
-            Some(out)
-        })
-        .collect()
-}
-
-// we determine the offset so that we later know which index to store in the join tuples
 pub(super) fn probe_to_offsets2<T, I>(probe: &[I]) -> Vec<usize>
-    where
-        I: IntoIterator<Item=T> + Copy,
-        // <I as IntoIterator>::IntoIter: TrustedLen,
-        T: Send + Hash + Eq + Sync + Copy + AsU64,
+where
+    I: IntoIterator<Item = T> + Clone,
+    // <I as IntoIterator>::IntoIter: TrustedLen,
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     probe
         .iter()
-        .map(|ph| {
-            ph.into_iter().size_hint().1.unwrap()
-        })
+        .map(|ph| ph.clone().into_iter().size_hint().1.unwrap())
         .scan(0, |state, val| {
             let out = *state;
             *state += val;

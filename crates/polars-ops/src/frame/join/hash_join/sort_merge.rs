@@ -1,11 +1,11 @@
 #[cfg(feature = "performant")]
 use polars_arrow::kernels::sorted_join;
-
-use super::*;
 #[cfg(feature = "performant")]
 use polars_core::utils::_split_offsets;
 #[cfg(feature = "performant")]
 use polars_core::utils::flatten::flatten_par;
+
+use super::*;
 
 #[cfg(feature = "performant")]
 fn par_sorted_merge_left_impl<T>(

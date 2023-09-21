@@ -3,18 +3,19 @@ mod groups;
 use std::borrow::Cow;
 
 use asof::*;
+pub(super) use groups::AsofJoinBy;
 use num_traits::Bounded;
+use polars_core::prelude::*;
+use polars_core::utils::{ensure_sorted_arg, slice_slice};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
-use polars_core::prelude::*;
-use polars_core::utils::{ensure_sorted_arg, slice_slice};
-use crate::frame::IntoDf;
-use super::{build_tables, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_bytes, _finish_join, with_match_physical_numeric_polars_type, _check_categorical_src};
-pub(super) use {
-    groups::AsofJoinBy,
+use super::{
+    _check_categorical_src, _finish_join, build_tables, get_hash_tbl_threaded_join_partitioned,
+    multiple_keys as mk, prepare_bytes, with_match_physical_numeric_polars_type,
 };
+use crate::frame::IntoDf;
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -74,9 +75,9 @@ pub(crate) fn join_asof<T>(
     strategy: AsofStrategy,
     tolerance: Option<AnyValue<'static>>,
 ) -> PolarsResult<Vec<Option<IdxSize>>>
-    where
-        T: PolarsNumericType,
-        T::Native: Bounded + PartialOrd,
+where
+    T: PolarsNumericType,
+    T::Native: Bounded + PartialOrd,
 {
     let other = input_ca.unpack_series_matching_type(other)?;
 
@@ -145,47 +146,33 @@ pub trait AsofJoin: IntoDf {
 
         let take_idx = match left_key.dtype() {
             DataType::Int64 => {
-                let ca = left_key
-                    .i64()
-                    .unwrap();
+                let ca = left_key.i64().unwrap();
                 join_asof(ca, &right_key, strategy, tolerance)
             },
             DataType::Int32 => {
-                let ca = left_key
-                    .i32()
-                    .unwrap();
+                let ca = left_key.i32().unwrap();
                 join_asof(ca, &right_key, strategy, tolerance)
             },
             DataType::UInt64 => {
-                let ca = left_key
-                    .u64()
-                    .unwrap();
+                let ca = left_key.u64().unwrap();
                 join_asof(ca, &right_key, strategy, tolerance)
             },
             DataType::UInt32 => {
-                let ca = left_key
-                    .u32()
-                    .unwrap();
+                let ca = left_key.u32().unwrap();
                 join_asof(ca, &right_key, strategy, tolerance)
             },
             DataType::Float32 => {
-                let ca = left_key
-                    .f32()
-                    .unwrap();
+                let ca = left_key.f32().unwrap();
                 join_asof(ca, &right_key, strategy, tolerance)
             },
             DataType::Float64 => {
-                let ca = left_key
-                    .f64()
-                    .unwrap();
+                let ca = left_key.f64().unwrap();
                 join_asof(ca, &right_key, strategy, tolerance)
             },
             _ => {
                 let left_key = left_key.cast(&DataType::Int32).unwrap();
                 let right_key = right_key.cast(&DataType::Int32).unwrap();
-                let ca = left_key
-                    .i32()
-                    .unwrap();
+                let ca = left_key.i32().unwrap();
                 join_asof(ca, &right_key, strategy, tolerance)
             },
         }?;

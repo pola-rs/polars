@@ -287,8 +287,10 @@ impl<'a> CategoricalChunkedBuilder<'a> {
             self.hashes = Vec::with_capacity(iter.size_hint().0 / 10)
         }
         // It is important that we use the same hash builder as the global `StringCache` does.
-        self.local_mapping =
-            PlHashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, StringCache::get_hash_builder());
+        self.local_mapping = PlHashMap::with_capacity_and_hasher(
+            _HASHMAP_INIT_SIZE,
+            StringCache::get_hash_builder(),
+        );
         for opt_s in &mut iter {
             match opt_s {
                 Some(s) => self.push_impl(s, store_hashes),

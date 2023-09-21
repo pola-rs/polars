@@ -38,4 +38,3 @@ pub(crate) fn _finish_join(
     df_left.hstack_mut(&df_right.columns)?;
     Ok(df_left)
 }
-

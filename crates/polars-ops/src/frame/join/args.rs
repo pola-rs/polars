@@ -16,7 +16,8 @@ pub type ChunkJoinOptIds = Vec<Option<IdxSize>>;
 pub type ChunkJoinIds = Vec<IdxSize>;
 
 #[cfg(feature = "serde")]
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+
 use super::asof::AsOfOptions;
 
 #[derive(Clone, PartialEq, Eq, Debug)]

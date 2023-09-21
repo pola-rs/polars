@@ -1,9 +1,8 @@
+use polars_core::utils::flatten;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
 
-use super::single_keys::build_tables;
 use super::*;
-use polars_core::utils::flatten;
 
 pub(super) fn probe_inner2<T, F, I>(
     probe: I,
@@ -14,7 +13,7 @@ pub(super) fn probe_inner2<T, F, I>(
     swap_fn: F,
 ) where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
-    I: IntoIterator<Item=T>,
+    I: IntoIterator<Item = T>,
     // <I as IntoIterator>::IntoIter: TrustedLen,
     F: Fn(IdxSize, IdxSize) -> (IdxSize, IdxSize),
 {
@@ -41,15 +40,18 @@ pub(super) fn hash_join_tuples_inner2<T, I>(
     swapped: bool,
     validate: JoinValidation,
 ) -> PolarsResult<(Vec<IdxSize>, Vec<IdxSize>)>
-    where
-        I: IntoIterator<Item=T> + Send + Sync + Copy,
-        // <I as IntoIterator>::IntoIter: TrustedLen,
-        T: Send + Hash + Eq + Sync + Copy + AsU64,
+where
+    I: IntoIterator<Item = T> + Send + Sync + Copy,
+    // <I as IntoIterator>::IntoIter: TrustedLen,
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     // NOTE: see the left join for more elaborate comments
     // first we hash one relation
     let hash_tbls = if validate.needs_checks() {
-        let expected_size = build.iter().map(|v| v.into_iter().size_hint().1.unwrap()).sum();
+        let expected_size = build
+            .iter()
+            .map(|v| v.into_iter().size_hint().1.unwrap())
+            .sum();
         let hash_tbls = build_tables2(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
         validate.validate_build(build_size, expected_size, swapped)?;

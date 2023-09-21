@@ -8,26 +8,23 @@ mod single_keys_outer;
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
 
-
 pub use args::*;
+pub use multiple_keys::private_left_join_multiple_keys;
+pub(super) use multiple_keys::*;
+use polars_core::prelude::*;
+use polars_core::utils::{_set_partition_size, slice_slice, split_ca};
+use polars_core::POOL;
+pub(super) use single_keys::*;
+pub use single_keys_dispatch::SeriesJoin;
+pub(super) use single_keys_dispatch::*;
+use single_keys_inner::*;
 use single_keys_left::*;
 use single_keys_outer::*;
 #[cfg(feature = "semi_anti_join")]
 use single_keys_semi_anti::*;
 pub use sort_merge::*;
-pub use super::*;
-pub(super) use single_keys::*;
-pub(super) use multiple_keys::*;
-pub(super) use single_keys_dispatch::*;
 
-pub use {
-    multiple_keys::private_left_join_multiple_keys,
-    single_keys_dispatch::SeriesJoin,
-};
-use single_keys_inner::*;
-use polars_core::prelude::*;
-use polars_core::utils::{_set_partition_size, slice_slice, split_ca};
-use polars_core::POOL;
+pub use super::*;
 
 pub fn default_join_ids() -> ChunkJoinOptIds {
     #[cfg(feature = "chunked_ids")]
@@ -62,7 +59,6 @@ pub(super) use det_hash_prone_order;
 #[cfg(feature = "performant")]
 use polars_arrow::conversion::primitive_to_vec;
 use polars_utils::hash_to_partition;
-
 
 pub unsafe fn get_hash_tbl_threaded_join_partitioned<Item>(
     h: u64,
@@ -277,7 +273,10 @@ pub trait JoinDispatch: IntoDf {
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
         // store this so that we can keep original column order.
-        let join_column_index = ca_self.iter().position(|s| s.name() == s_left.name()).unwrap();
+        let join_column_index = ca_self
+            .iter()
+            .position(|s| s.name() == s_left.name())
+            .unwrap();
 
         // Get the indexes of the joined relations
         let opt_join_tuples = s_left.hash_join_outer(s_right, args.validation)?;

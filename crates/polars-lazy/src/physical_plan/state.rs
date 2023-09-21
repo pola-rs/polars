@@ -7,7 +7,7 @@ use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
-use polars_ops::prelude::{ChunkJoinOptIds, JoinArgs};
+use polars_ops::prelude::ChunkJoinOptIds;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
 use polars_plan::logical_plan::FileFingerPrint;
 

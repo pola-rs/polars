@@ -45,4 +45,3 @@ pub(crate) fn create_chunked_index_mapping(chunks: &[ArrayRef], len: usize) -> V
 
     vals
 }
-

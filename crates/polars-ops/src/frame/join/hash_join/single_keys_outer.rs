@@ -83,8 +83,14 @@ where
     // during the probe phase values are removed from the tables, that's done single threaded to
     // keep it lock free.
 
-    let size = probe.iter().map(|a| a.size_hint().1.unwrap()).sum::<usize>()
-        + build.iter().map(|b| b.size_hint().1.unwrap()).sum::<usize>();
+    let size = probe
+        .iter()
+        .map(|a| a.size_hint().1.unwrap())
+        .sum::<usize>()
+        + build
+            .iter()
+            .map(|b| b.size_hint().1.unwrap())
+            .sum::<usize>();
     let mut results = Vec::with_capacity(size);
 
     // prepare hash table

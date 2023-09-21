@@ -1,29 +1,21 @@
-use arrow::{
-    bitmap::utils::get_bit_unchecked,
-    array::{
-        Array, BinaryArray
-    }
-};
-use hashbrown::hash_map::RawEntryMut;
-use hashbrown::HashMap;
-#[cfg(feature = "group_by_list")]
-use polars_arrow::kernels::list_bytes_iter::numeric_list_bytes_iter;
-use polars_arrow::utils::CustomIterTools;
-use rayon::prelude::*;
+use std::hash::{BuildHasher, Hash, Hasher};
 
 use ahash::RandomState;
+use hashbrown::hash_map::RawEntryMut;
+use hashbrown::HashMap;
+use polars_arrow::trusted_len::TrustedLen;
+use polars_arrow::utils::CustomIterTools;
+use polars_core::hashing::partition::this_partition;
 use polars_core::prelude::*;
 use polars_core::POOL;
-use std::hash::{Hash, Hasher, BuildHasher};
-use polars_arrow::trusted_len::TrustedLen;
-use polars_core::hashing::partition::{this_partition, AsU64};
+use rayon::prelude::*;
 
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(
     iters: Vec<I>,
 ) -> Vec<HashMap<T, (bool, Vec<IdxSize>), RandomState>>
-    where
-        I: Iterator<Item = T> + Send + TrustedLen,
-        T: Send + Hash + Eq + Sync + Copy,
+where
+    I: Iterator<Item = T> + Send + TrustedLen,
+    T: Send + Hash + Eq + Sync + Copy,
 {
     let n_partitions = iters.len();
     assert!(n_partitions.is_power_of_two());
@@ -85,10 +77,10 @@ pub(crate) fn create_hash_and_keys_threaded_vectorized<I, T>(
     iters: Vec<I>,
     build_hasher: Option<RandomState>,
 ) -> (Vec<Vec<(u64, T)>>, RandomState)
-    where
-        I: IntoIterator<Item = T> + Send,
-        I::IntoIter: TrustedLen,
-        T: Send + Hash + Eq,
+where
+    I: IntoIterator<Item = T> + Send,
+    I::IntoIter: TrustedLen,
+    T: Send + Hash + Eq,
 {
     let build_hasher = build_hasher.unwrap_or_default();
     let hashes = POOL.install(|| {
@@ -108,4 +100,3 @@ pub(crate) fn create_hash_and_keys_threaded_vectorized<I, T>(
     });
     (hashes, build_hasher)
 }
-
