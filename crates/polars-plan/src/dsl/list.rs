@@ -30,47 +30,20 @@ impl ListNameSpace {
 
     /// Get lengths of the arrays in the List type.
     pub fn lengths(self) -> Expr {
-        let function = |s: Series| {
-            let ca = s.list()?;
-            Ok(Some(ca.lst_lengths().into_series()))
-        };
         self.0
-            .map(function, GetOutput::from_type(IDX_DTYPE))
-            .with_fmt("list.len")
+            .map_private(FunctionExpr::ListExpr(ListFunction::Length))
     }
 
     /// Compute the maximum of the items in every sublist.
     pub fn max(self) -> Expr {
         self.0
-            .map(
-                |s| Ok(Some(s.list()?.lst_max())),
-                GetOutput::map_field(|f| {
-                    if let DataType::List(adt) = f.data_type() {
-                        Field::new(f.name(), *adt.clone())
-                    } else {
-                        // inner type
-                        f.clone()
-                    }
-                }),
-            )
-            .with_fmt("list.max")
+            .map_private(FunctionExpr::ListExpr(ListFunction::Max))
     }
 
     /// Compute the minimum of the items in every sublist.
     pub fn min(self) -> Expr {
         self.0
-            .map(
-                |s| Ok(Some(s.list()?.lst_min())),
-                GetOutput::map_field(|f| {
-                    if let DataType::List(adt) = f.data_type() {
-                        Field::new(f.name(), *adt.clone())
-                    } else {
-                        // inner type
-                        f.clone()
-                    }
-                }),
-            )
-            .with_fmt("list.min")
+            .map_private(FunctionExpr::ListExpr(ListFunction::Min))
     }
 
     /// Compute the sum the items in every sublist.
@@ -82,51 +55,31 @@ impl ListNameSpace {
     /// Compute the mean of every sublist and return a `Series` of dtype `Float64`
     pub fn mean(self) -> Expr {
         self.0
-            .map(
-                |s| Ok(Some(s.list()?.lst_mean().into_series())),
-                GetOutput::from_type(DataType::Float64),
-            )
-            .with_fmt("list.mean")
+            .map_private(FunctionExpr::ListExpr(ListFunction::Mean))
     }
 
     /// Sort every sublist.
     pub fn sort(self, options: SortOptions) -> Expr {
         self.0
-            .map(
-                move |s| Ok(Some(s.list()?.lst_sort(options).into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("list.sort")
+            .map_private(FunctionExpr::ListExpr(ListFunction::Sort(options)))
     }
 
     /// Reverse every sublist
     pub fn reverse(self) -> Expr {
         self.0
-            .map(
-                move |s| Ok(Some(s.list()?.lst_reverse().into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("list.reverse")
+            .map_private(FunctionExpr::ListExpr(ListFunction::Reverse))
     }
 
     /// Keep only the unique values in every sublist.
     pub fn unique(self) -> Expr {
         self.0
-            .map(
-                move |s| Ok(Some(s.list()?.lst_unique()?.into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("list.unique")
+            .map_private(FunctionExpr::ListExpr(ListFunction::Unique(false)))
     }
 
     /// Keep only the unique values in every sublist.
     pub fn unique_stable(self) -> Expr {
         self.0
-            .map(
-                move |s| Ok(Some(s.list()?.lst_unique_stable()?.into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("list.unique_stable")
+            .map_private(FunctionExpr::ListExpr(ListFunction::Unique(true)))
     }
 
     /// Get items in every sublist by index.
@@ -291,47 +244,47 @@ impl ListNameSpace {
     pub fn contains<E: Into<Expr>>(self, other: E) -> Expr {
         let other = other.into();
 
-        Expr::Function {
-            input: vec![self.0, other],
-            function: FunctionExpr::ListExpr(ListFunction::Contains),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: true,
-                auto_explode: true,
-                ..Default::default()
-            },
-        }
+        self.0
+            .map_many_private(
+                FunctionExpr::ListExpr(ListFunction::Contains),
+                &[other],
+                false,
+            )
+            .with_function_options(|mut options| {
+                options.input_wildcard_expansion = true;
+                options
+            })
     }
     #[cfg(feature = "list_count")]
     /// Count how often the value produced by ``element`` occurs.
     pub fn count_matches<E: Into<Expr>>(self, element: E) -> Expr {
         let other = element.into();
 
-        Expr::Function {
-            input: vec![self.0, other],
-            function: FunctionExpr::ListExpr(ListFunction::CountMatches),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: true,
-                auto_explode: true,
-                ..Default::default()
-            },
-        }
+        self.0
+            .map_many_private(
+                FunctionExpr::ListExpr(ListFunction::CountMatches),
+                &[other],
+                false,
+            )
+            .with_function_options(|mut options| {
+                options.input_wildcard_expansion = true;
+                options
+            })
     }
 
     #[cfg(feature = "list_sets")]
     fn set_operation(self, other: Expr, set_operation: SetOperation) -> Expr {
-        Expr::Function {
-            input: vec![self.0, other],
-            function: FunctionExpr::ListExpr(ListFunction::SetOperation(set_operation)),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: true,
-                auto_explode: false,
-                cast_to_supertypes: true,
-                ..Default::default()
-            },
-        }
+        self.0
+            .map_many_private(
+                FunctionExpr::ListExpr(ListFunction::SetOperation(set_operation)),
+                &[other],
+                true,
+            )
+            .with_function_options(|mut options| {
+                options.input_wildcard_expansion = true;
+                options.auto_explode = false;
+                options
+            })
     }
 
     /// Return the SET UNION between both list arrays.

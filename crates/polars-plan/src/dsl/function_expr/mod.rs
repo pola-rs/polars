@@ -559,6 +559,13 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     #[cfg(feature = "list_count")]
                     CountMatches => map_as_slice!(list::count_matches),
                     Sum => map!(list::sum),
+                    Length => map!(list::length),
+                    Max => map!(list::max),
+                    Min => map!(list::min),
+                    Mean => map!(list::mean),
+                    Sort(options) => map!(list::sort, options),
+                    Reverse => map!(list::reverse),
+                    Unique(is_stable) => map!(list::unique, is_stable),
                     #[cfg(feature = "list_sets")]
                     SetOperation(s) => map_as_slice!(list::set_operation, s),
                     #[cfg(feature = "list_any_all")]
