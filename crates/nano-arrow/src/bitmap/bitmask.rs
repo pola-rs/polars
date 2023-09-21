@@ -134,3 +134,9 @@ impl<'a> BitMask<'a> {
         }
     }
 }
+
+impl<'a> Default for BitMask<'a> {
+    fn default() -> Self {
+        Self { bytes: &[], offset: 0, len: 0 }
+    }
+}
