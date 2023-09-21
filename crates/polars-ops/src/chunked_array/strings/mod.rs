@@ -10,6 +10,7 @@ mod justify;
 mod namespace;
 #[cfg(feature = "strings")]
 mod replace;
+mod split;
 #[cfg(feature = "strings")]
 mod substring;
 

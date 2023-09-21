@@ -455,38 +455,14 @@ pub(super) fn split(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].utf8()?;
     let by = s[1].utf8()?;
 
-    if by.len() == 1 {
-        if let Some(by) = by.get(0) {
-            Ok(ca.split(by).into_series())
-        } else {
-            Ok(Series::full_null(
-                ca.name(),
-                ca.len(),
-                &DataType::List(Box::new(DataType::Utf8)),
-            ))
-        }
-    } else {
-        Ok(ca.split_many(by).into_series())
-    }
+    Ok(ca.split(by).into_series())
 }
 
 pub(super) fn split_inclusive(s: &[Series]) -> PolarsResult<Series> {
     let ca = s[0].utf8()?;
     let by = s[1].utf8()?;
 
-    if by.len() == 1 {
-        if let Some(by) = by.get(0) {
-            Ok(ca.split_inclusive(by).into_series())
-        } else {
-            Ok(Series::full_null(
-                ca.name(),
-                ca.len(),
-                &DataType::List(Box::new(DataType::Utf8)),
-            ))
-        }
-    } else {
-        Ok(ca.split_inclusive_many(by).into_series())
-    }
+    Ok(ca.split_inclusive(by).into_series())
 }
 
 fn handle_temporal_parsing_error(
