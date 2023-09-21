@@ -460,18 +460,19 @@ pub(crate) fn group_by_values_iter<'a>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
-    by_unique_values: Option<bool>,
+    unique_time_values: bool,
 ) -> Box<dyn TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + 'a> {
     let mut offset = period;
     offset.negative = true;
-    if by_unique_values == Some(true) {
+    if unique_time_values {
         // t is at the right endpoint of the window
         let iter = group_by_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0);
         Box::new(iter)
     } else {
-        let iter = group_by_values_iter_partial_lookbehind(period, offset, time, closed_window, tu, tz);
+        // t not necessarily at the right endpoint of the window, so use slower algorithm
+        let iter =
+            group_by_values_iter_partial_lookbehind(period, offset, time, closed_window, tu, tz);
         Box::new(iter)
-
     }
 }
 
@@ -487,13 +488,14 @@ pub fn group_by_values(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
+    unique_time_values: bool,
 ) -> PolarsResult<GroupsSlice> {
     let thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
 
     // we have a (partial) lookbehind window
     if offset.negative {
         // lookbehind
-        if offset.duration_ns() == period.duration_ns() {
+        if (offset.duration_ns() == period.duration_ns()) && unique_time_values {
             // t is right at the end of the window
             // ------t---
             // [------]

@@ -54,7 +54,7 @@ pub(crate) fn rolling_min<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    by_unique_values: Option<bool>,
+    unique_time_values: bool,
     _params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
@@ -62,8 +62,15 @@ where
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok(), by_unique_values),
-        _ => group_by_values_iter(period, time, closed_window, tu, None, by_unique_values),
+        Some(tz) => group_by_values_iter(
+            period,
+            time,
+            closed_window,
+            tu,
+            tz.parse::<Tz>().ok(),
+            unique_time_values,
+        ),
+        _ => group_by_values_iter(period, time, closed_window, tu, None, unique_time_values),
     };
     rolling_apply_agg_window::<no_nulls::MinWindow<_>, _, _>(values, offset_iter, None)
 }
@@ -76,7 +83,7 @@ pub(crate) fn rolling_max<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    by_unique_values: Option<bool>,
+    unique_time_values: bool,
     _params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
@@ -84,8 +91,15 @@ where
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok(), by_unique_values),
-        _ => group_by_values_iter(period, time, closed_window, tu, None, by_unique_values),
+        Some(tz) => group_by_values_iter(
+            period,
+            time,
+            closed_window,
+            tu,
+            tz.parse::<Tz>().ok(),
+            unique_time_values,
+        ),
+        _ => group_by_values_iter(period, time, closed_window, tu, None, unique_time_values),
     };
     rolling_apply_agg_window::<no_nulls::MaxWindow<_>, _, _>(values, offset_iter, None)
 }
@@ -98,7 +112,7 @@ pub(crate) fn rolling_sum<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    by_unique_values: Option<bool>,
+    unique_time_values: bool,
     _params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
@@ -106,8 +120,15 @@ where
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok(), by_unique_values),
-        _ => group_by_values_iter(period, time, closed_window, tu, None, by_unique_values),
+        Some(tz) => group_by_values_iter(
+            period,
+            time,
+            closed_window,
+            tu,
+            tz.parse::<Tz>().ok(),
+            unique_time_values,
+        ),
+        _ => group_by_values_iter(period, time, closed_window, tu, None, unique_time_values),
     };
     rolling_apply_agg_window::<no_nulls::SumWindow<_>, _, _>(values, offset_iter, None)
 }
@@ -120,7 +141,7 @@ pub(crate) fn rolling_mean<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    by_unique_values: Option<bool>,
+    unique_time_values: bool,
     _params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
@@ -128,8 +149,15 @@ where
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok(), by_unique_values),
-        _ => group_by_values_iter(period, time, closed_window, tu, None, by_unique_values),
+        Some(tz) => group_by_values_iter(
+            period,
+            time,
+            closed_window,
+            tu,
+            tz.parse::<Tz>().ok(),
+            unique_time_values,
+        ),
+        _ => group_by_values_iter(period, time, closed_window, tu, None, unique_time_values),
     };
     rolling_apply_agg_window::<no_nulls::MeanWindow<_>, _, _>(values, offset_iter, None)
 }
@@ -142,7 +170,7 @@ pub(crate) fn rolling_var<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    by_unique_values: Option<bool>,
+    unique_time_values: bool,
     params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
@@ -150,8 +178,15 @@ where
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok(), by_unique_values),
-        _ => group_by_values_iter(period, time, closed_window, tu, None, by_unique_values),
+        Some(tz) => group_by_values_iter(
+            period,
+            time,
+            closed_window,
+            tu,
+            tz.parse::<Tz>().ok(),
+            unique_time_values,
+        ),
+        _ => group_by_values_iter(period, time, closed_window, tu, None, unique_time_values),
     };
     rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(values, offset_iter, params)
 }
@@ -164,7 +199,7 @@ pub(crate) fn rolling_quantile<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    by_unique_values: Option<bool>,
+    unique_time_values: bool,
     params: DynArgs,
 ) -> PolarsResult<ArrayRef>
 where
@@ -172,8 +207,15 @@ where
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => group_by_values_iter(period, time, closed_window, tu, tz.parse::<Tz>().ok(), by_unique_values),
-        _ => group_by_values_iter(period, time, closed_window, tu, None, by_unique_values),
+        Some(tz) => group_by_values_iter(
+            period,
+            time,
+            closed_window,
+            tu,
+            tz.parse::<Tz>().ok(),
+            unique_time_values,
+        ),
+        _ => group_by_values_iter(period, time, closed_window, tu, None, unique_time_values),
     };
     rolling_apply_agg_window::<no_nulls::QuantileWindow<_>, _, _>(values, offset_iter, params)
 }

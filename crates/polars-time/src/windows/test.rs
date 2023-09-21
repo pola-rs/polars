@@ -690,6 +690,7 @@ fn test_rolling_lookback() {
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
         None,
+        true,
     )
     .unwrap();
     assert_eq!(dates.len(), groups.len());
@@ -711,6 +712,7 @@ fn test_rolling_lookback() {
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
         None,
+        true,
     )
     .unwrap();
     assert_eq!(dates.len(), groups.len());
@@ -732,6 +734,7 @@ fn test_rolling_lookback() {
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
         None,
+        true,
     )
     .unwrap();
     assert_eq!(dates.len(), groups.len());

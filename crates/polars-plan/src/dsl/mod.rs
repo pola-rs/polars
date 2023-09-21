@@ -1261,7 +1261,7 @@ impl Expr {
                         tz: tz.as_ref(),
                         closed_window: options.closed_window,
                         fn_params: options.fn_params.clone(),
-                        by_unique_values: Some(by.n_unique()? == by.len())
+                        unique_time_values: Some(by.n_unique()? == by.len()),
                     };
 
                     rolling_fn(s, options).map(Some)

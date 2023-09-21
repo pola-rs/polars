@@ -538,6 +538,7 @@ impl Wrap<&DataFrame> {
                     options.closed_window,
                     tu,
                     tz,
+                    dt.n_unique()? == dt.len(),
                 )?,
                 rolling: true,
             })
@@ -576,6 +577,7 @@ impl Wrap<&DataFrame> {
                                 options.closed_window,
                                 tu,
                                 tz,
+                                dt.n_unique()? == dt.len(),
                             )?;
                             Ok(update_subgroups_idx(&sub_groups, base_g))
                         })
@@ -597,6 +599,7 @@ impl Wrap<&DataFrame> {
                                 options.closed_window,
                                 tu,
                                 tz,
+                                dt.n_unique()? == dt.len(),
                             )?;
                             Ok(update_subgroups_slice(&sub_groups, *base_g))
                         })
