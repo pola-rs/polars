@@ -20,7 +20,7 @@ impl CategoricalChunked {
             polars_bail!(string_cache_mismatch);
         } else {
             let len = self.len();
-            let new_rev_map = self.merge_categorical_map(other)?;
+            let new_rev_map = self._merge_categorical_map(other)?;
             unsafe { self.set_rev_map(new_rev_map, false) };
 
             self.logical_mut().length += other.len() as IdxSize;

@@ -1,5 +1,5 @@
-use polars_core::prelude::{JoinArgs, JoinType};
 use polars_plan::prelude::*;
+use polars_ops::prelude::*;
 
 pub(super) fn is_streamable_sort(args: &SortArguments) -> bool {
     // check if slice is positive or maintain order is true

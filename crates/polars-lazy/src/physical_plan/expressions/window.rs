@@ -4,7 +4,7 @@ use std::sync::Arc;
 use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_core::export::arrow::bitmap::Bitmap;
 use polars_core::frame::group_by::{GroupBy, GroupsProxy};
-use polars_core::frame::hash_join::{
+use polars_ops::frame::join::{
     default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
 };
 use polars_core::prelude::*;

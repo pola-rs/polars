@@ -15,6 +15,7 @@ use crate::executors::{operators, sources};
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{Operator, Sink as SinkTrait, Source};
 use crate::pipeline::PipeLine;
+use polars_ops::prelude::JoinType;
 
 fn exprs_to_physical<F>(
     exprs: &[Node],

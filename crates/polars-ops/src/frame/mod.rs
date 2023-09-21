@@ -1,4 +1,4 @@
-pub(crate) mod join;
+pub mod join;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 mod hashing;

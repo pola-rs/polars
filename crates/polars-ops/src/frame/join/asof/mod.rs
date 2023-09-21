@@ -7,18 +7,19 @@ use num_traits::Bounded;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
-use super::hash_join::_check_categorical_src;
 
 use polars_core::prelude::*;
 use polars_core::utils::{ensure_sorted_arg, slice_slice};
 use crate::frame::IntoDf;
-use super::{build_tables, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_bytes};
+use super::{build_tables, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_bytes, _finish_join, with_match_physical_numeric_polars_type, _check_categorical_src};
 pub(self) use polars_core::hashing::{
     _df_rows_to_hashes_threaded_vertical,
     partition::{AsU64, this_partition},
     _HASHMAP_INIT_SIZE,
 };
-pub(super) use groups::AsofJoinBy;
+pub(super) use {
+    groups::AsofJoinBy,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

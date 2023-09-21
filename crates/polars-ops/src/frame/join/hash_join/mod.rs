@@ -33,7 +33,10 @@ pub(super) use single_keys::*;
 pub(super) use multiple_keys::*;
 use single_keys_dispatch::*;
 
-pub use self::multiple_keys::private_left_join_multiple_keys;
+pub use {
+    multiple_keys::private_left_join_multiple_keys,
+    single_keys_dispatch::SeriesJoin,
+};
 use single_keys_inner::*;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, slice_slice, split_ca};
@@ -98,9 +101,9 @@ pub trait JoinDispatch: IntoDf {
     /// Join tuples must be in bounds
     #[cfg(feature = "chunked_ids")]
     unsafe fn create_left_df_chunked(&self, chunk_ids: &[ChunkId], left_join: bool) -> DataFrame {
-        let ca_self = self.to_df();
-        if left_join && chunk_ids.len() == self.height() {
-            ca_self.clone()
+        let df_self = self.to_df();
+        if left_join && chunk_ids.len() == df_self.height() {
+            df_self.clone()
         } else {
             // left join keys are in ascending order
             let sorted = if left_join {
@@ -108,7 +111,7 @@ pub trait JoinDispatch: IntoDf {
             } else {
                 IsSorted::Not
             };
-            ca_self.take_chunked_unchecked(chunk_ids, sorted)
+            df_self._take_chunked_unchecked(chunk_ids, sorted)
         }
     }
 
@@ -205,7 +208,7 @@ pub trait JoinDispatch: IntoDf {
                 if let Some((offset, len)) = slice {
                     right_idx = slice_slice(right_idx, offset, len);
                 }
-                unsafe { other.take_opt_chunked_unchecked(right_idx) }
+                unsafe { other._take_opt_chunked_unchecked(right_idx) }
             },
         };
         let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
@@ -329,7 +332,7 @@ pub trait JoinDispatch: IntoDf {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
                 let ca_left = s_left.categorical().unwrap();
-                let new_rev_map = ca_left.merge_categorical_map(s_right.categorical().unwrap())?;
+                let new_rev_map = ca_left._merge_categorical_map(s_right.categorical().unwrap())?;
                 let logical = s.u32().unwrap().clone();
                 // safety:
                 // categorical maps are merged

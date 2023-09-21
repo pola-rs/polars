@@ -5,6 +5,6 @@ extern crate core;
 pub mod chunked_array;
 #[cfg(feature = "pivot")]
 pub use frame::pivot;
-mod frame;
+pub mod frame;
 pub mod prelude;
 mod series;

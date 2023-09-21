@@ -28,9 +28,12 @@ use hashbrown::HashMap;
 use polars_arrow::utils::CustomIterTools;
 use rayon::prelude::*;
 use polars_arrow::trusted_len::TrustedLen;
-use polars_core::series::IsSorted;
+pub(super) use polars_core::{
+    series::IsSorted,
+    with_match_physical_numeric_polars_type
+};
 use super::IntoDf;
-use asof::{AsofJoin, AsofJoinBy};
+use asof::{AsofJoinBy};
 use super::hashing::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded,
 };
@@ -39,6 +42,11 @@ use polars_core::hashing::{
     _df_rows_to_hashes_threaded_vertical,
     partition::{AsU64, this_partition},
     _HASHMAP_INIT_SIZE,
+};
+pub use {
+    asof::{AsofJoin, AsofStrategy},
+    general::_finish_join,
+    hash_join::*,
 };
 
 use hash_join::*;
