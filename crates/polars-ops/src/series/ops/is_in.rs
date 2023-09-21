@@ -216,7 +216,7 @@ fn is_in_boolean(ca_in: &BooleanChunked, other: &Series) -> PolarsResult<Boolean
                 let has_false = if nc == 0 {
                     !other.all()
                 } else {
-                    !(other.sum().unwrap() as usize + nc) == other.len()
+                    (other.sum().unwrap() as usize + nc) != other.len()
                 };
                 Ok(ca_in.apply_values(|v| if v { has_true } else { has_false }))
             }

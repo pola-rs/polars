@@ -36,6 +36,12 @@ def test_is_in_bool() -> None:
     }
 
 
+def test_is_in_bool_11216() -> None:
+    s = pl.Series([False]).is_in([False, None])
+    expected = pl.Series([True])
+    assert_series_equal(s, expected)
+
+
 def test_is_in_empty_list_4559() -> None:
     assert pl.Series(["a"]).is_in([]).to_list() == [False]
 
