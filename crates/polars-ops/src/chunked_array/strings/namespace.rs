@@ -23,11 +23,11 @@ where
     f
 }
 
-fn opt_strip_prefix<'a, 'b>(s: Option<&'a str>, prefix: Option<&'b str>) -> Option<&'a str> {
+fn opt_strip_prefix<'a>(s: Option<&'a str>, prefix: Option<&str>) -> Option<&'a str> {
     Some(s?.strip_prefix(prefix?).unwrap_or(s?))
 }
 
-fn opt_strip_suffix<'a, 'b>(s: Option<&'a str>, suffix: Option<&'b str>) -> Option<&'a str> {
+fn opt_strip_suffix<'a>(s: Option<&'a str>, suffix: Option<&str>) -> Option<&'a str> {
     Some(s?.strip_suffix(suffix?).unwrap_or(s?))
 }
 
