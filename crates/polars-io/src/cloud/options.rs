@@ -110,24 +110,12 @@ impl CloudOptions {
     #[cfg(feature = "aws")]
     pub fn build_aws(&self, bucket_name: &str) -> PolarsResult<impl ObjectStore> {
         let options = self.aws.as_ref();
-
-        let builder = match options {
-            Some(options) => {
-                let mut builder = AmazonS3Builder::new();
-                for (key, value) in options.iter() {
-                    builder = builder.with_config(*key, value);
-                }
-                builder
-            },
-            None => {
-                let builder = AmazonS3Builder::from_env();
-                polars_ensure!(
-                    builder.get_config_value(&AmazonS3ConfigKey::AccessKeyId).is_some() &&
-                    builder.get_config_value(&AmazonS3ConfigKey::SecretAccessKey).is_some(),
-                    ComputeError: "`aws` configuration and env vars missing");
-                builder
-            },
-        };
+        let mut builder = AmazonS3Builder::from_env();
+        if let Some(options) = options {
+            for (key, value) in options.iter() {
+                builder = builder.with_config(*key, value);
+            }
+        }
 
         builder
             .with_bucket_name(bucket_name)
@@ -154,24 +142,13 @@ impl CloudOptions {
     #[cfg(feature = "azure")]
     pub fn build_azure(&self, container_name: &str) -> PolarsResult<impl ObjectStore> {
         let options = self.azure.as_ref();
+        let mut builder = MicrosoftAzureBuilder::from_env();
+        if let Some(options) = options {
+            for (key, value) in options.iter() {
+                builder = builder.with_config(*key, value);
+            }
+        }
 
-        let builder = match options {
-            Some(options) => {
-                let mut builder = MicrosoftAzureBuilder::new();
-                for (key, value) in options.iter() {
-                    builder = builder.with_config(*key, value);
-                }
-                builder
-            },
-            None => {
-                let builder = MicrosoftAzureBuilder::from_env();
-                polars_ensure!(
-                    builder.get_config_value(&AzureConfigKey::AccessKey).is_some() &&
-                    builder.get_config_value(&AzureConfigKey::ClientSecret).is_some(),
-                    ComputeError: "`azure` configuration and env vars missing");
-                builder
-            },
-        };
         builder
             .with_container_name(container_name)
             .build()
@@ -197,24 +174,12 @@ impl CloudOptions {
     #[cfg(feature = "gcp")]
     pub fn build_gcp(&self, bucket_name: &str) -> PolarsResult<impl ObjectStore> {
         let options = self.gcp.as_ref();
-
-        let builder = match options {
-            Some(options) => {
-                let mut builder = GoogleCloudStorageBuilder::new();
-                for (key, value) in options.iter() {
-                    builder = builder.with_config(*key, value);
-                }
-                builder
-            },
-            None => {
-                let builder = GoogleCloudStorageBuilder::from_env();
-                polars_ensure!(
-                    builder.get_config_value(&GoogleConfigKey::ApplicationCredentials).is_some() &&
-                    builder.get_config_value(&GoogleConfigKey::ServiceAccount).is_some(),
-                    ComputeError: "`gcp` configuration and env vars missing");
-                builder
-            },
-        };
+        let mut builder = GoogleCloudStorageBuilder::from_env();
+        if let Some(options) = options {
+            for (key, value) in options.iter() {
+                builder = builder.with_config(*key, value);
+            }
+        }
 
         builder
             .with_bucket_name(bucket_name)
