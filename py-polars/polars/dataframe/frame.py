@@ -5822,6 +5822,55 @@ class DataFrame:
         │ 2019-05-12 00:00:00 ┆ 83.52      ┆ 4696 │
         └─────────────────────┴────────────┴──────┘
 
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> sales = pl.DataFrame(
+        ...     {
+        ...         "sale_date": [
+        ...             datetime(2020, 1, 1),
+        ...             datetime(2020, 3, 1),
+        ...             datetime(2020, 5, 1),
+        ...             datetime(2020, 7, 1),
+        ...         ],
+        ...         "sales_amount": [1000, 1200, 800, 1500],
+        ...         "region": ["A", "B", "A", "B"],
+        ...     }
+        ... ).set_sorted("sale_date")
+        >>> expenses = pl.DataFrame(
+        ...     {
+        ...         "expense_date": [
+        ...             datetime(2020, 1, 15),
+        ...             datetime(2020, 4, 1),
+        ...             datetime(2020, 5, 15),
+        ...             datetime(2020, 7, 1),
+        ...         ],
+        ...         "expense_amount": [300, 400, 200, 450],
+        ...         "region": ["A", "B", "A", "B"],
+        ...     }
+        ... ).set_sorted("expense_date")
+        >>> result = sales.join_asof(
+        ...     expenses,
+        ...     on={"sale_date": "expense_date"},
+        ...     by={"region": "region"},
+        ...     by_left={"sales_amount": "expense_amount"},
+        ...     by_right={"expense_amount": "sales_amount"},
+        ...     strategy="backward",
+        ... )
+        >>> result
+        shape: (4, 4)
+        ┌────────────────────┬────────────┬───────┬─────┐
+        │ sale_date          ┆ sales_amount ┆ region ┆ expense_date │
+        │ ---                ┆ ---          ┆ ---    ┆ ---         │
+        │ datetime[μs]       ┆ i64          ┆ str    ┆ datetime[μs] │
+        ╞════════════════════╪════════════╪════════╪═════════════╡
+        │ 2020-01-01 00:00:00 ┆ 1000         ┆ A      ┆ 2020-01-15 00:00:00 │
+        │ 2020-03-01 00:00:00 ┆ 1200         ┆ B      ┆ 2020-04-01 00:00:00 │
+        │ 2020-05-01 00:00:00 ┆ 800          ┆ A      ┆ 2020-05-15 00:00:00 │
+        │ 2020-07-01 00:00:00 ┆ 1500         ┆ B      ┆ 2020-07-01 00:00:00 │
+        └────────────────────┴────────────┴───────┴─────┘
+
         """
         if not isinstance(other, DataFrame):
             raise TypeError(
