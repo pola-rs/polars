@@ -44,7 +44,7 @@ use polars_core::hashing::{
     _HASHMAP_INIT_SIZE,
 };
 pub use {
-    asof::{AsofJoin, AsofStrategy},
+    asof::{AsofJoin, AsofStrategy, AsOfOptions},
     general::_finish_join,
     hash_join::*,
 };

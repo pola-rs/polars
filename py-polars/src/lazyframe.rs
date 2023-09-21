@@ -16,7 +16,7 @@ use polars::prelude::CsvEncoding;
 use polars::prelude::{ClosedWindow, Field, JoinType, Schema};
 use polars::time::*;
 use polars_core::frame::explode::MeltArgs;
-use polars_core::frame::hash_join::JoinValidation;
+use polars_ops::prelude::AsOfOptions;
 use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::*;
 use pyo3::exceptions::PyValueError;
