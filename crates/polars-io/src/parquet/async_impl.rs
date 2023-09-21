@@ -7,7 +7,6 @@ use arrow::io::parquet::read::{
 };
 use arrow::io::parquet::write::FileMetaData;
 use futures::future::BoxFuture;
-use futures::lock::Mutex;
 use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
@@ -24,7 +23,7 @@ use super::read_impl::FetchRowGroups;
 use crate::cloud::CloudOptions;
 
 pub struct ParquetObjectStore {
-    store: Arc<Mutex<Box<dyn ObjectStore>>>,
+    store: Arc<Box<dyn ObjectStore>>,
     path: ObjectPath,
     length: Option<u64>,
     metadata: Option<FileMetaData>,
@@ -33,7 +32,7 @@ pub struct ParquetObjectStore {
 impl ParquetObjectStore {
     pub fn from_uri(uri: &str, options: Option<&CloudOptions>) -> PolarsResult<Self> {
         let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options)?;
-        let store = Arc::new(Mutex::from(store));
+        let store = Arc::new(store);
 
         Ok(ParquetObjectStore {
             store,
@@ -49,8 +48,7 @@ impl ParquetObjectStore {
             return Ok(());
         }
         let path = self.path.clone();
-        let locked_store = self.store.lock().await;
-        self.length = Some(locked_store.head(&path).await.map_err(to_compute_err)?.size as u64);
+        self.length = Some(self.store.head(&path).await.map_err(to_compute_err)?.size as u64);
         Ok(())
     }
 
