@@ -540,15 +540,23 @@ def test_string_cache() -> None:
 
 @pytest.mark.write_disk()
 def test_config_load_save(tmp_path: Path) -> None:
-    for file in (None, tmp_path / "polars.config", str(tmp_path / "polars.config")):
+    for file in (
+        None,
+        tmp_path / "polars.config",
+        str(tmp_path / "polars.config"),
+    ):
         # set some config options...
         pl.Config.set_tbl_cols(12)
         pl.Config.set_verbose(True)
         pl.Config.set_fmt_float("full")
         assert os.environ.get("POLARS_VERBOSE") == "1"
 
-        cfg = pl.Config.save(file)
-        assert isinstance(cfg, str)
+        if file is None:
+            cfg = pl.Config.save()
+            assert isinstance(cfg, str)
+        else:
+            assert pl.Config.save_to_file(file) is None
+
         assert "POLARS_VERBOSE" in pl.Config.state(if_set=True)
 
         # ...modify the same options...
@@ -556,10 +564,21 @@ def test_config_load_save(tmp_path: Path) -> None:
         pl.Config.set_verbose(False)
         assert os.environ.get("POLARS_VERBOSE") == "0"
 
-        # ...load back from config...
-        if file is not None:
-            assert Path(cfg).is_file()
-        pl.Config.load(cfg)
+        # ...load back from config file/string...
+        if file is None:
+            pl.Config.load(cfg)
+        else:
+            with pytest.raises(ValueError, match="invalid Config file"):
+                pl.Config.load_from_file(cfg)
+
+            if isinstance(file, Path):
+                with pytest.raises(TypeError, match="the JSON object must be str"):
+                    pl.Config.load(file)  # type: ignore[arg-type]
+            else:
+                with pytest.raises(ValueError, match="invalid Config string"):
+                    pl.Config.load(file)
+
+            pl.Config.load_from_file(file)
 
         # ...and confirm the saved options were set.
         assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
@@ -575,6 +594,19 @@ def test_config_load_save(tmp_path: Path) -> None:
         assert os.environ.get("POLARS_FMT_MAX_COLS") is None
         assert os.environ.get("POLARS_VERBOSE") is None
         assert _get_float_fmt() == "mixed"
+
+    # ref: #11094
+    with pl.Config(
+        streaming_chunk_size=100,
+        tbl_cols=2000,
+        tbl_formatting="UTF8_NO_BORDERS",
+        tbl_hide_column_data_types=True,
+        tbl_hide_dtype_separator=True,
+        tbl_rows=2000,
+        tbl_width_chars=2000,
+        verbose=True,
+    ):
+        assert isinstance(repr(pl.DataFrame({"xyz": [0]})), str)
 
 
 def test_config_scope() -> None:
