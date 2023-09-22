@@ -75,12 +75,12 @@ impl PyExpr {
         self.inner.clone().str().strip_chars_end(matches).into()
     }
 
-    fn str_strip_prefix(&self, prefix: String) -> Self {
-        self.inner.clone().str().strip_prefix(prefix).into()
+    fn str_strip_prefix(&self, prefix: Self) -> Self {
+        self.inner.clone().str().strip_prefix(prefix.inner).into()
     }
 
-    fn str_strip_suffix(&self, suffix: String) -> Self {
-        self.inner.clone().str().strip_suffix(suffix).into()
+    fn str_strip_suffix(&self, suffix: Self) -> Self {
+        self.inner.clone().str().strip_suffix(suffix.inner).into()
     }
 
     fn str_slice(&self, start: i64, length: Option<u64>) -> Self {

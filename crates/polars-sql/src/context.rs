@@ -15,14 +15,26 @@ use sqlparser::ast::{
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
+use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
 use crate::sql_expr::{parse_sql_expr, process_join_constraint};
 use crate::table_functions::PolarsTableFunctions;
 
 /// The SQLContext is the main entry point for executing SQL queries.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct SQLContext {
     pub(crate) table_map: PlHashMap<String, LazyFrame>,
+    pub(crate) function_registry: Arc<dyn FunctionRegistry>,
     cte_map: RefCell<PlHashMap<String, LazyFrame>>,
+}
+
+impl Default for SQLContext {
+    fn default() -> Self {
+        Self {
+            function_registry: Arc::new(DefaultFunctionRegistry {}),
+            table_map: Default::default(),
+            cte_map: Default::default(),
+        }
+    }
 }
 
 impl SQLContext {
@@ -34,12 +46,8 @@ impl SQLContext {
     /// # }
     /// ```
     pub fn new() -> Self {
-        Self {
-            table_map: PlHashMap::new(),
-            cte_map: RefCell::new(PlHashMap::new()),
-        }
+        Self::default()
     }
-
     /// Get the names of all registered tables, in sorted order.
     pub fn get_tables(&self) -> Vec<String> {
         let mut tables = Vec::from_iter(self.table_map.keys().cloned());
@@ -106,6 +114,23 @@ impl SQLContext {
         // Every execution should clear the CTE map.
         self.cte_map.borrow_mut().clear();
         res
+    }
+
+    /// add a function registry to the SQLContext
+    /// the registry provides the ability to add custom functions to the SQLContext
+    pub fn with_function_registry(mut self, function_registry: Arc<dyn FunctionRegistry>) -> Self {
+        self.function_registry = function_registry;
+        self
+    }
+
+    /// Get the function registry of the SQLContext
+    pub fn registry(&self) -> &Arc<dyn FunctionRegistry> {
+        &self.function_registry
+    }
+
+    /// Get a mutable reference to the function registry of the SQLContext
+    pub fn registry_mut(&mut self) -> &mut dyn FunctionRegistry {
+        Arc::get_mut(&mut self.function_registry).unwrap()
     }
 }
 
@@ -702,7 +727,7 @@ impl SQLContext {
     pub fn new_from_table_map(table_map: PlHashMap<String, LazyFrame>) -> Self {
         Self {
             table_map,
-            cte_map: RefCell::new(PlHashMap::new()),
+            ..Default::default()
         }
     }
 }

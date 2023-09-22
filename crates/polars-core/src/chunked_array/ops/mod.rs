@@ -2,7 +2,6 @@
 use arrow::offset::OffsetsBuffer;
 use polars_arrow::prelude::QuantileInterpolOptions;
 
-pub use self::take::*;
 #[cfg(feature = "object")]
 use crate::datatypes::ObjectType;
 use crate::prelude::*;
@@ -31,6 +30,7 @@ mod fill_null;
 mod filter;
 mod for_each;
 pub mod full;
+pub mod gather;
 #[cfg(feature = "interpolate")]
 mod interpolate;
 mod len;
@@ -146,86 +146,19 @@ pub trait ChunkRollApply: AsRefDataType {
     }
 }
 
-/// Random access
-pub trait TakeRandom {
-    type Item;
-
-    /// Get a nullable value by index.
-    ///
-    /// # Panics
-    /// Panics if `index >= self.len()`
-    fn get(&self, index: usize) -> Option<Self::Item>;
-
-    /// Get a value by index and ignore the null bit.
-    ///
-    /// # Safety
-    ///
-    /// Does not do bound checks.
-    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item>
+pub trait ChunkTake<Idx: ?Sized>: ChunkTakeUnchecked<Idx> {
+    /// Gather values from ChunkedArray by index.
+    fn take(&self, indices: &Idx) -> PolarsResult<Self>
     where
-        Self: Sized,
-    {
-        self.get(index)
-    }
-
-    /// This is much faster if we have many chunks as we don't have to compute the index
-    /// # Panics
-    /// Panics if `index >= self.len()`
-    fn last(&self) -> Option<Self::Item>;
-}
-// Utility trait because associated type needs a lifetime
-pub trait TakeRandomUtf8 {
-    type Item;
-
-    /// Get a nullable value by index.
-    ///
-    /// # Panics
-    /// Panics if `index >= self.len()`
-    fn get(self, index: usize) -> Option<Self::Item>;
-
-    /// Get a value by index and ignore the null bit.
-    ///
-    /// # Safety
-    ///
-    /// Does not do bound checks.
-    unsafe fn get_unchecked(self, index: usize) -> Option<Self::Item>
-    where
-        Self: Sized,
-    {
-        self.get(index)
-    }
-
-    /// This is much faster if we have many chunks
-    /// # Panics
-    /// Panics if `index >= self.len()`
-    fn last(&self) -> Option<Self::Item>;
+        Self: Sized;
 }
 
-/// Fast access by index.
-pub trait ChunkTake: ChunkTakeUnchecked {
-    /// Take values from ChunkedArray by index.
-    /// Note that the iterator will be cloned, so prefer an iterator that takes the owned memory
-    /// by reference.
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
-    where
-        Self: Sized,
-        I: TakeIterator,
-        INulls: TakeIteratorNulls;
-}
-
-/// Fast access by index.
-pub trait ChunkTakeUnchecked {
-    /// Take values from ChunkedArray by index.
+pub trait ChunkTakeUnchecked<Idx: ?Sized> {
+    /// Gather values from ChunkedArray by index.
     ///
     /// # Safety
-    ///
-    /// Doesn't do any bound checking.
-    #[must_use]
-    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
-    where
-        Self: Sized,
-        I: TakeIterator,
-        INulls: TakeIteratorNulls;
+    /// The non-null indices must be valid.
+    unsafe fn take_unchecked(&self, indices: &Idx) -> Self;
 }
 
 /// Create a `ChunkedArray` with new values by index or by boolean mask.
@@ -596,7 +529,7 @@ macro_rules! impl_chunk_expand {
 
 impl<T: PolarsNumericType> ChunkExpandAtIndex<T> for ChunkedArray<T>
 where
-    ChunkedArray<T>: ChunkFull<T::Native> + TakeRandom<Item = T::Native>,
+    ChunkedArray<T>: ChunkFull<T::Native>,
 {
     fn new_from_index(&self, index: usize, length: usize) -> ChunkedArray<T> {
         let mut out = impl_chunk_expand!(self, length, index);
@@ -631,7 +564,7 @@ impl ChunkExpandAtIndex<BinaryType> for BinaryChunked {
 
 impl ChunkExpandAtIndex<ListType> for ListChunked {
     fn new_from_index(&self, index: usize, length: usize) -> ListChunked {
-        let opt_val = self.get(index);
+        let opt_val = self.get_as_series(index);
         match opt_val {
             Some(val) => {
                 let mut ca = ListChunked::full(self.name(), &val, length);
@@ -646,7 +579,7 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
 #[cfg(feature = "dtype-array")]
 impl ChunkExpandAtIndex<FixedSizeListType> for ArrayChunked {
     fn new_from_index(&self, index: usize, length: usize) -> ArrayChunked {
-        let opt_val = self.get(index);
+        let opt_val = self.get_as_series(index);
         match opt_val {
             Some(val) => {
                 let mut ca = ArrayChunked::full(self.name(), &val, length);

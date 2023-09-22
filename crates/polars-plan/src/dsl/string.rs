@@ -441,19 +441,21 @@ impl StringNameSpace {
     }
 
     /// Remove prefix.
-    pub fn strip_prefix(self, prefix: String) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::StripPrefix(
-                prefix,
-            )))
+    pub fn strip_prefix(self, prefix: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::StripPrefix),
+            &[prefix],
+            false,
+        )
     }
 
     /// Remove suffix.
-    pub fn strip_suffix(self, suffix: String) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::StripSuffix(
-                suffix,
-            )))
+    pub fn strip_suffix(self, suffix: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::StripSuffix),
+            &[suffix],
+            false,
+        )
     }
 
     /// Convert all characters to lowercase.

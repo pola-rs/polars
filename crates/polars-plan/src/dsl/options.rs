@@ -1,4 +1,4 @@
-use polars_core::prelude::{JoinArgs, JoinType};
+use polars_ops::prelude::{JoinArgs, JoinType};
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

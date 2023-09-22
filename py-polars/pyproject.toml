@@ -49,13 +49,14 @@ deltalake = ["deltalake >= 0.10.0"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 matplotlib = ["matplotlib"]
 pydantic = ["pydantic"]
+pyiceberg = ["pyiceberg >= 0.5.0"]
 sqlalchemy = ["sqlalchemy", "pandas"]
 xlsxwriter = ["xlsxwriter"]
 adbc = ["adbc_driver_sqlite"]
 cloudpickle = ["cloudpickle"]
 gevent = ["gevent"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
+  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,pydantic,pyiceberg,sqlalchemy,xlsxwriter,adbc,cloudpickle,gevent]",
 ]
 
 [tool.mypy]

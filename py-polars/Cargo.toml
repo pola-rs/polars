@@ -12,7 +12,7 @@ polars-algo = { path = "../crates/polars-algo", default-features = false }
 polars-core = { path = "../crates/polars-core", default-features = false, features = ["python"] }
 polars-error = { path = "../crates/polars-error" }
 polars-lazy = { path = "../crates/polars-lazy", default-features = false, features = ["python"] }
-polars-ops = { path = "../crates/polars-ops", default-features = false }
+polars-ops = { path = "../crates/polars-ops", default-features = false, features = ["convert_index"] }
 polars-plan = { path = "../crates/polars-plan", default-features = false }
 
 ahash = "0.8"
@@ -141,43 +141,22 @@ cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
 ffi_plugin = ["polars-plan/ffi_plugin"]
+cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure"]
 
-all = [
+dtypes = [
   "dtype-i8",
   "dtype-i16",
   "dtype-u8",
   "dtype-u16",
-  "json",
-  "parquet",
-  "ipc",
-  "ipc_streaming",
-  "avro",
+  "polars/group_by_list",
+  "object",
+]
+
+operations = [
   "is_in",
   "repeat_by",
   "trigonometry",
   "sign",
-  "asof_join",
-  "cross_join",
-  "pct_change",
-  "search_sorted",
-  "merge_sorted",
-  "meta",
-  "decompress",
-  "lazy_regex",
-  "csv",
-  "extract_jsonpath",
-  "timezones",
-  "object",
-  "pivot",
-  "top_k",
-  "build_info",
-  "cse",
-  "propagate_nans",
-  "polars/group_by_list",
-  "polars/fused",
-  "sql",
-  "binary_encoding",
-  "streaming",
   "performant",
   "list_take",
   "list_count",
@@ -186,7 +165,45 @@ all = [
   "cutqcut",
   "rle",
   "extract_groups",
-  "polars-ops/convert_index",
+  "pivot",
+  "extract_jsonpath",
+  "asof_join",
+  "cross_join",
+  "pct_change",
+  "search_sorted",
+  "merge_sorted",
+  "top_k",
+  "propagate_nans",
+  "timezones",
+]
+
+io = [
+  "json",
+  "parquet",
+  "ipc",
+  "ipc_streaming",
+  "avro",
+  "csv",
+  "cloud",
+]
+
+optimizations = [
+  "cse",
+  "polars/fused",
+  "streaming",
+]
+
+all = [
+  "optimizations",
+  "io",
+  "operations",
+  "dtypes",
+  "meta",
+  "decompress",
+  "lazy_regex",
+  "build_info",
+  "sql",
+  "binary_encoding",
   "ffi_plugin",
 ]
 

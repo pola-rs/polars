@@ -1,9 +1,7 @@
 #[cfg(feature = "dtype-date")]
 use polars_arrow::export::arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 use polars_arrow::time_zone::Tz;
-use polars_core::chunked_array::ops::arity::{
-    try_binary_elementwise, try_binary_elementwise_values, try_ternary_elementwise,
-};
+use polars_core::chunked_array::ops::arity::{try_binary_elementwise, try_ternary_elementwise};
 use polars_core::prelude::*;
 
 use crate::prelude::*;
@@ -51,11 +49,14 @@ impl PolarsTruncate for DatetimeChunked {
                 if let Some(every) = every.get(0) {
                     let every = Duration::parse(every);
                     let w = Window::new(every, every, offset);
-                    try_binary_elementwise_values(
-                        self,
-                        ambiguous,
-                        |timestamp: i64, ambiguous: &str| func(&w, timestamp, tz, ambiguous),
-                    )
+                    try_binary_elementwise(self, ambiguous, |opt_timestamp, opt_ambiguous| {
+                        match (opt_timestamp, opt_ambiguous) {
+                            (Some(timestamp), Some(ambiguous)) => {
+                                func(&w, timestamp, tz, ambiguous).map(Some)
+                            },
+                            _ => Ok(None),
+                        }
+                    })
                 } else {
                     Ok(Int64Chunked::full_null(self.name(), self.len()))
                 }

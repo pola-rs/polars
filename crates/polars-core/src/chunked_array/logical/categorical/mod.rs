@@ -7,7 +7,6 @@ pub mod stringcache;
 use bitflags::bitflags;
 pub use builder::*;
 pub(crate) use merge::*;
-pub(crate) use ops::{CategoricalTakeRandomGlobal, CategoricalTakeRandomLocal};
 use polars_utils::sync::SyncPtr;
 
 use super::*;

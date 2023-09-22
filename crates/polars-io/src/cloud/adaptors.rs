@@ -13,9 +13,10 @@ use futures::lock::Mutex;
 use futures::{AsyncRead, AsyncSeek, Future, TryFutureExt};
 use object_store::path::Path;
 use object_store::{MultipartId, ObjectStore};
-use polars_core::cloud::CloudOptions;
 use polars_error::{PolarsError, PolarsResult};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
+
+use super::*;
 
 type OptionalFuture = Arc<Mutex<Option<BoxFuture<'static, std::io::Result<Vec<u8>>>>>>;
 
@@ -26,7 +27,7 @@ pub struct CloudReader {
     // The total size of the object is required when seeking from the end of the file.
     length: Option<u64>,
     // Hold an reference to the store in a thread safe way.
-    object_store: Arc<Mutex<Box<dyn ObjectStore>>>,
+    object_store: Arc<dyn ObjectStore>,
     // The path in the object_store of the current object being read.
     path: Path,
     // If a read is pending then `active` will point to its future.
@@ -34,11 +35,7 @@ pub struct CloudReader {
 }
 
 impl CloudReader {
-    pub fn new(
-        length: Option<u64>,
-        object_store: Arc<Mutex<Box<dyn ObjectStore>>>,
-        path: Path,
-    ) -> Self {
+    pub fn new(length: Option<u64>, object_store: Arc<dyn ObjectStore>, path: Path) -> Self {
         Self {
             pos: 0,
             length,
@@ -64,10 +61,9 @@ impl CloudReader {
         // Create the future.
         let future = {
             let path = self.path.clone();
-            let arc = self.object_store.clone();
+            let object_store = self.object_store.clone();
             // Use an async move block to get our owned objects.
             async move {
-                let object_store = arc.lock().await;
                 object_store
                     .get_range(&path, start..start + length)
                     .map_ok(|r| r.to_vec())
@@ -187,8 +183,7 @@ impl CloudWriter {
     /// Wrapper around `CloudWriter::new_with_object_store` that is useful if you only have a single write task.
     /// TODO: Naming?
     pub fn new(uri: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<Self> {
-        let (cloud_location, object_store) = crate::cloud::build(uri, cloud_options)?;
-        let object_store = Arc::from(object_store);
+        let (cloud_location, object_store) = crate::cloud::build_object_store(uri, cloud_options)?;
         Self::new_with_object_store(object_store, cloud_location.prefix.into())
     }
 
@@ -257,11 +252,10 @@ mod tests {
 
         let mut df = example_dataframe();
 
-        let object_store: Box<dyn ObjectStore> = Box::new(
+        let object_store: Arc<dyn ObjectStore> = Arc::new(
             object_store::local::LocalFileSystem::new_with_prefix(std::env::temp_dir())
                 .expect("Could not initialize connection"),
         );
-        let object_store: Arc<dyn ObjectStore> = Arc::from(object_store);
 
         let path: object_store::path::Path = "cloud_writer_example.csv".into();
 

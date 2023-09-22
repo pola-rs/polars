@@ -36,17 +36,11 @@ pub use crate::datatypes::{ArrayCollectIterExt, *};
 pub use crate::error::{
     polars_bail, polars_ensure, polars_err, polars_warn, PolarsError, PolarsResult,
 };
-#[cfg(feature = "asof_join")]
-pub use crate::frame::asof_join::*;
 pub use crate::frame::explode::MeltArgs;
 #[cfg(feature = "algorithm_group_by")]
 pub(crate) use crate::frame::group_by::aggregations::*;
 #[cfg(feature = "algorithm_group_by")]
 pub use crate::frame::group_by::{GroupsIdx, GroupsProxy, GroupsSlice, IntoGroupsProxy};
-#[cfg(feature = "algorithm_join")]
-pub(crate) use crate::frame::hash_join::*;
-#[cfg(feature = "algorithm_join")]
-pub use crate::frame::hash_join::{JoinArgs, JoinType};
 pub use crate::frame::{DataFrame, UniqueKeepStrategy};
 pub use crate::hashing::{FxHash, VecHash};
 pub use crate::named_from::{NamedFrom, NamedFromOwned};
@@ -58,4 +52,4 @@ pub use crate::series::{IntoSeries, Series, SeriesTrait};
 pub use crate::testing::*;
 pub(crate) use crate::utils::CustomIterTools;
 pub use crate::utils::IntoVec;
-pub use crate::{cloud, datatypes, df};
+pub use crate::{datatypes, df};

@@ -827,11 +827,7 @@ class DataFrame:
         if isinstance(columns, str):
             columns = [columns]
 
-        if (
-            isinstance(source, str)
-            and _is_glob_pattern(source)
-            and _is_local_file(source)
-        ):
+        if isinstance(source, str) and _is_glob_pattern(source):
             from polars import scan_parquet
 
             scan = scan_parquet(

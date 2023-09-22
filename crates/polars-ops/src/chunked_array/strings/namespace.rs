@@ -2,8 +2,6 @@
 use base64::engine::general_purpose;
 #[cfg(feature = "string_encoding")]
 use base64::Engine as _;
-use polars_arrow::export::arrow::compute::substring::substring;
-use polars_arrow::export::arrow::{self};
 use polars_arrow::kernels::string::*;
 #[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
@@ -15,6 +13,23 @@ use regex::escape;
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
+
+// We need this to infer the right lifetimes for the match closure.
+#[inline(always)]
+fn infer_re_match<F>(f: F) -> F
+where
+    F: for<'a, 'b> FnMut(Option<&'a str>, Option<&'b str>) -> Option<bool>,
+{
+    f
+}
+
+fn opt_strip_prefix<'a>(s: Option<&'a str>, prefix: Option<&str>) -> Option<&'a str> {
+    Some(s?.strip_prefix(prefix?).unwrap_or(s?))
+}
+
+fn opt_strip_suffix<'a>(s: Option<&'a str>, suffix: Option<&str>) -> Option<&'a str> {
+    Some(s?.strip_suffix(suffix?).unwrap_or(s?))
+}
 
 pub trait Utf8NameSpaceImpl: AsUtf8 {
     #[cfg(not(feature = "binary_encoding"))]
@@ -112,18 +127,26 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                         src.contains(pat)
                     }))
                 } else if strict {
-                    try_binary_elementwise_values(ca, pat, |src, pat| {
-                        Ok(Regex::new(pat)?.is_match(src))
+                    // A sqrt(n) regex cache is not too small, not too large.
+                    let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
+                    try_binary_elementwise(ca, pat, |opt_src, opt_pat| match (opt_src, opt_pat) {
+                        (Some(src), Some(pat)) => {
+                            let reg = reg_cache.try_get_or_insert_with(pat, |p| Regex::new(p))?;
+                            Ok(Some(reg.is_match(src)))
+                        },
+                        _ => Ok(None),
                     })
                 } else {
-                    Ok(binary_elementwise(ca, pat, |opt_src, opt_pat| {
-                        match (opt_src, opt_pat) {
-                            (Some(src), Some(pat)) => {
-                                Regex::new(pat).ok().map(|re| re.is_match(src))
-                            },
-                            _ => None,
-                        }
-                    }))
+                    // A sqrt(n) regex cache is not too small, not too large.
+                    let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
+                    Ok(binary_elementwise(
+                        ca,
+                        pat,
+                        infer_re_match(|src, pat| {
+                            let reg = reg_cache.try_get_or_insert_with(pat?, |p| Regex::new(p));
+                            Some(reg.ok()?.is_match(src?))
+                        }),
+                    ))
                 }
             },
         }
@@ -327,6 +350,32 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         Ok(builder.finish())
     }
 
+    fn strip_prefix(&self, prefix: &Utf8Chunked) -> Utf8Chunked {
+        let ca = self.as_utf8();
+        match prefix.len() {
+            1 => match prefix.get(0) {
+                Some(prefix) => {
+                    ca.apply_generic(|opt_s| opt_s.map(|s| s.strip_prefix(prefix).unwrap_or(s)))
+                },
+                _ => Utf8Chunked::full_null(ca.name(), ca.len()),
+            },
+            _ => binary_elementwise(ca, prefix, opt_strip_prefix),
+        }
+    }
+
+    fn strip_suffix(&self, suffix: &Utf8Chunked) -> Utf8Chunked {
+        let ca = self.as_utf8();
+        match suffix.len() {
+            1 => match suffix.get(0) {
+                Some(suffix) => {
+                    ca.apply_generic(|opt_s| opt_s.map(|s| s.strip_suffix(suffix).unwrap_or(s)))
+                },
+                _ => Utf8Chunked::full_null(ca.name(), ca.len()),
+            },
+            _ => binary_elementwise(ca, suffix, opt_strip_suffix),
+        }
+    }
+
     fn split(&self, by: &str) -> ListChunked {
         let ca = self.as_utf8();
         let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
@@ -399,15 +448,13 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         // A sqrt(n) regex cache is not too small, not too large.
         let mut reg_cache = FastFixedCache::new((ca.len() as f64).sqrt() as usize);
         let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
-        for (opt_s, opt_pat) in ca.into_iter().zip(pat) {
-            match (opt_s, opt_pat) {
-                (_, None) | (None, _) => builder.append_null(),
-                (Some(s), Some(pat)) => {
-                    let reg = reg_cache.get_or_insert_with(pat, |p| Regex::new(p).unwrap());
-                    builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str()));
-                },
-            }
-        }
+        binary_elementwise_for_each(ca, pat, |opt_s, opt_pat| match (opt_s, opt_pat) {
+            (_, None) | (None, _) => builder.append_null(),
+            (Some(s), Some(pat)) => {
+                let reg = reg_cache.get_or_insert_with(pat, |p| Regex::new(p).unwrap());
+                builder.append_values_iter(reg.find_iter(s).map(|m| m.as_str()));
+            },
+        });
         Ok(builder.finish())
     }
 
@@ -427,12 +474,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             Regex::new(pat)?
         };
 
-        let mut out: UInt32Chunked = ca
-            .into_iter()
-            .map(|opt_s| opt_s.map(|s| reg.find_iter(s).count() as u32))
-            .collect();
-        out.rename(ca.name());
-        Ok(out)
+        Ok(ca.apply_generic(|opt_s| opt_s.map(|s| reg.find_iter(s).count() as u32)))
     }
 
     /// Count all successive non-overlapping regex matches.
@@ -500,14 +542,12 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     ///
     /// Determines a substring starting from `start` and with optional length `length` of each of the elements in `array`.
     /// `start` can be negative, in which case the start counts from the end of the string.
-    fn str_slice(&self, start: i64, length: Option<u64>) -> PolarsResult<Utf8Chunked> {
+    fn str_slice(&self, start: i64, length: Option<u64>) -> Utf8Chunked {
         let ca = self.as_utf8();
-        let chunks = ca
+        let iter = ca
             .downcast_iter()
-            .map(|c| substring(c, start, &length))
-            .collect::<arrow::error::Result<_>>()?;
-        // SAFETY: these are all the same type.
-        unsafe { Ok(Utf8Chunked::from_chunks(ca.name(), chunks)) }
+            .map(|c| substring::utf8_substring(c, start, &length));
+        Utf8Chunked::from_chunk_iter_like(ca, iter)
     }
 }
 

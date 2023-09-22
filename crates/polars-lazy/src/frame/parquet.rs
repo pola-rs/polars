@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
+use polars_io::cloud::CloudOptions;
 use polars_io::input::file_format::parquet::ParquetFormat;
 use polars_io::input::file_format::FileFormat;
 use polars_io::input::file_listing::ObjectListingUrl;
@@ -191,40 +191,5 @@ impl LazyFrame {
     /// Create a LazyFrame directly from a parquet scan.
     pub fn scan_parquet2(path: &str, args: ScanArgsParquet) -> PolarsResult<Self> {
         LazyParquetReader::new2(path.to_string(), args).finish2()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_pq() {
-        let args = ScanArgsParquet {
-            n_rows: None,
-            cache: true,
-            row_count: Some(RowCount {
-                name: "serial_num".to_string(),
-                offset: 0,
-            }),
-            parallel: Default::default(),
-            ..Default::default()
-        };
-        let x = LazyFrame::scan_parquet2(
-            "/Users/chitral/test_data/nw_app_activities.parquet",
-            args.clone(),
-        )
-        .expect("cant make lazy frame");
-
-        let x2 = LazyFrame::scan_parquet(
-            "/Users/chitral/test_data/nw_app_activities.parquet",
-            args.clone(),
-        )
-        .expect("cant make lazy frame");
-
-        dbg!(x.describe_optimized_plan());
-        dbg!(x.schema());
-        dbg!(x2.describe_optimized_plan());
-        dbg!(x2.schema());
     }
 }

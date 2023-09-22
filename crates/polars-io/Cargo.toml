@@ -25,8 +25,9 @@ chrono-tz = { workspace = true, optional = true }
 fast-float = { version = "0.2", optional = true }
 flate2 = { version = "1", optional = true, default-features = false }
 futures = { workspace = true }
+itoa = { workspace = true, optional = true }
 lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-integers"] }
-lexical-core = { version = "0.8", optional = true }
+lexical-core = { workspace = true, optional = true }
 memchr = { workspace = true }
 memmap = { package = "memmap2", version = "0.7" }
 num-traits = { workspace = true }
@@ -34,10 +35,11 @@ object_store = { workspace = true, optional = true }
 once_cell = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
+ryu = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { version = "1", default-features = false, features = ["alloc", "raw_value"], optional = true }
 simd-json = { workspace = true, optional = true }
-simdutf8 = { version = "0.1", optional = true }
+simdutf8 = { workspace = true, optional = true }
 tokio = { version = "1.26", features = ["net", "io-util", "rt-multi-thread"] }
 tokio-util = { version = "0.7.8", features = ["io", "io-util"] }
 url = { workspace = true }
@@ -49,13 +51,13 @@ itertools = { version = "0" }
 version = "0.40"
 default-features = false
 features = [
-  "services-azblob",
-  "services-azdls",
-  "services-gcs",
-  "services-s3",
-  "services-http",
-  "services-fs",
-  "services-webhdfs",
+    "services-azblob",
+    "services-azdls",
+    "services-gcs",
+    "services-s3",
+    "services-http",
+    "services-fs",
+    "services-webhdfs",
 ]
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
@@ -68,7 +70,6 @@ tempdir = "0.3.7"
 default = ["decompress"]
 # support for arrows json parsing
 json = [
-  "arrow/io_json_write",
   "polars-json",
   "simd-json",
   "lexical",
@@ -84,7 +85,7 @@ ipc = ["arrow/io_ipc", "arrow/io_ipc_compression", "arrow/io_ipc_read_async"]
 ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
 avro = ["arrow/io_avro", "arrow/io_avro_compression", "arrow/io_avro_async"]
-csv = ["lexical", "polars-core/rows", "lexical-core", "fast-float", "simdutf8", "arrow/io_csv_read_async"]
+csv = ["lexical", "polars-core/rows", "itoa", "ryu", "fast-float", "simdutf8"]
 decompress = ["flate2/rust_backend"]
 decompress-fast = ["flate2/zlib-ng"]
 dtype-categorical = ["polars-core/dtype-categorical"]
@@ -107,10 +108,10 @@ fmt = ["polars-core/fmt"]
 lazy = []
 parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression"]
 async = ["arrow/io_ipc_write_async", "polars-error/regex"]
-cloud = ["object_store", "async" ]
-aws = ["object_store/aws", "cloud", "polars-core/aws"]
-azure = ["object_store/azure", "cloud", "polars-core/azure"]
-gcp = ["object_store/gcp", "cloud", "polars-core/gcp"]
+cloud = ["object_store", "async"]
+aws = ["object_store/aws", "cloud"]
+azure = ["object_store/azure", "cloud"]
+gcp = ["object_store/gcp", "cloud"]
 partition = ["polars-core/partition_by"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 simd = []

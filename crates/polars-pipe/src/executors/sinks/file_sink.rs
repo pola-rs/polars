@@ -105,7 +105,7 @@ impl ParquetCloudSink {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(
         uri: &str,
-        cloud_options: Option<&polars_core::cloud::CloudOptions>,
+        cloud_options: Option<&polars_io::cloud::CloudOptions>,
         parquet_options: ParquetWriteOptions,
         schema: &Schema,
     ) -> PolarsResult<FilesSink> {

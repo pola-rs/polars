@@ -251,7 +251,6 @@ pub(crate) fn det_join_schema(
                         right_on.to_field_amortized(schema_right, Context::Default, &mut arena)?;
                     if field_left.name != field_right.name {
                         if schema_left.contains(&field_right.name) {
-                            use polars_core::frame::hash_join::_join_suffix_name;
                             new_schema.with_column(
                                 _join_suffix_name(&field_right.name, options.args.suffix()).into(),
                                 field_right.dtype,

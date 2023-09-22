@@ -133,7 +133,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
         Random => {
             // Safety:
             // in bounds
-            let arr = unsafe { s.take_unchecked(&sort_idx_ca).unwrap() };
+            let arr = unsafe { s.take_unchecked(&sort_idx_ca) };
             let not_consecutive_same = arr
                 .slice(1, len - 1)
                 .not_equal(&arr.slice(0, len - 1))
@@ -185,7 +185,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
         _ => {
             let inv_ca = IdxCa::from_vec(s.name(), inv);
             // SAFETY: in bounds.
-            let arr = unsafe { s.take_unchecked(&sort_idx_ca).unwrap() };
+            let arr = unsafe { s.take_unchecked(&sort_idx_ca) };
             let validity = arr.chunks()[0].validity().cloned();
             let not_consecutive_same = arr
                 .slice(1, len - 1)
@@ -228,7 +228,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
             let dense = IdxCa::with_chunk(s.name(), arr);
 
             // SAFETY: in bounds.
-            let dense = unsafe { dense.take_unchecked((&inv_ca).into()) };
+            let dense = unsafe { dense.take_unchecked(&inv_ca) };
 
             if let RankMethod::Dense = method {
                 return if s.null_count() == 0 {
@@ -280,18 +280,18 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
             match method {
                 Max => {
                     // SAFETY: in bounds.
-                    unsafe { count.take_unchecked((&dense).into()).into_series() }
+                    unsafe { count.take_unchecked(&dense).into_series() }
                 },
                 Min => {
                     // SAFETY: in bounds.
-                    unsafe { (count.take_unchecked((&dense).into()) + 1).into_series() }
+                    unsafe { (count.take_unchecked(&dense) + 1).into_series() }
                 },
                 Average => {
                     // SAFETY: in bounds.
-                    let a = unsafe { count.take_unchecked((&dense).into()) }
+                    let a = unsafe { count.take_unchecked(&dense) }
                         .cast(&DataType::Float64)
                         .unwrap();
-                    let b = unsafe { count.take_unchecked((&(dense - 1)).into()) }
+                    let b = unsafe { count.take_unchecked(&(dense - 1)) }
                         .cast(&DataType::Float64)
                         .unwrap()
                         + 1.0;
