@@ -11,7 +11,9 @@ use polars::lazy::frame::LazyCsvReader;
 use polars::lazy::frame::LazyJsonLineReader;
 use polars::lazy::frame::{AllowedOptimizations, LazyFrame};
 use polars::lazy::prelude::col;
-use polars::prelude::{cloud, ClosedWindow, CsvEncoding, Field, JoinType, Schema};
+#[cfg(feature = "csv")]
+use polars::prelude::CsvEncoding;
+use polars::prelude::{ClosedWindow, Field, JoinType, Schema};
 use polars::time::*;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::hash_join::JoinValidation;
@@ -28,16 +30,6 @@ use crate::expr::ToExprs;
 use crate::file::get_file_like;
 use crate::prelude::*;
 use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};
-
-/// Extract CloudOptions from a Python object.
-fn extract_cloud_options(url: &str, py_object: PyObject) -> PyResult<cloud::CloudOptions> {
-    let untyped_options = Python::with_gil(|py| py_object.extract::<HashMap<String, String>>(py))
-        .expect("Expected a dictionary for cloud_options");
-    Ok(
-        cloud::CloudOptions::from_untyped_config(url, untyped_options)
-            .map_err(PyPolarsErr::from)?,
-    )
-}
 
 #[pyclass]
 #[repr(transparent)]
@@ -253,11 +245,11 @@ impl PyLazyFrame {
         rechunk: bool,
         row_count: Option<(String, IdxSize)>,
         low_memory: bool,
-        cloud_options: Option<PyObject>,
+        cloud_options: Option<Vec<(String, String)>>,
         use_statistics: bool,
     ) -> PyResult<Self> {
         let cloud_options = cloud_options
-            .map(|po| extract_cloud_options(&path, po))
+            .map(|kv| parse_cloud_options(&path, kv))
             .transpose()?;
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsParquet {

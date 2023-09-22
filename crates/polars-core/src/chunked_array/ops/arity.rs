@@ -7,8 +7,18 @@ use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter, StaticArray};
 use crate::prelude::{ChunkedArray, PolarsDataType};
 use crate::utils::{align_chunks_binary, align_chunks_ternary};
 
+// We need this helper because for<'a> notation can't yet be applied properly
+// on the return type.
+pub trait BinaryFnMut<A1, A2>: FnMut(A1, A2) -> Self::Ret {
+    type Ret;
+}
+
+impl<A1, A2, R, T: FnMut(A1, A2) -> R> BinaryFnMut<A1, A2> for T {
+    type Ret = R;
+}
+
 #[inline]
-pub fn binary_elementwise<T, U, V, F, K>(
+pub fn binary_elementwise<T, U, V, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
@@ -17,8 +27,10 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType,
-    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> Option<K>,
-    V::Array: ArrayFromIter<Option<K>>,
+    F: for<'a> BinaryFnMut<Option<T::Physical<'a>>, Option<U::Physical<'a>>>,
+    V::Array: for<'a> ArrayFromIter<
+        <F as BinaryFnMut<Option<T::Physical<'a>>, Option<U::Physical<'a>>>>::Ret,
+    >,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs

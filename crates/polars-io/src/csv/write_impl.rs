@@ -454,7 +454,7 @@ pub(crate) fn write<W: Write>(
         });
 
         // rayon will ensure the right order
-        result_buf.par_extend(par_iter);
+        POOL.install(|| result_buf.par_extend(par_iter));
 
         for buf in result_buf.drain(..) {
             let mut buf = buf?;

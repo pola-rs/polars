@@ -44,7 +44,7 @@ fn err_missing_configuration(feature: &str, scheme: &str) -> BuildResult {
 
 /// Build an [`ObjectStore`] based on the URL and passed in url. Return the cloud location and an implementation of the object store.
 #[cfg(feature = "cloud")]
-pub fn build(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
+pub fn build_object_store(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
     let cloud_location = CloudLocation::new(url)?;
     let store = match CloudType::from_str(url)? {
         CloudType::File => {
@@ -57,7 +57,7 @@ pub fn build(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
                 let options = _options
                     .map(Cow::Borrowed)
                     .unwrap_or_else(|| Cow::Owned(Default::default()));
-                let store = options.build_aws(&cloud_location.bucket)?;
+                let store = options.build_aws(url)?;
                 Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)
             }
             #[cfg(not(feature = "aws"))]
@@ -67,7 +67,7 @@ pub fn build(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
             #[cfg(feature = "gcp")]
             match _options {
                 Some(options) => {
-                    let store = options.build_gcp(&cloud_location.bucket)?;
+                    let store = options.build_gcp(url)?;
                     Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)
                 },
                 _ => return err_missing_configuration("gcp", &cloud_location.scheme),
@@ -80,7 +80,7 @@ pub fn build(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
                 #[cfg(feature = "azure")]
                 match _options {
                     Some(options) => {
-                        let store = options.build_azure(&cloud_location.bucket)?;
+                        let store = options.build_azure(url)?;
                         Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)
                     },
                     _ => return err_missing_configuration("azure", &cloud_location.scheme),

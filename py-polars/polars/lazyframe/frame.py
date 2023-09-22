@@ -44,7 +44,7 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import dataframe_api_compat, subprocess
-from polars.io._utils import _is_local_file
+from polars.io._utils import _is_local_file, _is_supported_cloud
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
@@ -407,13 +407,16 @@ class LazyFrame:
 
         """
         # try fsspec scanner
-        if not _is_local_file(source):
+        if not _is_local_file(source) and not _is_supported_cloud(source):
             scan = _scan_parquet_fsspec(source, storage_options)
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
                 scan = scan.with_row_count(row_count_name, row_count_offset)
             return scan  # type: ignore[return-value]
+
+        if storage_options is not None:
+            storage_options = list(storage_options.items())  #  type: ignore[assignment]
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(

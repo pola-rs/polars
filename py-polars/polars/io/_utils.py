@@ -15,6 +15,10 @@ def _is_glob_pattern(file: str) -> bool:
     return any(char in file for char in ["*", "?", "["])
 
 
+def _is_supported_cloud(file: str) -> bool:
+    return file.startswith(("s3", "gs", "az", "adl", "abfs"))
+
+
 def _is_local_file(file: str) -> bool:
     try:
         next(glob.iglob(file, recursive=True))  # noqa: PTH207
@@ -162,19 +166,8 @@ def _prepare_file_arg(
                         context=f"{file!r}",
                         raise_if_empty=raise_if_empty,
                     )
-            # non-local file
-            if "*" in file:
-                raise ValueError(
-                    "globbing patterns not supported when scanning non-local files"
-                )
             kwargs["encoding"] = encoding
             return fsspec.open(file, **kwargs)
-
-        # TODO: add azure/ gcp/ ?
-        if file.startswith("s3://"):
-            raise ModuleNotFoundError(
-                "fsspec needs to be installed to read files from S3"
-            )
 
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _FSSPEC_AVAILABLE:

@@ -7,7 +7,6 @@ use arrow::io::parquet::read::{
 };
 use arrow::io::parquet::write::FileMetaData;
 use futures::future::BoxFuture;
-use futures::lock::Mutex;
 use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
@@ -17,14 +16,14 @@ use polars_core::error::{to_compute_err, PolarsResult};
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
 
-use super::cloud::{build, CloudLocation, CloudReader};
+use super::cloud::{build_object_store, CloudLocation, CloudReader};
 use super::mmap;
 use super::mmap::ColumnStore;
 use super::read_impl::FetchRowGroups;
 use crate::cloud::CloudOptions;
 
 pub struct ParquetObjectStore {
-    store: Arc<Mutex<Box<dyn ObjectStore>>>,
+    store: Arc<dyn ObjectStore>,
     path: ObjectPath,
     length: Option<u64>,
     metadata: Option<FileMetaData>,
@@ -32,8 +31,8 @@ pub struct ParquetObjectStore {
 
 impl ParquetObjectStore {
     pub fn from_uri(uri: &str, options: Option<&CloudOptions>) -> PolarsResult<Self> {
-        let (CloudLocation { prefix, .. }, store) = build(uri, options)?;
-        let store = Arc::new(Mutex::from(store));
+        let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options)?;
+        let store = Arc::from(store);
 
         Ok(ParquetObjectStore {
             store,
@@ -48,9 +47,13 @@ impl ParquetObjectStore {
         if self.length.is_some() {
             return Ok(());
         }
-        let path = self.path.clone();
-        let locked_store = self.store.lock().await;
-        self.length = Some(locked_store.head(&path).await.map_err(to_compute_err)?.size as u64);
+        self.length = Some(
+            self.store
+                .head(&self.path)
+                .await
+                .map_err(to_compute_err)?
+                .size as u64,
+        );
         Ok(())
     }
 

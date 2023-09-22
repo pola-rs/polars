@@ -11,7 +11,7 @@ pub trait StaticArray:
     + for<'a> ArrayFromIterDtype<Self::ValueT<'a>>
     + for<'a> ArrayFromIterDtype<Option<Self::ValueT<'a>>>
 {
-    type ValueT<'a>
+    type ValueT<'a>: Clone
     where
         Self: 'a;
     type ValueIterT<'a>: Iterator<Item = Self::ValueT<'a>>
@@ -55,6 +55,11 @@ pub trait StaticArray:
     /// It is the callers responsibility that the `idx < self.len()`.
     unsafe fn value_unchecked(&self, idx: usize) -> Self::ValueT<'_>;
 
+    #[inline(always)]
+    fn as_slice(&self) -> Option<&[Self::ValueT<'_>]> {
+        None
+    }
+
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter>;
     fn values_iter(&self) -> Self::ValueIterT<'_>;
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self;
@@ -75,6 +80,11 @@ impl<T: NumericNative> StaticArray for PrimitiveArray<T> {
 
     fn values_iter(&self) -> Self::ValueIterT<'_> {
         self.values_iter().copied()
+    }
+
+    #[inline(always)]
+    fn as_slice(&self) -> Option<&[Self::ValueT<'_>]> {
+        Some(self.values().as_slice())
     }
 
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter> {

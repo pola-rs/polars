@@ -552,6 +552,7 @@ impl PyDataFrame {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "csv")]
     pub fn write_csv(
         &mut self,
         py: Python,
