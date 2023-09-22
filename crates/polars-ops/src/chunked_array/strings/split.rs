@@ -48,80 +48,38 @@ where
     StructChunked::new(ca.name(), &fields)
 }
 
-pub fn split(ca: &Utf8Chunked, by: &Utf8Chunked) -> ListChunked {
+pub fn split_helper<'a, F, I>(ca: &'a Utf8Chunked, by: &'a Utf8Chunked, op: F) -> ListChunked
+where
+    F: Fn(&'a str, &'a str) -> I,
+    I: Iterator<Item = &'a str>,
+{
     if by.len() == 1 {
         if let Some(by) = by.get(0) {
-            split_literal(ca, by)
+            let mut builder =
+                ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+
+            ca.for_each(|opt_s| match opt_s {
+                Some(s) => {
+                    let iter = op(s, by);
+                    builder.append_values_iter(iter)
+                },
+                _ => builder.append_null(),
+            });
+            builder.finish()
         } else {
             ListChunked::full_null_with_dtype(ca.name(), ca.len(), &DataType::Utf8)
         }
     } else {
-        split_many(ca, by)
+        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+
+        binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
+            (Some(s), Some(by)) => {
+                let iter = op(s, by);
+                builder.append_values_iter(iter);
+            },
+            _ => builder.append_null(),
+        });
+
+        builder.finish()
     }
-}
-
-pub fn split_inclusive(ca: &Utf8Chunked, by: &Utf8Chunked) -> ListChunked {
-    if by.len() == 1 {
-        if let Some(by) = by.get(0) {
-            split_inclusive_literal(ca, by)
-        } else {
-            ListChunked::full_null_with_dtype(ca.name(), ca.len(), &DataType::Utf8)
-        }
-    } else {
-        split_inclusive_many(ca, by)
-    }
-}
-
-fn split_literal(ca: &Utf8Chunked, by: &str) -> ListChunked {
-    let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
-
-    ca.for_each(|opt_v| match opt_v {
-        Some(val) => {
-            let iter = val.split(by);
-            builder.append_values_iter(iter)
-        },
-        _ => builder.append_null(),
-    });
-    builder.finish()
-}
-
-fn split_many(ca: &Utf8Chunked, by: &Utf8Chunked) -> ListChunked {
-    let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
-
-    binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
-        (Some(s), Some(by)) => {
-            let iter = s.split(by);
-            builder.append_values_iter(iter);
-        },
-        _ => builder.append_null(),
-    });
-
-    builder.finish()
-}
-
-fn split_inclusive_literal(ca: &Utf8Chunked, by: &str) -> ListChunked {
-    let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
-
-    ca.for_each(|opt_v| match opt_v {
-        Some(val) => {
-            let iter = val.split_inclusive(by);
-            builder.append_values_iter(iter)
-        },
-        _ => builder.append_null(),
-    });
-    builder.finish()
-}
-
-fn split_inclusive_many(ca: &Utf8Chunked, by: &Utf8Chunked) -> ListChunked {
-    let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
-
-    binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
-        (Some(s), Some(by)) => {
-            let iter = s.split_inclusive(by);
-            builder.append_values_iter(iter);
-        },
-        _ => builder.append_null(),
-    });
-
-    builder.finish()
 }

@@ -400,13 +400,13 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     fn split(&self, by: &Utf8Chunked) -> ListChunked {
         let ca = self.as_utf8();
 
-        split(ca, by)
+        split_helper(ca, by, str::split)
     }
 
     fn split_inclusive(&self, by: &Utf8Chunked) -> ListChunked {
         let ca = self.as_utf8();
 
-        split_inclusive(ca, by)
+        split_helper(ca, by, str::split_inclusive)
     }
 
     /// Extract each successive non-overlapping regex match in an individual string as an array.
