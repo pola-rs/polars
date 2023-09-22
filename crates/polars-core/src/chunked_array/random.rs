@@ -296,17 +296,17 @@ mod test {
         .unwrap();
 
         // default samples are random and don't require seeds
-        assert!(df.sample_n(Series::new("s", 3), false, false, None).is_ok());
+        assert!(df.sample_n(&Series::new("s", &[3]), false, false, None).is_ok());
         assert!(df.sample_frac(0.4, false, false, None).is_ok());
         // with seeding
         assert!(df
-            .sample_n(Series::new("s", 3), false, false, Some(0))
+            .sample_n(&Series::new("s", &[3]), false, false, Some(0))
             .is_ok());
         assert!(df.sample_frac(0.4, false, false, Some(0)).is_ok());
         // without replacement can not sample more than 100%
         assert!(df.sample_frac(2.0, false, false, Some(0)).is_err());
         assert!(df
-            .sample_n(Series::new("s", 3), true, false, Some(0))
+            .sample_n(&Series::new("s", &[3]), true, false, Some(0))
             .is_ok());
         assert!(df.sample_frac(0.4, true, false, Some(0)).is_ok());
         // with replacement can sample more than 100%
