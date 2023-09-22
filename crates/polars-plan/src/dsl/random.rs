@@ -10,19 +10,23 @@ impl Expr {
 
     pub fn sample_n(
         self,
-        n: usize,
+        n: Expr,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
     ) -> Self {
-        self.apply_private(FunctionExpr::Random {
-            method: RandomMethod::SampleN {
-                n,
-                with_replacement,
-                shuffle,
+        self.apply_many_private(
+            FunctionExpr::Random {
+                method: RandomMethod::SampleN {
+                    with_replacement,
+                    shuffle,
+                },
+                seed,
             },
-            seed,
-        })
+            &[n],
+            false,
+            false,
+        )
     }
 
     pub fn sample_frac(

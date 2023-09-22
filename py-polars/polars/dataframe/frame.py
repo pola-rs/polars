@@ -8678,7 +8678,7 @@ class DataFrame:
 
     def sample(
         self,
-        n: int | None = None,
+        n: int | Series | None = None,
         *,
         fraction: float | None = None,
         with_replacement: bool = False,
@@ -8739,7 +8739,9 @@ class DataFrame:
 
         if n is None:
             n = 1
-        return self._from_pydf(self._df.sample_n(n, with_replacement, shuffle, seed))
+        n = _prepare_other_arg(n, 1)
+
+        return self._from_pydf(self._df.sample_n(n._s, with_replacement, shuffle, seed))
 
     def fold(self, operation: Callable[[Series, Series], Series]) -> Series:
         """

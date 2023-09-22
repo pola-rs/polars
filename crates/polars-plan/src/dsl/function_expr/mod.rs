@@ -679,7 +679,21 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             RLEID => map!(rle_id),
             ToPhysical => map!(dispatch::to_physical),
             #[cfg(feature = "random")]
-            Random { method, seed } => map!(random::random, method, seed),
+            Random { method, seed } => {
+                use RandomMethod::*;
+                match method {
+                    Shuffle => map!(random::shuffle, seed),
+                    SampleFrac {
+                        frac,
+                        with_replacement,
+                        shuffle,
+                    } => map!(random::sample_frac, frac, with_replacement, shuffle, seed),
+                    SampleN {
+                        with_replacement,
+                        shuffle,
+                    } => map_as_slice!(random::sample_n, with_replacement, shuffle, seed),
+                }
+            },
             SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => unsafe {
