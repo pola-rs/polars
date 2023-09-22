@@ -10,7 +10,7 @@ description = "More operations on Polars data structures"
 
 [dependencies]
 polars-arrow = { workspace = true, default-features = false }
-polars-core = { workspace = true, features = ["algorithm_group_by", "algorithm_join"], default-features = false }
+polars-core = { workspace = true, features = ["algorithm_group_by"], default-features = false }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
 polars-utils = { workspace = true, default-features = false }
@@ -89,10 +89,10 @@ search_sorted = []
 merge_sorted = []
 top_k = []
 pivot = ["polars-core/reinterpret"]
-cross_join = ["polars-core/cross_join"]
+cross_join = []
 chunked_ids = ["polars-core/chunked_ids"]
 asof_join = ["polars-core/asof_join"]
-semi_anti_join = ["polars-core/semi_anti_join"]
+semi_anti_join = []
 list_take = []
 list_sets = []
 list_any_all = []

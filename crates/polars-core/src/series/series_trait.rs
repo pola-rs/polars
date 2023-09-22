@@ -153,14 +153,6 @@ pub(crate) mod private {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
 
-        unsafe fn zip_outer_join_column(
-            &self,
-            _right_column: &Series,
-            _opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-        ) -> Series {
-            invalid_operation_panic!(zip_outer_join_column, self)
-        }
-
         fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
             invalid_operation_panic!(sub, self)
         }

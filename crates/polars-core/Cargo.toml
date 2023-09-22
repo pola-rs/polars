@@ -52,9 +52,8 @@ avx512 = []
 docs = []
 temporal = ["regex", "chrono", "polars-error/regex"]
 random = ["rand", "rand_distr"]
-algorithm_join = []
 algorithm_group_by = []
-default = ["algorithm_join", "algorithm_group_by"]
+default = ["algorithm_group_by"]
 lazy = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
@@ -83,8 +82,7 @@ checked_arithmetic = []
 repeat_by = []
 is_first_distinct = []
 is_last_distinct = []
-asof_join = ["algorithm_join"]
-cross_join = ["algorithm_join"]
+asof_join = []
 dot_product = []
 concat_str = []
 row_hash = []
@@ -109,7 +107,6 @@ dataframe_arithmetic = []
 product = []
 unique_counts = []
 partition_by = []
-semi_anti_join = ["algorithm_join"]
 chunked_ids = []
 describe = []
 timezones = ["chrono-tz", "arrow/chrono-tz", "polars-arrow/timezones"]
@@ -154,7 +151,6 @@ docs-selection = [
   "is_first_distinct",
   "is_last_distinct",
   "asof_join",
-  "cross_join",
   "dot_product",
   "concat_str",
   "row_hash",
@@ -174,9 +170,7 @@ docs-selection = [
   "unique_counts",
   "describe",
   "chunked_ids",
-  "semi_anti_join",
   "partition_by",
-  "algorithm_join",
   "algorithm_group_by",
 ]
 
