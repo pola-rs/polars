@@ -5786,6 +5786,7 @@ class DataFrame:
 
         Examples
         --------
+        Example 1:
         >>> from datetime import datetime
         >>> gdp = pl.DataFrame(
         ...     {
@@ -5822,9 +5823,7 @@ class DataFrame:
         │ 2019-05-12 00:00:00 ┆ 83.52      ┆ 4696 │
         └─────────────────────┴────────────┴──────┘
 
-
-        Examples
-        --------
+        Example 2:
         >>> from datetime import datetime
         >>> sales = pl.DataFrame(
         ...     {
@@ -5852,10 +5851,8 @@ class DataFrame:
         ... ).set_sorted("expense_date")
         >>> result = sales.join_asof(
         ...     expenses,
-        ...     on={"sale_date": "expense_date"},
-        ...     by={"region": "region"},
-        ...     by_left={"sales_amount": "expense_amount"},
-        ...     by_right={"expense_amount": "sales_amount"},
+        ...     left_on="sale_date",
+        ...     right_on="expense_date",
         ...     strategy="backward",
         ... )
         >>> result
