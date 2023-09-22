@@ -43,7 +43,7 @@ where
     let hash_sets = create_probe_table_semi_anti(build);
 
     // we determine the offset so that we later know which index to store in the join tuples
-    let offsets = probe_to_offsets2(&probe);
+    let offsets = probe_to_offsets(&probe);
 
     let n_tables = hash_sets.len() as u64;
     debug_assert!(n_tables.is_power_of_two());

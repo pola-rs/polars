@@ -116,16 +116,16 @@ where
     // first we hash one relation
     let hash_tbls = if validate.needs_checks() {
         let expected_size = build.iter().map(|v| v.size_hint().1.unwrap()).sum();
-        let hash_tbls = build_tables2(build);
+        let hash_tbls = build_tables(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
         validate.validate_build(build_size, expected_size, false)?;
         hash_tbls
     } else {
-        build_tables2(build)
+        build_tables(build)
     };
 
     // we determine the offset so that we later know which index to store in the join tuples
-    let offsets = probe_to_offsets2(&probe);
+    let offsets = probe_to_offsets(&probe);
 
     let n_tables = hash_tbls.len() as u64;
     debug_assert!(n_tables.is_power_of_two());

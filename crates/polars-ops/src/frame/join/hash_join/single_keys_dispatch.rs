@@ -105,7 +105,7 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let lhs = lhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
                 Ok((
-                    hash_join_tuples_inner2(lhs, rhs, swapped, validate)?,
+                    hash_join_tuples_inner(lhs, rhs, swapped, validate)?,
                     !swapped,
                 ))
             },
@@ -212,18 +212,18 @@ where
                     .map(|arr| arr.as_slice().unwrap())
                     .collect::<Vec<_>>();
                 Ok((
-                    hash_join_tuples_inner2(splitted_a, splitted_b, swapped, validate)?,
+                    hash_join_tuples_inner(splitted_a, splitted_b, swapped, validate)?,
                     !swapped,
                 ))
             } else {
                 Ok((
-                    hash_join_tuples_inner2(splitted_a, splitted_b, swapped, validate)?,
+                    hash_join_tuples_inner(splitted_a, splitted_b, swapped, validate)?,
                     !swapped,
                 ))
             }
         },
         _ => Ok((
-            hash_join_tuples_inner2(splitted_a, splitted_b, swapped, validate)?,
+            hash_join_tuples_inner(splitted_a, splitted_b, swapped, validate)?,
             !swapped,
         )),
     }

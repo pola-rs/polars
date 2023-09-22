@@ -1,6 +1,6 @@
 use super::*;
 
-pub(crate) fn build_tables2<T, I>(keys: Vec<I>) -> Vec<PlHashMap<T, Vec<IdxSize>>>
+pub(crate) fn build_tables<T, I>(keys: Vec<I>) -> Vec<PlHashMap<T, Vec<IdxSize>>>
 where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
     I: IntoIterator<Item = T> + Send + Sync + Clone,
@@ -54,7 +54,7 @@ where
 }
 
 // we determine the offset so that we later know which index to store in the join tuples
-pub(super) fn probe_to_offsets2<T, I>(probe: &[I]) -> Vec<usize>
+pub(super) fn probe_to_offsets<T, I>(probe: &[I]) -> Vec<usize>
 where
     I: IntoIterator<Item = T> + Clone,
     // <I as IntoIterator>::IntoIter: TrustedLen,

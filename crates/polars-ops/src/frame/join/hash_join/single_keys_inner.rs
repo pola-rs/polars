@@ -4,7 +4,7 @@ use polars_utils::sync::SyncPtr;
 
 use super::*;
 
-pub(super) fn probe_inner2<T, F, I>(
+pub(super) fn probe_inner<T, F, I>(
     probe: I,
     hash_tbls: &[PlHashMap<T, Vec<IdxSize>>],
     results: &mut Vec<(IdxSize, IdxSize)>,
@@ -33,7 +33,7 @@ pub(super) fn probe_inner2<T, F, I>(
     });
 }
 
-pub(super) fn hash_join_tuples_inner2<T, I>(
+pub(super) fn hash_join_tuples_inner<T, I>(
     probe: Vec<I>,
     build: Vec<I>,
     // Because b should be the shorter relation we could need to swap to keep left left and right right.
@@ -52,17 +52,17 @@ where
             .iter()
             .map(|v| v.into_iter().size_hint().1.unwrap())
             .sum();
-        let hash_tbls = build_tables2(build);
+        let hash_tbls = build_tables(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
         validate.validate_build(build_size, expected_size, swapped)?;
         hash_tbls
     } else {
-        build_tables2(build)
+        build_tables(build)
     };
 
     let n_tables = hash_tbls.len() as u64;
     debug_assert!(n_tables.is_power_of_two());
-    let offsets = probe_to_offsets2(&probe);
+    let offsets = probe_to_offsets(&probe);
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
     let out = POOL.install(|| {
@@ -78,7 +78,7 @@ where
 
                 // branch is to hoist swap out of the inner loop.
                 if swapped {
-                    probe_inner2(
+                    probe_inner(
                         probe,
                         hash_tbls,
                         &mut results,
@@ -87,7 +87,7 @@ where
                         |idx_a, idx_b| (idx_b, idx_a),
                     )
                 } else {
-                    probe_inner2(
+                    probe_inner(
                         probe,
                         hash_tbls,
                         &mut results,

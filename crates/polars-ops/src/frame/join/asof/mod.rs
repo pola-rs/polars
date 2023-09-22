@@ -15,7 +15,7 @@ use smartstring::alias::String as SmartString;
 #[cfg(feature = "dtype-categorical")]
 use super::_check_categorical_src;
 use super::{
-    _finish_join, build_tables2, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk,
+    _finish_join, build_tables, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk,
     prepare_bytes,
 };
 use crate::frame::IntoDf;
