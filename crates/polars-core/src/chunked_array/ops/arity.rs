@@ -5,10 +5,20 @@ use polars_arrow::utils::combine_validities_and;
 
 use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter, StaticArray};
 use crate::prelude::{ChunkedArray, PolarsDataType};
-use crate::utils::align_chunks_binary;
+use crate::utils::{align_chunks_binary, align_chunks_ternary};
+
+// We need this helper because for<'a> notation can't yet be applied properly
+// on the return type.
+pub trait BinaryFnMut<A1, A2>: FnMut(A1, A2) -> Self::Ret {
+    type Ret;
+}
+
+impl<A1, A2, R, T: FnMut(A1, A2) -> R> BinaryFnMut<A1, A2> for T {
+    type Ret = R;
+}
 
 #[inline]
-pub fn binary_elementwise<T, U, V, F, K>(
+pub fn binary_elementwise<T, U, V, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
     mut op: F,
@@ -17,8 +27,10 @@ where
     T: PolarsDataType,
     U: PolarsDataType,
     V: PolarsDataType,
-    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>) -> Option<K>,
-    V::Array: ArrayFromIter<Option<K>>,
+    F: for<'a> BinaryFnMut<Option<T::Physical<'a>>, Option<U::Physical<'a>>>,
+    V::Array: for<'a> ArrayFromIter<
+        <F as BinaryFnMut<Option<T::Physical<'a>>, Option<U::Physical<'a>>>>::Ret,
+    >,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let iter = lhs
@@ -253,4 +265,39 @@ where
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
         .collect::<Result<Vec<_>, E>>()?;
     Ok(lhs.copy_with_chunks(chunks, keep_sorted, keep_fast_explode))
+}
+
+#[inline]
+pub fn try_ternary_elementwise<T, U, V, G, F, K, E>(
+    ca1: &ChunkedArray<T>,
+    ca2: &ChunkedArray<U>,
+    ca3: &ChunkedArray<G>,
+    mut op: F,
+) -> Result<ChunkedArray<V>, E>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsDataType,
+    G: PolarsDataType,
+    F: for<'a> FnMut(
+        Option<T::Physical<'a>>,
+        Option<U::Physical<'a>>,
+        Option<G::Physical<'a>>,
+    ) -> Result<Option<K>, E>,
+    V::Array: ArrayFromIter<Option<K>>,
+{
+    let (ca1, ca2, ca3) = align_chunks_ternary(ca1, ca2, ca3);
+    let iter = ca1
+        .downcast_iter()
+        .zip(ca2.downcast_iter())
+        .zip(ca3.downcast_iter())
+        .map(|((ca1_arr, ca2_arr), ca3_arr)| {
+            let element_iter = ca1_arr.iter().zip(ca2_arr.iter()).zip(ca3_arr.iter()).map(
+                |((ca1_opt_val, ca2_opt_val), ca3_opt_val)| {
+                    op(ca1_opt_val, ca2_opt_val, ca3_opt_val)
+                },
+            );
+            element_iter.try_collect_arr()
+        });
+    ChunkedArray::try_from_chunk_iter(ca1.name(), iter)
 }

@@ -575,12 +575,8 @@ impl PySeries {
     }
 
     fn get_list(&self, index: usize) -> Option<Self> {
-        if let Ok(ca) = &self.series.list() {
-            let s = ca.get(index);
-            s.map(|s| s.into())
-        } else {
-            None
-        }
+        let ca = self.series.list().ok()?;
+        Some(ca.get_as_series(index)?.into())
     }
 
     fn peak_max(&self) -> Self {

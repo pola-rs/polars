@@ -92,7 +92,7 @@ impl PhysicalExpr for SortByExpr {
         );
 
         // SAFETY: sorted index are within bounds.
-        unsafe { series.take_unchecked(&sorted_idx) }
+        unsafe { Ok(series.take_unchecked(&sorted_idx)) }
     }
 
     #[allow(clippy::ptr_arg)]
@@ -135,7 +135,7 @@ impl PhysicalExpr for SortByExpr {
                                     multithreaded: false,
                                     ..Default::default()
                                 });
-                                Some(unsafe { s.take_unchecked(&idx).unwrap() })
+                                Some(unsafe { s.take_unchecked(&idx) })
                             }
                         },
                         _ => None,
@@ -168,11 +168,7 @@ impl PhysicalExpr for SortByExpr {
                             let new_idx = match indicator {
                                 GroupsIndicator::Idx((_, idx)) => {
                                     // SAFETY: group tuples are always in bounds.
-                                    let group = unsafe {
-                                        sort_by_s.take_iter_unchecked(
-                                            &mut idx.iter().map(|i| *i as usize),
-                                        )
-                                    };
+                                    let group = unsafe { sort_by_s.take_slice_unchecked(idx) };
 
                                     let sorted_idx = group.arg_sort(SortOptions {
                                         descending: descending[0],
@@ -244,11 +240,7 @@ impl PhysicalExpr for SortByExpr {
                                     // SAFETY: group tuples are always in bounds.
                                     let groups = sort_by_s
                                         .iter()
-                                        .map(|s| unsafe {
-                                            s.take_iter_unchecked(
-                                                &mut idx.iter().map(|i| *i as usize),
-                                            )
-                                        })
+                                        .map(|s| unsafe { s.take_slice_unchecked(idx) })
                                         .collect::<Vec<_>>();
 
                                     let options = SortMultipleOptions {

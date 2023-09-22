@@ -2,9 +2,9 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-#[cfg(any(feature = "cloud", feature = "parquet"))]
-use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
+#[cfg(any(feature = "cloud", feature = "parquet"))]
+use polars_io::cloud::CloudOptions;
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::prelude::*;

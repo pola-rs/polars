@@ -116,7 +116,7 @@ fn array_to_string() {
         .lazy()
         .group_by([col("b")])
         .agg([col("a")])
-        .select(&[col("b"), col("a").list().join(", ").alias("as")])
+        .select(&[col("b"), col("a").list().join(lit(", ")).alias("as")])
         .sort_by_exprs(vec![col("b"), col("as")], vec![false, false], false, true)
         .collect()
         .unwrap();

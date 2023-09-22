@@ -151,8 +151,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::cumreduce))
         .unwrap();
+    #[cfg(feature = "trigonometry")]
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arctan2))
         .unwrap();
+    #[cfg(feature = "trigonometry")]
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arctan2d))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::datetime))

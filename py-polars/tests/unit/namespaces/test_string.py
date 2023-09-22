@@ -260,16 +260,40 @@ def test_str_strip_deprecated() -> None:
         pl.Series(["a", "b", "c"]).str.rstrip()
 
 
-def test_str_strip_prefix() -> None:
-    s = pl.Series(["foo:bar", "foofoo:bar", "bar:bar", "foo", ""])
-    expected = pl.Series([":bar", "foo:bar", "bar:bar", "", ""])
+def test_str_strip_prefix_literal() -> None:
+    s = pl.Series(["foo:bar", "foofoo:bar", "bar:bar", "foo", "", None])
+    expected = pl.Series([":bar", "foo:bar", "bar:bar", "", "", None])
     assert_series_equal(s.str.strip_prefix("foo"), expected)
+    # test null literal
+    expected = pl.Series([None, None, None, None, None, None], dtype=pl.Utf8)
+    assert_series_equal(s.str.strip_prefix(pl.lit(None, dtype=pl.Utf8)), expected)
+
+
+def test_str_strip_prefix_suffix_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["foo-bar", "foobarbar", "barfoo", "", "anything", None],
+            "prefix": ["foo", "foobar", "foo", "", None, "bar"],
+            "suffix": ["bar", "barbar", "bar", "", None, "foo"],
+        }
+    )
+    out = df.select(
+        pl.col("s").str.strip_prefix(pl.col("prefix")).alias("strip_prefix"),
+        pl.col("s").str.strip_suffix(pl.col("suffix")).alias("strip_suffix"),
+    )
+    assert out.to_dict(False) == {
+        "strip_prefix": ["-bar", "bar", "barfoo", "", None, None],
+        "strip_suffix": ["foo-", "foo", "barfoo", "", None, None],
+    }
 
 
 def test_str_strip_suffix() -> None:
-    s = pl.Series(["foo:bar", "foo:barbar", "foo:foo", "bar", ""])
-    expected = pl.Series(["foo:", "foo:bar", "foo:foo", "", ""])
+    s = pl.Series(["foo:bar", "foo:barbar", "foo:foo", "bar", "", None])
+    expected = pl.Series(["foo:", "foo:bar", "foo:foo", "", "", None])
     assert_series_equal(s.str.strip_suffix("bar"), expected)
+    # test null literal
+    expected = pl.Series([None, None, None, None, None, None], dtype=pl.Utf8)
+    assert_series_equal(s.str.strip_suffix(pl.lit(None, dtype=pl.Utf8)), expected)
 
 
 def test_str_split() -> None:
@@ -457,8 +481,8 @@ def test_contains_expr() -> None:
             .alias("contains_lit"),
         ]
     ).to_dict(False) == {
-        "contains": [True, True, False, False, False, None],
-        "contains_lit": [False, True, False, False, False, False],
+        "contains": [True, True, False, None, None, None],
+        "contains_lit": [False, True, False, None, None, False],
     }
 
     with pytest.raises(pl.ComputeError):
@@ -762,7 +786,10 @@ def test_ljust_and_rjust() -> None:
 
 def test_starts_ends_with() -> None:
     df = pl.DataFrame(
-        {"a": ["hamburger", "nuts", "lollypop"], "sub": ["ham", "ts", None]}
+        {
+            "a": ["hamburger", "nuts", "lollypop", None],
+            "sub": ["ham", "ts", None, "anything"],
+        }
     )
 
     assert df.select(
@@ -775,12 +802,12 @@ def test_starts_ends_with() -> None:
             pl.col("a").str.starts_with(pl.col("sub")).alias("starts_sub"),
         ]
     ).to_dict(False) == {
-        "ends_pop": [False, False, True],
-        "ends_None": [False, False, False],
-        "ends_sub": [False, True, False],
-        "starts_ham": [True, False, False],
-        "starts_None": [False, False, False],
-        "starts_sub": [True, False, False],
+        "ends_pop": [False, False, True, None],
+        "ends_None": [None, None, None, None],
+        "ends_sub": [False, True, None, None],
+        "starts_ham": [True, False, False, None],
+        "starts_None": [None, None, None, None],
+        "starts_sub": [True, False, None, None],
     }
 
 

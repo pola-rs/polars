@@ -31,7 +31,7 @@ pub enum TemporalFunction {
     Microsecond,
     Nanosecond,
     TimeStamp(TimeUnit),
-    Truncate(TruncateOptions),
+    Truncate(String),
     #[cfg(feature = "date_offset")]
     MonthStart,
     #[cfg(feature = "date_offset")]
@@ -201,27 +201,26 @@ pub(super) fn timestamp(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
     s.timestamp(tu).map(|ca| ca.into_series())
 }
 
-pub(super) fn truncate(s: &[Series], options: &TruncateOptions) -> PolarsResult<Series> {
+pub(super) fn truncate(s: &[Series], offset: &str) -> PolarsResult<Series> {
     let time_series = &s[0];
-    let ambiguous = &s[1].utf8().unwrap();
+    let every = s[1].utf8()?;
+    let ambiguous = s[2].utf8()?;
+
     let mut out = match time_series.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => time_series
-                .datetime()
-                .unwrap()
-                .truncate(options, tz.parse::<Tz>().ok().as_ref(), ambiguous)?
+                .datetime()?
+                .truncate(tz.parse::<Tz>().ok().as_ref(), every, offset, ambiguous)?
                 .into_series(),
             _ => time_series
-                .datetime()
-                .unwrap()
-                .truncate(options, None, ambiguous)?
+                .datetime()?
+                .truncate(None, every, offset, ambiguous)?
                 .into_series(),
         },
         DataType::Date => time_series
-            .date()
-            .unwrap()
-            .truncate(options, None, ambiguous)?
+            .date()?
+            .truncate(None, every, offset, ambiguous)?
             .into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     };

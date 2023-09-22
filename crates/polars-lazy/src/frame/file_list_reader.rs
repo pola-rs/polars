@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use polars_core::cloud::CloudOptions;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
+use polars_io::cloud::CloudOptions;
 use polars_io::{is_cloud_url, RowCount};
 
 use crate::prelude::*;

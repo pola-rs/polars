@@ -82,6 +82,10 @@ class NoRowsReturnedError(RowsError):
     """Exception raised when no rows are returned, but at least one row is expected."""
 
 
+class ParameterCollisionError(RuntimeError):
+    """Exception raised when the same parameter occurs multiple times."""
+
+
 class PolarsInefficientMapWarning(Warning):
     """Warning raised when a potentially slow `apply` operation is performed."""
 

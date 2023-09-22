@@ -11,6 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .select([col("tz_naive").str().strptime(
             DataType::Datetime(TimeUnit::Milliseconds, None),
             StrptimeOptions::default(),
+            lit("raise"),
         )])
         .with_columns([col("tz_naive")
             .dt()

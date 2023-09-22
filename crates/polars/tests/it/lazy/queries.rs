@@ -225,7 +225,7 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("A")?;
-    let out = out.list()?.get(1).unwrap();
+    let out = out.list()?.get_as_series(1).unwrap();
     let out = out.i32()?;
 
     assert_eq!(Vec::from(out), &[Some(16)]);

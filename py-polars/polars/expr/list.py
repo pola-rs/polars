@@ -459,7 +459,7 @@ class ExprListNameSpace:
         item = parse_as_expression(item, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_contains(item))
 
-    def join(self, separator: str) -> Expr:
+    def join(self, separator: IntoExpr) -> Expr:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -489,7 +489,21 @@ class ExprListNameSpace:
         │ x y   │
         └───────┘
 
+        >>> df = pl.DataFrame(
+        ...     {"s": [["a", "b", "c"], ["x", "y"]], "separator": ["*", "_"]}
+        ... )
+        >>> df.select(pl.col("s").list.join(pl.col("separator")))
+        shape: (2, 1)
+        ┌───────┐
+        │ s     │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │ a*b*c │
+        │ x_y   │
+        └───────┘
         """
+        separator = parse_as_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_join(separator))
 
     def arg_min(self) -> Expr:

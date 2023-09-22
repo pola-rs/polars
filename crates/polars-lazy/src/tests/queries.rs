@@ -299,7 +299,7 @@ fn test_lazy_query_5() {
         .unwrap()
         .list()
         .unwrap()
-        .get(0)
+        .get_as_series(0)
         .unwrap();
     assert_eq!(s.len(), 2);
     let s = out
@@ -307,7 +307,7 @@ fn test_lazy_query_5() {
         .unwrap()
         .list()
         .unwrap()
-        .get(0)
+        .get_as_series(0)
         .unwrap();
     assert_eq!(s.len(), 2);
 }
@@ -670,7 +670,7 @@ fn test_lazy_partition_agg() {
         .collect()
         .unwrap();
     let cat_agg_list = out.select_at_idx(1).unwrap();
-    let fruit_series = cat_agg_list.list().unwrap().get(0).unwrap();
+    let fruit_series = cat_agg_list.list().unwrap().get_as_series(0).unwrap();
     let fruit_list = fruit_series.i64().unwrap();
     assert_eq!(
         Vec::from(fruit_list),
@@ -1141,11 +1141,11 @@ fn test_fill_forward() -> PolarsResult<()> {
         .collect()?;
     let agg = out.column("b")?.list()?;
 
-    let a: Series = agg.get(0).unwrap();
+    let a: Series = agg.get_as_series(0).unwrap();
     assert!(a.series_equal(&Series::new("b", &[1, 1])));
-    let a: Series = agg.get(2).unwrap();
+    let a: Series = agg.get_as_series(2).unwrap();
     assert!(a.series_equal(&Series::new("b", &[1, 1])));
-    let a: Series = agg.get(1).unwrap();
+    let a: Series = agg.get_as_series(1).unwrap();
     assert_eq!(a.null_count(), 1);
     Ok(())
 }
@@ -1310,7 +1310,7 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
     assert_eq!(
         out.column("filtered")?
             .list()?
-            .get(0)
+            .get_as_series(0)
             .unwrap()
             .i32()?
             .get(0)
@@ -1320,14 +1320,21 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
     assert_eq!(
         out.column("filtered")?
             .list()?
-            .get(1)
+            .get_as_series(1)
             .unwrap()
             .i32()?
             .get(0)
             .unwrap(),
         5
     );
-    assert_eq!(out.column("filtered")?.list()?.get(2).unwrap().len(), 0);
+    assert_eq!(
+        out.column("filtered")?
+            .list()?
+            .get_as_series(2)
+            .unwrap()
+            .len(),
+        0
+    );
 
     Ok(())
 }
@@ -1564,7 +1571,7 @@ fn test_group_by_rank() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("B")?;
-    let out = out.list()?.get(1).unwrap();
+    let out = out.list()?.get_as_series(1).unwrap();
     let out = out.idx()?;
 
     assert_eq!(Vec::from(out), &[Some(1)]);

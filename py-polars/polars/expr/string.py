@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from polars import Expr
     from polars.type_aliases import (
         Ambiguous,
+        IntoExpr,
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
@@ -679,7 +680,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_strip_chars_end(characters))
 
-    def strip_prefix(self, prefix: str) -> Expr:
+    def strip_prefix(self, prefix: IntoExpr) -> Expr:
         """
         Remove prefix.
 
@@ -707,9 +708,10 @@ class ExprStringNameSpace:
         └───────────┴──────────┘
 
         """
+        prefix = parse_as_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_prefix(prefix))
 
-    def strip_suffix(self, suffix: str) -> Expr:
+    def strip_suffix(self, suffix: IntoExpr) -> Expr:
         """
         Remove suffix.
 
@@ -737,6 +739,7 @@ class ExprStringNameSpace:
         └───────────┴──────────┘
 
         """
+        suffix = parse_as_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_suffix(suffix))
 
     def zfill(self, alignment: int) -> Expr:
@@ -1511,7 +1514,7 @@ class ExprStringNameSpace:
         pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_count_matches(pattern, literal))
 
-    def split(self, by: str | Expr, *, inclusive: bool = False) -> Expr:
+    def split(self, by: IntoExpr, *, inclusive: bool = False) -> Expr:
         """
         Split the string by a substring.
 

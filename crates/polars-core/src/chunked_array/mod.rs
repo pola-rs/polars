@@ -20,7 +20,6 @@ pub mod collect;
 pub mod comparison;
 pub mod float;
 pub mod iterator;
-pub mod kernels;
 #[cfg(feature = "ndarray")]
 pub(crate) mod ndarray;
 
@@ -375,6 +374,82 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<T::Physical<'_>> {
+        let (chunk_idx, arr_idx) = self.index_to_chunked_index(idx);
+        let arr = self.downcast_get(chunk_idx)?;
+
+        // SAFETY: if index_to_chunked_index returns a valid chunk_idx, we know
+        // that arr_idx < arr.len().
+        unsafe { arr.get_unchecked(arr_idx) }
+    }
+
+    /// # Safety
+    /// It is the callers responsibility that the `idx < self.len()`.
+    #[inline]
+    pub unsafe fn get_unchecked(&self, idx: usize) -> Option<T::Physical<'_>> {
+        let (chunk_idx, arr_idx) = self.index_to_chunked_index(idx);
+
+        unsafe {
+            // SAFETY: up to the caller to make sure the index is valid.
+            self.downcast_get_unchecked(chunk_idx)
+                .get_unchecked(arr_idx)
+        }
+    }
+
+    /// # Safety
+    /// It is the callers responsibility that the `idx < self.len()`.
+    #[inline]
+    pub unsafe fn value_unchecked(&self, idx: usize) -> T::Physical<'_> {
+        let (chunk_idx, arr_idx) = self.index_to_chunked_index(idx);
+
+        unsafe {
+            // SAFETY: up to the caller to make sure the index is valid.
+            self.downcast_get_unchecked(chunk_idx)
+                .value_unchecked(arr_idx)
+        }
+    }
+
+    #[inline]
+    pub fn last(&self) -> Option<T::Physical<'_>> {
+        unsafe {
+            let arr = self.downcast_get_unchecked(self.chunks.len().checked_sub(1)?);
+            arr.get_unchecked(arr.len().checked_sub(1)?)
+        }
+    }
+}
+
+impl ListChunked {
+    #[inline]
+    pub fn get_as_series(&self, idx: usize) -> Option<Series> {
+        unsafe {
+            Some(Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![self.get(idx)?],
+                &self.inner_dtype().to_physical(),
+            ))
+        }
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl ArrayChunked {
+    #[inline]
+    pub fn get_as_series(&self, idx: usize) -> Option<Series> {
+        unsafe {
+            Some(Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![self.get(idx)?],
+                &self.inner_dtype().to_physical(),
+            ))
+        }
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+{
     /// Should be used to match the chunk_id of another [`ChunkedArray`].
     /// # Panics
     /// It is the callers responsibility to ensure that this [`ChunkedArray`] has a single chunk.
@@ -664,7 +739,7 @@ pub(crate) mod test {
     #[test]
     fn take() {
         let a = get_chunked_array();
-        let new = a.take([0usize, 1].iter().copied().into()).unwrap();
+        let new = a.take(&[0 as IdxSize, 1]).unwrap();
         assert_eq!(new.len(), 2)
     }
 

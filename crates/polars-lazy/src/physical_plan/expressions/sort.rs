@@ -84,13 +84,8 @@ impl PhysicalExpr for SortExpr {
                             groups
                                 .par_iter()
                                 .map(|(first, idx)| {
-                                    // Safety:
-                                    // Group tuples are always in bounds
-                                    let group = unsafe {
-                                        series.take_iter_unchecked(
-                                            &mut idx.iter().map(|i| *i as usize),
-                                        )
-                                    };
+                                    // SAFETY: group tuples are always in bounds.
+                                    let group = unsafe { series.take_slice_unchecked(idx) };
 
                                     let sorted_idx = group.arg_sort(sort_options);
                                     let new_idx = map_sorted_indices_to_group_idx(&sorted_idx, idx);

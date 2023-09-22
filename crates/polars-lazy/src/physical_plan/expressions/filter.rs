@@ -73,7 +73,7 @@ impl PhysicalExpr for FilterExpr {
             let predicate = predicate_s.bool()?;
 
             // All values true - don't do anything.
-            if predicate.all() {
+            if let Some(true) = predicate.all_kleene() {
                 return Ok(ac_s);
             }
             // All values false - create empty groups.

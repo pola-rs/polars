@@ -33,7 +33,9 @@ Config load, save, and current state
    :toctree: api/
 
     Config.load
+    Config.load_from_file
     Config.save
+    Config.save_to_file
     Config.state
     Config.restore_defaults
 

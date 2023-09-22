@@ -480,24 +480,31 @@ impl Series {
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> PolarsResult<Series> {
-        let idx = IdxCa::mmap_slice("", idx);
-        self.take_unchecked(&idx)
+    pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> Series {
+        self.take_slice_unchecked(idx)
     }
 
     /// Take by index if ChunkedArray contains a single chunk.
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_threaded(
-        &self,
-        idx: &IdxCa,
-        rechunk: bool,
-    ) -> PolarsResult<Series> {
+    pub unsafe fn take_unchecked_threaded(&self, idx: &IdxCa, rechunk: bool) -> Series {
         self.threaded_op(rechunk, idx.len(), &|offset, len| {
             let idx = idx.slice(offset as i64, len);
-            self.take_unchecked(&idx)
+            Ok(self.take_unchecked(&idx))
         })
+        .unwrap()
+    }
+
+    /// Take by index if ChunkedArray contains a single chunk.
+    ///
+    /// # Safety
+    /// This doesn't check any bounds. Null validity is checked.
+    pub unsafe fn take_slice_unchecked_threaded(&self, idx: &[IdxSize], rechunk: bool) -> Series {
+        self.threaded_op(rechunk, idx.len(), &|offset, len| {
+            Ok(self.take_slice_unchecked(&idx[offset..offset + len]))
+        })
+        .unwrap()
     }
 
     /// # Safety
@@ -540,6 +547,13 @@ impl Series {
             let idx = idx.slice(offset as i64, len);
             self.take(&idx)
         })
+    }
+
+    /// Traverse and collect every nth element in a new array.
+    pub fn take_every(&self, n: usize) -> Series {
+        let idx = (0..self.len() as IdxSize).step_by(n).collect_ca("");
+        // SAFETY: we stay in-bounds.
+        unsafe { self.take_unchecked(&idx) }
     }
 
     /// Filter by boolean mask. This operation clones data.
@@ -901,7 +915,7 @@ impl Series {
     pub fn unique_stable(&self) -> PolarsResult<Series> {
         let idx = self.arg_unique()?;
         // SAFETY: Indices are in bounds.
-        unsafe { self.take_unchecked(&idx) }
+        unsafe { Ok(self.take_unchecked(&idx)) }
     }
 
     pub fn idx(&self) -> PolarsResult<&IdxCa> {

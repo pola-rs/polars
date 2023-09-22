@@ -82,8 +82,7 @@ impl ChunkReverse for ArrayChunked {
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkReverse for ObjectChunked<T> {
     fn reverse(&self) -> Self {
-        // Safety
-        // we we know we don't get out of bounds
-        unsafe { self.take_unchecked((0..self.len()).rev().into()) }
+        // SAFETY: we know we don't go out of bounds.
+        unsafe { self.take_unchecked(&(0..self.len() as IdxSize).rev().collect_ca("")) }
     }
 }

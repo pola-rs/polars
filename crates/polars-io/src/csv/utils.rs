@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use std::io::Read;
 use std::mem::MaybeUninit;
 

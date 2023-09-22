@@ -10,6 +10,8 @@ mod justify;
 mod namespace;
 #[cfg(feature = "strings")]
 mod replace;
+#[cfg(feature = "strings")]
+mod substring;
 
 #[cfg(feature = "extract_jsonpath")]
 pub use json_path::*;

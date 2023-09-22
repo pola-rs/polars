@@ -270,7 +270,8 @@ def test_schema_owned_arithmetic_5669() -> None:
         .with_columns(-pl.col("A").alias("B"))
         .collect()
     )
-    assert df.columns == ["A", "literal"], df.columns
+    assert df.columns == ["A", "B"]
+    assert df.rows() == [(3, -3)]
 
 
 def test_fill_null_f32_with_lit() -> None:

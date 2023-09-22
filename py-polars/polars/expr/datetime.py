@@ -28,7 +28,7 @@ class ExprDateTimeNameSpace:
 
     def truncate(
         self,
-        every: str | timedelta,
+        every: str | timedelta | Expr,
         offset: str | timedelta | None = None,
         *,
         use_earliest: bool | None = None,
@@ -221,12 +221,17 @@ class ExprDateTimeNameSpace:
         ambiguous = rename_use_earliest_to_ambiguous(use_earliest, ambiguous)
         if not isinstance(ambiguous, pl.Expr):
             ambiguous = F.lit(ambiguous)
+
+        if not isinstance(every, pl.Expr):
+            every = _timedelta_to_pl_duration(every)
+        every = parse_as_expression(every, str_as_lit=True)
+
         if offset is None:
             offset = "0ns"
 
         return wrap_expr(
             self._pyexpr.dt_truncate(
-                _timedelta_to_pl_duration(every),
+                every,
                 _timedelta_to_pl_duration(offset),
                 ambiguous._pyexpr,
             )

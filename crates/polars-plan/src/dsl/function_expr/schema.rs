@@ -45,7 +45,7 @@ impl FunctionExpr {
                         DataType::Datetime(tu, _) => DataType::Datetime(tu, None),
                         dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
                     },
-                    Truncate(..) => mapper.with_same_dtype().unwrap().dtype,
+                    Truncate(_) => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "date_offset")]
                     MonthStart => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "date_offset")]
@@ -113,6 +113,7 @@ impl FunctionExpr {
                     Any => mapper.with_dtype(DataType::Boolean),
                     #[cfg(feature = "list_any_all")]
                     All => mapper.with_dtype(DataType::Boolean),
+                    Join => mapper.with_dtype(DataType::Utf8),
                 }
             },
             #[cfg(feature = "dtype-array")]
@@ -131,37 +132,12 @@ impl FunctionExpr {
                 }
             },
             #[cfg(feature = "dtype-struct")]
-            StructExpr(s) => {
-                use polars_core::utils::slice_offsets;
-                use StructFunction::*;
-                match s {
-                    FieldByIndex(index) => {
-                        let (index, _) = slice_offsets(*index, 0, fields.len());
-                        if let DataType::Struct(flds) = &fields[0].dtype {
-                            flds.get(index).cloned().ok_or_else(
-                                || polars_err!(ComputeError: "index out of bounds in `struct.field`")
-                            )
-                        } else {
-                            polars_bail!(
-                                ComputeError: "expected struct dtype, got: `{}`", &fields[0].dtype
-                            )
-                        }
-                    },
-                    FieldByName(name) => {
-                        if let DataType::Struct(flds) = &fields[0].dtype {
-                            let fld = flds
-                                .iter()
-                                .find(|fld| fld.name() == name.as_ref())
-                                .ok_or_else(
-                                    || polars_err!(StructFieldNotFound: "{}", name.as_ref()),
-                                )?;
-                            Ok(fld.clone())
-                        } else {
-                            polars_bail!(StructFieldNotFound: "{}", name.as_ref());
-                        }
-                    },
-                }
-            },
+            AsStruct => Ok(Field::new(
+                fields[0].name(),
+                DataType::Struct(fields.to_vec()),
+            )),
+            #[cfg(feature = "dtype-struct")]
+            StructExpr(s) => s.get_field(mapper),
             #[cfg(feature = "top_k")]
             TopK { .. } => mapper.with_same_dtype(),
             Shift(..) | Reverse => mapper.with_same_dtype(),
@@ -271,6 +247,18 @@ impl<'a> FieldsMapper<'a> {
     pub fn map_dtype(&self, func: impl Fn(&DataType) -> DataType) -> PolarsResult<Field> {
         let dtype = func(self.fields[0].data_type());
         Ok(Field::new(self.fields[0].name(), dtype))
+    }
+
+    pub fn get_fields_lens(&self) -> usize {
+        self.fields.len()
+    }
+
+    /// Map a single field with a potentially failing mapper function.
+    pub fn try_map_field(
+        &self,
+        func: impl Fn(&Field) -> PolarsResult<Field>,
+    ) -> PolarsResult<Field> {
+        func(&self.fields[0])
     }
 
     /// Map to a float supertype.

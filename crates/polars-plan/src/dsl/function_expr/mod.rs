@@ -11,6 +11,7 @@ mod bounds;
 mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
+mod coerce;
 mod concat;
 mod correlation;
 mod cum;
@@ -142,6 +143,8 @@ pub enum FunctionExpr {
     ArrayExpr(ArrayFunction),
     #[cfg(feature = "dtype-struct")]
     StructExpr(StructFunction),
+    #[cfg(feature = "dtype-struct")]
+    AsStruct,
     #[cfg(feature = "top_k")]
     TopK {
         k: usize,
@@ -243,14 +246,21 @@ impl Hash for FunctionExpr {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
+            FunctionExpr::Pow(f) => f.hash(state),
+            #[cfg(feature = "search_sorted")]
+            FunctionExpr::SearchSorted(f) => f.hash(state),
             FunctionExpr::BinaryExpr(f) => f.hash(state),
             FunctionExpr::Boolean(f) => f.hash(state),
             #[cfg(feature = "strings")]
             FunctionExpr::StringExpr(f) => f.hash(state),
+            FunctionExpr::ListExpr(f) => f.hash(state),
+            #[cfg(feature = "dtype-array")]
+            FunctionExpr::ArrayExpr(f) => f.hash(state),
             #[cfg(feature = "dtype-struct")]
             FunctionExpr::StructExpr(f) => f.hash(state),
             #[cfg(feature = "random")]
             FunctionExpr::Random { method, .. } => method.hash(state),
+            FunctionExpr::Correlation { method, .. } => method.hash(state),
             #[cfg(feature = "range")]
             FunctionExpr::Range(f) => f.hash(state),
             #[cfg(feature = "temporal")]
@@ -259,6 +269,8 @@ impl Hash for FunctionExpr {
             FunctionExpr::Trigonometry(f) => f.hash(state),
             #[cfg(feature = "fused")]
             FunctionExpr::Fused(f) => f.hash(state),
+            #[cfg(feature = "diff")]
+            FunctionExpr::Diff(_, null_behavior) => null_behavior.hash(state),
             #[cfg(feature = "interpolate")]
             FunctionExpr::Interpolate(f) => f.hash(state),
             #[cfg(feature = "dtype-categorical")]
@@ -318,6 +330,8 @@ impl Display for FunctionExpr {
             ListExpr(func) => return write!(f, "{func}"),
             #[cfg(feature = "dtype-struct")]
             StructExpr(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-struct")]
+            AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
             TopK { .. } => "top_k",
             Shift(_) => "shift",
@@ -551,6 +565,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Any => map!(list::lst_any),
                     #[cfg(feature = "list_any_all")]
                     All => map!(list::lst_all),
+                    Join => map_as_slice!(list::join),
                 }
             },
             #[cfg(feature = "dtype-array")]
@@ -569,7 +584,12 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 match sf {
                     FieldByIndex(index) => map!(struct_::get_by_index, index),
                     FieldByName(name) => map!(struct_::get_by_name, name.clone()),
+                    RenameFields(names) => map!(struct_::rename_fields, names.clone()),
                 }
+            },
+            #[cfg(feature = "dtype-struct")]
+            AsStruct => {
+                map_as_slice!(coerce::as_struct)
             },
             #[cfg(feature = "top_k")]
             TopK { k, descending } => {
@@ -719,8 +739,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             StripChars(matches) => map!(strings::strip_chars, matches.as_deref()),
             StripCharsStart(matches) => map!(strings::strip_chars_start, matches.as_deref()),
             StripCharsEnd(matches) => map!(strings::strip_chars_end, matches.as_deref()),
-            StripPrefix(prefix) => map!(strings::strip_prefix, &prefix),
-            StripSuffix(suffix) => map!(strings::strip_suffix, &suffix),
+            StripPrefix => map_as_slice!(strings::strip_prefix),
+            StripSuffix => map_as_slice!(strings::strip_suffix),
             #[cfg(feature = "string_from_radix")]
             FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
             Slice(start, length) => map!(strings::str_slice, start, length),
@@ -777,8 +797,8 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Microsecond => map!(datetime::microsecond),
             Nanosecond => map!(datetime::nanosecond),
             TimeStamp(tu) => map!(datetime::timestamp, tu),
-            Truncate(truncate_options) => {
-                map_as_slice!(datetime::truncate, &truncate_options)
+            Truncate(offset) => {
+                map_as_slice!(datetime::truncate, &offset)
             },
             #[cfg(feature = "date_offset")]
             MonthStart => map!(datetime::month_start),

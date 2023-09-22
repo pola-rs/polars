@@ -761,11 +761,11 @@ def test_rolling_kernels_group_by_dynamic_7548() -> None:
     ).to_dict(
         False
     ) == {
-        "time": [0, 1, 2, 3],
-        "value": [[0, 1, 2], [1, 2, 3], [2, 3], [3]],
-        "min_value": [0, 1, 2, 3],
-        "max_value": [2, 3, 3, 3],
-        "sum_value": [3, 6, 5, 3],
+        "time": [-1, 0, 1, 2, 3],
+        "value": [[0, 1], [0, 1, 2], [1, 2, 3], [2, 3], [3]],
+        "min_value": [0, 0, 1, 2, 3],
+        "max_value": [1, 2, 3, 3, 3],
+        "sum_value": [1, 3, 6, 5, 3],
     }
 
 

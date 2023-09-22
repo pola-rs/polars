@@ -338,7 +338,7 @@ impl Wrap<&DataFrame> {
                         let ir = groups
                             .par_iter()
                             .map(|base_g| {
-                                let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
+                                let dt = unsafe { dt.take_unchecked(base_g.1) };
                                 let vals = dt.downcast_iter().next().unwrap();
                                 let ts = vals.values().as_slice();
                                 if options.check_sorted
@@ -417,7 +417,7 @@ impl Wrap<&DataFrame> {
                         let groupsidx = groups
                             .par_iter()
                             .map(|base_g| {
-                                let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
+                                let dt = unsafe { dt.take_unchecked(base_g.1) };
                                 let vals = dt.downcast_iter().next().unwrap();
                                 let ts = vals.values().as_slice();
                                 if options.check_sorted
@@ -560,7 +560,7 @@ impl Wrap<&DataFrame> {
                     let idx = groups
                         .par_iter()
                         .map(|base_g| {
-                            let dt = unsafe { dt_local.take_unchecked(base_g.1.into()) };
+                            let dt = unsafe { dt_local.take_unchecked(base_g.1) };
                             let vals = dt.downcast_iter().next().unwrap();
                             let ts = vals.values().as_slice();
                             if options.check_sorted

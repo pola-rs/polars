@@ -44,7 +44,7 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import dataframe_api_compat, subprocess
-from polars.io._utils import _is_local_file
+from polars.io._utils import _is_local_file, _is_supported_cloud
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
@@ -56,7 +56,7 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_df, wrap_expr
-from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.convert import _negate_duration, _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_renamed_function,
@@ -407,13 +407,16 @@ class LazyFrame:
 
         """
         # try fsspec scanner
-        if not _is_local_file(source):
+        if not _is_local_file(source) and not _is_supported_cloud(source):
             scan = _scan_parquet_fsspec(source, storage_options)
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
                 scan = scan.with_row_count(row_count_name, row_count_offset)
             return scan  # type: ignore[return-value]
+
+        if storage_options is not None:
+            storage_options = list(storage_options.items())  #  type: ignore[assignment]
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(
@@ -2944,7 +2947,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         index_column = parse_as_expression(index_column)
         if offset is None:
-            offset = f"-{_timedelta_to_pl_duration(period)}"
+            offset = _negate_duration(_timedelta_to_pl_duration(period))
 
         pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
         period = _timedelta_to_pl_duration(period)
@@ -2973,47 +2976,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Group based on a time value (or index value of type Int32, Int64).
 
         Time windows are calculated and rows are assigned to windows. Different from a
-        normal group by is that a row can be member of multiple groups. The time/index
-        window could be seen as a rolling window, with a window size determined by
-        dates/times/values instead of slots in the DataFrame.
+        normal group by is that a row can be member of multiple groups.
+        By default, the windows look like:
 
-        A window is defined by:
+        - [start, start + period)
+        - [start + every, start + every + period)
+        - [start + 2*every, start + 2*every + period)
+        - ...
 
-        - every: interval of the window
-        - period: length of the window
-        - offset: offset of the window
-
-        The `every`, `period` and `offset` arguments are created with
-        the following string language:
-
-        - 1ns   (1 nanosecond)
-        - 1us   (1 microsecond)
-        - 1ms   (1 millisecond)
-        - 1s    (1 second)
-        - 1m    (1 minute)
-        - 1h    (1 hour)
-        - 1d    (1 calendar day)
-        - 1w    (1 calendar week)
-        - 1mo   (1 calendar month)
-        - 1q    (1 calendar quarter)
-        - 1y    (1 calendar year)
-        - 1i    (1 index count)
-
-        Or combine them:
-        "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-        Suffix with `"_saturating"` to indicate that dates too large for
-        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-        instead of erroring.
-
-        By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, due to daylight savings). Similarly for "calendar week",
-        "calendar month", "calendar quarter", and "calendar year".
-
-        In case of a group_by_dynamic on an integer column, the windows are defined by:
-
-        - "1i"      # length 1
-        - "10i"     # length 10
+        where `start` is determined by `start_by`, `offset`, and `every` (see parameter
+        descriptions below).
 
         .. warning::
             The index column must be sorted in ascending order. If `by` is passed, then
@@ -3033,10 +3005,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every
             interval of the window
         period
-            length of the window, if None it is equal to 'every'
+            length of the window, if None it will equal 'every'
         offset
-            offset of the window if None and period is None it will be equal to negative
-            `every`
+            offset of the window, only takes effect if `start_by` is `'window'`.
+            Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
         include_boundaries
@@ -3050,7 +3022,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
 
-            * 'window': Truncate the start of the window with the 'every' argument.
+            * 'window': Start by taking the earliest timestamp, truncating it with
+              `every`, and then adding `offset`.
               Note that weekly windows start on Monday.
             * 'datapoint': Start from the first encountered data point.
             * a day of the week (only takes effect if `every` contains ``'w'``):
@@ -3079,23 +3052,55 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        If you're coming from pandas, then
+        1) If you're coming from pandas, then
 
-        .. code-block:: python
+           .. code-block:: python
 
-            # polars
-            df.group_by_dynamic("ts", every="1d").agg(pl.col("value").sum())
+               # polars
+               df.group_by_dynamic("ts", every="1d").agg(pl.col("value").sum())
 
-        is equivalent to
+           is equivalent to
 
-        .. code-block:: python
+           .. code-block:: python
 
-            # pandas
-            df.set_index("ts").resample("D")["value"].sum().reset_index()
+               # pandas
+               df.set_index("ts").resample("D")["value"].sum().reset_index()
 
-        though note that, unlike pandas, polars doesn't add extra rows for empty
-        windows. If you need `index_column` to be evenly spaced, then please combine
-        with :func:`DataFrame.upsample`.
+           though note that, unlike pandas, polars doesn't add extra rows for empty
+           windows. If you need `index_column` to be evenly spaced, then please combine
+           with :func:`DataFrame.upsample`.
+
+        2) The `every`, `period` and `offset` arguments are created with
+           the following string language:
+
+           - 1ns   (1 nanosecond)
+           - 1us   (1 microsecond)
+           - 1ms   (1 millisecond)
+           - 1s    (1 second)
+           - 1m    (1 minute)
+           - 1h    (1 hour)
+           - 1d    (1 calendar day)
+           - 1w    (1 calendar week)
+           - 1mo   (1 calendar month)
+           - 1q    (1 calendar quarter)
+           - 1y    (1 calendar year)
+           - 1i    (1 index count)
+
+           Or combine them:
+           "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+           Suffix with `"_saturating"` to indicate that dates too large for
+           their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+           instead of erroring.
+
+           By "calendar day", we mean the corresponding time on the next day (which may
+           not be 24 hours, due to daylight savings). Similarly for "calendar week",
+           "calendar month", "calendar quarter", and "calendar year".
+
+           In case of a group_by_dynamic on an integer column, the windows are defined by:
+
+           - "1i"      # length 1
+           - "10i"     # length 10
 
         Examples
         --------
@@ -3271,12 +3276,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     include_boundaries=True,
         ...     closed="right",
         ... ).agg(pl.col("A").alias("A_agg_list")).collect()
-        shape: (3, 4)
+        shape: (4, 4)
         ┌─────────────────┬─────────────────┬─────┬─────────────────┐
         │ _lower_boundary ┆ _upper_boundary ┆ idx ┆ A_agg_list      │
         │ ---             ┆ ---             ┆ --- ┆ ---             │
         │ i64             ┆ i64             ┆ i64 ┆ list[str]       │
         ╞═════════════════╪═════════════════╪═════╪═════════════════╡
+        │ -2              ┆ 1               ┆ -2  ┆ ["A", "A"]      │
         │ 0               ┆ 3               ┆ 0   ┆ ["A", "B", "B"] │
         │ 2               ┆ 5               ┆ 2   ┆ ["B", "B", "C"] │
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
@@ -3285,7 +3291,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """  # noqa: W505
         index_column = parse_as_expression(index_column)
         if offset is None:
-            offset = f"-{_timedelta_to_pl_duration(every)}" if period is None else "0ns"
+            offset = _negate_duration(_timedelta_to_pl_duration(every))
 
         if period is None:
             period = every
@@ -5751,10 +5757,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every
             interval of the window
         period
-            length of the window, if None it is equal to 'every'
+            length of the window, if None it will equal 'every'
         offset
-            offset of the window if None and period is None it will be equal to negative
-            `every`
+            offset of the window, only takes effect if `start_by` is ``'window'``.
+            Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
         include_boundaries
@@ -5768,7 +5774,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
 
-            * 'window': Truncate the start of the window with the 'every' argument.
+            * 'window': Start by taking the earliest timestamp, truncating it with
+              `every`, and then adding `offset`.
               Note that weekly windows start on Monday.
             * 'datapoint': Start from the first encountered data point.
             * a day of the week (only takes effect if `every` contains ``'w'``):

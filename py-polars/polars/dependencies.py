@@ -17,6 +17,7 @@ _NUMPY_AVAILABLE = True
 _PANDAS_AVAILABLE = True
 _PYARROW_AVAILABLE = True
 _PYDANTIC_AVAILABLE = True
+_PYICEBERG_AVAILABLE = True
 _ZONEINFO_AVAILABLE = True
 
 
@@ -162,6 +163,7 @@ if TYPE_CHECKING:
     import pandas
     import pyarrow
     import pydantic
+    import pyiceberg
 
     if sys.version_info >= (3, 9):
         import zoneinfo
@@ -186,6 +188,7 @@ else:
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
     pydantic, _PYDANTIC_AVAILABLE = _lazy_import("pydantic")
+    pyiceberg, _PYICEBERG_AVAILABLE = _lazy_import("pyiceberg")
     zoneinfo, _ZONEINFO_AVAILABLE = (
         _lazy_import("zoneinfo")
         if sys.version_info >= (3, 9)
@@ -235,6 +238,7 @@ __all__ = [
     "numpy",
     "pandas",
     "pydantic",
+    "pyiceberg",
     "pyarrow",
     "zoneinfo",
     # lazy utilities
@@ -245,6 +249,7 @@ __all__ = [
     "_LazyModule",
     # exported flags/guards
     "_DELTALAKE_AVAILABLE",
+    "_PYICEBERG_AVAILABLE",
     "_FSSPEC_AVAILABLE",
     "_GEVENT_AVAILABLE",
     "_HYPOTHESIS_AVAILABLE",

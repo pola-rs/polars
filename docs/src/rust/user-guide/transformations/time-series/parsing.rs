@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .with_columns([col("Date")
             .str()
-            .strptime(DataType::Date, StrptimeOptions::default())])
+            .strptime(DataType::Date, StrptimeOptions::default(), lit("raise"))])
         .collect()?;
     println!("{}", &df);
     // --8<-- [end:cast]
@@ -63,6 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 format: Some("%Y-%m-%dT%H:%M:%S%z".to_string()),
                 ..Default::default()
             },
+            lit("raise"),
         )
         .dt()
         .convert_time_zone("Europe/Brussels".to_string());

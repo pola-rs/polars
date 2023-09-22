@@ -118,7 +118,7 @@ where
                         idx.len() as IdxSize,
                     ),
                     _ => {
-                        let take = { ca.take_unchecked(idx.into()) };
+                        let take = { ca.take_unchecked(idx) };
                         ca_nan_agg(&take, nan_max)
                     },
                 }
@@ -190,7 +190,7 @@ where
                         idx.len() as IdxSize,
                     ),
                     _ => {
-                        let take = { ca.take_unchecked(idx.into()) };
+                        let take = { ca.take_unchecked(idx) };
                         ca_nan_agg(&take, nan_min)
                     },
                 }
