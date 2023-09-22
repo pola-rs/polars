@@ -5827,50 +5827,35 @@ class DataFrame:
         >>> from datetime import datetime
         >>> sales = pl.DataFrame(
         ...     {
-        ...         "sale_date": [
-        ...             datetime(2020, 1, 1),
-        ...             datetime(2020, 3, 1),
-        ...             datetime(2020, 5, 1),
-        ...             datetime(2020, 7, 1),
-        ...         ],
-        ...         "sales_amount": [1000, 1200, 800, 1500],
-        ...         "region": ["A", "B", "A", "B"],
+        ...         "sale_date": [datetime(2020, 1, 1), datetime(2020, 3, 1)],
+        ...         "sales_amount": [1000, 1200],
+        ...         "region": ["A", "B"],
         ...     }
-        ... ).set_sorted("sale_date")
+        ... )
         >>> expenses = pl.DataFrame(
         ...     {
-        ...         "expense_date": [
-        ...             datetime(2020, 1, 15),
-        ...             datetime(2020, 4, 1),
-        ...             datetime(2020, 5, 15),
-        ...             datetime(2020, 7, 1),
-        ...         ],
-        ...         "expense_amount": [300, 400, 200, 450],
-        ...         "region": ["A", "B", "A", "B"],
+        ...         "expense_date": [datetime(2020, 1, 15), datetime(2020, 4, 1)],
+        ...         "expense_amount": [300, 400],
+        ...         "region": ["A", "B"],
         ...     }
-        ... ).set_sorted("expense_date")
+        ... )
         >>> result = sales.join_asof(
         ...     expenses,
-        ...     left_on="sale_date",
-        ...     right_on="expense_date",
+        ...     by="region",
+        ...     by_left="sale_date",
+        ...     by_right="expense_date",
         ...     strategy="backward",
         ... )
         >>> result
-        shape: (4, 6)
-        ┌──────────────┬──────────────┬────────┬─────────────────────┬────────────────┬──────────────┐
-        │ sale_date    ┆ sales_amount ┆ region ┆ expense_date        │
-        │ ---          ┆ ---          ┆ ---    ┆ ---                 │
-        │ datetime[μs] ┆ i64          ┆ str    ┆ datetime[μs]        │
-        ╞══════════════╪══════════════╪════════╪═════════════════════╪
-        │ 2020-01-01   ┆ 1000         ┆ A      ┆ null                ┆
-        │ 00:00:00     ┆              ┆        ┆                     ┆
-        │ 2020-03-01   ┆ 1200         ┆ B      ┆ 2020-01-15 00:00:00 ┆
-        │ 00:00:00     ┆              ┆        ┆                     ┆
-        │ 2020-05-01   ┆ 800          ┆ A      ┆ 2020-04-01 00:00:00 ┆
-        │ 00:00:00     ┆              ┆        ┆                     ┆
-        │ 2020-07-01   ┆ 1500         ┆ B      ┆ 2020-07-01 00:00:00 ┆
-        │ 00:00:00     ┆              ┆        ┆                     ┆
-        └──────────────┴──────────────┴────────┴─────────────────────┴
+        shape: (2, 5)
+        ┌──────────────┬──────────────┬────────┬─────────────────────┬────────────────┐
+        │ sale_date    ┆ sales_amount ┆ region ┆ expense_date        ┆ expense_amount │
+        │ ---          ┆ ---          ┆ ---    ┆ ---                 ┆ ---            │
+        │ datetime[μs] ┆ i64          ┆ str    ┆ datetime[μs]        ┆ i64            │
+        ╞══════════════╪══════════════╪════════╪═════════════════════╪════════════════╡
+        │ 2020-01-01   ┆ 1000         ┆ A      ┆ 2020-01-15 00:00:00 ┆ 300            │
+        │ 2020-03-01   ┆ 1200         ┆ B      ┆ 2020-04-01 00:00:00 ┆ 400            │
+        └──────────────┴──────────────┴────────┴─────────────────────┴────────────────┘
 
         """
         if not isinstance(other, DataFrame):
