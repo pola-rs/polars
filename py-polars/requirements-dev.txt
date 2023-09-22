@@ -28,6 +28,7 @@ s3fs[boto3]
 ezodf
 lxml
 openpyxl
+pyxlsb
 xlsx2csv
 XlsxWriter
 # Deltalake
