@@ -73,7 +73,9 @@ def test_read_s3(s3: str, function: Callable[..., Any], extension: str) -> None:
 @pytest.mark.parametrize(
     ("function", "extension"),
     [
+        (pl.scan_csv, "csv"),
         (pl.scan_ipc, "ipc"),
+        (pl.scan_parquet, "parquet"),
     ],
 )
 def test_scan_s3(s3: str, function: Callable[..., Any], extension: str) -> None:
