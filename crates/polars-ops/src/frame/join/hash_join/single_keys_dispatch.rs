@@ -25,8 +25,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
                 let (lhs, rhs, _, _) = prepare_binary(lhs, rhs, false);
-                let lhs = lhs.iter().collect::<Vec<_>>();
-                let rhs = rhs.iter().collect::<Vec<_>>();
+                let lhs = lhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
+                let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
                 hash_join_tuples_left(lhs, rhs, None, None, validate)
             },
             _ => {
@@ -59,8 +59,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
                 let (lhs, rhs, _, _) = prepare_binary(lhs, rhs, false);
-                let lhs = lhs.iter().collect::<Vec<_>>();
-                let rhs = rhs.iter().collect::<Vec<_>>();
+                let lhs = lhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
+                let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
                 if anti {
                     hash_join_tuples_left_anti(lhs, rhs)
                 } else {
@@ -102,8 +102,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let lhs = lhs.binary().unwrap();
                 let rhs = rhs.binary().unwrap();
                 let (lhs, rhs, swapped, _) = prepare_binary(lhs, rhs, true);
-                let lhs = lhs.iter().collect::<Vec<_>>();
-                let rhs = rhs.iter().collect::<Vec<_>>();
+                let lhs = lhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
+                let rhs = rhs.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
                 Ok((
                     hash_join_tuples_inner2(lhs, rhs, swapped, validate)?,
                     !swapped,
@@ -194,6 +194,8 @@ where
     let splitted_b = split_ca(b, n_threads).unwrap();
     let splitted_a = get_arrays(&splitted_a);
     let splitted_b = get_arrays(&splitted_b);
+    // SAFETY: extend lifetime. The call to the function's below is sound as the borrow
+    // will never leave the scope of this function.
     let splitted_a = unsafe { std::mem::transmute::<_, Vec<&'b T::Array>>(splitted_a) };
     let splitted_b = unsafe { std::mem::transmute::<_, Vec<&'b T::Array>>(splitted_b) };
 
@@ -303,7 +305,7 @@ where
         },
         _ => {
             let keys_a = get_arrays(&splitted_a);
-            let keys_b = get_arrays(&splitted_a);
+            let keys_b = get_arrays(&splitted_b);
             let (mapping_left, mapping_right) =
                 create_mappings(left.chunks(), right.chunks(), left.len(), right.len());
             hash_join_tuples_left(
@@ -453,7 +455,7 @@ where
         },
         _ => {
             let keys_a = get_arrays(&splitted_a);
-            let keys_b = get_arrays(&splitted_a);
+            let keys_b = get_arrays(&splitted_b);
             if anti {
                 hash_join_tuples_left_anti(keys_a, keys_b)
             } else {

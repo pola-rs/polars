@@ -168,8 +168,8 @@ fn to_left_join_ids(left_idx: Vec<IdxSize>, right_idx: Vec<Option<IdxSize>>) -> 
 }
 
 #[cfg(feature = "performant")]
-fn create_reverse_map_from_arg_sort(arg_sort: IdxCa) -> Vec<IdxSize> {
-    let arr = arg_sort.chunks().last().unwrap().clone();
+fn create_reverse_map_from_arg_sort(mut arg_sort: IdxCa) -> Vec<IdxSize> {
+    let arr = unsafe { arg_sort.chunks_mut() }.pop().unwrap();
     primitive_to_vec::<IdxSize>(arr).unwrap()
 }
 
