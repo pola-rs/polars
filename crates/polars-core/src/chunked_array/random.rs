@@ -296,7 +296,9 @@ mod test {
         .unwrap();
 
         // default samples are random and don't require seeds
-        assert!(df.sample_n(&Series::new("s", &[3]), false, false, None).is_ok());
+        assert!(df
+            .sample_n(&Series::new("s", &[3]), false, false, None)
+            .is_ok());
         assert!(df.sample_frac(0.4, false, false, None).is_ok());
         // with seeding
         assert!(df
