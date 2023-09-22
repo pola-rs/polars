@@ -4,6 +4,8 @@
 use std::borrow::Cow;
 #[cfg(feature = "cloud")]
 use std::str::FromStr;
+#[cfg(feature = "cloud")]
+use std::sync::Arc;
 
 #[cfg(feature = "cloud")]
 use object_store::local::LocalFileSystem;
@@ -24,7 +26,7 @@ pub use glob::*;
 pub use options::*;
 
 #[cfg(feature = "cloud")]
-type BuildResult = PolarsResult<(CloudLocation, Box<dyn ObjectStore>)>;
+type BuildResult = PolarsResult<(CloudLocation, Arc<dyn ObjectStore>)>;
 
 #[allow(dead_code)]
 #[cfg(feature = "cloud")]
@@ -49,7 +51,7 @@ pub fn build_object_store(url: &str, _options: Option<&CloudOptions>) -> BuildRe
     let store = match CloudType::from_str(url)? {
         CloudType::File => {
             let local = LocalFileSystem::new();
-            Ok::<_, PolarsError>(Box::new(local) as Box<dyn ObjectStore>)
+            Ok::<_, PolarsError>(Arc::new(local) as Arc<dyn ObjectStore>)
         },
         CloudType::Aws => {
             #[cfg(feature = "aws")]
@@ -58,7 +60,7 @@ pub fn build_object_store(url: &str, _options: Option<&CloudOptions>) -> BuildRe
                     .map(Cow::Borrowed)
                     .unwrap_or_else(|| Cow::Owned(Default::default()));
                 let store = options.build_aws(url)?;
-                Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)
+                Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
             }
             #[cfg(not(feature = "aws"))]
             return err_missing_feature("aws", &cloud_location.scheme);
@@ -68,7 +70,7 @@ pub fn build_object_store(url: &str, _options: Option<&CloudOptions>) -> BuildRe
             match _options {
                 Some(options) => {
                     let store = options.build_gcp(url)?;
-                    Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)
+                    Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                 },
                 _ => return err_missing_configuration("gcp", &cloud_location.scheme),
             }
@@ -81,7 +83,7 @@ pub fn build_object_store(url: &str, _options: Option<&CloudOptions>) -> BuildRe
                 match _options {
                     Some(options) => {
                         let store = options.build_azure(url)?;
-                        Ok::<_, PolarsError>(Box::new(store) as Box<dyn ObjectStore>)
+                        Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
                     },
                     _ => return err_missing_configuration("azure", &cloud_location.scheme),
                 }
