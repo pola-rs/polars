@@ -347,7 +347,33 @@ class Config(contextlib.ContextDecorator):
 
     @classmethod
     def set_auto_structify(cls, active: bool | None = False) -> type[Config]:
-        """Allow multi-output expressions to be automatically turned into Structs."""
+        """
+        Allow multi-output expressions to be automatically turned into Structs.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"v":range(10),"v2":range(10,20)})
+        >>> with pl.Config(set_auto_structify=True):
+        ...     out = df.select(pl.all())
+        >>> out
+        shape: (10, 1)
+        ┌───────────┐
+        │ v         │
+        │ ---       │
+        │ struct[2] │
+        ╞═══════════╡
+        │ {0,10}    │
+        │ {1,11}    │
+        │ {2,12}    │
+        │ {3,13}    │
+        │ …         │
+        │ {6,16}    │
+        │ {7,17}    │
+        │ {8,18}    │
+        │ {9,19}    │
+        └───────────┘
+
+        """
         if active is None:
             os.environ.pop("POLARS_AUTO_STRUCTIFY", None)
         else:
@@ -366,9 +392,22 @@ class Config(contextlib.ContextDecorator):
 
         Examples
         --------
+        >>> s = pl.Series([1.2304980958725870923])
+        >>> with pl.Config(set_fmt_float="mixed"):
+        ...     print(s)
+        shape: (1,)
+        Series: '' [f64]
+        [
+                1.230498
+        ]
+
         >>> with pl.Config(set_fmt_float="full"):
-            s = pl.Series([1.2304980958725870923])
-            print(s)
+        ...     print(s)
+        shape: (1,)
+        Series: '' [f64]
+        [
+                1.230498095872587
+        ]
 
         """
         _set_float_fmt(fmt="mixed" if fmt is None else fmt)
