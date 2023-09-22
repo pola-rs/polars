@@ -35,6 +35,9 @@ serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
 
+[dev-dependencies]
+rand = { workspace = true }
+
 [build-dependencies]
 version_check = { workspace = true }
 
