@@ -5841,6 +5841,7 @@ class DataFrame:
         ... )
         >>> result = sales.join_asof(
         ...     expenses,
+        ...     left_on="sale_date",
         ...     by="region",
         ...     by_left="sale_date",
         ...     by_right="expense_date",
