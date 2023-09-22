@@ -1864,21 +1864,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return result  # type: ignore[return-value]
 
     def sink_parquet(
-            self,
-            path: str | Path,
-            *,
-            compression: str = "zstd",
-            compression_level: int | None = None,
-            statistics: bool = False,
-            row_group_size: int | None = None,
-            data_pagesize_limit: int | None = None,
-            maintain_order: bool = True,
-            type_coercion: bool = True,
-            predicate_pushdown: bool = True,
-            projection_pushdown: bool = True,
-            simplify_expression: bool = True,
-            no_optimization: bool = False,
-            slice_pushdown: bool = True,
+        self,
+        path: str | Path,
+        *,
+        compression: str = "zstd",
+        compression_level: int | None = None,
+        statistics: bool = False,
+        row_group_size: int | None = None,
+        data_pagesize_limit: int | None = None,
+        maintain_order: bool = True,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = False,
+        slice_pushdown: bool = True,
     ) -> DataFrame:
         """
         Persists a LazyFrame at the provided path.
