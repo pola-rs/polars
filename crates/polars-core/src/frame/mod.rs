@@ -17,14 +17,10 @@ use crate::utils::{slice_offsets, split_ca, split_df, try_get_supertype, NoNull}
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
 mod chunks;
-#[cfg(feature = "cross_join")]
-pub(crate) mod cross_join;
 pub mod explode;
 mod from;
 #[cfg(feature = "algorithm_group_by")]
 pub mod group_by;
-#[cfg(feature = "algorithm_join")]
-pub mod hash_join;
 #[cfg(feature = "rows")]
 pub mod row;
 mod top_k;

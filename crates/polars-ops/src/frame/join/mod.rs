@@ -3,6 +3,7 @@ mod args;
 mod asof;
 #[cfg(feature = "dtype-categorical")]
 mod checks;
+mod cross_join;
 mod general;
 mod hash_join;
 #[cfg(feature = "merge_sorted")]
@@ -21,11 +22,12 @@ use asof::AsofJoinBy;
 pub use asof::{AsOfOptions, AsofJoin, AsofStrategy};
 #[cfg(feature = "dtype-categorical")]
 pub(crate) use checks::*;
+pub use cross_join::CrossJoin;
 #[cfg(feature = "chunked_ids")]
 use either::Either;
-pub use general::_finish_join;
 #[cfg(feature = "chunked_ids")]
 use general::create_chunked_index_mapping;
+pub use general::{_finish_join, _join_suffix_name};
 pub use hash_join::*;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
@@ -328,8 +330,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 let mut keys = Vec::with_capacity(selected_left.len() + df_left.width());
                 for (s_left, s_right) in selected_left.iter().zip(&selected_right) {
                     let s = unsafe {
-                        s_left
-                            .zip_outer_join_column(s_right, opt_join_tuples)
+                        zip_outer_join_column(s_left, s_right, opt_join_tuples)
                             .with_name(s_left.name())
                     };
                     keys.push(s)

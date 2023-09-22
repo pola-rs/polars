@@ -6,6 +6,7 @@ use std::vec;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
+use polars_ops::prelude::CrossJoin as CrossJoinTrait;
 use smartstring::alias::String as SmartString;
 
 use crate::operators::{

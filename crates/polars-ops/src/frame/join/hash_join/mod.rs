@@ -7,6 +7,7 @@ mod single_keys_outer;
 #[cfg(feature = "semi_anti_join")]
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
+mod zip_outer;
 
 pub use args::*;
 pub use multiple_keys::private_left_join_multiple_keys;
@@ -24,6 +25,7 @@ use single_keys_outer::*;
 #[cfg(feature = "semi_anti_join")]
 use single_keys_semi_anti::*;
 pub use sort_merge::*;
+pub(super) use zip_outer::zip_outer_join_column;
 
 pub use super::*;
 
@@ -310,10 +312,12 @@ pub trait JoinDispatch: IntoDf {
         );
 
         let s = unsafe {
-            s_left
-                .to_physical_repr()
-                .zip_outer_join_column(&s_right.to_physical_repr(), opt_join_tuples)
-                .with_name(s_left.name())
+            zip_outer_join_column(
+                &s_left.to_physical_repr(),
+                &s_right.to_physical_repr(),
+                opt_join_tuples,
+            )
+            .with_name(s_left.name())
         };
         let s = match s_left.dtype() {
             #[cfg(feature = "dtype-categorical")]

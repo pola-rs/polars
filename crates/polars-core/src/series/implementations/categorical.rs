@@ -10,8 +10,6 @@ use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
-#[cfg(feature = "algorithm_join")]
-use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 
@@ -116,31 +114,6 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         list.into_series()
     }
 
-    #[cfg(feature = "algorithm_join")]
-    unsafe fn zip_outer_join_column(
-        &self,
-        right_column: &Series,
-        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-    ) -> Series {
-        let new_rev_map = self
-            .0
-            ._merge_categorical_map(right_column.categorical().unwrap())
-            .unwrap();
-        let left = self.0.logical();
-        let right = right_column
-            .categorical()
-            .unwrap()
-            .logical()
-            .clone()
-            .into_series();
-
-        let cats = left.zip_outer_join_column(&right, opt_join_tuples);
-        let cats = cats.u32().unwrap().clone();
-
-        unsafe {
-            CategoricalChunked::from_cats_and_rev_map_unchecked(cats, new_rev_map).into_series()
-        }
-    }
     #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         #[cfg(feature = "performant")]

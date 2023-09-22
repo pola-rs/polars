@@ -19,8 +19,6 @@ use crate::chunked_array::ops::ToBitRepr;
 use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
-#[cfg(feature = "algorithm_join")]
-use crate::frame::hash_join::*;
 use crate::prelude::*;
 
 macro_rules! impl_dyn_series {
@@ -109,19 +107,6 @@ macro_rules! impl_dyn_series {
                     .agg_list(groups)
                     .cast(&DataType::List(Box::new(self.dtype().clone())))
                     .unwrap()
-            }
-
-#[cfg(feature = "algorithm_join")]
-            unsafe fn zip_outer_join_column(
-                &self,
-                right_column: &Series,
-                opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-            ) -> Series {
-                let right_column = right_column.to_physical_repr().into_owned();
-                self.0
-                    .zip_outer_join_column(&right_column, opt_join_tuples)
-                    .$into_logical()
-                    .into_series()
             }
 
             fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
