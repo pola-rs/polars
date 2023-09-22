@@ -2059,6 +2059,7 @@ name = "polars-error"
 version = "0.33.2"
 dependencies = [
  "nano-arrow",
+ "object_store",
  "regex",
  "thiserror",
 ]

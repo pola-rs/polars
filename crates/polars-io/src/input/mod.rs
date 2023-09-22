@@ -26,7 +26,7 @@ pub(crate) fn try_blocking_io<F: Future>(f: F) -> PolarsResult<F::Output> {
     Ok(handle.block_on(f))
 }
 
-pub fn try_map_async<'a, I, O, F>(input: Vec<I>, buffer: usize, f: F) -> PolarsResult<Vec<O>>
+pub fn try_map_async<I, O, F>(input: Vec<I>, buffer: usize, f: F) -> PolarsResult<Vec<O>>
 where
     F: Fn(I) -> O,
 {

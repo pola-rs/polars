@@ -25,6 +25,8 @@ chrono-tz = { workspace = true, optional = true }
 fast-float = { version = "0.2", optional = true }
 flate2 = { version = "1", optional = true, default-features = false }
 futures = { workspace = true }
+glob = { version = "0.3" }
+itertools = { version = "0" }
 itoa = { workspace = true, optional = true }
 lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-integers"] }
 lexical-core = { workspace = true, optional = true }
@@ -33,6 +35,7 @@ memmap = { package = "memmap2", version = "0.7" }
 num-traits = { workspace = true }
 object_store = { workspace = true, optional = true }
 once_cell = { workspace = true }
+percent-encoding = { version = "2.3" }
 rayon = { workspace = true }
 regex = { workspace = true }
 ryu = { workspace = true, optional = true }
@@ -43,21 +46,18 @@ simdutf8 = { workspace = true, optional = true }
 tokio = { version = "1.26", features = ["net", "io-util", "rt-multi-thread"] }
 tokio-util = { version = "0.7.8", features = ["io", "io-util"] }
 url = { workspace = true }
-glob = { version = "0.3" }
-percent-encoding = { version = "2.3" }
-itertools = { version = "0" }
 
 [dependencies.opendal]
 version = "0.40"
 default-features = false
 features = [
-    "services-azblob",
-    "services-azdls",
-    "services-gcs",
-    "services-s3",
-    "services-http",
-    "services-fs",
-    "services-webhdfs",
+  "services-azblob",
+  "services-azdls",
+  "services-gcs",
+  "services-s3",
+  "services-http",
+  "services-fs",
+  "services-webhdfs",
 ]
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
@@ -107,7 +107,7 @@ fmt = ["polars-core/fmt"]
 lazy = []
 parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression"]
 async = ["arrow/io_ipc_write_async", "polars-error/regex"]
-cloud = ["object_store", "async"]
+cloud = ["object_store", "async", "polars-error/object_store"]
 aws = ["object_store/aws", "cloud"]
 azure = ["object_store/azure", "cloud"]
 gcp = ["object_store/gcp", "cloud"]

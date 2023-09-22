@@ -7,6 +7,7 @@ use opendal::Operator;
 use polars_core::schema::Schema;
 use polars_error::{to_compute_err, PolarsResult};
 
+use crate::file_format::ObjectInfo;
 use crate::input::file_format::FileFormat;
 
 #[derive(Debug)]
@@ -62,11 +63,7 @@ impl FileFormat for ParquetFormat {
         (known, estimated)
     }
 
-    async fn get_object_info(
-        &self,
-        operator: &Operator,
-        path: String,
-    ) -> PolarsResult<(String, Schema, (Option<usize>, usize))> {
+    async fn get_object_info(&self, operator: &Operator, path: String) -> PolarsResult<ObjectInfo> {
         let (metadata, _) = self.fetch_metadata_async(operator, path.clone()).await?;
         let num_rows = &metadata.num_rows;
         let size_hint = self.calculate_rows_count((*num_rows, Some(*num_rows)));

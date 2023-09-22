@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
+use polars_io::file_format::ObjectInfo;
 use polars_io::input::file_format::parquet::ParquetFormat;
 use polars_io::input::file_format::FileFormat;
 use polars_io::input::file_listing::ObjectListingUrl;

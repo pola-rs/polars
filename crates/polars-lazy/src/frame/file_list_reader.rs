@@ -3,13 +3,12 @@ use std::path::{Path, PathBuf};
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
+use polars_io::file_format::ObjectInfo;
 use polars_io::input::try_map_async;
 use polars_io::{is_cloud_url, RowCount};
 
 use crate::prelude::*;
-
 pub type GlobIterator = Box<dyn Iterator<Item = PolarsResult<PathBuf>>>;
-pub type ObjectInfo = (String, Schema, (Option<usize>, usize));
 
 // cloud_options is used only with async feature
 #[allow(unused_variables)]
@@ -123,7 +122,7 @@ pub trait LazyFileListReader: Clone {
         todo!()
     }
 
-    fn object_to_lazy(self, object_info: ObjectInfo) -> PolarsResult<LazyFrame> {
+    fn object_to_lazy(self, _object_info: ObjectInfo) -> PolarsResult<LazyFrame> {
         todo!()
     }
 

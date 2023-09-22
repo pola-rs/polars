@@ -10,16 +10,10 @@ use polars_error::PolarsResult;
 use crate::input::file_listing::ObjectListingUrl;
 use crate::input::try_blocking_io;
 
-#[cfg(feature = "avro")]
-pub mod avro;
-#[cfg(feature = "csv")]
-pub mod csv;
-#[cfg(any(feature = "ipc", feature = "ipc_streaming"))]
-pub mod ipc;
-#[cfg(feature = "json")]
-pub mod ndjson;
 #[cfg(feature = "parquet")]
 pub mod parquet;
+
+pub type ObjectInfo = (String, Schema, (Option<usize>, usize));
 
 pub trait FileFormatOptions {}
 
@@ -56,7 +50,7 @@ pub trait FileFormat: std::fmt::Display + Send + Sync + Debug + 'static {
         cloud_opts: HashMap<String, String>,
         exclude_empty: bool,
         recursive: bool,
-    ) -> PolarsResult<Vec<(String, Schema, (Option<usize>, usize))>> {
+    ) -> PolarsResult<Vec<ObjectInfo>> {
         try_blocking_io(async {
             let url = listing_url.clone();
             let operator = url
@@ -68,14 +62,12 @@ pub trait FileFormat: std::fmt::Display + Send + Sync + Debug + 'static {
                 .await
                 .expect("failed to glob objects from remote store");
 
-            let object_infos = futures::stream::iter(objects)
+            futures::stream::iter(objects)
                 .map(|(path, _)| async { self.get_object_info(&operator, path).await })
                 .buffer_unordered(SCHEMA_INFERENCE_CONCURRENCY)
                 .try_collect::<Vec<_>>()
                 .await
-                .expect("failed to get info for one or more objects");
-
-            object_infos
+                .expect("failed to get info for one or more objects")
         })
     }
 
@@ -83,9 +75,5 @@ pub trait FileFormat: std::fmt::Display + Send + Sync + Debug + 'static {
     /// object info (path, schema, size_hint).
     ///
     /// The [Schema] is inferred from the format specific metadata.
-    async fn get_object_info(
-        &self,
-        operator: &Operator,
-        path: String,
-    ) -> PolarsResult<(String, Schema, (Option<usize>, usize))>;
+    async fn get_object_info(&self, operator: &Operator, path: String) -> PolarsResult<ObjectInfo>;
 }

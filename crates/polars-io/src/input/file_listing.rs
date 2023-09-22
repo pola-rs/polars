@@ -190,12 +190,12 @@ impl ObjectListingUrl {
         _opts.insert("root".to_string(), root);
 
         Operator::via_map(scheme, _opts)
-            .and_then(|op| Ok(op.layer(RetryLayer::new())))
+            .map(|op| op.layer(RetryLayer::new()))
             .map_err(|e| PolarsError::Generic(Box::new(e)))
     }
 
     /// Returns `true` if `path` matches this [`ObjectListingUrl`]
-    pub fn contains(&self, path: &String) -> bool {
+    pub fn contains(&self, path: &str) -> bool {
         match self.strip_prefix(path) {
             Some(mut segments) => match &self.glob {
                 Some(glob) => {
@@ -212,9 +212,9 @@ impl ObjectListingUrl {
     /// an iterator of the remaining path segments
     pub(crate) fn strip_prefix<'a, 'b: 'a>(
         &'a self,
-        path: &'b String,
+        path: &'b str,
     ) -> Option<impl Iterator<Item = &'b str> + 'a> {
-        Some(path.as_str().split_terminator(DELIMITER))
+        Some(path.split_terminator(DELIMITER))
     }
 
     /// Streams all objects identified by this [`ObjectListingUrl`] for the provided options
