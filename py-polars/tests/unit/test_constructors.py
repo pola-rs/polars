@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
@@ -267,37 +267,43 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
 
 
 def test_init_pydantic_2x() -> None:
-    class PageView(BaseModel):
-        user_id: str
-        ts: datetime = Field(alias=["ts", "$date"])  # type: ignore[literal-required, arg-type]
-        path: str = Field("?", alias=["url", "path"])  # type: ignore[literal-required, arg-type]
-        referer: str = Field("?", alias="referer")
-        event: Literal["leave", "enter"] = Field("enter")
-        time_on_page: int = Field(0, serialization_alias="top")
+    try:
+        # don't fail if manually testing with pydantic 1.x
+        from pydantic import TypeAdapter
 
-    data_json = """
-    [{
-        "user_id": "x",
-        "ts": {"$date": "2021-01-01T00:00:00.000Z"},
-        "url": "/latest/foobar",
-        "referer": "https://google.com",
-        "event": "enter",
-        "top": 123
-    }]
-    """
-    adapter: TypeAdapter[Any] = TypeAdapter(List[PageView])
-    models = adapter.validate_json(data_json)
+        class PageView(BaseModel):
+            user_id: str
+            ts: datetime = Field(alias=["ts", "$date"])  # type: ignore[literal-required, arg-type]
+            path: str = Field("?", alias=["url", "path"])  # type: ignore[literal-required, arg-type]
+            referer: str = Field("?", alias="referer")
+            event: Literal["leave", "enter"] = Field("enter")
+            time_on_page: int = Field(0, serialization_alias="top")
 
-    result = pl.DataFrame(models)
+        data_json = """
+        [{
+            "user_id": "x",
+            "ts": {"$date": "2021-01-01T00:00:00.000Z"},
+            "url": "/latest/foobar",
+            "referer": "https://google.com",
+            "event": "enter",
+            "top": 123
+        }]
+        """
+        adapter: TypeAdapter[Any] = TypeAdapter(List[PageView])
+        models = adapter.validate_json(data_json)
 
-    assert result.to_dict(False) == {
-        "user_id": ["x"],
-        "ts": [datetime(2021, 1, 1, 0, 0)],
-        "path": ["?"],
-        "referer": ["https://google.com"],
-        "event": ["enter"],
-        "time_on_page": [0],
-    }
+        result = pl.DataFrame(models)
+
+        assert result.to_dict(False) == {
+            "user_id": ["x"],
+            "ts": [datetime(2021, 1, 1, 0, 0)],
+            "path": ["?"],
+            "referer": ["https://google.com"],
+            "event": ["enter"],
+            "time_on_page": [0],
+        }
+    except ImportError:
+        pass
 
 
 def test_init_structured_objects_unhashable() -> None:
