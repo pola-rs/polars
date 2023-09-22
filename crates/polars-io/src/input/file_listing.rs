@@ -17,10 +17,10 @@ use url::Url;
 
 pub(crate) const DELIMITER: &str = "/";
 
-/// A parsed URL identifying files for a listing table, see [`FileListingUrl::parse`]
+/// A parsed URL identifying files for a listing table, see [`ObjectListingUrl::parse`]
 /// for more information on the supported expressions
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct FileListingUrl {
+pub struct ObjectListingUrl {
     /// A URL that identifies a file or directory to list files from
     url: Url,
     /// The path prefix
@@ -29,8 +29,8 @@ pub struct FileListingUrl {
     glob: Option<Pattern>,
 }
 
-impl FileListingUrl {
-    /// Parse a provided string as a [[FileListingUrl]]
+impl ObjectListingUrl {
+    /// Parse a provided string as a [[ObjectListingUrl]]
     ///
     /// # Paths without a Scheme
     ///
@@ -97,7 +97,7 @@ impl FileListingUrl {
         .map_err(|_| to_compute_err(format!("Can not open path: {url_path}")))
     }
 
-    /// Creates a new [`FileListingUrl`] interpreting `s` as a filesystem path
+    /// Creates a new [`ObjectListingUrl`] interpreting `s` as a filesystem path
     fn parse_to_prefix(url_path: &str) -> PolarsResult<(String, Option<Pattern>)> {
         let (prefix, glob) = match split_glob_expression(url_path) {
             Some((prefix, glob)) => {
@@ -194,7 +194,7 @@ impl FileListingUrl {
             .map_err(|e| PolarsError::Generic(Box::new(e)))
     }
 
-    /// Returns `true` if `path` matches this [`FileListingUrl`]
+    /// Returns `true` if `path` matches this [`ObjectListingUrl`]
     pub fn contains(&self, path: &String) -> bool {
         match self.strip_prefix(path) {
             Some(mut segments) => match &self.glob {
@@ -208,7 +208,7 @@ impl FileListingUrl {
         }
     }
 
-    /// Strips the prefix of this [`FileListingUrl`] from the provided path, returning
+    /// Strips the prefix of this [`ObjectListingUrl`] from the provided path, returning
     /// an iterator of the remaining path segments
     pub(crate) fn strip_prefix<'a, 'b: 'a>(
         &'a self,
@@ -217,7 +217,7 @@ impl FileListingUrl {
         Some(path.as_str().split_terminator(DELIMITER))
     }
 
-    /// Streams all objects identified by this [`FileListingUrl`] for the provided options
+    /// Streams all objects identified by this [`ObjectListingUrl`] for the provided options
     pub async fn glob_object_stream<'a>(
         &'a self,
         store: &'a Operator,
@@ -266,7 +266,7 @@ impl FileListingUrl {
         Ok(stream)
     }
 
-    /// Lists all objects identified by this [`FileListingUrl`] for the provided options
+    /// Lists all objects identified by this [`ObjectListingUrl`] for the provided options
     pub async fn glob_object_list<'a>(
         &'a self,
         store: &'a Operator,
@@ -282,13 +282,13 @@ impl FileListingUrl {
         Ok(list)
     }
 
-    /// Returns this [`FileListingUrl`] as a string
+    /// Returns this [`ObjectListingUrl`] as a string
     pub fn as_str(&self) -> &str {
         self.url.as_str()
     }
 }
 
-impl std::fmt::Display for FileListingUrl {
+impl std::fmt::Display for ObjectListingUrl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.as_str().fmt(f)
     }
@@ -363,34 +363,34 @@ mod tests {
         let root = std::env::current_dir().unwrap();
         let root = root.to_string_lossy();
 
-        let url = FileListingUrl::parse(root).unwrap();
+        let url = ObjectListingUrl::parse(root).unwrap();
         let child = String::from("partition/file");
         let prefix: Vec<_> = url.strip_prefix(&child).unwrap().collect();
         assert_eq!(prefix, vec!["partition", "file"]);
 
-        let url = FileListingUrl::parse("file:///").unwrap();
+        let url = ObjectListingUrl::parse("file:///").unwrap();
         let child = String::from("foo/bar");
         let prefix: Vec<_> = url.strip_prefix(&child).unwrap().collect();
         assert_eq!(prefix, vec!["foo", "bar"]);
 
-        let url = FileListingUrl::parse("file:///foo").unwrap();
+        let url = ObjectListingUrl::parse("file:///foo").unwrap();
         let child = String::from("/foob/bar");
         assert!(url.strip_prefix(&child).is_some());
 
-        let url = FileListingUrl::parse("file:///foo/file").unwrap();
+        let url = ObjectListingUrl::parse("file:///foo/file").unwrap();
         let child = String::from("foo/file");
         assert_eq!(url.strip_prefix(&child).unwrap().count(), 2);
 
-        let url = FileListingUrl::parse("file:///foo/ bar").unwrap();
+        let url = ObjectListingUrl::parse("file:///foo/ bar").unwrap();
         assert_eq!(url.prefix, "/foo/ bar");
 
-        let url = FileListingUrl::parse("file:///foo/bar?").unwrap();
+        let url = ObjectListingUrl::parse("file:///foo/bar?").unwrap();
         assert_eq!(url.prefix, "/foo/bar");
     }
 
     #[test]
     fn test_prefix_s3() {
-        let url = FileListingUrl::parse("s3://bucket/foo/bar/").unwrap();
+        let url = ObjectListingUrl::parse("s3://bucket/foo/bar/").unwrap();
         assert_eq!(url.prefix(), "/foo/bar/");
 
         let child = String::from("partition/foo.parquet");

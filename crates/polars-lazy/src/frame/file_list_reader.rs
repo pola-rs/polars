@@ -3,11 +3,13 @@ use std::path::{Path, PathBuf};
 use polars_core::cloud::CloudOptions;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
+use polars_io::input::try_map_async;
 use polars_io::{is_cloud_url, RowCount};
 
 use crate::prelude::*;
 
 pub type GlobIterator = Box<dyn Iterator<Item = PolarsResult<PathBuf>>>;
+pub type ObjectInfo = (String, Schema, (Option<usize>, usize));
 
 // cloud_options is used only with async feature
 #[allow(unused_variables)]
@@ -70,6 +72,39 @@ pub trait LazyFileListReader: Clone {
         }
     }
 
+    fn finish2(self) -> PolarsResult<LazyFrame> {
+        let file_infos = self.clone().glob_object_infos()?;
+
+        let lfs = try_map_async(file_infos, 32, |file_info| {
+            // let x = &file_info.0.as_str();
+            self.clone()
+                .object_to_lazy(file_info)
+                .expect(format!("error while reading {}", "fff").as_str())
+        })?;
+
+        polars_ensure!(
+            !lfs.is_empty(),
+            ComputeError: "no matching files found in {}", self.path().display()
+        );
+
+        if lfs.len() > 1 {
+            let mut lf = self.concat_impl(lfs)?;
+
+            if let Some(n_rows) = self.n_rows() {
+                lf = lf.slice(0, n_rows as IdxSize)
+            };
+
+            if let Some(rc) = self.row_count() {
+                lf = lf.with_row_count(&rc.name, Some(rc.offset))
+            };
+
+            Ok(lf)
+        } else {
+            // unwrap because we have checked the empty condition above
+            Ok(lfs.into_iter().next().unwrap())
+        }
+    }
+
     /// Recommended concatenation of [LazyFrame]s from many input files.
     ///
     /// This method should not take into consideration [LazyFileListReader::n_rows]
@@ -83,6 +118,14 @@ pub trait LazyFileListReader: Clone {
     ///
     /// It is recommended to always use [LazyFileListReader::finish] method.
     fn finish_no_glob(self) -> PolarsResult<LazyFrame>;
+
+    fn glob_object_infos(self) -> PolarsResult<Vec<ObjectInfo>> {
+        todo!()
+    }
+
+    fn object_to_lazy(self, object_info: ObjectInfo) -> PolarsResult<LazyFrame> {
+        todo!()
+    }
 
     /// Path of the scanned file.
     /// It can be potentially a glob pattern.
