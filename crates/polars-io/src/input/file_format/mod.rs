@@ -1,14 +1,15 @@
-use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
 use opendal::Operator;
-use polars_core::prelude::Schema;
+use polars_core::prelude::{DataFrame, PlHashMap, Schema};
 use polars_error::PolarsResult;
 
 use crate::input::file_listing::ObjectListingUrl;
 use crate::input::try_blocking_io;
+use crate::predicates::PhysicalIoExpr;
 
 #[cfg(feature = "parquet")]
 pub mod parquet;
@@ -16,9 +17,6 @@ pub mod parquet;
 pub type ObjectInfo = (String, Schema, (Option<usize>, usize));
 
 pub trait FileFormatOptions {}
-
-/// Default max records to scan to infer the schema
-const DEFAULT_SCHEMA_INFER_MAX_RECORD: usize = 1000;
 
 /// The number of objects to read in parallel when inferring schema
 const SCHEMA_INFERENCE_CONCURRENCY: usize = 32;
@@ -47,7 +45,7 @@ pub trait FileFormat: std::fmt::Display + Send + Sync + Debug + 'static {
     fn glob_object_info(
         &self,
         listing_url: ObjectListingUrl,
-        cloud_opts: HashMap<String, String>,
+        cloud_opts: PlHashMap<String, String>,
         exclude_empty: bool,
         recursive: bool,
     ) -> PolarsResult<Vec<ObjectInfo>> {
@@ -76,4 +74,18 @@ pub trait FileFormat: std::fmt::Display + Send + Sync + Debug + 'static {
     ///
     /// The [Schema] is inferred from the format specific metadata.
     async fn get_object_info(&self, operator: &Operator, path: String) -> PolarsResult<ObjectInfo>;
+
+    fn finish_read(
+        &self,
+        _n_rows: Option<usize>,
+        _columns: Option<Vec<String>>,
+        _predicate: Option<Arc<dyn PhysicalIoExpr>>,
+        _projection: Option<Vec<usize>>,
+    ) -> PolarsResult<DataFrame> {
+        todo!()
+    }
+
+    fn get_batches(&self) -> PolarsResult<Vec<DataFrame>> {
+        todo!()
+    }
 }

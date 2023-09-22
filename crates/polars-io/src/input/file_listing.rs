@@ -1,6 +1,5 @@
 //! This module is inspired from [arrow-datafusion](https://github.com/apache/arrow-datafusion/blob/f4c4ee1e7ffa97b089994162c3d754402f218503/datafusion/core/src/datasource/listing/url.rs) but decoupled from object_store crate in favour of opendal crate.
 
-use std::collections::HashMap;
 use std::path::{Component, PathBuf};
 
 use futures::stream::BoxStream;
@@ -12,6 +11,7 @@ use opendal::{
     Error as OpenDalError, ErrorKind as OpenDalErrorKind, Metadata, Metakey, Operator, Scheme,
 };
 use percent_encoding;
+use polars_core::prelude::PlHashMap;
 use polars_error::{to_compute_err, PolarsError, PolarsResult};
 use url::Url;
 
@@ -149,8 +149,9 @@ impl ObjectListingUrl {
         self.prefix.ends_with(DELIMITER)
     }
 
-    pub fn infer_operator(&self, opts: HashMap<String, String>) -> PolarsResult<Operator> {
-        let mut _opts = opts;
+    #[allow(clippy::disallowed_types)]
+    pub fn infer_operator(&self, opts: PlHashMap<String, String>) -> PolarsResult<Operator> {
+        let mut _opts = std::collections::HashMap::new();
 
         let scheme = match (self.url.scheme(), self.url.host_str()) {
             ("file", None) => Scheme::Fs,
@@ -188,6 +189,10 @@ impl ObjectListingUrl {
         };
 
         _opts.insert("root".to_string(), root);
+
+        for (key, value) in opts {
+            _opts.insert(key, value);
+        }
 
         Operator::via_map(scheme, _opts)
             .map(|op| op.layer(RetryLayer::new()))

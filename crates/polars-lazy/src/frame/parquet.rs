@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
@@ -96,7 +95,7 @@ impl LazyFileListReader for LazyParquetReader {
         let url = ObjectListingUrl::parse(path_str)?;
 
         // todo! get this from cloud options
-        let cloud_opts = HashMap::new();
+        let cloud_opts = PlHashMap::new();
         ParquetFormat::create().glob_object_info(url, cloud_opts, true, false)
     }
 

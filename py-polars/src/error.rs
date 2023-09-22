@@ -52,6 +52,7 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                 PolarsError::StructFieldNotFound(name) => {
                     StructFieldNotFoundError::new_err(name.to_string())
                 },
+                PolarsError::Generic(err) => GenericError::new_err(format!("{err:?}")),
             },
             Arrow(err) => ArrowErrorException::new_err(format!("{err:?}")),
             _ => default(),
@@ -82,6 +83,7 @@ create_exception!(exceptions, SchemaFieldNotFoundError, PyException);
 create_exception!(exceptions, ShapeError, PyException);
 create_exception!(exceptions, StringCacheMismatchError, PyException);
 create_exception!(exceptions, StructFieldNotFoundError, PyException);
+create_exception!(exceptions, GenericError, PyException);
 
 #[macro_export]
 macro_rules! raise_err(
