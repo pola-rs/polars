@@ -47,21 +47,53 @@ where
 }
 
 #[inline]
-pub fn binary_elementwise_for_each<T, U, F>(lhs: &ChunkedArray<T>, rhs: &ChunkedArray<U>, mut op: F)
-where
+pub fn binary_elementwise_for_each<'a, 'b, T, U, F>(
+    lhs: &'a ChunkedArray<T>,
+    rhs: &'b ChunkedArray<U>,
+    mut op: F,
+) where
     T: PolarsDataType,
     U: PolarsDataType,
-    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>),
+    F: FnMut(Option<T::Physical<'a>>, Option<U::Physical<'b>>),
 {
-    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
-    lhs.downcast_iter()
-        .zip(rhs.downcast_iter())
-        .for_each(|(lhs_arr, rhs_arr)| {
-            lhs_arr
-                .iter()
-                .zip(rhs_arr.iter())
-                .for_each(|(lhs_opt_val, rhs_opt_val)| op(lhs_opt_val, rhs_opt_val));
-        })
+    let mut lhs_arr_iter = lhs.downcast_iter();
+    let mut rhs_arr_iter = rhs.downcast_iter();
+
+    let lhs_arr = lhs_arr_iter.next().unwrap();
+    let rhs_arr = rhs_arr_iter.next().unwrap();
+
+    let mut lhs_remaining = lhs_arr.len();
+    let mut rhs_remaining = rhs_arr.len();
+    let mut lhs_iter = lhs_arr.iter();
+    let mut rhs_iter = rhs_arr.iter();
+
+    loop {
+        let range = std::cmp::min(lhs_remaining, rhs_remaining);
+
+        for _ in 0..range {
+            // SAFETY: we loop until the smaller iter is exhausted.
+            let lhs_opt_val = unsafe { lhs_iter.next().unwrap_unchecked() };
+            let rhs_opt_val = unsafe { rhs_iter.next().unwrap_unchecked() };
+            op(lhs_opt_val, rhs_opt_val)
+        }
+        lhs_remaining -= range;
+        rhs_remaining -= range;
+
+        if lhs_remaining == 0 {
+            let Some(new_arr) = lhs_arr_iter.next() else {
+                return;
+            };
+            lhs_remaining = new_arr.len();
+            lhs_iter = new_arr.iter();
+        }
+        if rhs_remaining == 0 {
+            let Some(new_arr) = rhs_arr_iter.next() else {
+                return;
+            };
+            rhs_remaining = new_arr.len();
+            rhs_iter = new_arr.iter();
+        }
+    }
 }
 
 #[inline]
@@ -105,6 +137,7 @@ where
     V::Array: ArrayFromIter<K>,
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+
     let iter = lhs
         .downcast_iter()
         .zip(rhs.downcast_iter())
