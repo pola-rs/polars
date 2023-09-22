@@ -59,6 +59,23 @@ pub(crate) unsafe fn zip_outer_join_column(
     }
 }
 
+fn get_value<T, A, F: Fn(A, usize) -> T>(
+    opt_left_idx: Option<IdxSize>,
+    opt_right_idx: Option<IdxSize>,
+    left_arr: A,
+    right_arr: A,
+    getter: F,
+) -> T {
+    if let Some(left_idx) = opt_left_idx {
+        getter(left_arr, left_idx as usize)
+    } else {
+        unsafe {
+            let right_idx = opt_right_idx.unwrap_unchecked();
+            getter(right_arr, right_idx as usize)
+        }
+    }
+}
+
 // TODO! improve this once we have a proper scatter.
 // Two scatters should do it. Can also improve the `opt_join_tuples` format then.
 unsafe fn zip_outer_join_column_ca<'a, T>(
@@ -75,6 +92,8 @@ where
         .unpack_series_matching_type(right_column)
         .unwrap();
 
+    let tuples_iter = opt_join_tuples.iter();
+
     // No nulls.
     if left_column.null_count() == 0 && right_ca.null_count() == 0 {
         // Single chunk case.
@@ -83,47 +102,41 @@ where
             let right_arr = right_ca.downcast_iter().next().unwrap();
 
             match (left_arr.as_slice(), right_arr.as_slice()) {
-                (Some(left_slice), Some(right_slice)) => opt_join_tuples
-                    .iter()
+                (Some(left_slice), Some(right_slice)) => tuples_iter
                     .map(|(opt_left_idx, opt_right_idx)| {
-                        if let Some(left_idx) = opt_left_idx {
-                            *unsafe { left_slice.get_unchecked(*left_idx as usize) }
-                        } else {
-                            unsafe {
-                                let right_idx = opt_right_idx.unwrap_unchecked();
-                                *right_slice.get_unchecked(right_idx as usize)
-                            }
-                        }
+                        get_value(
+                            *opt_left_idx,
+                            *opt_right_idx,
+                            left_slice,
+                            right_slice,
+                            |slice, idx| *slice.get_unchecked(idx),
+                        )
                     })
                     .collect_ca_trusted_like(left_column)
                     .into_series(),
-                _ => opt_join_tuples
-                    .iter()
+                _ => tuples_iter
                     .map(|(opt_left_idx, opt_right_idx)| {
-                        if let Some(left_idx) = opt_left_idx {
-                            unsafe { left_arr.value_unchecked(*left_idx as usize) }
-                        } else {
-                            unsafe {
-                                let right_idx = opt_right_idx.unwrap_unchecked();
-                                right_arr.value_unchecked(right_idx as usize)
-                            }
-                        }
+                        get_value(
+                            *opt_left_idx,
+                            *opt_right_idx,
+                            left_arr,
+                            right_arr,
+                            |slice, idx| slice.value_unchecked(idx),
+                        )
                     })
                     .collect_ca_trusted_like(left_column)
                     .into_series(),
             }
         } else {
-            opt_join_tuples
-                .iter()
+            tuples_iter
                 .map(|(opt_left_idx, opt_right_idx)| {
-                    if let Some(left_idx) = opt_left_idx {
-                        unsafe { left_column.value_unchecked(*left_idx as usize) }
-                    } else {
-                        unsafe {
-                            let right_idx = opt_right_idx.unwrap_unchecked();
-                            right_ca.value_unchecked(right_idx as usize)
-                        }
-                    }
+                    get_value(
+                        *opt_left_idx,
+                        *opt_right_idx,
+                        left_column,
+                        right_ca,
+                        |slice, idx| slice.value_unchecked(idx),
+                    )
                 })
                 .collect_ca_trusted_like(left_column)
                 .into_series()
@@ -135,32 +148,28 @@ where
         if left_column.chunks().len() == 1 && right_column.chunks().len() == 1 {
             let left_arr = left_column.downcast_iter().next().unwrap();
             let right_arr = right_ca.downcast_iter().next().unwrap();
-            opt_join_tuples
-                .iter()
+            tuples_iter
                 .map(|(opt_left_idx, opt_right_idx)| {
-                    if let Some(left_idx) = opt_left_idx {
-                        unsafe { left_arr.get_unchecked(*left_idx as usize) }
-                    } else {
-                        unsafe {
-                            let right_idx = opt_right_idx.unwrap_unchecked();
-                            right_arr.get_unchecked(right_idx as usize)
-                        }
-                    }
+                    get_value(
+                        *opt_left_idx,
+                        *opt_right_idx,
+                        left_arr,
+                        right_arr,
+                        |slice, idx| slice.get_unchecked(idx),
+                    )
                 })
                 .collect_ca_trusted_like(left_column)
                 .into_series()
         } else {
-            opt_join_tuples
-                .iter()
+            tuples_iter
                 .map(|(opt_left_idx, opt_right_idx)| {
-                    if let Some(left_idx) = opt_left_idx {
-                        unsafe { left_column.get_unchecked(*left_idx as usize) }
-                    } else {
-                        unsafe {
-                            let right_idx = opt_right_idx.unwrap_unchecked();
-                            right_ca.get_unchecked(right_idx as usize)
-                        }
-                    }
+                    get_value(
+                        *opt_left_idx,
+                        *opt_right_idx,
+                        left_column,
+                        right_ca,
+                        |slice, idx| slice.get_unchecked(idx),
+                    )
                 })
                 .collect_ca_trusted_like(left_column)
                 .into_series()
