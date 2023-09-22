@@ -143,42 +143,20 @@ extract_groups = ["polars/extract_groups"]
 ffi_plugin = ["polars-plan/ffi_plugin"]
 cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure"]
 
-all = [
+dtypes = [
   "dtype-i8",
   "dtype-i16",
   "dtype-u8",
   "dtype-u16",
-  "json",
-  "parquet",
-  "ipc",
-  "ipc_streaming",
-  "avro",
+  "polars/group_by_list",
+  "object",
+]
+
+operations = [
   "is_in",
   "repeat_by",
   "trigonometry",
   "sign",
-  "asof_join",
-  "cross_join",
-  "pct_change",
-  "search_sorted",
-  "merge_sorted",
-  "meta",
-  "decompress",
-  "lazy_regex",
-  "csv",
-  "extract_jsonpath",
-  "timezones",
-  "object",
-  "pivot",
-  "top_k",
-  "build_info",
-  "cse",
-  "propagate_nans",
-  "polars/group_by_list",
-  "polars/fused",
-  "sql",
-  "binary_encoding",
-  "streaming",
   "performant",
   "list_take",
   "list_count",
@@ -187,8 +165,46 @@ all = [
   "cutqcut",
   "rle",
   "extract_groups",
-  "ffi_plugin",
+  "pivot",
+  "extract_jsonpath",
+  "asof_join",
+  "cross_join",
+  "pct_change",
+  "search_sorted",
+  "merge_sorted",
+  "top_k",
+  "propagate_nans",
+  "timezones",
+]
+
+io = [
+  "json",
+  "parquet",
+  "ipc",
+  "ipc_streaming",
+  "avro",
+  "csv",
   "cloud",
+]
+
+optimizations = [
+  "cse",
+  "polars/fused",
+  "streaming",
+]
+
+all = [
+  "optimizations",
+  "io",
+  "operations",
+  "dtypes",
+  "meta",
+  "decompress",
+  "lazy_regex",
+  "build_info",
+  "sql",
+  "binary_encoding",
+  "ffi_plugin",
 ]
 
 # we cannot conditionally activate simd

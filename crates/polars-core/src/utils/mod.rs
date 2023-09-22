@@ -808,17 +808,6 @@ pub(crate) fn index_to_chunked_index<
     (current_chunk_idx, index_remainder)
 }
 
-#[cfg(feature = "chunked_ids")]
-pub(crate) fn create_chunked_index_mapping(chunks: &[ArrayRef], len: usize) -> Vec<ChunkId> {
-    let mut vals = Vec::with_capacity(len);
-
-    for (chunk_i, chunk) in chunks.iter().enumerate() {
-        vals.extend((0..chunk.len()).map(|array_i| [chunk_i as IdxSize, array_i as IdxSize]))
-    }
-
-    vals
-}
-
 pub(crate) fn first_non_null<'a, I>(iter: I) -> Option<usize>
 where
     I: Iterator<Item = Option<&'a Bitmap>>,

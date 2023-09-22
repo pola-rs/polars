@@ -67,10 +67,14 @@ pub(super) fn hash_join_tuples_outer<T, I, J>(
     validate: JoinValidation,
 ) -> PolarsResult<Vec<(Option<IdxSize>, Option<IdxSize>)>>
 where
-    I: Iterator<Item = T> + Send + TrustedLen,
-    J: Iterator<Item = T> + Send + TrustedLen,
+    I: IntoIterator<Item = T>,
+    J: IntoIterator<Item = T>,
+    <J as IntoIterator>::IntoIter: TrustedLen + Send,
+    <I as IntoIterator>::IntoIter: TrustedLen + Send,
     T: Hash + Eq + Copy + Sync + Send,
 {
+    let probe = probe.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();
+    let build = build.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();
     // This function is partially multi-threaded.
     // Parts that are done in parallel:
     //  - creation of the probe tables
@@ -79,8 +83,14 @@ where
     // during the probe phase values are removed from the tables, that's done single threaded to
     // keep it lock free.
 
-    let size = probe.iter().map(|a| a.size_hint().0).sum::<usize>()
-        + build.iter().map(|b| b.size_hint().0).sum::<usize>();
+    let size = probe
+        .iter()
+        .map(|a| a.size_hint().1.unwrap())
+        .sum::<usize>()
+        + build
+            .iter()
+            .map(|b| b.size_hint().1.unwrap())
+            .sum::<usize>();
     let mut results = Vec::with_capacity(size);
 
     // prepare hash table

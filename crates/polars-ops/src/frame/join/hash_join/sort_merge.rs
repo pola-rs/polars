@@ -1,11 +1,11 @@
 #[cfg(feature = "performant")]
 use polars_arrow::kernels::sorted_join;
+#[cfg(feature = "performant")]
+use polars_core::utils::_split_offsets;
+#[cfg(feature = "performant")]
+use polars_core::utils::flatten::flatten_par;
 
 use super::*;
-#[cfg(feature = "performant")]
-use crate::utils::_split_offsets;
-#[cfg(feature = "performant")]
-use crate::utils::flatten::flatten_par;
 
 #[cfg(feature = "performant")]
 fn par_sorted_merge_left_impl<T>(
@@ -169,7 +169,7 @@ fn to_left_join_ids(left_idx: Vec<IdxSize>, right_idx: Vec<Option<IdxSize>>) -> 
 
 #[cfg(feature = "performant")]
 fn create_reverse_map_from_arg_sort(mut arg_sort: IdxCa) -> Vec<IdxSize> {
-    let arr = arg_sort.chunks.pop().unwrap();
+    let arr = unsafe { arg_sort.chunks_mut() }.pop().unwrap();
     primitive_to_vec::<IdxSize>(arr).unwrap()
 }
 

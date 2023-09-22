@@ -1,7 +1,6 @@
-use super::single_keys::build_tables;
+use polars_core::utils::flatten::flatten_par;
+
 use super::*;
-use crate::frame::hash_join::single_keys::probe_to_offsets;
-use crate::utils::flatten::flatten_par;
 
 #[cfg(feature = "chunked_ids")]
 unsafe fn apply_mapping(idx: Vec<IdxSize>, chunk_mapping: &[ChunkId]) -> Vec<ChunkId> {
@@ -98,9 +97,9 @@ pub(super) fn flatten_left_join_ids(result: Vec<LeftJoinIds>) -> LeftJoinIds {
     }
 }
 
-pub(super) fn hash_join_tuples_left<T, IntoSlice>(
-    probe: Vec<IntoSlice>,
-    build: Vec<IntoSlice>,
+pub(super) fn hash_join_tuples_left<T, I>(
+    probe: Vec<I>,
+    build: Vec<I>,
     // map the global indices to [chunk_idx, array_idx]
     // only needed if we have non contiguous memory
     chunk_mapping_left: Option<&[ChunkId]>,
@@ -108,12 +107,15 @@ pub(super) fn hash_join_tuples_left<T, IntoSlice>(
     validate: JoinValidation,
 ) -> PolarsResult<LeftJoinIds>
 where
-    IntoSlice: AsRef<[T]> + Send + Sync,
+    I: IntoIterator<Item = T>,
+    <I as IntoIterator>::IntoIter: Send + Sync + Clone,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
+    let probe = probe.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();
+    let build = build.into_iter().map(|i| i.into_iter()).collect::<Vec<_>>();
     // first we hash one relation
     let hash_tbls = if validate.needs_checks() {
-        let expected_size = build.iter().map(|v| v.as_ref().len()).sum();
+        let expected_size = build.iter().map(|v| v.size_hint().1.unwrap()).sum();
         let hash_tbls = build_tables(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
         validate.validate_build(build_size, expected_size, false)?;
@@ -138,13 +140,12 @@ where
             .map(move |(probe, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
-                let probe = probe.as_ref();
 
                 // assume the result tuples equal length of the no. of hashes processed by this thread.
-                let mut result_idx_left = Vec::with_capacity(probe.len());
-                let mut result_idx_right = Vec::with_capacity(probe.len());
+                let mut result_idx_left = Vec::with_capacity(probe.size_hint().1.unwrap());
+                let mut result_idx_right = Vec::with_capacity(probe.size_hint().1.unwrap());
 
-                probe.iter().enumerate().for_each(|(idx_a, k)| {
+                probe.enumerate().for_each(|(idx_a, k)| {
                     let idx_a = (idx_a + offset) as IdxSize;
                     // probe table that contains the hashed value
                     let current_probe_table = unsafe {
@@ -152,7 +153,7 @@ where
                     };
 
                     // we already hashed, so we don't have to hash again.
-                    let value = current_probe_table.get(k);
+                    let value = current_probe_table.get(&k);
 
                     match value {
                         // left and right matches

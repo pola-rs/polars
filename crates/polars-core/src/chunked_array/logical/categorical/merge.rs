@@ -143,7 +143,7 @@ pub(crate) fn merge_rev_map(
 }
 
 impl CategoricalChunked {
-    pub(crate) fn merge_categorical_map(&self, other: &Self) -> PolarsResult<Arc<RevMapping>> {
+    pub fn _merge_categorical_map(&self, other: &Self) -> PolarsResult<Arc<RevMapping>> {
         merge_rev_map(self.get_rev_map(), other.get_rev_map())
     }
 }
@@ -167,7 +167,7 @@ mod test {
         builder2.drain_iter(vec![Some("hello"), None, Some("world"), Some("bar")].into_iter());
         let ca1 = builder1.finish();
         let ca2 = builder2.finish();
-        let rev_map = ca1.merge_categorical_map(&ca2).unwrap();
+        let rev_map = ca1._merge_categorical_map(&ca2).unwrap();
 
         let mut ca = UInt32Chunked::new("", &[0, 1, 2, 3]);
         ca.categorical_map = Some(rev_map);

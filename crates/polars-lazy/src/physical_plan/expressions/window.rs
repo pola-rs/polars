@@ -4,13 +4,13 @@ use std::sync::Arc;
 use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_core::export::arrow::bitmap::Bitmap;
 use polars_core::frame::group_by::{GroupBy, GroupsProxy};
-use polars_core::frame::hash_join::{
-    default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
-};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
+use polars_ops::frame::join::{
+    default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
+};
 use polars_utils::format_smartstring;
 use polars_utils::sort::perfect_sort;
 use polars_utils::sync::SyncPtr;
