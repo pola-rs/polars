@@ -78,7 +78,6 @@ The opt-in features are:
   - `dtype-u16`
   - `dtype-categorical`
   - `dtype-struct`
-- `performant` - Longer compile times more fast paths.
 - `lazy` - Lazy API
   - `lazy_regex` - Use regexes in [column selection](crate::lazy::dsl::col)
   - `dot_diagram` - Create dot diagrams from lazy logical plans.
