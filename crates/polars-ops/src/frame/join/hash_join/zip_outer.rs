@@ -59,48 +59,111 @@ pub(crate) unsafe fn zip_outer_join_column(
     }
 }
 
-unsafe fn zip_outer_join_column_ca<T>(
-    left_column: &ChunkedArray<T>,
+// TODO! improve this once we have a proper scatter.
+// Two scatters should do it. Can also improve the `opt_join_tuples` format then.
+unsafe fn zip_outer_join_column_ca<'a, T>(
+    left_column: &'a ChunkedArray<T>,
     right_column: &Series,
     opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
 ) -> Series
 where
     T: PolarsDataType,
     ChunkedArray<T>: IntoSeries,
+    T::Physical<'a>: Copy,
 {
     let right_ca = left_column
         .unpack_series_matching_type(right_column)
         .unwrap();
 
+    // No nulls.
     if left_column.null_count() == 0 && right_ca.null_count() == 0 {
-        opt_join_tuples
-            .iter()
-            .map(|(opt_left_idx, opt_right_idx)| {
-                if let Some(left_idx) = opt_left_idx {
-                    unsafe { left_column.value_unchecked(*left_idx as usize) }
-                } else {
-                    unsafe {
-                        let right_idx = opt_right_idx.unwrap_unchecked();
-                        right_ca.value_unchecked(right_idx as usize)
+        // Single chunk case.
+        if left_column.chunks().len() == 1 && right_column.chunks().len() == 1 {
+            let left_arr = left_column.downcast_iter().next().unwrap();
+            let right_arr = right_ca.downcast_iter().next().unwrap();
+
+            match (left_arr.as_slice(), right_arr.as_slice()) {
+                (Some(left_slice), Some(right_slice)) => opt_join_tuples
+                    .iter()
+                    .map(|(opt_left_idx, opt_right_idx)| {
+                        if let Some(left_idx) = opt_left_idx {
+                            *unsafe { left_slice.get_unchecked(*left_idx as usize) }
+                        } else {
+                            unsafe {
+                                let right_idx = opt_right_idx.unwrap_unchecked();
+                                *right_slice.get_unchecked(right_idx as usize)
+                            }
+                        }
+                    })
+                    .collect_ca_trusted_like(left_column)
+                    .into_series(),
+                _ => opt_join_tuples
+                    .iter()
+                    .map(|(opt_left_idx, opt_right_idx)| {
+                        if let Some(left_idx) = opt_left_idx {
+                            unsafe { left_arr.value_unchecked(*left_idx as usize) }
+                        } else {
+                            unsafe {
+                                let right_idx = opt_right_idx.unwrap_unchecked();
+                                right_arr.value_unchecked(right_idx as usize)
+                            }
+                        }
+                    })
+                    .collect_ca_trusted_like(left_column)
+                    .into_series(),
+            }
+        } else {
+            opt_join_tuples
+                .iter()
+                .map(|(opt_left_idx, opt_right_idx)| {
+                    if let Some(left_idx) = opt_left_idx {
+                        unsafe { left_column.value_unchecked(*left_idx as usize) }
+                    } else {
+                        unsafe {
+                            let right_idx = opt_right_idx.unwrap_unchecked();
+                            right_ca.value_unchecked(right_idx as usize)
+                        }
                     }
-                }
-            })
-            .collect_ca_trusted_like(left_column)
-            .into_series()
+                })
+                .collect_ca_trusted_like(left_column)
+                .into_series()
+        }
+
+    // Nulls.
     } else {
-        opt_join_tuples
-            .iter()
-            .map(|(opt_left_idx, opt_right_idx)| {
-                if let Some(left_idx) = opt_left_idx {
-                    unsafe { left_column.get_unchecked(*left_idx as usize) }
-                } else {
-                    unsafe {
-                        let right_idx = opt_right_idx.unwrap_unchecked();
-                        right_ca.get_unchecked(right_idx as usize)
+        // Single chunk case.
+        if left_column.chunks().len() == 1 && right_column.chunks().len() == 1 {
+            let left_arr = left_column.downcast_iter().next().unwrap();
+            let right_arr = right_ca.downcast_iter().next().unwrap();
+            opt_join_tuples
+                .iter()
+                .map(|(opt_left_idx, opt_right_idx)| {
+                    if let Some(left_idx) = opt_left_idx {
+                        unsafe { left_arr.get_unchecked(*left_idx as usize) }
+                    } else {
+                        unsafe {
+                            let right_idx = opt_right_idx.unwrap_unchecked();
+                            right_arr.get_unchecked(right_idx as usize)
+                        }
                     }
-                }
-            })
-            .collect_ca_trusted_like(left_column)
-            .into_series()
+                })
+                .collect_ca_trusted_like(left_column)
+                .into_series()
+        } else {
+            opt_join_tuples
+                .iter()
+                .map(|(opt_left_idx, opt_right_idx)| {
+                    if let Some(left_idx) = opt_left_idx {
+                        unsafe { left_column.get_unchecked(*left_idx as usize) }
+                    } else {
+                        unsafe {
+                            let right_idx = opt_right_idx.unwrap_unchecked();
+                            right_ca.get_unchecked(right_idx as usize)
+                        }
+                    }
+                })
+                .collect_ca_trusted_like(left_column)
+                .into_series()
+        }
     }
 }
