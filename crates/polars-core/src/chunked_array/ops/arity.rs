@@ -47,13 +47,19 @@ where
 }
 
 #[inline]
-pub fn binary_elementwise_for_each<T, U, F>(lhs: &ChunkedArray<T>, rhs: &ChunkedArray<U>, mut op: F)
-where
+pub fn binary_elementwise_for_each<'a, 'b, T, U, F>(
+    lhs: &'a ChunkedArray<T>,
+    rhs: &'b ChunkedArray<U>,
+    mut op: F,
+) where
     T: PolarsDataType,
     U: PolarsDataType,
-    F: for<'a> FnMut(Option<T::Physical<'a>>, Option<U::Physical<'a>>),
+    F: FnMut(Option<T::Physical<'a>>, Option<U::Physical<'b>>),
 {
     let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    // SAFETY: lifetime still points to `'a and 'b as the heap allocations never change if we clone.
+    let lhs = unsafe { std::mem::transmute::<_, &'a ChunkedArray<T>>(lhs.as_ref()) };
+    let rhs = unsafe { std::mem::transmute::<_, &'b ChunkedArray<U>>(rhs.as_ref()) };
     lhs.downcast_iter()
         .zip(rhs.downcast_iter())
         .for_each(|(lhs_arr, rhs_arr)| {
