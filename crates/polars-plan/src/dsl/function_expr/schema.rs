@@ -107,8 +107,8 @@ impl FunctionExpr {
                     #[cfg(feature = "list_count")]
                     CountMatches => mapper.with_dtype(IDX_DTYPE),
                     Sum => mapper.nested_sum_type(),
-                    Min => mapper.map_to_list_inner_dtype_or_self(),
-                    Max => mapper.map_to_list_inner_dtype_or_self(),
+                    Min => mapper.map_to_list_inner_dtype(),
+                    Max => mapper.map_to_list_inner_dtype(),
                     Mean => mapper.with_dtype(DataType::Float64),
                     Sort(_) => mapper.with_same_dtype(),
                     Reverse => mapper.with_same_dtype(),
@@ -327,15 +327,6 @@ impl<'a> FieldsMapper<'a> {
             .cloned()
             .unwrap_or(DataType::Unknown);
         first.coerce(dt);
-        Ok(first)
-    }
-
-    /// Map the dtype to list inner dtype or the cloned dtype itself.
-    pub fn map_to_list_inner_dtype_or_self(&self) -> PolarsResult<Field> {
-        let mut first = self.fields[0].clone();
-        if let DataType::List(inner) = first.data_type() {
-            first.coerce(*inner.clone())
-        }
         Ok(first)
     }
 
