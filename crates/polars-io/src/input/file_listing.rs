@@ -1,6 +1,6 @@
 //! This module is inspired from [arrow-datafusion](https://github.com/apache/arrow-datafusion/blob/f4c4ee1e7ffa97b089994162c3d754402f218503/datafusion/core/src/datasource/listing/url.rs) but decoupled from object_store crate in favour of opendal crate.
 
-use std::path::{Component, PathBuf};
+use std::path::{Component, PathBuf, MAIN_SEPARATOR_STR};
 
 use futures::stream::BoxStream;
 use futures::{StreamExt, TryStreamExt};
@@ -15,7 +15,7 @@ use polars_core::prelude::PlHashMap;
 use polars_error::{to_compute_err, PolarsError, PolarsResult};
 use url::Url;
 
-pub(crate) const DELIMITER: &str = "/";
+pub(crate) const DELIMITER: &str = MAIN_SEPARATOR_STR;
 
 /// A parsed URL identifying files for a listing table, see [`ObjectListingUrl::parse`]
 /// for more information on the supported expressions
@@ -387,16 +387,28 @@ mod tests {
         assert_eq!(url.strip_prefix(&child).unwrap().count(), 2);
 
         let url = ObjectListingUrl::parse("file:///foo/ bar").unwrap();
-        assert_eq!(url.prefix, "/foo/ bar");
+        assert_eq!(
+            url.prefix,
+            format!("{}foo{} bar", MAIN_SEPARATOR_STR, MAIN_SEPARATOR_STR)
+        );
 
         let url = ObjectListingUrl::parse("file:///foo/bar?").unwrap();
-        assert_eq!(url.prefix, "/foo/bar");
+        assert_eq!(
+            url.prefix,
+            format!("{}foo{}bar", MAIN_SEPARATOR_STR, MAIN_SEPARATOR_STR)
+        );
     }
 
     #[test]
     fn test_prefix_s3() {
         let url = ObjectListingUrl::parse("s3://bucket/foo/bar/").unwrap();
-        assert_eq!(url.prefix(), "/foo/bar/");
+        assert_eq!(
+            url.prefix(),
+            format!(
+                "{}foo{}bar{}",
+                MAIN_SEPARATOR_STR, MAIN_SEPARATOR_STR, MAIN_SEPARATOR_STR
+            )
+        );
 
         let child = String::from("partition/foo.parquet");
         let prefix: Vec<_> = url.strip_prefix(&child).unwrap().collect();

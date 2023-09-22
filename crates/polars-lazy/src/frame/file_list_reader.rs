@@ -75,10 +75,10 @@ pub trait LazyFileListReader: Clone {
         let file_infos = self.clone().glob_object_infos()?;
 
         let lfs = try_map_async(file_infos, 32, |file_info| {
-            // let x = &file_info.0.as_str();
+            let (path, ..) = &file_info;
             self.clone()
-                .object_to_lazy(file_info)
-                .expect(format!("error while reading {}", "fff").as_str())
+                .object_to_lazy(file_info.clone())
+                .unwrap_or_else(|_| panic!("error while reading {}", &path))
         })?;
 
         polars_ensure!(
