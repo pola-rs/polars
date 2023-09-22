@@ -5845,6 +5845,7 @@ class DataFrame:
         ...     by="region",
         ...     by_left="sale_date",
         ...     by_right="expense_date",
+        ...     right_on="expense_date",
         ...     strategy="backward",
         ... )
         >>> result
