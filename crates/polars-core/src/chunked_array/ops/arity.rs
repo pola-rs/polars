@@ -264,6 +264,7 @@ where
     U: PolarsDataType,
     F: FnMut(&T::Array, &U::Array) -> Box<dyn Array>,
 {
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
     let chunks = lhs
         .downcast_iter()
         .zip(rhs.downcast_iter())
