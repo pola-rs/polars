@@ -78,15 +78,11 @@ pub enum StringFunction {
     StripSuffix,
     #[cfg(feature = "dtype-struct")]
     SplitExact {
-        by: String,
         n: usize,
         inclusive: bool,
     },
     #[cfg(feature = "dtype-struct")]
-    SplitN {
-        by: String,
-        n: usize,
-    },
+    SplitN(usize),
     #[cfg(feature = "temporal")]
     Strptime(DataType, StrptimeOptions),
     Split(bool),
@@ -146,7 +142,7 @@ impl StringFunction {
                     .collect(),
             )),
             #[cfg(feature = "dtype-struct")]
-            SplitN { by: _, n } => mapper.with_dtype(DataType::Struct(
+            SplitN(n) => mapper.with_dtype(DataType::Struct(
                 (0..*n)
                     .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8))
                     .collect(),
@@ -200,7 +196,7 @@ impl Display for StringFunction {
                 }
             },
             #[cfg(feature = "dtype-struct")]
-            StringFunction::SplitN { .. } => "splitn",
+            StringFunction::SplitN(_) => "splitn",
             #[cfg(feature = "temporal")]
             StringFunction::Strptime(_, _) => "strptime",
             StringFunction::Split(inclusive) => {
@@ -434,8 +430,9 @@ pub(super) fn strptime(
 }
 
 #[cfg(feature = "dtype-struct")]
-pub(super) fn split_exact(s: &Series, by: &str, n: usize, inclusive: bool) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+pub(super) fn split_exact(s: &[Series], n: usize, inclusive: bool) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+    let by = s[1].utf8()?;
 
     if inclusive {
         ca.split_exact_inclusive(by, n).map(|ca| ca.into_series())
@@ -445,8 +442,10 @@ pub(super) fn split_exact(s: &Series, by: &str, n: usize, inclusive: bool) -> Po
 }
 
 #[cfg(feature = "dtype-struct")]
-pub(super) fn splitn(s: &Series, by: &str, n: usize) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
+pub(super) fn splitn(s: &[Series], n: usize) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+    let by = s[1].utf8()?;
+
     ca.splitn(by, n).map(|ca| ca.into_series())
 }
 
