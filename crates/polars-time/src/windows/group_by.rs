@@ -458,9 +458,9 @@ pub(crate) fn group_by_values_iter_full_lookahead(
 
 #[cfg(feature = "rolling_window")]
 #[inline]
-pub(crate) fn group_by_values_iter<'a>(
+pub(crate) fn group_by_values_iter(
     period: Duration,
-    time: &'a [i64],
+    time: &[i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
