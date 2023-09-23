@@ -267,12 +267,6 @@ Don't use this unless you hit the row boundary as the default polars is faster a
 Do you want polars to run on an old CPU (e.g. dating from before 2011)? Install `pip install polars-lts-cpu`. This polars project is
 compiled without [avx](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target features.
 
-## Acknowledgements
-
-Development of Polars is proudly powered by
-
-[![Xomnia](https://raw.githubusercontent.com/pola-rs/polars-static/master/sponsors/xomnia.png)](https://www.xomnia.com/)
-
 ## Sponsors
 
-[<img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/sponsors/xomnia.png" height="40" />](https://www.xomnia.com/) &emsp; [<img src="https://www.jetbrains.com/company/brand/img/jetbrains_logo.png" height="50" />](https://www.jetbrains.com)
+[<img src="https://www.jetbrains.com/company/brand/img/jetbrains_logo.png" height="50" />](https://www.jetbrains.com)
