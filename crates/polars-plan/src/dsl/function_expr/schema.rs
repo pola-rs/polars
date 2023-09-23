@@ -107,6 +107,13 @@ impl FunctionExpr {
                     #[cfg(feature = "list_count")]
                     CountMatches => mapper.with_dtype(IDX_DTYPE),
                     Sum => mapper.nested_sum_type(),
+                    Min => mapper.map_to_list_inner_dtype(),
+                    Max => mapper.map_to_list_inner_dtype(),
+                    Mean => mapper.with_dtype(DataType::Float64),
+                    Sort(_) => mapper.with_same_dtype(),
+                    Reverse => mapper.with_same_dtype(),
+                    Unique(_) => mapper.with_same_dtype(),
+                    Length => mapper.with_dtype(IDX_DTYPE),
                     #[cfg(feature = "list_sets")]
                     SetOperation(_) => mapper.with_same_dtype(),
                     #[cfg(feature = "list_any_all")]
