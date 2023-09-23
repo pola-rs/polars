@@ -23,11 +23,13 @@ impl Bounds {
     }
 
     /// Duration in unit for this Boundary
+    #[inline]
     pub(crate) fn duration(&self) -> i64 {
         self.stop - self.start
     }
 
     // check if unit is within bounds
+    #[inline]
     pub(crate) fn is_member(&self, t: i64, closed: ClosedWindow) -> bool {
         match closed {
             ClosedWindow::Right => t > self.start && t <= self.stop,
@@ -37,6 +39,7 @@ impl Bounds {
         }
     }
 
+    #[inline]
     pub(crate) fn is_future(&self, t: i64, closed: ClosedWindow) -> bool {
         match closed {
             ClosedWindow::Left | ClosedWindow::None => self.stop <= t,

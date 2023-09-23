@@ -3155,3 +3155,15 @@ def test_group_by_dynamic(
         .sort("dt")
     )
     assert_frame_equal(result, expected_grouped_df)
+
+
+def test_group_by_rolling_duplicates() -> None:
+    df = pl.DataFrame(
+        {
+            "ts": [datetime(2000, 1, 1, 0, 0), datetime(2000, 1, 1, 0, 0)],
+            "value": [0, 1],
+        }
+    )
+    assert df.sort("ts").with_columns(
+        pl.col("value").rolling_max("1d", by="ts", closed="right")
+    )["value"].to_list() == [1, 1]
