@@ -473,6 +473,9 @@ pub(crate) fn group_by_values_iter(
 
 /// Checks if the boundary elements don't split on duplicates
 fn check_splits(time: &[i64], thread_offsets: &[(usize, usize)]) -> bool {
+    if time.is_empty() {
+        return true;
+    }
     let mut valid = true;
     for window in thread_offsets.windows(2) {
         let left_block_end = window[0].0 + window[0].1;
