@@ -234,7 +234,7 @@ impl FunctionExpr {
             Random { .. } => mapper.with_same_dtype(),
             SetSortedFlag(_) => mapper.with_same_dtype(),
             #[cfg(feature = "ffi_plugin")]
-            FfiPlugin { lib, symbol } => unsafe {
+            FfiPlugin { lib, symbol, .. } => unsafe {
                 plugin::plugin_field(fields, lib, &format!("__polars_field_{}", symbol.as_ref()))
             },
             BackwardFill { .. } => mapper.with_same_dtype(),

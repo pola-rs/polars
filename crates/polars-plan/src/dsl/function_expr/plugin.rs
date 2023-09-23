@@ -1,3 +1,4 @@
+use std::ffi::CStr;
 use std::sync::RwLock;
 
 use arrow::ffi::{import_field_from_c, ArrowSchema};
@@ -30,18 +31,27 @@ fn get_lib(lib: &str) -> PolarsResult<&'static Library> {
     }
 }
 
-pub(super) unsafe fn call_plugin(s: &[Series], lib: &str, symbol: &str) -> PolarsResult<Series> {
+pub(super) unsafe fn call_plugin(
+    s: &[Series],
+    lib: &str,
+    symbol: &str,
+    kwargs: &CStr,
+) -> PolarsResult<Series> {
     let lib = get_lib(lib)?;
 
     let symbol: libloading::Symbol<
-        unsafe extern "C" fn(*const SeriesExport, usize) -> SeriesExport,
+        unsafe extern "C" fn(
+            *const SeriesExport,
+            usize,
+            *const std::os::raw::c_char,
+        ) -> SeriesExport,
     > = lib.get(symbol.as_bytes()).unwrap();
 
     let n_args = s.len();
 
     let input = s.iter().map(export_series).collect::<Vec<_>>();
     let slice_ptr = input.as_ptr();
-    let out = symbol(slice_ptr, n_args);
+    let out = symbol(slice_ptr, n_args, kwargs.as_ptr());
 
     for e in input {
         std::mem::forget(e);

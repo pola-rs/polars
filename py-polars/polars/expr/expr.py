@@ -9508,10 +9508,11 @@ class Expr:
 
     def _register_plugin(
         self,
+        *,
         lib: str,
         symbol: str,
         args: list[IntoExpr] | None = None,
-        *,
+        kwargs: dict[Any, Any] | None = None,
         is_elementwise: bool = False,
         input_wildcard_expansion: bool = False,
         auto_explode: bool = False,
@@ -9536,6 +9537,9 @@ class Expr:
             Function to load.
         args
             Arguments (other than self) passed to this function.
+            These arguments have to be of type Expression.
+        kwargs
+            Non-expression arguments. They must be JSON serializable.
         is_elementwise
             If the function only operates on scalars
             this will trigger fast paths.
@@ -9552,11 +9556,19 @@ class Expr:
             args = []
         else:
             args = [parse_as_expression(a) for a in args]
+        if kwargs is None:
+            serialized_kwargs = ""
+        else:
+            import json
+
+            serialized_kwargs = json.dumps(kwargs)
+
         return self._from_pyexpr(
             self._pyexpr.register_plugin(
                 lib,
                 symbol,
                 args,
+                serialized_kwargs,
                 is_elementwise,
                 input_wildcard_expansion,
                 auto_explode,
