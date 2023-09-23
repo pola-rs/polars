@@ -104,15 +104,12 @@ class ListNameSpace:
         >>> s = pl.Series({"values": [[None, 1, None, 2], [None], [3, 4]]})
         >>> s.list.drop_nulls()
         shape: (3, )
-        ┌───────────┐
-        │ values    │
-        │ ---       │
-        │ list[i64] │
-        ╞═══════════╡
-        │ [1, 2]    │
-        │ []        │
-        │ [3, 4]    │
-        └───────────┘
+        Series: 's' [list[i64]]
+        [
+            [1, 2]
+            []
+            [3, 4]
+        ]
 
         """
 
