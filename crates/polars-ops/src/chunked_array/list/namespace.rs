@@ -379,6 +379,7 @@ pub trait ListNameSpaceImpl: AsList {
         }
     }
 
+    #[cfg(feature = "list_drop_nulls")]
     fn lst_drop_nulls(&self) -> ListChunked {
         let list_ca = self.as_list();
 

@@ -110,6 +110,7 @@ impl PyExpr {
         self.inner.clone().list().sum().with_fmt("list.sum").into()
     }
 
+    #[cfg(feature = "list_drop_nulls")]
     fn list_drop_nulls(&self) -> Self {
         self.inner.clone().list().drop_nulls().into()
     }

@@ -9,6 +9,7 @@ pub enum ListFunction {
     Concat,
     #[cfg(feature = "is_in")]
     Contains,
+    #[cfg(feature = "list_drop_nulls")]
     DropNulls,
     Slice,
     Get,
@@ -41,6 +42,7 @@ impl Display for ListFunction {
             Concat => "concat",
             #[cfg(feature = "is_in")]
             Contains => "contains",
+            #[cfg(feature = "list_drop_nulls")]
             DropNulls => "drop_nulls",
             Slice => "slice",
             Get => "get",
@@ -85,6 +87,7 @@ pub(super) fn contains(args: &mut [Series]) -> PolarsResult<Option<Series>> {
     })
 }
 
+#[cfg(feature = "list_drop_nulls")]
 pub(super) fn drop_nulls(s: &Series) -> PolarsResult<Series> {
     let list = s.list()?;
 
