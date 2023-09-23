@@ -727,12 +727,13 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Strptime(dtype, options) => {
                 map_as_slice!(strings::strptime, dtype.clone(), &options)
             },
-            Split => {
-                map_as_slice!(strings::split)
+            Split(inclusive) => {
+                map_as_slice!(strings::split, inclusive)
             },
-            SplitInclusive => {
-                map_as_slice!(strings::split_inclusive)
-            },
+            #[cfg(feature = "dtype-struct")]
+            SplitExact { by, n, inclusive } => map!(strings::split_exact, &by, n, inclusive),
+            #[cfg(feature = "dtype-struct")]
+            SplitN { by, n } => map!(strings::splitn, &by, n),
             #[cfg(feature = "concat_str")]
             ConcatVertical(delimiter) => map!(strings::concat, &delimiter),
             #[cfg(feature = "concat_str")]
