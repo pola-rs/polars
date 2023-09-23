@@ -28,6 +28,7 @@ impl Bounds {
     }
 
     // check if unit is within bounds
+    #[inline]
     pub(crate) fn is_member(&self, t: i64, closed: ClosedWindow) -> bool {
         match closed {
             ClosedWindow::Right => t > self.start && t <= self.stop,
