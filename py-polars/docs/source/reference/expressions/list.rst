@@ -11,6 +11,7 @@ The following methods are available under the `expr.list` attribute.
 
     Expr.list.all
     Expr.list.any
+    Expr.list.drop_nulls
     Expr.list.arg_max
     Expr.list.arg_min
     Expr.list.concat

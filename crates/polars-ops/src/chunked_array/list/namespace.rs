@@ -379,6 +379,12 @@ pub trait ListNameSpaceImpl: AsList {
         }
     }
 
+    fn lst_drop_nulls(&self) -> ListChunked {
+        let list_ca = self.as_list();
+
+        list_ca.apply_amortized(|s| s.as_ref().drop_nulls())
+    }
+
     fn lst_concat(&self, other: &[Series]) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
         let other_len = other.len();
