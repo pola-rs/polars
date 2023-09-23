@@ -952,21 +952,4 @@ mod test {
         assert!(time_key.series_equal(&lower_bound));
         Ok(())
     }
-
-    #[test]
-    fn test_foo() {
-        use crate::prelude::*;
-        let ca = Int64Chunked::new("", &[0, 2]);
-
-        let out = ca.into_series().rolling_max(RollingOptionsImpl {
-            window_size: Duration::parse("1d"),
-            tu: Some(TimeUnit::Milliseconds),
-            tz: None,
-            closed_window: Some(ClosedWindow::Right),
-            by: Some([0i64, 0].as_slice()),
-            ..Default::default()
-        });
-
-        dbg!(out);
-    }
 }

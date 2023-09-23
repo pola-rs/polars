@@ -23,6 +23,7 @@ impl Bounds {
     }
 
     /// Duration in unit for this Boundary
+    #[inline]
     pub(crate) fn duration(&self) -> i64 {
         self.stop - self.start
     }
@@ -38,6 +39,7 @@ impl Bounds {
         }
     }
 
+    #[inline]
     pub(crate) fn is_future(&self, t: i64, closed: ClosedWindow) -> bool {
         match closed {
             ClosedWindow::Left | ClosedWindow::None => self.stop <= t,
