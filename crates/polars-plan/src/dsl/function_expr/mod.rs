@@ -135,8 +135,8 @@ pub enum FunctionExpr {
     DropNans,
     #[cfg(feature = "round_series")]
     Clip {
-        min: Option<AnyValue<'static>>,
-        max: Option<AnyValue<'static>>,
+        has_min: bool,
+        has_max: bool,
     },
     ListExpr(ListFunction),
     #[cfg(feature = "dtype-array")]
@@ -321,10 +321,10 @@ impl Display for FunctionExpr {
             ShiftAndFill { .. } => "shift_and_fill",
             DropNans => "drop_nans",
             #[cfg(feature = "round_series")]
-            Clip { min, max } => match (min, max) {
-                (Some(_), Some(_)) => "clip",
-                (None, Some(_)) => "clip_max",
-                (Some(_), None) => "clip_min",
+            Clip { has_min, has_max } => match (has_min, has_max) {
+                (true, true) => "clip",
+                (false, true) => "clip_max",
+                (true, false) => "clip_min",
                 _ => unreachable!(),
             },
             ListExpr(func) => return write!(f, "{func}"),
@@ -543,8 +543,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             DropNans => map_owned!(nan::drop_nans),
             #[cfg(feature = "round_series")]
-            Clip { min, max } => {
-                map_owned!(clip::clip, min.clone(), max.clone())
+            Clip { has_min, has_max } => {
+                map_as_slice!(clip::clip, has_min, has_max)
             },
             ListExpr(lf) => {
                 use ListFunction::*;
