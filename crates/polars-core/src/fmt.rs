@@ -175,18 +175,18 @@ macro_rules! format_nullarray {
         let v = "null";
         if (limit == 0 && $length > 0) || ($length > limit + 1) {
             if limit > 0 {
-                for i in 0..std::cmp::max((limit / 2), 1) {
+                for _i in 0..std::cmp::max((limit / 2), 1) {
                     write_fn(v, $f)?;
                 }
             }
             write!($f, "\t…\n")?;
             if limit > 1 {
-                for i in ($length - (limit + 1) / 2)..$length {
+                for _i in ($length - (limit + 1) / 2)..$length {
                     write_fn(v, $f)?;
                 }
             }
         } else {
-            for i in 0..$length {
+            for _i in 0..$length {
                 write_fn(v, $f)?;
             }
         }
