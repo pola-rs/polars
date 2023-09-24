@@ -212,9 +212,41 @@ impl FunctionExpr {
             PeakMin => mapper.with_same_dtype(),
             PeakMax => mapper.with_same_dtype(),
             #[cfg(feature = "cutqcut")]
-            Cut { .. } => mapper.with_dtype(DataType::Categorical(None)),
+            Cut {
+                breaks: _,
+                labels: _,
+                left_closed: _,
+                include_breaks: true,
+            } => Ok(Field::new(
+                fields[0].name(),
+                DataType::Struct(fields.to_vec()),
+            )),
             #[cfg(feature = "cutqcut")]
-            QCut { .. } => mapper.with_dtype(DataType::Categorical(None)),
+            Cut {
+                breaks: _,
+                labels: _,
+                left_closed: _,
+                include_breaks: false,
+            } => mapper.with_dtype(DataType::Categorical(None)),
+            #[cfg(feature = "cutqcut")]
+            QCut {
+                probs: _,
+                labels: _,
+                left_closed: _,
+                allow_duplicates: _,
+                include_breaks: true,
+            } => Ok(Field::new(
+                fields[0].name(),
+                DataType::Struct(fields.to_vec()),
+            )),
+            #[cfg(feature = "cutqcut")]
+            QCut {
+                probs: _,
+                labels: _,
+                left_closed: _,
+                allow_duplicates: _,
+                include_breaks: false,
+            } => mapper.with_dtype(DataType::Categorical(None)),
             #[cfg(feature = "rle")]
             RLE => mapper.map_dtype(|dt| {
                 DataType::Struct(vec![
