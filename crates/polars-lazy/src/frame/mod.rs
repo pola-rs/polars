@@ -1,18 +1,8 @@
 //! Lazy variant of a [DataFrame].
-#[cfg(feature = "csv")]
-mod csv;
-#[cfg(feature = "ipc")]
-mod ipc;
-#[cfg(feature = "json")]
-mod ndjson;
-#[cfg(feature = "parquet")]
-mod parquet;
 #[cfg(feature = "python")]
 mod python;
 
-mod anonymous_scan;
 mod err;
-mod file_list_reader;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 

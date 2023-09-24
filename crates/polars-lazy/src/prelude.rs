@@ -19,3 +19,4 @@ pub(crate) use polars_utils::arena::{Arena, Node};
 pub use crate::dsl::*;
 pub use crate::frame::*;
 pub use crate::physical_plan::expressions::*;
+pub(crate) use crate::scan::*;
