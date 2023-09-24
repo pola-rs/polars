@@ -234,6 +234,7 @@ impl StringNameSpace {
             .into(),
             &[by],
             false,
+            false,
         )
     }
 
@@ -245,6 +246,7 @@ impl StringNameSpace {
             StringFunction::SplitExact { n, inclusive: true }.into(),
             &[by],
             false,
+            false,
         )
     }
 
@@ -253,7 +255,7 @@ impl StringNameSpace {
     /// keeps the remainder of the string intact. The resulting dtype is [`DataType::Struct`].
     pub fn splitn(self, by: Expr, n: usize) -> Expr {
         self.0
-            .map_many_private(StringFunction::SplitN(n).into(), &[by], false)
+            .map_many_private(StringFunction::SplitN(n).into(), &[by], false, false)
     }
 
     #[cfg(feature = "regex")]
