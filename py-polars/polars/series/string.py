@@ -891,7 +891,7 @@ class StringNameSpace:
 
         """
 
-    def split_exact(self, by: str, n: int, *, inclusive: bool = False) -> Series:
+    def split_exact(self, by: IntoExpr, n: int, *, inclusive: bool = False) -> Series:
         """
         Split the string by a substring using ``n`` splits.
 
@@ -951,7 +951,7 @@ class StringNameSpace:
 
         """
 
-    def splitn(self, by: str, n: int) -> Series:
+    def splitn(self, by: IntoExpr, n: int) -> Series:
         """
         Split the string by a substring, restricted to returning at most ``n`` items.
 

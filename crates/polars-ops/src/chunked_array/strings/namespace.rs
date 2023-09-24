@@ -377,24 +377,24 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     #[cfg(feature = "dtype-struct")]
-    fn split_exact(&self, by: &str, n: usize) -> PolarsResult<StructChunked> {
+    fn split_exact(&self, by: &Utf8Chunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_utf8();
 
-        split_to_struct(ca, n + 1, |s| s.split(by))
+        split_to_struct(ca, by, n + 1, |s, by| s.split(by))
     }
 
     #[cfg(feature = "dtype-struct")]
-    fn split_exact_inclusive(&self, by: &str, n: usize) -> PolarsResult<StructChunked> {
+    fn split_exact_inclusive(&self, by: &Utf8Chunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_utf8();
 
-        split_to_struct(ca, n + 1, |s| s.split_inclusive(by))
+        split_to_struct(ca, by, n + 1, |s, by| s.split_inclusive(by))
     }
 
     #[cfg(feature = "dtype-struct")]
-    fn splitn(&self, by: &str, n: usize) -> PolarsResult<StructChunked> {
+    fn splitn(&self, by: &Utf8Chunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_utf8();
 
-        split_to_struct(ca, n, |s| s.splitn(n, by))
+        split_to_struct(ca, by, n, |s, by| s.splitn(n, by))
     }
 
     fn split(&self, by: &Utf8Chunked) -> ListChunked {

@@ -1574,7 +1574,7 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_split_inclusive(by))
         return wrap_expr(self._pyexpr.str_split(by))
 
-    def split_exact(self, by: str, n: int, *, inclusive: bool = False) -> Expr:
+    def split_exact(self, by: IntoExpr, n: int, *, inclusive: bool = False) -> Expr:
         """
         Split the string by a substring using ``n`` splits.
 
@@ -1640,11 +1640,12 @@ class ExprStringNameSpace:
         └──────┴────────────┴─────────────┘
 
         """
+        by = parse_as_expression(by, str_as_lit=True)
         if inclusive:
             return wrap_expr(self._pyexpr.str_split_exact_inclusive(by, n))
         return wrap_expr(self._pyexpr.str_split_exact(by, n))
 
-    def splitn(self, by: str, n: int) -> Expr:
+    def splitn(self, by: IntoExpr, n: int) -> Expr:
         """
         Split the string by a substring, restricted to returning at most ``n`` items.
 
@@ -1705,6 +1706,7 @@ class ExprStringNameSpace:
         └─────────────┴────────────┴─────────────┘
 
         """
+        by = parse_as_expression(by, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_splitn(by, n))
 
     def replace(

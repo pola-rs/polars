@@ -216,42 +216,35 @@ impl StringNameSpace {
 
     #[cfg(feature = "dtype-struct")]
     /// Split exactly `n` times by a given substring. The resulting dtype is [`DataType::Struct`].
-    pub fn split_exact(self, by: &str, n: usize) -> Expr {
-        let by = by.to_string();
-
-        self.0.map_private(
+    pub fn split_exact(self, by: Expr, n: usize) -> Expr {
+        self.0.map_many_private(
             StringFunction::SplitExact {
-                by,
                 n,
                 inclusive: false,
             }
             .into(),
+            &[by],
+            false,
         )
     }
 
     #[cfg(feature = "dtype-struct")]
     /// Split exactly `n` times by a given substring and keep the substring.
     /// The resulting dtype is [`DataType::Struct`].
-    pub fn split_exact_inclusive(self, by: &str, n: usize) -> Expr {
-        let by = by.to_string();
-
-        self.0.map_private(
-            StringFunction::SplitExact {
-                by,
-                n,
-                inclusive: true,
-            }
-            .into(),
+    pub fn split_exact_inclusive(self, by: Expr, n: usize) -> Expr {
+        self.0.map_many_private(
+            StringFunction::SplitExact { n, inclusive: true }.into(),
+            &[by],
+            false,
         )
     }
 
     #[cfg(feature = "dtype-struct")]
     /// Split by a given substring, returning exactly `n` items. If there are more possible splits,
     /// keeps the remainder of the string intact. The resulting dtype is [`DataType::Struct`].
-    pub fn splitn(self, by: &str, n: usize) -> Expr {
-        let by = by.to_string();
-
-        self.0.map_private(StringFunction::SplitN { by, n }.into())
+    pub fn splitn(self, by: Expr, n: usize) -> Expr {
+        self.0
+            .map_many_private(StringFunction::SplitN(n).into(), &[by], false)
     }
 
     #[cfg(feature = "regex")]

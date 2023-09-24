@@ -283,16 +283,20 @@ impl PyExpr {
         self.inner.clone().str().split_inclusive(by.inner).into()
     }
 
-    fn str_split_exact(&self, by: &str, n: usize) -> Self {
-        self.inner.clone().str().split_exact(by, n).into()
+    fn str_split_exact(&self, by: Self, n: usize) -> Self {
+        self.inner.clone().str().split_exact(by.inner, n).into()
     }
 
-    fn str_split_exact_inclusive(&self, by: &str, n: usize) -> Self {
-        self.inner.clone().str().split_exact_inclusive(by, n).into()
+    fn str_split_exact_inclusive(&self, by: Self, n: usize) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .split_exact_inclusive(by.inner, n)
+            .into()
     }
 
-    fn str_splitn(&self, by: &str, n: usize) -> Self {
-        self.inner.clone().str().splitn(by, n).into()
+    fn str_splitn(&self, by: Self, n: usize) -> Self {
+        self.inner.clone().str().splitn(by.inner, n).into()
     }
 
     fn str_to_decimal(&self, infer_len: usize) -> Self {
