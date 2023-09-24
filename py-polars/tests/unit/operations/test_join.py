@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -443,6 +443,94 @@ def test_semi_join_projection_pushdown_6455() -> None:
 
 
 def test_update() -> None:
+    df1 = pl.DataFrame(
+        {
+            "key1": [1, 2, 3, 4],
+            "key2": [1, 2, 3, 4],
+            "a": [1, 2, 3, 4],
+            "b": [1, 2, 3, 4],
+            "c": ["1", "2", "3", "4"],
+            "d": [
+                date(2023, 1, 1),
+                date(2023, 1, 2),
+                date(2023, 1, 3),
+                date(2023, 1, 4),
+            ],
+        }
+    )
+
+    df2 = pl.DataFrame(
+        {
+            "key1": [1, 2, 3, 4],
+            "key2": [1, 2, 3, 5],
+            "a": [1, 1, 1, 1],
+            "b": [2, 2, 2, 2],
+            "c": ["3", "3", "3", "3"],
+            "d": [
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+            ],
+        }
+    )
+
+    # update only on key1
+    expected = pl.DataFrame(
+        {
+            "key1": [1, 2, 3, 4],
+            "key2": [1, 2, 3, 5],
+            "a": [1, 1, 1, 1],
+            "b": [2, 2, 2, 2],
+            "c": ["3", "3", "3", "3"],
+            "d": [
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+            ],
+        }
+    )
+    assert_frame_equal(df1.update(df2, on="key1"), expected)
+
+    # update on key1 using different left/right names
+    assert_frame_equal(
+        df1.update(
+            df2.rename({"key1": "key1b"}),
+            left_on="key1",
+            right_on="key1b",
+        ),
+        expected,
+    )
+
+    # update on key1 and key2. This should fail to match the last item.
+    expected = pl.DataFrame(
+        {
+            "key1": [1, 2, 3, 4],
+            "key2": [1, 2, 3, 4],
+            "a": [1, 1, 1, 4],
+            "b": [2, 2, 2, 4],
+            "c": ["3", "3", "3", "4"],
+            "d": [
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 1, 4),
+            ],
+        }
+    )
+    assert_frame_equal(df1.update(df2, on=["key1", "key2"]), expected)
+
+    # update on key1 and key2 using different left/right names
+    assert_frame_equal(
+        df1.update(
+            df2.rename({"key1": "key1b", "key2": "key2b"}),
+            left_on=["key1", "key2"],
+            right_on=["key1b", "key2b"],
+        ),
+        expected,
+    )
+
     df = pl.DataFrame({"A": [1, 2, 3, 4], "B": [400, 500, 600, 700]})
 
     new_df = pl.DataFrame({"B": [4, None, 6], "C": [7, 8, 9]})

@@ -5478,6 +5478,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         other: LazyFrame,
         on: str | Sequence[str] | None = None,
+        left_on: str | Sequence[str] | None = None,
+        right_on: str | Sequence[str] | None = None,
         how: Literal["left", "inner"] = "left",
     ) -> Self:
         """
@@ -5499,6 +5501,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         on
             Column names that will be joined on.
             If none given the row count is used.
+        left_on
+           Join column(s) of the left DataFrame.
+        right_on
+           Join column(s) of the right DataFrame.
         how : {'left', 'inner'}
             'left' will keep the left table rows as is.
             'inner' will remove rows that are not found in other
@@ -5555,42 +5561,56 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         row_count_used = False
-        if on is None:
+        if on is None and left_on is None and right_on is None:
             row_count_used = True
             row_count_name = "__POLARS_ROW_COUNT"
             self = self.with_row_count(row_count_name)
             other = other.with_row_count(row_count_name)
             on = row_count_name
 
-        if isinstance(on, str):
-            on = [on]
+        if on is not None:
+            left_on = right_on = on
 
-        union_names = set(self.columns) & set(other.columns)
+        if isinstance(left_on, str):
+            left_on = [left_on]
+        if isinstance(right_on, str):
+            right_on = [right_on]
 
-        for name in on:
-            if name not in union_names:
-                raise ValueError(f"join column {name!r} not found")
-
-        right_added_names = union_names - set(on)
+        left_names = self.columns
+        for name in left_on:
+            if name not in left_names:
+                raise ValueError(f"left join column {name!r} not found")
+        right_names = other.columns
+        for name in right_on:
+            if name not in right_names:
+                raise ValueError(f"right join column {name!r} not found")
 
         # no need to join if only join columns are in other
-        if len(right_added_names) == 0:
+        if len(right_on) == len(other.columns):
             if row_count_used:
                 return self.drop(row_count_name)
             return self
 
+        right_other = set(other.columns).intersection(self.columns) - set(right_on)
+
         tmp_name = "__POLARS_RIGHT"
         result = (
-            self.join(other.select(list(union_names)), on=on, how=how, suffix=tmp_name)
+            self.join(
+                other.select(*right_on, *right_other),
+                left_on=left_on,
+                right_on=right_on,
+                how=how,
+                suffix=tmp_name,
+            )
             .with_columns(
                 [
-                    F.coalesce([column_name + tmp_name, F.col(column_name)]).alias(
+                    F.coalesce([f"{column_name}{tmp_name}", F.col(column_name)]).alias(
                         column_name
                     )
-                    for column_name in right_added_names
+                    for column_name in right_other
                 ]
             )
-            .drop([name + tmp_name for name in right_added_names])
+            .drop([f"{name}{tmp_name}" for name in right_other])
         )
         if row_count_used:
             result = result.drop(row_count_name)
