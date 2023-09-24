@@ -56,31 +56,6 @@ python:
   apply: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.apply.html
   over: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.over.html
   implode: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.implode.html
-  selectors: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html
-  cs_numeric:
-    link: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.numeric
-    name: cs.numeric
-  cs_by_name:
-    link: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.by_name
-    name: cs.by_name
-  cs_first:
-    link: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.first
-    name: cs.first
-  cs_temporal:
-    link: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.temporal
-    name: cs.temporal
-  cs_contains:
-    link: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.contains
-    name: cs.contains
-  cs_matches:
-    link: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.matches
-    name: cs.matches
-  is_selector:
-    link: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.is_selector
-    name: is_selector
-  selector_column_names:
-    link: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.selector_column_names
-    name: selector_column_names
   DataFrame.explode: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.explode.html
   read_database_connectorx:
     name: read_database
@@ -127,16 +102,6 @@ python:
   melt: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.melt.html
   is_between: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.is_between.html
   year: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.dt.year.html
-  dt.convert_time_zone:
-    name: dt.convert_time_zone
-    link: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.dt.convert_time_zone.html
-    feature_flags: ['timezone']
-  dt.replace_time_zone:
-    name: dt.replace_time_zone
-    link: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.dt.replace_time_zone.html
-    feature_flags: ['timezone']
-  Series.dt.day: https://pola-rs.github.io/polars/py-polars/html/reference/series/api/polars.Series.dt.day.html
-  dt.to_string: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.dt.to_string.html
   date_range: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.date_range.html
   upsample: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.upsample.html
   group_by_dynamic: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.group_by_dynamic.html
@@ -148,19 +113,40 @@ python:
     feature_flags: ['numpy']
   lengths: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.lengths.html
   n_chars: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.n_chars.html
-  str.contains:
-    name: str.contains
-    link: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.contains.html
+  Array: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.Array.html
+  arr: https://pola-rs.github.io/polars/py-polars/html/reference/series/array.html
+  Series.dt.day: https://pola-rs.github.io/polars/py-polars/html/reference/series/api/polars.Series.dt.day.html
+
+  selectors: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html
+  cs.numeric: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.numeric
+  cs.by_name: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.by_name
+  cs.first: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.first
+  cs.temporal: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.temporal
+  cs.contains: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.contains
+  cs.matches: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.matches
+  is_selector: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.is_selector
+  selector_column_names: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.selector_column_names
+
+  dt.convert_time_zone:
+    name: dt.convert_time_zone
+    link: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.dt.convert_time_zone.html
+    feature_flags: ['timezone']
+  dt.replace_time_zone:
+    name: dt.replace_time_zone
+    link: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.dt.replace_time_zone.html
+    feature_flags: ['timezone']
+  dt.to_string: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.dt.to_string.html
+
   starts_with: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.starts_with.html
   ends_with: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.ends_with.html
   extract: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.extract.html
   extract_all: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.extract_all.html
+
+  str.contains: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.contains.html
   str.replace: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.replace.html
   str.replace_all: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.replace_all.html
   str.to_datetime: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.to_datetime.html
   str.to_date: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.to_date.html
-  Array: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.Array.html
-  arr: https://pola-rs.github.io/polars/py-polars/html/reference/series/array.html
 
 rust:
   DataFrame: https://pola-rs.github.io/polars/docs/rust/dev/polars/frame/struct.DataFrame.html
@@ -260,6 +246,17 @@ rust:
   apply: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.apply
   over: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.over
   cast: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.cast
+  fill_null: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.fill_null
+
+  selectors: https://github.com/pola-rs/polars/issues/10594
+  cs.numeric: https://github.com/pola-rs/polars/issues/10594
+  cs.by_name: https://github.com/pola-rs/polars/issues/10594
+  cs.first: https://github.com/pola-rs/polars/issues/10594
+  cs.temporal: https://github.com/pola-rs/polars/issues/10594
+  cs.contains: https://github.com/pola-rs/polars/issues/10594
+  cs.matches: https://github.com/pola-rs/polars/issues/10594
+  is_selector: https://github.com/pola-rs/polars/issues/10594
+  selector_column_names: https://github.com/pola-rs/polars/issues/10594
 
   str.replace:
     name: str.replace
