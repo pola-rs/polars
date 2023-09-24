@@ -100,6 +100,8 @@ impl FunctionExpr {
                     Concat => mapper.map_to_list_supertype(),
                     #[cfg(feature = "is_in")]
                     Contains => mapper.with_dtype(DataType::Boolean),
+                    #[cfg(feature = "list_drop_nulls")]
+                    DropNulls => mapper.with_same_dtype(),
                     Slice => mapper.with_same_dtype(),
                     Get => mapper.map_to_list_inner_dtype(),
                     #[cfg(feature = "list_take")]

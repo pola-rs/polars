@@ -28,6 +28,12 @@ impl ListNameSpace {
             .with_fmt("list.all")
     }
 
+    #[cfg(feature = "list_drop_nulls")]
+    pub fn drop_nulls(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::DropNulls))
+    }
+
     /// Get lengths of the arrays in the List type.
     pub fn lengths(self) -> Expr {
         self.0
