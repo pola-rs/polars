@@ -608,14 +608,13 @@ def test_init_ndarray(monkeypatch: Any) -> None:
 
 
 def test_nullarray_print_format() -> None:
-    tbl_null = pa.table({"a": [None, None]})
-    df_null = pl.from_arrow(tbl_null)
+    pa_tbl_null = pa.table({"a": [None, None]})
+    df_null = pl.from_arrow(pa_tbl_null)
     assert df_null.schema == {"a": pl.Null}
     assert df_null.rows() == [(None,), (None,)]
 
     expected_string = "shape: (2,)\nSeries: 'null' [nullarray]\n[\n\tnull\n\tnull\n]"
     assert str(df_null["a"]) == expected_string
-    
 
 
 def test_init_arrow() -> None:
