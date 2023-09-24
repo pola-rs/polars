@@ -161,6 +161,7 @@ rust:
   group_by: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/frame/struct.LazyFrame.html#method.group_by
   join: https://pola-rs.github.io/polars/docs/rust/dev/polars_core/frame/hash_join/index.html
   hstack: https://pola-rs.github.io/polars/docs/rust/dev/polars_core/frame/struct.DataFrame.html#method.hstack
+  concat: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/functions/fn.concat.html
   SQLContext: https://pola-rs.github.io/polars/py-polars/html/reference/sql.html
   read_csv:
     name: CsvReader
