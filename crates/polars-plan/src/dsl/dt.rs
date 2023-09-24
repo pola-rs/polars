@@ -259,6 +259,7 @@ impl DateLikeNameSpace {
             FunctionExpr::TemporalExpr(TemporalFunction::Round(every, offset)),
             &[ambiguous],
             false,
+            false,
         )
     }
 
