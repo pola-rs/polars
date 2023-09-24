@@ -5561,14 +5561,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         row_count_used = False
-        if on is None and left_on is None and right_on is None:
-            row_count_used = True
-            row_count_name = "__POLARS_ROW_COUNT"
-            self = self.with_row_count(row_count_name)
-            other = other.with_row_count(row_count_name)
-            on = row_count_name
 
-        if on is not None:
+        if on is None:
+            if left_on is None and right_on is None:
+                # no keys provided--use row count
+                row_count_used = True
+                row_count_name = "__POLARS_ROW_COUNT"
+                self = self.with_row_count(row_count_name)
+                other = other.with_row_count(row_count_name)
+                left_on = right_on = [row_count_name]
+            else:
+                # one of left or right is missing, raise error
+                if left_on is None:
+                    raise ValueError("missing join columns for left frame")
+                if right_on is None:
+                    raise ValueError("missing join columns for right frame")
+
+        else:
+            # move on into left/right_on to simplify logic
             left_on = right_on = on
 
         if isinstance(left_on, str):
@@ -5586,11 +5596,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 raise ValueError(f"right join column {name!r} not found")
 
         # no need to join if only join columns are in other
-        if len(right_on) == len(other.columns):
+        if len(other.columns) == len(right_on):
             if row_count_used:
                 return self.drop(row_count_name)
             return self
 
+        # only use non-idx right columns present in left frame
         right_other = set(other.columns).intersection(self.columns) - set(right_on)
 
         tmp_name = "__POLARS_RIGHT"
