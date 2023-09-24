@@ -51,7 +51,7 @@ To extract all occurrences of a pattern within a string, we can use the `extract
 
 We have discussed two methods for pattern matching and extraction thus far, and now we will explore how to replace a pattern within a string. Similar to `extract` and `extract_all`, Polars provides the `replace` and `replace_all` methods for this purpose. In the example below we replace one match of `abc` at the end of a word (`\b`) by `ABC` and we replace all occurrence of `a` with `-`.
 
-{{code_block('user-guide/expressions/strings','replace',['replace','replace_all'])}}
+{{code_block('user-guide/expressions/strings','replace',['str.replace','str.replace_all'])}}
 
 ```python exec="on" result="text" session="user-guide/strings"
 --8<-- "python/user-guide/expressions/strings.py:replace"

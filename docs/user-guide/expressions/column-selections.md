@@ -37,7 +37,7 @@ Often, we don't just want to include all columns, but include all _while_ exclud
 
 Specifying multiple strings allows expressions to _expand_ to all matching columns:
 
-{{code_block('user-guide/expressions/column-selections','expansion_by_names',['dt_to_string'])}}
+{{code_block('user-guide/expressions/column-selections','expansion_by_names',['dt.to_string'])}}
 
 ```python exec="on" result="text" session="user-guide/column-selections"
 --8<-- "python/user-guide/expressions/column-selections.py:expansion_by_names"

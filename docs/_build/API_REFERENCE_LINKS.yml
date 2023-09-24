@@ -22,7 +22,6 @@ python:
   struct: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.struct.html
   rename_fields: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.struct.rename_fields.html
   is_duplicated: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.is_duplicated.html
-  replace: https://pola-rs.github.io/polars/py-polars/html/reference/series/api/polars.Series.str.replace.html
   sample: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.sample.html
   day: https://pola-rs.github.io/polars/py-polars/html/reference/series/api/polars.Series.dt.day.html
   head: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.head.html
@@ -58,9 +57,6 @@ python:
   apply: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.apply.html
   over: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.over.html
   implode: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.implode.html
-  dt_to_string:
-    link: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.dt.to_string.html
-    name: dt.to_string
   selectors: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html
   cs_numeric:
     link: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.numeric
@@ -131,17 +127,16 @@ python:
   pivot: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.pivot.html
   melt: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.melt.html
   is_between: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.is_between.html
-  strftime: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.dt.strftime.html
-  strptime: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.strptime.html
   year: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.dt.year.html
-  convert_time_zone:
-    name: convert_time_zone
+  dt.convert_time_zone:
+    name: dt.convert_time_zone
     link: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.dt.convert_time_zone.html
     feature_flags: ['timezone']
-  replace_time_zone:
-    name: replace_time_zone
+  dt.replace_time_zone:
+    name: dt.replace_time_zone
     link: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.dt.replace_time_zone.html
     feature_flags: ['timezone']
+  dt.to_string: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.dt.to_string.html
   date_range: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.date_range.html
   upsample: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.upsample.html
   group_by_dynamic: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.group_by_dynamic.html
@@ -160,8 +155,10 @@ python:
   ends_with: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.ends_with.html
   extract: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.extract.html
   extract_all: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.extract_all.html
-  replace: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.replace.html
-  replace_all: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.replace_all.html
+  str.replace: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.replace.html
+  str.replace_all: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.replace_all.html
+  str.to_datetime: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.to_datetime.html
+  str.to_date: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.to_date.html
   Array: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.Array.html
   arr: https://pola-rs.github.io/polars/py-polars/html/reference/series/array.html
 
@@ -262,3 +259,34 @@ rust:
   map: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.map
   apply: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.apply
   over: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.over
+  cast: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/enum.Expr.html#method.cast
+
+  str.replace:
+    name: str.replace
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.replace
+    feature_flags: [regex]
+  str.replace_all:
+    name: str.replace_all
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.replace_all
+    feature_flags: [regex]
+  str.to_date:
+    name: str.replace_all
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.to_date
+    feature_flags: [dtype-date]
+  str.to_datetime:
+    name: str.replace_all
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.to_datetime
+    feature_flags: [dtype-datetime]
+
+  dt.convert_time_zone:
+    name: dt.convert_time_zone
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html#method.convert_time_zone
+    feature_flags: [timezones]
+  dt.replace_time_zone:
+    name: dt.replace_time_zone
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html#method.replace_time_zone
+    feature_flags: [timezones]
+  dt.to_string:
+    name: dt.to_string
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html#method.to_string
+    feature_flags: [temporal]
