@@ -23,17 +23,15 @@ build: .venv  ## Compile and install Polars for development
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop
 
 .PHONY: build-debug-opt
-build-debug-opt: .venv  ## Compile and install Polars for development, with minimal optimizations turned on
+build-debug-opt: .venv  ## Compile and install Polars with minimal optimizations turned on
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --profile opt-dev
 
 .PHONY: build-debug-opt-subset
-build-debug-opt: .venv  ## Compile and install Polars for development, with minimal optimizations turned on \
-                           and no default features.
+build-debug-opt-subset: .venv  ## Compile and install Polars with minimal optimizations turned on and no default features
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --no-default-features --profile opt-dev
 
 .PHONY: build-opt
-build-opt: .venv  ## Compile and install Polars for performance-sensitive development, with nearly \
-	                 full optimization on and debug assertions turned off, but with debug symbols on
+build-opt: .venv  ## Compile and install Polars with nearly full optimization on and debug assertions turned off, but with debug symbols on
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --profile debug-release
 
 .PHONY: build-release
