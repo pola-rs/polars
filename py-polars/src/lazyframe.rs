@@ -11,10 +11,10 @@ use polars::lazy::frame::LazyCsvReader;
 use polars::lazy::frame::LazyJsonLineReader;
 use polars::lazy::frame::{AllowedOptimizations, LazyFrame};
 use polars::lazy::prelude::col;
-#[cfg(feature = "csv")]
-use polars::prelude::{cloud, ClosedWindow, CsvEncoding, Field, JoinType, Schema};
 #[cfg(feature = "json")]
 use polars::prelude::JsonFormat;
+#[cfg(feature = "csv")]
+use polars::prelude::{ClosedWindow, CsvEncoding, Field, JoinType, Schema};
 use polars::time::*;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::UniqueKeepStrategy;

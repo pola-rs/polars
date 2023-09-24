@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Mutex, RwLock};
 
-use bitflags::{bitflags, Flags};
+use bitflags::bitflags;
 use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
 use polars_core::frame::group_by::GroupsProxy;
