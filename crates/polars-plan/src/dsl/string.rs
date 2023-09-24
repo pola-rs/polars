@@ -123,7 +123,7 @@ impl StringNameSpace {
     /// Extract each successive non-overlapping match in an individual string as an array
     pub fn extract_all(self, pat: Expr) -> Expr {
         self.0
-            .map_many_private(StringFunction::ExtractAll.into(), &[pat], true, false)
+            .map_many_private(StringFunction::ExtractAll.into(), &[pat], false, false)
     }
 
     /// Count all successive non-overlapping regex matches.
@@ -214,13 +214,13 @@ impl StringNameSpace {
     /// Split the string by a substring. The resulting dtype is `List<Utf8>`.
     pub fn split(self, by: Expr) -> Expr {
         self.0
-            .map_many_private(StringFunction::Split(false).into(), &[by], true, false)
+            .map_many_private(StringFunction::Split(false).into(), &[by], false, false)
     }
 
     /// Split the string by a substring and keep the substring. The resulting dtype is `List<Utf8>`.
     pub fn split_inclusive(self, by: Expr) -> Expr {
         self.0
-            .map_many_private(StringFunction::Split(true).into(), &[by], true, false)
+            .map_many_private(StringFunction::Split(true).into(), &[by], false, false)
     }
 
     #[cfg(feature = "dtype-struct")]
@@ -262,7 +262,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::Replace { n: 1, literal }),
             &[pat, value],
-            true,
+            false,
             true,
         )
     }
@@ -273,7 +273,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::Replace { n, literal }),
             &[pat, value],
-            true,
+            false,
             true,
         )
     }
@@ -284,7 +284,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::Replace { n: -1, literal }),
             &[pat, value],
-            true,
+            false,
             true,
         )
     }
@@ -318,7 +318,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::StripPrefix),
             &[prefix],
-            true,
+            false,
             false,
         )
     }
@@ -328,7 +328,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::StripSuffix),
             &[suffix],
-            true,
+            false,
             false,
         )
     }

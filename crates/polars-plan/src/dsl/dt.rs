@@ -267,7 +267,7 @@ impl DateLikeNameSpace {
     #[cfg(feature = "date_offset")]
     pub fn offset_by(self, by: Expr) -> Expr {
         self.0
-            .map_many_private(FunctionExpr::DateOffset, &[by], true, false)
+            .map_many_private(FunctionExpr::DateOffset, &[by], false, false)
     }
 
     #[cfg(feature = "timezones")]
@@ -275,7 +275,7 @@ impl DateLikeNameSpace {
         self.0.map_many_private(
             FunctionExpr::TemporalExpr(TemporalFunction::ReplaceTimeZone(time_zone)),
             &[ambiguous],
-            true,
+            false,
             false,
         )
     }
@@ -284,7 +284,7 @@ impl DateLikeNameSpace {
         self.0.map_many_private(
             FunctionExpr::TemporalExpr(TemporalFunction::Combine(tu)),
             &[time],
-            true,
+            false,
             false,
         )
     }
