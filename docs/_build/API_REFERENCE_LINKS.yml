@@ -23,7 +23,6 @@ python:
   rename_fields: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.struct.rename_fields.html
   is_duplicated: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.is_duplicated.html
   sample: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.sample.html
-  day: https://pola-rs.github.io/polars/py-polars/html/reference/series/api/polars.Series.dt.day.html
   head: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.head.html
   tail: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.tail.html
   describe: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.describe.html
@@ -136,6 +135,7 @@ python:
     name: dt.replace_time_zone
     link: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.dt.replace_time_zone.html
     feature_flags: ['timezone']
+  Series.dt.day: https://pola-rs.github.io/polars/py-polars/html/reference/series/api/polars.Series.dt.day.html
   dt.to_string: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.dt.to_string.html
   date_range: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.date_range.html
   upsample: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.upsample.html
@@ -289,4 +289,8 @@ rust:
   dt.to_string:
     name: dt.to_string
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html#method.to_string
+    feature_flags: [temporal]
+  Series.dt.day:
+    name: dt.day
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/dt/struct.DateLikeNameSpace.html#method.day
     feature_flags: [temporal]
