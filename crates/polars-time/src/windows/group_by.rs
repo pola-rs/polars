@@ -371,6 +371,24 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
     })
 }
 
+// A helper that use the previous partition as an educated guess of the first pivot
+// in binary search. We start looking at 2 * previous_pivot.
+// Assuming that previous partition is much smaller than `len(slice)` If what we search for
+// is to the left of the array, we have cut off the largest chunk of the array.
+fn slice_partition<P, T>(slice: &[T], previous_partition: usize, mut pred: P) -> usize
+where
+    P: FnMut(&T) -> bool,
+{
+    let new_partition = previous_partition * 2;
+    // Left hand side predicates are true, so if we find false, we know we must go left.
+    if let Some(false) = slice.get(new_partition).map(&mut pred) {
+        let slice = unsafe { slice.get_unchecked_release(..new_partition) };
+        slice.partition_point(pred)
+    } else {
+        slice.partition_point(pred)
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn group_by_values_iter_partial_lookahead(
     period: Duration,
@@ -391,6 +409,7 @@ pub(crate) fn group_by_values_iter_partial_lookahead(
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 
+    let mut len = 0;
     time[start_offset..upper_bound]
         .iter()
         .enumerate()
@@ -403,8 +422,7 @@ pub(crate) fn group_by_values_iter_partial_lookahead(
 
             debug_assert!(i < time.len());
             let slice = unsafe { time.get_unchecked(i..) };
-            let len = slice.partition_point(|v| b.is_member(*v, closed_window));
-
+            len = slice_partition(slice, len, |v| b.is_member(*v, closed_window));
             Ok((i as IdxSize, len as IdxSize))
         })
 }
