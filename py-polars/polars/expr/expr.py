@@ -8053,7 +8053,7 @@ class Expr:
 
     def sample(
         self,
-        n: IntoExpr = None,
+        n: int | Expr | None = None,
         *,
         fraction: float | None = None,
         with_replacement: bool = False,

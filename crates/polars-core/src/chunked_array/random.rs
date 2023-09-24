@@ -174,13 +174,13 @@ impl DataFrame {
         shuffle: bool,
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
-        let n = n.cast(&IDX_DTYPE)?;
-        let n = n.idx()?;
-
         polars_ensure!(
         n.len() == 1,
         ComputeError: "Sample size must be a single value."
         );
+
+        let n = n.cast(&IDX_DTYPE)?;
+        let n = n.idx()?;
 
         match n.get(0) {
             Some(n) => self.sample_n_literal(n as usize, with_replacement, shuffle, seed),

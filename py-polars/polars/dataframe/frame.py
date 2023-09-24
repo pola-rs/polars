@@ -8739,7 +8739,9 @@ class DataFrame:
 
         if n is None:
             n = 1
-        n = _prepare_other_arg(n, 1)
+
+        if not isinstance(n, pl.Series):
+            n = pl.Series("", [n])
 
         return self._from_pydf(self._df.sample_n(n._s, with_replacement, shuffle, seed))
 
