@@ -108,7 +108,7 @@ impl ListNameSpace {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Take(null_on_oob)),
             &[index],
-            false,
+            true,
             false,
         )
     }
@@ -181,7 +181,7 @@ impl ListNameSpace {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Slice),
             &[offset, length],
-            false,
+            true,
             false,
         )
     }
