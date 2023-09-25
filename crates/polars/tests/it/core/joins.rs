@@ -257,7 +257,7 @@ fn test_join_multiple_columns() {
 #[cfg(feature = "dtype-categorical")]
 fn test_join_categorical() {
     let _lock = StringCacheHolder::hold();
-    let _lock = polars_core::SINGLE_LOCK.lock();
+    let _lock = SINGLE_LOCK.lock();
 
     let (mut df_a, mut df_b) = get_dfs();
 
