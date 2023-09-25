@@ -921,6 +921,39 @@ def test_split_exact() -> None:
     assert df["x"].str.split_exact("_", 1, inclusive=False).dtype == pl.Struct
 
 
+def test_split_exact_expr() -> None:
+    df = pl.DataFrame(
+        {"x": ["a_a", None, "b", "c^c^c", "d#d"], "by": ["_", "&", "$", "^", None]}
+    )
+
+    out = df.select(
+        pl.col("x").str.split_exact(pl.col("by"), 2, inclusive=False)
+    ).unnest("x")
+
+    expected = pl.DataFrame(
+        {
+            "field_0": ["a", None, "b", "c", None],
+            "field_1": ["a", None, None, "c", None],
+            "field_2": pl.Series([None, None, None, "c", None], dtype=pl.Utf8),
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+    out2 = df.select(
+        pl.col("x").str.split_exact(pl.col("by"), 2, inclusive=True)
+    ).unnest("x")
+
+    expected2 = pl.DataFrame(
+        {
+            "field_0": ["a_", None, "b", "c^", None],
+            "field_1": ["a", None, None, "c^", None],
+            "field_2": pl.Series([None, None, None, "c", None], dtype=pl.Utf8),
+        }
+    )
+    assert_frame_equal(out2, expected2)
+
+
 def test_splitn() -> None:
     df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
     out = df.select([pl.col("x").str.splitn("_", 2)]).unnest("x")
@@ -931,6 +964,23 @@ def test_splitn() -> None:
 
     assert_frame_equal(out, expected)
     assert_frame_equal(df["x"].str.splitn("_", 2).to_frame().unnest("x"), expected)
+
+
+def test_splitn_expr() -> None:
+    df = pl.DataFrame(
+        {"x": ["a_a", None, "b", "c^c^c", "d#d"], "by": ["_", "&", "$", "^", None]}
+    )
+
+    out = df.select(pl.col("x").str.splitn(pl.col("by"), 2)).unnest("x")
+
+    expected = pl.DataFrame(
+        {
+            "field_0": ["a", None, "b", "c", None],
+            "field_1": ["a", None, None, "c^c", None],
+        }
+    )
+
+    assert_frame_equal(out, expected)
 
 
 def test_titlecase() -> None:

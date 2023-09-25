@@ -113,11 +113,11 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 if s_self.bit_repr_is_large() {
                     let lhs = s_self.bit_repr_large();
                     let rhs = other.bit_repr_large();
-                    group_join_inner(&lhs, &rhs, validate)
+                    group_join_inner::<UInt64Type>(&lhs, &rhs, validate)
                 } else {
                     let lhs = s_self.bit_repr_small();
                     let rhs = other.bit_repr_small();
-                    group_join_inner(&lhs, &rhs, validate)
+                    group_join_inner::<UInt32Type>(&lhs, &rhs, validate)
                 }
             },
         }
@@ -178,15 +178,15 @@ fn get_arrays<T: PolarsDataType>(cas: &[ChunkedArray<T>]) -> Vec<&T::Array> {
     cas.iter().flat_map(|arr| arr.downcast_iter()).collect()
 }
 
-fn group_join_inner<'b, T>(
-    left: &'b ChunkedArray<T>,
-    right: &'b ChunkedArray<T>,
+fn group_join_inner<T>(
+    left: &ChunkedArray<T>,
+    right: &ChunkedArray<T>,
     validate: JoinValidation,
 ) -> PolarsResult<(InnerJoinIds, bool)>
 where
     T: PolarsDataType,
-    &'b T::Array: IntoIterator<Item = Option<&'b T::Physical<'b>>>,
-    T::Physical<'b>: Hash + Eq + Send + AsU64 + Copy + Send + Sync,
+    for<'a> &'a T::Array: IntoIterator<Item = Option<&'a T::Physical<'a>>>,
+    for<'a> T::Physical<'a>: Hash + Eq + Send + AsU64 + Copy + Send + Sync,
 {
     let n_threads = POOL.current_num_threads();
     let (a, b, swapped) = det_hash_prone_order!(left, right);
@@ -194,10 +194,6 @@ where
     let splitted_b = split_ca(b, n_threads).unwrap();
     let splitted_a = get_arrays(&splitted_a);
     let splitted_b = get_arrays(&splitted_b);
-    // SAFETY: extend lifetime. The call to the function's below is sound as the borrow
-    // will never leave the scope of this function.
-    let splitted_a = unsafe { std::mem::transmute::<_, Vec<&'b T::Array>>(splitted_a) };
-    let splitted_b = unsafe { std::mem::transmute::<_, Vec<&'b T::Array>>(splitted_b) };
 
     match (left.null_count(), right.null_count()) {
         (0, 0) => {

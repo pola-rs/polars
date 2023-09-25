@@ -75,8 +75,12 @@ impl PyExpr {
         self.inner.clone().dt().dst_offset().into()
     }
 
-    fn dt_round(&self, every: &str, offset: &str) -> Self {
-        self.inner.clone().dt().round(every, offset).into()
+    fn dt_round(&self, every: &str, offset: &str, ambiguous: Self) -> Self {
+        self.inner
+            .clone()
+            .dt()
+            .round(every, offset, ambiguous.inner)
+            .into()
     }
 
     fn dt_combine(&self, time: Self, time_unit: Wrap<TimeUnit>) -> Self {

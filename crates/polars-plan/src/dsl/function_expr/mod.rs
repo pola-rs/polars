@@ -135,8 +135,8 @@ pub enum FunctionExpr {
     DropNans,
     #[cfg(feature = "round_series")]
     Clip {
-        min: Option<AnyValue<'static>>,
-        max: Option<AnyValue<'static>>,
+        has_min: bool,
+        has_max: bool,
     },
     ListExpr(ListFunction),
     #[cfg(feature = "dtype-array")]
@@ -321,10 +321,10 @@ impl Display for FunctionExpr {
             ShiftAndFill { .. } => "shift_and_fill",
             DropNans => "drop_nans",
             #[cfg(feature = "round_series")]
-            Clip { min, max } => match (min, max) {
-                (Some(_), Some(_)) => "clip",
-                (None, Some(_)) => "clip_max",
-                (Some(_), None) => "clip_min",
+            Clip { has_min, has_max } => match (has_min, has_max) {
+                (true, true) => "clip",
+                (false, true) => "clip_max",
+                (true, false) => "clip_min",
                 _ => unreachable!(),
             },
             ListExpr(func) => return write!(f, "{func}"),
@@ -543,8 +543,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             DropNans => map_owned!(nan::drop_nans),
             #[cfg(feature = "round_series")]
-            Clip { min, max } => {
-                map_owned!(clip::clip, min.clone(), max.clone())
+            Clip { has_min, has_max } => {
+                map_as_slice!(clip::clip, has_min, has_max)
             },
             ListExpr(lf) => {
                 use ListFunction::*;
@@ -552,6 +552,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Concat => wrap!(list::concat),
                     #[cfg(feature = "is_in")]
                     Contains => wrap!(list::contains),
+                    #[cfg(feature = "list_drop_nulls")]
+                    DropNulls => map!(list::drop_nulls),
                     Slice => wrap!(list::slice),
                     Get => wrap!(list::get),
                     #[cfg(feature = "list_take")]
@@ -559,6 +561,13 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     #[cfg(feature = "list_count")]
                     CountMatches => map_as_slice!(list::count_matches),
                     Sum => map!(list::sum),
+                    Length => map!(list::length),
+                    Max => map!(list::max),
+                    Min => map!(list::min),
+                    Mean => map!(list::mean),
+                    Sort(options) => map!(list::sort, options),
+                    Reverse => map!(list::reverse),
+                    Unique(is_stable) => map!(list::unique, is_stable),
                     #[cfg(feature = "list_sets")]
                     SetOperation(s) => map_as_slice!(list::set_operation, s),
                     #[cfg(feature = "list_any_all")]
@@ -720,12 +729,13 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Strptime(dtype, options) => {
                 map_as_slice!(strings::strptime, dtype.clone(), &options)
             },
-            Split => {
-                map_as_slice!(strings::split)
+            Split(inclusive) => {
+                map_as_slice!(strings::split, inclusive)
             },
-            SplitInclusive => {
-                map_as_slice!(strings::split_inclusive)
-            },
+            #[cfg(feature = "dtype-struct")]
+            SplitExact { n, inclusive } => map_as_slice!(strings::split_exact, n, inclusive),
+            #[cfg(feature = "dtype-struct")]
+            SplitN(n) => map_as_slice!(strings::splitn, n),
             #[cfg(feature = "concat_str")]
             ConcatVertical(delimiter) => map!(strings::concat, &delimiter),
             #[cfg(feature = "concat_str")]
@@ -808,7 +818,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             BaseUtcOffset => map!(datetime::base_utc_offset),
             #[cfg(feature = "timezones")]
             DSTOffset => map!(datetime::dst_offset),
-            Round(every, offset) => map!(datetime::round, &every, &offset),
+            Round(every, offset) => map_as_slice!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(tz) => {
                 map_as_slice!(dispatch::replace_time_zone, tz.as_deref())

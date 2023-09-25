@@ -241,6 +241,8 @@ class ExprDateTimeNameSpace:
         self,
         every: str | timedelta,
         offset: str | timedelta | None = None,
+        *,
+        ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
         Divide the date/datetime range into buckets.
@@ -256,6 +258,12 @@ class ExprDateTimeNameSpace:
             Every interval start and period length
         offset
             Offset the window
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Notes
         -----
@@ -342,10 +350,14 @@ class ExprDateTimeNameSpace:
         if offset is None:
             offset = "0ns"
 
+        if not isinstance(ambiguous, pl.Expr):
+            ambiguous = F.lit(ambiguous)
+
         return wrap_expr(
             self._pyexpr.dt_round(
                 _timedelta_to_pl_duration(every),
                 _timedelta_to_pl_duration(offset),
+                ambiguous._pyexpr,
             )
         )
 

@@ -145,7 +145,6 @@ io_parquet_sample_test = ["io_parquet"]
 io_parquet_zstd = ["parquet2/zstd"]
 io_parquet_snappy = ["parquet2/snappy"]
 io_parquet_gzip = ["parquet2/gzip"]
-io_parquet_lz4_flex = ["parquet2/lz4_flex"]
 io_parquet_lz4 = ["parquet2/lz4"]
 io_parquet_brotli = ["parquet2/brotli"]
 

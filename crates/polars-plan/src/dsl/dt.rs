@@ -251,13 +251,14 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::DSTOffset))
     }
 
-    pub fn round<S: AsRef<str>>(self, every: S, offset: S) -> Expr {
+    pub fn round<S: AsRef<str>>(self, every: S, offset: S, ambiguous: Expr) -> Expr {
         let every = every.as_ref().into();
         let offset = offset.as_ref().into();
-        self.0
-            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Round(
-                every, offset,
-            )))
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::Round(every, offset)),
+            &[ambiguous],
+            false,
+        )
     }
 
     /// Offset this `Date/Datetime` by a given offset [`Duration`].

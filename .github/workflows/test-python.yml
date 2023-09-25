@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - py-polars/**
+      - docs/src/python/**
       - crates/**
       - .github/workflows/test-python.yml
   push:
@@ -11,6 +12,7 @@ on:
       - main
     paths:
       - crates/**
+      - docs/src/python/**
       - py-polars/**
       - .github/workflows/test-python.yml
 

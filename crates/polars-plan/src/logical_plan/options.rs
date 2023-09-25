@@ -147,7 +147,7 @@ pub struct DistinctOptions {
 pub enum ApplyOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
-    // e.g. [g1, g1, g2] -> [[g1, g2], g2]
+    // e.g. [g1, g1, g2] -> [[g1, g1], g2]
     ApplyGroups,
     // collect groups to a list and then apply
     // e.g. [g1, g1, g2] -> list([g1, g1, g2])

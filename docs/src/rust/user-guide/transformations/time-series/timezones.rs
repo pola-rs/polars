@@ -8,8 +8,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tz_naive = Series::new("tz_naive", &ts);
     let time_zones_df = DataFrame::new(vec![tz_naive])?
         .lazy()
-        .select([col("tz_naive").str().strptime(
-            DataType::Datetime(TimeUnit::Milliseconds, None),
+        .select([col("tz_naive").str().to_datetime(
+            TimeUnit::Milliseconds,
+            None,
             StrptimeOptions::default(),
             lit("raise"),
         )])
