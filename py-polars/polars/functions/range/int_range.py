@@ -15,13 +15,13 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import IntoExpr, PolarsIntegerType
+    from polars.type_aliases import IntoExprColumn, PolarsIntegerType
 
 
 @overload
 def arange(
-    start: int | Expr | Series,
-    end: int | Expr | Series,
+    start: int | IntoExprColumn,
+    end: int | IntoExprColumn,
     step: int = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -32,8 +32,8 @@ def arange(
 
 @overload
 def arange(
-    start: int | IntoExpr,
-    end: int | IntoExpr,
+    start: int | IntoExprColumn,
+    end: int | IntoExprColumn,
     step: int = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -44,8 +44,8 @@ def arange(
 
 @overload
 def arange(
-    start: int | IntoExpr,
-    end: int | IntoExpr,
+    start: int | IntoExprColumn,
+    end: int | IntoExprColumn,
     step: int = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -55,8 +55,8 @@ def arange(
 
 
 def arange(
-    start: int | IntoExpr,
-    end: int | IntoExpr,
+    start: int | IntoExprColumn,
+    end: int | IntoExprColumn,
     step: int = 1,
     *,
     dtype: PolarsIntegerType = Int64,
@@ -107,8 +107,8 @@ def arange(
 
 @overload
 def int_range(
-    start: int | IntoExpr,
-    end: int | IntoExpr,
+    start: int | IntoExprColumn,
+    end: int | IntoExprColumn,
     step: int = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -119,8 +119,8 @@ def int_range(
 
 @overload
 def int_range(
-    start: int | IntoExpr,
-    end: int | IntoExpr,
+    start: int | IntoExprColumn,
+    end: int | IntoExprColumn,
     step: int = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -131,8 +131,8 @@ def int_range(
 
 @overload
 def int_range(
-    start: int | IntoExpr,
-    end: int | IntoExpr,
+    start: int | IntoExprColumn,
+    end: int | IntoExprColumn,
     step: int = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -142,8 +142,8 @@ def int_range(
 
 
 def int_range(
-    start: int | IntoExpr,
-    end: int | IntoExpr,
+    start: int | IntoExprColumn,
+    end: int | IntoExprColumn,
     step: int = 1,
     *,
     dtype: PolarsIntegerType = Int64,
@@ -199,8 +199,8 @@ def int_range(
 
 @overload
 def int_ranges(
-    start: IntoExpr,
-    end: IntoExpr,
+    start: int | IntoExprColumn,
+    end: int | IntoExprColumn,
     step: int = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -211,8 +211,8 @@ def int_ranges(
 
 @overload
 def int_ranges(
-    start: IntoExpr,
-    end: IntoExpr,
+    start: int | IntoExprColumn,
+    end: int | IntoExprColumn,
     step: int = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -223,8 +223,8 @@ def int_ranges(
 
 @overload
 def int_ranges(
-    start: IntoExpr,
-    end: IntoExpr,
+    start: int | IntoExprColumn,
+    end: int | IntoExprColumn,
     step: int = ...,
     *,
     dtype: PolarsIntegerType = ...,
@@ -234,8 +234,8 @@ def int_ranges(
 
 
 def int_ranges(
-    start: IntoExpr,
-    end: IntoExpr,
+    start: int | IntoExprColumn,
+    end: int | IntoExprColumn,
     step: int = 1,
     *,
     dtype: PolarsIntegerType = Int64,
