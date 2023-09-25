@@ -29,11 +29,9 @@ pub fn infer_scale(bytes: &[u8]) -> Option<u8> {
 /// The decimal precision and scale are not checked.
 #[inline]
 pub(super) fn deserialize_decimal(mut bytes: &[u8], precision: Option<u8>, scale: u8) -> Option<i128> {
-    let sign = if bytes.starts_with(b"-") {
+    let negative = bytes.get(0) == Some(&b'-');
+    if negative {
         bytes = &bytes[1..];
-        -1
-    } else {
-        1
     };
     let (lhs, rhs) = split_decimal_bytes(bytes);
     let precision = precision.unwrap_or(u8::MAX);
@@ -95,7 +93,11 @@ pub(super) fn deserialize_decimal(mut bytes: &[u8], precision: Option<u8>, scale
             },
         }
     });
-    Some(abs? * sign)
+    if negative {
+        Some(-abs?)
+    } else {
+        abs
+    }
 }
 
 #[cfg(test)]
