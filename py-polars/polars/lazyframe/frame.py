@@ -2480,7 +2480,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def clone(self) -> Self:
         """
-        Very cheap deepcopy/clone.
+        Create a copy of a LazyFrame. This is a cheap operation that does not copy data.
 
         See Also
         --------

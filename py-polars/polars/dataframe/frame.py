@@ -6532,7 +6532,7 @@ class DataFrame:
 
     def clone(self) -> Self:
         """
-        Cheap deepcopy/clone.
+        Create a copy of a DataFrame. This is a cheap operation that does not copy data.
 
         See Also
         --------
