@@ -28,7 +28,11 @@ pub fn infer_scale(bytes: &[u8]) -> Option<u8> {
 /// Deserializes bytes to a single i128 representing a decimal
 /// The decimal precision and scale are not checked.
 #[inline]
-pub(super) fn deserialize_decimal(mut bytes: &[u8], precision: Option<u8>, scale: u8) -> Option<i128> {
+pub(super) fn deserialize_decimal(
+    mut bytes: &[u8],
+    precision: Option<u8>,
+    scale: u8,
+) -> Option<i128> {
     let negative = bytes.get(0) == Some(&b'-');
     if negative {
         bytes = &bytes[1..];
@@ -81,9 +85,7 @@ pub(super) fn deserialize_decimal(mut bytes: &[u8], precision: Option<u8>, scale
                             Some((lhs, rhs))
                         }
                     })
-                    .map(|(lhs, rhs)| {
-                        lhs * 10i128.pow(scale as u32) + rhs
-                    })
+                    .map(|(lhs, rhs)| lhs * 10i128.pow(scale as u32) + rhs)
             },
             None => {
                 if lhs_b.len() > precision as usize || scale != 0 {
@@ -125,7 +127,7 @@ mod test {
             deserialize_decimal(val.as_bytes(), precision, scale),
             Some(14390)
         );
-        
+
         let val = "-0.5";
         assert_eq!(
             deserialize_decimal(val.as_bytes(), precision, scale),
