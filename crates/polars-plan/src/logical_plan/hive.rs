@@ -1,7 +1,13 @@
+use std::path::Path;
+
 use polars_core::prelude::*;
 use polars_io::utils::{BOOLEAN_RE, FLOAT_RE, INTEGER_RE};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
-struct HivePartitions {
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
+pub struct HivePartitions {
     /// Single value Series that can be used to run the predicate against.
     /// They are to be broadcasted if the predicates don't filter them out.
     partitions: Vec<Series>,
@@ -9,8 +15,10 @@ struct HivePartitions {
 
 impl HivePartitions {
     /// Parse a url and optionally return HivePartitions
-    fn parse_url(url: &str) -> Option<Self> {
+    pub(crate) fn parse_url(url: &Path) -> Option<Self> {
         let partitions = url
+            .as_os_str()
+            .to_str()?
             .split('/')
             .filter_map(|part| {
                 let mut it = part.split('=');
@@ -33,7 +41,7 @@ impl HivePartitions {
                     let value = value.parse::<f64>().ok()?;
                     Series::new(name, &[value])
                 } else {
-                    return None;
+                    Series::new(name, &[value])
                 };
                 Some(s)
             })
