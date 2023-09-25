@@ -359,7 +359,7 @@ impl Debug for Series {
                 "Series"
             ),
             DataType::Null => {
-                format_nullarray!(f, self.len(), "nullarray", "null", "Series")
+                format_nullarray!(f, self.len(), "nullarray", self.name(), "Series")
             },
             DataType::Binary => {
                 format_array!(f, self.binary().unwrap(), "binary", self.name(), "Series")
