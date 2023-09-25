@@ -49,32 +49,20 @@ pub struct FileInfo {
     // - known size
     // - estimated size
     pub row_estimation: (Option<usize>, usize),
-    #[cfg(feature = "hive_partitions")]
     pub hive_parts: Option<hive::HivePartitions>,
 }
 
 impl FileInfo {
     pub fn new(schema: SchemaRef, row_estimation: (Option<usize>, usize)) -> Self {
-        #[cfg(feature = "hive_partitions")]
-        {
-            return Self {
-                schema,
-                row_estimation,
-                hive_parts: None,
-            };
-        }
-        #[cfg(not(feature = "hive_partitions"))]
         Self {
             schema,
             row_estimation,
+            hive_parts: None,
         }
     }
 
-    pub fn set_hive_partitions(&mut self, _url: &Path) {
-        #[cfg(feature = "hive_partitions")]
-        {
-            self.hive_parts = hive::HivePartitions::parse_url(_url);
-        }
+    pub fn set_hive_partitions(&mut self, url: &Path) {
+        self.hive_parts = hive::HivePartitions::parse_url(url);
     }
 }
 

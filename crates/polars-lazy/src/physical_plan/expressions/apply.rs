@@ -5,9 +5,7 @@ use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 #[cfg(feature = "parquet")]
-use polars_io::parquet::predicates::BatchStats;
-#[cfg(feature = "parquet")]
-use polars_io::predicates::StatsEvaluator;
+use polars_io::predicates::{BatchStats, StatsEvaluator};
 #[cfg(feature = "parquet")]
 use polars_plan::dsl::FunctionExpr;
 use rayon::prelude::*;

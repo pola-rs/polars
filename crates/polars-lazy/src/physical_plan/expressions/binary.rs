@@ -247,8 +247,7 @@ impl PhysicalExpr for BinaryExpr {
 
 #[cfg(feature = "parquet")]
 mod stats {
-    use polars_io::parquet::predicates::BatchStats;
-    use polars_io::predicates::StatsEvaluator;
+    use polars_io::predicates::{BatchStats, StatsEvaluator};
 
     use super::*;
 
