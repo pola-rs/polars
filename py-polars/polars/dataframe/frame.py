@@ -3434,30 +3434,57 @@ class DataFrame:
         Parameters
         ----------
         table_name
-            Name of the table to create or append to in the target SQL database.
-            If your table name contains special characters, it should be quoted.
+            Schema-qualified name of the table to create or append to in the target
+            SQL database. If your table name contains special characters, it should
+            be quoted.
         connection
             Connection URI string, for example:
 
             * "postgresql://user:pass@server:port/database"
             * "sqlite:////path/to/database.db"
         if_exists : {'append', 'replace', 'fail'}
-            The insert mode.
-            'replace' will create a new database table, overwriting an existing one.
-            'append' will append to an existing table.
-            'fail' will fail if table already exists.
+            The insert mode:
+
+            * 'replace' will create a new database table, overwriting an existing one.
+            * 'append' will append to an existing table.
+            * 'fail' will fail if table already exists.
         engine : {'sqlalchemy', 'adbc'}
             Select the engine used for writing the data.
         """
         from polars.io.database import _open_adbc_connection
 
+        def unpack_table_name(name: str) -> tuple[str | None, str]:
+            """Unpack optionally qualified table name into schema/table pair."""
+            from csv import reader as delimited_read
+
+            table_ident = next(delimited_read([name], delimiter="."))
+            if len(table_ident) > 2:
+                raise ValueError(f"`table_name` appears to be invalid: {name!r}")
+            elif len(table_ident) > 1:
+                schema = table_ident[0]
+                tbl = table_ident[1]
+            else:
+                schema = None
+                tbl = table_ident[0]
+            return schema, tbl
+
         if engine == "adbc":
+            import adbc_driver_manager
+
+            adbc_version = parse_version(
+                getattr(adbc_driver_manager, "__version__", "0.0")
+            )
             if if_exists == "fail":
-                raise NotImplementedError(
-                    "`if_exists = 'fail'` not supported for ADBC engine"
-                )
-            elif if_exists == "replace":
+                # if the table exists, 'create' will raise an error,
+                # resulting in behaviour equivalent to 'fail'
                 mode = "create"
+            elif if_exists == "replace":
+                if adbc_version < (0, 7):
+                    adbc_str_version = ".".join(str(v) for v in adbc_version)
+                    raise ModuleNotFoundError(
+                        f"`if_exists = 'replace'` requires ADBC version >= 0.7, found {adbc_str_version}"
+                    )
+                mode = "replace"
             elif if_exists == "append":
                 mode = "append"
             else:
@@ -3465,16 +3492,35 @@ class DataFrame:
                     f"unexpected value for `if_exists`: {if_exists!r}"
                     f"\n\nChoose one of {{'fail', 'replace', 'append'}}"
                 )
+
             with _open_adbc_connection(connection) as conn, conn.cursor() as cursor:
-                cursor.adbc_ingest(table_name, self.to_arrow(), mode)
+                if adbc_version >= (0, 7):
+                    db_schema, unpacked_table_name = unpack_table_name(table_name)
+                    if "sqlite" in conn.adbc_get_info()["driver_name"].lower():
+                        if if_exists == "replace":
+                            # note: adbc doesn't (yet) support 'replace' for sqlite
+                            cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+                            mode = "create"
+                        catalog, db_schema = db_schema, None
+                    else:
+                        catalog = None
+
+                    cursor.adbc_ingest(
+                        unpacked_table_name,
+                        data=self.to_arrow(),
+                        mode=mode,
+                        catalog_name=catalog,
+                        db_schema_name=db_schema,
+                    )
+                else:
+                    cursor.adbc_ingest(table_name, self.to_arrow(), mode)
                 conn.commit()
 
         elif engine == "sqlalchemy":
             if parse_version(pd.__version__) < parse_version("1.5"):
                 raise ModuleNotFoundError(
-                    f"writing with engine 'sqlalchemy' requires pandas 1.5.x or higher, found pandas {pd.__version__!r}"
+                    f"writing with engine 'sqlalchemy' requires pandas 1.5.x or higher, found {pd.__version__!r}"
                 )
-
             try:
                 from sqlalchemy import create_engine
             except ModuleNotFoundError as exc:
@@ -3482,23 +3528,12 @@ class DataFrame:
                     "sqlalchemy not found"
                     "\n\nInstall Polars with: pip install polars[sqlalchemy]"
                 ) from exc
-            from csv import reader as delimited_read
-
-            # the table name may also include the db schema; ensure that we identify
-            # both components and pass them through unquoted (sqlalachemy will quote)
-            table_ident = next(delimited_read([table_name], delimiter="."))
-            if len(table_ident) > 2:
-                raise ValueError(f"`table_name` appears to be invalid: {table_name!r}")
-            elif len(table_ident) > 1:
-                db_schema = table_ident[0]
-                table_name = table_ident[1]
-            else:
-                table_name = table_ident[0]
-                db_schema = None
 
             # ensure conversion to pandas uses the pyarrow extension array option
             # so that we can make use of the sql/db export without copying data
             engine_sa = create_engine(connection)
+            db_schema, table_name = unpack_table_name(table_name)
+
             self.to_pandas(use_pyarrow_extension_array=True).to_sql(
                 name=table_name,
                 schema=db_schema,
