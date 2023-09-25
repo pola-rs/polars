@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use percent_encoding::percent_decode_str;
 use polars_core::prelude::*;
 use polars_io::predicates::{BatchStats, ColumnStats};
 use polars_io::utils::{BOOLEAN_RE, FLOAT_RE, INTEGER_RE};
@@ -48,7 +49,7 @@ impl HivePartitions {
                 } else if value == "__HIVE_DEFAULT_PARTITION__" {
                     Series::full_null(name, 1, &DataType::Null)
                 } else {
-                    Series::new(name, &[value])
+                    Series::new(name, &[percent_decode_str(value).decode_utf8().ok()?])
                 };
                 Some(s)
             })

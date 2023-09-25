@@ -28,6 +28,7 @@ chrono-tz = { workspace = true, optional = true }
 ciborium = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 once_cell = { workspace = true }
+percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true, optional = true }
