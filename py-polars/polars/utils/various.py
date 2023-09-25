@@ -370,7 +370,10 @@ def find_stacklevel() -> int:
     try:
         while frame:
             fname = inspect.getfile(frame)
-            if fname.startswith(str(pkg_dir)):
+            if fname.startswith(str(pkg_dir)) or (
+                fname.endswith("functools.py")
+                and str(frame.f_code).startswith("<code object wrapper")
+            ):
                 frame = frame.f_back
                 n += 1
             else:
