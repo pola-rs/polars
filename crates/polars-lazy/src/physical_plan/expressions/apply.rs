@@ -467,8 +467,8 @@ impl ApplyExpr {
                     let min = st.to_min()?;
                     let max = st.to_max()?;
 
-                    let all_smaller = || Some(ChunkCompare::lt(input, &min).ok()?.all());
-                    let all_bigger = || Some(ChunkCompare::gt(input, &max).ok()?.all());
+                    let all_smaller = || Some(ChunkCompare::lt(input, min).ok()?.all());
+                    let all_bigger = || Some(ChunkCompare::gt(input, max).ok()?.all());
                     Some(!all_smaller()? && !all_bigger()?)
                 };
 
