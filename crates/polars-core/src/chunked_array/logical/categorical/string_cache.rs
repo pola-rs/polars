@@ -1,6 +1,6 @@
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use ahash::RandomState;
 use hashbrown::hash_map::RawEntryMut;
@@ -13,7 +13,7 @@ use crate::prelude::InitHashMaps;
 
 /// We use atomic reference counting to determine how many threads use the
 /// string cache. If the refcount is zero, we may clear the string cache.
-static STRING_CACHE_REFCOUNT: AtomicU32 = AtomicU32::new(0);
+static STRING_CACHE_REFCOUNT: Mutex<u32> = Mutex::new(0);
 static STRING_CACHE_ENABLED_GLOBALLY: AtomicBool = AtomicBool::new(false);
 static STRING_CACHE_UUID_CTR: AtomicU32 = AtomicU32::new(0);
 
@@ -64,12 +64,13 @@ impl Drop for StringCacheHolder {
 }
 
 fn increment_string_cache_refcount() {
-    STRING_CACHE_REFCOUNT.fetch_add(1, Ordering::Release);
+    let mut refcount = STRING_CACHE_REFCOUNT.lock().unwrap();
+    *refcount += 1;
 }
 fn decrement_string_cache_refcount() {
-    let previous = STRING_CACHE_REFCOUNT.fetch_sub(1, Ordering::Release);
-    if previous == 0 || previous == 1 {
-        STRING_CACHE_REFCOUNT.store(0, Ordering::Release);
+    let mut refcount = STRING_CACHE_REFCOUNT.lock().unwrap();
+    *refcount -= 1;
+    if *refcount == 0 {
         STRING_CACHE.clear()
     }
 }
@@ -105,7 +106,8 @@ pub fn disable_string_cache() {
 
 /// Check whether the global string cache is enabled.
 pub fn using_string_cache() -> bool {
-    STRING_CACHE_REFCOUNT.load(Ordering::Acquire) > 0
+    let refcount = STRING_CACHE_REFCOUNT.lock().unwrap();
+    *refcount > 0
 }
 
 // This is the hash and the Index offset in the linear buffer
