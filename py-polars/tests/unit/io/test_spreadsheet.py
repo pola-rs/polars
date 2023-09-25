@@ -244,20 +244,25 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
     }
 
     for workbook_path in (path_xlsx, path_xlsb, path_ods):
-        print(workbook_path)
         df4 = pl.read_excel(
             workbook_path,
             sheet_name="test5",
             schema_overrides={"dtm": pl.Datetime("ns"), "dt": pl.Date},
         )
-        assert df4.to_dict(False) == {
-            "dtm": [
-                datetime(1999, 12, 31, 10, 30, 45),
-                datetime(2010, 10, 11, 12, 13, 14),
-            ],
-            "dt": [date(2024, 1, 1), date(2018, 8, 7)],
-            "val": [1.5, -0.5],
-        }
+        assert_frame_equal(
+            df4,
+            pl.DataFrame(
+                {
+                    "dtm": [
+                        datetime(1999, 12, 31, 10, 30, 45),
+                        datetime(2010, 10, 11, 12, 13, 14),
+                    ],
+                    "dt": [date(2024, 1, 1), date(2018, 8, 7)],
+                    "val": [1.5, -0.5],
+                },
+                schema={"dtm": pl.Datetime("ns"), "dt": pl.Date, "val": pl.Float64},
+            ),
+        )
 
     with pytest.raises(ParameterCollisionError):
         # cannot specify 'cardinality' in both schema_overrides and read_csv_options
