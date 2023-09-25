@@ -164,6 +164,9 @@ def disable_string_cache() -> bool:
     Consider using the :class:`StringCache` context manager for a more reliable way of
     enabling and disabling the string cache.
 
+    When used in conjunction with the :class:`StringCache` context manager, the string
+    cache will not be disabled until the context manager exits.
+
     Examples
     --------
     Construct two Series using the same global string cache.
