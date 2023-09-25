@@ -31,6 +31,7 @@ impl std::convert::From<PyPolarsErr> for PyErr {
         use PyPolarsErr::*;
         match &err {
             Polars(err) => match err {
+                PolarsError::NotSupported(err) => NotSupported::new_err(err.to_string()),
                 PolarsError::ArrowError(err) => ArrowErrorException::new_err(format!("{err:?}")),
                 PolarsError::ColumnNotFound(name) => ColumnNotFoundError::new_err(name.to_string()),
                 PolarsError::ComputeError(err) => ComputeError::new_err(err.to_string()),
@@ -82,6 +83,7 @@ create_exception!(exceptions, SchemaFieldNotFoundError, PyException);
 create_exception!(exceptions, ShapeError, PyException);
 create_exception!(exceptions, StringCacheMismatchError, PyException);
 create_exception!(exceptions, StructFieldNotFoundError, PyException);
+create_exception!(exceptions, NotSupported, PyException);
 
 #[macro_export]
 macro_rules! raise_err(

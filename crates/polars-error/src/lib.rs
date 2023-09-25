@@ -67,6 +67,8 @@ pub enum PolarsError {
     StringCacheMismatch(ErrString),
     #[error("field not found: {0}")]
     StructFieldNotFound(ErrString),
+    #[error("not implemented: {0}")]
+    NotSupported(ErrString),
 }
 
 impl From<ArrowError> for PolarsError {
@@ -100,6 +102,7 @@ impl PolarsError {
     pub fn wrap_msg(&self, func: &dyn Fn(&str) -> String) -> Self {
         use PolarsError::*;
         match self {
+            NotSupported(msg) => NotSupported(func(msg).into()),
             ArrowError(err) => ComputeError(func(&format!("ArrowError: {err}")).into()),
             ColumnNotFound(msg) => ColumnNotFound(func(msg).into()),
             ComputeError(msg) => ComputeError(func(msg).into()),
