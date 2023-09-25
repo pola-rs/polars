@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::path::Path;
 use std::thread::JoinHandle;
 
 use crossbeam_channel::{bounded, Receiver, Sender};

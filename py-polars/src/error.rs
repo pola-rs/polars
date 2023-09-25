@@ -31,6 +31,7 @@ impl std::convert::From<PyPolarsErr> for PyErr {
         use PyPolarsErr::*;
         match &err {
             Polars(err) => match err {
+                PolarsError::SendError(err) => SendError::new_err(err.to_string()),
                 PolarsError::ArrowError(err) => ArrowErrorException::new_err(format!("{err:?}")),
                 PolarsError::ColumnNotFound(name) => ColumnNotFoundError::new_err(name.to_string()),
                 PolarsError::ComputeError(err) => ComputeError::new_err(err.to_string()),
@@ -70,6 +71,7 @@ impl Debug for PyPolarsErr {
     }
 }
 
+create_exception!(exceptions, SendError, PyException);
 create_exception!(exceptions, ArrowErrorException, PyException);
 create_exception!(exceptions, ColumnNotFoundError, PyException);
 create_exception!(exceptions, ComputeError, PyException);
