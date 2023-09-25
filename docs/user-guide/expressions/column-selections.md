@@ -47,7 +47,7 @@ Specifying multiple strings allows expressions to _expand_ to all matching colum
 
 Multiple column selection is possible by regular expressions also, by making sure to wrap the regex by `^` and `$` to let `pl.col` know that a regex selection is expected:
 
-{{code_block('user-guide/expressions/column-selections','expansion_by_regex',[''])}}
+{{code_block('user-guide/expressions/column-selections','expansion_by_regex',[])}}
 
 ```python exec="on" result="text" session="user-guide/column-selections"
 --8<-- "python/user-guide/expressions/column-selections.py:expansion_by_regex"

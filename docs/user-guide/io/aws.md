@@ -17,4 +17,4 @@ located on an AWS bucket.
 
 Load a `.parquet` file using:
 
-{{code_block('user-guide/io/aws','bucket',['from_arrow'])}}
+{{code_block('user-guide/io/aws','bucket',[])}}

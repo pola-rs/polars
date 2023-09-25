@@ -40,7 +40,7 @@ You can also cast a column of datetimes encoded as strings to a datetime type. Y
 
 You can extract data features such as the year or day from a date column using the `.dt` namespace on a date column:
 
-{{code_block('user-guide/transformations/time-series/parsing','extract',['year'])}}
+{{code_block('user-guide/transformations/time-series/parsing','extract',['dt.year'])}}
 
 ```python exec="on" result="text" session="user-guide/transformations/ts/parsing"
 --8<-- "python/user-guide/transformations/time-series/parsing.py:extract"
