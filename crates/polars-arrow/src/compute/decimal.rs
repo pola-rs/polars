@@ -33,7 +33,7 @@ pub(super) fn deserialize_decimal(
     precision: Option<u8>,
     scale: u8,
 ) -> Option<i128> {
-    let negative = bytes.get(0) == Some(&b'-');
+    let negative = bytes.first() == Some(&b'-');
     if negative {
         bytes = &bytes[1..];
     };
