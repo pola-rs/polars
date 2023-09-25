@@ -388,7 +388,7 @@ def sequence_to_pyseries(
         if (
             dataclasses.is_dataclass(value)
             or is_pydantic_model(value)
-            or is_namedtuple(value.__class__, annotated=True)
+            or is_namedtuple(value.__class__)
         ):
             return pl.DataFrame(values).to_struct(name)._s
         elif isinstance(value, range):
@@ -1080,12 +1080,13 @@ def _sequence_of_tuple_to_pydf(
     if is_namedtuple(first_element.__class__):
         if schema is None:
             schema = first_element._fields  # type: ignore[attr-defined]
-            if len(first_element.__annotations__) == len(schema):
+            annotations = getattr(first_element, "__annotations__", None)
+            if annotations and len(annotations) == len(schema):
                 schema = [
                     (name, py_type_to_dtype(tp, raise_unmatched=False))
                     for name, tp in first_element.__annotations__.items()
                 ]
-        elif orient is None:
+        if orient is None:
             orient = "row"
 
     # ...then defer to generic sequence processing
