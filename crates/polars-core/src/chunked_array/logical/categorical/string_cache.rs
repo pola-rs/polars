@@ -14,7 +14,7 @@ use crate::prelude::InitHashMaps;
 /// We use atomic reference counting to determine how many threads use the
 /// string cache. If the refcount is zero, we may clear the string cache.
 static STRING_CACHE_REFCOUNT: AtomicU32 = AtomicU32::new(0);
-static STRING_CACHE_ENABLED: AtomicBool = AtomicBool::new(false);
+static STRING_CACHE_ENABLED_GLOBALLY: AtomicBool = AtomicBool::new(false);
 static STRING_CACHE_UUID_CTR: AtomicU32 = AtomicU32::new(0);
 
 /// Enable the global string cache as long as the object is alive ([RAII]).
@@ -86,7 +86,7 @@ fn decrement_string_cache_refcount() {
 ///
 /// [`Categorical`]: crate::datatypes::DataType::Categorical
 pub fn enable_string_cache() {
-    let was_enabled = STRING_CACHE_ENABLED.swap(true, Ordering::AcqRel);
+    let was_enabled = STRING_CACHE_ENABLED_GLOBALLY.swap(true, Ordering::AcqRel);
     if !was_enabled {
         increment_string_cache_refcount();
     }
@@ -97,7 +97,7 @@ pub fn enable_string_cache() {
 /// Note: Consider using [`StringCacheHolder`] for a more reliable way of
 /// enabling and disabling the string cache.
 pub fn disable_string_cache() {
-    let was_enabled = STRING_CACHE_ENABLED.swap(false, Ordering::AcqRel);
+    let was_enabled = STRING_CACHE_ENABLED_GLOBALLY.swap(false, Ordering::AcqRel);
     if was_enabled {
         decrement_string_cache_refcount();
     }
