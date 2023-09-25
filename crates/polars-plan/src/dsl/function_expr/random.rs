@@ -49,13 +49,13 @@ pub(super) fn sample_n(
     let src = &s[0];
     let n_s = &s[1];
 
-    let n_s = n_s.cast(&IDX_DTYPE)?;
-    let n = n_s.idx()?;
-
     polars_ensure!(
-        n.len() == 1,
+        n_s.len() == 1,
         ComputeError: "Sample size must be a single value."
     );
+
+    let n_s = n_s.cast(&IDX_DTYPE)?;
+    let n = n_s.idx()?;
 
     match n.get(0) {
         Some(n) => src.sample_n(n as usize, with_replacement, shuffle, seed),
