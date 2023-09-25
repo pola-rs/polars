@@ -13,8 +13,8 @@ use crate::prelude::InitHashMaps;
 
 /// We use atomic reference counting to determine how many threads use the
 /// string cache. If the refcount is zero, we may clear the string cache.
-pub(crate) static STRING_CACHE_ENABLED: AtomicBool = AtomicBool::new(false);
-pub(crate) static STRING_CACHE_REFCOUNT: AtomicU32 = AtomicU32::new(0);
+static STRING_CACHE_REFCOUNT: AtomicU32 = AtomicU32::new(0);
+static STRING_CACHE_ENABLED: AtomicBool = AtomicBool::new(false);
 static STRING_CACHE_UUID_CTR: AtomicU32 = AtomicU32::new(0);
 
 /// Enable the global string cache as long as the object is alive ([RAII]).
