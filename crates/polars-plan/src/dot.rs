@@ -400,6 +400,7 @@ impl LogicalPlan {
                         SinkType::File { .. } => "SINK (FILE)",
                         #[cfg(feature = "cloud")]
                         SinkType::Cloud { .. } => "SINK (CLOUD)",
+                        SinkType::Sender { .. } => "SINK (SENDER)",
                     },
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;

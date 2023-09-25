@@ -1,7 +1,8 @@
 pub(crate) use polars_ops::prelude::*;
 pub use polars_ops::prelude::{JoinArgs, JoinType, JoinValidation};
 pub use polars_plan::logical_plan::{
-    AnonymousScan, AnonymousScanOptions, FileType, Literal, LiteralValue, LogicalPlan, Null, NULL,
+    AnonymousScan, AnonymousScanOptions, FileType, Literal, LiteralValue, LogicalPlan, Null,
+    SinkSender, NULL,
 };
 #[cfg(feature = "csv")]
 pub use polars_plan::prelude::CsvWriterOptions;

@@ -166,6 +166,7 @@ impl ALogicalPlan {
                 SinkType::File { .. } => "sink (file)",
                 #[cfg(feature = "cloud")]
                 SinkType::Cloud { .. } => "sink (cloud)",
+                SinkType::Sender { .. } => "sink (sender)",
             },
         }
     }

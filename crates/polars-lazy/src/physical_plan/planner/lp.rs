@@ -156,8 +156,11 @@ pub fn create_physical_plan(
                 SinkType::File{file_type, ..} => panic!(
                     "sink_{file_type:?} not yet supported in standard engine. Use 'collect().write_parquet()'"
                 ),
+                SinkType::Sender { .. } => {
+                    panic!("Sender Sink not supported in standard engine.")
+                }
                 #[cfg(feature = "cloud")]
-                SinkType::Cloud{..} => panic!("Cloud Sink not supported in standard engine.")
+                SinkType::Cloud{..} => panic!("Cloud Sink not supported in standard engine."),
             }
         }
         Union { inputs, options } => {

@@ -47,7 +47,7 @@ impl<W: std::io::Write> SinkWriter for polars_io::ipc::BatchedWriter<W> {
 }
 
 #[cfg(feature = "csv")]
-impl SinkWriter for polars_io::csv::BatchedWriter<std::fs::File> {
+impl<W: std::io::Write> SinkWriter for polars_io::csv::BatchedWriter<W> {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         self.write_batch(df)
     }
@@ -63,12 +63,11 @@ pub struct ParquetSink {}
 impl ParquetSink {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(
-        path: &Path,
+        writer: impl std::io::Write + Send + Sync + 'static,
         options: ParquetWriteOptions,
         schema: &Schema,
     ) -> PolarsResult<FilesSink> {
-        let file = std::fs::File::create(path)?;
-        let writer = ParquetWriter::new(file)
+        let writer = ParquetWriter::new(writer)
             .with_compression(options.compression)
             .with_data_pagesize_limit(options.data_pagesize_limit)
             .with_statistics(options.statistics)
@@ -145,9 +144,12 @@ pub struct IpcSink {}
 #[cfg(feature = "ipc")]
 impl IpcSink {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(path: &Path, options: IpcWriterOptions, schema: &Schema) -> PolarsResult<FilesSink> {
-        let file = std::fs::File::create(path)?;
-        let writer = IpcWriter::new(file)
+    pub fn new(
+        writer: impl std::io::Write + Send + Sync + 'static,
+        options: IpcWriterOptions,
+        schema: &Schema,
+    ) -> PolarsResult<FilesSink> {
+        let writer = IpcWriter::new(writer)
             .with_compression(options.compression)
             .batched(schema)?;
 
@@ -176,9 +178,12 @@ pub struct CsvSink {}
 #[cfg(feature = "csv")]
 impl CsvSink {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(path: &Path, options: CsvWriterOptions, schema: &Schema) -> PolarsResult<FilesSink> {
-        let file = std::fs::File::create(path)?;
-        let writer = CsvWriter::new(file)
+    pub fn new(
+        writer: impl std::io::Write + Send + Sync + 'static,
+        options: CsvWriterOptions,
+        schema: &Schema,
+    ) -> PolarsResult<FilesSink> {
+        let writer = CsvWriter::new(writer)
             .has_header(options.has_header)
             .with_delimiter(options.serialize_options.delimiter)
             .with_line_terminator(options.serialize_options.line_terminator)
@@ -192,7 +197,7 @@ impl CsvSink {
             .with_quote_style(options.serialize_options.quote_style)
             .batched(schema)?;
 
-        let writer = Box::new(writer) as Box<dyn SinkWriter + Send + Sync>;
+        let writer = Box::new(writer) as Box<dyn SinkWriter + Send>;
 
         let morsels_per_sink = morsels_per_sink();
         let backpressure = morsels_per_sink * 2;

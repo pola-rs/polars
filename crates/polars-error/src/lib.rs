@@ -41,6 +41,8 @@ impl Display for ErrString {
 
 #[derive(Debug, thiserror::Error)]
 pub enum PolarsError {
+    #[error("error sending data: {0}")]
+    SendError(ErrString),
     #[error(transparent)]
     ArrowError(Box<ArrowError>),
     #[error("not found: {0}")]
@@ -113,6 +115,7 @@ impl PolarsError {
             ShapeMismatch(msg) => ShapeMismatch(func(msg).into()),
             StringCacheMismatch(msg) => StringCacheMismatch(func(msg).into()),
             StructFieldNotFound(msg) => StructFieldNotFound(func(msg).into()),
+            SendError(msg) => SendError(func(msg).into()),
         }
     }
 }

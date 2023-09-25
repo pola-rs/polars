@@ -647,6 +647,29 @@ impl LazyFrame {
         Ok((out, timer_df))
     }
 
+    /// Stream a query result into any sender that implements the `SinkSender` trait.
+    /// This is useful if the final result doesn't fit into memory. This
+    /// methods will return an error if the query cannot be completely done in a streaming
+    /// fashion.
+    pub fn sink_sender(mut self, tx: impl SinkSender, file_type: FileType) -> PolarsResult<()> {
+        self.opt_state.streaming = true;
+        self.logical_plan = LogicalPlan::Sink {
+            input: Box::new(self.logical_plan),
+            payload: SinkType::Sender {
+                tx: SinkSenderDyn::new(tx),
+                file_type,
+            },
+        };
+        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
+        polars_ensure!(
+            is_streaming,
+            ComputeError: "cannot run the whole query in a streaming order; \
+            use `collect().write_parquet()` instead"
+        );
+        let _ = physical_plan.execute(&mut state)?;
+        Ok(())
+    }
+
     /// Stream a query result into a parquet file. This is useful if the final result doesn't fit
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.

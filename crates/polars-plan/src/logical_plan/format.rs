@@ -230,6 +230,7 @@ impl LogicalPlan {
                     SinkType::File { .. } => "SINK (file)",
                     #[cfg(feature = "cloud")]
                     SinkType::Cloud { .. } => "SINK (cloud)",
+                    SinkType::Sender { .. } => "SINK (sender)",
                 };
                 write!(f, "{:indent$}{}", "", name)?;
                 input._format(f, sub_indent)

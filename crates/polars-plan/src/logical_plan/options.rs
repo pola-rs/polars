@@ -301,10 +301,70 @@ pub struct AnonymousScanOptions {
     pub fmt_str: &'static str,
 }
 
+/// Allows for custom sink implementations. This can be used
+/// to stream data to a remote location or to a different thread.
+pub trait SinkSender: 'static + std::fmt::Debug + Send + Sync {
+    /// Send a buffer of bytes to whatever data structure is used to write to.
+    /// This can be a file, a network connection or a channel.
+    fn sink_send(&self, buf: &[u8]) -> PolarsResult<usize>;
+    /// In cases where there's a buffer that needs to be flushed.
+    /// This is not always the case.
+    fn sink_flush(&self) -> PolarsResult<()>;
+}
+
+#[derive(Debug, Clone)]
+pub struct SinkSenderDyn(Arc<dyn SinkSender>);
+
+impl SinkSenderDyn {
+    pub fn new(tx: impl SinkSender + 'static) -> Self {
+        Self(Arc::from(tx))
+    }
+}
+
+impl std::ops::Deref for SinkSenderDyn {
+    type Target = dyn SinkSender;
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref()
+    }
+}
+
+impl std::io::Write for SinkSenderDyn {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.sink_send(buf).map_or_else(
+            |e| Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+            |_| Ok(buf.len()),
+        )
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.sink_flush().map_or_else(
+            |e| Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+            |_| Ok(()),
+        )
+    }
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for SinkSenderDyn {
+    fn serialize<S: serde::Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+        Err(serde::ser::Error::custom("cannot serialize SinkSenderDyn"))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for SinkSenderDyn {
+    fn deserialize<D: serde::Deserializer<'de>>(_deserializer: D) -> Result<Self, D::Error> {
+        Err(serde::de::Error::custom("cannot deserialize SinkSenderDyn"))
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub enum SinkType {
     Memory,
+    Sender {
+        tx: SinkSenderDyn,
+        file_type: FileType,
+    },
     File {
         path: Arc<PathBuf>,
         file_type: FileType,
