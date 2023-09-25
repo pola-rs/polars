@@ -14,28 +14,28 @@ unsafe fn gather_skip_null_idx_pairs_unchecked<'a, T: PolarsDataType>(
     len: usize,
 ) -> Vec<T::ZeroablePhysical<'a>> {
     if index_pairs.len() == 0 {
-        return Vec::new();
+        return zeroed_vec(len);
     }
 
     // We sort by gather index so we can do the null scan in one pass.
     index_pairs.sort_unstable_by_key(|t| t.1);
     let mut pair_iter = index_pairs.iter().copied();
-    let (mut out_idx, mut get_idx);
-    (out_idx, get_idx) = pair_iter.next().unwrap();
+    let (mut out_idx, mut nonnull_idx);
+    (out_idx, nonnull_idx) = pair_iter.next().unwrap();
 
     let mut out: Vec<T::ZeroablePhysical<'a>> = zeroed_vec(len);
-    let mut global_nonnull_scanned = 0;
+    let mut nonnull_prev_arrays = 0;
     'outer: for arr in ca.downcast_iter() {
         let arr_nonnull_len = arr.len() - arr.null_count();
         let mut arr_scan_offset = 0;
         let mut nonnull_before_offset = 0;
         let mask = arr.validity().map(BitMask::from_bitmap).unwrap_or_default();
 
-        // Is our next get_idx in this array?
-        while get_idx as usize - global_nonnull_scanned < arr_nonnull_len {
-            let nonnull_idx_in_arr = get_idx as usize - global_nonnull_scanned;
+        // Is our next nonnull_idx in this array?
+        while nonnull_idx as usize - nonnull_prev_arrays < arr_nonnull_len {
+            let nonnull_idx_in_arr = nonnull_idx as usize - nonnull_prev_arrays;
 
-            let get_idx_in_arr = if arr.null_count() == 0 {
+            let phys_idx_in_arr = if arr.null_count() == 0 {
                 // Happy fast path for full non-null array.
                 nonnull_idx_in_arr
             } else {
@@ -44,20 +44,20 @@ unsafe fn gather_skip_null_idx_pairs_unchecked<'a, T: PolarsDataType>(
             };
 
             unsafe {
-                let val = arr.value_unchecked(get_idx_in_arr);
+                let val = arr.value_unchecked(phys_idx_in_arr);
                 *out.get_unchecked_mut(out_idx as usize) = val.into();
             }
 
-            arr_scan_offset = get_idx_in_arr;
-            nonnull_before_offset = get_idx as usize;
+            arr_scan_offset = phys_idx_in_arr;
+            nonnull_before_offset = nonnull_idx_in_arr;
 
             let Some(next_pair) = pair_iter.next() else {
                 break 'outer;
             };
-            (out_idx, get_idx) = next_pair;
+            (out_idx, nonnull_idx) = next_pair;
         }
 
-        global_nonnull_scanned += arr_nonnull_len;
+        nonnull_prev_arrays += arr_nonnull_len;
     }
 
     out
@@ -79,7 +79,7 @@ impl<T: PolarsDataType> ChunkGatherSkipNulls<[IdxSize]> for ChunkedArray<T> {
         let index_pairs: Vec<_> = indices
             .iter()
             .enumerate()
-            .map(|(out_idx, get_idx)| (out_idx as IdxSize, *get_idx))
+            .map(|(out_idx, nonnull_idx)| (out_idx as IdxSize, *nonnull_idx))
             .collect();
         let gathered =
             unsafe { gather_skip_null_idx_pairs_unchecked(self, index_pairs, indices.len()) };
@@ -102,7 +102,7 @@ impl<T: PolarsDataType> ChunkGatherSkipNulls<IdxCa> for ChunkedArray<T> {
                 .downcast_iter()
                 .flat_map(|arr| arr.values_iter())
                 .enumerate()
-                .map(|(out_idx, get_idx)| (out_idx as IdxSize, *get_idx))
+                .map(|(out_idx, nonnull_idx)| (out_idx as IdxSize, *nonnull_idx))
                 .collect()
         } else {
             // Filter *after* the enumerate so we place the non-null gather
@@ -111,7 +111,7 @@ impl<T: PolarsDataType> ChunkGatherSkipNulls<IdxCa> for ChunkedArray<T> {
                 .downcast_iter()
                 .flat_map(|arr| arr.iter())
                 .enumerate()
-                .filter_map(|(out_idx, get_idx)| Some((out_idx as IdxSize, *get_idx?)))
+                .filter_map(|(out_idx, nonnull_idx)| Some((out_idx as IdxSize, *nonnull_idx?)))
                 .collect()
         };
         let gathered = unsafe {
@@ -154,10 +154,11 @@ mod test {
     }
 
     fn ref_gather_nulls(v: Vec<Option<u32>>, idx: Vec<Option<usize>>) -> Option<Vec<Option<u32>>> {
+        let v: Vec<u32> = v.into_iter().flatten().collect();
         if idx.iter().any(|oi| oi.map(|i| i >= v.len()) == Some(true)) {
             return None;
         }
-        Some(idx.into_iter().map(|i| v[i?]).collect())
+        Some(idx.into_iter().map(|i| Some(v[i?])).collect())
     }
 
     fn test_equal_ref(ca: &UInt32Chunked, idx_ca: &IdxCa) {
@@ -166,22 +167,29 @@ mod test {
             (&idx_ca).into_iter().map(|i| Some(i? as usize)).collect();
         let gather = ca.gather_skip_nulls(idx_ca).ok();
         let ref_gather = ref_gather_nulls(ref_ca, ref_idx_ca);
-        assert!(gather.map(|ca| ca.into_iter().collect()) == ref_gather);
+        assert_eq!(gather.map(|ca| ca.into_iter().collect()), ref_gather);
+    }
+    
+    fn gather_skip_nulls_check(ca: &UInt32Chunked, idx_ca: &IdxCa) {
+        test_equal_ref(ca, idx_ca);
+        test_equal_ref(&ca.rechunk(), idx_ca);
+        test_equal_ref(ca, &idx_ca.rechunk());
+        test_equal_ref(&ca.rechunk(), &idx_ca.rechunk());
     }
 
     #[rustfmt::skip]
     #[test]
-    fn gather_skip_nulls() {
+    fn test_gather_skip_nulls() {
         let mut rng = SmallRng::seed_from_u64(0xdeadbeef);
 
         for _test in 0..20 {
             let num_elem_chunks = rng.gen_range(1..10);
-            let elem_chunks: Vec<_> = (0..num_elem_chunks).map(|_| random_vec(&mut rng, 0..u32::MAX, 0..10)).collect();
+            let elem_chunks: Vec<_> = (0..num_elem_chunks).map(|_| random_vec(&mut rng, 0..u32::MAX, 0..100)).collect();
             let null_elem_chunks: Vec<_> = elem_chunks.iter().map(|c| random_filter(&mut rng, c, 0.7..1.0)).collect();
-            let num_elems: usize = elem_chunks.iter().map(|c| c.len()).sum();
+            let num_nonnull_elems: usize = null_elem_chunks.iter().map(|c| c.iter().filter(|x| x.is_some()).count()).sum();
 
             let num_idx_chunks = rng.gen_range(1..10);
-            let idx_chunks: Vec<_> = (0..num_idx_chunks).map(|_| random_vec(&mut rng, 0..num_elems as IdxSize, 0..10)).collect();
+            let idx_chunks: Vec<_> = (0..num_idx_chunks).map(|_| random_vec(&mut rng, 0..num_nonnull_elems as IdxSize, 0..200)).collect();
             let null_idx_chunks: Vec<_> = idx_chunks.iter().map(|c| random_filter(&mut rng, c, 0.7..1.0)).collect();
             
             let nonnull_ca = UInt32Chunked::from_chunk_iter("", elem_chunks.iter().cloned().map(|v| v.into_iter().collect_arr()));
@@ -189,10 +197,10 @@ mod test {
             let nonnull_idx_ca = IdxCa::from_chunk_iter("", idx_chunks.iter().cloned().map(|v| v.into_iter().collect_arr()));
             let idx_ca = IdxCa::from_chunk_iter("", null_idx_chunks.iter().cloned().map(|v| v.into_iter().collect_arr()));
             
-            test_equal_ref(&ca, &idx_ca);
-            test_equal_ref(&ca, &nonnull_idx_ca);
-            test_equal_ref(&nonnull_ca, &idx_ca);
-            test_equal_ref(&nonnull_ca, &nonnull_idx_ca);
+            gather_skip_nulls_check(&ca, &idx_ca);
+            gather_skip_nulls_check(&ca, &nonnull_idx_ca);
+            gather_skip_nulls_check(&nonnull_ca, &idx_ca);
+            gather_skip_nulls_check(&nonnull_ca, &nonnull_idx_ca);
         }
     }
 }

@@ -130,11 +130,11 @@ impl<'a> BitMask<'a> {
         let mut next_u32_mask = self.get_u32(start);
         while n >= next_u32_mask.count_ones() as usize {
             n -= next_u32_mask.count_ones() as usize;
-            next_u32_mask = self.get_u32(start);
             start += 32;
             if start >= self.len {
                 return None;
             }
+            next_u32_mask = self.get_u32(start);
         }
 
         // Happy fast path for dense non-null section.

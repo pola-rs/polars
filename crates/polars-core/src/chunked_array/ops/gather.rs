@@ -20,7 +20,7 @@ pub fn check_bounds_nulls(idx: &PrimitiveArray<IdxSize>, len: IdxSize) -> Polars
             in_bounds |= ((*x < len) as u32) << i;
         }
         let m = mask.get_u32(32 * block_idx);
-        polars_ensure!(m == m & in_bounds, ComputeError: "indices are out of bounds");
+        polars_ensure!(m == m & in_bounds, ComputeError: "take indices are out of bounds");
     }
     Ok(())
 }
