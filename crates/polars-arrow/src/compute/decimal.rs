@@ -82,7 +82,7 @@ pub(super) fn deserialize_decimal(mut bytes: &[u8], precision: Option<u8>, scale
                         }
                     })
                     .map(|(lhs, rhs)| {
-                        lhs * 10i128.pow(scale as u32) + (if lhs < 0 { -rhs } else { rhs })
+                        lhs * 10i128.pow(scale as u32) + rhs
                     })
             },
             None => {
