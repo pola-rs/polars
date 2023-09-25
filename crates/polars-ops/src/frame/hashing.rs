@@ -7,6 +7,7 @@ use polars_arrow::trusted_len::TrustedLen;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::hashing::partition::this_partition;
 use polars_core::prelude::*;
+use polars_core::utils::_set_partition_size;
 use polars_core::POOL;
 use rayon::prelude::*;
 
@@ -17,9 +18,7 @@ where
     I: Iterator<Item = T> + Send + TrustedLen,
     T: Send + Hash + Eq + Sync + Copy,
 {
-    let n_partitions = iters.len();
-    assert!(n_partitions.is_power_of_two());
-
+    let n_partitions = _set_partition_size();
     let (hashes_and_keys, build_hasher) = create_hash_and_keys_threaded_vectorized(iters, None);
 
     // We will create a hashtable in every thread.
