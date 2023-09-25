@@ -631,6 +631,20 @@ def test_empty_struct() -> None:
     assert df.to_dict(False) == {"a": [{"": None}]}
 
 
+def test_empty_series_nested_dtype() -> None:
+    # various flavours of empty nested dtype
+    for dtype in (
+        pl.List,
+        pl.List(pl.Null),
+        pl.Array(32),
+        pl.Struct,
+        pl.Struct([pl.Field("", pl.Null)]),
+    ):
+        s = pl.Series(values=[], dtype=dtype)  # type: ignore[arg-type]
+        assert s.dtype.base_type() == dtype.base_type()  # type: ignore[attr-defined]
+        assert s.to_list() == []
+
+
 def test_empty_with_schema_struct() -> None:
     # Empty structs, with schema
     struct_schema = {"a": pl.Date, "b": pl.Boolean, "c": pl.Float64}
