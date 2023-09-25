@@ -847,6 +847,7 @@ impl Expr {
             },
             &[min, max],
             false,
+            false,
         )
     }
 
@@ -860,6 +861,7 @@ impl Expr {
             },
             &[max],
             false,
+            false,
         )
     }
 
@@ -872,6 +874,7 @@ impl Expr {
                 has_max: false,
             },
             &[min],
+            false,
             false,
         )
     }
