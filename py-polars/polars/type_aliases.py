@@ -60,12 +60,15 @@ SchemaDefinition: TypeAlias = Union[
 ]
 SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
-# literal types that are allowed in expressions (auto-converted to pl.lit)
+# Python literal types (can convert into a `lit` expression)
 PythonLiteral: TypeAlias = Union[
     str, int, float, bool, date, time, datetime, timedelta, bytes, Decimal, List[Any]
 ]
+# Inputs that can convert into a `col` expression
+IntoExprColumn: TypeAlias = Union["Expr", "Series", str]
+# Inputs that can convert into an expression
+IntoExpr: TypeAlias = Union[PythonLiteral, IntoExprColumn, None]
 
-IntoExpr: TypeAlias = Union["Expr", PythonLiteral, "Series", None]
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
 
 # selector type, and related collection/sequence
