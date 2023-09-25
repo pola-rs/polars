@@ -52,27 +52,25 @@ impl Default for StringCacheHolder {
 impl StringCacheHolder {
     /// Hold the StringCache
     pub fn hold() -> StringCacheHolder {
-        set_string_cache(true);
+        increment_string_cache_refcount();
         StringCacheHolder { private_zst: () }
     }
 }
 
 impl Drop for StringCacheHolder {
     fn drop(&mut self) {
-        set_string_cache(false)
+        decrement_string_cache_refcount();
     }
 }
 
-/// Increment or decrement the number of string cache uses.
-fn set_string_cache(active: bool) {
-    if active {
-        STRING_CACHE_REFCOUNT.fetch_add(1, Ordering::Release);
-    } else {
-        let previous = STRING_CACHE_REFCOUNT.fetch_sub(1, Ordering::Release);
-        if previous == 0 || previous == 1 {
-            STRING_CACHE_REFCOUNT.store(0, Ordering::Release);
-            STRING_CACHE.clear()
-        }
+fn increment_string_cache_refcount() {
+    STRING_CACHE_REFCOUNT.fetch_add(1, Ordering::Release);
+}
+fn decrement_string_cache_refcount() {
+    let previous = STRING_CACHE_REFCOUNT.fetch_sub(1, Ordering::Release);
+    if previous == 0 || previous == 1 {
+        STRING_CACHE_REFCOUNT.store(0, Ordering::Release);
+        STRING_CACHE.clear()
     }
 }
 
@@ -90,7 +88,7 @@ fn set_string_cache(active: bool) {
 pub fn enable_string_cache() {
     let was_enabled = STRING_CACHE_ENABLED.swap(true, Ordering::AcqRel);
     if !was_enabled {
-        set_string_cache(true)
+        increment_string_cache_refcount();
     }
 }
 
@@ -101,7 +99,7 @@ pub fn enable_string_cache() {
 pub fn disable_string_cache() {
     let was_enabled = STRING_CACHE_ENABLED.swap(false, Ordering::AcqRel);
     if was_enabled {
-        set_string_cache(false)
+        decrement_string_cache_refcount();
     }
 }
 
