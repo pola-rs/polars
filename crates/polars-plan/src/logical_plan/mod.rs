@@ -49,6 +49,7 @@ pub use functions::*;
 pub use iterator::*;
 pub use lit::*;
 pub use optimizer::*;
+pub use options::FileType;
 pub use schema::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
