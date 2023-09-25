@@ -106,7 +106,7 @@ where
                         parquet_options,
                         cloud_options,
                         file_options,
-                        file_info.schema,
+                        file_info,
                         verbose,
                     )?;
                     Ok(Box::new(src) as Box<dyn Source>)

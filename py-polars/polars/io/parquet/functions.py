@@ -230,7 +230,7 @@ def scan_parquet(
         Use statistics in the parquet to determine if pages
         can be skipped from reading.
     hive_partitioning
-        Infer statistics and scheam from hive partitioned URL and use them
+        Infer statistics and schema from hive partitioned URL and use them
         to prune reads.
 
     Examples
