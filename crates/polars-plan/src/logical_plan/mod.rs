@@ -257,12 +257,6 @@ pub enum LogicalPlan {
     },
 }
 
-impl PartialEq for LogicalPlan {
-    fn eq(&self, _other: &LogicalPlan) -> bool {
-        false
-    }
-}
-
 impl Default for LogicalPlan {
     fn default() -> Self {
         let df = DataFrame::new::<Series>(vec![]).unwrap();
