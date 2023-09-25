@@ -14,7 +14,7 @@ use crate::prelude::InitHashMaps;
 /// We use atomic reference counting to determine how many threads use the
 /// string cache. If the refcount is zero, we may clear the string cache.
 pub(crate) static STRING_CACHE_ENABLED: AtomicBool = AtomicBool::new(false);
-pub(crate) static USE_STRING_CACHE: AtomicU32 = AtomicU32::new(0);
+pub(crate) static STRING_CACHE_REFCOUNT: AtomicU32 = AtomicU32::new(0);
 static STRING_CACHE_UUID_CTR: AtomicU32 = AtomicU32::new(0);
 
 /// Enable the global string cache as long as the object is alive ([RAII]).
@@ -66,11 +66,11 @@ impl Drop for StringCacheHolder {
 /// Increment or decrement the number of string cache uses.
 fn set_string_cache(active: bool) {
     if active {
-        USE_STRING_CACHE.fetch_add(1, Ordering::Release);
+        STRING_CACHE_REFCOUNT.fetch_add(1, Ordering::Release);
     } else {
-        let previous = USE_STRING_CACHE.fetch_sub(1, Ordering::Release);
+        let previous = STRING_CACHE_REFCOUNT.fetch_sub(1, Ordering::Release);
         if previous == 0 || previous == 1 {
-            USE_STRING_CACHE.store(0, Ordering::Release);
+            STRING_CACHE_REFCOUNT.store(0, Ordering::Release);
             STRING_CACHE.clear()
         }
     }
@@ -107,7 +107,7 @@ pub fn disable_string_cache() {
 
 /// Check whether the global string cache is enabled.
 pub fn using_string_cache() -> bool {
-    USE_STRING_CACHE.load(Ordering::Acquire) > 0
+    STRING_CACHE_REFCOUNT.load(Ordering::Acquire) > 0
 }
 
 // This is the hash and the Index offset in the linear buffer

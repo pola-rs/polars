@@ -1,6 +1,6 @@
 // used only if feature="is_in", feature="dtype-categorical"
 #[allow(unused_imports)]
-use polars_core::{StringCacheHolder, SINGLE_LOCK};
+use polars_core::{disable_string_cache, StringCacheHolder, SINGLE_LOCK};
 
 use super::*;
 
