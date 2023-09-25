@@ -266,10 +266,26 @@ mod stats {
         true
     }
 
+    fn apply_operator_stats_neq(min_max: &Series, literal: &Series) -> bool {
+        if min_max.len() < 2 {
+            return true;
+        }
+        use ChunkCompare as C;
+        if min_max.get(0).unwrap() == min_max.get(1).unwrap()
+            && C::not_equal(literal, min_max)
+                .map(|s| s.all())
+                .unwrap_or(false)
+        {
+            return false;
+        }
+        true
+    }
+
     fn apply_operator_stats_rhs_lit(min_max: &Series, literal: &Series, op: Operator) -> bool {
         use ChunkCompare as C;
         match op {
             Operator::Eq => apply_operator_stats_eq(min_max, literal),
+            Operator::NotEq => apply_operator_stats_neq(min_max, literal),
             // col > lit
             // e.g.
             // [min, max] > 0
