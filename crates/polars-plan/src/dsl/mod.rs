@@ -838,29 +838,41 @@ impl Expr {
 
     /// Clip underlying values to a set boundary.
     #[cfg(feature = "round_series")]
-    pub fn clip(self, min: AnyValue<'_>, max: AnyValue<'_>) -> Self {
-        self.map_private(FunctionExpr::Clip {
-            min: Some(min.into_static().unwrap()),
-            max: Some(max.into_static().unwrap()),
-        })
+    pub fn clip(self, min: Expr, max: Expr) -> Self {
+        self.map_many_private(
+            FunctionExpr::Clip {
+                has_min: true,
+                has_max: true,
+            },
+            &[min, max],
+            false,
+        )
     }
 
     /// Clip underlying values to a set boundary.
     #[cfg(feature = "round_series")]
-    pub fn clip_max(self, max: AnyValue<'_>) -> Self {
-        self.map_private(FunctionExpr::Clip {
-            min: None,
-            max: Some(max.into_static().unwrap()),
-        })
+    pub fn clip_max(self, max: Expr) -> Self {
+        self.map_many_private(
+            FunctionExpr::Clip {
+                has_min: false,
+                has_max: true,
+            },
+            &[max],
+            false,
+        )
     }
 
     /// Clip underlying values to a set boundary.
     #[cfg(feature = "round_series")]
-    pub fn clip_min(self, min: AnyValue<'_>) -> Self {
-        self.map_private(FunctionExpr::Clip {
-            min: Some(min.into_static().unwrap()),
-            max: None,
-        })
+    pub fn clip_min(self, min: Expr) -> Self {
+        self.map_many_private(
+            FunctionExpr::Clip {
+                has_min: true,
+                has_max: false,
+            },
+            &[min],
+            false,
+        )
     }
 
     /// Convert all values to their absolute/positive value.
