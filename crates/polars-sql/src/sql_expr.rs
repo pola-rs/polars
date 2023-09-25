@@ -3,6 +3,7 @@ use polars_core::prelude::*;
 use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::*;
 use polars_plan::prelude::LiteralValue::Null;
+use polars_plan::dsl::SubLogicalPlan;
 use polars_plan::prelude::{col, lit, when};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
@@ -161,7 +162,10 @@ impl SqlExprVisitor<'_> {
                 let new_name = String::from(old_name.as_str()) + rand_string.as_str();
                 lf = lf.rename([old_name.to_string()], [new_name.clone()]);
 
-                return Ok(Expr::SubPlan(Box::new(lf.logical_plan), vec![new_name]));
+                return Ok(Expr::SubPlan(
+                    Box::new(SubLogicalPlan(lf.logical_plan)),
+                    vec![new_name],
+                ));
             }
         };
 
