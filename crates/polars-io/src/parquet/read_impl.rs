@@ -251,10 +251,10 @@ pub fn read_parquet<R: MmapBytesReader>(
     // if there are multiple row groups and categorical data
     // we need a string cache
     // we keep it alive until the end of the function
-    let _string_cache = if n_row_groups > 1 {
+    let _sc = if n_row_groups > 1 {
         #[cfg(feature = "dtype-categorical")]
         {
-            Some(polars_core::IUseStringCache::hold())
+            Some(polars_core::StringCacheHolder::hold())
         }
         #[cfg(not(feature = "dtype-categorical"))]
         {

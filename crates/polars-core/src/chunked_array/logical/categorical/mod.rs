@@ -2,7 +2,7 @@ mod builder;
 mod from;
 mod merge;
 mod ops;
-pub mod stringcache;
+pub mod string_cache;
 
 use bitflags::bitflags;
 pub use builder::*;
@@ -265,12 +265,12 @@ mod test {
     use std::convert::TryFrom;
 
     use super::*;
-    use crate::{enable_string_cache, reset_string_cache, SINGLE_LOCK};
+    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 
     #[test]
     fn test_categorical_round_trip() -> PolarsResult<()> {
         let _lock = SINGLE_LOCK.lock();
-        reset_string_cache();
+        disable_string_cache();
         let slice = &[
             Some("foo"),
             None,
@@ -295,8 +295,8 @@ mod test {
     #[test]
     fn test_append_categorical() {
         let _lock = SINGLE_LOCK.lock();
-        reset_string_cache();
-        enable_string_cache(true);
+        disable_string_cache();
+        enable_string_cache();
 
         let mut s1 = Series::new("1", vec!["a", "b", "c"])
             .cast(&DataType::Categorical(None))
@@ -329,8 +329,7 @@ mod test {
     #[test]
     fn test_categorical_flow() -> PolarsResult<()> {
         let _lock = SINGLE_LOCK.lock();
-        reset_string_cache();
-        enable_string_cache(false);
+        disable_string_cache();
 
         // tests several things that may lose the dtype information
         let s = Series::new("a", vec!["a", "b", "c"]).cast(&DataType::Categorical(None))?;

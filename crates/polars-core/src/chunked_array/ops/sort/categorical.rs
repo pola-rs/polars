@@ -120,7 +120,7 @@ impl CategoricalChunked {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use crate::{enable_string_cache, reset_string_cache, SINGLE_LOCK};
+    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 
     fn assert_order(ca: &CategoricalChunked, cmp: &[&str]) {
         let s = ca.cast(&DataType::Utf8).unwrap();
@@ -133,9 +133,12 @@ mod test {
         let init = &["c", "b", "a", "d"];
 
         let _lock = SINGLE_LOCK.lock();
-        for toggle in [true, false] {
-            reset_string_cache();
-            enable_string_cache(toggle);
+        for use_string_cache in [true, false] {
+            disable_string_cache();
+            if use_string_cache {
+                enable_string_cache();
+            }
+
             let s = Series::new("", init).cast(&DataType::Categorical(None))?;
             let ca = s.categorical()?;
             let mut ca_lexical = ca.clone();
@@ -157,13 +160,16 @@ mod test {
     }
 
     #[test]
-
     fn test_cat_lexical_sort_multiple() -> PolarsResult<()> {
         let init = &["c", "b", "a", "a"];
 
         let _lock = SINGLE_LOCK.lock();
-        for enable in [true, false] {
-            enable_string_cache(enable);
+        for use_string_cache in [true, false] {
+            disable_string_cache();
+            if use_string_cache {
+                enable_string_cache();
+            }
+
             let s = Series::new("", init).cast(&DataType::Categorical(None))?;
             let ca = s.categorical()?;
             let mut ca_lexical: CategoricalChunked = ca.clone();
