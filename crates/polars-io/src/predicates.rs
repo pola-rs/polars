@@ -10,13 +10,11 @@ pub trait PhysicalIoExpr: Send + Sync {
     /// Can take &dyn Statistics and determine of a file should be
     /// read -> `true`
     /// or not -> `false`
-    #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
         None
     }
 }
 
-#[cfg(feature = "parquet")]
 pub trait StatsEvaluator {
     fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool>;
 }

@@ -126,6 +126,7 @@ impl LogicalPlanBuilder {
         low_memory: bool,
         cloud_options: Option<CloudOptions>,
         use_statistics: bool,
+        hive_partitioning: bool,
     ) -> PolarsResult<Self> {
         use polars_io::{is_cloud_url, SerReader as _};
 
@@ -162,6 +163,7 @@ impl LogicalPlanBuilder {
             rechunk,
             row_count,
             file_counter: Default::default(),
+            hive_partitioning,
         };
         Ok(LogicalPlan::Scan {
             path,
@@ -211,6 +213,8 @@ impl LogicalPlanBuilder {
             rechunk,
             row_count,
             file_counter: Default::default(),
+            // TODO! add
+            hive_partitioning: false,
         };
         Ok(LogicalPlan::Scan {
             path,
@@ -318,6 +322,8 @@ impl LogicalPlanBuilder {
             rechunk,
             row_count,
             file_counter: Default::default(),
+            // TODO! add
+            hive_partitioning: false,
         };
         Ok(LogicalPlan::Scan {
             path,

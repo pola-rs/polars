@@ -62,7 +62,12 @@ impl FileInfo {
     }
 
     pub fn set_hive_partitions(&mut self, url: &Path) {
-        self.hive_parts = hive::HivePartitions::parse_url(url).map(Arc::new);
+        self.hive_parts = hive::HivePartitions::parse_url(url).map(|hive_parts| {
+            let schema = Arc::make_mut(&mut self.schema);
+            schema.merge(hive_parts.get_statistics().schema().clone());
+
+            Arc::new(hive_parts)
+        });
     }
 }
 

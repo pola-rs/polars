@@ -15,6 +15,10 @@ pub struct HivePartitions {
 }
 
 impl HivePartitions {
+    pub fn get_statistics(&self) -> &BatchStats {
+        &self.stats
+    }
+
     /// Parse a url and optionally return HivePartitions
     pub(crate) fn parse_url(url: &Path) -> Option<Self> {
         let partitions = url
