@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from collections import namedtuple
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
@@ -460,6 +461,24 @@ def test_dataclasses_initvar_typing() -> None:
 
     # ...but should not load the initvar field into the DataFrame
     assert dataclasses.asdict(abc) == df.rows(named=True)[0]
+
+
+def test_collections_namedtuple() -> None:
+    TestData = namedtuple("TestData", ["id", "info"])
+    nt_data = [TestData(1, "a"), TestData(2, "b"), TestData(3, "c")]
+
+    df1 = pl.DataFrame(nt_data)
+    assert df1.to_dict(False) == {"id": [1, 2, 3], "info": ["a", "b", "c"]}
+
+    df2 = pl.DataFrame({"data": nt_data, "misc": ["x", "y", "z"]})
+    assert df2.to_dict(False) == {
+        "data": [
+            {"id": 1, "info": "a"},
+            {"id": 2, "info": "b"},
+            {"id": 3, "info": "c"},
+        ],
+        "misc": ["x", "y", "z"],
+    }
 
 
 def test_init_ndarray(monkeypatch: Any) -> None:
