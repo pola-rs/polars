@@ -361,6 +361,7 @@ mod stats {
             }) {
                 return Ok(true);
             }
+            dbg!(stats);
 
             let schema = stats.schema();
             let fld_l = self.left.to_field(schema)?;

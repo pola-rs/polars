@@ -44,7 +44,7 @@ impl ParquetExec {
             self.file_options.row_count.is_some(),
         );
 
-        let out = if let Some(file) = file {
+        if let Some(file) = file {
             ParquetReader::new(file)
                 .with_n_rows(n_rows)
                 .read_parallel(self.options.parallel)
@@ -52,6 +52,12 @@ impl ParquetExec {
                 .set_rechunk(self.file_options.rechunk)
                 .set_low_memory(self.options.low_memory)
                 .use_statistics(self.options.use_statistics)
+                .with_hive_partition_columns(
+                    self.file_info
+                        .hive_parts
+                        .as_ref()
+                        .map(|hive| hive.materialize_partition_columns()),
+                )
                 ._finish_with_scan_ops(predicate, projection.as_ref().map(|v| v.as_ref()))
         } else if is_cloud_url(self.path.as_path()) {
             #[cfg(feature = "cloud")]
@@ -62,7 +68,13 @@ impl ParquetExec {
                 )?
                 .with_n_rows(n_rows)
                 .with_row_count(mem::take(&mut self.file_options.row_count))
-                .use_statistics(self.options.use_statistics);
+                .use_statistics(self.options.use_statistics)
+                .with_hive_partition_columns(
+                    self.file_info
+                        .hive_parts
+                        .as_ref()
+                        .map(|hive| hive.materialize_partition_columns()),
+                );
 
                 reader.finish(predicate)
             }
@@ -72,14 +84,7 @@ impl ParquetExec {
             }
         } else {
             polars_bail!(ComputeError: "could not read {}", self.path.display())
-        };
-
-        let Some(hive_parts) = self.file_info.hive_parts.as_deref() else {
-            return out;
-        };
-        let mut out = out?;
-        hive_parts.materialize_partition_columns(&mut out)?;
-        Ok(out)
+        }
     }
 }
 

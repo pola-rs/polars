@@ -68,12 +68,11 @@ impl HivePartitions {
         }
     }
 
-    pub fn materialize_partition_columns(&self, df: &mut DataFrame) -> PolarsResult<()> {
-        let stats = self.get_statistics();
-        for cs in stats.column_stats() {
-            let s = cs.to_min().unwrap();
-            df.with_column(s.clone())?;
-        }
-        Ok(())
+    pub fn materialize_partition_columns(&self) -> Vec<Series> {
+        self.get_statistics()
+            .column_stats()
+            .iter()
+            .map(|cs| cs.to_min().unwrap().clone())
+            .collect()
     }
 }

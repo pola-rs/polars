@@ -66,6 +66,12 @@ impl ParquetSource {
                     .with_row_count(file_options.row_count)
                     .with_projection(projection)
                     .use_statistics(options.use_statistics)
+                    .with_hive_partition_columns(
+                        self.file_info
+                            .hive_parts
+                            .as_ref()
+                            .map(|hive| hive.materialize_partition_columns()),
+                    )
                     .batched(chunk_size)?
             }
         } else {
@@ -76,6 +82,12 @@ impl ParquetSource {
                 .with_row_count(file_options.row_count)
                 .with_projection(projection)
                 .use_statistics(options.use_statistics)
+                .with_hive_partition_columns(
+                    self.file_info
+                        .hive_parts
+                        .as_ref()
+                        .map(|hive| hive.materialize_partition_columns()),
+                )
                 .batched(chunk_size)?
         };
         self.batched_reader = Some(batched_reader);
@@ -122,17 +134,12 @@ impl Source for ParquetSource {
             Some(batches) => SourceResult::GotMoreData(
                 batches
                     .into_iter()
-                    .map(|mut data| {
+                    .map(|data| {
                         let chunk_index = self.chunk_index;
                         self.chunk_index += 1;
-
-                        if let Some(hive_partitions) = self.file_info.hive_parts.as_deref() {
-                            hive_partitions.materialize_partition_columns(&mut data)?
-                        }
-
-                        Ok(DataChunk { chunk_index, data })
+                        DataChunk { chunk_index, data }
                     })
-                    .collect::<PolarsResult<Vec<_>>>()?,
+                    .collect(),
             ),
         })
     }
