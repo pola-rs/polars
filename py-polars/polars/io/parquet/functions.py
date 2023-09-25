@@ -262,5 +262,5 @@ def scan_parquet(
         storage_options=storage_options,
         low_memory=low_memory,
         use_statistics=use_statistics,
-        hive_partitioning=hive_partitioning
+        hive_partitioning=hive_partitioning,
     )

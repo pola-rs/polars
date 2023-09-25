@@ -430,7 +430,7 @@ class LazyFrame:
             low_memory,
             cloud_options=storage_options,
             use_statistics=use_statistics,
-            hive_partitioning=hive_partitioning
+            hive_partitioning=hive_partitioning,
         )
         return self
 
