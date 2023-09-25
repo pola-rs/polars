@@ -121,7 +121,9 @@ if TYPE_CHECKING:
         FillNullStrategy,
         InterpolationMethod,
         IntoExpr,
+        IntoExprColumn,
         NullBehavior,
+        NumericLiteral,
         OneOrMoreDataTypes,
         PolarsDataType,
         PythonLiteral,
@@ -129,6 +131,7 @@ if TYPE_CHECKING:
         RollingInterpolationMethod,
         SearchSortedSide,
         SizeUnit,
+        TemporalLiteral,
     )
 
     if sys.version_info >= (3, 11):
@@ -6101,7 +6104,11 @@ class Series:
         """
         return self._s.kurtosis(fisher, bias)
 
-    def clip(self, lower_bound: IntoExpr, upper_bound: IntoExpr) -> Series:
+    def clip(
+        self,
+        lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn,
+        upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn,
+    ) -> Series:
         """
         Clip (limit) the values in an array to a `min` and `max` boundary.
 
@@ -6132,7 +6139,9 @@ class Series:
 
         """
 
-    def clip_min(self, lower_bound: IntoExpr) -> Series:
+    def clip_min(
+        self, lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Series:
         """
         Clip (limit) the values in an array to a `min` boundary.
 
@@ -6148,7 +6157,9 @@ class Series:
 
         """
 
-    def clip_max(self, upper_bound: IntoExpr) -> Series:
+    def clip_max(
+        self, upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Series:
         """
         Clip (limit) the values in an array to a `max` boundary.
 

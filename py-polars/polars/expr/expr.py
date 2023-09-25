@@ -75,13 +75,16 @@ if TYPE_CHECKING:
         FillNullStrategy,
         InterpolationMethod,
         IntoExpr,
+        IntoExprColumn,
         MapElementsStrategy,
         NullBehavior,
+        NumericLiteral,
         PolarsDataType,
         PythonLiteral,
         RankMethod,
         RollingInterpolationMethod,
         SearchSortedSide,
+        TemporalLiteral,
         WindowMappingStrategy,
     )
 
@@ -7424,7 +7427,11 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.kurtosis(fisher, bias))
 
-    def clip(self, lower_bound: IntoExpr, upper_bound: IntoExpr) -> Self:
+    def clip(
+        self,
+        lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn,
+        upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn,
+    ) -> Self:
         """
         Clip (limit) the values in an array to a `min` and `max` boundary.
 
@@ -7461,7 +7468,9 @@ class Expr:
         upper_bound = parse_as_expression(upper_bound, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.clip(lower_bound, upper_bound))
 
-    def clip_min(self, lower_bound: IntoExpr) -> Self:
+    def clip_min(
+        self, lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Self:
         """
         Clip (limit) the values in an array to a `min` boundary.
 
@@ -7495,7 +7504,9 @@ class Expr:
         lower_bound = parse_as_expression(lower_bound, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.clip_min(lower_bound))
 
-    def clip_max(self, upper_bound: IntoExpr) -> Self:
+    def clip_max(
+        self, upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Self:
         """
         Clip (limit) the values in an array to a `max` boundary.
 

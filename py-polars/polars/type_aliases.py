@@ -60,9 +60,11 @@ SchemaDefinition: TypeAlias = Union[
 ]
 SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
+NumericLiteral: TypeAlias = Union[int, float, Decimal]
+TemporalLiteral: TypeAlias = Union[date, time, datetime, timedelta]
 # Python literal types (can convert into a `lit` expression)
 PythonLiteral: TypeAlias = Union[
-    str, int, float, bool, date, time, datetime, timedelta, bytes, Decimal, List[Any]
+    NumericLiteral, TemporalLiteral, str, bool, bytes, List[Any]
 ]
 # Inputs that can convert into a `col` expression
 IntoExprColumn: TypeAlias = Union["Expr", "Series", str]
