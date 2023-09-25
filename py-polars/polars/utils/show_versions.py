@@ -19,7 +19,7 @@ def show_versions() -> None:
     Platform:             macOS-13.5.2-arm64-arm-64bit
     Python:               3.11.5 (main, Aug 24 2023, 15:09:45) [Clang 14.0.3 (clang-1403.0.22.14.1)]
     ----Optional dependencies----
-    adbc_driver_manager:  0.6.0
+    adbc_driver_sqlite:   0.6.0
     cloudpickle:          2.2.1
     connectorx:           0.3.2
     deltalake:            0.10.1
@@ -59,7 +59,7 @@ def show_versions() -> None:
 def _get_dependency_info() -> dict[str, str]:
     # see the list of dependencies in pyproject.toml
     opt_deps = [
-        "adbc_driver_manager",
+        "adbc_driver_sqlite",
         "cloudpickle",
         "connectorx",
         "deltalake",
