@@ -1,5 +1,5 @@
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use ahash::RandomState;
@@ -13,6 +13,7 @@ use crate::prelude::InitHashMaps;
 
 /// We use atomic reference counting to determine how many threads use the
 /// string cache. If the refcount is zero, we may clear the string cache.
+pub(crate) static STRING_CACHE_ENABLED: AtomicBool = AtomicBool::new(false);
 pub(crate) static USE_STRING_CACHE: AtomicU32 = AtomicU32::new(0);
 static STRING_CACHE_UUID_CTR: AtomicU32 = AtomicU32::new(0);
 
@@ -87,18 +88,21 @@ fn set_string_cache(active: bool) {
 ///
 /// [`Categorical`]: crate::datatypes::DataType::Categorical
 pub fn enable_string_cache() {
-    set_string_cache(true)
+    let was_enabled = STRING_CACHE_ENABLED.swap(true, Ordering::AcqRel);
+    if !was_enabled {
+        set_string_cache(true)
+    }
 }
 
 /// Disable and clear the global string cache.
 ///
-/// **Warning**: Disabling the string cache this way may cause errors if there
-/// are other threads that rely the global string cache being enabled.
-/// Consider using [`StringCacheHolder`] for a more reliable way of enabling
-/// and disabling the string cache.
+/// Note: Consider using [`StringCacheHolder`] for a more reliable way of
+/// enabling and disabling the string cache.
 pub fn disable_string_cache() {
-    USE_STRING_CACHE.store(0, Ordering::Release);
-    STRING_CACHE.clear()
+    let was_enabled = STRING_CACHE_ENABLED.swap(false, Ordering::AcqRel);
+    if was_enabled {
+        set_string_cache(false)
+    }
 }
 
 /// Check whether the global string cache is enabled.
