@@ -9136,7 +9136,7 @@ class DataFrame:
         from polars.selectors import expand_selector, is_selector
 
         if is_selector(key):
-            key_tuple = expand_selector(target=self, selector=key)  # type: ignore[type-var]
+            key_tuple = expand_selector(target=self, selector=key)
         elif not isinstance(key, str):
             key_tuple = tuple(key)  # type: ignore[arg-type]
         else:
@@ -9174,7 +9174,7 @@ class DataFrame:
                     k = get_key(d)
                     if not include_key:
                         for ix in key_tuple:
-                            del d[ix]
+                            del d[ix]  # type: ignore[arg-type]
                     if unique:
                         rows[k] = d
                     else:
