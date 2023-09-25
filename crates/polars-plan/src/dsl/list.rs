@@ -90,8 +90,12 @@ impl ListNameSpace {
 
     /// Get items in every sublist by index.
     pub fn get(self, index: Expr) -> Expr {
-        self.0
-            .map_many_private(FunctionExpr::ListExpr(ListFunction::Get), &[index], false)
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::Get),
+            &[index],
+            true,
+            false,
+        )
     }
 
     /// Get items in every sublist by multiple indexes.
@@ -104,6 +108,7 @@ impl ListNameSpace {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Take(null_on_oob)),
             &[index],
+            true,
             false,
         )
     }
@@ -125,6 +130,7 @@ impl ListNameSpace {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Join),
             &[separator],
+            false,
             false,
         )
     }
@@ -175,6 +181,7 @@ impl ListNameSpace {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::Slice),
             &[offset, length],
+            true,
             false,
         )
     }
@@ -254,6 +261,7 @@ impl ListNameSpace {
             .map_many_private(
                 FunctionExpr::ListExpr(ListFunction::Contains),
                 &[other],
+                true,
                 false,
             )
             .with_function_options(|mut options| {
@@ -270,6 +278,7 @@ impl ListNameSpace {
             .map_many_private(
                 FunctionExpr::ListExpr(ListFunction::CountMatches),
                 &[other],
+                true,
                 false,
             )
             .with_function_options(|mut options| {
@@ -284,11 +293,11 @@ impl ListNameSpace {
             .map_many_private(
                 FunctionExpr::ListExpr(ListFunction::SetOperation(set_operation)),
                 &[other],
+                false,
                 true,
             )
             .with_function_options(|mut options| {
                 options.input_wildcard_expansion = true;
-                options.auto_explode = false;
                 options
             })
     }
