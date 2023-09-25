@@ -31,7 +31,7 @@ Although it is more common to work directly on a `DataFrame` object, `Series` im
 
 There are a number of methods related to string operations in the `StringNamespace`. These only work on `Series` with the Datatype `Utf8`.
 
-{{code_block('getting-started/series-dataframes','string',['replace'])}}
+{{code_block('getting-started/series-dataframes','string',['str.replace'])}}
 
 ```python exec="on" result="text" session="getting-started/series"
 --8<-- "python/getting-started/series-dataframes.py:string"
@@ -41,7 +41,7 @@ There are a number of methods related to string operations in the `StringNamespa
 
 Similar to strings, there is a separate namespace for datetime related operations in the `DateLikeNameSpace`. These only work on `Series`with DataTypes related to dates.
 
-{{code_block('getting-started/series-dataframes','dt',['day'])}}
+{{code_block('getting-started/series-dataframes','dt',['Series.dt.day'])}}
 
 ```python exec="on" result="text" session="getting-started/series"
 --8<-- "python/getting-started/series-dataframes.py:dt"

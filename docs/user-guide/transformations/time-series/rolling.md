@@ -103,7 +103,7 @@ Below we show an example where we use **group_by_dynamic** to compute:
 - the number of days until the end of the month
 - the number of days in a month
 
-{{code_block('user-guide/transformations/time-series/rolling','group_by_dyn',['group_by_dynamic','explode','date_range'])}}
+{{code_block('user-guide/transformations/time-series/rolling','group_by_dyn',['group_by_dynamic','DataFrame.explode','date_range'])}}
 
 ```python exec="on" result="text" session="user-guide/transformations/ts/rolling"
 --8<-- "python/user-guide/transformations/time-series/rolling.py:group_by_dyn"
