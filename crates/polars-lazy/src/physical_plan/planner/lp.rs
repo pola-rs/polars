@@ -233,7 +233,7 @@ pub fn create_physical_plan(
                     cloud_options,
                 } => Ok(Box::new(executors::ParquetExec::new(
                     path,
-                    file_info.schema,
+                    file_info,
                     predicate,
                     options,
                     cloud_options,

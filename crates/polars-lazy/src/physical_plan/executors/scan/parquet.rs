@@ -7,7 +7,7 @@ use super::*;
 
 pub struct ParquetExec {
     path: PathBuf,
-    schema: SchemaRef,
+    file_info: FileInfo,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     options: ParquetOptions,
     #[allow(dead_code)]
@@ -18,7 +18,7 @@ pub struct ParquetExec {
 impl ParquetExec {
     pub(crate) fn new(
         path: PathBuf,
-        schema: SchemaRef,
+        file_info: FileInfo,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
@@ -26,7 +26,7 @@ impl ParquetExec {
     ) -> Self {
         ParquetExec {
             path,
-            schema,
+            file_info,
             predicate,
             options,
             cloud_options,
@@ -39,12 +39,12 @@ impl ParquetExec {
             &self.path,
             &self.predicate,
             &mut self.file_options.with_columns,
-            &mut self.schema,
+            &mut self.file_info.schema,
             self.file_options.n_rows,
             self.file_options.row_count.is_some(),
         );
 
-        if let Some(file) = file {
+        let out = if let Some(file) = file {
             ParquetReader::new(file)
                 .with_n_rows(n_rows)
                 .read_parallel(self.options.parallel)
@@ -72,7 +72,14 @@ impl ParquetExec {
             }
         } else {
             polars_bail!(ComputeError: "could not read {}", self.path.display())
-        }
+        };
+
+        let Some(hive_parts) = self.file_info.hive_parts.as_deref() else {
+            return out;
+        };
+        let mut out = out?;
+        hive_parts.materialize_partition_columns(&mut out)?;
+        Ok(out)
     }
 }
 

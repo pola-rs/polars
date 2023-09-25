@@ -184,4 +184,8 @@ impl BatchStats {
     pub fn schema(&self) -> &Schema {
         &self.schema
     }
+
+    pub fn column_stats(&self) -> &[ColumnStats] {
+        self.stats.as_ref()
+    }
 }
