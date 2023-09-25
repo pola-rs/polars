@@ -34,6 +34,12 @@ impl Debug for Schema {
     }
 }
 
+impl From<&[Series]> for Schema {
+    fn from(value: &[Series]) -> Self {
+        value.iter().map(|s| s.field().into_owned()).collect()
+    }
+}
+
 impl<F> FromIterator<F> for Schema
 where
     F: Into<Field>,

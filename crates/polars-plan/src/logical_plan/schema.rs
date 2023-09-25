@@ -49,7 +49,7 @@ pub struct FileInfo {
     // - known size
     // - estimated size
     pub row_estimation: (Option<usize>, usize),
-    pub hive_parts: Option<hive::HivePartitions>,
+    pub hive_parts: Option<Arc<hive::HivePartitions>>,
 }
 
 impl FileInfo {
@@ -62,7 +62,7 @@ impl FileInfo {
     }
 
     pub fn set_hive_partitions(&mut self, url: &Path) {
-        self.hive_parts = hive::HivePartitions::parse_url(url);
+        self.hive_parts = hive::HivePartitions::parse_url(url).map(Arc::new);
     }
 }
 

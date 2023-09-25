@@ -1,16 +1,17 @@
 use std::path::Path;
 
 use polars_core::prelude::*;
+use polars_io::predicates::{BatchStats, ColumnStats};
 use polars_io::utils::{BOOLEAN_RE, FLOAT_RE, INTEGER_RE};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct HivePartitions {
     /// Single value Series that can be used to run the predicate against.
     /// They are to be broadcasted if the predicates don't filter them out.
-    partitions: Vec<Series>,
+    stats: BatchStats,
 }
 
 impl HivePartitions {
@@ -46,10 +47,20 @@ impl HivePartitions {
                 Some(s)
             })
             .collect::<Vec<_>>();
+
         if partitions.is_empty() {
             None
         } else {
-            Some(HivePartitions { partitions })
+            let schema: Schema = partitions.as_slice().into();
+            let stats = BatchStats::new(
+                schema,
+                partitions
+                    .into_iter()
+                    .map(ColumnStats::from_column_literal)
+                    .collect(),
+            );
+
+            Some(HivePartitions { stats })
         }
     }
 }

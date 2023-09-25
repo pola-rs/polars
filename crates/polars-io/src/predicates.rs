@@ -1,4 +1,6 @@
 use polars_core::prelude::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 pub trait PhysicalIoExpr: Send + Sync {
     /// Take a [`DataFrame`] and produces a boolean [`Series`] that serves
@@ -54,7 +56,8 @@ pub(crate) fn apply_predicate(
 /// - max value
 /// - min value
 /// - null_count
-#[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ColumnStats {
     field: Field,
     // The array may hold the null count for every row group,
@@ -76,6 +79,16 @@ impl ColumnStats {
             null_count,
             min_value,
             max_value,
+        }
+    }
+
+    pub fn from_column_literal(s: Series) -> Self {
+        debug_assert_eq!(s.len(), 1);
+        Self {
+            field: s.field().into_owned(),
+            null_count: None,
+            min_value: Some(s.clone()),
+            max_value: Some(s),
         }
     }
 
@@ -154,6 +167,8 @@ impl ColumnStats {
 }
 
 /// A collection of column stats with a known schema.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug)]
 pub struct BatchStats {
     schema: Schema,
     stats: Vec<ColumnStats>,
