@@ -52,6 +52,7 @@ fn test_agg_unique_first() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "csv")]
 fn test_lazy_agg_scan() {
     let lf = scan_foods_csv;
     let df = lf().min().collect().unwrap();
