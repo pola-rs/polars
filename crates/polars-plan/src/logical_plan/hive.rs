@@ -45,6 +45,8 @@ impl HivePartitions {
                 } else if FLOAT_RE.is_match(value) {
                     let value = value.parse::<f64>().ok()?;
                     Series::new(name, &[value])
+                } else if value == "__HIVE_DEFAULT_PARTITION__" {
+                    Series::full_null(name, 1, &DataType::Null)
                 } else {
                     Series::new(name, &[value])
                 };

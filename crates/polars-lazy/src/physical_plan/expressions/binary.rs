@@ -267,14 +267,16 @@ mod stats {
     }
 
     fn apply_operator_stats_neq(min_max: &Series, literal: &Series) -> bool {
-        if min_max.len() < 2 {
+        if min_max.len() < 2 || min_max.null_count() > 0 {
             return true;
         }
         use ChunkCompare as C;
+
+        // First check proofs all values are the same (e.g. min/max is the same)
+        // Second check proofs all values are equal, so we can skip as we search
+        // for non-equal values.
         if min_max.get(0).unwrap() == min_max.get(1).unwrap()
-            && C::not_equal(literal, min_max)
-                .map(|s| s.all())
-                .unwrap_or(false)
+            && C::equal(literal, min_max).map(|s| s.all()).unwrap_or(false)
         {
             return false;
         }
@@ -321,6 +323,7 @@ mod stats {
         use ChunkCompare as C;
         match op {
             Operator::Eq => apply_operator_stats_eq(min_max, literal),
+            Operator::NotEq => apply_operator_stats_eq(min_max, literal),
             Operator::Gt => {
                 // Literal is bigger than max value, selection needs all rows.
                 C::gt(literal, min_max).map(|ca| ca.any()).unwrap_or(false)
@@ -352,20 +355,21 @@ mod stats {
             use Expr::*;
             use Operator::*;
             if !self.expr.into_iter().all(|e| match e {
-                BinaryExpr { op, .. } => !matches!(
-                    op,
-                    Multiply | Divide | TrueDivide | FloorDivide | Modulus | NotEq
-                ),
+                BinaryExpr { op, .. } => {
+                    !matches!(op, Multiply | Divide | TrueDivide | FloorDivide | Modulus)
+                },
                 Column(_) | Literal(_) | Alias(_, _) => true,
                 _ => false,
             }) {
                 return Ok(true);
             }
-            dbg!(stats);
-
             let schema = stats.schema();
-            let fld_l = self.left.to_field(schema)?;
-            let fld_r = self.right.to_field(schema)?;
+            let Some(fld_l) = self.left.to_field(schema).ok() else {
+                return Ok(true);
+            };
+            let Some(fld_r) = self.right.to_field(schema).ok() else {
+                return Ok(true);
+            };
 
             #[cfg(debug_assertions)]
             {
