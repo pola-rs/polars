@@ -141,6 +141,32 @@ def test_list_shift() -> None:
     expected = pl.Series("a", [[None, 1], [None, 3, 2]])
     assert s.list.shift().to_list() == expected.to_list()
 
+    df = pl.DataFrame(
+        {
+            "values": [
+                [1, 2, None],
+                [1, 2, 3],
+                [None, 1, 2],
+                [None, None, None],
+                [1, 2],
+            ],
+            "shift": [1, -2, 3, 2, None],
+        }
+    )
+    df = df.select(pl.col("values").list.shift(pl.col("shift")))
+    expected_df = pl.DataFrame(
+        {
+            "values": [
+                [None, 1, 2],
+                [3, None, None],
+                [None, None, None],
+                [None, None, None],
+                None,
+            ]
+        }
+    )
+    assert_frame_equal(df, expected_df)
+
 
 def test_list_drop_nulls() -> None:
     s = pl.Series("values", [[1, None, 2, None], [None, None], [1, 2], None])

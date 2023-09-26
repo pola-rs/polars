@@ -12,7 +12,12 @@ if TYPE_CHECKING:
 
     from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.type_aliases import IntoExpr, NullBehavior, ToStructStrategy
+    from polars.type_aliases import (
+        IntoExpr,
+        IntoExprColumn,
+        NullBehavior,
+        ToStructStrategy,
+    )
 
 
 @expr_dispatch
@@ -333,7 +338,7 @@ class ListNameSpace:
 
         """
 
-    def shift(self, periods: int = 1) -> Series:
+    def shift(self, periods: int | IntoExprColumn = 1) -> Series:
         """
         Shift values by the given period.
 

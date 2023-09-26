@@ -12,6 +12,7 @@ pub enum ListFunction {
     #[cfg(feature = "list_drop_nulls")]
     DropNulls,
     Slice,
+    Shift,
     Get,
     #[cfg(feature = "list_take")]
     Take(bool),
@@ -45,6 +46,7 @@ impl Display for ListFunction {
             #[cfg(feature = "list_drop_nulls")]
             DropNulls => "drop_nulls",
             Slice => "slice",
+            Shift => "shift",
             Get => "get",
             #[cfg(feature = "list_take")]
             Take(_) => "take",
@@ -102,6 +104,13 @@ fn check_slice_arg_shape(slice_len: usize, ca_len: usize, name: &str) -> PolarsR
         name, slice_len, ca_len
     );
     Ok(())
+}
+
+pub(super) fn shift(s: &[Series]) -> PolarsResult<Series> {
+    let list = s[0].list()?;
+    let periods = &s[1];
+
+    list.lst_shift(periods).map(|ok| ok.into_series())
 }
 
 pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
