@@ -760,9 +760,9 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Lowercase => map!(strings::lowercase),
             #[cfg(feature = "nightly")]
             Titlecase => map!(strings::titlecase),
-            StripChars(matches) => map!(strings::strip_chars, matches.as_deref()),
-            StripCharsStart(matches) => map!(strings::strip_chars_start, matches.as_deref()),
-            StripCharsEnd(matches) => map!(strings::strip_chars_end, matches.as_deref()),
+            StripChars => map_as_slice!(strings::strip_chars),
+            StripCharsStart => map_as_slice!(strings::strip_chars_start),
+            StripCharsEnd => map_as_slice!(strings::strip_chars_end),
             StripPrefix => map_as_slice!(strings::strip_prefix),
             StripSuffix => map_as_slice!(strings::strip_suffix),
             #[cfg(feature = "string_from_radix")]

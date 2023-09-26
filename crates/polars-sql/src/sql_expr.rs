@@ -2,6 +2,7 @@ use polars_arrow::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::*;
+use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{col, lit, when};
 use sqlparser::ast::{
     ArrayAgg, BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType,
@@ -322,12 +323,12 @@ impl SqlExprVisitor<'_> {
         };
 
         Ok(match (trim_where, trim_what) {
-            (None | Some(TrimWhereField::Both), None) => expr.str().strip_chars(None),
-            (None | Some(TrimWhereField::Both), Some(val)) => expr.str().strip_chars(Some(val)),
-            (Some(TrimWhereField::Leading), None) => expr.str().strip_chars_start(None),
-            (Some(TrimWhereField::Leading), Some(val)) => expr.str().strip_chars_start(Some(val)),
-            (Some(TrimWhereField::Trailing), None) => expr.str().strip_chars_end(None),
-            (Some(TrimWhereField::Trailing), Some(val)) => expr.str().strip_chars_end(Some(val)),
+            (None | Some(TrimWhereField::Both), None) => expr.str().strip_chars(lit(Null)),
+            (None | Some(TrimWhereField::Both), Some(val)) => expr.str().strip_chars(lit(val)),
+            (Some(TrimWhereField::Leading), None) => expr.str().strip_chars_start(lit(Null)),
+            (Some(TrimWhereField::Leading), Some(val)) => expr.str().strip_chars_start(lit(val)),
+            (Some(TrimWhereField::Trailing), None) => expr.str().strip_chars_end(lit(Null)),
+            (Some(TrimWhereField::Trailing), Some(val)) => expr.str().strip_chars_end(lit(val)),
         })
     }
 

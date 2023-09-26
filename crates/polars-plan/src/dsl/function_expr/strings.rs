@@ -71,9 +71,9 @@ pub enum StringFunction {
     },
     Slice(i64, Option<u64>),
     StartsWith,
-    StripChars(Option<String>),
-    StripCharsStart(Option<String>),
-    StripCharsEnd(Option<String>),
+    StripChars,
+    StripCharsStart,
+    StripCharsEnd,
     StripPrefix,
     StripSuffix,
     #[cfg(feature = "dtype-struct")]
@@ -127,9 +127,9 @@ impl StringFunction {
             ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
             Uppercase
             | Lowercase
-            | StripChars(_)
-            | StripCharsStart(_)
-            | StripCharsEnd(_)
+            | StripChars
+            | StripCharsStart
+            | StripCharsEnd
             | StripPrefix
             | StripSuffix
             | Slice(_, _) => mapper.with_same_dtype(),
@@ -182,9 +182,9 @@ impl Display for StringFunction {
             StringFunction::Replace { .. } => "replace",
             StringFunction::Slice(_, _) => "str_slice",
             StringFunction::StartsWith { .. } => "starts_with",
-            StringFunction::StripChars(_) => "strip_chars",
-            StringFunction::StripCharsStart(_) => "strip_chars_start",
-            StringFunction::StripCharsEnd(_) => "strip_chars_end",
+            StringFunction::StripChars => "strip_chars",
+            StringFunction::StripCharsStart => "strip_chars_start",
+            StringFunction::StripCharsEnd => "strip_chars_end",
             StringFunction::StripPrefix => "strip_prefix",
             StringFunction::StripSuffix => "strip_suffix",
             #[cfg(feature = "dtype-struct")]
@@ -298,67 +298,22 @@ pub(super) fn rjust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Se
     Ok(ca.rjust(width, fillchar).into_series())
 }
 
-pub(super) fn strip_chars(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    if let Some(matches) = matches {
-        if matches.chars().count() == 1 {
-            // Fast path for when a single character is passed
-            Ok(ca
-                .apply_values(|s| Cow::Borrowed(s.trim_matches(matches.chars().next().unwrap())))
-                .into_series())
-        } else {
-            Ok(ca
-                .apply_values(|s| Cow::Borrowed(s.trim_matches(|c| matches.contains(c))))
-                .into_series())
-        }
-    } else {
-        Ok(ca.apply_values(|s| Cow::Borrowed(s.trim())).into_series())
-    }
+pub(super) fn strip_chars(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+    let pat_s = &s[1];
+    ca.strip_chars(pat_s).map(|ok| ok.into_series())
 }
 
-pub(super) fn strip_chars_start(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-
-    if let Some(matches) = matches {
-        if matches.chars().count() == 1 {
-            // Fast path for when a single character is passed
-            Ok(ca
-                .apply_values(|s| {
-                    Cow::Borrowed(s.trim_start_matches(matches.chars().next().unwrap()))
-                })
-                .into_series())
-        } else {
-            Ok(ca
-                .apply_values(|s| Cow::Borrowed(s.trim_start_matches(|c| matches.contains(c))))
-                .into_series())
-        }
-    } else {
-        Ok(ca
-            .apply_values(|s| Cow::Borrowed(s.trim_start()))
-            .into_series())
-    }
+pub(super) fn strip_chars_start(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+    let pat_s = &s[1];
+    ca.strip_chars_start(pat_s).map(|ok| ok.into_series())
 }
 
-pub(super) fn strip_chars_end(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    if let Some(matches) = matches {
-        if matches.chars().count() == 1 {
-            // Fast path for when a single character is passed
-            Ok(ca
-                .apply_values(|s| {
-                    Cow::Borrowed(s.trim_end_matches(matches.chars().next().unwrap()))
-                })
-                .into_series())
-        } else {
-            Ok(ca
-                .apply_values(|s| Cow::Borrowed(s.trim_end_matches(|c| matches.contains(c))))
-                .into_series())
-        }
-    } else {
-        Ok(ca
-            .apply_values(|s| Cow::Borrowed(s.trim_end()))
-            .into_series())
-    }
+pub(super) fn strip_chars_end(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+    let pat_s = &s[1];
+    ca.strip_chars_end(pat_s).map(|ok| ok.into_series())
 }
 
 pub(super) fn strip_prefix(s: &[Series]) -> PolarsResult<Series> {

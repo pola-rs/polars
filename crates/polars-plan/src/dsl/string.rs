@@ -292,27 +292,33 @@ impl StringNameSpace {
     }
 
     /// Remove leading and trailing characters, or whitespace if matches is None.
-    pub fn strip_chars(self, matches: Option<String>) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::StripChars(
-                matches,
-            )))
+    pub fn strip_chars(self, matches: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::StripChars),
+            &[matches],
+            false,
+            false,
+        )
     }
 
     /// Remove leading characters, or whitespace if matches is None.
-    pub fn strip_chars_start(self, matches: Option<String>) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::StripCharsStart(
-                matches,
-            )))
+    pub fn strip_chars_start(self, matches: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::StripCharsStart),
+            &[matches],
+            false,
+            false,
+        )
     }
 
     /// Remove trailing characters, or whitespace if matches is None.
-    pub fn strip_chars_end(self, matches: Option<String>) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::StripCharsEnd(
-                matches,
-            )))
+    pub fn strip_chars_end(self, matches: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::StripCharsEnd),
+            &[matches],
+            false,
+            false,
+        )
     }
 
     /// Remove prefix.
