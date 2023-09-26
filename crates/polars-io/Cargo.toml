@@ -40,8 +40,8 @@ serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { version = "1", default-features = false, features = ["alloc", "raw_value"], optional = true }
 simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
-tokio = { version = "1.26", features = ["net"], optional = true }
-tokio-util = { version = "0.7.8", features = ["io", "io-util"], optional = true }
+tokio = { workspace = true, features = ["net"], optional = true }
+tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
 url = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
