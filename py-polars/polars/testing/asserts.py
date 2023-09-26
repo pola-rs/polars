@@ -101,11 +101,14 @@ def assert_frame_equal(
 
     if collect_input_frames:
         if check_dtype:  # check this _before_ we collect
-            assert left.schema == right.schema, "schema dtypes are not equal"
+            left_schema, right_schema = left.schema, right.schema
+            assert (
+                left_schema == right_schema
+            ), f"lazy schemas are not equal\nleft: {left_schema}\nright: {right_schema}"
         left, right = left.collect(), right.collect()  # type: ignore[union-attr]
 
     if left.shape[0] != right.shape[0]:  # type: ignore[union-attr]
-        raise_assert_detail(objs, "Length mismatch", left.shape, right.shape)  # type: ignore[union-attr]
+        raise_assert_detail(objs, "length mismatch", left.shape, right.shape)  # type: ignore[union-attr]
 
     if not check_row_order:
         try:
