@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, time
+from typing import TYPE_CHECKING
 
 import pandas as pd
 import pyarrow as pa
+import pytest
 
 import polars as pl
 import polars.selectors as cs
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType
 
 
 def test_struct_to_list() -> None:
@@ -629,6 +634,26 @@ def test_empty_struct() -> None:
     # Empty struct
     df = pl.DataFrame({"a": [{}]})
     assert df.to_dict(False) == {"a": [{"": None}]}
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.List,
+        pl.List(pl.Null),
+        pl.List(pl.Utf8),
+        pl.Array(32),
+        pl.Array(16, inner=pl.UInt8),
+        pl.Struct,
+        pl.Struct([pl.Field("", pl.Null)]),
+        pl.Struct([pl.Field("x", pl.UInt32), pl.Field("y", pl.Float64)]),
+    ],
+)
+def test_empty_series_nested_dtype(dtype: PolarsDataType) -> None:
+    # various flavours of empty nested dtype
+    s = pl.Series("nested", dtype=dtype)
+    assert s.dtype.base_type() == dtype.base_type()
+    assert s.to_list() == []
 
 
 def test_empty_with_schema_struct() -> None:

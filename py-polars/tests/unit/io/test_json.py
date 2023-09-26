@@ -97,10 +97,13 @@ def test_read_ndjson_empty_array() -> None:
 
 
 def test_ndjson_nested_null() -> None:
-    payload = """{"foo":{"bar":[{}]}}"""
-    assert pl.read_ndjson(io.StringIO(payload)).to_dict(False) == {
-        "foo": [{"bar": [{"": None}]}]
-    }
+    json_payload = """{"foo":{"bar":[{}]}}"""
+    df = pl.read_ndjson(io.StringIO(json_payload))
+
+    # 'bar' represents an empty list of structs; check the schema is correct (eg: picks
+    # up that it IS a list of structs), but confirm that list is empty (ref: #11301)
+    assert df.schema == {"foo": pl.Struct([pl.Field("bar", pl.List(pl.Struct([])))])}
+    assert df.to_dict(False) == {"foo": [{"bar": []}]}
 
 
 def test_ndjson_nested_utf8_int() -> None:
