@@ -15,6 +15,20 @@ pub struct HivePartitions {
     stats: BatchStats,
 }
 
+#[cfg(target_os = "windows")]
+fn separator(url: &Path) -> char {
+    if polars_io::is_cloud_url(url) {
+        '/'
+    } else {
+        '\\'
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn separator(_url: &Path) -> char {
+    '/'
+}
+
 impl HivePartitions {
     pub fn get_statistics(&self) -> &BatchStats {
         &self.stats
@@ -22,10 +36,12 @@ impl HivePartitions {
 
     /// Parse a url and optionally return HivePartitions
     pub(crate) fn parse_url(url: &Path) -> Option<Self> {
+        let sep = separator(url);
+
         let partitions = url
-            .as_os_str()
-            .to_str()?
-            .split('/')
+            .display()
+            .to_string()
+            .split(sep)
             .filter_map(|part| {
                 let mut it = part.split('=');
                 let name = it.next()?;
