@@ -6,7 +6,7 @@ import sys
 import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypedDict, cast
 
 import numpy as np
 import pyarrow as pa
@@ -1460,6 +1460,15 @@ def test_csv_9929() -> None:
 
 
 def test_csv_quote_styles() -> None:
+    class TemporalFormats(TypedDict):
+        datetime_format: str
+        time_format: str
+
+    temporal_formats: TemporalFormats = {
+        "datetime_format": "%Y-%m-%dT%H:%M:%S",
+        "time_format": "%H:%M:%S",
+    }
+
     dtm = datetime(2077, 7, 5, 3, 1, 0)
     dt = dtm.date()
     tm = dtm.time()
@@ -1475,10 +1484,7 @@ def test_csv_quote_styles() -> None:
             "time": [tm, tm, None],
         }
     )
-    temporal_formats = {
-        "datetime_format": "%Y-%m-%dT%H:%M:%S",
-        "time_format": "%H:%M:%S",
-    }
+
     assert df.write_csv(quote_style="always", **temporal_formats) == (
         '"float","string","int","bool","date","datetime","time"\n'
         '"1.0","a","1","true","2077-07-05","","03:01:00"\n'
