@@ -1,9 +1,10 @@
 import itertools
-from github import Github
+from github import Github, Auth
 import os
 
 token = os.getenv("GITHUB_TOKEN")
-g = Github(token)
+auth = Auth.Token(token) if token else None
+g = Github(auth=auth)
 
 ICON_TEMPLATE = "[![{login}]({avatar_url}){{.contributor_icon}}]({html_url})"
 
