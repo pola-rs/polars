@@ -29,7 +29,7 @@ pub struct DynamicGroupOptions {
     /// Offset window boundaries.
     pub offset: Duration,
     /// Truncate the time column values to the window.
-    pub truncate: bool,
+    pub label: Label,
     /// Add the boundaries to the dataframe.
     pub include_boundaries: bool,
     pub closed_window: ClosedWindow,
@@ -46,7 +46,7 @@ impl Default for DynamicGroupOptions {
             every: Duration::new(1),
             period: Duration::new(1),
             offset: Duration::new(1),
-            truncate: true,
+            label: Label::Left,
             include_boundaries: false,
             closed_window: ClosedWindow::Left,
             start_by: Default::default(),
@@ -290,8 +290,10 @@ impl Wrap<&DataFrame> {
             include_lower_bound = true;
             include_upper_bound = true;
         }
-        if options.truncate {
+        if options.label == Label::Left {
             include_lower_bound = true;
+        } else if options.label == Label::Right {
+            include_upper_bound = true;
         }
 
         let mut update_bounds =
@@ -332,7 +334,7 @@ impl Wrap<&DataFrame> {
                 .take_groups();
 
             // Include boundaries cannot be parallel (easily).
-            if include_lower_bound {
+            if include_lower_bound | include_upper_bound {
                 POOL.install(|| match groups {
                     GroupsProxy::Idx(groups) => {
                         let ir = groups
@@ -481,28 +483,30 @@ impl Wrap<&DataFrame> {
         }
 
         let lower = lower_bound.map(|lower| Int64Chunked::new_vec(LB_NAME, lower));
+        let upper = upper_bound.map(|upper| Int64Chunked::new_vec(UP_NAME, upper));
 
-        if options.truncate {
+        if options.label == Label::Left {
             let mut lower = lower.clone().unwrap();
             if by.is_empty() {
                 lower.set_sorted_flag(IsSorted::Ascending)
             }
             dt = lower.with_name(dt.name());
+        } else if options.label == Label::Right {
+            let mut upper = upper.clone().unwrap();
+            if by.is_empty() {
+                upper.set_sorted_flag(IsSorted::Ascending)
+            }
+            dt = upper.with_name(dt.name());
         }
 
-        if let (true, Some(mut lower), Some(upper)) =
-            (options.include_boundaries, lower, upper_bound)
+        if let (true, Some(mut lower), Some(mut upper)) = (options.include_boundaries, lower, upper)
         {
-            let mut upper = Int64Chunked::new_vec(UP_NAME, upper)
-                .into_datetime(tu, tz.clone())
-                .into_series();
-
             if by.is_empty() {
                 lower.set_sorted_flag(IsSorted::Ascending);
                 upper.set_sorted_flag(IsSorted::Ascending);
             }
             by.push(lower.into_datetime(tu, tz.clone()).into_series());
-            by.push(upper);
+            by.push(upper.into_datetime(tu, tz.clone()).into_series());
         }
 
         dt.into_datetime(tu, None)
@@ -824,7 +828,7 @@ mod test {
                     every: Duration::parse("1h"),
                     period: Duration::parse("1h"),
                     offset: Duration::parse("0h"),
-                    truncate: true,
+                    label: Label::Left,
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
                     start_by: Default::default(),
@@ -939,7 +943,7 @@ mod test {
                     every: Duration::parse("6d"),
                     period: Duration::parse("6d"),
                     offset: Duration::parse("0h"),
-                    truncate: true,
+                    label: Label::Left,
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
                     start_by: Default::default(),

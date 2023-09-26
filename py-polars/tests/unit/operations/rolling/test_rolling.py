@@ -21,7 +21,7 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ClosedInterval, TimeUnit
+    from polars.type_aliases import ClosedInterval, Label, TimeUnit
 
 
 @pytest.fixture()
@@ -538,7 +538,7 @@ def test_dynamic_group_by_timezone_awareness(
             offset=offset,
             closed="right",
             include_boundaries=True,
-            truncate=False,
+            label="datapoint",
         ).agg(pl.col("value").last())
     ).dtypes == [pl.Datetime("ns", "UTC")] * 3 + [pl.Int64]
 
@@ -554,7 +554,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         "date",
         every="31m",
         include_boundaries=True,
-        truncate=False,
+        label="datapoint",
         start_by="datapoint",
     ).agg(pl.count()).to_dict(False) == {
         "_lower_boundary": [
@@ -598,7 +598,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         period="3d",
         include_boundaries=True,
         start_by="monday",
-        truncate=False,
+        label="datapoint",
     ).agg([pl.count(), pl.col("day").first().alias("data_day")])
     assert result.to_dict(False) == {
         "_lower_boundary": [
@@ -623,7 +623,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         period="3d",
         include_boundaries=True,
         start_by="saturday",
-        truncate=False,
+        label="datapoint",
     ).agg([pl.count(), pl.col("day").first().alias("data_day")])
     assert result.to_dict(False) == {
         "_lower_boundary": [
@@ -684,6 +684,77 @@ def test_group_by_dynamic_by_monday_and_offset_5444() -> None:
         .agg(pl.col("value").sum())
     )
     assert result_empty.schema == result.schema
+
+
+def test_group_by_dynamic_truncate_to_label_deprecation() -> None:
+    df = pl.LazyFrame({"ts": [], "n": []})
+    with pytest.warns(
+        DeprecationWarning, match="replace `truncate=False` with `label='datapoint'`"
+    ):
+        df.group_by_dynamic("ts", every="1d", truncate=False)
+    with pytest.warns(
+        DeprecationWarning, match="replace `truncate=True` with `label='left'`"
+    ):
+        df.group_by_dynamic("ts", every="1d", truncate=True)
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("left", [datetime(2020, 1, 1), datetime(2020, 1, 2)]),
+        ("right", [datetime(2020, 1, 2), datetime(2020, 1, 3)]),
+        ("datapoint", [datetime(2020, 1, 1, 1), datetime(2020, 1, 2, 3)]),
+    ],
+)
+def test_group_by_dynamic_label(label: Label, expected: list[datetime]) -> None:
+    df = pl.DataFrame(
+        {
+            "ts": [
+                datetime(2020, 1, 1, 1),
+                datetime(2020, 1, 1, 2),
+                datetime(2020, 1, 2, 3),
+                datetime(2020, 1, 2, 4),
+            ],
+            "n": [1, 2, 3, 4],
+            "group": ["a", "a", "b", "b"],
+        }
+    ).sort("ts")
+    result = (
+        df.group_by_dynamic("ts", every="1d", label=label, by="group")
+        .agg(pl.col("n"))["ts"]
+        .to_list()
+    )
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("left", [datetime(2020, 1, 1), datetime(2020, 1, 2), datetime(2020, 1, 3)]),
+        ("right", [datetime(2020, 1, 2), datetime(2020, 1, 3), datetime(2020, 1, 4)]),
+        (
+            "datapoint",
+            [datetime(2020, 1, 1, 1), datetime(2020, 1, 2, 2), datetime(2020, 1, 3, 3)],
+        ),
+    ],
+)
+def test_group_by_dynamic_label_with_by(label: Label, expected: list[datetime]) -> None:
+    df = pl.DataFrame(
+        {
+            "ts": [
+                datetime(2020, 1, 1, 1),
+                datetime(2020, 1, 2, 2),
+                datetime(2020, 1, 3, 3),
+            ],
+            "n": [1, 2, 3],
+        }
+    ).sort("ts")
+    result = (
+        df.group_by_dynamic("ts", every="1d", label=label)
+        .agg(pl.col("n"))["ts"]
+        .to_list()
+    )
+    assert result == expected
 
 
 def test_group_by_rolling_iter() -> None:
