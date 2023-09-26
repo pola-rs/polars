@@ -363,7 +363,7 @@ impl SQLContext {
                         ComputeError:
                         "group_by error: a positive number or an expression expected",
                     )),
-                    _ => parse_sql_expr(&e, self),
+                    _ => parse_sql_expr(e, self),
                 })
                 .collect::<PolarsResult<_>>()?
         } else {
