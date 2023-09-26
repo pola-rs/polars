@@ -420,40 +420,52 @@ pub(crate) fn group_by_values_iter_full_lookahead(
     upper_bound: Option<usize>,
 ) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
     let upper_bound = upper_bound.unwrap_or(time.len());
-    debug_assert!(!offset.negative);
 
     let add = match tu {
         TimeUnit::Nanoseconds => Duration::add_ns,
         TimeUnit::Microseconds => Duration::add_us,
         TimeUnit::Milliseconds => Duration::add_ms,
     };
+    let mut start = start_offset;
+    let mut end = start;
 
-    time[start_offset..upper_bound]
-        .iter()
-        .enumerate()
-        .map(move |(mut i, lower)| {
-            i += start_offset;
-            let lower = add(&offset, *lower, tz.as_ref())?;
-            let upper = add(&period, lower, tz.as_ref())?;
+    time[start_offset..upper_bound].iter().map(move |lower| {
+        let lower = add(&offset, *lower, tz.as_ref())?;
+        let upper = add(&period, lower, tz.as_ref())?;
 
-            let b = Bounds::new(lower, upper);
+        let b = Bounds::new(lower, upper);
 
-            // find starting point of window
-            for &t in &time[i..] {
-                if b.is_member(t, closed_window) {
-                    break;
-                }
-                i += 1;
+        loop {
+            match time.get(start) {
+                None => break,
+                Some(t) => {
+                    if b.is_member(*t, closed_window) {
+                        break;
+                    }
+                },
             }
-            if i >= time.len() {
-                return Ok((i as IdxSize, 0));
+            start += 1;
+        }
+        end = std::cmp::max(start, end);
+        loop {
+            match time.get(end) {
+                None => break,
+                Some(t) => {
+                    if !b.is_member(*t, closed_window) {
+                        break;
+                    }
+                },
             }
+            end += 1;
+        }
+        let len = end - start;
+        let offset = start as IdxSize;
+        // -1 for boundary effects
+        start = start.saturating_sub(1);
+        end = end.saturating_sub(1);
 
-            let slice = unsafe { time.get_unchecked(i..) };
-            let len = slice.partition_point(|v| b.is_member(*v, closed_window));
-
-            Ok((i as IdxSize, len as IdxSize))
-        })
+        Ok((offset, len as IdxSize))
+    })
 }
 
 #[cfg(feature = "rolling_window")]

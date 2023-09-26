@@ -758,12 +758,14 @@ fn test_rolling_lookback() {
             group_by_values_iter_lookbehind(period, offset, &dates, closed_window, tu, None, 0)
                 .collect::<PolarsResult<Vec<_>>>()
                 .unwrap();
-        let g1 = group_by_values_iter_partial_lookbehind(
+        let g1 = group_by_values_iter_full_lookahead(
             period,
             offset,
             &dates,
             closed_window,
             tu,
+            None,
+            0,
             None,
         )
         .collect::<PolarsResult<Vec<_>>>()
