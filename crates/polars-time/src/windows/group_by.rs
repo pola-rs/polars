@@ -423,6 +423,7 @@ pub(crate) fn group_by_values_iter_lookahead(
     };
     let mut start = start_offset;
     let mut end = start;
+    let mut previous = 0i64;
 
     time[start_offset..upper_bound].iter().map(move |lower| {
         let lower = add(&offset, *lower, tz.as_ref())?;
@@ -430,7 +431,14 @@ pub(crate) fn group_by_values_iter_lookahead(
 
         let b = Bounds::new(lower, upper);
 
+        let mut duplicate_count = 0;
         for &t in &time[start..] {
+            if t == previous {
+                duplicate_count += 1;
+            } else {
+                duplicate_count = 0;
+            }
+            previous = t;
             if b.is_member(t, closed_window) {
                 break;
             }
@@ -447,9 +455,9 @@ pub(crate) fn group_by_values_iter_lookahead(
 
         let len = end - start;
         let offset = start as IdxSize;
-        // -1 for boundary effects
-        start = start.saturating_sub(1);
-        end = end.saturating_sub(1);
+        // Subtract 1 slot for boundary effects and subtract the duplicates.
+        start = start.saturating_sub(1 + duplicate_count);
+        end = end.saturating_sub(1 + duplicate_count);
 
         Ok((offset, len as IdxSize))
     })
