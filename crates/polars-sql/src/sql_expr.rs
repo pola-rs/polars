@@ -60,8 +60,16 @@ pub(crate) struct SqlExprVisitor<'a> {
 impl SqlExprVisitor<'_> {
     fn visit_expr(&self, expr: &SqlExpr) -> PolarsResult<Expr> {
         match expr {
-            SqlExpr::AllOp {left, compare_op, right} => self.visit_all(left, compare_op, right),
-            SqlExpr::AnyOp {left, compare_op, right} => self.visit_any(left, compare_op, right),
+            SqlExpr::AllOp {
+                left,
+                compare_op,
+                right,
+            } => self.visit_all(left, compare_op, right),
+            SqlExpr::AnyOp {
+                left,
+                compare_op,
+                right,
+            } => self.visit_any(left, compare_op, right),
             SqlExpr::ArrayAgg(expr) => self.visit_arr_agg(expr),
             SqlExpr::Between {
                 expr,
@@ -227,45 +235,53 @@ impl SqlExprVisitor<'_> {
         visitor.visit_function()
     }
 
-    /// Visit a SQL CAST
+    /// Visit a SQL ALL
     ///
     /// e.g. `a > ALL(y)`
-    fn visit_all(&self, left: &SqlExpr, compare_op: &BinaryOperator, right: &SqlExpr) -> PolarsResult<Expr> {
+    fn visit_all(
+        &self,
+        left: &SqlExpr,
+        compare_op: &BinaryOperator,
+        right: &SqlExpr,
+    ) -> PolarsResult<Expr> {
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
 
-        match compare_op
-        {
+        match compare_op {
             BinaryOperator::Gt => Ok(left.gt(right.max())),
             BinaryOperator::Lt => Ok(left.lt(right.min())),
             BinaryOperator::GtEq => Ok(left.gt_eq(right.max())),
             BinaryOperator::LtEq => Ok(left.lt_eq(right.min())),
             BinaryOperator::Eq => polars_bail!(ComputeError: "ALL cannot be used with ="),
             BinaryOperator::NotEq => polars_bail!(ComputeError: "ALL cannot be used with !="),
-            _ => polars_bail!(ComputeError: "Invalid comparison operator")
+            _ => polars_bail!(ComputeError: "Invalid comparison operator"),
         }
     }
 
     /// Visit a SQL ANY
     ///
     /// e.g. `a != ANY(y)`
-    fn visit_any(&self, left: &SqlExpr, compare_op: &BinaryOperator, right: &SqlExpr) -> PolarsResult<Expr> {
+    fn visit_any(
+        &self,
+        left: &SqlExpr,
+        compare_op: &BinaryOperator,
+        right: &SqlExpr,
+    ) -> PolarsResult<Expr> {
         let left = self.visit_expr(left)?;
         let right = self.visit_expr(right)?;
 
-        match compare_op
-        {
+        match compare_op {
             BinaryOperator::Gt => Ok(left.gt(right.min())),
             BinaryOperator::Lt => Ok(left.lt(right.max())),
             BinaryOperator::GtEq => Ok(left.gt_eq(right.min())),
             BinaryOperator::LtEq => Ok(left.lt_eq(right.max())),
             BinaryOperator::Eq => Ok(left.is_in(right)),
             BinaryOperator::NotEq => Ok(left.is_in(right).not()),
-            _ => polars_bail!(ComputeError: "Invalid comparison operator")
+            _ => polars_bail!(ComputeError: "Invalid comparison operator"),
         }
     }
 
-    /// Visit a SQL ALL
+    /// Visit a SQL CAST
     ///
     /// e.g. `CAST(column AS INT)` or `column::INT`
     fn visit_cast(&self, expr: &SqlExpr, data_type: &SQLDataType) -> PolarsResult<Expr> {

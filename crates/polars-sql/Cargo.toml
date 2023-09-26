@@ -16,8 +16,7 @@ polars-plan = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
-sqlparser = { path = "../../../../sqlparser-rs" }
-# sqlparser = { workspace = true }
+sqlparser = { workspace = true }
 # sqlparser = { git = "https://github.com/sqlparser-rs/sqlparser-rs.git", rev = "ae3b5844c839072c235965fe0d1bddc473dced87" }
 
 [features]
