@@ -1098,7 +1098,7 @@ class Series:
         Ensures that `np.asarray(pl.Series(..))` works as expected, see
         https://numpy.org/devdocs/user/basics.interoperability.html#the-array-method.
         """
-        if not dtype and self.dtype == Utf8 and not self.has_validity():
+        if not dtype and self.dtype == Utf8 and not self.null_count():
             dtype = np.dtype("U")
         if dtype:
             return self.to_numpy().__array__(dtype)
@@ -3289,8 +3289,14 @@ class Series:
         """
         Return True if the Series has a validity bitmask.
 
-        If there is none, it means that there are no null values.
-        Use this to swiftly assert a Series does not have null values.
+        If there is no mask, it means that there are no ``null`` values.
+
+        Notes
+        -----
+        While the _absence_ of a validity bitmask guarantees that a Series does not
+        have ``null`` values, the converse is not true, eg: the _presence_ of a
+        bitmask does not mean that there _are_ null values, as every value of the
+        bitmask could be ``false``.
 
         """
         return self._s.has_validity()
@@ -4051,7 +4057,7 @@ class Series:
 
         """
         if not ignore_nulls:
-            assert not self.has_validity()
+            assert not self.null_count()
 
         from polars.series._numpy import SeriesView, _ptr_to_numpy
 
@@ -4149,7 +4155,7 @@ class Series:
             # note: there is no native numpy "time" dtype
             return np.array(self.to_list(), dtype="object")
         else:
-            if not self.has_validity():
+            if not self.null_count():
                 if self.is_temporal():
                     np_array = convert_to_date(self.view(ignore_nulls=True))
                 elif self.is_numeric():

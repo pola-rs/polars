@@ -1318,6 +1318,19 @@ def test_to_numpy(order: IndexOrder, f_contiguous: bool, c_contiguous: bool) -> 
     assert_array_equal(structured_array, expected_array)
     assert structured_array.flags["F_CONTIGUOUS"]
 
+    # check string conversion; if no nulls can optimise as a fixed-width dtype
+    df = pl.DataFrame({"s": ["x", "y", None]})
+    assert df["s"].has_validity()
+    assert_array_equal(
+        df.to_numpy(structured=True),
+        np.array([("x",), ("y",), (None,)], dtype=[("s", "O")]),
+    )
+    assert df["s"][:2].has_validity()
+    assert_array_equal(
+        df[:2].to_numpy(structured=True),
+        np.array([("x",), ("y",)], dtype=[("s", "<U1")]),
+    )
+
 
 def test_to_numpy_structured() -> None:
     # round-trip structured array: validate init/export
@@ -1336,7 +1349,6 @@ def test_to_numpy_structured() -> None:
             ]
         ),
     )
-
     df = pl.from_numpy(structured_array)
     assert df.schema == {
         "product": pl.Utf8,

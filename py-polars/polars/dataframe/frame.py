@@ -2091,7 +2091,7 @@ class DataFrame:
                 a = s.to_numpy()
                 arrays.append(
                     a.astype(str, copy=False)
-                    if tp == Utf8 and not s.has_validity()
+                    if tp == Utf8 and not s.null_count()
                     else a
                 )
 
