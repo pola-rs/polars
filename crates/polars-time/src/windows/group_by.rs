@@ -248,13 +248,15 @@ pub(crate) fn group_by_values_iter_lookbehind(
 
     let upper_bound = upper_bound.unwrap_or(time.len());
     // Use binary search to find the initial start as that is behind.
-    let t = time[start_offset];
-    let lower = add(&offset, t, tz.as_ref()).unwrap();
-    let upper = add(&period, lower, tz.as_ref()).unwrap();
-    let b = Bounds::new(lower, upper);
-    let slice = &time[..start_offset];
-
-    let mut start = slice.partition_point(|v| !b.is_member(*v, closed_window));
+    let mut start = if let Some(&t) = time.get(start_offset) {
+        let lower = add(&offset, t, tz.as_ref()).unwrap();
+        let upper = add(&period, lower, tz.as_ref()).unwrap();
+        let b = Bounds::new(lower, upper);
+        let slice = &time[..start_offset];
+        slice.partition_point(|v| !b.is_member(*v, closed_window))
+    } else {
+        0
+    };
     let mut end = start;
     time[start_offset..upper_bound]
         .iter()
@@ -310,7 +312,6 @@ pub(crate) fn group_by_values_iter_window_behind_t(
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 
-    let t0 = time[0];
     let mut start = 0;
     let mut end = start;
     time.iter().map(move |lower| {
@@ -318,7 +319,7 @@ pub(crate) fn group_by_values_iter_window_behind_t(
         let upper = add(&period, lower, tz.as_ref())?;
 
         let b = Bounds::new(lower, upper);
-        if b.is_future(t0, closed_window) {
+        if b.is_future(time[0], closed_window) {
             Ok((0, 0))
         } else {
             for &t in &time[start..] {
