@@ -186,21 +186,19 @@ unsafe fn write_anyvalue(
                                 },
                                 _ => ndt.format(datetime_format),
                             };
-                            write!(f, "{formatted}").map_err(|_|{
+                            let str_result = write!(f, "{formatted}");
+                            if str_result.is_err() {
                                 let datetime_format = unsafe { *datetime_formats.get_unchecked(i) };
                                 let type_name = if tz.is_some() {
                                     "DateTime"
                                 } else {
                                     "NaiveDateTime"
                                 };
-                                polars_err!(
+                                polars_bail!(
                                     ComputeError: "cannot format {} with format '{}'", type_name, datetime_format,
                                 )
-                            })?;
-                            if end_with_quote {
-                                write!(f, "{quote}")?
-                            }
-                            return Ok(())
+                            };
+                            str_result
                         },
                         #[cfg(feature = "dtype-time")]
                         AnyValue::Time(v) => {
