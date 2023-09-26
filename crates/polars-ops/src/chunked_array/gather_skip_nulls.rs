@@ -8,7 +8,7 @@ use polars_utils::index::check_bounds;
 
 /// # Safety
 /// For each index pair, pair.0 < len && pair.1 < ca.null_count() must hold.
-unsafe fn gather_skip_null_idx_pairs_unchecked<'a, T: PolarsDataType>(
+unsafe fn gather_skip_nulls_idx_pairs_unchecked<'a, T: PolarsDataType>(
     ca: &'a ChunkedArray<T>,
     mut index_pairs: Vec<(IdxSize, IdxSize)>,
     len: usize,
@@ -93,7 +93,7 @@ where
             .map(|(out_idx, nonnull_idx)| (out_idx as IdxSize, *nonnull_idx))
             .collect();
         let gathered =
-            unsafe { gather_skip_null_idx_pairs_unchecked(self, index_pairs, indices.len()) };
+            unsafe { gather_skip_nulls_idx_pairs_unchecked(self, index_pairs, indices.len()) };
         let arr = T::Array::from_zeroable_vec(gathered, self.dtype().clone());
         Ok(ChunkedArray::from_chunk_iter_like(self, [arr]))
     }
@@ -137,7 +137,7 @@ where
                 .collect()
         };
         let gathered = unsafe {
-            gather_skip_null_idx_pairs_unchecked(self, index_pairs, indices.as_ref().len())
+            gather_skip_nulls_idx_pairs_unchecked(self, index_pairs, indices.as_ref().len())
         };
 
         let mut arr = T::Array::from_zeroable_vec(gathered, self.dtype().clone());
