@@ -223,9 +223,11 @@ pub fn group_by_windows(
     (groups, lower_bound, upper_bound)
 }
 
-// this assumes that the given time point is the right endpoint of the window
-// there could duplicates rhs still
+// t is right at the end of the window
+// ------t---
+// [------]
 #[inline]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn group_by_values_iter_lookbehind(
     period: Duration,
     offset: Duration,
@@ -234,6 +236,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
     tu: TimeUnit,
     tz: Option<Tz>,
     start_offset: usize,
+    upper_bound: Option<usize>,
 ) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
     debug_assert!(offset.duration_ns() == period.duration_ns());
     debug_assert!(offset.negative);
@@ -243,6 +246,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 
+    let upper_bound = upper_bound.unwrap_or(time.len());
     // Use binary search to find the initial start as that is behind.
     let t = time[start_offset];
     let lower = add(&offset, t, tz.as_ref()).unwrap();
@@ -252,7 +256,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
 
     let mut start = slice.partition_point(|v| !b.is_member(*v, closed_window));
     let mut end = start;
-    time[start_offset..]
+    time[start_offset..upper_bound]
         .iter()
         .enumerate()
         .map(move |(mut i, lower)| {
@@ -456,7 +460,7 @@ pub(crate) fn group_by_values_iter(
     let mut offset = period;
     offset.negative = true;
     // t is at the right endpoint of the window
-    group_by_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0)
+    group_by_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0, None)
 }
 
 /// Checks if the boundary elements don't split on duplicates
@@ -509,11 +513,12 @@ pub fn group_by_values(
                         let iter = group_by_values_iter_lookbehind(
                             period,
                             offset,
-                            &time[..upper_bound],
+                            time,
                             closed_window,
                             tu,
                             tz,
                             base_offset,
+                            Some(upper_bound),
                         );
                         iter.map(|result| result.map(|(offset, len)| [offset, len]))
                             .collect::<PolarsResult<Vec<_>>>()
