@@ -5,7 +5,6 @@ use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
-use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -244,42 +243,48 @@ pub(crate) fn group_by_values_iter_lookbehind(
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 
-    let mut last_lookbehind_i = 0;
+    // Use binary search to find the initial start as that is behind.
+    let t = time[start_offset];
+    let lower = add(&offset, t, tz.as_ref()).unwrap();
+    let upper = add(&period, lower, tz.as_ref()).unwrap();
+    let b = Bounds::new(lower, upper);
+    let slice = &time[..start_offset];
+
+    let mut start = slice.partition_point(|v| !b.is_member(*v, closed_window));
+    let mut end = start;
     time[start_offset..]
         .iter()
         .enumerate()
-        .map(move |(mut i, mut lower)| {
-            // Consume duplicates, this is very uncommon.
-            while let Some(next_val) = time.get(i + 1) {
-                if next_val == lower {
-                    lower = next_val;
-                    i += 1;
-                } else {
-                    break;
-                }
-            }
+        .map(move |(mut i, lower)| {
             i += start_offset;
             let lower = add(&offset, *lower, tz.as_ref())?;
             let upper = add(&period, lower, tz.as_ref())?;
 
             let b = Bounds::new(lower, upper);
 
-            // we have a complete lookbehind so we know that `i` is the upper bound.
-            // Safety
-            // we are in bounds
-            let slice = unsafe { time.get_unchecked_release(last_lookbehind_i..i) };
-            let offset = slice.partition_point(|v| !b.is_member(*v, closed_window));
-
-            let lookbehind_i = offset + last_lookbehind_i;
-            // -1 for window boundary effects
-            last_lookbehind_i = lookbehind_i.saturating_sub(1);
-
-            let mut len = i - lookbehind_i;
-            if matches!(closed_window, ClosedWindow::Right | ClosedWindow::Both) {
-                len += 1;
+            for &t in &time[start..] {
+                if b.is_member(t, closed_window) || start == i {
+                    break;
+                }
+                start += 1;
             }
 
-            Ok((lookbehind_i as IdxSize, len as IdxSize))
+            end = std::cmp::max(start, end);
+            for &t in &time[end..] {
+                if !b.is_member(t, closed_window) {
+                    break;
+                }
+                end += 1;
+            }
+
+            let len = end - start;
+            let offset = start as IdxSize;
+
+            // -1 for boundary effects
+            start = start.saturating_sub(1);
+            end = end.saturating_sub(1);
+
+            Ok((offset, len as IdxSize))
         })
 }
 
