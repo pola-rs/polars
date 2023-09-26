@@ -404,6 +404,6 @@ pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
                 is_in_numeric(ca, other)
             })
         },
-        dt => polars_bail!(opq = is_int, dt),
+        dt => polars_bail!(opq = is_in, dt),
     }
 }
