@@ -67,10 +67,21 @@ pub trait ChunkGatherSkipNulls<I: ?Sized>: Sized {
     fn gather_skip_nulls(&self, indices: &I) -> PolarsResult<Self>;
 }
 
-impl<T: PolarsDataType> ChunkGatherSkipNulls<[IdxSize]> for ChunkedArray<T> {
+impl<T: PolarsDataType> ChunkGatherSkipNulls<[IdxSize]> for ChunkedArray<T>
+where
+    ChunkedArray<T>: ChunkFilter<T>,
+{
     fn gather_skip_nulls(&self, indices: &[IdxSize]) -> PolarsResult<Self> {
         if self.null_count() == 0 {
             return self.take(indices);
+        }
+
+        // If we want many indices it's probably better to do a normal gather on
+        // a dense array.
+        if indices.len() >= self.len() / 4 {
+            return ChunkFilter::filter(self, &self.is_not_null())
+                .unwrap()
+                .take(indices);
         }
 
         let bound = self.len() - self.null_count();
@@ -88,10 +99,21 @@ impl<T: PolarsDataType> ChunkGatherSkipNulls<[IdxSize]> for ChunkedArray<T> {
     }
 }
 
-impl<T: PolarsDataType> ChunkGatherSkipNulls<IdxCa> for ChunkedArray<T> {
+impl<T: PolarsDataType> ChunkGatherSkipNulls<IdxCa> for ChunkedArray<T>
+where
+    ChunkedArray<T>: ChunkFilter<T>,
+{
     fn gather_skip_nulls(&self, indices: &IdxCa) -> PolarsResult<Self> {
         if self.null_count() == 0 {
             return self.take(indices);
+        }
+
+        // If we want many indices it's probably better to do a normal gather on
+        // a dense array.
+        if indices.len() >= self.len() / 4 {
+            return ChunkFilter::filter(self, &self.is_not_null())
+                .unwrap()
+                .take(indices);
         }
 
         let bound = self.len() - self.null_count();
@@ -126,7 +148,6 @@ impl<T: PolarsDataType> ChunkGatherSkipNulls<IdxCa> for ChunkedArray<T> {
         Ok(ChunkedArray::from_chunk_iter_like(self, [arr]))
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -169,7 +190,7 @@ mod test {
         let ref_gather = ref_gather_nulls(ref_ca, ref_idx_ca);
         assert_eq!(gather.map(|ca| ca.into_iter().collect()), ref_gather);
     }
-    
+
     fn gather_skip_nulls_check(ca: &UInt32Chunked, idx_ca: &IdxCa) {
         test_equal_ref(ca, idx_ca);
         test_equal_ref(&ca.rechunk(), idx_ca);
