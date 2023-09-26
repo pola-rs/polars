@@ -62,7 +62,7 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized {
     type ZeroablePhysical<'a>: Zeroable + From<Self::Physical<'a>>;
     type Array: for<'a> StaticArray<
         ValueT<'a> = Self::Physical<'a>,
-        ZeroableValueT<'a> = Self::ZeroablePhysical<'a>
+        ZeroableValueT<'a> = Self::ZeroablePhysical<'a>,
     >;
 
     fn get_dtype() -> DataType

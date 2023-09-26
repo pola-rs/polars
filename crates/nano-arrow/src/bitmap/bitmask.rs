@@ -94,6 +94,7 @@ fn load_padded_le_u64(bytes: &[u8]) -> u64 {
     lo | mid | hi
 }
 
+#[derive(Default, Clone)]
 pub struct BitMask<'a> {
     bytes: &'a [u8],
     offset: usize,
@@ -228,16 +229,6 @@ impl<'a> BitMask<'a> {
             (byte >> byte_shift) & 1 == 1
         } else {
             false
-        }
-    }
-}
-
-impl<'a> Default for BitMask<'a> {
-    fn default() -> Self {
-        Self {
-            bytes: &[],
-            offset: 0,
-            len: 0,
         }
     }
 }

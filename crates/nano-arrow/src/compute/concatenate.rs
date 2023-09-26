@@ -47,7 +47,6 @@ pub fn concatenate(arrays: &[&dyn Array]) -> Result<Box<dyn Array>> {
     Ok(mutable.as_box())
 }
 
-
 /// Concatenate the validities of multiple [Array]s into a single Bitmap.
 pub fn concatenate_validities(arrays: &[&dyn Array]) -> Option<Bitmap> {
     let null_count: usize = arrays.iter().map(|a| a.null_count()).sum();

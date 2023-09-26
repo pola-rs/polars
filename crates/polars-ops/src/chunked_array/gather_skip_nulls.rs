@@ -13,7 +13,7 @@ unsafe fn gather_skip_null_idx_pairs_unchecked<'a, T: PolarsDataType>(
     mut index_pairs: Vec<(IdxSize, IdxSize)>,
     len: usize,
 ) -> Vec<T::ZeroablePhysical<'a>> {
-    if index_pairs.len() == 0 {
+    if index_pairs.is_empty() {
         return zeroed_vec(len);
     }
 

@@ -68,7 +68,7 @@ pub trait StaticArray:
     fn iter(&self) -> ZipValidity<Self::ValueT<'_>, Self::ValueIterT<'_>, BitmapIter>;
     fn values_iter(&self) -> Self::ValueIterT<'_>;
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self;
-    
+
     fn from_vec(v: Vec<Self::ValueT<'_>>, dtype: DataType) -> Self {
         v.into_iter().collect_arr_with_dtype(dtype)
     }
@@ -108,7 +108,7 @@ impl<T: NumericNative> StaticArray for PrimitiveArray<T> {
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
     }
-    
+
     fn from_vec(v: Vec<Self::ValueT<'_>>, _dtype: DataType) -> Self {
         PrimitiveArray::from_vec(v)
     }
@@ -145,13 +145,13 @@ impl StaticArray for BooleanArray {
     fn with_validity_typed(self, validity: Option<Bitmap>) -> Self {
         self.with_validity(validity)
     }
-    
+
     fn from_vec(v: Vec<Self::ValueT<'_>>, _dtype: DataType) -> Self {
-        BooleanArray::from_slice(&v)
+        BooleanArray::from_slice(v)
     }
-    
+
     fn from_zeroable_vec(v: Vec<Self::ValueT<'_>>, _dtype: DataType) -> Self {
-        BooleanArray::from_slice(&v)
+        BooleanArray::from_slice(v)
     }
 }
 
