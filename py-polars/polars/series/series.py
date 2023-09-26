@@ -3293,10 +3293,12 @@ class Series:
 
         Notes
         -----
-        While the _absence_ of a validity bitmask guarantees that a Series does not
-        have ``null`` values, the converse is not true, eg: the _presence_ of a
-        bitmask does not mean that there _are_ null values, as every value of the
+        While the *absence* of a validity bitmask guarantees that a Series does not
+        have ``null`` values, the converse is not true, eg: the *presence* of a
+        bitmask does not mean that there are null values, as every value of the
         bitmask could be ``false``.
+
+        To confirm that a column has ``null`` values use :func:`null_count`.
 
         """
         return self._s.has_validity()
