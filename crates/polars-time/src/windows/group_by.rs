@@ -293,6 +293,9 @@ pub(crate) fn group_by_values_iter_lookbehind(
 }
 
 // this one is correct for all lookbehind/lookaheads, but is slower
+// window is completely behind t and t itself is not a member
+// ---------------t---
+//  [---]
 pub(crate) fn group_by_values_iter_window_behind_t(
     period: Duration,
     offset: Duration,
@@ -307,37 +310,40 @@ pub(crate) fn group_by_values_iter_window_behind_t(
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 
-    let mut lagging_offset = 0;
-    time.iter().enumerate().map(move |(i, lower)| {
+    let t0 = time[0];
+    let mut start = 0;
+    let mut end = start;
+    time.iter().map(move |lower| {
         let lower = add(&offset, *lower, tz.as_ref())?;
         let upper = add(&period, lower, tz.as_ref())?;
 
         let b = Bounds::new(lower, upper);
-        if b.is_future(time[0], closed_window) {
+        if b.is_future(t0, closed_window) {
             Ok((0, 0))
         } else {
-            // find starting point of window
-            // we can start searching from lagging offset as that is the minimum boundary because data is sorted
-            // and every iteration this boundary shifts right
-            // we cannot use binary search as a window is not binary,
-            // it is false left from the window, true inside, and false right of the window
-            let mut count = 0;
-            for &t in &time[lagging_offset..] {
-                if b.is_member(t, closed_window) || lagging_offset + count == i {
+            for &t in &time[start..] {
+                if b.is_member(t, closed_window) {
                     break;
                 }
-                count += 1
-            }
-            if lagging_offset + count != i {
-                lagging_offset += count;
+                start += 1;
             }
 
-            // Safety
-            // we just iterated over value i.
-            let slice = unsafe { time.get_unchecked(lagging_offset..) };
-            let len = slice.partition_point(|v| b.is_member(*v, closed_window));
+            end = std::cmp::max(start, end);
+            for &t in &time[end..] {
+                if !b.is_member(t, closed_window) {
+                    break;
+                }
+                end += 1;
+            }
 
-            Ok((lagging_offset as IdxSize, len as IdxSize))
+            let len = end - start;
+            let offset = start as IdxSize;
+
+            // -1 for boundary effects
+            start = start.saturating_sub(1);
+            end = end.saturating_sub(1);
+
+            Ok((offset, len as IdxSize))
         }
     })
 }
