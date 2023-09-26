@@ -104,7 +104,7 @@ def assert_frame_equal(
             left_schema, right_schema = left.schema, right.schema
             assert (
                 left_schema == right_schema
-            ), f"lazy schemas are not equal\nleft: {left_schema}\nright: {right_schema}"
+            ), f"lazy schemas are not equal\n left: {left_schema}\nright: {right_schema}"
         left, right = left.collect(), right.collect()  # type: ignore[union-attr]
 
     if left.shape[0] != right.shape[0]:  # type: ignore[union-attr]
