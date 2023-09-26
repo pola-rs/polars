@@ -395,6 +395,7 @@ class LazyFrame:
         storage_options: dict[str, object] | None = None,
         low_memory: bool = False,
         use_statistics: bool = True,
+        hive_partitioning: bool = True,
     ) -> Self:
         """
         Lazily read from a parquet file or multiple files via glob patterns.
@@ -429,6 +430,7 @@ class LazyFrame:
             low_memory,
             cloud_options=storage_options,
             use_statistics=use_statistics,
+            hive_partitioning=hive_partitioning,
         )
         return self
 

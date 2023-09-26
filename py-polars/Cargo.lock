@@ -1826,6 +1826,7 @@ dependencies = [
  "libloading",
  "nano-arrow",
  "once_cell",
+ "percent-encoding",
  "polars-arrow",
  "polars-core",
  "polars-ffi",

@@ -178,6 +178,7 @@ def scan_parquet(
     storage_options: dict[str, Any] | None = None,
     low_memory: bool = False,
     use_statistics: bool = True,
+    hive_partitioning: bool = True,
 ) -> LazyFrame:
     """
     Lazily read from a parquet file or multiple files via glob patterns.
@@ -228,6 +229,9 @@ def scan_parquet(
     use_statistics
         Use statistics in the parquet to determine if pages
         can be skipped from reading.
+    hive_partitioning
+        Infer statistics and schema from hive partitioned URL and use them
+        to prune reads.
 
     Examples
     --------
@@ -258,4 +262,5 @@ def scan_parquet(
         storage_options=storage_options,
         low_memory=low_memory,
         use_statistics=use_statistics,
+        hive_partitioning=hive_partitioning,
     )

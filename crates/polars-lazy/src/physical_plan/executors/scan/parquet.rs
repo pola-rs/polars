@@ -7,7 +7,7 @@ use super::*;
 
 pub struct ParquetExec {
     path: PathBuf,
-    schema: SchemaRef,
+    file_info: FileInfo,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     options: ParquetOptions,
     #[allow(dead_code)]
@@ -18,7 +18,7 @@ pub struct ParquetExec {
 impl ParquetExec {
     pub(crate) fn new(
         path: PathBuf,
-        schema: SchemaRef,
+        file_info: FileInfo,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
@@ -26,7 +26,7 @@ impl ParquetExec {
     ) -> Self {
         ParquetExec {
             path,
-            schema,
+            file_info,
             predicate,
             options,
             cloud_options,
@@ -39,7 +39,7 @@ impl ParquetExec {
             &self.path,
             &self.predicate,
             &mut self.file_options.with_columns,
-            &mut self.schema,
+            &mut self.file_info.schema,
             self.file_options.n_rows,
             self.file_options.row_count.is_some(),
         );
@@ -52,6 +52,12 @@ impl ParquetExec {
                 .set_rechunk(self.file_options.rechunk)
                 .set_low_memory(self.options.low_memory)
                 .use_statistics(self.options.use_statistics)
+                .with_hive_partition_columns(
+                    self.file_info
+                        .hive_parts
+                        .as_ref()
+                        .map(|hive| hive.materialize_partition_columns()),
+                )
                 ._finish_with_scan_ops(predicate, projection.as_ref().map(|v| v.as_ref()))
         } else if is_cloud_url(self.path.as_path()) {
             #[cfg(feature = "cloud")]
@@ -62,7 +68,13 @@ impl ParquetExec {
                 )?
                 .with_n_rows(n_rows)
                 .with_row_count(mem::take(&mut self.file_options.row_count))
-                .use_statistics(self.options.use_statistics);
+                .use_statistics(self.options.use_statistics)
+                .with_hive_partition_columns(
+                    self.file_info
+                        .hive_parts
+                        .as_ref()
+                        .map(|hive| hive.materialize_partition_columns()),
+                );
 
                 reader.finish(predicate)
             }

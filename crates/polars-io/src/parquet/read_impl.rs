@@ -84,6 +84,14 @@ pub(super) fn array_iter_to_series(
     }
 }
 
+fn materialize_hive_partitions(df: &mut DataFrame, hive_partition_columns: Option<&[Series]>) {
+    if let Some(hive_columns) = hive_partition_columns {
+        for s in hive_columns {
+            unsafe { df.with_column_unchecked(s.new_from_index(0, df.height())) };
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 // might parallelize over columns
 fn rg_to_dfs(
@@ -99,6 +107,7 @@ fn rg_to_dfs(
     parallel: ParallelStrategy,
     projection: &[usize],
     use_statistics: bool,
+    hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<Vec<DataFrame>> {
     let mut dfs = Vec::with_capacity(row_group_end - row_group_start);
 
@@ -148,6 +157,7 @@ fn rg_to_dfs(
         if let Some(rc) = &row_count {
             df.with_row_count_mut(&rc.name, Some(*previous_row_count + rc.offset));
         }
+        materialize_hive_partitions(&mut df, hive_partition_columns);
 
         apply_predicate(&mut df, predicate.as_deref(), true)?;
 
@@ -175,6 +185,7 @@ fn rg_to_dfs_par(
     row_count: Option<RowCount>,
     projection: &[usize],
     use_statistics: bool,
+    hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<Vec<DataFrame>> {
     // compute the limits per row group and the row count offsets
     let row_groups = file_metadata
@@ -222,6 +233,7 @@ fn rg_to_dfs_par(
             if let Some(rc) = &row_count {
                 df.with_row_count_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
             }
+            materialize_hive_partitions(&mut df, hive_partition_columns);
 
             apply_predicate(&mut df, predicate.as_deref(), false)?;
 
@@ -242,6 +254,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     mut parallel: ParallelStrategy,
     row_count: Option<RowCount>,
     use_statistics: bool,
+    hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<DataFrame> {
     let file_metadata = metadata
         .map(Ok)
@@ -297,6 +310,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             parallel,
             &projection,
             use_statistics,
+            hive_partition_columns,
         )?,
         ParallelStrategy::RowGroups => rg_to_dfs_par(
             &store,
@@ -310,6 +324,7 @@ pub fn read_parquet<R: MmapBytesReader>(
             row_count,
             &projection,
             use_statistics,
+            hive_partition_columns,
         )?,
         // auto should already be replaced by Columns or RowGroups
         ParallelStrategy::Auto => unimplemented!(),
@@ -374,9 +389,11 @@ pub struct BatchedParquetReader {
     parallel: ParallelStrategy,
     chunk_size: usize,
     use_statistics: bool,
+    hive_partition_columns: Option<Vec<Series>>,
 }
 
 impl BatchedParquetReader {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         row_group_fetcher: Box<dyn FetchRowGroups>,
         metadata: FileMetaData,
@@ -385,6 +402,7 @@ impl BatchedParquetReader {
         row_count: Option<RowCount>,
         chunk_size: usize,
         use_statistics: bool,
+        hive_partition_columns: Option<Vec<Series>>,
     ) -> PolarsResult<Self> {
         let schema = read::schema::infer_schema(&metadata)?;
         let n_row_groups = metadata.row_groups.len();
@@ -412,6 +430,7 @@ impl BatchedParquetReader {
             parallel,
             chunk_size,
             use_statistics,
+            hive_partition_columns,
         })
     }
 
@@ -438,6 +457,7 @@ impl BatchedParquetReader {
                         ParallelStrategy::Columns,
                         &self.projection,
                         self.use_statistics,
+                        self.hive_partition_columns.as_deref(),
                     )?;
                     self.row_group_offset += n;
                     dfs
@@ -455,6 +475,7 @@ impl BatchedParquetReader {
                         self.row_count.clone(),
                         &self.projection,
                         self.use_statistics,
+                        self.hive_partition_columns.as_deref(),
                     )?;
                     self.row_group_offset += n;
                     dfs

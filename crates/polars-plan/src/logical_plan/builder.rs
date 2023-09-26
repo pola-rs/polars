@@ -96,10 +96,7 @@ impl LogicalPlanBuilder {
             None => function.schema(infer_schema_length)?,
         });
 
-        let file_info = FileInfo {
-            schema: schema.clone(),
-            row_estimation: (n_rows, n_rows.unwrap_or(usize::MAX)),
-        };
+        let file_info = FileInfo::new(schema.clone(), (n_rows, n_rows.unwrap_or(usize::MAX)));
         Ok(LogicalPlan::AnonymousScan {
             function,
             file_info,
@@ -129,17 +126,18 @@ impl LogicalPlanBuilder {
         low_memory: bool,
         cloud_options: Option<CloudOptions>,
         use_statistics: bool,
+        hive_partitioning: bool,
     ) -> PolarsResult<Self> {
         use polars_io::{is_cloud_url, SerReader as _};
 
         let path = path.into();
         let (mut schema, num_rows) = if is_cloud_url(&path) {
-            #[cfg(not(feature = "async"))]
+            #[cfg(not(feature = "cloud"))]
             panic!(
                 "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
             );
 
-            #[cfg(feature = "async")]
+            #[cfg(feature = "cloud")]
             {
                 let uri = path.to_string_lossy();
                 ParquetAsyncReader::file_info(&uri, cloud_options.as_ref())?
@@ -154,10 +152,9 @@ impl LogicalPlanBuilder {
             let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
         }
 
-        let file_info = FileInfo {
-            schema: Arc::new(schema),
-            row_estimation: (Some(num_rows), num_rows),
-        };
+        let mut file_info = FileInfo::new(Arc::new(schema), (Some(num_rows), num_rows));
+
+        file_info.set_hive_partitions(path.as_path());
 
         let options = FileScanOptions {
             with_columns: None,
@@ -166,6 +163,7 @@ impl LogicalPlanBuilder {
             rechunk,
             row_count,
             file_counter: Default::default(),
+            hive_partitioning,
         };
         Ok(LogicalPlan::Scan {
             path,
@@ -206,10 +204,7 @@ impl LogicalPlanBuilder {
         let schema = Arc::new(schema);
 
         let num_rows = reader._num_rows()?;
-        let file_info = FileInfo {
-            schema,
-            row_estimation: (None, num_rows),
-        };
+        let file_info = FileInfo::new(schema, (None, num_rows));
 
         let file_options = FileScanOptions {
             with_columns: None,
@@ -218,6 +213,8 @@ impl LogicalPlanBuilder {
             rechunk,
             row_count,
             file_counter: Default::default(),
+            // TODO! add
+            hive_partitioning: false,
         };
         Ok(LogicalPlan::Scan {
             path,
@@ -316,10 +313,7 @@ impl LogicalPlanBuilder {
         let estimated_n_rows = (rows_read as f64 / bytes_read as f64 * n_bytes as f64) as usize;
 
         skip_rows += skip_rows_after_header;
-        let file_info = FileInfo {
-            schema,
-            row_estimation: (None, estimated_n_rows),
-        };
+        let file_info = FileInfo::new(schema, (None, estimated_n_rows));
 
         let options = FileScanOptions {
             with_columns: None,
@@ -328,6 +322,8 @@ impl LogicalPlanBuilder {
             rechunk,
             row_count,
             file_counter: Default::default(),
+            // TODO! add
+            hive_partitioning: false,
         };
         Ok(LogicalPlan::Scan {
             path,

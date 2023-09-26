@@ -101,6 +101,7 @@ pub struct FileScanOptions {
     pub row_count: Option<RowCount>,
     pub rechunk: bool,
     pub file_counter: FileCount,
+    pub hive_partitioning: bool,
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]

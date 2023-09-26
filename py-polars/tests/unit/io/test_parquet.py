@@ -30,6 +30,7 @@ COMPRESSIONS = [
 ]
 
 
+@pytest.mark.write_disk()
 def test_write_parquet_using_pyarrow_9753(tmpdir: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     df.write_parquet(
