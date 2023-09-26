@@ -1,11 +1,11 @@
 [package]
 name = "nano-arrow"
 version = "0.1.0"
-authors = ["Jorge C. Leitao <jorgecarleitao@gmail.com>", "Apache Arrow <dev@arrow.apache.org>", "Ritchie Vink"]
-edition.workspace = true
-homepage.workspace = true
-licence = "Apache 2.0 and MIT"
-repository.workspace = true
+authors = ["Jorge C. Leitao <jorgecarleitao@gmail.com>", "Apache Arrow <dev@arrow.apache.org>", "Ritchie Vink <ritchie46@gmail.com>"]
+edition = { workspace = true }
+homepage = { workspace = true }
+license = "Apache 2.0 AND MIT"
+repository = { workspace = true }
 description = "Minimal implementation of the Arrow specification forked from arrow2."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
