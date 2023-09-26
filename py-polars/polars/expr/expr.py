@@ -8053,7 +8053,7 @@ class Expr:
 
     def sample(
         self,
-        n: int | None = None,
+        n: int | Expr | None = None,
         *,
         fraction: float | None = None,
         with_replacement: bool = False,
@@ -8104,6 +8104,7 @@ class Expr:
 
         if n is None:
             n = 1
+        n = parse_as_expression(n)
         return self._from_pyexpr(
             self._pyexpr.sample_n(n, with_replacement, shuffle, seed)
         )
