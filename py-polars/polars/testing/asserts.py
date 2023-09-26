@@ -75,9 +75,8 @@ def assert_frame_equal(
     >>> assert_frame_equal(df1, df2)  # doctest: +SKIP
     AssertionError: Values for column 'a' are different.
     """
-    if collect_input_frames := (
-        isinstance(left, LazyFrame) and isinstance(right, LazyFrame)
-    ):
+    collect_input_frames = isinstance(left, LazyFrame) and isinstance(right, LazyFrame)
+    if collect_input_frames:
         objs = "LazyFrames"
     elif isinstance(left, DataFrame) and isinstance(right, DataFrame):
         objs = "DataFrames"
