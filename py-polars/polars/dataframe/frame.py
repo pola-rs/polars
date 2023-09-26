@@ -6871,6 +6871,9 @@ class DataFrame:
         """
         Create a spreadsheet-style pivot table as a DataFrame.
 
+        Only available in eager mode. See "Examples" section below for how to do a
+        "lazy pivot" if you know the unique column values in advance.
+
         Parameters
         ----------
         values
@@ -6959,6 +6962,36 @@ class DataFrame:
         ...     values="col3",
         ...     aggregate_function=pl.element().tanh().mean(),
         ... )
+        shape: (2, 3)
+        ┌──────┬──────────┬──────────┐
+        │ col1 ┆ x        ┆ y        │
+        │ ---  ┆ ---      ┆ ---      │
+        │ str  ┆ f64      ┆ f64      │
+        ╞══════╪══════════╪══════════╡
+        │ a    ┆ 0.998347 ┆ null     │
+        │ b    ┆ 0.964028 ┆ 0.999954 │
+        └──────┴──────────┴──────────┘
+
+        Note that `pivot` is only available in eager mode. If you know the unique
+        column values in advance, you can use :meth:`polars.LazyFrame.groupby` to
+        get the same result as above in lazy mode:
+
+        >>> index = pl.col("col1")
+        >>> columns = pl.col("col2")
+        >>> values = pl.col("col3")
+        >>> unique_column_values = ["x", "y"]
+        >>> aggregate_function = lambda col: col.tanh().mean()
+        >>> (
+        ...     df.lazy()
+        ...     .group_by(index)
+        ...     .agg(
+        ...         *[
+        ...             aggregate_function(values.filter(columns == value)).alias(value)
+        ...             for value in unique_column_values
+        ...         ]
+        ...     )
+        ...     .collect()
+        ... )  # doctest: +IGNORE_RESULT
         shape: (2, 3)
         ┌──────┬──────────┬──────────┐
         │ col1 ┆ x        ┆ y        │
