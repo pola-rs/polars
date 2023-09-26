@@ -540,7 +540,7 @@ def raise_assert_detail(
     error_msg = textwrap.dedent(
         f"""\
         {obj} are different ({detail})
-         [left]: {left}
+        [left]:  {left}
         [right]: {right}\
         """
     )
