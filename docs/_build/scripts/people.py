@@ -1,7 +1,9 @@
 import itertools
 from github import Github
+import os
 
-g = Github(None)
+token = os.getenv("GITHUB_TOKEN")
+g = Github(token)
 
 ICON_TEMPLATE = "[![{login}]({avatar_url}){{.contributor_icon}}]({html_url})"
 
