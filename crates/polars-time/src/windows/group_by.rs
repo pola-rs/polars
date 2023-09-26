@@ -333,7 +333,9 @@ pub(crate) fn group_by_values_iter_window_behind_t(
     })
 }
 
-// this one is correct for all lookbehind/lookaheads, but is slower
+// window is with -1 periods of t
+// ----t---
+//  [---]
 pub(crate) fn group_by_values_iter_partial_lookbehind(
     period: Duration,
     offset: Duration,
@@ -348,68 +350,45 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 
-    let mut lagging_offset = 0;
+    let mut start = 0;
+    let mut end = start;
     time.iter().enumerate().map(move |(i, lower)| {
         let lower = add(&offset, *lower, tz.as_ref())?;
         let upper = add(&period, lower, tz.as_ref())?;
 
         let b = Bounds::new(lower, upper);
 
-        for &t in &time[lagging_offset..] {
-            if b.is_member(t, closed_window) || lagging_offset == i {
+        for &t in &time[start..] {
+            if b.is_member(t, closed_window) || start == i {
                 break;
             }
-            lagging_offset += 1;
+            start += 1;
         }
 
-        // Safety
-        // we just iterated over value i.
-        let slice = unsafe { time.get_unchecked(lagging_offset..) };
-        let len = slice.partition_point(|v| b.is_member(*v, closed_window));
+        end = std::cmp::max(start, end);
+        for &t in &time[end..] {
+            if !b.is_member(t, closed_window) {
+                break;
+            }
+            end += 1;
+        }
 
-        Ok((lagging_offset as IdxSize, len as IdxSize))
+        let len = end - start;
+        let offset = start as IdxSize;
+
+        // -1 for boundary effects
+        start = start.saturating_sub(1);
+        end = end.saturating_sub(1);
+
+        Ok((offset, len as IdxSize))
     })
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn group_by_values_iter_partial_lookahead(
-    period: Duration,
-    offset: Duration,
-    time: &[i64],
-    closed_window: ClosedWindow,
-    tu: TimeUnit,
-    tz: Option<Tz>,
-    start_offset: usize,
-    upper_bound: Option<usize>,
-) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
-    let upper_bound = upper_bound.unwrap_or(time.len());
-    debug_assert!(!offset.negative);
-
-    let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
-
-    time[start_offset..upper_bound]
-        .iter()
-        .enumerate()
-        .map(move |(mut i, lower)| {
-            i += start_offset;
-            let lower = add(&offset, *lower, tz.as_ref())?;
-            let upper = add(&period, lower, tz.as_ref())?;
-
-            let b = Bounds::new(lower, upper);
-
-            debug_assert!(i < time.len());
-            let slice = unsafe { time.get_unchecked(i..) };
-            let len = slice.partition_point(|v| b.is_member(*v, closed_window));
-
-            Ok((i as IdxSize, len as IdxSize))
-        })
-}
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn group_by_values_iter_full_lookahead(
+// window is completely ahead of t and t itself is not a member
+// --t-----------
+//        [---]
+pub(crate) fn group_by_values_iter_lookahead(
     period: Duration,
     offset: Duration,
     time: &[i64],
@@ -590,7 +569,7 @@ pub fn group_by_values(
                 .map(|(base_offset, len)| {
                     let lower_bound = base_offset;
                     let upper_bound = base_offset + len;
-                    let iter = group_by_values_iter_full_lookahead(
+                    let iter = group_by_values_iter_lookahead(
                         period,
                         offset,
                         time,
@@ -618,7 +597,7 @@ pub fn group_by_values(
                 .map(|(base_offset, len)| {
                     let lower_bound = base_offset;
                     let upper_bound = base_offset + len;
-                    let iter = group_by_values_iter_partial_lookahead(
+                    let iter = group_by_values_iter_lookahead(
                         period,
                         offset,
                         time,
