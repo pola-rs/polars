@@ -5485,10 +5485,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Update the values in this `LazyFrame` with the non-null values in `other`.
 
-        Notes
-        -----
-        This is syntactic sugar for a left/inner join + coalesce
-
         Warnings
         --------
         This functionality is experimental and may change without it being considered a
@@ -5504,6 +5500,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         how : {'left', 'inner'}
             'left' will keep the left table rows as is.
             'inner' will remove rows that are not found in other
+
+        Notes
+        -----
+        This is syntactic sugar for a left/inner join + coalesce
 
         Examples
         --------
