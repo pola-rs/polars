@@ -67,6 +67,8 @@ jobs:
         uses: ts-graphviz/setup-graphviz@v1
 
       - name: Build documentation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: mkdocs build
 
       - name: Add .nojekyll
