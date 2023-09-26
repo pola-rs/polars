@@ -414,29 +414,21 @@ pub(crate) fn group_by_values_iter_lookahead(
 
         let b = Bounds::new(lower, upper);
 
-        loop {
-            match time.get(start) {
-                None => break,
-                Some(t) => {
-                    if b.is_member(*t, closed_window) {
-                        break;
-                    }
-                },
+        for &t in &time[start..] {
+            if b.is_member(t, closed_window) {
+                break;
             }
             start += 1;
         }
+
         end = std::cmp::max(start, end);
-        loop {
-            match time.get(end) {
-                None => break,
-                Some(t) => {
-                    if !b.is_member(*t, closed_window) {
-                        break;
-                    }
-                },
+        for &t in &time[end..] {
+            if !b.is_member(t, closed_window) {
+                break;
             }
             end += 1;
         }
+
         let len = end - start;
         let offset = start as IdxSize;
         // -1 for boundary effects
