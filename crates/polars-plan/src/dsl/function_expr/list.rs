@@ -65,14 +65,14 @@ impl Display for ListFunction {
                 }
             },
             #[cfg(feature = "list_sets")]
-            SetOperation(s) => return write!(f, "{s}"),
+            SetOperation(s) => return write!(f, "list.{s}"),
             #[cfg(feature = "list_any_all")]
             Any => "any",
             #[cfg(feature = "list_any_all")]
             All => "all",
             Join => "join",
         };
-        write!(f, "{name}")
+        write!(f, "list.{name}")
     }
 }
 
