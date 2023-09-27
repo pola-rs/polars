@@ -3222,7 +3222,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     period="3i",
         ...     include_boundaries=True,
         ...     closed="right",
-        ... ).agg(pl.col("A").alias("A_agg_list"))
+        ... ).agg(pl.col("A").alias("A_agg_list")).collect()
         shape: (4, 4)
         ┌─────────────────┬─────────────────┬─────┬─────────────────┐
         │ _lower_boundary ┆ _upper_boundary ┆ idx ┆ A_agg_list      │
