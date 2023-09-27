@@ -80,6 +80,7 @@ polars-io = { version = "0.33.2", path = "crates/polars-io", default-features = 
 polars-error = { version = "0.33.2", path = "crates/polars-error", default-features = false }
 polars-json = { version = "0.33.2", path = "crates/polars-json", default-features = false }
 polars = { version = "0.33.2", path = "crates/polars", default-features = false }
+rand_distr = "0.4"
 
 [workspace.dependencies.arrow]
 package = "nano-arrow"

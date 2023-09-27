@@ -38,7 +38,7 @@ avx512 = ["polars-core/avx512"]
 nightly = ["polars-core/nightly", "polars-ops/nightly", "simd", "polars-lazy?/nightly"]
 docs = ["polars-core/docs"]
 temporal = ["polars-core/temporal", "polars-lazy?/temporal", "polars-io/temporal", "polars-time"]
-random = ["polars-core/random", "polars-lazy?/random"]
+random = ["polars-core/random", "polars-lazy?/random", "polars-ops/random"]
 default = [
   "docs",
   "zip_with",
@@ -142,7 +142,7 @@ lazy_regex = ["polars-lazy?/regex"]
 cum_agg = ["polars-core/cum_agg", "polars-core/cum_agg"]
 rolling_window = ["polars-core/rolling_window", "polars-lazy?/rolling_window", "polars-time/rolling_window"]
 interpolate = ["polars-ops/interpolate", "polars-lazy?/interpolate"]
-rank = ["polars-core/rank", "polars-lazy?/rank"]
+rank = ["polars-lazy?/rank", "polars-ops/rank"]
 diff = ["polars-core/diff", "polars-lazy?/diff", "polars-ops/diff"]
 pct_change = ["polars-core/pct_change", "polars-lazy?/pct_change"]
 moment = ["polars-core/moment", "polars-lazy?/moment", "polars-ops/moment"]
