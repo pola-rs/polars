@@ -249,7 +249,6 @@ pub(crate) fn group_by_values_iter_lookbehind(
     } else {
         0
     };
-    let mut end = start;
     time[start_offset..upper_bound]
         .iter()
         .enumerate()
@@ -260,17 +259,17 @@ pub(crate) fn group_by_values_iter_lookbehind(
 
             let b = Bounds::new(lower, upper);
 
-            for &t in unsafe { time.get_unchecked_release(start..) } {
-                if b.is_member_entry(t, closed_window) || start == i {
+            for &t in unsafe { time.get_unchecked_release(start..i) } {
+                if b.is_member_entry(t, closed_window) {
                     break;
                 }
                 start += 1;
             }
 
             // we know that t is at least at `i`.
-            end = std::cmp::max(i, end);
+            let mut end = std::cmp::max(i, start);
             // we still must loop to consume duplicates
-            for &t in unsafe { time.get_unchecked_release(i..) } {
+            for &t in unsafe { time.get_unchecked_release(end..) } {
                 if !b.is_member_exit(t, closed_window) {
                     break;
                 }
