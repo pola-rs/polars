@@ -102,7 +102,11 @@ impl CloudLocation {
                 .to_string();
             (bucket, key)
         };
-        let (mut prefix, expansion) = extract_prefix_expansion(key)?;
+
+        let key = percent_encoding::percent_decode_str(key)
+            .decode_utf8()
+            .map_err(to_compute_err)?;
+        let (mut prefix, expansion) = extract_prefix_expansion(&key)?;
         if is_local && key.starts_with(DELIMITER) {
             prefix.insert(0, DELIMITER);
         }

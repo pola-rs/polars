@@ -33,6 +33,7 @@ memmap = { package = "memmap2", version = "0.7" }
 num-traits = { workspace = true }
 object_store = { workspace = true, optional = true }
 once_cell = { workspace = true }
+percent-encoding = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 ryu = { workspace = true, optional = true }
