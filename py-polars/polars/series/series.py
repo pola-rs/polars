@@ -927,11 +927,9 @@ class Series:
         return self.clone()
 
     def __contains__(self, item: Any) -> bool:
-        # TODO: optimize via `is_in` and `SORTED` flags
-        try:
-            return (self == item).any()
-        except ValueError:
-            return False
+        if item is None:
+            return self.null_count() > 0
+        return self.implode().list.contains(item).item()
 
     def __iter__(self) -> Generator[Any, None, None]:
         if self.dtype == List:

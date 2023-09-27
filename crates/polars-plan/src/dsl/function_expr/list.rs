@@ -79,9 +79,9 @@ impl Display for ListFunction {
 #[cfg(feature = "is_in")]
 pub(super) fn contains(args: &mut [Series]) -> PolarsResult<Option<Series>> {
     let list = &args[0];
-    let is_in = &args[1];
+    let item = &args[1];
 
-    polars_ops::prelude::is_in(is_in, list).map(|mut ca| {
+    polars_ops::prelude::is_in(item, list).map(|mut ca| {
         ca.rename(list.name());
         Some(ca.into_series())
     })
