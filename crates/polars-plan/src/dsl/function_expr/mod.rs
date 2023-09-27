@@ -558,6 +558,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     #[cfg(feature = "list_drop_nulls")]
                     DropNulls => map!(list::drop_nulls),
                     Slice => wrap!(list::slice),
+                    Shift => map_as_slice!(list::shift),
                     Get => wrap!(list::get),
                     #[cfg(feature = "list_take")]
                     Take(null_ob_oob) => map_as_slice!(list::take, null_ob_oob),

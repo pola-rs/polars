@@ -78,8 +78,8 @@ impl PyExpr {
         self.inner.clone().list().reverse().into()
     }
 
-    fn list_shift(&self, periods: i64) -> Self {
-        self.inner.clone().list().shift(periods).into()
+    fn list_shift(&self, periods: PyExpr) -> Self {
+        self.inner.clone().list().shift(periods.inner).into()
     }
 
     fn list_slice(&self, offset: PyExpr, length: Option<PyExpr>) -> Self {

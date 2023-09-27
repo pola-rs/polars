@@ -13,7 +13,12 @@ if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars import Expr, Series
-    from polars.type_aliases import IntoExpr, NullBehavior, ToStructStrategy
+    from polars.type_aliases import (
+        IntoExpr,
+        IntoExprColumn,
+        NullBehavior,
+        ToStructStrategy,
+    )
 
 
 class ExprListNameSpace:
@@ -642,7 +647,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_diff(n, null_behavior))
 
-    def shift(self, periods: int = 1) -> Expr:
+    def shift(self, periods: int | IntoExprColumn = 1) -> Expr:
         """
         Shift values by the given period.
 
@@ -663,6 +668,7 @@ class ExprListNameSpace:
         ]
 
         """
+        periods = parse_as_expression(periods)
         return wrap_expr(self._pyexpr.list_shift(periods))
 
     def slice(
