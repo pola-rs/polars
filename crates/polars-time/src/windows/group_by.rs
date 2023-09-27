@@ -5,6 +5,7 @@ use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
+use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -252,22 +253,28 @@ pub(crate) fn group_by_values_iter_lookbehind(
     time[start_offset..upper_bound]
         .iter()
         .enumerate()
-        .map(move |(mut i, lower)| {
+        .map(move |(mut i, t)| {
             i += start_offset;
-            let lower = add(&offset, *lower, tz.as_ref())?;
+            let lower = add(&offset, *t, tz.as_ref())?;
             let upper = add(&period, lower, tz.as_ref())?;
 
             let b = Bounds::new(lower, upper);
 
-            for &t in &time[start..] {
-                if b.is_member_entry(t, closed_window) || start == i {
+            for &t in unsafe { time.get_unchecked_release(start..i) } {
+                if b.is_member_entry(t, closed_window) {
                     break;
                 }
                 start += 1;
             }
 
-            end = std::cmp::max(start, end);
-            for &t in &time[end..] {
+            // faster path, check if `i` is member.
+            if b.is_member_exit(*t, closed_window) {
+                end = i;
+            } else {
+                end = std::cmp::max(end, start);
+            }
+            // we still must loop to consume duplicates
+            for &t in unsafe { time.get_unchecked_release(end..) } {
                 if !b.is_member_exit(t, closed_window) {
                     break;
                 }
