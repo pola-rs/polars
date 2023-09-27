@@ -63,12 +63,12 @@
 //!
 use std::convert::TryFrom;
 use std::io::Write;
-use std::iter::Map;
 use std::ops::Deref;
 
 use arrow::array::StructArray;
 use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
+use polars_core::frame::RecordBatchIter;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
 use polars_json::json::infer;
@@ -77,7 +77,6 @@ use polars_json::json::write::FallibleStreamingIterator;
 use serde::{Deserialize, Serialize};
 use polars_json::{json, ndjson};
 use simd_json::BorrowedValue;
-use polars_core::frame::{ArrowChunk, RecordBatchIter};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
@@ -181,7 +180,7 @@ where
     }
 }
 
-impl<W> SinkWriter<W> for JsonBatchedWriter<W>
+impl<W> JsonBatchedWriter<W>
 where
     W: Write,
 {
@@ -189,36 +188,43 @@ where
     ///
     /// # Panics
     /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
-    fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+    pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
-        let batches = df
-            .iter_chunks()
-            .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
+        let chunks = df.iter_chunks();
         match self.json_format {
             JsonFormat::Json => {
-                self.write_json_batch(batches)?;
+                self.write_json_batch(fields, chunks)?;
             },
             JsonFormat::JsonLines => {
-                self.write_json_lines_batch(batches)?;
-            }
+                self.write_json_lines_batch(fields, chunks)?;
+            },
         }
         Ok(())
     }
 
     /// Writes the footer of the Json file.
-    fn finish(&mut self) -> PolarsResult<()> {
+    pub fn finish(&mut self) -> PolarsResult<()> {
         match self.json_format {
             JsonFormat::Json => {
                 self.write_json_finish()?;
             },
-            _ => {}
+            _ => {},
         }
         Ok(())
     }
 }
 /// These are the methods implementation for json lines format
-impl<W> JsonBatchedWriter<W> where W: Write {
-    fn write_json_lines_batch<I>(&mut self, batches: I) -> Result<(), PolarsError> {
+impl<W> JsonBatchedWriter<W>
+where
+    W: Write,
+{
+    fn write_json_lines_batch(
+        &mut self,
+        fields: Vec<ArrowField>,
+        chunks: RecordBatchIter,
+    ) -> Result<(), PolarsError> {
+        let batches =
+            chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
         let mut serializer = polars_json::ndjson::write::Serializer::new(batches, vec![]);
         while let Some(block) = serializer.next()? {
             self.writer.write_all(block)?;
@@ -227,8 +233,17 @@ impl<W> JsonBatchedWriter<W> where W: Write {
     }
 }
 /// These are the methods implementation for standard json format
-impl<W> JsonBatchedWriter<W> where W: Write {
-    fn write_json_batch<I>(&mut self, batches: I) -> Result<(), PolarsError> {
+impl<W> JsonBatchedWriter<W>
+where
+    W: Write,
+{
+    fn write_json_batch(
+        &mut self,
+        fields: Vec<ArrowField>,
+        chunks: RecordBatchIter,
+    ) -> Result<(), PolarsError> {
+        let batches =
+            chunks.map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
         let mut serializer = polars_json::json::write::Serializer::new(batches, vec![]);
 
         while let Some(block) = serializer.next()? {
