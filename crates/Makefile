@@ -50,6 +50,7 @@ test:  ## Run tests
 		-p polars-utils \
 		-p polars-row \
 		-p polars-sql \
+		-p polars-ops \
 		-p polars-plan \
 		-- \
 		--test-threads=2
@@ -65,6 +66,7 @@ nextest:  ## Run tests with nextest
 		-p polars-utils \
 		-p polars-row \
 		-p polars-sql \
+		-p polars-ops \
 		-p polars-plan \
 
 .PHONY: integration-tests

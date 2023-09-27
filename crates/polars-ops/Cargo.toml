@@ -19,6 +19,7 @@ ahash = { workspace = true }
 argminmax = { version = "0.6.1", default-features = false, features = ["float"] }
 arrow = { workspace = true }
 base64 = { workspace = true, optional = true }
+bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 either = { workspace = true }
@@ -33,6 +34,9 @@ regex = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
 
 [build-dependencies]
 version_check = { workspace = true }

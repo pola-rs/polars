@@ -1634,6 +1634,7 @@ version = "0.33.2"
 dependencies = [
  "ahash",
  "bitflags 2.4.0",
+ "bytemuck",
  "chrono",
  "chrono-tz",
  "comfy-table",
@@ -1769,6 +1770,7 @@ dependencies = [
  "ahash",
  "argminmax",
  "base64",
+ "bytemuck",
  "chrono",
  "chrono-tz",
  "either",
