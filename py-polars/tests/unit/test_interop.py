@@ -1011,10 +1011,10 @@ def test_series_from_repr() -> None:
         )
 
         for col in frame.columns:
-            srs = cast(pl.Series, pl.from_repr(repr(frame[col])))
-            assert_series_equal(srs, frame[col])
+            s = cast(pl.Series, pl.from_repr(repr(frame[col])))
+            assert_series_equal(s, frame[col])
 
-    srs = cast(
+    s = cast(
         pl.Series,
         pl.from_repr(
             """
@@ -1029,9 +1029,9 @@ def test_series_from_repr() -> None:
             """
         ),
     )
-    assert_series_equal(srs, pl.Series("s", ["a", "c"]))
+    assert_series_equal(s, pl.Series("s", ["a", "c"]))
 
-    srs = cast(
+    s = cast(
         pl.Series,
         pl.from_repr(
             """
@@ -1041,7 +1041,7 @@ def test_series_from_repr() -> None:
             """
         ),
     )
-    assert_series_equal(srs, pl.Series("flt", [], dtype=pl.Float32))
+    assert_series_equal(s, pl.Series("flt", [], dtype=pl.Float32))
 
 
 def test_to_init_repr() -> None:
