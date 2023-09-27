@@ -165,7 +165,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
 }
 
 static CLOUD_URL: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^(s3|gs|gs|gcs|file|adbs|az|adl)\:\/\/.+$").unwrap());
+    Lazy::new(|| Regex::new(r"^(s3|gs|gs|gcs|file|abfs|azure|az|adl)\:\/\/.+$").unwrap());
 
 /// Check if the path is a cloud url.
 pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {
