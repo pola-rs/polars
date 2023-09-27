@@ -249,12 +249,13 @@ pub(crate) fn group_by_values_iter_lookbehind(
     } else {
         0
     };
+    let mut end = start;
     time[start_offset..upper_bound]
         .iter()
         .enumerate()
-        .map(move |(mut i, lower)| {
+        .map(move |(mut i, t)| {
             i += start_offset;
-            let lower = add(&offset, *lower, tz.as_ref())?;
+            let lower = add(&offset, *t, tz.as_ref())?;
             let upper = add(&period, lower, tz.as_ref())?;
 
             let b = Bounds::new(lower, upper);
@@ -266,8 +267,12 @@ pub(crate) fn group_by_values_iter_lookbehind(
                 start += 1;
             }
 
-            // we know that t is at least at `i`.
-            let mut end = std::cmp::max(i, start);
+            // faster path, check if `i` is member.
+            if b.is_member_exit(*t, closed_window) {
+                end = i;
+            } else {
+                end = std::cmp::max(end, start);
+            }
             // we still must loop to consume duplicates
             for &t in unsafe { time.get_unchecked_release(end..) } {
                 if !b.is_member_exit(t, closed_window) {
