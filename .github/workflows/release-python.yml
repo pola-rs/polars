@@ -32,7 +32,8 @@ jobs:
       - name: Publish wheel
         uses: PyO3/maturin-action@v1
         env:
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+          RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt
+
         with:
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
@@ -92,7 +93,8 @@ jobs:
       - name: Publish wheel
         uses: PyO3/maturin-action@v1
         env:
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
+          RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt
+
         with:
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
@@ -118,7 +120,7 @@ jobs:
       - name: Publish wheel
         uses: PyO3/maturin-action@v1
         env:
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc
+          RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc
         with:
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
@@ -146,7 +148,8 @@ jobs:
       - name: Publish wheel
         uses: PyO3/maturin-action@v1
         env:
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
+          RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt
+
         with:
           command: publish
           args: -m py-polars/Cargo.toml --no-sdist --skip-existing -o wheels -i python -u ritchie46
