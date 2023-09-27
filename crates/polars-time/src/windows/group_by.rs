@@ -5,6 +5,7 @@ use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
+use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -259,15 +260,17 @@ pub(crate) fn group_by_values_iter_lookbehind(
 
             let b = Bounds::new(lower, upper);
 
-            for &t in &time[start..] {
+            for &t in unsafe { time.get_unchecked_release(start..) } {
                 if b.is_member_entry(t, closed_window) || start == i {
                     break;
                 }
                 start += 1;
             }
 
-            end = std::cmp::max(start, end);
-            for &t in &time[end..] {
+            // we know that t is at least at `i`.
+            end = std::cmp::max(i, end);
+            // we still must loop to consume duplicates
+            for &t in unsafe { time.get_unchecked_release(i..) } {
                 if !b.is_member_exit(t, closed_window) {
                     break;
                 }
