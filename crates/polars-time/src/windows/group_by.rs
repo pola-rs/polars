@@ -58,7 +58,7 @@ impl StartBy {
 #[allow(clippy::too_many_arguments)]
 fn update_groups_and_bounds(
     bounds_iter: BoundsIter<'_>,
-    mut start_offset: usize,
+    mut start: usize,
     time: &[i64],
     closed_window: ClosedWindow,
     include_lower_bound: bool,
@@ -67,38 +67,25 @@ fn update_groups_and_bounds(
     upper_bound: &mut Vec<i64>,
     groups: &mut Vec<[IdxSize; 2]>,
 ) {
-    for bi in bounds_iter {
-        let mut skip_window = false;
+    'bounds: for bi in bounds_iter {
         // find starting point of window
-        while start_offset < time.len() {
-            let t = time[start_offset];
+        for &t in &time[start..time.len().saturating_sub(1)] {
+            // the window is behind the time values.
             if bi.is_future(t, closed_window) {
-                // the window is behind the time values.
-                skip_window = true;
+                continue 'bounds;
+            }
+            if bi.is_member_entry(t, closed_window) {
                 break;
             }
-            if bi.is_member(t, closed_window) {
-                break;
-            }
-            start_offset += 1;
-        }
-        if skip_window {
-            start_offset = start_offset.saturating_sub(1);
-            continue;
-        }
-        if start_offset == time.len() {
-            start_offset = start_offset.saturating_sub(1);
+            start += 1;
         }
 
         // find members of this window
-        let mut i = start_offset;
-        // start next iteration 1 index back because of boundary conditions.
-        // e.g. "closed left" could match the next iteration, but did not this one.
-        start_offset = start_offset.saturating_sub(1);
+        let mut end = start;
 
-        // last value
-        if i == time.len() - 1 {
-            let t = time[i];
+        // last value isn't always added
+        if end == time.len() - 1 {
+            let t = time[end];
             if bi.is_member(t, closed_window) {
                 if include_lower_bound {
                     lower_bound.push(bi.start);
@@ -106,21 +93,17 @@ fn update_groups_and_bounds(
                 if include_upper_bound {
                     upper_bound.push(bi.stop);
                 }
-                groups.push([i as IdxSize, 1])
+                groups.push([end as IdxSize, 1])
             }
             continue;
         }
-
-        let first = i as IdxSize;
-
-        while i < time.len() {
-            let t = time[i];
-            if !bi.is_member(t, closed_window) {
+        for &t in &time[end..] {
+            if !bi.is_member_exit(t, closed_window) {
                 break;
             }
-            i += 1;
+            end += 1;
         }
-        let len = (i as IdxSize) - first;
+        let len = end - start;
 
         if include_lower_bound {
             lower_bound.push(bi.start);
@@ -128,7 +111,7 @@ fn update_groups_and_bounds(
         if include_upper_bound {
             upper_bound.push(bi.stop);
         }
-        groups.push([first, len])
+        groups.push([start as IdxSize, len as IdxSize])
     }
 }
 
