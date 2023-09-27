@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 
     from polars.type_aliases import SchemaDict, SelectorType
 
+pytestmark = pytest.mark.slow()
+
 
 @pytest.fixture()
 def path_xlsx(io_files_path: Path) -> Path:
@@ -164,7 +166,7 @@ def test_read_excel_all_sheets(
         ("openpyxl", None),
     ],
 )
-def test_basic_datatypes_read_excel(
+def test_read_excel_basic_datatypes(
     engine: Literal["xlsx2csv", "openpyxl", "pyxlsb"],
     schema_overrides: SchemaDict | None,
 ) -> None:
