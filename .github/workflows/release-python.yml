@@ -23,12 +23,6 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      
-      # Needed to avoid potential out-of-memory errors.
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |
@@ -38,40 +32,7 @@ jobs:
       - name: Publish wheel
         uses: PyO3/maturin-action@v1
         env:
-          RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt
-
-        with:
-          command: publish
-          args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-
-  manylinux-x64_64-lts-cpu:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      # Needed to avoid potential out-of-memory errors.
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
-
-      - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-
-      - name: Prepare lts-cpu
-        run: sed -i 's/name = "polars"/name = "polars-lts-cpu"/' py-polars/pyproject.toml
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc
+          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
         with:
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
@@ -87,7 +48,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      # Needed to avoid potential out-of-memory errors.
+      # Needed to avoid out-of-memory error
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:
@@ -109,59 +70,42 @@ jobs:
           maturin-version: ${{ env.MATURIN_VERSION }}
           rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
 
-  win-macos-x64_64:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-
+  manylinux-bigidx:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      
-      # Needed to avoid potential out-of-memory errors.
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |
           rm py-polars/README.md
           cp README.md py-polars/README.md
 
+      - name: Prepare bigidx
+        run: |
+          sed -i 's/name = "polars"/name = "polars-u64-idx"/' py-polars/pyproject.toml
+          # A brittle hack to insert the 'bigidx' feature
+          sed -i 's/"dynamic_group_by",/"dynamic_group_by",\n"bigidx",/' py-polars/Cargo.toml
+
       - name: Publish wheel
         uses: PyO3/maturin-action@v1
         env:
-          RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt
-
+          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
         with:
           command: publish
-          args: -m py-polars/Cargo.toml --skip-existing --no-sdist -o wheels -i python -u ritchie46
+          args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
           maturin-version: ${{ env.MATURIN_VERSION }}
           rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
 
-  win-macos-x64_64-lts-cpu:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-
+  manylinux-x64_64-lts-cpu:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      
-      # Needed to avoid potential out-of-memory errors.
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |
@@ -174,11 +118,38 @@ jobs:
       - name: Publish wheel
         uses: PyO3/maturin-action@v1
         env:
-          RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt
-
+          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc
         with:
           command: publish
-          args: -m py-polars/Cargo.toml --skip-existing --no-sdist -o wheels -i python -u ritchie46
+          args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
+          maturin-version: ${{ env.MATURIN_VERSION }}
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+  win-macos:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Fix README symlink
+        run: |
+          rm py-polars/README.md
+          cp README.md py-polars/README.md
+
+      - name: Publish wheel
+        uses: PyO3/maturin-action@v1
+        env:
+          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
+        with:
+          command: publish
+          args: -m py-polars/Cargo.toml --no-sdist --skip-existing -o wheels -i python -u ritchie46
           maturin-version: ${{ env.MATURIN_VERSION }}
           rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
 
@@ -189,12 +160,6 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      
-      # Needed to avoid potential out-of-memory errors.
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |
@@ -203,231 +168,6 @@ jobs:
 
       - name: Set up Rust targets
         run: rustup target add aarch64-apple-darwin
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
-        with:
-          command: publish
-          args: -m py-polars/Cargo.toml --target aarch64-apple-darwin --no-sdist -o wheels -i python -u ritchie46
-          maturin-version: ${{ env.MATURIN_VERSION }}
-
-  manylinux-x64_64-bigidx:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      # Needed to avoid potential out-of-memory errors.
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
-
-      - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-
-      - name: Prepare bigidx
-        run: |
-          sed -i 's/name = "polars"/name = "polars-u64-idx"/' py-polars/pyproject.toml
-          # A brittle hack to insert the 'bigidx' feature
-          sed -i 's/"dynamic_group_by",/"dynamic_group_by",\n"bigidx",/' py-polars/Cargo.toml
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt
-
-        with:
-          command: publish
-          args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-
-  manylinux-x64_64-lts-cpu-bigidx:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      # Needed to avoid potential out-of-memory errors.
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
-
-      - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-
-      - name: Prepare lts-cpu-bigidx
-        run: |
-          sed -i 's/name = "polars"/name = "polars-lts-cpu-u64-idx"/' py-polars/pyproject.toml
-          # A brittle hack to insert the 'bigidx' feature
-          sed -i 's/"dynamic_group_by",/"dynamic_group_by",\n"bigidx",/' py-polars/Cargo.toml
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc
-        with:
-          command: publish
-          args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-
-  # Needed for Docker on Apple M1
-  manylinux-aarch64-bigidx:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      # Needed to avoid potential out-of-memory errors.
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
-
-      - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-
-      - name: Prepare bigidx
-        run: |
-          sed -i 's/name = "polars"/name = "polars-u64-idx"/' py-polars/pyproject.toml
-          # A brittle hack to insert the 'bigidx' feature
-          sed -i 's/"dynamic_group_by",/"dynamic_group_by",\n"bigidx",/' py-polars/Cargo.toml
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
-        env:
-          JEMALLOC_SYS_WITH_LG_PAGE: 16
-        with:
-          command: publish
-          args: -m py-polars/Cargo.toml --skip-existing --no-sdist -o wheels -i python -u ritchie46
-          target: aarch64-unknown-linux-gnu
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-
-  win-macos-x64_64-bigidx:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      # Needed to avoid potential out-of-memory errors.
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
-
-      - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-      
-      - name: Prepare bigidx
-        run: |
-          sed -i 's/name = "polars"/name = "polars-u64-idx"/' py-polars/pyproject.toml
-          # A brittle hack to insert the 'bigidx' feature
-          sed -i 's/"dynamic_group_by",/"dynamic_group_by",\n"bigidx",/' py-polars/Cargo.toml
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt
-
-        with:
-          command: publish
-          args: -m py-polars/Cargo.toml --skip-existing --no-sdist -o wheels -i python -u ritchie46
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-
-  win-macos-x64_64-lts-cpu-bigidx:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      # Needed to avoid potential out-of-memory errors.
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
-
-      - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-
-      - name: Prepare lts-cpu-bigidx
-        run: |
-          sed -i 's/name = "polars"/name = "polars-lts-cpu-u64-idx"/' py-polars/pyproject.toml
-          # A brittle hack to insert the 'bigidx' feature
-          sed -i 's/"dynamic_group_by",/"dynamic_group_by",\n"bigidx",/' py-polars/Cargo.toml
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: -C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt
-
-        with:
-          command: publish
-          args: -m py-polars/Cargo.toml --skip-existing --no-sdist -o wheels -i python -u ritchie46
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-
-  macos-aarch64-bigidx:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      # Needed to avoid potential out-of-memory errors.
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
-
-      - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-
-      - name: Set up Rust targets
-        run: rustup target add aarch64-apple-darwin
-      
-      - name: Prepare bigidx
-        run: |
-          sed -i 's/name = "polars"/name = "polars-u64-idx"/' py-polars/pyproject.toml
-          # A brittle hack to insert the 'bigidx' feature
-          sed -i 's/"dynamic_group_by",/"dynamic_group_by",\n"bigidx",/' py-polars/Cargo.toml
 
       - name: Publish wheel
         uses: PyO3/maturin-action@v1
