@@ -23,6 +23,12 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      
+      # Needed to avoid potential out-of-memory errors.
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |
@@ -47,6 +53,12 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      
+      # Needed to avoid potential out-of-memory errors.
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |
@@ -75,7 +87,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      # Needed to avoid out-of-memory error
+      # Needed to avoid potential out-of-memory errors.
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:
@@ -109,6 +121,12 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      
+      # Needed to avoid potential out-of-memory errors.
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |
@@ -138,6 +156,12 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      
+      # Needed to avoid potential out-of-memory errors.
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |
@@ -165,6 +189,12 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      
+      # Needed to avoid potential out-of-memory errors.
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |
@@ -188,6 +218,12 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      
+      # Needed to avoid potential out-of-memory errors.
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |
@@ -218,6 +254,12 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      
+      # Needed to avoid potential out-of-memory errors.
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |
@@ -248,8 +290,8 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
-      # Needed to avoid out-of-memory error
+      
+      # Needed to avoid potential out-of-memory errors.
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:
@@ -289,6 +331,12 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      
+      # Needed to avoid potential out-of-memory errors.
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |
@@ -324,6 +372,12 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      
+      # Needed to avoid potential out-of-memory errors.
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |
@@ -354,6 +408,12 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      
+      # Needed to avoid potential out-of-memory errors.
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |
