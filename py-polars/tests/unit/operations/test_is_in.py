@@ -147,6 +147,13 @@ def test_is_in_series() -> None:
     assert_series_equal(b, pl.Series("b", [True, False]))
 
 
+def test_is_in_null() -> None:
+    s = pl.Series([None, None], dtype=pl.Null)
+    result = s.is_in([1, 2, None])
+    expected = pl.Series([None, None], dtype=pl.Boolean)
+    assert_series_equal(result, expected)
+
+
 def test_is_in_invalid_shape() -> None:
     with pytest.raises(pl.ComputeError):
         pl.Series("a", [1, 2, 3]).is_in([[]])
