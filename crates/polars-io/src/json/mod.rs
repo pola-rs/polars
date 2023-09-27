@@ -204,11 +204,8 @@ where
 
     /// Writes the footer of the Json file.
     pub fn finish(&mut self) -> PolarsResult<()> {
-        match self.json_format {
-            JsonFormat::Json => {
-                self.write_json_finish()?;
-            },
-            _ => {},
+        if JsonFormat::Json == self.json_format {
+            self.write_json_finish()?;
         }
         Ok(())
     }
