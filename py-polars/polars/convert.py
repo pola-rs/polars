@@ -412,7 +412,7 @@ def from_repr(tbl: str) -> DataFrame | Series:
 
     From Series repr:
 
-    >>> srs = pl.from_repr(
+    >>> s = pl.from_repr(
     ...     '''
     ...     shape: (3,)
     ...     Series: 's' [bool]
@@ -423,7 +423,7 @@ def from_repr(tbl: str) -> DataFrame | Series:
     ...     ]
     ...     '''
     ... )
-    >>> srs.to_list()
+    >>> s.to_list()
     [True, False, True]
 
     """

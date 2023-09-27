@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import cast
 
 import numpy as np
 import pytest
@@ -15,27 +14,17 @@ def test_concat_align() -> None:
     b = pl.DataFrame({"a": ["a", "b", "c"], "c": [5.5, 6.0, 7.5]})
     c = pl.DataFrame({"a": ["a", "b", "c", "d", "e"], "d": ["w", "x", "y", "z", None]})
 
-    expected = cast(
-        pl.DataFrame,
-        pl.from_repr(
-            """
-            shape: (6, 4)
-            ┌─────┬──────┬──────┬──────┐
-            │ a   ┆ b    ┆ c    ┆ d    │
-            │ --- ┆ ---  ┆ ---  ┆ ---  │
-            │ str ┆ i64  ┆ f64  ┆ str  │
-            ╞═════╪══════╪══════╪══════╡
-            │ a   ┆ 1    ┆ 5.5  ┆ w    │
-            │ b   ┆ 2    ┆ 6.0  ┆ x    │
-            │ c   ┆ null ┆ 7.5  ┆ y    │
-            │ d   ┆ 4    ┆ null ┆ z    │
-            │ e   ┆ 5    ┆ null ┆ null │
-            │ e   ┆ 6    ┆ null ┆ null │
-            └─────┴──────┴──────┴──────┘
-            """
-        ),
+    result = pl.concat([a, b, c], how="align")
+
+    expected = pl.DataFrame(
+        {
+            "a": ["a", "b", "c", "d", "e", "e"],
+            "b": [1, 2, None, 4, 5, 6],
+            "c": [5.5, 6.0, 7.5, None, None, None],
+            "d": ["w", "x", "y", "z", None, None],
+        }
     )
-    assert_frame_equal(pl.concat([a, b, c], how="align"), expected)
+    assert_frame_equal(result, expected)
 
 
 def test_concat_diagonal() -> None:
@@ -79,28 +68,14 @@ def test_concat_vertical() -> None:
     a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]})
     b = pl.DataFrame({"a": ["c", "d", "e"], "b": [3, 4, 5]})
 
-    out = pl.concat([a, b], how="vertical")
-    expected = cast(
-        pl.DataFrame,
-        pl.from_repr(
-            """
-            shape: (5, 2)
-            ┌─────┬─────┐
-            │ a   ┆ b   │
-            │ --- ┆ --- │
-            │ str ┆ i64 │
-            ╞═════╪═════╡
-            │ a   ┆ 1   │
-            │ b   ┆ 2   │
-            │ c   ┆ 3   │
-            │ d   ┆ 4   │
-            │ e   ┆ 5   │
-            └─────┴─────┘
-            """
-        ),
+    result = pl.concat([a, b], how="vertical")
+    expected = pl.DataFrame(
+        {
+            "a": ["a", "b", "c", "d", "e"],
+            "b": [1, 2, 3, 4, 5],
+        }
     )
-    assert_frame_equal(out, expected)
-    assert out.rows() == [("a", 1), ("b", 2), ("c", 3), ("d", 4), ("e", 5)]
+    assert_frame_equal(result, expected)
 
 
 def test_null_handling_correlation() -> None:
