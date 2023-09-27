@@ -7,6 +7,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Poll;
 
+use bytes::Bytes;
 use futures::executor::block_on;
 use futures::future::BoxFuture;
 use futures::lock::Mutex;
@@ -18,7 +19,7 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use super::*;
 
-type OptionalFuture = Arc<Mutex<Option<BoxFuture<'static, std::io::Result<Vec<u8>>>>>>;
+type OptionalFuture = Arc<Mutex<Option<BoxFuture<'static, std::io::Result<Bytes>>>>>;
 
 /// Adaptor to translate from AsyncSeek and AsyncRead to the object_store get_range API.
 pub struct CloudReader {
@@ -50,7 +51,7 @@ impl CloudReader {
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         length: usize,
-    ) -> std::task::Poll<std::io::Result<Vec<u8>>> {
+    ) -> std::task::Poll<std::io::Result<Bytes>> {
         let start = self.pos as usize;
 
         // If we already have a future just poll it.
@@ -66,7 +67,6 @@ impl CloudReader {
             async move {
                 object_store
                     .get_range(&path, start..start + length)
-                    .map_ok(|r| r.to_vec())
                     .map_err(|e| {
                         std::io::Error::new(
                             std::io::ErrorKind::Other,
@@ -101,7 +101,7 @@ impl AsyncRead for CloudReader {
         // With this approach we keep ownership of the buffer and we don't have to pass it to the future runtime.
         match block_on(self.read_operation(cx, buf.len())) {
             Poll::Ready(Ok(bytes)) => {
-                buf.copy_from_slice(&bytes);
+                buf.copy_from_slice(bytes.as_ref());
                 Poll::Ready(Ok(bytes.len()))
             },
             Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
