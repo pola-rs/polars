@@ -63,16 +63,24 @@ impl PyExpr {
         self.inner.clone().str().to_time(options).into()
     }
 
-    fn str_strip_chars(&self, matches: Option<String>) -> Self {
-        self.inner.clone().str().strip_chars(matches).into()
+    fn str_strip_chars(&self, matches: Self) -> Self {
+        self.inner.clone().str().strip_chars(matches.inner).into()
     }
 
-    fn str_strip_chars_start(&self, matches: Option<String>) -> Self {
-        self.inner.clone().str().strip_chars_start(matches).into()
+    fn str_strip_chars_start(&self, matches: Self) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .strip_chars_start(matches.inner)
+            .into()
     }
 
-    fn str_strip_chars_end(&self, matches: Option<String>) -> Self {
-        self.inner.clone().str().strip_chars_end(matches).into()
+    fn str_strip_chars_end(&self, matches: Self) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .strip_chars_end(matches.inner)
+            .into()
     }
 
     fn str_strip_prefix(&self, prefix: Self) -> Self {

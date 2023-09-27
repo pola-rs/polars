@@ -85,7 +85,7 @@ impl Display for TemporalFunction {
             Round(..) => "round",
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(_) => "replace_time_zone",
-            DatetimeFunction { .. } => return write!(f, "datetime"),
+            DatetimeFunction { .. } => return write!(f, "dt.datetime"),
             Combine(_) => "combine",
         };
         write!(f, "dt.{s}")

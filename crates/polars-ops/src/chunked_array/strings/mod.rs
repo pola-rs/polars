@@ -10,7 +10,10 @@ mod justify;
 mod namespace;
 #[cfg(feature = "strings")]
 mod replace;
+#[cfg(feature = "strings")]
 mod split;
+#[cfg(feature = "strings")]
+mod strip;
 #[cfg(feature = "strings")]
 mod substring;
 
@@ -19,7 +22,10 @@ pub use json_path::*;
 #[cfg(feature = "strings")]
 pub use namespace::*;
 use polars_core::prelude::*;
+#[cfg(feature = "strings")]
 pub use split::*;
+#[cfg(feature = "strings")]
+pub use strip::*;
 
 pub trait AsUtf8 {
     fn as_utf8(&self) -> &Utf8Chunked;

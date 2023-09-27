@@ -27,6 +27,8 @@ pub mod prelude;
 #[cfg(all(test, feature = "csv"))]
 mod tests;
 pub mod utils;
+use once_cell::sync::Lazy;
+use regex::Regex;
 
 #[cfg(feature = "partition")]
 pub mod partition;
@@ -162,9 +164,13 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     }
 }
 
+static CLOUD_URL: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(s3|gs|gs|gcs|file|adbs|az|adl)\:\/\/.+$").unwrap());
+
 /// Check if the path is a cloud url.
 pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {
-    p.as_ref().starts_with("s3://")
-        || p.as_ref().starts_with("file://")
-        || p.as_ref().starts_with("gcs://")
+    match p.as_ref().as_os_str().to_str() {
+        Some(s) => CLOUD_URL.is_match(s),
+        _ => false,
+    }
 }

@@ -35,7 +35,7 @@ use smartstring::alias::String as SmartString;
 
 use crate::fallible;
 use crate::physical_plan::executors::Executor;
-use crate::physical_plan::planner::create_physical_plan;
+use crate::physical_plan::planner::{create_physical_expr, create_physical_plan};
 use crate::physical_plan::state::ExecutionState;
 #[cfg(feature = "streaming")]
 use crate::physical_plan::streaming::insert_streaming_nodes;
@@ -550,7 +550,25 @@ impl LazyFrame {
             );
             opt_state.comm_subplan_elim = false;
         }
-        let lp_top = optimize(self.logical_plan, opt_state, lp_arena, expr_arena, scratch)?;
+        let lp_top = optimize(
+            self.logical_plan,
+            opt_state,
+            lp_arena,
+            expr_arena,
+            scratch,
+            Some(&|node, expr_arena| {
+                let phys_expr = create_physical_expr(
+                    node,
+                    Context::Default,
+                    expr_arena,
+                    None,
+                    &mut Default::default(),
+                )
+                .ok()?;
+                let io_expr = phys_expr_to_io_expr(phys_expr);
+                Some(io_expr)
+            }),
+        )?;
 
         if streaming {
             #[cfg(feature = "streaming")]

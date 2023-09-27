@@ -362,7 +362,7 @@ def find_stacklevel() -> int:
     Taken from:
     https://github.com/pandas-dev/pandas/blob/ab89c53f48df67709a533b6a95ce3d911871a0a8/pandas/util/_exceptions.py#L30-L51
     """
-    pkg_dir = Path(pl.__file__).parent
+    pkg_dir = str(Path(pl.__file__).parent)
 
     # https://stackoverflow.com/questions/17407119/python-inspect-stack-is-slow
     frame = inspect.currentframe()
@@ -370,7 +370,11 @@ def find_stacklevel() -> int:
     try:
         while frame:
             fname = inspect.getfile(frame)
-            if fname.startswith(str(pkg_dir)):
+            if fname.startswith(pkg_dir) or (
+                (qualname := getattr(frame.f_code, "co_qualname", None))
+                # ignore @singledispatch wrappers
+                and qualname.startswith("singledispatch.")
+            ):
                 frame = frame.f_back
                 n += 1
             else:

@@ -3,6 +3,7 @@ use polars_lazy::dsl::Expr;
 use polars_plan::dsl::{coalesce, count, when};
 use polars_plan::logical_plan::LiteralValue;
 use polars_plan::prelude::lit;
+use polars_plan::prelude::LiteralValue::Null;
 use sqlparser::ast::{
     Expr as SqlExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SqlValue,
     WindowSpec, WindowType,
@@ -626,8 +627,8 @@ impl SqlFunctionVisitor<'_> {
             Length => self.visit_unary(|e| e.str().n_chars()),
             Lower => self.visit_unary(|e| e.str().to_lowercase()),
             LTrim => match function.args.len() {
-                1 => self.visit_unary(|e| e.str().strip_chars_start(None)),
-                2 => self.visit_binary(|e, s| e.str().strip_chars_start(Some(s))),
+                1 => self.visit_unary(|e| e.str().strip_chars_start(lit(Null))),
+                2 => self.visit_binary(|e, s| e.str().strip_chars_start(s)),
                 _ => polars_bail!(InvalidOperation:
                     "Invalid number of arguments for LTrim: {}",
                     function.args.len()
@@ -652,8 +653,8 @@ impl SqlFunctionVisitor<'_> {
                 _ => polars_bail!(InvalidOperation:"Invalid number of arguments for RegexpLike: {}",function.args.len()),
             },
             RTrim => match function.args.len() {
-                1 => self.visit_unary(|e| e.str().strip_chars_end(None)),
-                2 => self.visit_binary(|e, s| e.str().strip_chars_end(Some(s))),
+                1 => self.visit_unary(|e| e.str().strip_chars_end(lit(Null))),
+                2 => self.visit_binary(|e, s| e.str().strip_chars_end(s)),
                 _ => polars_bail!(InvalidOperation:
                     "Invalid number of arguments for RTrim: {}",
                     function.args.len()

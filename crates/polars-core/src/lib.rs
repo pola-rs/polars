@@ -38,7 +38,7 @@ use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 
 #[cfg(feature = "dtype-categorical")]
-pub use crate::chunked_array::logical::categorical::stringcache::*;
+pub use crate::chunked_array::logical::categorical::string_cache::*;
 
 pub static PROCESS_ID: Lazy<u128> = Lazy::new(|| {
     SystemTime::now()

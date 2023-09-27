@@ -146,10 +146,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "dtype-struct")]
     AsStruct,
     #[cfg(feature = "top_k")]
-    TopK {
-        k: usize,
-        descending: bool,
-    },
+    TopK(bool),
     Shift(i64),
     Cumcount {
         reverse: bool,
@@ -333,7 +330,13 @@ impl Display for FunctionExpr {
             #[cfg(feature = "dtype-struct")]
             AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
-            TopK { .. } => "top_k",
+            TopK(descending) => {
+                if *descending {
+                    "top_k"
+                } else {
+                    "bottom_k"
+                }
+            },
             Shift(_) => "shift",
             Cumcount { .. } => "cumcount",
             Cumsum { .. } => "cumsum",
@@ -555,6 +558,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     #[cfg(feature = "list_drop_nulls")]
                     DropNulls => map!(list::drop_nulls),
                     Slice => wrap!(list::slice),
+                    Shift => map_as_slice!(list::shift),
                     Get => wrap!(list::get),
                     #[cfg(feature = "list_take")]
                     Take(null_ob_oob) => map_as_slice!(list::take, null_ob_oob),
@@ -601,8 +605,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(coerce::as_struct)
             },
             #[cfg(feature = "top_k")]
-            TopK { k, descending } => {
-                map!(top_k, k, descending)
+            TopK(descending) => {
+                map_as_slice!(top_k, descending)
             },
             Shift(periods) => map!(dispatch::shift, periods),
             Cumcount { reverse } => map!(cum::cumcount, reverse),
@@ -679,7 +683,21 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             RLEID => map!(rle_id),
             ToPhysical => map!(dispatch::to_physical),
             #[cfg(feature = "random")]
-            Random { method, seed } => map!(random::random, method, seed),
+            Random { method, seed } => {
+                use RandomMethod::*;
+                match method {
+                    Shuffle => map!(random::shuffle, seed),
+                    SampleFrac {
+                        frac,
+                        with_replacement,
+                        shuffle,
+                    } => map!(random::sample_frac, frac, with_replacement, shuffle, seed),
+                    SampleN {
+                        with_replacement,
+                        shuffle,
+                    } => map_as_slice!(random::sample_n, with_replacement, shuffle, seed),
+                }
+            },
             SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => unsafe {
@@ -746,9 +764,9 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Lowercase => map!(strings::lowercase),
             #[cfg(feature = "nightly")]
             Titlecase => map!(strings::titlecase),
-            StripChars(matches) => map!(strings::strip_chars, matches.as_deref()),
-            StripCharsStart(matches) => map!(strings::strip_chars_start, matches.as_deref()),
-            StripCharsEnd(matches) => map!(strings::strip_chars_end, matches.as_deref()),
+            StripChars => map_as_slice!(strings::strip_chars),
+            StripCharsStart => map_as_slice!(strings::strip_chars_start),
+            StripCharsEnd => map_as_slice!(strings::strip_chars_end),
             StripPrefix => map_as_slice!(strings::strip_prefix),
             StripSuffix => map_as_slice!(strings::strip_suffix),
             #[cfg(feature = "string_from_radix")]

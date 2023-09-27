@@ -23,14 +23,6 @@ where
     f
 }
 
-fn opt_strip_prefix<'a>(s: Option<&'a str>, prefix: Option<&str>) -> Option<&'a str> {
-    Some(s?.strip_prefix(prefix?).unwrap_or(s?))
-}
-
-fn opt_strip_suffix<'a>(s: Option<&'a str>, suffix: Option<&str>) -> Option<&'a str> {
-    Some(s?.strip_suffix(suffix?).unwrap_or(s?))
-}
-
 pub trait Utf8NameSpaceImpl: AsUtf8 {
     #[cfg(not(feature = "binary_encoding"))]
     fn hex_decode(&self) -> PolarsResult<Utf8Chunked> {
@@ -350,30 +342,41 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         Ok(builder.finish())
     }
 
+    fn strip_chars(&self, pat: &Series) -> PolarsResult<Utf8Chunked> {
+        let ca = self.as_utf8();
+        if pat.dtype() == &DataType::Null {
+            Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim())))
+        } else {
+            Ok(strip_chars(ca, pat.utf8()?))
+        }
+    }
+
+    fn strip_chars_start(&self, pat: &Series) -> PolarsResult<Utf8Chunked> {
+        let ca = self.as_utf8();
+        if pat.dtype() == &DataType::Null {
+            return Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_start())));
+        } else {
+            Ok(strip_chars_start(ca, pat.utf8()?))
+        }
+    }
+
+    fn strip_chars_end(&self, pat: &Series) -> PolarsResult<Utf8Chunked> {
+        let ca = self.as_utf8();
+        if pat.dtype() == &DataType::Null {
+            return Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_end())));
+        } else {
+            Ok(strip_chars_end(ca, pat.utf8()?))
+        }
+    }
+
     fn strip_prefix(&self, prefix: &Utf8Chunked) -> Utf8Chunked {
         let ca = self.as_utf8();
-        match prefix.len() {
-            1 => match prefix.get(0) {
-                Some(prefix) => {
-                    ca.apply_generic(|opt_s| opt_s.map(|s| s.strip_prefix(prefix).unwrap_or(s)))
-                },
-                _ => Utf8Chunked::full_null(ca.name(), ca.len()),
-            },
-            _ => binary_elementwise(ca, prefix, opt_strip_prefix),
-        }
+        strip_prefix(ca, prefix)
     }
 
     fn strip_suffix(&self, suffix: &Utf8Chunked) -> Utf8Chunked {
         let ca = self.as_utf8();
-        match suffix.len() {
-            1 => match suffix.get(0) {
-                Some(suffix) => {
-                    ca.apply_generic(|opt_s| opt_s.map(|s| s.strip_suffix(suffix).unwrap_or(s)))
-                },
-                _ => Utf8Chunked::full_null(ca.name(), ca.len()),
-            },
-            _ => binary_elementwise(ca, suffix, opt_strip_suffix),
-        }
+        strip_suffix(ca, suffix)
     }
 
     #[cfg(feature = "dtype-struct")]

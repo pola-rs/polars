@@ -1,6 +1,3 @@
-#[cfg(feature = "rank")]
-pub(crate) mod rank;
-
 use std::hash::Hash;
 
 use arrow::bitmap::MutableBitmap;

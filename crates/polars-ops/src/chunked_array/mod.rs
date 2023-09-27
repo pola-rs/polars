@@ -14,6 +14,8 @@ mod sum;
 #[cfg(feature = "top_k")]
 mod top_k;
 
+pub mod gather_skip_nulls;
+
 pub use binary::*;
 #[cfg(feature = "timezones")]
 pub use datetime::*;

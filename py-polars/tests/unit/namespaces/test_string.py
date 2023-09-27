@@ -195,6 +195,49 @@ def test_str_parse_int_df() -> None:
         )
 
 
+def test_str_strip_chars_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "s": [" hello ", "^^world^^", "&&hi&&", "  polars  ", None],
+            "pat": [" ", "^", "&", None, "anything"],
+        }
+    )
+
+    all_expr = df.select(
+        [
+            pl.col("s").str.strip_chars(pl.col("pat")).alias("strip_chars"),
+            pl.col("s").str.strip_chars_start(pl.col("pat")).alias("strip_chars_start"),
+            pl.col("s").str.strip_chars_end(pl.col("pat")).alias("strip_chars_end"),
+        ]
+    )
+
+    expected = pl.DataFrame(
+        {
+            "strip_chars": ["hello", "world", "hi", "polars", None],
+            "strip_chars_start": ["hello ", "world^^", "hi&&", "polars  ", None],
+            "strip_chars_end": [" hello", "^^world", "&&hi", "  polars", None],
+        }
+    )
+
+    assert_frame_equal(all_expr, expected)
+
+    strip_by_null = df.select(
+        pl.col("s").str.strip_chars(None).alias("strip_chars"),
+        pl.col("s").str.strip_chars_start(None).alias("strip_chars_start"),
+        pl.col("s").str.strip_chars_end(None).alias("strip_chars_end"),
+    )
+
+    # only whitespace are striped.
+    expected = pl.DataFrame(
+        {
+            "strip_chars": ["hello", "^^world^^", "&&hi&&", "polars", None],
+            "strip_chars_start": ["hello ", "^^world^^", "&&hi&&", "polars  ", None],
+            "strip_chars_end": [" hello", "^^world^^", "&&hi&&", "  polars", None],
+        }
+    )
+    assert_frame_equal(strip_by_null, expected)
+
+
 def test_str_strip_chars() -> None:
     s = pl.Series([" hello ", "world\t "])
     expected = pl.Series(["hello", "world"])

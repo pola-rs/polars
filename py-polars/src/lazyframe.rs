@@ -235,7 +235,7 @@ impl PyLazyFrame {
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (path, n_rows, cache, parallel, rechunk, row_count,
-        low_memory, cloud_options, use_statistics)
+        low_memory, cloud_options, use_statistics, hive_partitioning)
     )]
     fn new_from_parquet(
         path: String,
@@ -247,6 +247,7 @@ impl PyLazyFrame {
         low_memory: bool,
         cloud_options: Option<Vec<(String, String)>>,
         use_statistics: bool,
+        hive_partitioning: bool,
     ) -> PyResult<Self> {
         let cloud_options = cloud_options
             .map(|kv| parse_cloud_options(&path, kv))
@@ -261,6 +262,7 @@ impl PyLazyFrame {
             low_memory,
             cloud_options,
             use_statistics,
+            hive_partitioning,
         };
         let lf = LazyFrame::scan_parquet(path, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())
@@ -649,7 +651,7 @@ impl PyLazyFrame {
         every: &str,
         period: &str,
         offset: &str,
-        truncate: bool,
+        label: Wrap<Label>,
         include_boundaries: bool,
         closed: Wrap<ClosedWindow>,
         by: Vec<PyExpr>,
@@ -669,7 +671,7 @@ impl PyLazyFrame {
                 every: Duration::parse(every),
                 period: Duration::parse(period),
                 offset: Duration::parse(offset),
-                truncate,
+                label: label.0,
                 include_boundaries,
                 closed_window,
                 start_by: start_by.0,

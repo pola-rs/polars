@@ -495,7 +495,7 @@ impl PhysicalExpr for WindowExpr {
         // Worst case is that a categorical is created with indexes from the string
         // cache which is fine, as the physical representation is undefined.
         #[cfg(feature = "dtype-categorical")]
-        let _sc = polars_core::IUseStringCache::hold();
+        let _sc = polars_core::StringCacheHolder::hold();
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         use MapStrategy::*;

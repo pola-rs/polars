@@ -21,6 +21,8 @@ mod is_last_distinct;
 mod is_unique;
 #[cfg(feature = "log")]
 mod log;
+#[cfg(feature = "rank")]
+mod rank;
 #[cfg(feature = "rle")]
 mod rle;
 #[cfg(feature = "rolling_window")]
@@ -55,6 +57,8 @@ pub use is_unique::*;
 #[cfg(feature = "log")]
 pub use log::*;
 use polars_core::prelude::*;
+#[cfg(feature = "rank")]
+pub use rank::*;
 #[cfg(feature = "rle")]
 pub use rle::*;
 #[cfg(feature = "rolling_window")]

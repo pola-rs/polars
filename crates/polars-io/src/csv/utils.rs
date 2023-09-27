@@ -3,22 +3,21 @@ use std::borrow::Cow;
 use std::io::Read;
 use std::mem::MaybeUninit;
 
-use once_cell::sync::Lazy;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 #[cfg(feature = "polars-time")]
 use polars_time::chunkedarray::utf8::infer as date_infer;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::utf8::Pattern;
-use regex::{Regex, RegexBuilder};
 
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use crate::csv::parser::next_line_position_naive;
 use crate::csv::parser::{next_line_position, skip_bom, skip_line_ending, SplitLines};
 use crate::csv::splitfields::SplitFields;
 use crate::csv::CsvEncoding;
-use crate::mmap::*;
+use crate::mmap::ReaderBytes;
 use crate::prelude::NullValues;
+use crate::utils::{BOOLEAN_RE, FLOAT_RE, INTEGER_RE};
 
 pub(crate) fn get_file_chunks(
     bytes: &[u8],
@@ -57,19 +56,6 @@ pub(crate) fn get_file_chunks(
     offsets.push((last_pos, total_len));
     offsets
 }
-
-static FLOAT_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^\s*[-+]?((\d*\.\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+\.)$").unwrap()
-});
-
-static INTEGER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*-?(\d+)$").unwrap());
-
-static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
-    RegexBuilder::new(r"^\s*(true)$|^(false)$")
-        .case_insensitive(true)
-        .build()
-        .unwrap()
-});
 
 /// Infer the data type of a record
 fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {

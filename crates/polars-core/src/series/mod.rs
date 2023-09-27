@@ -28,8 +28,6 @@ use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
 use crate::chunked_array::Settings;
-#[cfg(feature = "rank")]
-use crate::prelude::unique::rank::rank;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{_split_offsets, get_casting_failures, split_ca, split_series, Wrap};
@@ -716,11 +714,6 @@ impl Series {
         {
             panic!("activate 'product' feature")
         }
-    }
-
-    #[cfg(feature = "rank")]
-    pub fn rank(&self, options: RankOptions, seed: Option<u64>) -> Series {
-        rank(self, options.method, options.descending, seed)
     }
 
     /// Cast throws an error if conversion had overflows

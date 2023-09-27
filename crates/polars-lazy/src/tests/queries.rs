@@ -231,6 +231,7 @@ fn test_lazy_query_2() {
 }
 
 #[test]
+#[cfg(feature = "csv")]
 fn test_lazy_query_3() {
     // query checks if schema of scanning is not changed by aggregation
     let _ = scan_foods_csv()
@@ -643,6 +644,7 @@ fn test_type_coercion() {
 }
 
 #[test]
+#[cfg(feature = "csv")]
 fn test_lazy_partition_agg() {
     let df = df! {
         "foo" => &[1, 1, 2, 2, 3],

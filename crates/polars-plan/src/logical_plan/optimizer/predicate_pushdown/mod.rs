@@ -3,6 +3,7 @@ mod keys;
 mod rename;
 mod utils;
 
+use polars_core::config::verbose;
 use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 use utils::*;
@@ -14,10 +15,21 @@ use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::prelude::optimizer::predicate_pushdown::rename::process_rename;
 use crate::utils::{check_input_node, has_aexpr};
 
-#[derive(Default)]
-pub struct PredicatePushDown {}
+pub type HiveEval<'a> = Option<&'a dyn Fn(Node, &Arena<AExpr>) -> Option<Arc<dyn PhysicalIoExpr>>>;
 
-impl PredicatePushDown {
+pub struct PredicatePushDown<'a> {
+    hive_partition_eval: HiveEval<'a>,
+    verbose: bool,
+}
+
+impl<'a> PredicatePushDown<'a> {
+    pub fn new(hive_partition_eval: HiveEval<'a>) -> Self {
+        Self {
+            hive_partition_eval,
+            verbose: verbose(),
+        }
+    }
+
     fn optional_apply_predicate(
         &self,
         lp: ALogicalPlan,
@@ -220,6 +232,28 @@ impl PredicatePushDown {
             } => {
                 let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
+
+                if let (Some(hive_part_stats), Some(predicate)) = (file_info.hive_parts.as_deref(), predicate) {
+                    if let Some(io_expr) = self.hive_partition_eval.unwrap()(predicate, expr_arena) {
+                        if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
+                            if !stats_evaluator.should_read(hive_part_stats.get_statistics())? {
+                                if self.verbose {
+                                    eprintln!("hive partitioning: skipped: {}", path.display())
+                                }
+                                let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
+                                let df = DataFrame::from(schema.as_ref());
+
+                                return Ok(DataFrameScan {
+                                    df: Arc::new(df),
+                                    schema: schema.clone(),
+                                    output_schema: None,
+                                    projection: None,
+                                    selection: None
+                                })
+                            }
+                        }
+                    }
+                }
 
                 let lp = match (predicate, &scan_type) {
                     #[cfg(feature = "csv")]

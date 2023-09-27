@@ -1217,6 +1217,22 @@ impl FromPyObject<'_> for Wrap<JoinType> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<Label> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "left" => Label::Left,
+            "right" => Label::Right,
+            "datapoint" => Label::DataPoint,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`label` must be one of {{'left', 'right', 'datapoint'}}, got {v}",
+                )))
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl FromPyObject<'_> for Wrap<ListToStructWidthStrategy> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {

@@ -17,7 +17,7 @@ polars-plan = { workspace = true }
 polars-row = { workspace = true }
 polars-utils = { workspace = true, features = ["sysinfo"] }
 
-crossbeam-channel = { version = "0.5" }
+crossbeam-channel = { workspace = true }
 crossbeam-queue = { version = "0.3" }
 enum_dispatch = { version = "0.3" }
 hashbrown = { workspace = true }
