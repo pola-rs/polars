@@ -3216,15 +3216,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "A": ["A", "A", "B", "B", "B", "C"],
         ...     }
         ... )
-        >>> (
-        ...     lf.group_by_dynamic(
-        ...         "idx",
-        ...         every="2i",
-        ...         period="3i",
-        ...         include_boundaries=True,
-        ...         closed="right",
-        ...     ).agg(pl.col("A").alias("A_agg_list"))
-        ... ).collect()
+        >>> lf.group_by_dynamic(
+        ...     "idx",
+        ...     every="2i",
+        ...     period="3i",
+        ...     include_boundaries=True,
+        ...     closed="right",
+        ... ).agg(pl.col("A").alias("A_agg_list"))
         shape: (4, 4)
         ┌─────────────────┬─────────────────┬─────┬─────────────────┐
         │ _lower_boundary ┆ _upper_boundary ┆ idx ┆ A_agg_list      │
