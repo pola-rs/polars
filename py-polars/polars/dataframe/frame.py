@@ -5301,7 +5301,9 @@ class DataFrame:
 
             - 'left': lower boundary of the window
             - 'right': upper boundary of the window
-            - 'datapoint': the first value of the index column in the given window
+            - 'datapoint': the first value of the index column in the given window.
+              If you don't need the label to be at one of the boundaries, choose this
+              option for maximum performance
         by
             Also group by this column/these columns
         start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}

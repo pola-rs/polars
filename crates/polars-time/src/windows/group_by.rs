@@ -19,7 +19,7 @@ pub enum ClosedWindow {
     None,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Label {
     Left,

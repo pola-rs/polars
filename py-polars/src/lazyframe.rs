@@ -651,7 +651,7 @@ impl PyLazyFrame {
         every: &str,
         period: &str,
         offset: &str,
-        label: &str,
+        label: Wrap<Label>,
         include_boundaries: bool,
         closed: Wrap<ClosedWindow>,
         by: Vec<PyExpr>,
@@ -664,12 +664,6 @@ impl PyLazyFrame {
             .map(|pyexpr| pyexpr.inner)
             .collect::<Vec<_>>();
         let ldf = self.ldf.clone();
-        let label = match label {
-            "left" => Label::Left,
-            "right" => Label::Right,
-            "datapoint" => Label::DataPoint,
-            _ => unreachable!(),
-        };
         let lazy_gb = ldf.group_by_dynamic(
             index_column.inner,
             by,
@@ -677,7 +671,7 @@ impl PyLazyFrame {
                 every: Duration::parse(every),
                 period: Duration::parse(period),
                 offset: Duration::parse(offset),
-                label,
+                label: label.0,
                 include_boundaries,
                 closed_window,
                 start_by: start_by.0,
