@@ -1786,6 +1786,8 @@ dependencies = [
  "polars-error",
  "polars-json",
  "polars-utils",
+ "rand",
+ "rand_distr",
  "rayon",
  "regex",
  "serde",

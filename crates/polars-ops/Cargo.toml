@@ -29,6 +29,8 @@ indexmap = { workspace = true }
 jsonpath_lib = { version = "0.3", optional = true, git = "https://github.com/ritchie46/jsonpath", branch = "improve_compiled" }
 memchr = { workspace = true }
 num-traits = { workspace = true }
+rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
+rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
@@ -69,6 +71,8 @@ fused = []
 cutqcut = ["dtype-categorical", "dtype-struct"]
 rle = ["dtype-struct"]
 timezones = ["chrono-tz", "chrono"]
+random = ["rand", "rand_distr"]
+rank = ["rand"]
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]
