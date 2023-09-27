@@ -148,7 +148,7 @@ impl FunctionExpr {
             #[cfg(feature = "dtype-struct")]
             StructExpr(s) => s.get_field(mapper),
             #[cfg(feature = "top_k")]
-            TopK { .. } => mapper.with_same_dtype(),
+            TopK(_) => mapper.with_same_dtype(),
             Shift(..) | Reverse => mapper.with_same_dtype(),
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "dtype-categorical")]

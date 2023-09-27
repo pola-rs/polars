@@ -1947,7 +1947,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sort_with(descending, nulls_last))
 
-    def top_k(self, k: int = 5) -> Self:
+    def top_k(self, k: int | IntoExprColumn = 5) -> Self:
         r"""
         Return the `k` largest elements.
 
@@ -1991,9 +1991,10 @@ class Expr:
         └───────┴──────────┘
 
         """
+        k = parse_as_expression(k)
         return self._from_pyexpr(self._pyexpr.top_k(k))
 
-    def bottom_k(self, k: int = 5) -> Self:
+    def bottom_k(self, k: int | IntoExprColumn = 5) -> Self:
         r"""
         Return the `k` smallest elements.
 
@@ -2037,6 +2038,7 @@ class Expr:
         └───────┴──────────┘
 
         """
+        k = parse_as_expression(k)
         return self._from_pyexpr(self._pyexpr.bottom_k(k))
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:

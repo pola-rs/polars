@@ -275,11 +275,27 @@ def test_top_k() -> None:
     assert_series_equal(s.top_k(3), pl.Series("a", [8, 5, 3]))
     assert_series_equal(s.bottom_k(4), pl.Series("a", [1, 2, 3, 5]))
 
+    assert_series_equal(s.top_k(pl.Series([3])), pl.Series("a", [8, 5, 3]))
+    assert_series_equal(s.bottom_k(pl.Series([4])), pl.Series("a", [1, 2, 3, 5]))
+
     # 5886
-    df = pl.DataFrame({"test": [2, 4, 1, 3]})
+    df = pl.DataFrame(
+        {
+            "test": [2, 4, 1, 3],
+            "val": [2, 4, 9, 3],
+        }
+    )
     assert_frame_equal(
         df.select(pl.col("test").top_k(10)),
         pl.DataFrame({"test": [4, 3, 2, 1]}),
+    )
+
+    assert_frame_equal(
+        df.select(
+            top_k=pl.col("test").top_k(pl.col("val").min()),
+            bottom_k=pl.col("test").bottom_k(pl.col("val").min()),
+        ),
+        pl.DataFrame({"top_k": [4, 3], "bottom_k": [1, 2]}),
     )
 
     # dataframe
