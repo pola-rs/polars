@@ -27,9 +27,8 @@ rand = { workspace = true }
 version_check = { workspace = true }
 
 # enable js feature for getrandom to work in wasm
-[target.'cfg(target_family = "wasm")'.dependencies.getrandom]
-version = "0.2"
-features = ["js"]
+[target.'cfg(target_family = "wasm")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
 
 [features]
 sql = ["polars-sql"]

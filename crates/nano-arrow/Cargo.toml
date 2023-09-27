@@ -1,29 +1,33 @@
 [package]
 name = "nano-arrow"
 version = "0.1.0"
-authors = ["Jorge C. Leitao <jorgecarleitao@gmail.com>", "Apache Arrow <dev@arrow.apache.org>", "Ritchie Vink"]
-edition.workspace = true
-homepage.workspace = true
-licence = "Apache 2.0 and MIT"
-repository.workspace = true
+authors = [
+  "Jorge C. Leitao <jorgecarleitao@gmail.com>",
+  "Apache Arrow <dev@arrow.apache.org>",
+  "Ritchie Vink <ritchie46@gmail.com>",
+]
+edition = { workspace = true }
+homepage = { workspace = true }
+license = "Apache 2.0 AND MIT"
+repository = { workspace = true }
 description = "Minimal implementation of the Arrow specification forked from arrow2."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bytemuck.workspace = true
-chrono.workspace = true
+bytemuck = { workspace = true }
+chrono = { workspace = true }
 # for timezone support
 chrono-tz = { workspace = true, optional = true }
-dyn-clone = "1"
-either.workspace = true
-foreign_vec = "0.1.0"
-hashbrown.workspace = true
-num-traits.workspace = true
-simdutf8.workspace = true
+dyn-clone = { version = "1" }
+either = { workspace = true }
+foreign_vec = { version = "0.1" }
+hashbrown = { workspace = true }
+num-traits = { workspace = true }
+simdutf8 = { workspace = true }
 
 # for decimal i256
-ethnum = "1"
+ethnum = { workspace = true }
 
 # To efficiently cast numbers to strings
 lexical-core = { workspace = true, optional = true }
@@ -46,7 +50,7 @@ zstd = { version = "0.12", optional = true }
 base64 = { workspace = true, optional = true }
 
 # to write to parquet as a stream
-futures = { version = "0.3", optional = true }
+futures = { workspace = true, optional = true }
 
 # to read IPC as a stream
 async-stream = { version = "0.3.2", optional = true }
@@ -61,16 +65,13 @@ strength_reduce = { version = "0.2", optional = true }
 multiversion = { workspace = true, optional = true }
 
 # Faster hashing
-ahash.workspace = true
+ahash = { workspace = true }
 
 # Support conversion to/from arrow-rs
 arrow-array = { version = ">=40", optional = true }
 arrow-buffer = { version = ">=40", optional = true }
 arrow-data = { version = ">=40", optional = true }
 arrow-schema = { version = ">=40", optional = true }
-
-[target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.2", features = ["js"] }
 
 # parquet support
 [dependencies.parquet2]
@@ -82,24 +83,26 @@ features = ["async"]
 [dev-dependencies]
 avro-rs = { version = "0.13", features = ["snappy"] }
 criterion = "0.4"
-crossbeam-channel = "0.5.1"
+crossbeam-channel = { workspace = true }
 doc-comment = "0.3"
 flate2 = "1"
 # used to run formal property testing
 proptest = { version = "1", default_features = false, features = ["std"] }
 # use for flaky testing
-rand = "0.8"
+rand = { workspace = true }
 # use for generating and testing random data samples
 sample-arrow2 = "0.1"
 sample-std = "0.1"
 sample-test = "0.1"
 # used to test async readers
-tokio = { version = "1", features = ["macros", "rt", "fs", "io-util"] }
-tokio-util = { version = "0.7", features = ["compat"] }
+tokio = { workspace = true, features = ["macros", "rt", "fs", "io-util"] }
+tokio-util = { workspace = true, features = ["compat"] }
 
-[package.metadata.docs.rs]
-features = ["full"]
-rustdoc-args = ["--cfg", "docsrs"]
+[build-dependencies]
+rustc_version = "0.4.0"
+
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
 
 [features]
 default = []
@@ -189,8 +192,9 @@ compute = [
 ]
 simd = []
 
-[build-dependencies]
-rustc_version = "0.4.0"
+[package.metadata.docs.rs]
+features = ["full"]
+rustdoc-args = ["--cfg", "docsrs"]
 
 [package.metadata.cargo-all-features]
 allowlist = ["compute", "compute_sort", "compute_hash", "compute_nullif"]
