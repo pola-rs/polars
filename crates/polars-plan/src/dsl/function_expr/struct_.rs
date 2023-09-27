@@ -63,11 +63,11 @@ impl StructFunction {
 
 impl Display for StructFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use self::*;
+        use StructFunction::*;
         match self {
-            StructFunction::FieldByIndex(index) => write!(f, "struct.field_by_index({index})"),
-            StructFunction::FieldByName(name) => write!(f, "struct.field_by_name({name})"),
-            StructFunction::RenameFields(names) => write!(f, "struct.rename_fields({:?})", names),
+            FieldByIndex(index) => write!(f, "struct.field_by_index({index})"),
+            FieldByName(name) => write!(f, "struct.field_by_name({name})"),
+            RenameFields(names) => write!(f, "struct.rename_fields({:?})", names),
         }
     }
 }
