@@ -82,7 +82,6 @@ create_exception!(exceptions, SchemaFieldNotFoundError, PyException);
 create_exception!(exceptions, ShapeError, PyException);
 create_exception!(exceptions, StringCacheMismatchError, PyException);
 create_exception!(exceptions, StructFieldNotFoundError, PyException);
-create_exception!(exceptions, UnsupportedCPUError, PyException);
 
 #[macro_export]
 macro_rules! raise_err(

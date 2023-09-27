@@ -13,7 +13,6 @@ use pyo3::prelude::*;
 
 use crate::dataframe::PyDataFrame;
 #[allow(unused_imports)]
-use crate::error::UnsupportedCPUError;
 use crate::map::lazy::{call_lambda_with_series, ToSeries};
 use crate::prelude::{python_udf, ObjectValue};
 use crate::py_modules::{POLARS, UTILS};
@@ -76,7 +75,7 @@ fn warning_function(msg: &str) {
 macro_rules! ensure_x86_feat {
     ($feat:literal) => {
         if !std::is_x86_feature_detected!($feat) {
-            return Err(UnsupportedCPUError::new_err(format!("Your CPU does not support the {} instruction set, which this build of Polars requires.", $feat.to_uppercase())));
+            return Err(PyImportError::new_err(format!("Your CPU does not support the {} instruction set, which this build of Polars requires.", $feat.to_uppercase())));
         }
     }
 }
