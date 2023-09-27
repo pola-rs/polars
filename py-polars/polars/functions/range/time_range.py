@@ -18,13 +18,13 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import ClosedInterval, IntoExpr
+    from polars.type_aliases import ClosedInterval, IntoExprColumn
 
 
 @overload
 def time_range(
-    start: time | IntoExpr | None = ...,
-    end: time | IntoExpr | None = ...,
+    start: time | IntoExprColumn | None = ...,
+    end: time | IntoExprColumn | None = ...,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -36,8 +36,8 @@ def time_range(
 
 @overload
 def time_range(
-    start: time | IntoExpr | None = ...,
-    end: time | IntoExpr | None = ...,
+    start: time | IntoExprColumn | None = ...,
+    end: time | IntoExprColumn | None = ...,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -49,8 +49,8 @@ def time_range(
 
 @overload
 def time_range(
-    start: time | IntoExpr | None = ...,
-    end: time | IntoExpr | None = ...,
+    start: time | IntoExprColumn | None = ...,
+    end: time | IntoExprColumn | None = ...,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -61,8 +61,8 @@ def time_range(
 
 
 def time_range(
-    start: time | IntoExpr | None = None,
-    end: time | IntoExpr | None = None,
+    start: time | IntoExprColumn | None = None,
+    end: time | IntoExprColumn | None = None,
     interval: str | timedelta = "1h",
     *,
     closed: ClosedInterval = "both",
@@ -180,8 +180,8 @@ def time_range(
 
 @overload
 def time_ranges(
-    start: time | IntoExpr | None = ...,
-    end: time | IntoExpr | None = ...,
+    start: time | IntoExprColumn | None = ...,
+    end: time | IntoExprColumn | None = ...,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -192,8 +192,8 @@ def time_ranges(
 
 @overload
 def time_ranges(
-    start: time | IntoExpr | None = ...,
-    end: time | IntoExpr | None = ...,
+    start: time | IntoExprColumn | None = ...,
+    end: time | IntoExprColumn | None = ...,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -204,8 +204,8 @@ def time_ranges(
 
 @overload
 def time_ranges(
-    start: time | IntoExpr | None = ...,
-    end: time | IntoExpr | None = ...,
+    start: time | IntoExprColumn | None = ...,
+    end: time | IntoExprColumn | None = ...,
     interval: str | timedelta = ...,
     *,
     closed: ClosedInterval = ...,
@@ -215,8 +215,8 @@ def time_ranges(
 
 
 def time_ranges(
-    start: time | IntoExpr | None = None,
-    end: time | IntoExpr | None = None,
+    start: time | IntoExprColumn | None = None,
+    end: time | IntoExprColumn | None = None,
     interval: str | timedelta = "1h",
     *,
     closed: ClosedInterval = "both",

@@ -1,19 +1,12 @@
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
-use rayon::prelude::*;
+use polars_core::hashing::{
+    populate_multiple_key_hashmap, IdBuildHasher, IdxHash, _HASHMAP_INIT_SIZE,
+};
+use polars_core::utils::{_set_partition_size, split_df};
+use polars_core::POOL;
 
 use super::*;
-use crate::frame::hash_join::{
-    get_hash_tbl_threaded_join_mut_partitioned, get_hash_tbl_threaded_join_partitioned,
-};
-use crate::hashing::{
-    df_rows_to_hashes_threaded_vertical, populate_multiple_key_hashmap, this_partition,
-    IdBuildHasher, IdxHash, HASHMAP_INIT_SIZE,
-};
-use crate::prelude::*;
-use crate::utils::series::_to_physical_and_bit_repr;
-use crate::utils::{_set_partition_size, split_df};
-use crate::POOL;
 
 /// Compare the rows of two [`DataFrame`]s
 pub(crate) unsafe fn compare_df_rows2(
@@ -45,7 +38,7 @@ pub(crate) fn create_probe_table(
             .map(|part_no| {
                 let part_no = part_no as u64;
                 let mut hash_tbl: HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher> =
-                    HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+                    HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
 
                 let n_partitions = n_partitions as u64;
                 let mut offset = 0;
@@ -94,7 +87,7 @@ fn create_build_table_outer(
         (0..n_partitions).into_par_iter().map(|part_no| {
             let part_no = part_no as u64;
             let mut hash_tbl: HashMap<IdxHash, (bool, Vec<IdxSize>), IdBuildHasher> =
-                HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+                HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
 
             let n_partitions = n_partitions as u64;
             let mut offset = 0;
@@ -189,9 +182,9 @@ pub fn _inner_join_multiple_keys(
     let dfs_a = split_df(a, n_threads).unwrap();
     let dfs_b = split_df(b, n_threads).unwrap();
 
-    let (build_hashes, random_state) = df_rows_to_hashes_threaded_vertical(&dfs_b, None).unwrap();
+    let (build_hashes, random_state) = _df_rows_to_hashes_threaded_vertical(&dfs_b, None).unwrap();
     let (probe_hashes, _) =
-        df_rows_to_hashes_threaded_vertical(&dfs_a, Some(random_state)).unwrap();
+        _df_rows_to_hashes_threaded_vertical(&dfs_a, Some(random_state)).unwrap();
 
     let hash_tbls = create_probe_table(&build_hashes, b);
     // early drop to reduce memory pressure
@@ -271,9 +264,9 @@ pub fn _left_join_multiple_keys(
     let dfs_a = split_df(a, n_threads).unwrap();
     let dfs_b = split_df(b, n_threads).unwrap();
 
-    let (build_hashes, random_state) = df_rows_to_hashes_threaded_vertical(&dfs_b, None).unwrap();
+    let (build_hashes, random_state) = _df_rows_to_hashes_threaded_vertical(&dfs_b, None).unwrap();
     let (probe_hashes, _) =
-        df_rows_to_hashes_threaded_vertical(&dfs_a, Some(random_state)).unwrap();
+        _df_rows_to_hashes_threaded_vertical(&dfs_a, Some(random_state)).unwrap();
 
     let hash_tbls = create_probe_table(&build_hashes, b);
     // early drop to reduce memory pressure
@@ -355,7 +348,7 @@ pub(crate) fn create_build_table_semi_anti(
         (0..n_partitions).into_par_iter().map(|part_no| {
             let part_no = part_no as u64;
             let mut hash_tbl: HashMap<IdxHash, (), IdBuildHasher> =
-                HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+                HashMap::with_capacity_and_hasher(_HASHMAP_INIT_SIZE, Default::default());
 
             let n_partitions = n_partitions as u64;
             let mut offset = 0;
@@ -402,9 +395,9 @@ pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
     let dfs_a = split_df(a, n_threads).unwrap();
     let dfs_b = split_df(b, n_threads).unwrap();
 
-    let (build_hashes, random_state) = df_rows_to_hashes_threaded_vertical(&dfs_b, None).unwrap();
+    let (build_hashes, random_state) = _df_rows_to_hashes_threaded_vertical(&dfs_b, None).unwrap();
     let (probe_hashes, _) =
-        df_rows_to_hashes_threaded_vertical(&dfs_a, Some(random_state)).unwrap();
+        _df_rows_to_hashes_threaded_vertical(&dfs_a, Some(random_state)).unwrap();
 
     let hash_tbls = create_build_table_semi_anti(&build_hashes, b);
     // early drop to reduce memory pressure
@@ -557,9 +550,9 @@ pub fn _outer_join_multiple_keys(
     let dfs_a = split_df(a, n_threads).unwrap();
     let dfs_b = split_df(b, n_threads).unwrap();
 
-    let (build_hashes, random_state) = df_rows_to_hashes_threaded_vertical(&dfs_b, None).unwrap();
+    let (build_hashes, random_state) = _df_rows_to_hashes_threaded_vertical(&dfs_b, None).unwrap();
     let (probe_hashes, _) =
-        df_rows_to_hashes_threaded_vertical(&dfs_a, Some(random_state)).unwrap();
+        _df_rows_to_hashes_threaded_vertical(&dfs_a, Some(random_state)).unwrap();
 
     let mut hash_tbls = create_build_table_outer(&build_hashes, b);
     // early drop to reduce memory pressure

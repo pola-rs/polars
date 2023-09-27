@@ -52,6 +52,7 @@ pub struct ParquetReader<R: Read + Seek> {
     row_count: Option<RowCount>,
     low_memory: bool,
     metadata: Option<FileMetaData>,
+    hive_partition_columns: Option<Vec<Series>>,
     use_statistics: bool,
 }
 
@@ -78,6 +79,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
             self.parallel,
             self.row_count,
             self.use_statistics,
+            self.hive_partition_columns.as_deref(),
         )
         .map(|mut df| {
             if rechunk {
@@ -145,6 +147,11 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         Ok(metadata.num_rows)
     }
 
+    pub fn with_hive_partition_columns(mut self, columns: Option<Vec<Series>>) -> Self {
+        self.hive_partition_columns = columns;
+        self
+    }
+
     fn get_metadata(&mut self) -> PolarsResult<&FileMetaData> {
         if self.metadata.is_none() {
             self.metadata = Some(read::read_metadata(&mut self.reader)?);
@@ -166,6 +173,7 @@ impl<R: MmapBytesReader + 'static> ParquetReader<R> {
             self.row_count,
             chunk_size,
             self.use_statistics,
+            self.hive_partition_columns,
         )
     }
 }
@@ -184,6 +192,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             low_memory: false,
             metadata: None,
             use_statistics: true,
+            hive_partition_columns: None,
         }
     }
 
@@ -210,6 +219,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             self.parallel,
             self.row_count,
             self.use_statistics,
+            self.hive_partition_columns.as_deref(),
         )
         .map(|mut df| {
             if self.rechunk {
@@ -230,6 +240,7 @@ pub struct ParquetAsyncReader {
     projection: Option<Vec<usize>>,
     row_count: Option<RowCount>,
     use_statistics: bool,
+    hive_partition_columns: Option<Vec<Series>>,
 }
 
 #[cfg(feature = "cloud")]
@@ -245,6 +256,7 @@ impl ParquetAsyncReader {
             projection: None,
             row_count: None,
             use_statistics: true,
+            hive_partition_columns: None,
         })
     }
 
@@ -294,6 +306,11 @@ impl ParquetAsyncReader {
         self
     }
 
+    pub fn with_hive_partition_columns(mut self, columns: Option<Vec<Series>>) -> Self {
+        self.hive_partition_columns = columns;
+        self
+    }
+
     #[tokio::main(flavor = "current_thread")]
     pub async fn batched(mut self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
         let metadata = self.reader.get_metadata().await?.to_owned();
@@ -311,6 +328,7 @@ impl ParquetAsyncReader {
             self.row_count,
             chunk_size,
             self.use_statistics,
+            self.hive_partition_columns,
         )
     }
 

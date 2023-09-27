@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::path::Path;
 
 use polars_core::prelude::*;
 use polars_utils::format_smartstring;
@@ -48,6 +49,26 @@ pub struct FileInfo {
     // - known size
     // - estimated size
     pub row_estimation: (Option<usize>, usize),
+    pub hive_parts: Option<Arc<hive::HivePartitions>>,
+}
+
+impl FileInfo {
+    pub fn new(schema: SchemaRef, row_estimation: (Option<usize>, usize)) -> Self {
+        Self {
+            schema,
+            row_estimation,
+            hive_parts: None,
+        }
+    }
+
+    pub fn set_hive_partitions(&mut self, url: &Path) {
+        self.hive_parts = hive::HivePartitions::parse_url(url).map(|hive_parts| {
+            let schema = Arc::make_mut(&mut self.schema);
+            schema.merge(hive_parts.get_statistics().schema().clone());
+
+            Arc::new(hive_parts)
+        });
+    }
 }
 
 #[cfg(feature = "streaming")]
@@ -251,7 +272,6 @@ pub(crate) fn det_join_schema(
                         right_on.to_field_amortized(schema_right, Context::Default, &mut arena)?;
                     if field_left.name != field_right.name {
                         if schema_left.contains(&field_right.name) {
-                            use polars_core::frame::hash_join::_join_suffix_name;
                             new_schema.with_column(
                                 _join_suffix_name(&field_right.name, options.args.suffix()).into(),
                                 field_right.dtype,

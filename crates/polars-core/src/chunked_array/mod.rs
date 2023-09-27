@@ -827,9 +827,9 @@ pub(crate) mod test {
     #[test]
     #[cfg(feature = "dtype-categorical")]
     fn test_iter_categorical() {
-        use crate::{reset_string_cache, SINGLE_LOCK};
+        use crate::{disable_string_cache, SINGLE_LOCK};
         let _lock = SINGLE_LOCK.lock();
-        reset_string_cache();
+        disable_string_cache();
         let ca = Utf8Chunked::new("", &[Some("foo"), None, Some("bar"), Some("ham")]);
         let ca = ca.cast(&DataType::Categorical(None)).unwrap();
         let ca = ca.categorical().unwrap();

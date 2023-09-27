@@ -15,7 +15,7 @@ impl CategoricalChunked {
             },
             _ => self.logical().zip_with(mask, other.logical())?,
         };
-        let new_state = self.merge_categorical_map(other)?;
+        let new_state = self._merge_categorical_map(other)?;
 
         // Safety:
         // we checked the rev_maps.

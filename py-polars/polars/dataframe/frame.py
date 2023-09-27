@@ -1819,11 +1819,6 @@ class DataFrame:
         """
         Return the dataframe as a scalar, or return the element at the given row/column.
 
-        Notes
-        -----
-        If row/col not provided, this is equivalent to ``df[0,0]``, with a check that
-        the shape is (1,1). With row/col, this is equivalent to ``df[row,col]``.
-
         Parameters
         ----------
         row
@@ -1834,6 +1829,11 @@ class DataFrame:
         See Also
         --------
         row: Get the values of a single row, either by index or by predicate.
+
+        Notes
+        -----
+        If row/col not provided, this is equivalent to ``df[0,0]``, with a check that
+        the shape is (1,1). With row/col, this is equivalent to ``df[row,col]``.
 
         Examples
         --------
@@ -2091,7 +2091,7 @@ class DataFrame:
                 a = s.to_numpy()
                 arrays.append(
                     a.astype(str, copy=False)
-                    if tp == Utf8 and not s.has_validity()
+                    if tp == Utf8 and not s.null_count()
                     else a
                 )
 
@@ -6871,6 +6871,9 @@ class DataFrame:
         """
         Create a spreadsheet-style pivot table as a DataFrame.
 
+        Only available in eager mode. See "Examples" section below for how to do a
+        "lazy pivot" if you know the unique column values in advance.
+
         Parameters
         ----------
         values
@@ -6959,6 +6962,36 @@ class DataFrame:
         ...     values="col3",
         ...     aggregate_function=pl.element().tanh().mean(),
         ... )
+        shape: (2, 3)
+        ┌──────┬──────────┬──────────┐
+        │ col1 ┆ x        ┆ y        │
+        │ ---  ┆ ---      ┆ ---      │
+        │ str  ┆ f64      ┆ f64      │
+        ╞══════╪══════════╪══════════╡
+        │ a    ┆ 0.998347 ┆ null     │
+        │ b    ┆ 0.964028 ┆ 0.999954 │
+        └──────┴──────────┴──────────┘
+
+        Note that `pivot` is only available in eager mode. If you know the unique
+        column values in advance, you can use :meth:`polars.LazyFrame.groupby` to
+        get the same result as above in lazy mode:
+
+        >>> index = pl.col("col1")
+        >>> columns = pl.col("col2")
+        >>> values = pl.col("col3")
+        >>> unique_column_values = ["x", "y"]
+        >>> aggregate_function = lambda col: col.tanh().mean()
+        >>> (
+        ...     df.lazy()
+        ...     .group_by(index)
+        ...     .agg(
+        ...         *[
+        ...             aggregate_function(values.filter(columns == value)).alias(value)
+        ...             for value in unique_column_values
+        ...         ]
+        ...     )
+        ...     .collect()
+        ... )  # doctest: +IGNORE_RESULT
         shape: (2, 3)
         ┌──────┬──────────┬──────────┐
         │ col1 ┆ x        ┆ y        │
@@ -8678,7 +8711,7 @@ class DataFrame:
 
     def sample(
         self,
-        n: int | None = None,
+        n: int | Series | None = None,
         *,
         fraction: float | None = None,
         with_replacement: bool = False,
@@ -8739,7 +8772,11 @@ class DataFrame:
 
         if n is None:
             n = 1
-        return self._from_pydf(self._df.sample_n(n, with_replacement, shuffle, seed))
+
+        if not isinstance(n, pl.Series):
+            n = pl.Series("", [n])
+
+        return self._from_pydf(self._df.sample_n(n._s, with_replacement, shuffle, seed))
 
     def fold(self, operation: Callable[[Series, Series], Series]) -> Series:
         """
@@ -9136,7 +9173,7 @@ class DataFrame:
         from polars.selectors import expand_selector, is_selector
 
         if is_selector(key):
-            key_tuple = expand_selector(target=self, selector=key)  # type: ignore[type-var]
+            key_tuple = expand_selector(target=self, selector=key)
         elif not isinstance(key, str):
             key_tuple = tuple(key)  # type: ignore[arg-type]
         else:
@@ -9174,7 +9211,7 @@ class DataFrame:
                     k = get_key(d)
                     if not include_key:
                         for ix in key_tuple:
-                            del d[ix]
+                            del d[ix]  # type: ignore[arg-type]
                     if unique:
                         rows[k] = d
                     else:

@@ -13,8 +13,6 @@ use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
-#[cfg(feature = "algorithm_join")]
-use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 #[cfg(feature = "checked_arithmetic")]
 use crate::series::arithmetic::checked::NumOpsDispatchChecked;
@@ -121,14 +119,6 @@ macro_rules! impl_dyn_series {
                 self.0.agg_list(groups)
             }
 
-            #[cfg(feature = "algorithm_join")]
-            unsafe fn zip_outer_join_column(
-                &self,
-                right_column: &Series,
-                opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-            ) -> Series {
-                ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
-            }
             fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
                 NumOpsDispatch::subtract(&self.0, rhs)
             }

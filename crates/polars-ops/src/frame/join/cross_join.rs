@@ -1,10 +1,9 @@
+use polars_core::series::IsSorted;
+use polars_core::utils::{concat_df_unchecked, slice_offsets, CustomIterTools, NoNull};
+use polars_core::POOL;
 use smartstring::alias::String as SmartString;
 
-use crate::frame::hash_join::_finish_join;
-use crate::prelude::*;
-use crate::series::IsSorted;
-use crate::utils::{concat_df_unchecked, slice_offsets, CustomIterTools, NoNull};
-use crate::POOL;
+use super::*;
 
 fn slice_take(
     total_rows: IdxSize,
@@ -42,14 +41,15 @@ fn take_right(total_rows: IdxSize, n_rows_right: IdxSize, slice: Option<(i64, us
     slice_take(total_rows, n_rows_right, slice, inner)
 }
 
-impl DataFrame {
+pub trait CrossJoin: IntoDf {
     fn cross_join_dfs(
         &self,
         other: &DataFrame,
         slice: Option<(i64, usize)>,
         parallel: bool,
     ) -> PolarsResult<(DataFrame, DataFrame)> {
-        let n_rows_left = self.height() as IdxSize;
+        let df_self = self.to_df();
+        let n_rows_left = df_self.height() as IdxSize;
         let n_rows_right = other.height() as IdxSize;
         let Some(total_rows) = n_rows_left.checked_mul(n_rows_right) else {
             polars_bail!(
@@ -58,7 +58,7 @@ impl DataFrame {
             );
         };
         if n_rows_left == 0 || n_rows_right == 0 {
-            return Ok((self.clear(), other.clear()));
+            return Ok((df_self.clear(), other.clear()));
         }
 
         // the left side has the Nth row combined with every row from right.
@@ -72,7 +72,7 @@ impl DataFrame {
         let create_left_df = || {
             // Safety:
             // take left is in bounds
-            unsafe { self.take_unchecked(&take_left(total_rows, n_rows_right, slice)) }
+            unsafe { df_self.take_unchecked(&take_left(total_rows, n_rows_right, slice)) }
         };
 
         let create_right_df = || {
@@ -98,7 +98,7 @@ impl DataFrame {
 
     #[doc(hidden)]
     /// used by streaming
-    pub fn _cross_join_with_names(
+    fn _cross_join_with_names(
         &self,
         other: &DataFrame,
         names: &[SmartString],
@@ -106,7 +106,7 @@ impl DataFrame {
         let (mut l_df, r_df) = self.cross_join_dfs(other, None, false)?;
 
         unsafe {
-            l_df.get_columns_mut().extend_from_slice(&r_df.columns);
+            l_df.get_columns_mut().extend_from_slice(r_df.get_columns());
 
             l_df.get_columns_mut()
                 .iter_mut()
@@ -121,7 +121,7 @@ impl DataFrame {
     }
 
     /// Creates the cartesian product from both frames, preserves the order of the left keys.
-    pub fn cross_join(
+    fn cross_join(
         &self,
         other: &DataFrame,
         suffix: Option<&str>,
@@ -133,31 +133,4 @@ impl DataFrame {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::df;
-
-    #[test]
-    fn test_cross_join() -> PolarsResult<()> {
-        let df_a = df![
-            "a" => [1, 2],
-            "b" => ["foo", "spam"]
-        ]?;
-
-        let df_b = df![
-            "b" => ["a", "b", "c"]
-        ]?;
-
-        let out = df_a.cross_join(&df_b, None, None)?;
-        let expected = df![
-            "a" => [1, 1, 1, 2, 2, 2],
-            "b" => ["foo", "foo", "foo", "spam", "spam", "spam"],
-            "b_right" => ["a", "b", "c", "a", "b", "c"]
-        ]?;
-
-        assert!(out.frame_equal(&expected));
-
-        Ok(())
-    }
-}
+impl CrossJoin for DataFrame {}

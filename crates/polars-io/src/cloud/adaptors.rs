@@ -184,7 +184,6 @@ impl CloudWriter {
     /// TODO: Naming?
     pub fn new(uri: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<Self> {
         let (cloud_location, object_store) = crate::cloud::build_object_store(uri, cloud_options)?;
-        let object_store = Arc::from(object_store);
         Self::new_with_object_store(object_store, cloud_location.prefix.into())
     }
 
@@ -253,11 +252,10 @@ mod tests {
 
         let mut df = example_dataframe();
 
-        let object_store: Box<dyn ObjectStore> = Box::new(
+        let object_store: Arc<dyn ObjectStore> = Arc::new(
             object_store::local::LocalFileSystem::new_with_prefix(std::env::temp_dir())
                 .expect("Could not initialize connection"),
         );
-        let object_store: Arc<dyn ObjectStore> = Arc::from(object_store);
 
         let path: object_store::path::Path = "cloud_writer_example.csv".into();
 

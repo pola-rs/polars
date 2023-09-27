@@ -295,24 +295,32 @@ pub(super) fn dst_offset(s: &Series) -> PolarsResult<Series> {
     }
 }
 
-pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Series> {
+pub(super) fn round(s: &[Series], every: &str, offset: &str) -> PolarsResult<Series> {
     let every = Duration::parse(every);
     let offset = Duration::parse(offset);
-    Ok(match s.dtype() {
+
+    let time_series = &s[0];
+    let ambiguous = s[1].utf8()?;
+
+    Ok(match time_series.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => s
+            Some(tz) => time_series
                 .datetime()
                 .unwrap()
-                .round(every, offset, tz.parse::<Tz>().ok().as_ref())?
+                .round(every, offset, tz.parse::<Tz>().ok().as_ref(), ambiguous)?
                 .into_series(),
-            _ => s
+            _ => time_series
                 .datetime()
                 .unwrap()
-                .round(every, offset, None)?
+                .round(every, offset, None, ambiguous)?
                 .into_series(),
         },
-        DataType::Date => s.date().unwrap().round(every, offset, None)?.into_series(),
+        DataType::Date => time_series
+            .date()
+            .unwrap()
+            .round(every, offset, None, ambiguous)?
+            .into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     })
 }

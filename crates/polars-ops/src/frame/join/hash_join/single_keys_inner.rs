@@ -1,14 +1,11 @@
+use polars_core::utils::flatten;
 use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
 
-use super::single_keys::build_tables;
 use super::*;
-use crate::frame::hash_join::single_keys::probe_to_offsets;
-use crate::utils::flatten;
 
-/// Probe the build table and add tuples to the results (inner join)
-pub(super) fn probe_inner<T, F>(
-    probe: &[T],
+pub(super) fn probe_inner<T, F, I>(
+    probe: I,
     hash_tbls: &[PlHashMap<T, Vec<IdxSize>>],
     results: &mut Vec<(IdxSize, IdxSize)>,
     local_offset: IdxSize,
@@ -16,16 +13,18 @@ pub(super) fn probe_inner<T, F>(
     swap_fn: F,
 ) where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
+    I: IntoIterator<Item = T>,
+    // <I as IntoIterator>::IntoIter: TrustedLen,
     F: Fn(IdxSize, IdxSize) -> (IdxSize, IdxSize),
 {
     assert!(hash_tbls.len().is_power_of_two());
-    probe.iter().enumerate_idx().for_each(|(idx_a, k)| {
+    probe.into_iter().enumerate_idx().for_each(|(idx_a, k)| {
         let idx_a = idx_a + local_offset;
         // probe table that contains the hashed value
         let current_probe_table =
             unsafe { get_hash_tbl_threaded_join_partitioned(k.as_u64(), hash_tbls, n_tables) };
 
-        let value = current_probe_table.get(k);
+        let value = current_probe_table.get(&k);
 
         if let Some(indexes_b) = value {
             let tuples = indexes_b.iter().map(|&idx_b| swap_fn(idx_a, idx_b));
@@ -34,22 +33,25 @@ pub(super) fn probe_inner<T, F>(
     });
 }
 
-pub(super) fn hash_join_tuples_inner<T, IntoSlice>(
-    probe: Vec<IntoSlice>,
-    build: Vec<IntoSlice>,
+pub(super) fn hash_join_tuples_inner<T, I>(
+    probe: Vec<I>,
+    build: Vec<I>,
     // Because b should be the shorter relation we could need to swap to keep left left and right right.
     swapped: bool,
     validate: JoinValidation,
 ) -> PolarsResult<(Vec<IdxSize>, Vec<IdxSize>)>
 where
-    IntoSlice: AsRef<[T]> + Send + Sync,
+    I: IntoIterator<Item = T> + Send + Sync + Copy,
+    // <I as IntoIterator>::IntoIter: TrustedLen,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     // NOTE: see the left join for more elaborate comments
-
     // first we hash one relation
     let hash_tbls = if validate.needs_checks() {
-        let expected_size = build.iter().map(|v| v.as_ref().len()).sum();
+        let expected_size = build
+            .iter()
+            .map(|v| v.into_iter().size_hint().1.unwrap())
+            .sum();
         let hash_tbls = build_tables(build);
         let build_size = hash_tbls.iter().map(|m| m.len()).sum();
         validate.validate_build(build_size, expected_size, swapped)?;
@@ -68,10 +70,10 @@ where
             .into_par_iter()
             .zip(offsets)
             .map(|(probe, offset)| {
-                let probe = probe.as_ref();
+                let probe = probe.into_iter();
                 // local reference
                 let hash_tbls = &hash_tbls;
-                let mut results = Vec::with_capacity(probe.len());
+                let mut results = Vec::with_capacity(probe.size_hint().1.unwrap());
                 let local_offset = offset as IdxSize;
 
                 // branch is to hoist swap out of the inner loop.

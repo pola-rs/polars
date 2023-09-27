@@ -5,6 +5,7 @@ use std::sync::Arc;
 use hashbrown::hash_map::Entry;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
+use polars_ops::prelude::JoinType;
 use polars_plan::prelude::*;
 
 use crate::executors::operators::HstackOperator;
@@ -105,7 +106,7 @@ where
                         parquet_options,
                         cloud_options,
                         file_options,
-                        file_info.schema,
+                        file_info,
                         verbose,
                     )?;
                     Ok(Box::new(src) as Box<dyn Source>)

@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from polars.type_aliases import (
         Ambiguous,
         IntoExpr,
+        IntoExprColumn,
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
@@ -891,7 +892,7 @@ class StringNameSpace:
 
         """
 
-    def split_exact(self, by: str, n: int, *, inclusive: bool = False) -> Series:
+    def split_exact(self, by: IntoExpr, n: int, *, inclusive: bool = False) -> Series:
         """
         Split the string by a substring using ``n`` splits.
 
@@ -951,7 +952,7 @@ class StringNameSpace:
 
         """
 
-    def splitn(self, by: str, n: int) -> Series:
+    def splitn(self, by: IntoExpr, n: int) -> Series:
         """
         Split the string by a substring, restricted to returning at most ``n`` items.
 
@@ -1102,7 +1103,7 @@ class StringNameSpace:
 
         """
 
-    def strip_chars(self, characters: str | None = None) -> Series:
+    def strip_chars(self, characters: IntoExprColumn | None = None) -> Series:
         r"""
         Remove leading and trailing characters.
 
@@ -1138,7 +1139,7 @@ class StringNameSpace:
 
         """
 
-    def strip_chars_start(self, characters: str | None = None) -> Series:
+    def strip_chars_start(self, characters: IntoExprColumn | None = None) -> Series:
         r"""
         Remove leading characters.
 
@@ -1173,7 +1174,7 @@ class StringNameSpace:
 
         """
 
-    def strip_chars_end(self, characters: str | None = None) -> Series:
+    def strip_chars_end(self, characters: IntoExprColumn | None = None) -> Series:
         r"""
         Remove trailing characters.
 

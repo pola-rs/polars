@@ -5,18 +5,15 @@ use std::ops::{Add, Sub};
 use ahash::RandomState;
 use arrow::types::NativeType;
 use num_traits::{Bounded, Zero};
+use polars_core::hashing::partition::AsU64;
+use polars_core::hashing::{_df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
+use polars_core::utils::{split_ca, split_df};
+use polars_core::POOL;
 use rayon::prelude::*;
 use smartstring::alias::String as SmartString;
 
 use super::*;
-#[cfg(feature = "dtype-categorical")]
-use crate::frame::hash_join::_check_categorical_src;
-use crate::frame::hash_join::{
-    build_tables, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_bytes,
-};
-use crate::hashing::{df_rows_to_hashes_threaded_vertical, AsU64, HASHMAP_INIT_SIZE};
-use crate::utils::{split_ca, split_df};
-use crate::POOL;
+use crate::frame::IntoDf;
 
 pub(super) unsafe fn join_asof_backward_with_indirection_and_tolerance<
     T: PartialOrd + Copy + Sub<Output = T> + Debug,
@@ -397,7 +394,7 @@ where
                 // assume the result tuples equal length of the no. of hashes processed by this thread.
                 let mut results = Vec::with_capacity(vals_left.len());
 
-                let mut right_tbl_offsets = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+                let mut right_tbl_offsets = PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
 
                 vals_left.iter().enumerate().for_each(|(idx_a, k)| {
                     let idx_a = (idx_a + offset) as IdxSize;
@@ -525,7 +522,7 @@ where
                 // assume the result tuples equal length of the no. of hashes processed by this thread.
                 let mut results = Vec::with_capacity(vals_left.len());
 
-                let mut right_tbl_offsets = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+                let mut right_tbl_offsets = PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
 
                 vals_left.iter().enumerate().for_each(|(idx_a, k)| {
                     let idx_a = (idx_a + offset) as IdxSize;
@@ -620,9 +617,9 @@ where
     let dfs_a = split_df(a, n_threads).unwrap();
     let dfs_b = split_df(b, n_threads).unwrap();
 
-    let (build_hashes, random_state) = df_rows_to_hashes_threaded_vertical(&dfs_b, None).unwrap();
+    let (build_hashes, random_state) = _df_rows_to_hashes_threaded_vertical(&dfs_b, None).unwrap();
     let (probe_hashes, _) =
-        df_rows_to_hashes_threaded_vertical(&dfs_a, Some(random_state)).unwrap();
+        _df_rows_to_hashes_threaded_vertical(&dfs_a, Some(random_state)).unwrap();
 
     let hash_tbls = mk::create_probe_table(&build_hashes, b);
     // early drop to reduce memory pressure
@@ -643,7 +640,7 @@ where
 
                 // assume the result tuples equal length of the no. of hashes processed by this thread.
                 let mut results = Vec::with_capacity(probe_hashes.len());
-                let mut right_tbl_offsets = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+                let mut right_tbl_offsets = PlHashMap::with_capacity(_HASHMAP_INIT_SIZE);
 
                 let local_offset = offset;
 
@@ -758,10 +755,10 @@ fn dispatch_join<T: PolarsNumericType>(
     Ok(out)
 }
 
-impl DataFrame {
+pub trait AsofJoinBy: IntoDf {
     #[allow(clippy::too_many_arguments)]
     #[doc(hidden)]
-    pub fn _join_asof_by(
+    fn _join_asof_by(
         &self,
         other: &DataFrame,
         left_on: &str,
@@ -773,7 +770,8 @@ impl DataFrame {
         suffix: Option<&str>,
         slice: Option<(i64, usize)>,
     ) -> PolarsResult<DataFrame> {
-        let left_asof = self.column(left_on)?.to_physical_repr();
+        let self_df = self.to_df();
+        let left_asof = self_df.column(left_on)?.to_physical_repr();
         let right_asof = other.column(right_on)?.to_physical_repr();
         let right_asof_name = right_asof.name();
         let left_asof_name = left_asof.name();
@@ -784,7 +782,7 @@ impl DataFrame {
             left_by.is_empty() && right_by.is_empty(),
         )?;
 
-        let mut left_by = self.select(left_by)?;
+        let mut left_by = self_df.select(left_by)?;
         let mut right_by = other.select(right_by)?;
 
         unsafe {
@@ -837,7 +835,7 @@ impl DataFrame {
             .collect();
         let other = DataFrame::new_no_checks(cols);
 
-        let mut left = self.clone();
+        let mut left = self_df.clone();
         let mut right_join_tuples = &*right_join_tuples;
 
         if let Some((offset, len)) = slice {
@@ -856,7 +854,7 @@ impl DataFrame {
     /// The keys must be sorted to perform an asof join. This is a special implementation of an asof join
     /// that searches for the nearest keys within a subgroup set by `by`.
     #[allow(clippy::too_many_arguments)]
-    pub fn join_asof_by<I, S>(
+    fn join_asof_by<I, S>(
         &self,
         other: &DataFrame,
         left_on: &str,
@@ -870,13 +868,16 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
+        let self_df = self.to_df();
         let left_by = left_by.into_iter().map(|s| s.as_ref().into()).collect();
         let right_by = right_by.into_iter().map(|s| s.as_ref().into()).collect();
-        self._join_asof_by(
+        self_df._join_asof_by(
             other, left_on, right_on, left_by, right_by, strategy, tolerance, None, None,
         )
     }
 }
+
+impl AsofJoinBy for DataFrame {}
 
 #[cfg(test)]
 mod test {

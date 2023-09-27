@@ -1,11 +1,10 @@
 use super::*;
-use crate::frame::hash_join::single_keys::probe_to_offsets;
 
 /// Only keeps track of membership in right table
-pub(super) fn create_probe_table_semi_anti<T, IntoSlice>(keys: Vec<IntoSlice>) -> Vec<PlHashSet<T>>
+pub(super) fn create_probe_table_semi_anti<T, I>(keys: Vec<I>) -> Vec<PlHashSet<T>>
 where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
-    IntoSlice: AsRef<[T]> + Send + Sync,
+    I: IntoIterator<Item = T> + Copy + Send + Sync,
 {
     let n_partitions = _set_partition_size();
 
@@ -16,14 +15,13 @@ where
         (0..n_partitions).into_par_iter().map(|partition_no| {
             let partition_no = partition_no as u64;
 
-            let mut hash_tbl: PlHashSet<T> = PlHashSet::with_capacity(HASHMAP_INIT_SIZE);
+            let mut hash_tbl: PlHashSet<T> = PlHashSet::with_capacity(_HASHMAP_INIT_SIZE);
 
             let n_partitions = n_partitions as u64;
             for keys in &keys {
-                let keys = keys.as_ref();
-                keys.iter().for_each(|k| {
+                keys.into_iter().for_each(|k| {
                     if this_partition(k.as_u64(), partition_no, n_partitions) {
-                        hash_tbl.insert(*k);
+                        hash_tbl.insert(k);
                     }
                 });
             }
@@ -33,12 +31,12 @@ where
     .collect()
 }
 
-pub(super) fn semi_anti_impl<T, IntoSlice>(
-    probe: Vec<IntoSlice>,
-    build: Vec<IntoSlice>,
+pub(super) fn semi_anti_impl<T, I>(
+    probe: Vec<I>,
+    build: Vec<I>,
 ) -> impl ParallelIterator<Item = (IdxSize, bool)>
 where
-    IntoSlice: AsRef<[T]> + Send + Sync,
+    I: IntoIterator<Item = T> + Copy + Send + Sync,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     // first we hash one relation
@@ -60,12 +58,12 @@ where
             .flat_map(move |(probe, offset)| {
                 // local reference
                 let hash_sets = &hash_sets;
-                let probe = probe.as_ref();
+                let probe_iter = probe.into_iter();
 
                 // assume the result tuples equal length of the no. of hashes processed by this thread.
-                let mut results = Vec::with_capacity(probe.len());
+                let mut results = Vec::with_capacity(probe_iter.size_hint().1.unwrap());
 
-                probe.iter().enumerate().for_each(|(idx_a, k)| {
+                probe_iter.enumerate().for_each(|(idx_a, k)| {
                     let idx_a = (idx_a + offset) as IdxSize;
                     // probe table that contains the hashed value
                     let current_probe_table = unsafe {
@@ -73,7 +71,7 @@ where
                     };
 
                     // we already hashed, so we don't have to hash again.
-                    let value = current_probe_table.get(k);
+                    let value = current_probe_table.get(&k);
 
                     match value {
                         // left and right matches
@@ -87,12 +85,9 @@ where
     })
 }
 
-pub(super) fn hash_join_tuples_left_anti<T, IntoSlice>(
-    probe: Vec<IntoSlice>,
-    build: Vec<IntoSlice>,
-) -> Vec<IdxSize>
+pub(super) fn hash_join_tuples_left_anti<T, I>(probe: Vec<I>, build: Vec<I>) -> Vec<IdxSize>
 where
-    IntoSlice: AsRef<[T]> + Send + Sync,
+    I: IntoIterator<Item = T> + Copy + Send + Sync,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     semi_anti_impl(probe, build)
@@ -101,12 +96,9 @@ where
         .collect()
 }
 
-pub(super) fn hash_join_tuples_left_semi<T, IntoSlice>(
-    probe: Vec<IntoSlice>,
-    build: Vec<IntoSlice>,
-) -> Vec<IdxSize>
+pub(super) fn hash_join_tuples_left_semi<T, I>(probe: Vec<I>, build: Vec<I>) -> Vec<IdxSize>
 where
-    IntoSlice: AsRef<[T]> + Send + Sync,
+    I: IntoIterator<Item = T> + Copy + Send + Sync,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     semi_anti_impl(probe, build)

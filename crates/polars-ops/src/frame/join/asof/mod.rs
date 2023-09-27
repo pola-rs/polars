@@ -1,16 +1,24 @@
-mod asof;
+mod default;
 mod groups;
 use std::borrow::Cow;
 
-use asof::*;
+use default::*;
+pub(super) use groups::AsofJoinBy;
 use num_traits::Bounded;
+use polars_core::prelude::*;
+use polars_core::utils::{ensure_sorted_arg, slice_slice};
+use polars_core::with_match_physical_numeric_polars_type;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
-use crate::frame::hash_join::_finish_join;
-use crate::prelude::*;
-use crate::utils::{ensure_sorted_arg, slice_slice};
+#[cfg(feature = "dtype-categorical")]
+use super::_check_categorical_src;
+use super::{
+    _finish_join, build_tables, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk,
+    prepare_bytes,
+};
+use crate::frame::IntoDf;
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -64,66 +72,64 @@ pub enum AsofStrategy {
     Nearest,
 }
 
-impl<T> ChunkedArray<T>
+pub(crate) fn join_asof<T>(
+    input_ca: &ChunkedArray<T>,
+    other: &Series,
+    strategy: AsofStrategy,
+    tolerance: Option<AnyValue<'static>>,
+) -> PolarsResult<Vec<Option<IdxSize>>>
 where
     T: PolarsNumericType,
     T::Native: Bounded + PartialOrd,
 {
-    pub(crate) fn join_asof(
-        &self,
-        other: &Series,
-        strategy: AsofStrategy,
-        tolerance: Option<AnyValue<'static>>,
-    ) -> PolarsResult<Vec<Option<IdxSize>>> {
-        let other = self.unpack_series_matching_type(other)?;
+    let other = input_ca.unpack_series_matching_type(other)?;
 
-        // cont_slice requires a single chunk
-        let ca = self.rechunk();
-        let other = other.rechunk();
+    // cont_slice requires a single chunk
+    let ca = input_ca.rechunk();
+    let other = other.rechunk();
 
-        let out = match strategy {
-            AsofStrategy::Forward => match tolerance {
-                None => join_asof_forward(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
-                Some(tolerance) => {
-                    let tolerance = tolerance.extract::<T::Native>().unwrap();
-                    join_asof_forward_with_tolerance(
-                        ca.cont_slice().unwrap(),
-                        other.cont_slice().unwrap(),
-                        tolerance,
-                    )
-                },
+    let out = match strategy {
+        AsofStrategy::Forward => match tolerance {
+            None => join_asof_forward(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
+            Some(tolerance) => {
+                let tolerance = tolerance.extract::<T::Native>().unwrap();
+                join_asof_forward_with_tolerance(
+                    ca.cont_slice().unwrap(),
+                    other.cont_slice().unwrap(),
+                    tolerance,
+                )
             },
-            AsofStrategy::Backward => match tolerance {
-                None => join_asof_backward(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
-                Some(tolerance) => {
-                    let tolerance = tolerance.extract::<T::Native>().unwrap();
-                    join_asof_backward_with_tolerance(
-                        self.cont_slice().unwrap(),
-                        other.cont_slice().unwrap(),
-                        tolerance,
-                    )
-                },
+        },
+        AsofStrategy::Backward => match tolerance {
+            None => join_asof_backward(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
+            Some(tolerance) => {
+                let tolerance = tolerance.extract::<T::Native>().unwrap();
+                join_asof_backward_with_tolerance(
+                    input_ca.cont_slice().unwrap(),
+                    other.cont_slice().unwrap(),
+                    tolerance,
+                )
             },
-            AsofStrategy::Nearest => match tolerance {
-                None => join_asof_nearest(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
-                Some(tolerance) => {
-                    let tolerance = tolerance.extract::<T::Native>().unwrap();
-                    join_asof_nearest_with_tolerance(
-                        self.cont_slice().unwrap(),
-                        other.cont_slice().unwrap(),
-                        tolerance,
-                    )
-                },
+        },
+        AsofStrategy::Nearest => match tolerance {
+            None => join_asof_nearest(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
+            Some(tolerance) => {
+                let tolerance = tolerance.extract::<T::Native>().unwrap();
+                join_asof_nearest_with_tolerance(
+                    input_ca.cont_slice().unwrap(),
+                    other.cont_slice().unwrap(),
+                    tolerance,
+                )
             },
-        };
-        Ok(out)
-    }
+        },
+    };
+    Ok(out)
 }
 
-impl DataFrame {
+pub trait AsofJoin: IntoDf {
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
-    pub fn _join_asof(
+    fn _join_asof(
         &self,
         other: &DataFrame,
         left_on: &str,
@@ -133,7 +139,8 @@ impl DataFrame {
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
     ) -> PolarsResult<DataFrame> {
-        let left_key = self.column(left_on)?;
+        let self_df = self.to_df();
+        let left_key = self_df.column(left_on)?;
         let right_key = other.column(right_on)?;
 
         check_asof_columns(left_key, right_key, true)?;
@@ -141,37 +148,35 @@ impl DataFrame {
         let right_key = right_key.to_physical_repr();
 
         let take_idx = match left_key.dtype() {
-            DataType::Int64 => left_key
-                .i64()
-                .unwrap()
-                .join_asof(&right_key, strategy, tolerance),
-            DataType::Int32 => left_key
-                .i32()
-                .unwrap()
-                .join_asof(&right_key, strategy, tolerance),
-            DataType::UInt64 => left_key
-                .u64()
-                .unwrap()
-                .join_asof(&right_key, strategy, tolerance),
-            DataType::UInt32 => left_key
-                .u32()
-                .unwrap()
-                .join_asof(&right_key, strategy, tolerance),
-            DataType::Float32 => left_key
-                .f32()
-                .unwrap()
-                .join_asof(&right_key, strategy, tolerance),
-            DataType::Float64 => left_key
-                .f64()
-                .unwrap()
-                .join_asof(&right_key, strategy, tolerance),
+            DataType::Int64 => {
+                let ca = left_key.i64().unwrap();
+                join_asof(ca, &right_key, strategy, tolerance)
+            },
+            DataType::Int32 => {
+                let ca = left_key.i32().unwrap();
+                join_asof(ca, &right_key, strategy, tolerance)
+            },
+            DataType::UInt64 => {
+                let ca = left_key.u64().unwrap();
+                join_asof(ca, &right_key, strategy, tolerance)
+            },
+            DataType::UInt32 => {
+                let ca = left_key.u32().unwrap();
+                join_asof(ca, &right_key, strategy, tolerance)
+            },
+            DataType::Float32 => {
+                let ca = left_key.f32().unwrap();
+                join_asof(ca, &right_key, strategy, tolerance)
+            },
+            DataType::Float64 => {
+                let ca = left_key.f64().unwrap();
+                join_asof(ca, &right_key, strategy, tolerance)
+            },
             _ => {
                 let left_key = left_key.cast(&DataType::Int32).unwrap();
                 let right_key = right_key.cast(&DataType::Int32).unwrap();
-                left_key
-                    .i32()
-                    .unwrap()
-                    .join_asof(&right_key, strategy, tolerance)
+                let ca = left_key.i32().unwrap();
+                join_asof(ca, &right_key, strategy, tolerance)
             },
         }?;
 
@@ -187,7 +192,7 @@ impl DataFrame {
             Cow::Borrowed(other)
         };
 
-        let mut left = self.clone();
+        let mut left = self_df.clone();
         let mut take_idx = &*take_idx;
 
         if let Some((offset, len)) = slice {
@@ -203,7 +208,7 @@ impl DataFrame {
 
     /// This is similar to a left-join except that we match on nearest key rather than equal keys.
     /// The keys must be sorted to perform an asof join
-    pub fn join_asof(
+    fn join_asof(
         &self,
         other: &DataFrame,
         left_on: &str,
@@ -215,3 +220,5 @@ impl DataFrame {
         self._join_asof(other, left_on, right_on, strategy, tolerance, suffix, None)
     }
 }
+
+impl AsofJoin for DataFrame {}

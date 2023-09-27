@@ -1,8 +1,10 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use once_cell::sync::Lazy;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
+use regex::{Regex, RegexBuilder};
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 #[cfg(any(
@@ -150,6 +152,19 @@ pub(crate) fn overwrite_schema(
     }
     Ok(())
 }
+
+pub static FLOAT_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^\s*[-+]?((\d*\.\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+\.)$").unwrap()
+});
+
+pub static INTEGER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*-?(\d+)$").unwrap());
+
+pub static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
+    RegexBuilder::new(r"^\s*(true)$|^(false)$")
+        .case_insensitive(true)
+        .build()
+        .unwrap()
+});
 
 #[cfg(test)]
 mod tests {

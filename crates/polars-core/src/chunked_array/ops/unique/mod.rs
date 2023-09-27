@@ -11,7 +11,7 @@ use crate::datatypes::PlHashSet;
 use crate::frame::group_by::GroupsProxy;
 #[cfg(feature = "mode")]
 use crate::frame::group_by::IntoGroupsProxy;
-use crate::hashing::HASHMAP_INIT_SIZE;
+use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -255,7 +255,7 @@ impl ChunkUnique<BinaryType> for BinaryChunked {
         match self.null_count() {
             0 => {
                 let mut set =
-                    PlHashSet::with_capacity(std::cmp::min(HASHMAP_INIT_SIZE, self.len()));
+                    PlHashSet::with_capacity(std::cmp::min(_HASHMAP_INIT_SIZE, self.len()));
                 for arr in self.downcast_iter() {
                     set.extend(arr.values_iter())
                 }
@@ -266,7 +266,7 @@ impl ChunkUnique<BinaryType> for BinaryChunked {
             },
             _ => {
                 let mut set =
-                    PlHashSet::with_capacity(std::cmp::min(HASHMAP_INIT_SIZE, self.len()));
+                    PlHashSet::with_capacity(std::cmp::min(_HASHMAP_INIT_SIZE, self.len()));
                 for arr in self.downcast_iter() {
                     set.extend(arr.iter())
                 }

@@ -132,8 +132,7 @@ extra:
     property: G-LKNVFWD3T5
 
 # Preview controls
-# TODO: Fix warnings and turn on strict mode
-strict: false
+strict: true
 
 # Formatting options
 markdown_extensions:

@@ -26,21 +26,21 @@ On the other hand binary formats such as parquet have a schema that is respected
 
 ## Casting strings to dates
 
-You can also cast a column of datetimes encoded as strings to a datetime type. You do this by calling the string `str.strptime` method and passing the format of the date string:
+You can also cast a column of datetimes encoded as strings to a datetime type. You do this by calling the string `str.to_date` method and passing the format of the date string:
 
-{{code_block('user-guide/transformations/time-series/parsing','cast',['read_csv','strptime'])}}
+{{code_block('user-guide/transformations/time-series/parsing','cast',['read_csv','str.to_date'])}}
 
 ```python exec="on" result="text" session="user-guide/transformations/ts/parsing"
 --8<-- "python/user-guide/transformations/time-series/parsing.py:cast"
 ```
 
-[The strptime date formats can be found here.](https://docs.rs/chrono/latest/chrono/format/strftime/index.html).
+[The format string specification can be found here.](https://docs.rs/chrono/latest/chrono/format/strftime/index.html).
 
 ## Extracting date features from a date column
 
 You can extract data features such as the year or day from a date column using the `.dt` namespace on a date column:
 
-{{code_block('user-guide/transformations/time-series/parsing','extract',['year'])}}
+{{code_block('user-guide/transformations/time-series/parsing','extract',['dt.year'])}}
 
 ```python exec="on" result="text" session="user-guide/transformations/ts/parsing"
 --8<-- "python/user-guide/transformations/time-series/parsing.py:extract"
@@ -51,7 +51,7 @@ You can extract data features such as the year or day from a date column using t
 If you have mixed offsets (say, due to crossing daylight saving time),
 then you can use `utc=True` and then convert to your time zone:
 
-{{code_block('user-guide/transformations/time-series/parsing','mixed',['strptime','convert_time_zone'])}}
+{{code_block('user-guide/transformations/time-series/parsing','mixed',['str.to_datetime','dt.convert_time_zone'])}}
 
 ```python exec="on" result="text" session="user-guide/transformations/ts/parsing"
 --8<-- "python/user-guide/transformations/time-series/parsing.py:mixed"

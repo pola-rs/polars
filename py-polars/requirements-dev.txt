@@ -12,7 +12,7 @@
 numpy
 pandas
 pyarrow
-pydantic >= 2.0.0
+pydantic >= 2.0.0, <2.4.0  # 2.4.0 breaks pyiceberg interop
 # Datetime / time zones
 backports.zoneinfo; python_version < '3.9'
 tzdata; platform_system == 'Windows'
@@ -28,6 +28,7 @@ s3fs[boto3]
 ezodf
 lxml
 openpyxl
+pyxlsb
 xlsx2csv
 XlsxWriter
 # Deltalake

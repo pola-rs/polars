@@ -1,8 +1,3 @@
-#[cfg(feature = "dtype-struct")]
-use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
-#[cfg(feature = "dtype-struct")]
-use polars_utils::format_smartstring;
-
 use super::function_expr::StringFunction;
 use super::*;
 /// Specialized expressions for [`Series`] of [`DataType::Utf8`].
@@ -19,6 +14,7 @@ impl StringNameSpace {
             }),
             &[pat],
             true,
+            true,
         )
     }
 
@@ -33,6 +29,7 @@ impl StringNameSpace {
             }),
             &[pat],
             true,
+            true,
         )
     }
 
@@ -42,6 +39,7 @@ impl StringNameSpace {
             FunctionExpr::StringExpr(StringFunction::EndsWith),
             &[sub],
             true,
+            true,
         )
     }
 
@@ -50,6 +48,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::StartsWith),
             &[sub],
+            true,
             true,
         )
     }
@@ -124,13 +123,17 @@ impl StringNameSpace {
     /// Extract each successive non-overlapping match in an individual string as an array
     pub fn extract_all(self, pat: Expr) -> Expr {
         self.0
-            .map_many_private(StringFunction::ExtractAll.into(), &[pat], false)
+            .map_many_private(StringFunction::ExtractAll.into(), &[pat], false, false)
     }
 
     /// Count all successive non-overlapping regex matches.
     pub fn count_matches(self, pat: Expr, literal: bool) -> Expr {
-        self.0
-            .map_many_private(StringFunction::CountMatches(literal).into(), &[pat], false)
+        self.0.map_many_private(
+            StringFunction::CountMatches(literal).into(),
+            &[pat],
+            true,
+            false,
+        )
     }
 
     /// Convert a Utf8 column into a Date/Datetime/Time column.
@@ -139,6 +142,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             StringFunction::Strptime(dtype, options).into(),
             &[ambiguous],
+            true,
             false,
         )
     }
@@ -199,191 +203,59 @@ impl StringNameSpace {
     /// * `delimiter` - A string that will act as delimiter between values.
     #[cfg(feature = "concat_str")]
     pub fn concat(self, delimiter: &str) -> Expr {
-        let delimiter = delimiter.to_owned();
-
-        Expr::Function {
-            input: vec![self.0],
-            function: StringFunction::ConcatVertical(delimiter).into(),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyGroups,
-                input_wildcard_expansion: false,
-                auto_explode: true,
-                ..Default::default()
-            },
-        }
+        self.0
+            .apply_private(StringFunction::ConcatVertical(delimiter.to_owned()).into())
+            .with_function_options(|mut options| {
+                options.auto_explode = true;
+                options
+            })
     }
 
     /// Split the string by a substring. The resulting dtype is `List<Utf8>`.
     pub fn split(self, by: Expr) -> Expr {
         self.0
-            .map_many_private(StringFunction::Split.into(), &[by], false)
+            .map_many_private(StringFunction::Split(false).into(), &[by], false, false)
     }
 
     /// Split the string by a substring and keep the substring. The resulting dtype is `List<Utf8>`.
     pub fn split_inclusive(self, by: Expr) -> Expr {
         self.0
-            .map_many_private(StringFunction::SplitInclusive.into(), &[by], false)
+            .map_many_private(StringFunction::Split(true).into(), &[by], false, false)
     }
 
     #[cfg(feature = "dtype-struct")]
     /// Split exactly `n` times by a given substring. The resulting dtype is [`DataType::Struct`].
-    pub fn split_exact(self, by: &str, n: usize) -> Expr {
-        let by = by.to_string();
-
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-
-            let mut arrs = (0..n + 1)
-                .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
-                .collect::<Vec<_>>();
-
-            ca.into_iter().for_each(|opt_s| match opt_s {
-                None => {
-                    for arr in &mut arrs {
-                        arr.push_null()
-                    }
-                },
-                Some(s) => {
-                    let mut arr_iter = arrs.iter_mut();
-                    let split_iter = s.split(&by);
-                    (split_iter)
-                        .zip(&mut arr_iter)
-                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
-                    // fill the remaining with null
-                    for arr in arr_iter {
-                        arr.push_null()
-                    }
-                },
-            });
-            let fields = arrs
-                .into_iter()
-                .enumerate()
-                .map(|(i, mut arr)| {
-                    Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
-                })
-                .collect::<Vec<_>>();
-            Ok(Some(StructChunked::new(ca.name(), &fields)?.into_series()))
-        };
-        self.0
-            .map(
-                function,
-                GetOutput::from_type(DataType::Struct(
-                    (0..n + 1)
-                        .map(|i| {
-                            Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8)
-                        })
-                        .collect(),
-                )),
-            )
-            .with_fmt("str.split_exact")
+    pub fn split_exact(self, by: Expr, n: usize) -> Expr {
+        self.0.map_many_private(
+            StringFunction::SplitExact {
+                n,
+                inclusive: false,
+            }
+            .into(),
+            &[by],
+            false,
+            false,
+        )
     }
 
     #[cfg(feature = "dtype-struct")]
     /// Split exactly `n` times by a given substring and keep the substring.
     /// The resulting dtype is [`DataType::Struct`].
-    pub fn split_exact_inclusive(self, by: &str, n: usize) -> Expr {
-        let by = by.to_string();
-
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-
-            let mut arrs = (0..n + 1)
-                .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
-                .collect::<Vec<_>>();
-
-            ca.into_iter().for_each(|opt_s| match opt_s {
-                None => {
-                    for arr in &mut arrs {
-                        arr.push_null()
-                    }
-                },
-                Some(s) => {
-                    let mut arr_iter = arrs.iter_mut();
-                    let split_iter = s.split_inclusive(&by);
-                    (split_iter)
-                        .zip(&mut arr_iter)
-                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
-                    // fill the remaining with null
-                    for arr in arr_iter {
-                        arr.push_null()
-                    }
-                },
-            });
-            let fields = arrs
-                .into_iter()
-                .enumerate()
-                .map(|(i, mut arr)| {
-                    Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
-                })
-                .collect::<Vec<_>>();
-            Ok(Some(StructChunked::new(ca.name(), &fields)?.into_series()))
-        };
-        self.0
-            .map(
-                function,
-                GetOutput::from_type(DataType::Struct(
-                    (0..n + 1)
-                        .map(|i| {
-                            Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8)
-                        })
-                        .collect(),
-                )),
-            )
-            .with_fmt("str.split_exact")
+    pub fn split_exact_inclusive(self, by: Expr, n: usize) -> Expr {
+        self.0.map_many_private(
+            StringFunction::SplitExact { n, inclusive: true }.into(),
+            &[by],
+            false,
+            false,
+        )
     }
 
     #[cfg(feature = "dtype-struct")]
     /// Split by a given substring, returning exactly `n` items. If there are more possible splits,
     /// keeps the remainder of the string intact. The resulting dtype is [`DataType::Struct`].
-    pub fn splitn(self, by: &str, n: usize) -> Expr {
-        let by = by.to_string();
-
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-
-            let mut arrs = (0..n)
-                .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
-                .collect::<Vec<_>>();
-
-            ca.into_iter().for_each(|opt_s| match opt_s {
-                None => {
-                    for arr in &mut arrs {
-                        arr.push_null()
-                    }
-                },
-                Some(s) => {
-                    let mut arr_iter = arrs.iter_mut();
-                    let split_iter = s.splitn(n, &by);
-                    (split_iter)
-                        .zip(&mut arr_iter)
-                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
-                    // fill the remaining with null
-                    for arr in arr_iter {
-                        arr.push_null()
-                    }
-                },
-            });
-            let fields = arrs
-                .into_iter()
-                .enumerate()
-                .map(|(i, mut arr)| {
-                    Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
-                })
-                .collect::<Vec<_>>();
-            Ok(Some(StructChunked::new(ca.name(), &fields)?.into_series()))
-        };
+    pub fn splitn(self, by: Expr, n: usize) -> Expr {
         self.0
-            .map(
-                function,
-                GetOutput::from_type(DataType::Struct(
-                    (0..n)
-                        .map(|i| {
-                            Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8)
-                        })
-                        .collect(),
-                )),
-            )
-            .with_fmt("str.splitn")
+            .map_many_private(StringFunction::SplitN(n).into(), &[by], false, false)
     }
 
     #[cfg(feature = "regex")]
@@ -392,6 +264,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::Replace { n: 1, literal }),
             &[pat, value],
+            false,
             true,
         )
     }
@@ -402,6 +275,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::Replace { n, literal }),
             &[pat, value],
+            false,
             true,
         )
     }
@@ -412,32 +286,39 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::Replace { n: -1, literal }),
             &[pat, value],
+            false,
             true,
         )
     }
 
     /// Remove leading and trailing characters, or whitespace if matches is None.
-    pub fn strip_chars(self, matches: Option<String>) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::StripChars(
-                matches,
-            )))
+    pub fn strip_chars(self, matches: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::StripChars),
+            &[matches],
+            false,
+            false,
+        )
     }
 
     /// Remove leading characters, or whitespace if matches is None.
-    pub fn strip_chars_start(self, matches: Option<String>) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::StripCharsStart(
-                matches,
-            )))
+    pub fn strip_chars_start(self, matches: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::StripCharsStart),
+            &[matches],
+            false,
+            false,
+        )
     }
 
     /// Remove trailing characters, or whitespace if matches is None.
-    pub fn strip_chars_end(self, matches: Option<String>) -> Expr {
-        self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::StripCharsEnd(
-                matches,
-            )))
+    pub fn strip_chars_end(self, matches: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::StripCharsEnd),
+            &[matches],
+            false,
+            false,
+        )
     }
 
     /// Remove prefix.
@@ -445,6 +326,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::StripPrefix),
             &[prefix],
+            false,
             false,
         )
     }
@@ -454,6 +336,7 @@ impl StringNameSpace {
         self.0.map_many_private(
             FunctionExpr::StringExpr(StringFunction::StripSuffix),
             &[suffix],
+            false,
             false,
         )
     }

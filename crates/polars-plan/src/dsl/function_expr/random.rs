@@ -10,7 +10,6 @@ use super::*;
 pub enum RandomMethod {
     Shuffle,
     SampleN {
-        n: usize,
         with_replacement: bool,
         shuffle: bool,
     },
@@ -27,18 +26,39 @@ impl Hash for RandomMethod {
     }
 }
 
-pub(super) fn random(s: &Series, method: RandomMethod, seed: Option<u64>) -> PolarsResult<Series> {
-    match method {
-        RandomMethod::Shuffle => Ok(s.shuffle(seed)),
-        RandomMethod::SampleFrac {
-            frac,
-            with_replacement,
-            shuffle,
-        } => s.sample_frac(frac, with_replacement, shuffle, seed),
-        RandomMethod::SampleN {
-            n,
-            with_replacement,
-            shuffle,
-        } => s.sample_n(n, with_replacement, shuffle, seed),
+pub(super) fn shuffle(s: &Series, seed: Option<u64>) -> PolarsResult<Series> {
+    Ok(s.shuffle(seed))
+}
+
+pub(super) fn sample_frac(
+    s: &Series,
+    frac: f64,
+    with_replacement: bool,
+    shuffle: bool,
+    seed: Option<u64>,
+) -> PolarsResult<Series> {
+    s.sample_frac(frac, with_replacement, shuffle, seed)
+}
+
+pub(super) fn sample_n(
+    s: &[Series],
+    with_replacement: bool,
+    shuffle: bool,
+    seed: Option<u64>,
+) -> PolarsResult<Series> {
+    let src = &s[0];
+    let n_s = &s[1];
+
+    polars_ensure!(
+        n_s.len() == 1,
+        ComputeError: "Sample size must be a single value."
+    );
+
+    let n_s = n_s.cast(&IDX_DTYPE)?;
+    let n = n_s.idx()?;
+
+    match n.get(0) {
+        Some(n) => src.sample_n(n as usize, with_replacement, shuffle, seed),
+        None => Ok(Series::new_empty(src.name(), src.dtype())),
     }
 }

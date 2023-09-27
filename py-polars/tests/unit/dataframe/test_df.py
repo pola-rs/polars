@@ -1290,45 +1290,6 @@ def test_duration_arithmetic() -> None:
     )
 
 
-def test_string_cache_eager_lazy() -> None:
-    # tests if the global string cache is really global and not interfered by the lazy
-    # execution. first the global settings was thread-local and this breaks with the
-    # parallel execution of lazy
-    with pl.StringCache():
-        df1 = pl.DataFrame(
-            {"region_ids": ["reg1", "reg2", "reg3", "reg4", "reg5"]}
-        ).select([pl.col("region_ids").cast(pl.Categorical)])
-
-        df2 = pl.DataFrame(
-            {"seq_name": ["reg4", "reg2", "reg1"], "score": [3.0, 1.0, 2.0]}
-        ).select([pl.col("seq_name").cast(pl.Categorical), pl.col("score")])
-
-        expected = pl.DataFrame(
-            {
-                "region_ids": ["reg1", "reg2", "reg3", "reg4", "reg5"],
-                "score": [2.0, 1.0, None, 3.0, None],
-            }
-        ).with_columns(pl.col("region_ids").cast(pl.Categorical))
-
-        result = df1.join(df2, left_on="region_ids", right_on="seq_name", how="left")
-        assert_frame_equal(result, expected)
-
-        # also check row-wise categorical insert.
-        # (column-wise is preferred, but this shouldn't fail)
-        for params in (
-            {"schema": [("region_ids", pl.Categorical)]},
-            {
-                "schema": ["region_ids"],
-                "schema_overrides": {"region_ids": pl.Categorical},
-            },
-        ):
-            df3 = pl.DataFrame(  # type: ignore[arg-type]
-                data=[["reg1"], ["reg2"], ["reg3"], ["reg4"], ["reg5"]],
-                **params,
-            )
-            assert_frame_equal(df1, df3)
-
-
 def test_assign() -> None:
     # check if can assign in case of a single column
     df = pl.DataFrame({"a": [1, 2, 3]})
@@ -1357,6 +1318,19 @@ def test_to_numpy(order: IndexOrder, f_contiguous: bool, c_contiguous: bool) -> 
     assert_array_equal(structured_array, expected_array)
     assert structured_array.flags["F_CONTIGUOUS"]
 
+    # check string conversion; if no nulls can optimise as a fixed-width dtype
+    df = pl.DataFrame({"s": ["x", "y", None]})
+    assert df["s"].has_validity()
+    assert_array_equal(
+        df.to_numpy(structured=True),
+        np.array([("x",), ("y",), (None,)], dtype=[("s", "O")]),
+    )
+    assert df["s"][:2].has_validity()
+    assert_array_equal(
+        df[:2].to_numpy(structured=True),
+        np.array([("x",), ("y",)], dtype=[("s", "<U1")]),
+    )
+
 
 def test_to_numpy_structured() -> None:
     # round-trip structured array: validate init/export
@@ -1375,7 +1349,6 @@ def test_to_numpy_structured() -> None:
             ]
         ),
     )
-
     df = pl.from_numpy(structured_array)
     assert df.schema == {
         "product": pl.Utf8,
@@ -3519,11 +3492,95 @@ def test_deadlocks_3409() -> None:
 
 
 def test_clip() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
-    assert df.select(pl.col("a").clip(2, 4))["a"].to_list() == [2, 2, 3, 4, 4]
-    assert pl.Series([1, 2, 3, 4, 5]).clip(2, 4).to_list() == [2, 2, 3, 4, 4]
-    assert pl.Series([1, 2, 3, 4, 5]).clip_min(3).to_list() == [3, 3, 3, 4, 5]
-    assert pl.Series([1, 2, 3, 4, 5]).clip_max(3).to_list() == [1, 2, 3, 3, 3]
+    clip_exprs = [
+        pl.col("a").clip(pl.col("min"), pl.col("max")).alias("clip"),
+        pl.col("a").clip_min(pl.col("min")).alias("clip_min"),
+        pl.col("a").clip_max(pl.col("max")).alias("clip_max"),
+    ]
+
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "min": [0, -1, 4, None, 4],
+            "max": [2, 1, 8, 5, None],
+        }
+    )
+
+    assert df.select(clip_exprs).to_dict(False) == {
+        "clip": [1, 1, 4, None, None],
+        "clip_min": [1, 2, 4, None, 5],
+        "clip_max": [1, 1, 3, 4, None],
+    }
+
+    df = pl.DataFrame(
+        {
+            "a": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "min": [0, -1.0, 4.0, None, 4.0],
+            "max": [2.0, 1.0, 8.0, 5.0, None],
+        }
+    )
+
+    assert df.select(clip_exprs).to_dict(False) == {
+        "clip": [1.0, 1.0, 4.0, None, None],
+        "clip_min": [1.0, 2.0, 4.0, None, 5.0],
+        "clip_max": [1.0, 1.0, 3.0, 4.0, None],
+    }
+
+    df = pl.DataFrame(
+        {
+            "a": [
+                datetime(1995, 6, 5, 10, 30),
+                datetime(1995, 6, 5),
+                datetime(2023, 10, 20, 18, 30, 6),
+                None,
+                datetime(2023, 9, 24),
+                datetime(2000, 1, 10),
+            ],
+            "min": [
+                datetime(1995, 6, 5, 10, 29),
+                datetime(1996, 6, 5),
+                datetime(2020, 9, 24),
+                datetime(2020, 1, 1),
+                None,
+                datetime(2000, 1, 1),
+            ],
+            "max": [
+                datetime(1995, 7, 21, 10, 30),
+                datetime(2000, 1, 1),
+                datetime(2023, 9, 20, 18, 30, 6),
+                datetime(2000, 1, 1),
+                datetime(1993, 3, 13),
+                None,
+            ],
+        }
+    )
+
+    assert df.select(clip_exprs).to_dict(False) == {
+        "clip": [
+            datetime(1995, 6, 5, 10, 30),
+            datetime(1996, 6, 5),
+            datetime(2023, 9, 20, 18, 30, 6),
+            None,
+            None,
+            None,
+        ],
+        "clip_min": [
+            datetime(1995, 6, 5, 10, 30),
+            datetime(1996, 6, 5),
+            datetime(2023, 10, 20, 18, 30, 6),
+            None,
+            None,
+            datetime(2000, 1, 10),
+        ],
+        "clip_max": [
+            datetime(1995, 6, 5, 10, 30),
+            datetime(1995, 6, 5),
+            datetime(2023, 9, 20, 18, 30, 6),
+            None,
+            datetime(1993, 3, 13),
+            None,
+        ],
+    }
 
 
 def test_cum_agg() -> None:

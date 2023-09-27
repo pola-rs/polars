@@ -23,14 +23,6 @@ where
     f
 }
 
-fn opt_strip_prefix<'a>(s: Option<&'a str>, prefix: Option<&str>) -> Option<&'a str> {
-    Some(s?.strip_prefix(prefix?).unwrap_or(s?))
-}
-
-fn opt_strip_suffix<'a>(s: Option<&'a str>, suffix: Option<&str>) -> Option<&'a str> {
-    Some(s?.strip_suffix(suffix?).unwrap_or(s?))
-}
-
 pub trait Utf8NameSpaceImpl: AsUtf8 {
     #[cfg(not(feature = "binary_encoding"))]
     fn hex_decode(&self) -> PolarsResult<Utf8Chunked> {
@@ -350,90 +342,74 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         Ok(builder.finish())
     }
 
+    fn strip_chars(&self, pat: &Series) -> PolarsResult<Utf8Chunked> {
+        let ca = self.as_utf8();
+        if pat.dtype() == &DataType::Null {
+            Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim())))
+        } else {
+            Ok(strip_chars(ca, pat.utf8()?))
+        }
+    }
+
+    fn strip_chars_start(&self, pat: &Series) -> PolarsResult<Utf8Chunked> {
+        let ca = self.as_utf8();
+        if pat.dtype() == &DataType::Null {
+            return Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_start())));
+        } else {
+            Ok(strip_chars_start(ca, pat.utf8()?))
+        }
+    }
+
+    fn strip_chars_end(&self, pat: &Series) -> PolarsResult<Utf8Chunked> {
+        let ca = self.as_utf8();
+        if pat.dtype() == &DataType::Null {
+            return Ok(ca.apply_generic(|opt_s| opt_s.map(|s| s.trim_end())));
+        } else {
+            Ok(strip_chars_end(ca, pat.utf8()?))
+        }
+    }
+
     fn strip_prefix(&self, prefix: &Utf8Chunked) -> Utf8Chunked {
         let ca = self.as_utf8();
-        match prefix.len() {
-            1 => match prefix.get(0) {
-                Some(prefix) => {
-                    ca.apply_generic(|opt_s| opt_s.map(|s| s.strip_prefix(prefix).unwrap_or(s)))
-                },
-                _ => Utf8Chunked::full_null(ca.name(), ca.len()),
-            },
-            _ => binary_elementwise(ca, prefix, opt_strip_prefix),
-        }
+        strip_prefix(ca, prefix)
     }
 
     fn strip_suffix(&self, suffix: &Utf8Chunked) -> Utf8Chunked {
         let ca = self.as_utf8();
-        match suffix.len() {
-            1 => match suffix.get(0) {
-                Some(suffix) => {
-                    ca.apply_generic(|opt_s| opt_s.map(|s| s.strip_suffix(suffix).unwrap_or(s)))
-                },
-                _ => Utf8Chunked::full_null(ca.name(), ca.len()),
-            },
-            _ => binary_elementwise(ca, suffix, opt_strip_suffix),
-        }
+        strip_suffix(ca, suffix)
     }
 
-    fn split(&self, by: &str) -> ListChunked {
+    #[cfg(feature = "dtype-struct")]
+    fn split_exact(&self, by: &Utf8Chunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_utf8();
-        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
 
-        ca.for_each(|opt_v| match opt_v {
-            Some(val) => {
-                let iter = val.split(by);
-                builder.append_values_iter(iter)
-            },
-            _ => builder.append_null(),
-        });
-        builder.finish()
+        split_to_struct(ca, by, n + 1, |s, by| s.split(by))
     }
 
-    fn split_many(&self, by: &Utf8Chunked) -> ListChunked {
+    #[cfg(feature = "dtype-struct")]
+    fn split_exact_inclusive(&self, by: &Utf8Chunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_utf8();
 
-        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
-
-        binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
-            (Some(s), Some(by)) => {
-                let iter = s.split(by);
-                builder.append_values_iter(iter);
-            },
-            _ => builder.append_null(),
-        });
-
-        builder.finish()
+        split_to_struct(ca, by, n + 1, |s, by| s.split_inclusive(by))
     }
 
-    fn split_inclusive(&self, by: &str) -> ListChunked {
+    #[cfg(feature = "dtype-struct")]
+    fn splitn(&self, by: &Utf8Chunked, n: usize) -> PolarsResult<StructChunked> {
         let ca = self.as_utf8();
-        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
 
-        ca.for_each(|opt_v| match opt_v {
-            Some(val) => {
-                let iter = val.split_inclusive(by);
-                builder.append_values_iter(iter)
-            },
-            _ => builder.append_null(),
-        });
-        builder.finish()
+        split_to_struct(ca, by, n, |s, by| s.splitn(n, by))
     }
 
-    fn split_inclusive_many(&self, by: &Utf8Chunked) -> ListChunked {
+    fn split(&self, by: &Utf8Chunked) -> ListChunked {
         let ca = self.as_utf8();
 
-        let mut builder = ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
+        split_helper(ca, by, str::split)
+    }
 
-        binary_elementwise_for_each(ca, by, |opt_s, opt_by| match (opt_s, opt_by) {
-            (Some(s), Some(by)) => {
-                let iter = s.split_inclusive(by);
-                builder.append_values_iter(iter);
-            },
-            _ => builder.append_null(),
-        });
+    fn split_inclusive(&self, by: &Utf8Chunked) -> ListChunked {
+        let ca = self.as_utf8();
 
-        builder.finish()
+        split_helper(ca, by, str::split_inclusive)
     }
 
     /// Extract each successive non-overlapping regex match in an individual string as an array.

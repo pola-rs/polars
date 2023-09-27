@@ -447,20 +447,16 @@ impl PyExpr {
         self.clone().inner.ceil().into()
     }
 
-    fn clip(&self, py: Python, min: PyObject, max: PyObject) -> Self {
-        let min = min.extract::<Wrap<AnyValue>>(py).unwrap().0;
-        let max = max.extract::<Wrap<AnyValue>>(py).unwrap().0;
-        self.clone().inner.clip(min, max).into()
+    fn clip(&self, min: Self, max: Self) -> Self {
+        self.clone().inner.clip(min.inner, max.inner).into()
     }
 
-    fn clip_min(&self, py: Python, min: PyObject) -> Self {
-        let min = min.extract::<Wrap<AnyValue>>(py).unwrap().0;
-        self.clone().inner.clip_min(min).into()
+    fn clip_min(&self, min: Self) -> Self {
+        self.clone().inner.clip_min(min.inner).into()
     }
 
-    fn clip_max(&self, py: Python, max: PyObject) -> Self {
-        let max = max.extract::<Wrap<AnyValue>>(py).unwrap().0;
-        self.clone().inner.clip_max(max).into()
+    fn clip_max(&self, max: Self) -> Self {
+        self.clone().inner.clip_max(max.inner).into()
     }
 
     fn abs(&self) -> Self {
@@ -739,10 +735,10 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (n, with_replacement, shuffle, seed))]
-    fn sample_n(&self, n: usize, with_replacement: bool, shuffle: bool, seed: Option<u64>) -> Self {
+    fn sample_n(&self, n: Self, with_replacement: bool, shuffle: bool, seed: Option<u64>) -> Self {
         self.inner
             .clone()
-            .sample_n(n, with_replacement, shuffle, seed)
+            .sample_n(n.inner, with_replacement, shuffle, seed)
             .into()
     }
 

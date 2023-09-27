@@ -12,6 +12,9 @@ use serde::{Deserialize, Serialize};
 static TZ_AWARE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
 
+#[cfg(feature = "dtype-struct")]
+use polars_utils::format_smartstring;
+
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -68,15 +71,21 @@ pub enum StringFunction {
     },
     Slice(i64, Option<u64>),
     StartsWith,
-    StripChars(Option<String>),
-    StripCharsStart(Option<String>),
-    StripCharsEnd(Option<String>),
+    StripChars,
+    StripCharsStart,
+    StripCharsEnd,
     StripPrefix,
     StripSuffix,
+    #[cfg(feature = "dtype-struct")]
+    SplitExact {
+        n: usize,
+        inclusive: bool,
+    },
+    #[cfg(feature = "dtype-struct")]
+    SplitN(usize),
     #[cfg(feature = "temporal")]
     Strptime(DataType, StrptimeOptions),
-    Split,
-    SplitInclusive,
+    Split(bool),
     #[cfg(feature = "dtype-decimal")]
     ToDecimal(usize),
     #[cfg(feature = "nightly")]
@@ -111,21 +120,33 @@ impl StringFunction {
             Replace { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "temporal")]
             Strptime(dtype, _) => mapper.with_dtype(dtype.clone()),
-            Split | SplitInclusive => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
+            Split(_) => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
             #[cfg(feature = "nightly")]
             Titlecase => mapper.with_same_dtype(),
             #[cfg(feature = "dtype-decimal")]
             ToDecimal(_) => mapper.with_dtype(DataType::Decimal(None, None)),
             Uppercase
             | Lowercase
-            | StripChars(_)
-            | StripCharsStart(_)
-            | StripCharsEnd(_)
+            | StripChars
+            | StripCharsStart
+            | StripCharsEnd
             | StripPrefix
             | StripSuffix
             | Slice(_, _) => mapper.with_same_dtype(),
             #[cfg(feature = "string_justify")]
             Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "dtype-struct")]
+            SplitExact { n, .. } => mapper.with_dtype(DataType::Struct(
+                (0..n + 1)
+                    .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8))
+                    .collect(),
+            )),
+            #[cfg(feature = "dtype-struct")]
+            SplitN(n) => mapper.with_dtype(DataType::Struct(
+                (0..*n)
+                    .map(|i| Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8))
+                    .collect(),
+            )),
         }
     }
 }
@@ -161,15 +182,30 @@ impl Display for StringFunction {
             StringFunction::Replace { .. } => "replace",
             StringFunction::Slice(_, _) => "str_slice",
             StringFunction::StartsWith { .. } => "starts_with",
-            StringFunction::StripChars(_) => "strip_chars",
-            StringFunction::StripCharsStart(_) => "strip_chars_start",
-            StringFunction::StripCharsEnd(_) => "strip_chars_end",
+            StringFunction::StripChars => "strip_chars",
+            StringFunction::StripCharsStart => "strip_chars_start",
+            StringFunction::StripCharsEnd => "strip_chars_end",
             StringFunction::StripPrefix => "strip_prefix",
             StringFunction::StripSuffix => "strip_suffix",
+            #[cfg(feature = "dtype-struct")]
+            StringFunction::SplitExact { inclusive, .. } => {
+                if *inclusive {
+                    "split_exact"
+                } else {
+                    "split_exact_inclusive"
+                }
+            },
+            #[cfg(feature = "dtype-struct")]
+            StringFunction::SplitN(_) => "splitn",
             #[cfg(feature = "temporal")]
             StringFunction::Strptime(_, _) => "strptime",
-            StringFunction::Split => "split",
-            StringFunction::SplitInclusive => "split_inclusive",
+            StringFunction::Split(inclusive) => {
+                if *inclusive {
+                    "split"
+                } else {
+                    "split_inclusive"
+                }
+            },
             #[cfg(feature = "nightly")]
             StringFunction::Titlecase => "titlecase",
             #[cfg(feature = "dtype-decimal")]
@@ -262,67 +298,22 @@ pub(super) fn rjust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Se
     Ok(ca.rjust(width, fillchar).into_series())
 }
 
-pub(super) fn strip_chars(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    if let Some(matches) = matches {
-        if matches.chars().count() == 1 {
-            // Fast path for when a single character is passed
-            Ok(ca
-                .apply_values(|s| Cow::Borrowed(s.trim_matches(matches.chars().next().unwrap())))
-                .into_series())
-        } else {
-            Ok(ca
-                .apply_values(|s| Cow::Borrowed(s.trim_matches(|c| matches.contains(c))))
-                .into_series())
-        }
-    } else {
-        Ok(ca.apply_values(|s| Cow::Borrowed(s.trim())).into_series())
-    }
+pub(super) fn strip_chars(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+    let pat_s = &s[1];
+    ca.strip_chars(pat_s).map(|ok| ok.into_series())
 }
 
-pub(super) fn strip_chars_start(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-
-    if let Some(matches) = matches {
-        if matches.chars().count() == 1 {
-            // Fast path for when a single character is passed
-            Ok(ca
-                .apply_values(|s| {
-                    Cow::Borrowed(s.trim_start_matches(matches.chars().next().unwrap()))
-                })
-                .into_series())
-        } else {
-            Ok(ca
-                .apply_values(|s| Cow::Borrowed(s.trim_start_matches(|c| matches.contains(c))))
-                .into_series())
-        }
-    } else {
-        Ok(ca
-            .apply_values(|s| Cow::Borrowed(s.trim_start()))
-            .into_series())
-    }
+pub(super) fn strip_chars_start(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+    let pat_s = &s[1];
+    ca.strip_chars_start(pat_s).map(|ok| ok.into_series())
 }
 
-pub(super) fn strip_chars_end(s: &Series, matches: Option<&str>) -> PolarsResult<Series> {
-    let ca = s.utf8()?;
-    if let Some(matches) = matches {
-        if matches.chars().count() == 1 {
-            // Fast path for when a single character is passed
-            Ok(ca
-                .apply_values(|s| {
-                    Cow::Borrowed(s.trim_end_matches(matches.chars().next().unwrap()))
-                })
-                .into_series())
-        } else {
-            Ok(ca
-                .apply_values(|s| Cow::Borrowed(s.trim_end_matches(|c| matches.contains(c))))
-                .into_series())
-        }
-    } else {
-        Ok(ca
-            .apply_values(|s| Cow::Borrowed(s.trim_end()))
-            .into_series())
-    }
+pub(super) fn strip_chars_end(s: &[Series]) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+    let pat_s = &s[1];
+    ca.strip_chars_end(pat_s).map(|ok| ok.into_series())
 }
 
 pub(super) fn strip_prefix(s: &[Series]) -> PolarsResult<Series> {
@@ -393,41 +384,34 @@ pub(super) fn strptime(
     }
 }
 
-pub(super) fn split(s: &[Series]) -> PolarsResult<Series> {
+#[cfg(feature = "dtype-struct")]
+pub(super) fn split_exact(s: &[Series], n: usize, inclusive: bool) -> PolarsResult<Series> {
     let ca = s[0].utf8()?;
     let by = s[1].utf8()?;
 
-    if by.len() == 1 {
-        if let Some(by) = by.get(0) {
-            Ok(ca.split(by).into_series())
-        } else {
-            Ok(Series::full_null(
-                ca.name(),
-                ca.len(),
-                &DataType::List(Box::new(DataType::Utf8)),
-            ))
-        }
+    if inclusive {
+        ca.split_exact_inclusive(by, n).map(|ca| ca.into_series())
     } else {
-        Ok(ca.split_many(by).into_series())
+        ca.split_exact(by, n).map(|ca| ca.into_series())
     }
 }
 
-pub(super) fn split_inclusive(s: &[Series]) -> PolarsResult<Series> {
+#[cfg(feature = "dtype-struct")]
+pub(super) fn splitn(s: &[Series], n: usize) -> PolarsResult<Series> {
     let ca = s[0].utf8()?;
     let by = s[1].utf8()?;
 
-    if by.len() == 1 {
-        if let Some(by) = by.get(0) {
-            Ok(ca.split_inclusive(by).into_series())
-        } else {
-            Ok(Series::full_null(
-                ca.name(),
-                ca.len(),
-                &DataType::List(Box::new(DataType::Utf8)),
-            ))
-        }
+    ca.splitn(by, n).map(|ca| ca.into_series())
+}
+
+pub(super) fn split(s: &[Series], inclusive: bool) -> PolarsResult<Series> {
+    let ca = s[0].utf8()?;
+    let by = s[1].utf8()?;
+
+    if inclusive {
+        Ok(ca.split_inclusive(by).into_series())
     } else {
-        Ok(ca.split_inclusive_many(by).into_series())
+        Ok(ca.split(by).into_series())
     }
 }
 

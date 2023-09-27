@@ -5,6 +5,7 @@ use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
+use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -224,6 +225,8 @@ pub fn group_by_windows(
 }
 
 // this assumes that the given time point is the right endpoint of the window
+// there could duplicates rhs still
+#[inline]
 pub(crate) fn group_by_values_iter_lookbehind(
     period: Duration,
     offset: Duration,
@@ -245,7 +248,16 @@ pub(crate) fn group_by_values_iter_lookbehind(
     time[start_offset..]
         .iter()
         .enumerate()
-        .map(move |(mut i, lower)| {
+        .map(move |(mut i, mut lower)| {
+            // Consume duplicates, this is very uncommon.
+            while let Some(next_val) = time.get(i + 1) {
+                if next_val == lower {
+                    lower = next_val;
+                    i += 1;
+                } else {
+                    break;
+                }
+            }
             i += start_offset;
             let lower = add(&offset, *lower, tz.as_ref())?;
             let upper = add(&period, lower, tz.as_ref())?;
@@ -255,16 +267,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
             // we have a complete lookbehind so we know that `i` is the upper bound.
             // Safety
             // we are in bounds
-            let slice = {
-                #[cfg(debug_assertions)]
-                {
-                    &time[last_lookbehind_i..i]
-                }
-                #[cfg(not(debug_assertions))]
-                {
-                    unsafe { time.get_unchecked(last_lookbehind_i..i) }
-                }
-            };
+            let slice = unsafe { time.get_unchecked_release(last_lookbehind_i..i) };
             let offset = slice.partition_point(|v| !b.is_member(*v, closed_window));
 
             let lookbehind_i = offset + last_lookbehind_i;
@@ -454,18 +457,33 @@ pub(crate) fn group_by_values_iter_full_lookahead(
 }
 
 #[cfg(feature = "rolling_window")]
-pub(crate) fn group_by_values_iter<'a>(
+#[inline]
+pub(crate) fn group_by_values_iter(
     period: Duration,
-    time: &'a [i64],
+    time: &[i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<Tz>,
-) -> Box<dyn TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + 'a> {
+) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
     let mut offset = period;
     offset.negative = true;
     // t is at the right endpoint of the window
-    let iter = group_by_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0);
-    Box::new(iter)
+    group_by_values_iter_lookbehind(period, offset, time, closed_window, tu, tz, 0)
+}
+
+/// Checks if the boundary elements don't split on duplicates
+fn check_splits(time: &[i64], thread_offsets: &[(usize, usize)]) -> bool {
+    if time.is_empty() {
+        return true;
+    }
+    let mut valid = true;
+    for window in thread_offsets.windows(2) {
+        let left_block_end = window[0].0 + window[0].1;
+        let right_block_start = window[1].0;
+
+        valid &= time[left_block_end] != time[right_block_start];
+    }
+    valid
 }
 
 /// Different from `group_by_windows`, where define window buckets and search which values fit that
@@ -481,7 +499,11 @@ pub fn group_by_values(
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> PolarsResult<GroupsSlice> {
-    let thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
+    let mut thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
+    // there are duplicates in the splits, so we opt for a single partition
+    if !check_splits(time, &thread_offsets) {
+        thread_offsets = _split_offsets(time.len(), 1)
+    }
 
     // we have a (partial) lookbehind window
     if offset.negative {

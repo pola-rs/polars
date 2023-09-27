@@ -67,7 +67,7 @@
 //!
 //! fn example(mut df_a: DataFrame, mut df_b: DataFrame) -> PolarsResult<DataFrame> {
 //!     // Set a global string cache
-//!     enable_string_cache(true);
+//!     enable_string_cache();
 //!
 //!     df_a.try_apply("a", |s| s.categorical().cloned())?;
 //!     df_b.try_apply("b", |s| s.categorical().cloned())?;

@@ -32,11 +32,10 @@ pub struct ParquetObjectStore {
 impl ParquetObjectStore {
     pub fn from_uri(uri: &str, options: Option<&CloudOptions>) -> PolarsResult<Self> {
         let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options)?;
-        let store = Arc::from(store);
 
         Ok(ParquetObjectStore {
             store,
-            path: prefix.into(),
+            path: ObjectPath::from_url_path(prefix).map_err(to_compute_err)?,
             length: None,
             metadata: None,
         })

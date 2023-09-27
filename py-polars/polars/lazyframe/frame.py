@@ -395,6 +395,7 @@ class LazyFrame:
         storage_options: dict[str, object] | None = None,
         low_memory: bool = False,
         use_statistics: bool = True,
+        hive_partitioning: bool = True,
     ) -> Self:
         """
         Lazily read from a parquet file or multiple files via glob patterns.
@@ -429,6 +430,7 @@ class LazyFrame:
             low_memory,
             cloud_options=storage_options,
             use_statistics=use_statistics,
+            hive_partitioning=hive_partitioning,
         )
         return self
 
@@ -5576,10 +5578,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Update the values in this `LazyFrame` with the non-null values in `other`.
 
-        Notes
-        -----
-        This is syntactic sugar for a left/inner join + coalesce
-
         Warnings
         --------
         This functionality is experimental and may change without it being considered a
@@ -5595,6 +5593,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         how : {'left', 'inner'}
             'left' will keep the left table rows as is.
             'inner' will remove rows that are not found in other
+
+        Notes
+        -----
+        This is syntactic sugar for a left/inner join + coalesce
 
         Examples
         --------

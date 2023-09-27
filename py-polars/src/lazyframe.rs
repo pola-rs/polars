@@ -16,9 +16,9 @@ use polars::prelude::CsvEncoding;
 use polars::prelude::{ClosedWindow, Field, JoinType, Schema};
 use polars::time::*;
 use polars_core::frame::explode::MeltArgs;
-use polars_core::frame::hash_join::JoinValidation;
 use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::*;
+use polars_ops::prelude::AsOfOptions;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
@@ -235,7 +235,7 @@ impl PyLazyFrame {
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (path, n_rows, cache, parallel, rechunk, row_count,
-        low_memory, cloud_options, use_statistics)
+        low_memory, cloud_options, use_statistics, hive_partitioning)
     )]
     fn new_from_parquet(
         path: String,
@@ -247,6 +247,7 @@ impl PyLazyFrame {
         low_memory: bool,
         cloud_options: Option<Vec<(String, String)>>,
         use_statistics: bool,
+        hive_partitioning: bool,
     ) -> PyResult<Self> {
         let cloud_options = cloud_options
             .map(|kv| parse_cloud_options(&path, kv))
@@ -261,6 +262,7 @@ impl PyLazyFrame {
             low_memory,
             cloud_options,
             use_statistics,
+            hive_partitioning,
         };
         let lf = LazyFrame::scan_parquet(path, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())

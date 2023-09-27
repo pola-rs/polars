@@ -340,7 +340,7 @@ pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
     match s.dtype() {
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(_) => {
-            use polars_core::frame::hash_join::_check_categorical_src;
+            use crate::frame::join::_check_categorical_src;
             _check_categorical_src(s.dtype(), other.dtype())?;
             let ca = s.categorical().unwrap();
             let ca = ca.logical();

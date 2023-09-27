@@ -2807,6 +2807,56 @@ def test_truncate_ambiguous() -> None:
         ser.dt.truncate("30m")
 
 
+def test_round_ambiguous() -> None:
+    t = pl.datetime_range(
+        date(2020, 10, 25),
+        datetime(2020, 10, 25, 2),
+        "30m",
+        eager=True,
+        time_zone="Europe/London",
+    ).dt.offset_by("15m")
+
+    with pytest.raises(
+        ComputeError,
+        match="datetime '2020-10-25 01:00:00' is ambiguous in time zone 'Europe/London'",
+    ):
+        t.dt.round("30m", ambiguous="raise")
+
+    df = pl.DataFrame(
+        {
+            "date": pl.datetime_range(
+                date(2020, 10, 25),
+                datetime(2020, 10, 25, 2),
+                "30m",
+                eager=True,
+                time_zone="Europe/London",
+            ).dt.offset_by("15m"),
+            "ambiguous": [
+                "raise",
+                "earliest",
+                "earliest",
+                "latest",
+                "latest",
+                "latest",
+                "raise",
+            ],
+        }
+    )
+
+    df = df.select(pl.col("date").dt.round("30m", ambiguous=pl.col("ambiguous")))
+    assert df.to_dict(False) == {
+        "date": [
+            datetime(2020, 10, 25, 0, 30, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 2, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 2, 30, tzinfo=ZoneInfo(key="Europe/London")),
+        ]
+    }
+
+
 def test_round_by_week() -> None:
     df = pl.DataFrame(
         {
@@ -3155,3 +3205,15 @@ def test_group_by_dynamic(
         .sort("dt")
     )
     assert_frame_equal(result, expected_grouped_df)
+
+
+def test_group_by_rolling_duplicates() -> None:
+    df = pl.DataFrame(
+        {
+            "ts": [datetime(2000, 1, 1, 0, 0), datetime(2000, 1, 1, 0, 0)],
+            "value": [0, 1],
+        }
+    )
+    assert df.sort("ts").with_columns(
+        pl.col("value").rolling_max("1d", by="ts", closed="right")
+    )["value"].to_list() == [1, 1]

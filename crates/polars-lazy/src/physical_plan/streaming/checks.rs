@@ -1,4 +1,4 @@
-use polars_core::prelude::{JoinArgs, JoinType};
+use polars_ops::prelude::*;
 use polars_plan::prelude::*;
 
 pub(super) fn is_streamable_sort(args: &SortArguments) -> bool {
