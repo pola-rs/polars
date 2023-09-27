@@ -12,7 +12,6 @@ use pyo3::intern;
 use pyo3::prelude::*;
 
 use crate::dataframe::PyDataFrame;
-#[allow(unused_imports)]
 use crate::map::lazy::{call_lambda_with_series, ToSeries};
 use crate::prelude::{python_udf, ObjectValue};
 use crate::py_modules::{POLARS, UTILS};
@@ -71,17 +70,8 @@ fn warning_function(msg: &str) {
     });
 }
 
-#[allow(unused_macros)]
-macro_rules! ensure_x86_feat {
-    ($feat:literal) => {
-        if !std::is_x86_feature_detected!($feat) {
-            return Err(PyImportError::new_err(format!("Your CPU does not support the {} instruction set, which this build of Polars requires.", $feat.to_uppercase())));
-        }
-    }
-}
-
 #[pyfunction]
-pub fn __register_startup_deps() -> Result<(), PyErr> {
+pub fn __register_startup_deps() {
     if !registry::is_object_builder_registered() {
         // register object type builder
         let object_builder = Box::new(|name: &str, capacity: usize| {
@@ -107,28 +97,5 @@ pub fn __register_startup_deps() -> Result<(), PyErr> {
             // init AnyValue LUT
             crate::conversion::LUT.set(py, Default::default()).unwrap();
         });
-
-        // We have two levels of CPU features for x86_64, check them at runtime
-        // if this build requires them, so we give a nice error instead of a
-        // hard abort due to an invalid instruction.
-        #[cfg(target_feature = "sse3")]
-        {
-            ensure_x86_feat!("sse3");
-            ensure_x86_feat!("ssse3");
-            ensure_x86_feat!("sse4.1");
-            ensure_x86_feat!("sse4.2");
-            ensure_x86_feat!("popcnt");
-        }
-        #[cfg(target_feature = "avx")]
-        {
-            ensure_x86_feat!("avx");
-            ensure_x86_feat!("avx2");
-            ensure_x86_feat!("fma");
-            ensure_x86_feat!("bmi1");
-            ensure_x86_feat!("bmi2");
-            ensure_x86_feat!("lzcnt");
-        }
     }
-
-    Ok(())
 }
