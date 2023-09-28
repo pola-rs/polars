@@ -1,6 +1,7 @@
 //! Everything you need to get started with Polars.
 pub use std::sync::Arc;
 
+pub(crate) use arrow::util::total_ord::{TotalOrd, TotalEq};
 pub(crate) use arrow::array::*;
 pub use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
 pub(crate) use polars_arrow::export::*;

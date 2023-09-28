@@ -9,7 +9,6 @@ use arrow::compute::comparison;
 use arrow::scalar::{BinaryScalar, PrimitiveScalar, Scalar, Utf8Scalar};
 use either::Either;
 use num_traits::{NumCast, ToPrimitive};
-use polars_arrow::kernels::rolling::compare_fn_nan_max;
 use polars_arrow::prelude::FromData;
 
 use crate::prelude::*;

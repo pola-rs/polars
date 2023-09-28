@@ -227,7 +227,8 @@ pub type BinaryChunked = ChunkedArray<BinaryType>;
 pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 
 pub trait NumericNative:
-    PartialOrd
+    TotalOrd
+    + PartialOrd
     + NativeType
     + Num
     + NumCast
