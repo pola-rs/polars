@@ -31,7 +31,7 @@ jobs:
             cpu: x86-64
           - os: macos-latest
             cpu: aarch64
-          - os: windows-latest
+          - os: windows-32gb-ram
             cpu: x86-64
           - os: ubuntu-latest
             cpu: x86-64
