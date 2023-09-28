@@ -14,7 +14,7 @@ use object_store::gcp::GoogleCloudStorageBuilder;
 pub use object_store::gcp::GoogleConfigKey;
 #[cfg(feature = "async")]
 use object_store::ObjectStore;
-#[cfg(feature = "async")]
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use object_store::{BackoffConfig, RetryConfig};
 use polars_core::error::{PolarsError, PolarsResult};
 use polars_error::*;
@@ -92,7 +92,7 @@ impl FromStr for CloudType {
         polars_bail!(ComputeError: "at least one of the cloud features must be enabled");
     }
 }
-#[cfg(feature = "async")]
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 fn get_retry_config(max_retries: usize) -> RetryConfig {
     RetryConfig {
         backoff: BackoffConfig::default(),
