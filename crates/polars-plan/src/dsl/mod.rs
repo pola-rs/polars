@@ -173,7 +173,7 @@ impl Expr {
                     "both" | "left" => Operator::LtEq,
                     _ => panic!("Invalid value for 'closed' parameter"),
                 },
-                self.clone()
+                self.clone(),
             ),
             Operator::And,
             binary_expr(
@@ -183,11 +183,10 @@ impl Expr {
                     "both" | "right" => Operator::LtEq,
                     _ => panic!("Invalid value for 'closed' parameter"),
                 },
-                upper_bound_expr
-            )
+                upper_bound_expr,
+            ),
         )
     }
-
 
     /// Negate `Expr`.
     #[allow(clippy::should_implement_trait)]
