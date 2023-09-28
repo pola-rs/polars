@@ -54,7 +54,7 @@ from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
 from polars.functions import col, lit
-from polars.io._utils import _is_glob_pattern, _is_local_file
+from polars.io._utils import _is_glob_pattern, _is_local_file, _is_supported_cloud
 from polars.io.spreadsheet._write_utils import (
     _unpack_multi_column_dict,
     _xl_apply_conditional_formats,
@@ -828,7 +828,9 @@ class DataFrame:
         if isinstance(columns, str):
             columns = [columns]
 
-        if isinstance(source, str) and _is_glob_pattern(source):
+        if isinstance(source, str) and (
+            _is_glob_pattern(source) or _is_supported_cloud(source)
+        ):
             from polars import scan_parquet
 
             scan = scan_parquet(
