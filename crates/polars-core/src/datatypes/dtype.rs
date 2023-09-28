@@ -163,29 +163,19 @@ impl DataType {
 
     /// Check if this [`DataType`] is a numeric type.
     pub fn is_numeric(&self) -> bool {
-        // allow because it cannot be replaced when object feature is activated
-        #[allow(clippy::match_like_matches_macro)]
-        match self {
-            DataType::Utf8
-            | DataType::List(_)
-            | DataType::Date
-            | DataType::Datetime(_, _)
-            | DataType::Duration(_)
-            | DataType::Time
-            | DataType::Boolean
-            | DataType::Unknown
-            | DataType::Null => false,
-            DataType::Binary => false,
-            #[cfg(feature = "object")]
-            DataType::Object(_) => false,
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => false,
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => false,
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => false,
-            _ => true,
-        }
+        matches!(
+            self,
+            DataType::UInt8
+                | DataType::UInt16
+                | DataType::UInt32
+                | DataType::UInt64
+                | DataType::Int8
+                | DataType::Int16
+                | DataType::Int32
+                | DataType::Int64
+                | DataType::Float32
+                | DataType::Float64
+        )
     }
 
     pub fn is_float(&self) -> bool {
