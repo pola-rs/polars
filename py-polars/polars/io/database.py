@@ -16,6 +16,10 @@ from polars.utils.deprecation import (
 if TYPE_CHECKING:
     from types import TracebackType
 
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
@@ -24,6 +28,11 @@ if TYPE_CHECKING:
     from polars import DataFrame
     from polars.dependencies import pyarrow as pa
     from polars.type_aliases import ConnectionOrCursor, Cursor, DbReadEngine, SchemaDict
+
+    try:
+        from sqlalchemy.sql.expression import Selectable
+    except ImportError:
+        Selectable: TypeAlias = Any  # type: ignore[no-redef]
 
 
 class _DriverProperties_(TypedDict):
@@ -210,17 +219,17 @@ class ConnectionExecutor:
 
     @deprecate_nonkeyword_arguments(allowed_args=["self", "query"], version="0.19.3")
     def execute(
-        self, query: str, select_queries_only: bool = True  # noqa: FBT001
+        self, query: str | Selectable, select_queries_only: bool = True  # noqa: FBT001
     ) -> Self:
         """Execute a query and reference the result set."""
-        if select_queries_only:
+        if select_queries_only and isinstance(query, str):
             q = re.search(r"\w{3,}", re.sub(r"/\*(.|[\r\n])*?\*/", "", query))
             if (query_type := "" if not q else q.group(0)) in _INVALID_QUERY_TYPES:
                 raise UnsuitableSQLError(
                     f"{query_type} statements are not valid 'read' queries"
                 )
 
-        if self.driver_name == "sqlalchemy":
+        if self.driver_name == "sqlalchemy" and isinstance(query, str):
             from sqlalchemy.sql import text
 
             query = text(query)  # type: ignore[assignment]
@@ -258,7 +267,7 @@ class ConnectionExecutor:
 
 @deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
 def read_database(  # noqa: D417
-    query: str,
+    query: str | Selectable,
     connection: ConnectionOrCursor,
     *,
     batch_size: int | None = None,
@@ -271,12 +280,13 @@ def read_database(  # noqa: D417
     Parameters
     ----------
     query
-        String SQL query to execute.
+        SQL query to execute (if using a SQLAlchemy connection object this can
+        be a suitable "Selectable", otherwise it is expected to be a string).
     connection
         An instantiated connection (or cursor/client object) that the query can be
         executed against.
     batch_size
-        Enable batched data fetching instead of (internally) collecting all rows at
+        Enable batched data fetching (internally) instead of collecting all rows at
         once; this can be helpful for minimising the peak memory used for very large
         resultsets. Note that this parameter is *not* equivalent to a "limit"; you
         will always load all rows. If supported by the backend, this value is passed
@@ -336,6 +346,10 @@ def read_database(  # noqa: D417
             message="Use of a string URI with 'read_database' is deprecated; use 'read_database_uri' instead",
             version="0.19.0",
         )
+        if not isinstance(query, (list, str)):
+            raise TypeError(
+                f"`read_database_uri` expects one or more string queries; found {type(query)}"
+            )
         return read_database_uri(
             query, uri=connection, schema_overrides=schema_overrides, **kwargs
         )
