@@ -14,6 +14,8 @@ use object_store::gcp::GoogleCloudStorageBuilder;
 pub use object_store::gcp::GoogleConfigKey;
 #[cfg(feature = "async")]
 use object_store::ObjectStore;
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
+use object_store::{BackoffConfig, RetryConfig};
 use polars_core::error::{PolarsError, PolarsResult};
 use polars_error::*;
 #[cfg(feature = "serde")]
@@ -40,6 +42,7 @@ pub struct CloudOptions {
     azure: Option<Configs<AzureConfigKey>>,
     #[cfg(feature = "gcp")]
     gcp: Option<Configs<GoogleConfigKey>>,
+    pub max_retries: usize,
 }
 
 #[allow(dead_code)]
@@ -89,6 +92,14 @@ impl FromStr for CloudType {
         polars_bail!(ComputeError: "at least one of the cloud features must be enabled");
     }
 }
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
+fn get_retry_config(max_retries: usize) -> RetryConfig {
+    RetryConfig {
+        backoff: BackoffConfig::default(),
+        max_retries,
+        retry_timeout: std::time::Duration::from_secs(10),
+    }
+}
 
 impl CloudOptions {
     /// Set the configuration for AWS connections. This is the preferred API from rust.
@@ -110,14 +121,17 @@ impl CloudOptions {
     #[cfg(feature = "aws")]
     pub fn build_aws(&self, url: &str) -> PolarsResult<impl ObjectStore> {
         let options = self.aws.as_ref();
-        let mut builder = AmazonS3Builder::from_env();
+        let mut builder = AmazonS3Builder::from_env().with_url(url);
         if let Some(options) = options {
             for (key, value) in options.iter() {
                 builder = builder.with_config(*key, value);
             }
         }
 
-        builder.with_url(url).build().map_err(to_compute_err)
+        builder
+            .with_retry(get_retry_config(self.max_retries))
+            .build()
+            .map_err(to_compute_err)
     }
 
     /// Set the configuration for Azure connections. This is the preferred API from rust.
@@ -146,7 +160,11 @@ impl CloudOptions {
             }
         }
 
-        builder.with_url(url).build().map_err(to_compute_err)
+        builder
+            .with_url(url)
+            .with_retry(get_retry_config(self.max_retries))
+            .build()
+            .map_err(to_compute_err)
     }
 
     /// Set the configuration for GCP connections. This is the preferred API from rust.
@@ -175,7 +193,11 @@ impl CloudOptions {
             }
         }
 
-        builder.with_url(url).build().map_err(to_compute_err)
+        builder
+            .with_url(url)
+            .with_retry(get_retry_config(self.max_retries))
+            .build()
+            .map_err(to_compute_err)
     }
 
     /// Parse a configuration from a Hashmap. This is the interface from Python.
