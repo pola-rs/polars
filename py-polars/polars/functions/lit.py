@@ -93,7 +93,9 @@ def lit(
             )
         e = lit(_datetime_to_pl_timestamp(value, time_unit)).cast(Datetime(time_unit))
         if time_zone is not None:
-            return e.dt.replace_time_zone(str(time_zone))
+            return e.dt.replace_time_zone(
+                str(time_zone), ambiguous="earliest" if value.fold == 0 else "latest"
+            )
         else:
             return e
 
