@@ -156,6 +156,39 @@ impl Expr {
         binary_expr(self, Operator::LtEq, other.into())
     }
 
+    /// Check if `Expr` is between two `Expr`s, with optional inclusive/exclusive comparison.
+    pub fn is_between<E1, E2>(self, lower_bound: E1, upper_bound: E2, closed: &str) -> Expr
+    where
+        E1: Into<Expr>,
+        E2: Into<Expr>,
+    {
+        let lower_bound_expr = lower_bound.into();
+        let upper_bound_expr = upper_bound.into();
+
+        binary_expr(
+            binary_expr(
+                lower_bound_expr,
+                match closed {
+                    "none" | "right" => Operator::Lt,
+                    "both" | "left" => Operator::LtEq,
+                    _ => panic!("Invalid value for 'closed' parameter"),
+                },
+                self.clone()
+            ),
+            Operator::And,
+            binary_expr(
+                self,
+                match closed {
+                    "none" | "left" => Operator::Lt,
+                    "both" | "right" => Operator::LtEq,
+                    _ => panic!("Invalid value for 'closed' parameter"),
+                },
+                upper_bound_expr
+            )
+        )
+    }
+
+
     /// Negate `Expr`.
     #[allow(clippy::should_implement_trait)]
     pub fn not(self) -> Expr {
