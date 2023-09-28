@@ -8,11 +8,13 @@ use crate::offset::Offset;
 use crate::types::NativeType;
 use crate::util::total_ord::TotalOrd;
 
-
 /// Compare the values at two arbitrary indices in two arrays.
 pub type DynComparator = Box<dyn Fn(usize, usize) -> Ordering + Send + Sync>;
 
-fn compare_primitives<T: NativeType + TotalOrd>(left: &dyn Array, right: &dyn Array) -> DynComparator {
+fn compare_primitives<T: NativeType + TotalOrd>(
+    left: &dyn Array,
+    right: &dyn Array,
+) -> DynComparator {
     let left = left
         .as_any()
         .downcast_ref::<PrimitiveArray<T>>()

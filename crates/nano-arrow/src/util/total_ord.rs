@@ -8,7 +8,7 @@ use crate::array::Array;
 /// generic w.r.t Ord while getting a total ordering for floats.
 pub trait TotalEq {
     fn tot_eq(&self, other: &Self) -> bool;
-    
+
     #[inline(always)]
     fn tot_ne(&self, other: &Self) -> bool {
         !(self.tot_eq(other))
@@ -17,7 +17,7 @@ pub trait TotalEq {
 
 /// Alternative traits for Eq. By consistently using this we can still be
 /// generic w.r.t Eq while getting a total ordering for floats.
-pub trait TotalOrd : TotalEq {
+pub trait TotalOrd: TotalEq {
     fn tot_cmp(&self, other: &Self) -> Ordering;
 
     #[inline(always)]
@@ -48,7 +48,7 @@ unsafe impl<T> TransparentWrapper<T> for TotalOrdWrap<T> {}
 impl<T: TotalEq + TotalOrd> PartialOrd for TotalOrdWrap<T> {
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.0.tot_cmp(&other.0))
+        Some(self.cmp(other))
     }
 
     #[inline(always)]
@@ -86,13 +86,13 @@ impl<T: TotalEq + TotalOrd> PartialEq for TotalOrdWrap<T> {
     }
 
     #[inline(always)]
+    #[allow(clippy::partialeq_ne_impl)]
     fn ne(&self, other: &Self) -> bool {
         self.0.tot_ne(&other.0)
     }
 }
 
-impl<T: TotalEq + TotalOrd> Eq for TotalOrdWrap<T> { }
-
+impl<T: TotalEq + TotalOrd> Eq for TotalOrdWrap<T> {}
 
 macro_rules! impl_trivial_eq {
     ($T: ty) => {
@@ -107,7 +107,7 @@ macro_rules! impl_trivial_eq {
                 self != other
             }
         }
-    }
+    };
 }
 
 macro_rules! impl_trivial_eq_ord {
@@ -140,7 +140,7 @@ macro_rules! impl_trivial_eq_ord {
                 self >= other
             }
         }
-    }
+    };
 }
 
 // We can't do a blanket impl because Rust complains f32 might implement
@@ -164,7 +164,6 @@ impl_trivial_eq_ord!(&[u8]);
 impl_trivial_eq_ord!(String);
 impl_trivial_eq!(&dyn Array);
 impl_trivial_eq!(Box<dyn Array>);
-
 
 macro_rules! impl_polars_eq_ord_float {
     ($f:ty) => {
@@ -206,13 +205,11 @@ macro_rules! impl_polars_eq_ord_float {
                 self.total_cmp(other) != Ordering::Less
             }
         }
-    }
+    };
 }
 
 impl_polars_eq_ord_float!(f32);
 impl_polars_eq_ord_float!(f64);
-
-
 
 // Blanket implementations.
 impl<T: TotalEq> TotalEq for Option<T> {
@@ -274,7 +271,6 @@ impl<T: TotalOrd> TotalOrd for Option<T> {
         other.tot_le(self)
     }
 }
-
 
 impl<T: TotalEq + ?Sized> TotalEq for &T {
     #[inline(always)]

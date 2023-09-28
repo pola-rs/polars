@@ -142,7 +142,7 @@ mod test {
         pub b: u8,
         pub other_heap: String,
     }
-    
+
     impl TotalEq for Foo {
         fn tot_eq(&self, other: &Self) -> bool {
             self == other
