@@ -238,9 +238,19 @@ def scan_parquet(
     Examples
     --------
     >>> source = "s3://bucket/*.parquet"
+    >>> pl.scan_parquet(source)  # doctest: +SKIP
     >>> storage_options = {
     ...     "aws_access_key_id": "<secret>",
     ...     "aws_secret_access_key": "<secret>",
+    ... }
+    >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
+
+    If you get a missing region error then you can set the region in the storage options:
+    >>> source = "s3://bucket/*.parquet"
+    >>> storage_options = {
+    ...     "aws_access_key_id": "<secret>",
+    ...     "aws_secret_access_key": "<secret>",
+    ...     "region": "us-east-1",
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
 
