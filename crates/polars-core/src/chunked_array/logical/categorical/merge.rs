@@ -38,7 +38,7 @@ struct State {
 
 #[derive(Default)]
 pub(crate) struct RevMapMerger {
-    id: u32,
+    id: Option<u32>,
     original: Arc<RevMapping>,
     // only initiate state when
     // we encounter a rev-map from a different source,
@@ -48,12 +48,14 @@ pub(crate) struct RevMapMerger {
 
 impl RevMapMerger {
     pub(crate) fn new(rev_map: Arc<RevMapping>) -> Self {
-        let RevMapping::Global(_, _, id) = rev_map.as_ref() else {
-            panic!("impl error")
+        let id = if let RevMapping::Global(_, _, id) = rev_map.as_ref() {
+            Some(*id)
+        } else {
+            None
         };
         RevMapMerger {
             state: None,
-            id: *id,
+            id,
             original: rev_map,
         }
     }
@@ -74,11 +76,12 @@ impl RevMapMerger {
         if Arc::ptr_eq(&self.original, rev_map) {
             return Ok(());
         }
+        let msg = "categoricals don't originate from the same string cache\n\
+    try setting a global string cache or increase the scope of the local string cache";
         let RevMapping::Global(map, slots, id) = rev_map.as_ref() else {
-            polars_bail!(ComputeError: "expected global rev-map")
+            polars_bail!(ComputeError: msg)
         };
-        polars_ensure!(*id == self.id, ComputeError: "categoricals don't originate from the same string cache\n\
-    try setting a global string cache or increase the scope of the local string cache");
+        polars_ensure!(Some(*id) == self.id, ComputeError: msg);
 
         if self.state.is_none() {
             self.init_state()
@@ -103,7 +106,7 @@ impl RevMapMerger {
         match self.state {
             None => self.original,
             Some(state) => {
-                let new_rev = RevMapping::Global(state.map, state.slots.into(), self.id);
+                let new_rev = RevMapping::Global(state.map, state.slots.into(), self.id.unwrap());
                 Arc::new(new_rev)
             },
         }
