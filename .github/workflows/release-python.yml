@@ -1,6 +1,7 @@
 name: Release Python
 
 on:
+  pull_request:
   push:
     tags:
       - py-*
@@ -20,26 +21,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            cpu: x86-64
-            sdist: true
-          - os: ubuntu-latest
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        cpu: [x86-64, aarch64]
+        lts-cpu: [false, true]
+        u64-idx: [false, true]
+        exclude:
+          - os: windows-latest
             cpu: aarch64
-          - os: macos-latest
-            cpu: x86-64
-          - os: macos-latest
-            cpu: aarch64
-          - os: windows-32gb-ram
-            cpu: x86-64
-          - os: ubuntu-latest
-            cpu: x86-64
-            lts-cpu: true
-            sdist: true
-          - os: ubuntu-latest
-            cpu: x86-64
+          - lts-cpu: true
             u64-idx: true
-            sdist: true
 
     steps:
       - uses: actions/checkout@v3
@@ -61,16 +51,23 @@ jobs:
           rm py-polars/README.md
           cp README.md py-polars/README.md
 
-      - name: Prepare lts-cpu
-        if: matrix.lts-cpu
-        run: sed -i 's/name = "polars"/name = "polars-lts-cpu"/' py-polars/pyproject.toml
-
-      - name: Prepare u64-idx
-        if: matrix.u64-idx
+      - name: Install GNU sed for macOS
+        if: runner.os == 'macOS' && (matrix.lts-cpu || matrix.u64-idx)
         run: |
-          sed -i 's/name = "polars"/name = "polars-u64-idx"/' py-polars/pyproject.toml
-          # A brittle hack to insert the 'bigidx' feature
-          sed -i 's/"dynamic_group_by",/"dynamic_group_by",\n"bigidx",/' py-polars/Cargo.toml
+          brew install gnu-sed
+          shopt -s expand_aliases
+          alias sed="gsed"
+
+      - name: Update package name
+        if: matrix.lts-cpu || matrix.u64-idx
+        run: |
+          NAME=${{ matrix.lts-cpu && 'polars-lts-cpu' || 'polars-u64-idx' }}
+          sed -i "s/name = \"polars\"/name = \"$NAME\"/" py-polars/pyproject.toml
+
+      - name: Add bigidx feature
+        if: matrix.u64-idx
+        # A brittle hack to insert the 'bigidx' feature
+        run: sed -i 's/"dynamic_group_by",/"dynamic_group_by",\n"bigidx",/' py-polars/Cargo.toml
 
       - name: Set RUSTFLAGS for x86-64
         if: matrix.cpu == 'x86-64' && !matrix.lts-cpu
