@@ -26,7 +26,7 @@ once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 smartstring = { workspace = true }
-tokio = { workspace = true, optional = true, default-features = false }
+tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

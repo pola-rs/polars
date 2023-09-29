@@ -19,6 +19,7 @@ mod adaptors;
 #[cfg(feature = "cloud")]
 mod glob;
 pub mod options;
+
 #[cfg(feature = "cloud")]
 pub use adaptors::*;
 #[cfg(feature = "cloud")]

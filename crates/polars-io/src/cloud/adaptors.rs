@@ -10,7 +10,6 @@ use std::task::Poll;
 use bytes::Bytes;
 use futures::executor::block_on;
 use futures::future::BoxFuture;
-use futures::lock::Mutex;
 use futures::{AsyncRead, AsyncSeek, Future, TryFutureExt};
 use object_store::path::Path;
 use object_store::{MultipartId, ObjectStore};
@@ -19,7 +18,7 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use super::*;
 
-type OptionalFuture = Arc<Mutex<Option<BoxFuture<'static, std::io::Result<Bytes>>>>>;
+type OptionalFuture = Option<BoxFuture<'static, std::io::Result<Bytes>>>;
 
 /// Adaptor to translate from AsyncSeek and AsyncRead to the object_store get_range API.
 pub struct CloudReader {
@@ -42,7 +41,7 @@ impl CloudReader {
             length,
             object_store,
             path,
-            active: Arc::new(Mutex::new(None)),
+            active: None,
         }
     }
 
@@ -55,7 +54,7 @@ impl CloudReader {
         let start = self.pos as usize;
 
         // If we already have a future just poll it.
-        if let Some(fut) = self.active.lock().await.as_mut() {
+        if let Some(fut) = self.active.as_mut() {
             return Future::poll(fut.as_mut(), cx);
         }
 
@@ -85,8 +84,7 @@ impl CloudReader {
         let polled = Future::poll(future.as_mut(), cx);
 
         // Save for next time.
-        let mut state = self.active.lock().await;
-        *state = Some(future);
+        self.active = Some(future);
         polled
     }
 }
@@ -127,6 +125,7 @@ impl AsyncSeek for CloudReader {
             },
             io::SeekFrom::Current(pos) => self.pos = (self.pos as i64 + pos) as u64,
         };
+        self.active = None;
         std::task::Poll::Ready(Ok(self.pos))
     }
 }

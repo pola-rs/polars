@@ -16,7 +16,7 @@ polars-ops = { workspace = true, features = ["search_sorted"] }
 polars-plan = { workspace = true }
 polars-row = { workspace = true }
 polars-utils = { workspace = true, features = ["sysinfo"] }
-tokio = { workspace = true, optional = true, default-features = false }
+tokio = { workspace = true, optional = true }
 
 crossbeam-channel = { workspace = true }
 crossbeam-queue = { version = "0.3" }

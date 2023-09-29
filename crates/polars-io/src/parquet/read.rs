@@ -164,7 +164,7 @@ impl<R: MmapBytesReader + 'static> ParquetReader<R> {
     pub fn batched(mut self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
         let metadata = read::read_metadata(&mut self.reader)?;
 
-        let row_group_fetcher = Box::new(FetchRowGroupsFromMmapReader::new(Box::new(self.reader))?);
+        let row_group_fetcher = FetchRowGroupsFromMmapReader::new(Box::new(self.reader))?.into();
         BatchedParquetReader::new(
             row_group_fetcher,
             metadata,
@@ -311,15 +311,11 @@ impl ParquetAsyncReader {
         self
     }
 
-    #[tokio::main(flavor = "current_thread")]
     pub async fn batched(mut self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
         let metadata = self.reader.get_metadata().await?.to_owned();
         // row group fetched deals with projection
-        let row_group_fetcher = Box::new(FetchRowGroupsFromObjectStore::new(
-            self.reader,
-            &metadata,
-            &self.projection,
-        )?);
+        let row_group_fetcher =
+            FetchRowGroupsFromObjectStore::new(self.reader, &metadata, &self.projection)?.into();
         BatchedParquetReader::new(
             row_group_fetcher,
             metadata,
@@ -332,20 +328,24 @@ impl ParquetAsyncReader {
         )
     }
 
-    pub fn finish(self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> PolarsResult<DataFrame> {
+    pub async fn finish(
+        self,
+        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    ) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
 
         // batched reader deals with slice pushdown
-        let reader = self.batched(usize::MAX)?;
-        let chunks = reader
-            .iter(16) // todo! tune this parameter
-            .map(|df_result| {
-                df_result.and_then(|mut df| {
-                    apply_predicate(&mut df, predicate.as_deref(), true)?;
-                    Ok(df)
-                })
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
+        let reader = self.batched(usize::MAX).await?;
+        let mut iter = reader.iter_async(16);
+
+        let mut chunks = Vec::with_capacity(16);
+        while let Some(result) = iter.next_().await {
+            let out = result.and_then(|mut df| {
+                apply_predicate(&mut df, predicate.as_deref(), true)?;
+                Ok(df)
+            })?;
+            chunks.push(out)
+        }
         let mut df = concat_df(&chunks)?;
 
         if rechunk {
