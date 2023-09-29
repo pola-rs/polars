@@ -91,7 +91,7 @@ impl HivePartitions {
         self.get_statistics()
             .column_stats()
             .iter()
-            .map(|cs| cs.to_min().unwrap().clone())
+            .map(|cs| cs.get_min_state().unwrap().clone())
             .collect()
     }
 }

@@ -180,6 +180,7 @@ def scan_parquet(
     low_memory: bool = False,
     use_statistics: bool = True,
     hive_partitioning: bool = True,
+    retries: int = 0,
 ) -> LazyFrame:
     """
     Lazily read from a parquet file or multiple files via glob patterns.
@@ -234,6 +235,8 @@ def scan_parquet(
     hive_partitioning
         Infer statistics and schema from hive partitioned URL and use them
         to prune reads.
+    retries
+        Number of retries if accessing a cloud instance fails.
 
     Examples
     --------
@@ -243,6 +246,7 @@ def scan_parquet(
     >>> storage_options = {
     ...     "aws_access_key_id": "<secret>",
     ...     "aws_secret_access_key": "<secret>",
+    ...     "aws_region": "us-east-1",
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
     If you get a missing region error then you can set the region in the storage options:
@@ -275,4 +279,5 @@ def scan_parquet(
         low_memory=low_memory,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
+        retries=retries,
     )

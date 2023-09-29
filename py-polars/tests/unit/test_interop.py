@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import warnings
 from datetime import date, datetime, time
 from typing import Any, cast
 
@@ -121,13 +120,21 @@ def test_from_pandas() -> None:
     for col, dtype in overrides.items():
         assert out.schema[col] == dtype
 
-    # empty and/or all null values, no pandas dtype
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", Warning)
 
-        for nulls in ([], [None], [None, None], [None, None, None]):
-            srs = pl.from_pandas(pd.Series(nulls))
-            assert nulls == srs.to_list()
+@pytest.mark.parametrize(
+    "nulls",
+    [
+        [],
+        [None],
+        [None, None],
+        [None, None, None],
+    ],
+)
+def test_from_pandas_nulls(nulls: list[None]) -> None:
+    # empty and/or all null values, no pandas dtype
+    ps = pd.Series(nulls)
+    s = pl.from_pandas(ps)
+    assert nulls == s.to_list()
 
 
 def test_from_pandas_nan_to_null() -> None:
