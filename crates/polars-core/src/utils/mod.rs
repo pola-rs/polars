@@ -4,8 +4,8 @@ mod supertype;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
-use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
+use arrow::bitmap::Bitmap;
 use flatten::*;
 use num_traits::{One, Zero};
 pub use polars_arrow::utils::{TrustMyLength, *};

@@ -4,7 +4,6 @@ use polars_arrow::kernels::rolling::no_nulls::{MaxWindow, MinWindow};
 use polars_arrow::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };
-use polars_arrow::utils::CustomIterTools;
 use polars_core::export::num::Bounded;
 use polars_core::frame::group_by::aggregations::{
     _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window_no_nulls,
@@ -17,14 +16,24 @@ fn nan_min<T: IsFloat + PartialOrd + Copy>(a: T, b: T) -> T {
     // If b is nan, min is nan, because the comparison failed. We have
     // to poison the result if a is nan.
     let min = if a < b { a } else { b };
-    if a != a { a } else { min }
+    #[allow(clippy::eq_op)]
+    if a != a {
+        a
+    } else {
+        min
+    }
 }
 
 #[inline(always)]
 fn nan_max<T: IsFloat + PartialOrd + Copy>(a: T, b: T) -> T {
     // See nan_min.
     let max = if a > b { a } else { b };
-    if a != a { a } else { max }
+    #[allow(clippy::eq_op)]
+    if a != a {
+        a
+    } else {
+        max
+    }
 }
 
 fn ca_nan_agg<T, Agg>(ca: &ChunkedArray<T>, min_or_max_fn: Agg) -> Option<T::Native>
@@ -35,12 +44,12 @@ where
     let mut cum_agg = None;
     ca.downcast_iter().for_each(|arr| {
         let agg = if arr.null_count() == 0 {
-            arr.values().iter().copied().fold_first_(min_or_max_fn)
+            arr.values().iter().copied().reduce(min_or_max_fn)
         } else {
             arr.iter()
                 .unwrap_optional()
                 .map(|opt| opt.copied())
-                .fold_first_(|a, b| match (a, b) {
+                .reduce(|a, b| match (a, b) {
                     (Some(a), Some(b)) => Some(min_or_max_fn(a, b)),
                     (None, Some(b)) => Some(b),
                     (Some(a), None) => Some(a),

@@ -231,7 +231,7 @@ where
                                     .map_err(PolarsError::from)
                                     .map(|dt| DataType::from(&dt))
                             })
-                            .fold_first_(|l, r| {
+                            .reduce(|l, r| {
                                 let l = l?;
                                 let r = r?;
                                 try_get_supertype(&l, &r)

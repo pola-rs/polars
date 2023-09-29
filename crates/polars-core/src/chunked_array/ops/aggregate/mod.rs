@@ -117,7 +117,7 @@ where
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::min_primitive)
-                .fold_first_(|acc, v| {
+                .reduce(|acc, v| {
                     if matches!(compare_fn_nan_max(&acc, &v), Ordering::Less) {
                         acc
                     } else {
@@ -149,7 +149,7 @@ where
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::max_primitive)
-                .fold_first_(|acc, v| {
+                .reduce(|acc, v| {
                     if matches!(compare_fn_nan_min(&acc, &v), Ordering::Greater) {
                         acc
                     } else {
@@ -457,7 +457,7 @@ impl Utf8Chunked {
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::max_string)
-                .fold_first_(|acc, v| if acc > v { acc } else { v }),
+                .reduce(|acc, v| if acc > v { acc } else { v }),
         }
     }
     pub(crate) fn min_str(&self) -> Option<&str> {
@@ -482,7 +482,7 @@ impl Utf8Chunked {
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::min_string)
-                .fold_first_(|acc, v| if acc < v { acc } else { v }),
+                .reduce(|acc, v| if acc < v { acc } else { v }),
         }
     }
 }
@@ -520,7 +520,7 @@ impl BinaryChunked {
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::max_binary)
-                .fold_first_(|acc, v| if acc > v { acc } else { v }),
+                .reduce(|acc, v| if acc > v { acc } else { v }),
         }
     }
 
@@ -544,7 +544,7 @@ impl BinaryChunked {
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::min_binary)
-                .fold_first_(|acc, v| if acc < v { acc } else { v }),
+                .reduce(|acc, v| if acc < v { acc } else { v }),
         }
     }
 }

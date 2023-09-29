@@ -10,10 +10,8 @@ pub(crate) fn new_chunks(chunks: &mut Vec<ArrayRef>, other: &[ArrayRef], len: us
     }
 }
 
-pub(super) fn update_sorted_flag_before_append<T>(
-    ca: &mut ChunkedArray<T>,
-    other: &ChunkedArray<T>,
-) where
+pub(super) fn update_sorted_flag_before_append<T>(ca: &mut ChunkedArray<T>, other: &ChunkedArray<T>)
+where
     T: PolarsDataType,
     for<'a> T::Physical<'a>: TotalOrd,
 {
@@ -33,7 +31,7 @@ pub(super) fn update_sorted_flag_before_append<T>(
         ca.set_sorted_flag(IsSorted::Not);
         return;
     }
-        
+
     // Check the order is maintained.
     let still_sorted = {
         let left = ca.get(ca.last_non_null().unwrap()).unwrap();
@@ -51,7 +49,7 @@ pub(super) fn update_sorted_flag_before_append<T>(
 
 impl<T> ChunkedArray<T>
 where
-    T: PolarsDataType<Structure=Flat>,
+    T: PolarsDataType<Structure = Flat>,
     for<'a> T::Physical<'a>: TotalOrd,
 {
     /// Append in place. This is done by adding the chunks of `other` to this [`ChunkedArray`].
