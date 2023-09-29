@@ -45,6 +45,9 @@ pub(crate) unsafe fn zip_outer_join_column(
         DataType::Binary => {
             zip_outer_join_column_ca(left_column.binary().unwrap(), right_column, opt_join_tuples)
         },
+        DataType::Boolean => {
+            zip_outer_join_column_ca(left_column.bool().unwrap(), right_column, opt_join_tuples)
+        },
         logical_type => {
             let lhs_phys = left_column.to_physical_repr();
             let rhs_phys = right_column.to_physical_repr();
