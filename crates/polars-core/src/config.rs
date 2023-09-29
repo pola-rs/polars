@@ -13,6 +13,7 @@ pub(crate) const FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION: &str =
 pub(crate) const FMT_TABLE_INLINE_COLUMN_DATA_TYPE: &str =
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE";
 pub(crate) const FMT_TABLE_ROUNDED_CORNERS: &str = "POLARS_FMT_TABLE_ROUNDED_CORNERS";
+pub(crate) const FMT_LIST_ELIDE_LEN: &str = "POLARS_FMT_LIST_ELIDE_LEN";
 
 // Other env vars
 #[cfg(feature = "dtype-decimal")]

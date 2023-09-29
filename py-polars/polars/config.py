@@ -69,6 +69,7 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
+    "POLARS_FMT_LIST_ELIDE_LEN"
     "POLARS_STREAMING_CHUNK_SIZE",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
@@ -472,6 +473,55 @@ class Config(contextlib.ContextDecorator):
 
             os.environ["POLARS_FMT_STR_LEN"] = str(n)
         return cls
+
+    @classmethod
+    def set_fmt_list_elide_len(cls, n: int | None) -> type[Config]:
+        """
+        Set the number of elements to display for List values.
+
+        Parameters
+        ----------
+        n : int
+            Number of characters to display.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "nums": [
+        ...             [1, 2, 3, 4, 5, 6],
+        ...         ]
+        ...     }
+        ... )
+        >>> df
+        shape: (1, 1)
+        ┌─────────────┐
+        │ nums        │
+        │ ---         │
+        │ list[i64]   │
+        ╞═════════════╡
+        │ [1, 2, … 6] │
+        └─────────────┘
+        >>> pl.Config.set_fmt_list_elide_len(10) # doctest: +SKIP
+        >>> df
+        shape: (1, 1)
+        ┌────────────────────┐
+        │ eef                │
+        │ ---                │
+        │ list[i64]          │
+        ╞════════════════════╡
+        │ [1, 2, 3, 4, 5, 6] │
+        └────────────────────┘
+        """
+        if n is None:
+            os.environ.pop("POLARS_FMT_LIST_ELIDE_LEN", None)
+        else:
+            if n <= 0:
+                raise ValueError("number of characters must be > 0")
+
+            os.environ["POLARS_FMT_LIST_ELIDE_LEN"] = str(n)
+        return cls
+
 
     @classmethod
     def set_streaming_chunk_size(cls, size: int | None) -> type[Config]:
