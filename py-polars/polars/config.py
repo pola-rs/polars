@@ -479,6 +479,8 @@ class Config(contextlib.ContextDecorator):
         """
         Set the number of elements to display for List values.
 
+        Values less than 0 will result in all values being printed.
+
         Parameters
         ----------
         n : int
@@ -516,9 +518,6 @@ class Config(contextlib.ContextDecorator):
         if n is None:
             os.environ.pop("POLARS_FMT_LIST_ELIDE_LEN", None)
         else:
-            if n <= 0:
-                raise ValueError("number of characters must be > 0")
-
             os.environ["POLARS_FMT_LIST_ELIDE_LEN"] = str(n)
         return cls
 
