@@ -48,14 +48,8 @@ where
         } else {
             arr.iter()
                 .unwrap_optional()
-                .map(|opt| opt.copied())
-                .reduce(|a, b| match (a, b) {
-                    (Some(a), Some(b)) => Some(min_or_max_fn(a, b)),
-                    (None, Some(b)) => Some(b),
-                    (Some(a), None) => Some(a),
-                    (None, None) => None,
-                })
-                .flatten()
+                .filter_map(|opt| opt.copied())
+                .reduce(|a, b| min_or_max_fn(a, b))
         };
         match cum_agg {
             None => cum_agg = agg,

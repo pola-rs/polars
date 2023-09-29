@@ -18,7 +18,6 @@ use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
-use crate::utils::CustomIterTools;
 
 mod float_sum;
 
