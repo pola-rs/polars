@@ -119,3 +119,12 @@ def test_drop_nan_ignore_null_3525() -> None:
         3.0,
         4.0,
     ]
+
+
+def test_drop_join_lit() -> None:
+    df = pl.LazyFrame({"date": [1, 2, 3], "symbol": [4, 5, 6]})
+    dates = df.select("date").unique()
+    symbols = df.select("symbol").unique()
+    assert symbols.join(dates, left_on=pl.lit(1), right_on=pl.lit(1)).drop(
+        "literal"
+    ).collect().columns == ["symbol", "date"]

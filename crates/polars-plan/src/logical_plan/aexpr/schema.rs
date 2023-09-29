@@ -1,4 +1,5 @@
 use super::*;
+use crate::constants::LITERAL_NAME;
 
 fn float_type(field: &mut Field) {
     if field.dtype.is_numeric() && !matches!(&field.dtype, DataType::Float32) {
@@ -51,7 +52,7 @@ impl AExpr {
             },
             Literal(sv) => Ok(match sv {
                 LiteralValue::Series(s) => s.field().into_owned(),
-                _ => Field::new("literal", sv.get_datatype()),
+                _ => Field::new(LITERAL_NAME, sv.get_datatype()),
             }),
             BinaryExpr { left, right, op } => {
                 use DataType::*;

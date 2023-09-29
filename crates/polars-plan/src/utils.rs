@@ -6,6 +6,7 @@ use std::vec::IntoIter;
 use polars_core::prelude::*;
 use smartstring::alias::String as SmartString;
 
+use crate::constants::LITERAL_NAME;
 use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
 use crate::prelude::names::COUNT;
@@ -349,12 +350,11 @@ pub fn aexpr_to_leaf_names_iter(
     node: Node,
     arena: &Arena<AExpr>,
 ) -> impl Iterator<Item = Arc<str>> + '_ {
-    aexpr_to_column_nodes_iter(node, arena).map(|node| match arena.get(node) {
+    arena.iter(node).flat_map(|(_, ae)| match ae {
         // expecting only columns here, wildcards and dtypes should already be replaced
-        AExpr::Column(name) => name.clone(),
-        e => {
-            panic!("{e:?} not expected")
-        },
+        AExpr::Column(name) => Some(name.clone()),
+        AExpr::Literal(_) => Some(Arc::from(LITERAL_NAME)),
+        _ => None,
     })
 }
 
