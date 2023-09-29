@@ -245,12 +245,12 @@ pub struct ParquetAsyncReader {
 
 #[cfg(feature = "cloud")]
 impl ParquetAsyncReader {
-    pub fn from_uri(
+    pub async fn from_uri(
         uri: &str,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<ParquetAsyncReader> {
         Ok(ParquetAsyncReader {
-            reader: ParquetObjectStore::from_uri(uri, cloud_options)?,
+            reader: ParquetObjectStore::from_uri(uri, cloud_options).await?,
             rechunk: false,
             n_rows: None,
             projection: None,
@@ -266,7 +266,7 @@ impl ParquetAsyncReader {
         uri: &str,
         options: Option<&CloudOptions>,
     ) -> PolarsResult<(Schema, usize)> {
-        let mut reader = ParquetAsyncReader::from_uri(uri, options)?;
+        let mut reader = ParquetAsyncReader::from_uri(uri, options).await?;
         let schema = reader.schema().await?;
         let num_rows = reader.num_rows().await?;
         Ok((schema, num_rows))

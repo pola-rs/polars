@@ -30,8 +30,8 @@ pub struct ParquetObjectStore {
 }
 
 impl ParquetObjectStore {
-    pub fn from_uri(uri: &str, options: Option<&CloudOptions>) -> PolarsResult<Self> {
-        let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options)?;
+    pub async fn from_uri(uri: &str, options: Option<&CloudOptions>) -> PolarsResult<Self> {
+        let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options).await?;
 
         Ok(ParquetObjectStore {
             store,

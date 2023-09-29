@@ -61,18 +61,24 @@ impl ParquetSource {
             #[cfg(feature = "async")]
             {
                 let uri = path.to_string_lossy();
-                ParquetAsyncReader::from_uri(&uri, self.cloud_options.as_ref())?
-                    .with_n_rows(file_options.n_rows)
-                    .with_row_count(file_options.row_count)
-                    .with_projection(projection)
-                    .use_statistics(options.use_statistics)
-                    .with_hive_partition_columns(
-                        self.file_info
-                            .hive_parts
-                            .as_ref()
-                            .map(|hive| hive.materialize_partition_columns()),
-                    )
-                    .batched(chunk_size)?
+                tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .unwrap()
+                    .block_on(async {
+                        ParquetAsyncReader::from_uri(&uri, self.cloud_options.as_ref())
+                            .await?
+                            .with_n_rows(file_options.n_rows)
+                            .with_row_count(file_options.row_count)
+                            .with_projection(projection)
+                            .use_statistics(options.use_statistics)
+                            .with_hive_partition_columns(
+                                self.file_info
+                                    .hive_parts
+                                    .as_ref()
+                                    .map(|hive| hive.materialize_partition_columns()),
+                            )
+                            .batched(chunk_size)
+                    })?
             }
         } else {
             let file = std::fs::File::open(path).unwrap();

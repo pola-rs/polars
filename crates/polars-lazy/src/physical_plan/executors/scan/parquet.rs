@@ -62,21 +62,27 @@ impl ParquetExec {
         } else if is_cloud_url(self.path.as_path()) {
             #[cfg(feature = "cloud")]
             {
-                let reader = ParquetAsyncReader::from_uri(
-                    &self.path.to_string_lossy(),
-                    self.cloud_options.as_ref(),
-                )?
-                .with_n_rows(n_rows)
-                .with_row_count(mem::take(&mut self.file_options.row_count))
-                .use_statistics(self.options.use_statistics)
-                .with_hive_partition_columns(
-                    self.file_info
-                        .hive_parts
-                        .as_ref()
-                        .map(|hive| hive.materialize_partition_columns()),
-                );
+                tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .unwrap()
+                    .block_on(async {
+                        let reader = ParquetAsyncReader::from_uri(
+                            &self.path.to_string_lossy(),
+                            self.cloud_options.as_ref(),
+                        )
+                        .await?
+                        .with_n_rows(n_rows)
+                        .with_row_count(mem::take(&mut self.file_options.row_count))
+                        .use_statistics(self.options.use_statistics)
+                        .with_hive_partition_columns(
+                            self.file_info
+                                .hive_parts
+                                .as_ref()
+                                .map(|hive| hive.materialize_partition_columns()),
+                        );
 
-                reader.finish(predicate)
+                        reader.finish(predicate)
+                    })
             }
             #[cfg(not(feature = "cloud"))]
             {

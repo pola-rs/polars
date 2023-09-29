@@ -182,8 +182,9 @@ impl CloudWriter {
     ///
     /// Wrapper around `CloudWriter::new_with_object_store` that is useful if you only have a single write task.
     /// TODO: Naming?
-    pub fn new(uri: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<Self> {
-        let (cloud_location, object_store) = crate::cloud::build_object_store(uri, cloud_options)?;
+    pub async fn new(uri: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<Self> {
+        let (cloud_location, object_store) =
+            crate::cloud::build_object_store(uri, cloud_options).await?;
         Self::new_with_object_store(object_store, cloud_location.prefix.into())
     }
 
@@ -267,15 +268,16 @@ mod tests {
 
     // Skip this tests on Windows since it does not have a convenient /tmp/ location.
     #[cfg_attr(target_os = "windows", ignore)]
-    #[test]
-    fn cloudwriter_from_cloudlocation_test() {
+    #[tokio::test]
+    async fn cloudwriter_from_cloudlocation_test() {
         use crate::csv::CsvWriter;
         use crate::prelude::SerWriter;
 
         let mut df = example_dataframe();
 
-        let mut cloud_writer =
-            CloudWriter::new("file:///tmp/cloud_writer_example2.csv", None).unwrap();
+        let mut cloud_writer = CloudWriter::new("file:///tmp/cloud_writer_example2.csv", None)
+            .await
+            .unwrap();
 
         CsvWriter::new(&mut cloud_writer)
             .finish(&mut df)
