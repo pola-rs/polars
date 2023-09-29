@@ -9,14 +9,13 @@ env:
   RUST_TOOLCHAIN: nightly-2023-08-26
   PYTHON_VERSION: '3.8'
   MATURIN_VERSION: '1.2.3'
-  MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
 
 defaults:
   run:
     shell: bash
 
 jobs:
-  publish-wheels:
+  build-wheels:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -93,12 +92,39 @@ jobs:
         run: |
           echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
 
-      - name: Publish wheel
+      - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
-          command: publish
+          command: build
           target: ${{ steps.target.outputs.target }}
           working-directory: py-polars
-          args: --skip-existing ${{ !matrix.sdist && '--no-sdist' || ''}}
+          args: --release ${{ matrix.sdist && '--sdist' || ''}}
           maturin-version: ${{ env.MATURIN_VERSION }}
           rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
+          manylinux: auto
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist
+          path: py-polars/target/wheels/*
+
+  publish-to-pypi:
+    needs: build-wheels
+    environment:
+      name: release-python
+      url: https://pypi.org/project/polars
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: dist
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
