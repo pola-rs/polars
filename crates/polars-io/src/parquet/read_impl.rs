@@ -14,10 +14,12 @@ use rayon::prelude::*;
 
 use super::mmap::ColumnStore;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
+#[cfg(feature = "async")]
 use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
 use crate::parquet::mmap::mmap_columns;
 use crate::parquet::predicates::read_this_row_group;
 use crate::parquet::{mmap, ParallelStrategy};
+#[cfg(feature = "async")]
 use crate::pl_async::get_runtime;
 use crate::predicates::{apply_predicate, arrow_schema_to_empty_df, PhysicalIoExpr};
 use crate::utils::{apply_projection, get_reader_bytes};
@@ -367,10 +369,12 @@ impl FetchRowGroupsFromMmapReader {
 // We couldn't use a trait as async trait gave very hard HRT lifetime errors.
 // Maybe a puzzle for another day.
 pub enum RowGroupFetcher {
+    #[cfg(feature = "async")]
     ObjectStore(FetchRowGroupsFromObjectStore),
     Local(FetchRowGroupsFromMmapReader),
 }
 
+#[cfg(feature = "async")]
 impl From<FetchRowGroupsFromObjectStore> for RowGroupFetcher {
     fn from(value: FetchRowGroupsFromObjectStore) -> Self {
         RowGroupFetcher::ObjectStore(value)
@@ -387,6 +391,7 @@ impl RowGroupFetcher {
     async fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
         match self {
             RowGroupFetcher::Local(f) => f.fetch_row_groups(_row_groups).await,
+            #[cfg(feature = "async")]
             RowGroupFetcher::ObjectStore(f) => f.fetch_row_groups(_row_groups).await,
         }
     }
@@ -551,6 +556,7 @@ impl BatchedParquetReader {
     }
 
     /// Turn the batched reader into an iterator.
+    #[cfg(feature = "async")]
     pub fn iter(self, batches_per_iter: usize) -> BatchedParquetIter {
         BatchedParquetIter {
             batches_per_iter,
@@ -561,6 +567,7 @@ impl BatchedParquetReader {
     }
 
     /// Turn the batched reader into an iterator.
+    #[cfg(feature = "async")]
     pub fn iter_async(self, batches_per_iter: usize) -> BatchedParquetIter {
         BatchedParquetIter {
             batches_per_iter,
@@ -571,6 +578,7 @@ impl BatchedParquetReader {
     }
 }
 
+#[cfg(feature = "async")]
 pub struct BatchedParquetIter {
     batches_per_iter: usize,
     inner: BatchedParquetReader,
@@ -578,6 +586,7 @@ pub struct BatchedParquetIter {
     rt: Option<tokio::runtime::Runtime>,
 }
 
+#[cfg(feature = "async")]
 impl BatchedParquetIter {
     // todo! implement stream
     pub(crate) async fn next_(&mut self) -> Option<PolarsResult<DataFrame>> {
@@ -595,6 +604,7 @@ impl BatchedParquetIter {
     }
 }
 
+#[cfg(feature = "async")]
 impl Iterator for BatchedParquetIter {
     type Item = PolarsResult<DataFrame>;
 
