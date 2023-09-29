@@ -69,7 +69,7 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
-    "POLARS_FMT_LIST_ELIDE_LEN",
+    "POLARS_FMT_TABLE_CELL_LIST_LEN",
     "POLARS_STREAMING_CHUNK_SIZE",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
@@ -475,7 +475,7 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
-    def set_fmt_list_elide_len(cls, n: int | None) -> type[Config]:
+    def set_fmt_table_cell_list_len(cls, n: int | None) -> type[Config]:
         """
         Set the number of elements to display for List values.
 
@@ -504,7 +504,7 @@ class Config(contextlib.ContextDecorator):
         ╞═════════════╡
         │ [1, 2, … 6] │
         └─────────────┘
-        >>> with pl.Config(fmt_list_elide_len=10):
+        >>> with pl.Config(fmt_table_list_len=10):
         ...     print(df)
         ...
         shape: (1, 1)
@@ -517,9 +517,9 @@ class Config(contextlib.ContextDecorator):
         └────────────────────┘
         """
         if n is None:
-            os.environ.pop("POLARS_FMT_LIST_ELIDE_LEN", None)
+            os.environ.pop("POLARS_FMT_TABLE_CELL_LIST_LEN", None)
         else:
-            os.environ["POLARS_FMT_LIST_ELIDE_LEN"] = str(n)
+            os.environ["POLARS_FMT_TABLE_CELL_LIST_LEN"] = str(n)
         return cls
 
     @classmethod

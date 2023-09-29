@@ -950,7 +950,7 @@ impl Series {
                 self.get(2).unwrap()
             ),
             _ => {
-                let max_items = std::env::var(FMT_LIST_ELIDE_LEN)
+                let max_items = std::env::var(FMT_TABLE_CELL_LIST_LEN)
                     .as_deref()
                     .unwrap_or("")
                     .parse()
@@ -1123,7 +1123,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list)
         );
 
-        std::env::set_var("POLARS_FMT_LIST_ELIDE_LEN", "10");
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "10");
 
         assert_eq!(
             r#"shape: (2,)
