@@ -13,10 +13,11 @@ use futures::future::BoxFuture;
 use futures::{AsyncRead, AsyncSeek, Future, TryFutureExt};
 use object_store::path::Path;
 use object_store::{MultipartId, ObjectStore};
-use polars_error::{PolarsError, PolarsResult};
+use polars_error::{to_compute_err, PolarsError, PolarsResult};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use super::*;
+use crate::pl_async::get_runtime;
 
 type OptionalFuture = Option<BoxFuture<'static, std::io::Result<Bytes>>>;
 
@@ -142,8 +143,6 @@ pub struct CloudWriter {
     path: Path,
     // ID of a partially-done upload, used to abort the upload on error
     multipart_id: MultipartId,
-    // The Tokio runtime which the writer uses internally.
-    runtime: tokio::runtime::Runtime,
     // Internal writer, constructed at creation
     writer: Box<dyn AsyncWrite + Send + Unpin>,
 }
@@ -154,24 +153,17 @@ impl CloudWriter {
     /// Creates a new (current-thread) Tokio runtime
     /// which bridges the sync writing process with the async ObjectStore multipart uploading.
     /// TODO: Naming?
-    pub fn new_with_object_store(
+    pub async fn new_with_object_store(
         object_store: Arc<dyn ObjectStore>,
         path: Path,
     ) -> PolarsResult<Self> {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_io()
-            .enable_time()
-            .build()
-            .unwrap();
-        let build_result =
-            runtime.block_on(async { Self::build_writer(&object_store, &path).await });
+        let build_result = Self::build_writer(&object_store, &path).await;
         match build_result {
             Err(error) => Err(PolarsError::from(error)),
             Ok((multipart_id, writer)) => Ok(CloudWriter {
                 object_store,
                 path,
                 multipart_id,
-                runtime,
                 writer,
             }),
         }
@@ -184,7 +176,7 @@ impl CloudWriter {
     pub async fn new(uri: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<Self> {
         let (cloud_location, object_store) =
             crate::cloud::build_object_store(uri, cloud_options).await?;
-        Self::new_with_object_store(object_store, cloud_location.prefix.into())
+        Self::new_with_object_store(object_store, cloud_location.prefix.into()).await
     }
 
     async fn build_writer(
@@ -195,36 +187,39 @@ impl CloudWriter {
         Ok((multipart_id, s3_writer))
     }
 
-    fn abort(&self) {
-        let _ = self.runtime.block_on(async {
-            self.object_store
-                .abort_multipart(&self.path, &self.multipart_id)
-                .await
-        });
+    async fn abort(&self) -> PolarsResult<()> {
+        self.object_store
+            .abort_multipart(&self.path, &self.multipart_id)
+            .await
+            .map_err(to_compute_err)
     }
 }
 
 impl std::io::Write for CloudWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let res = self.runtime.block_on(self.writer.write(buf));
-        if res.is_err() {
-            self.abort();
-        }
-        res
+        get_runtime().block_on(async {
+            let res = self.writer.write(buf).await;
+            if res.is_err() {
+                let _ = self.abort().await;
+            }
+            res
+        })
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        let res = self.runtime.block_on(self.writer.flush());
-        if res.is_err() {
-            self.abort();
-        }
-        res
+        get_runtime().block_on(async {
+            let res = self.writer.flush().await;
+            if res.is_err() {
+                let _ = self.abort().await;
+            }
+            res
+        })
     }
 }
 
 impl Drop for CloudWriter {
     fn drop(&mut self) {
-        let _ = self.runtime.block_on(self.writer.shutdown());
+        let _ = get_runtime().block_on(self.writer.shutdown());
     }
 }
 
@@ -245,8 +240,8 @@ mod tests {
         .unwrap()
     }
 
-    #[test]
-    fn csv_to_local_objectstore_cloudwriter() {
+    #[tokio::test]
+    async fn csv_to_local_objectstore_cloudwriter() {
         use crate::csv::CsvWriter;
         use crate::prelude::SerWriter;
 
@@ -259,7 +254,9 @@ mod tests {
 
         let path: object_store::path::Path = "cloud_writer_example.csv".into();
 
-        let mut cloud_writer = CloudWriter::new_with_object_store(object_store, path).unwrap();
+        let mut cloud_writer = CloudWriter::new_with_object_store(object_store, path)
+            .await
+            .unwrap();
         CsvWriter::new(&mut cloud_writer)
             .finish(&mut df)
             .expect("Could not write dataframe as CSV to remote location");
