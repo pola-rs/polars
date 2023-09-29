@@ -504,8 +504,9 @@ class Config(contextlib.ContextDecorator):
         ╞═════════════╡
         │ [1, 2, … 6] │
         └─────────────┘
-        >>> pl.Config.set_fmt_list_elide_len(10)
-        >>> df
+        >>> with pl.Config(fmt_list_elide_len=10):
+        ...     print(df)
+        ...
         shape: (1, 1)
         ┌────────────────────┐
         │ nums               │
