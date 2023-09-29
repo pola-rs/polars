@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import warnings
 from datetime import date, datetime, time
 from typing import Any, cast
 
@@ -131,14 +130,11 @@ def test_from_pandas() -> None:
         [None, None, None],
     ],
 )
-def test_from_pandas_nulls(nulls: Any) -> None:
+def test_from_pandas_nulls(nulls: list[None]) -> None:
     # empty and/or all null values, no pandas dtype
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", Warning)
-
-        ps = pd.Series(nulls)
-        srs = pl.from_pandas(ps)
-        assert nulls == srs.to_list()
+    ps = pd.Series(nulls)
+    s = pl.from_pandas(ps)
+    assert nulls == s.to_list()
 
 
 def test_from_pandas_nan_to_null() -> None:
