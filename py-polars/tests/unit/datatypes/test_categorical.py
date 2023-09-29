@@ -408,3 +408,17 @@ def test_list_builder_different_categorical_rev_maps() -> None:
     assert pl.DataFrame({"c": [s1, s2]}).to_dict(False) == {
         "c": [["a", "b"], ["c", "d"]]
     }
+
+
+def test_categorical_collect_11408() -> None:
+    df = pl.DataFrame(
+        data={"groups": ["a", "b", "c"], "cats": ["a", "b", "c"], "amount": [1, 2, 3]},
+        schema={"groups": pl.Utf8, "cats": pl.Categorical, "amount": pl.Int8},
+    )
+
+    assert df.group_by("groups").agg(
+        pl.col("cats").filter(pl.col("amount") == pl.col("amount").min()).first()
+    ).sort("groups").to_dict(False) == {
+        "groups": ["a", "b", "c"],
+        "cats": ["a", "b", "c"],
+    }
