@@ -971,17 +971,10 @@ impl Series {
                         break;
                     }
                 }
-
                 result.push(']');
 
                 result
             }
-            // format!(
-            //     "[{}, {}, … {}]",
-            //     self.get(0).unwrap(),
-            //     self.get(1).unwrap(),
-            //     self.get(self.len() - 1).unwrap()
-            // ),
         }
     }
 }
