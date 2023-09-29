@@ -951,10 +951,10 @@ impl Series {
             ),
             _ => {
                 let max_items = std::env::var(FMT_LIST_ELIDE_LEN)
-                .as_deref()
-                .unwrap_or("")
-                .parse()
-                .map_or(3, |n: i64| if n < 0 { self.len() } else { n as usize });
+                    .as_deref()
+                    .unwrap_or("")
+                    .parse()
+                    .map_or(3, |n: i64| if n < 0 { self.len() } else { n as usize });
 
                 let mut result = "[".to_owned();
 
@@ -962,7 +962,7 @@ impl Series {
                     result.push_str(&item.to_string());
 
                     if i != self.len() - 1 {
-                    result.push_str(", ");
+                        result.push_str(", ");
                     }
 
                     if i == max_items - 2 {
@@ -974,7 +974,7 @@ impl Series {
                 result.push(']');
 
                 result
-            }
+            },
         }
     }
 }
@@ -1126,7 +1126,7 @@ Series: 'a' [list[i32]]
         std::env::set_var("POLARS_FMT_LIST_ELIDE_LEN", "10");
 
         assert_eq!(
-                        r#"shape: (2,)
+            r#"shape: (2,)
 Series: 'a' [list[i32]]
 [
 	[1, 2, 3, 4, 5, 6]

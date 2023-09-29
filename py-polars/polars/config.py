@@ -504,7 +504,7 @@ class Config(contextlib.ContextDecorator):
         ╞═════════════╡
         │ [1, 2, … 6] │
         └─────────────┘
-        >>> pl.Config.set_fmt_list_elide_len(10) # doctest: +SKIP
+        >>> pl.Config.set_fmt_list_elide_len(10)
         >>> df
         shape: (1, 1)
         ┌────────────────────┐
@@ -520,7 +520,6 @@ class Config(contextlib.ContextDecorator):
         else:
             os.environ["POLARS_FMT_LIST_ELIDE_LEN"] = str(n)
         return cls
-
 
     @classmethod
     def set_streaming_chunk_size(cls, size: int | None) -> type[Config]:
