@@ -1,9 +1,6 @@
-use std::cmp::Ordering;
-
 use polars_arrow::export::arrow::array::Array;
 use polars_arrow::kernels::rolling;
 use polars_arrow::kernels::rolling::no_nulls::{MaxWindow, MinWindow};
-use polars_arrow::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 use polars_arrow::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };
@@ -15,21 +12,19 @@ use polars_core::frame::group_by::aggregations::{
 };
 use polars_core::prelude::*;
 
-#[inline]
-fn nan_min<T: IsFloat + PartialOrd>(a: T, b: T) -> T {
-    if let Ordering::Less = compare_fn_nan_min(&a, &b) {
-        a
-    } else {
-        b
-    }
+#[inline(always)]
+fn nan_min<T: IsFloat + PartialOrd + Copy>(a: T, b: T) -> T {
+    // If b is nan, min is nan, because the comparison failed. We have
+    // to poison the result if a is nan.
+    let min = if a < b { a } else { b };
+    if a != a { a } else { min }
 }
-#[inline]
-fn nan_max<T: IsFloat + PartialOrd>(a: T, b: T) -> T {
-    if let Ordering::Greater = compare_fn_nan_max(&a, &b) {
-        a
-    } else {
-        b
-    }
+
+#[inline(always)]
+fn nan_max<T: IsFloat + PartialOrd + Copy>(a: T, b: T) -> T {
+    // See nan_min.
+    let max = if a > b { a } else { b };
+    if a != a { a } else { max }
 }
 
 fn ca_nan_agg<T, Agg>(ca: &ChunkedArray<T>, min_or_max_fn: Agg) -> Option<T::Native>
@@ -235,7 +230,7 @@ where
 }
 
 /// # Safety
-/// `groups` must be in bounds
+/// `groups` must be in bounds.
 pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsProxy) -> Series {
     match s.dtype() {
         DataType::Float32 => {
@@ -251,7 +246,7 @@ pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsProxy) -> Series {
 }
 
 /// # Safety
-/// `groups` must be in bounds
+/// `groups` must be in bounds.
 pub unsafe fn group_agg_nan_max_s(s: &Series, groups: &GroupsProxy) -> Series {
     match s.dtype() {
         DataType::Float32 => {
