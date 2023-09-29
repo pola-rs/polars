@@ -9,10 +9,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import MetaData, Table, create_engine, select
 
 import polars as pl
 from polars.exceptions import UnsuitableSQLError
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import DbReadEngine, SchemaDict
@@ -223,6 +224,31 @@ def test_read_database(
     assert df.schema == expected_dtypes
     assert df.shape == (2, 4)
     assert df["date"].to_list() == expected_dates
+
+
+def test_read_database_alchemy_selectable(tmp_path: Path) -> None:
+    # setup underlying test data
+    tmp_path.mkdir(exist_ok=True)
+    test_db = str(tmp_path / "test.db")
+    create_temp_sqlite_db(test_db)
+
+    # establish alchemy query
+    conn = create_engine(f"sqlite:///{test_db}")
+    t = Table("test_data", MetaData(), autoload_with=conn)
+    alchemy_query = select(t.c.date, t.c.name, t.c.value).where(t.c.value < 0)
+
+    # validate read_database with alchemy "selectable"
+    df = pl.read_database(alchemy_query, connection=conn.connect())
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "date": [date(2021, 12, 31)],
+                "name": ["other"],
+                "value": [-99.5],
+            },
+        ),
+    )
 
 
 def test_read_database_mocked() -> None:
