@@ -19,7 +19,6 @@ use polars_core::schema::Schema;
 use super::cloud::{build_object_store, CloudLocation, CloudReader};
 use super::mmap;
 use super::mmap::ColumnStore;
-use super::read_impl::FetchRowGroups;
 use crate::cloud::CloudOptions;
 
 pub struct ParquetObjectStore {
@@ -30,8 +29,8 @@ pub struct ParquetObjectStore {
 }
 
 impl ParquetObjectStore {
-    pub fn from_uri(uri: &str, options: Option<&CloudOptions>) -> PolarsResult<Self> {
-        let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options)?;
+    pub async fn from_uri(uri: &str, options: Option<&CloudOptions>) -> PolarsResult<Self> {
+        let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options).await?;
 
         Ok(ParquetObjectStore {
             store,
@@ -100,7 +99,6 @@ type RowGroupChunks<'a> = Vec<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>>;
 
 /// Download rowgroups for the column whose indexes are given in `projection`.
 /// We concurrently download the columns for each field.
-#[tokio::main(flavor = "current_thread")]
 async fn download_projection<'a: 'b, 'b>(
     projection: &[usize],
     row_groups: &'a [RowGroupMetaData],
@@ -140,7 +138,7 @@ async fn download_projection<'a: 'b, 'b>(
         .await
 }
 
-pub(crate) struct FetchRowGroupsFromObjectStore {
+pub struct FetchRowGroupsFromObjectStore {
     reader: ParquetObjectStore,
     row_groups_metadata: Vec<RowGroupMetaData>,
     projection: Vec<usize>,
@@ -169,10 +167,11 @@ impl FetchRowGroupsFromObjectStore {
             schema,
         })
     }
-}
 
-impl FetchRowGroups for FetchRowGroupsFromObjectStore {
-    fn fetch_row_groups(&mut self, row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
+    pub(crate) async fn fetch_row_groups(
+        &mut self,
+        row_groups: Range<usize>,
+    ) -> PolarsResult<ColumnStore> {
         // Fetch the required row groups.
         let row_groups = &self
             .row_groups_metadata
@@ -186,7 +185,8 @@ impl FetchRowGroups for FetchRowGroupsFromObjectStore {
 
         // Package in the format required by ColumnStore.
         let downloaded =
-            download_projection(&self.projection, row_groups, &self.schema, &self.reader)?;
+            download_projection(&self.projection, row_groups, &self.schema, &self.reader).await?;
+
         if self.logging {
             eprintln!(
                 "BatchedParquetReader: fetched {} row_groups for {} fields, yielding {} column chunks.",

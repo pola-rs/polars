@@ -36,11 +36,13 @@ once_cell = { workspace = true }
 percent-encoding = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
+reqwest = { workspace = true, optional = true }
 ryu = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { version = "1", default-features = false, features = ["alloc", "raw_value"], optional = true }
 simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
+smartstring = { workspace = true }
 tokio = { workspace = true, features = ["net"], optional = true }
 tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
 url = { workspace = true, optional = true }
@@ -93,7 +95,7 @@ lazy = []
 parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression"]
 async = ["async-trait", "futures", "tokio", "tokio-util", "arrow/io_ipc_write_async", "polars-error/regex"]
 cloud = ["object_store", "async", "polars-error/object_store", "url"]
-aws = ["object_store/aws", "cloud"]
+aws = ["object_store/aws", "cloud", "reqwest"]
 azure = ["object_store/azure", "cloud"]
 gcp = ["object_store/gcp", "cloud"]
 partition = ["polars-core/partition_by"]

@@ -32,6 +32,8 @@ use regex::Regex;
 
 #[cfg(feature = "partition")]
 pub mod partition;
+#[cfg(feature = "async")]
+pub mod pl_async;
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};

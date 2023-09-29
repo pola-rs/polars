@@ -5,6 +5,7 @@ use polars_core::schema::*;
 use polars_core::POOL;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::{BatchedParquetReader, ParquetReader};
+use polars_io::pl_async::get_runtime;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::{is_cloud_url, SerReader};
@@ -26,6 +27,7 @@ pub struct ParquetSource {
     cloud_options: Option<CloudOptions>,
     file_info: FileInfo,
     verbose: bool,
+    rt: tokio::runtime::Runtime,
 }
 
 impl ParquetSource {
@@ -61,18 +63,22 @@ impl ParquetSource {
             #[cfg(feature = "async")]
             {
                 let uri = path.to_string_lossy();
-                ParquetAsyncReader::from_uri(&uri, self.cloud_options.as_ref())?
-                    .with_n_rows(file_options.n_rows)
-                    .with_row_count(file_options.row_count)
-                    .with_projection(projection)
-                    .use_statistics(options.use_statistics)
-                    .with_hive_partition_columns(
-                        self.file_info
-                            .hive_parts
-                            .as_ref()
-                            .map(|hive| hive.materialize_partition_columns()),
-                    )
-                    .batched(chunk_size)?
+                polars_io::pl_async::get_runtime().block_on(async {
+                    ParquetAsyncReader::from_uri(&uri, self.cloud_options.as_ref())
+                        .await?
+                        .with_n_rows(file_options.n_rows)
+                        .with_row_count(file_options.row_count)
+                        .with_projection(projection)
+                        .use_statistics(options.use_statistics)
+                        .with_hive_partition_columns(
+                            self.file_info
+                                .hive_parts
+                                .as_ref()
+                                .map(|hive| hive.materialize_partition_columns()),
+                        )
+                        .batched(chunk_size)
+                        .await
+                })?
             }
         } else {
             let file = std::fs::File::open(path).unwrap();
@@ -115,6 +121,7 @@ impl ParquetSource {
             cloud_options,
             file_info,
             verbose,
+            rt: get_runtime(),
         })
     }
 }
@@ -124,11 +131,12 @@ impl Source for ParquetSource {
         if self.batched_reader.is_none() {
             self.init_reader()?;
         }
-        let batches = self
-            .batched_reader
-            .as_mut()
-            .unwrap()
-            .next_batches(self.n_threads)?;
+        let batches = self.rt.block_on(
+            self.batched_reader
+                .as_mut()
+                .unwrap()
+                .next_batches(self.n_threads),
+        )?;
         Ok(match batches {
             None => SourceResult::Finished,
             Some(batches) => SourceResult::GotMoreData(

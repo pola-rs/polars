@@ -16,12 +16,22 @@ pub use object_store::gcp::GoogleConfigKey;
 use object_store::ObjectStore;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use object_store::{BackoffConfig, RetryConfig};
+#[cfg(feature = "aws")]
+use once_cell::sync::Lazy;
 use polars_core::error::{PolarsError, PolarsResult};
 use polars_error::*;
+#[cfg(feature = "aws")]
+use polars_utils::cache::FastFixedCache;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "aws")]
+use smartstring::alias::String as SmartString;
 #[cfg(feature = "async")]
 use url::Url;
+
+#[cfg(feature = "aws")]
+static BUCKET_REGION: Lazy<tokio::sync::Mutex<FastFixedCache<SmartString, SmartString>>> =
+    Lazy::new(|| tokio::sync::Mutex::new(FastFixedCache::default()));
 
 /// The type of the config keys must satisfy the following requirements:
 /// 1. must be easily collected into a HashMap, the type required by the object_crate API.
@@ -119,7 +129,7 @@ impl CloudOptions {
 
     /// Build the [`ObjectStore`] implementation for AWS.
     #[cfg(feature = "aws")]
-    pub fn build_aws(&self, url: &str) -> PolarsResult<impl ObjectStore> {
+    pub async fn build_aws(&self, url: &str) -> PolarsResult<impl ObjectStore> {
         let options = self.aws.as_ref();
         let mut builder = AmazonS3Builder::from_env().with_url(url);
         if let Some(options) = options {
@@ -127,6 +137,39 @@ impl CloudOptions {
                 builder = builder.with_config(*key, value);
             }
         }
+
+        if builder
+            .get_config_value(&AmazonS3ConfigKey::DefaultRegion)
+            .is_none()
+            && builder
+                .get_config_value(&AmazonS3ConfigKey::Region)
+                .is_none()
+        {
+            let mut bucket_region = BUCKET_REGION.lock().await;
+            let bucket = crate::cloud::CloudLocation::new(url)?.bucket;
+
+            match bucket_region.get(bucket.as_str()) {
+                Some(region) => {
+                    builder = builder.with_config(AmazonS3ConfigKey::Region, region.as_str())
+                },
+                None => {
+                    polars_warn!("'(default_)region' not set; polars will try to get it from bucket\n\nSet the region manually to silence this warning.");
+                    let result = reqwest::Client::builder()
+                        .build()
+                        .unwrap()
+                        .head(format!("https://{bucket}.s3.amazonaws.com"))
+                        .send()
+                        .await
+                        .map_err(to_compute_err)?;
+                    if let Some(region) = result.headers().get("x-amz-bucket-region") {
+                        let region =
+                            std::str::from_utf8(region.as_bytes()).map_err(to_compute_err)?;
+                        bucket_region.insert(bucket.into(), region.into());
+                        builder = builder.with_config(AmazonS3ConfigKey::Region, region)
+                    }
+                },
+            };
+        };
 
         builder
             .with_retry(get_retry_config(self.max_retries))

@@ -166,7 +166,7 @@ pub async fn glob(url: &str, cloud_options: Option<&CloudOptions>) -> PolarsResu
             expansion,
         },
         store,
-    ) = super::build_object_store(url, cloud_options)?;
+    ) = super::build_object_store(url, cloud_options).await?;
     let matcher = Matcher::new(prefix.clone(), expansion.as_deref())?;
 
     let list_stream = store
