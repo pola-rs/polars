@@ -1,8 +1,6 @@
 name: Release Python
 
 on:
-  pull_request:
-  workflow_dispatch:
   push:
     tags:
       - py-*
@@ -32,7 +30,7 @@ jobs:
             cpu: x86-64
           - os: macos-latest
             cpu: aarch64
-          - os: windows-latest
+          - os: windows-32gb-ram
             cpu: x86-64
           - os: ubuntu-latest
             cpu: x86-64
@@ -100,7 +98,7 @@ jobs:
           command: build
           target: ${{ steps.target.outputs.target }}
           working-directory: py-polars
-          args: ${{ matrix.sdist && '--sdist' || ''}}  # --release
+          args: --release ${{ matrix.sdist && '--sdist' || ''}}
           maturin-version: ${{ env.MATURIN_VERSION }}
           rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
           manylinux: auto
