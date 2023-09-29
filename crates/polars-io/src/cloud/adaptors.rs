@@ -270,7 +270,10 @@ mod tests {
         let mut df = example_dataframe();
 
         let mut cloud_writer = get_runtime()
-            .block_on(CloudWriter::new_with_object_store(object_store, path))
+            .block_on(CloudWriter::new(
+                "file:///tmp/cloud_writer_example2.csv",
+                None,
+            ))
             .unwrap();
 
         CsvWriter::new(&mut cloud_writer)
