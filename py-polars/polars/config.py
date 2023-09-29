@@ -410,7 +410,7 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     def set_fmt_float(cls, fmt: FloatFmt | None = "mixed") -> type[Config]:
         """
-        Control how floating  point values are displayed.
+        Control how floating point values are displayed.
 
         Parameters
         ----------
@@ -484,7 +484,7 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         n : int
-            Number of characters to display.
+            Number of values to display.
 
         Examples
         --------
