@@ -82,6 +82,14 @@ macro_rules! try_delayed {
     };
 }
 
+#[cfg(any(feature = "parquet", feature = "parquet_async",))]
+fn prepare_schema(mut schema: Schema, row_count: Option<&RowCount>) -> SchemaRef {
+    if let Some(rc) = row_count {
+        let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+    }
+    Arc::new(schema)
+}
+
 impl LogicalPlanBuilder {
     pub fn anonymous_scan(
         function: Arc<dyn AnonymousScan>,
@@ -127,32 +135,39 @@ impl LogicalPlanBuilder {
         cloud_options: Option<CloudOptions>,
         use_statistics: bool,
         hive_partitioning: bool,
+        // used to prevent multiple cloud calls
+        known_schema: Option<SchemaRef>,
     ) -> PolarsResult<Self> {
         use polars_io::{is_cloud_url, SerReader as _};
 
         let path = path.into();
-        let (mut schema, num_rows) = if is_cloud_url(&path) {
+        let (schema, num_rows) = if is_cloud_url(&path) {
             #[cfg(not(feature = "cloud"))]
             panic!(
                 "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
             );
 
             #[cfg(feature = "cloud")]
-            {
+            if let Some(known_schema) = known_schema {
+                (known_schema, None)
+            } else {
                 let uri = path.to_string_lossy();
-                ParquetAsyncReader::file_info(&uri, cloud_options.as_ref())?
+                ParquetAsyncReader::file_info(&uri, cloud_options.as_ref()).map(
+                    |(schema, num_rows)| {
+                        (prepare_schema(schema, row_count.as_ref()), Some(num_rows))
+                    },
+                )?
             }
         } else {
             let file = polars_utils::open_file(&path)?;
             let mut reader = ParquetReader::new(file);
-            (reader.schema()?, reader.num_rows()?)
+            (
+                prepare_schema(reader.schema()?, row_count.as_ref()),
+                Some(reader.num_rows()?),
+            )
         };
 
-        if let Some(rc) = &row_count {
-            let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
-        }
-
-        let mut file_info = FileInfo::new(Arc::new(schema), (Some(num_rows), num_rows));
+        let mut file_info = FileInfo::new(schema, (num_rows, num_rows.unwrap_or(0)));
 
         file_info.set_hive_partitions(path.as_path());
 

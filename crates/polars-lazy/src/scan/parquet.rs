@@ -40,16 +40,22 @@ impl Default for ScanArgsParquet {
 struct LazyParquetReader {
     args: ScanArgsParquet,
     path: PathBuf,
+    known_schema: Option<SchemaRef>,
 }
 
 impl LazyParquetReader {
     fn new(path: PathBuf, args: ScanArgsParquet) -> Self {
-        Self { args, path }
+        Self {
+            args,
+            path,
+            known_schema: None,
+        }
     }
 }
 
 impl LazyFileListReader for LazyParquetReader {
-    fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
+    fn finish_no_glob(mut self) -> PolarsResult<LazyFrame> {
+        let known_schema = self.known_schema();
         let row_count = self.args.row_count;
         let path = self.path;
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(
@@ -63,6 +69,7 @@ impl LazyFileListReader for LazyParquetReader {
             self.args.cloud_options,
             self.args.use_statistics,
             self.args.hive_partitioning,
+            known_schema,
         )?
         .build()
         .into();
@@ -71,6 +78,7 @@ impl LazyFileListReader for LazyParquetReader {
         if let Some(row_count) = row_count {
             lf = lf.with_row_count(&row_count.name, Some(row_count.offset))
         }
+        self.known_schema = Some(lf.schema()?);
 
         lf.opt_state.file_caching = true;
         Ok(lf)
@@ -100,6 +108,13 @@ impl LazyFileListReader for LazyParquetReader {
 
     fn n_rows(&self) -> Option<usize> {
         self.args.n_rows
+    }
+
+    fn known_schema(&self) -> Option<SchemaRef> {
+        self.known_schema.clone()
+    }
+    fn set_known_schema(&mut self, known_schema: SchemaRef) {
+        self.known_schema = Some(known_schema);
     }
 
     fn row_count(&self) -> Option<&RowCount> {
