@@ -691,3 +691,22 @@ def test_empty_inputs_error() -> None:
         pl.ComputeError, match="expression: 'fold' didn't get any inputs"
     ):
         df.select(pl.sum_horizontal(pl.exclude("col1")))
+
+
+def test_sort_by_error() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1, 1, 1, 2, 2, 3, 3, 3],
+            "number": [1, 3, 2, 1, 2, 2, 1, 3],
+            "type": ["A", "B", "A", "B", "B", "A", "B", "C"],
+            "cost": [10, 25, 20, 25, 30, 30, 50, 100],
+        }
+    )
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="expressions in 'sort_by' produced a different number of groups",
+    ):
+        df.group_by("id", maintain_order=True).agg(
+            pl.col("cost").filter(pl.col("type") == "A").sort_by("number")
+        )
