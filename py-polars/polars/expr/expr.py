@@ -5061,19 +5061,9 @@ class Expr:
         lower_bound = self._from_pyexpr(parse_as_expression(lower_bound))
         upper_bound = self._from_pyexpr(parse_as_expression(upper_bound))
 
-        if closed == "none":
-            return (self > lower_bound) & (self < upper_bound)
-        elif closed == "both":
-            return (self >= lower_bound) & (self <= upper_bound)
-        elif closed == "right":
-            return (self > lower_bound) & (self <= upper_bound)
-        elif closed == "left":
-            return (self >= lower_bound) & (self < upper_bound)
-        else:
-            raise ValueError(
-                "`closed` must be one of {'left', 'right', 'both', 'none'},"
-                f" got {closed!r}"
-            )
+        return self._from_pyexpr(
+            self._pyexpr.is_between(lower_bound._pyexpr, upper_bound._pyexpr, closed)
+        )
 
     def hash(
         self,

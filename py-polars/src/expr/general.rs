@@ -74,6 +74,13 @@ impl PyExpr {
         self.clone().inner.lt(other.inner).into()
     }
 
+    fn is_between(&self, lower_bound: Self, upper_bound: Self, closed: &str) -> Self {
+        self.clone()
+            .inner
+            .is_between(lower_bound.inner, upper_bound.inner, closed)
+            .into()
+    }
+
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
         let mut writer: Vec<u8> = vec![];
