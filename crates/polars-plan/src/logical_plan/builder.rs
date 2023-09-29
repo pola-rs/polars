@@ -82,6 +82,7 @@ macro_rules! try_delayed {
     };
 }
 
+#[cfg(any(feature = "parquet", feature = "parquet_async",))]
 fn prepare_schema(mut schema: Schema, row_count: Option<&RowCount>) -> SchemaRef {
     if let Some(rc) = row_count {
         let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
