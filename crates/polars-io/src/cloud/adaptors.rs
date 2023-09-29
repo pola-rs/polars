@@ -240,8 +240,7 @@ mod tests {
         .unwrap()
     }
 
-    #[tokio::test]
-    async fn csv_to_local_objectstore_cloudwriter() {
+    fn csv_to_local_objectstore_cloudwriter() {
         use crate::csv::CsvWriter;
         use crate::prelude::SerWriter;
 
@@ -254,8 +253,8 @@ mod tests {
 
         let path: object_store::path::Path = "cloud_writer_example.csv".into();
 
-        let mut cloud_writer = CloudWriter::new_with_object_store(object_store, path)
-            .await
+        let mut cloud_writer = get_runtime()
+            .block_on(CloudWriter::new_with_object_store(object_store, path))
             .unwrap();
         CsvWriter::new(&mut cloud_writer)
             .finish(&mut df)
@@ -264,15 +263,14 @@ mod tests {
 
     // Skip this tests on Windows since it does not have a convenient /tmp/ location.
     #[cfg_attr(target_os = "windows", ignore)]
-    #[tokio::test]
     async fn cloudwriter_from_cloudlocation_test() {
         use crate::csv::CsvWriter;
         use crate::prelude::SerWriter;
 
         let mut df = example_dataframe();
 
-        let mut cloud_writer = CloudWriter::new("file:///tmp/cloud_writer_example2.csv", None)
-            .await
+        let mut cloud_writer = get_runtime()
+            .block_on(CloudWriter::new_with_object_store(object_store, path))
             .unwrap();
 
         CsvWriter::new(&mut cloud_writer)
