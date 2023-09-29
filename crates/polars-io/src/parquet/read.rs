@@ -336,7 +336,7 @@ impl ParquetAsyncReader {
 
         // batched reader deals with slice pushdown
         let reader = self.batched(usize::MAX).await?;
-        let mut iter = reader.iter_async(16);
+        let mut iter = reader.iter(16);
 
         let mut chunks = Vec::with_capacity(16);
         while let Some(result) = iter.next_().await {

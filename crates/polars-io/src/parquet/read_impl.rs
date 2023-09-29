@@ -562,18 +562,6 @@ impl BatchedParquetReader {
             batches_per_iter,
             inner: self,
             current_batch: vec![].into_iter(),
-            rt: Some(get_runtime()),
-        }
-    }
-
-    /// Turn the batched reader into an iterator.
-    #[cfg(feature = "async")]
-    pub fn iter_async(self, batches_per_iter: usize) -> BatchedParquetIter {
-        BatchedParquetIter {
-            batches_per_iter,
-            inner: self,
-            current_batch: vec![].into_iter(),
-            rt: None,
         }
     }
 }
@@ -583,7 +571,6 @@ pub struct BatchedParquetIter {
     batches_per_iter: usize,
     inner: BatchedParquetReader,
     current_batch: std::vec::IntoIter<DataFrame>,
-    rt: Option<tokio::runtime::Runtime>,
 }
 
 #[cfg(feature = "async")]
@@ -609,21 +596,6 @@ impl Iterator for BatchedParquetIter {
     type Item = PolarsResult<DataFrame>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.current_batch.next() {
-            Some(df) => Some(Ok(df)),
-            None => match self
-                .rt
-                .as_ref()
-                .unwrap()
-                .block_on(self.inner.next_batches(self.batches_per_iter))
-            {
-                Err(e) => Some(Err(e)),
-                Ok(opt_batch) => {
-                    let batch = opt_batch?;
-                    self.current_batch = batch.into_iter();
-                    self.current_batch.next().map(Ok)
-                },
-            },
-        }
+        get_runtime().block_on(self.next_())
     }
 }

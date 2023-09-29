@@ -27,7 +27,6 @@ pub struct ParquetSource {
     cloud_options: Option<CloudOptions>,
     file_info: FileInfo,
     verbose: bool,
-    rt: tokio::runtime::Runtime,
 }
 
 impl ParquetSource {
@@ -121,7 +120,6 @@ impl ParquetSource {
             cloud_options,
             file_info,
             verbose,
-            rt: get_runtime(),
         })
     }
 }
@@ -131,7 +129,7 @@ impl Source for ParquetSource {
         if self.batched_reader.is_none() {
             self.init_reader()?;
         }
-        let batches = self.rt.block_on(
+        let batches = get_runtime().block_on(
             self.batched_reader
                 .as_mut()
                 .unwrap()

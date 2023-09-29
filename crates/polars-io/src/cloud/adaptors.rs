@@ -240,6 +240,7 @@ mod tests {
         .unwrap()
     }
 
+    #[test]
     fn csv_to_local_objectstore_cloudwriter() {
         use crate::csv::CsvWriter;
         use crate::prelude::SerWriter;
@@ -263,7 +264,8 @@ mod tests {
 
     // Skip this tests on Windows since it does not have a convenient /tmp/ location.
     #[cfg_attr(target_os = "windows", ignore)]
-    async fn cloudwriter_from_cloudlocation_test() {
+    #[test]
+    fn cloudwriter_from_cloudlocation_test() {
         use crate::csv::CsvWriter;
         use crate::prelude::SerWriter;
 
