@@ -1,5 +1,4 @@
 use std::str::FromStr;
-use std::sync::Mutex;
 
 #[cfg(feature = "aws")]
 use object_store::aws::AmazonS3Builder;
@@ -17,20 +16,22 @@ pub use object_store::gcp::GoogleConfigKey;
 use object_store::ObjectStore;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use object_store::{BackoffConfig, RetryConfig};
+#[cfg(feature = "aws")]
 use once_cell::sync::Lazy;
 use polars_core::error::{PolarsError, PolarsResult};
 use polars_error::*;
+#[cfg(feature = "aws")]
 use polars_utils::cache::FastFixedCache;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "aws")]
 use smartstring::alias::String as SmartString;
 #[cfg(feature = "async")]
 use url::Url;
-use polars_core::config::verbose;
 
 #[cfg(feature = "aws")]
-static BUCKET_REGION: Lazy<Mutex<FastFixedCache<SmartString, SmartString>>> =
-    Lazy::new(|| Mutex::new(FastFixedCache::default()));
+static BUCKET_REGION: Lazy<tokio::sync::Mutex<FastFixedCache<SmartString, SmartString>>> =
+    Lazy::new(|| tokio::sync::Mutex::new(FastFixedCache::default()));
 
 /// The type of the config keys must satisfy the following requirements:
 /// 1. must be easily collected into a HashMap, the type required by the object_crate API.
@@ -144,7 +145,7 @@ impl CloudOptions {
                 .get_config_value(&AmazonS3ConfigKey::Region)
                 .is_none()
         {
-            let mut bucket_region = BUCKET_REGION.lock().unwrap();
+            let mut bucket_region = BUCKET_REGION.lock().await;
             let bucket = crate::cloud::CloudLocation::new(url)?.bucket;
 
             match bucket_region.get(bucket.as_str()) {
