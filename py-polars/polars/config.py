@@ -508,7 +508,7 @@ class Config(contextlib.ContextDecorator):
         >>> df
         shape: (1, 1)
         ┌────────────────────┐
-        │ eef                │
+        │ nums               │
         │ ---                │
         │ list[i64]          │
         ╞════════════════════╡
