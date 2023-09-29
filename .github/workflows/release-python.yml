@@ -115,7 +115,7 @@ jobs:
     needs: build-wheels
     environment:
       name: release-python
-      url: https://pypi.org/p/polars
+      url: https://pypi.org/project/polars
     runs-on: ubuntu-latest
     permissions:
       id-token: write
