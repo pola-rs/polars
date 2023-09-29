@@ -504,7 +504,7 @@ class Config(contextlib.ContextDecorator):
         ╞═════════════╡
         │ [1, 2, … 6] │
         └─────────────┘
-        >>> with pl.Config(fmt_table_list_len=10):
+        >>> with pl.Config(fmt_table_cell_list_len=10):
         ...     print(df)
         ...
         shape: (1, 1)
