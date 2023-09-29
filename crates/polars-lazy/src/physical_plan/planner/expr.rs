@@ -113,7 +113,7 @@ pub(crate) fn create_physical_expr(
             let phys_function =
                 create_physical_expr(function, Context::Aggregation, expr_arena, schema, state)?;
             let mut out_name = None;
-            let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
+            let mut apply_columns = aexpr_to_leaf_column_names(function, expr_arena);
             // sort and then dedup removes consecutive duplicates == all duplicates
             apply_columns.sort();
             apply_columns.dedup();

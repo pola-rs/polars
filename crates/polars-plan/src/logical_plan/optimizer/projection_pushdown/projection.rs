@@ -61,7 +61,7 @@ pub(super) fn process_projection(
                     if let AExpr::Alias(_, name) = ae {
                         if projected_names.remove(name) {
                             acc_projections.retain(|expr| {
-                                !aexpr_to_leaf_names(*expr, expr_arena).contains(name)
+                                !aexpr_to_leaf_column_names(*expr, expr_arena).contains(name)
                             });
                         }
                     }

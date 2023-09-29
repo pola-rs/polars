@@ -119,7 +119,7 @@ fn partitionable_gb(
 
                 #[cfg(feature = "object")]
                 {
-                    for name in aexpr_to_leaf_names(*agg, expr_arena) {
+                    for name in aexpr_to_leaf_column_names(*agg, expr_arena) {
                         let dtype = _input_schema.get(&name).unwrap();
 
                         if let DataType::Object(_) = dtype {

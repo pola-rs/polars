@@ -135,7 +135,7 @@ pub(super) fn process_asof_join(
             let mut add_local = if already_added_local_to_local_projected.is_empty() {
                 true
             } else {
-                let name = aexpr_to_leaf_name(proj, expr_arena);
+                let name = aexpr_to_leaf_column_name(proj, expr_arena);
                 !already_added_local_to_local_projected.contains(&name)
             };
 
@@ -273,7 +273,7 @@ pub(super) fn process_join(
             let mut add_local = if already_added_local_to_local_projected.is_empty() {
                 true
             } else {
-                let name = aexpr_to_leaf_name(proj, expr_arena);
+                let name = aexpr_to_leaf_column_name(proj, expr_arena);
                 !already_added_local_to_local_projected.contains(&name)
             };
 
@@ -363,7 +363,7 @@ fn process_projection(
     // this branch tries to pushdown the column without suffix
     {
         // Column name of the projection without any alias.
-        let leaf_column_name = aexpr_to_leaf_names(proj, expr_arena).pop().unwrap();
+        let leaf_column_name = aexpr_to_leaf_column_names(proj, expr_arena).pop().unwrap();
 
         let suffix = options.args.suffix();
         // If _right suffix exists we need to push a projection down without this
@@ -407,7 +407,7 @@ pub(super) fn process_alias(
     mut add_local: bool,
 ) -> bool {
     if let AExpr::Alias(expr, name) = expr_arena.get(proj).clone() {
-        for root_name in aexpr_to_leaf_names(expr, expr_arena) {
+        for root_name in aexpr_to_leaf_column_names(expr, expr_arena) {
             let node = expr_arena.add(AExpr::Column(root_name));
             let proj = expr_arena.add(AExpr::Alias(node, name.clone()));
             local_projection.push(proj)
@@ -448,7 +448,7 @@ fn resolve_join_suffixes(
     let schema_after_join = alp.schema(lp_arena);
 
     for proj in local_projection {
-        for name in aexpr_to_leaf_names(*proj, expr_arena) {
+        for name in aexpr_to_leaf_column_names(*proj, expr_arena) {
             if name.contains(suffix) && schema_after_join.get(&name).is_none() {
                 let new_name = &name.as_ref()[..name.len() - suffix.len()];
 

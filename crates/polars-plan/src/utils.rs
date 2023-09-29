@@ -346,6 +346,27 @@ pub fn expressions_to_schema(
         .collect()
 }
 
+pub fn aexpr_to_leaf_column_names_iter(
+    node: Node,
+    arena: &Arena<AExpr>,
+) -> impl Iterator<Item = Arc<str>> + '_ {
+    aexpr_to_column_nodes_iter(node, arena).map(|node| match arena.get(node) {
+        // expecting only columns here, wildcards and dtypes should already be replaced
+        AExpr::Column(name) => name.clone(),
+        e => {
+            panic!("{e:?} not expected")
+        },
+    })
+}
+
+pub fn aexpr_to_leaf_column_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<str>> {
+    aexpr_to_leaf_column_names_iter(node, arena).collect()
+}
+
+pub fn aexpr_to_leaf_column_name(node: Node, arena: &Arena<AExpr>) -> Arc<str> {
+    aexpr_to_leaf_column_names_iter(node, arena).next().unwrap()
+}
+
 pub fn aexpr_to_leaf_names_iter(
     node: Node,
     arena: &Arena<AExpr>,
@@ -357,11 +378,6 @@ pub fn aexpr_to_leaf_names_iter(
         _ => None,
     })
 }
-
-pub fn aexpr_to_leaf_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<str>> {
-    aexpr_to_leaf_names_iter(node, arena).collect()
-}
-
 pub fn aexpr_to_leaf_name(node: Node, arena: &Arena<AExpr>) -> Arc<str> {
     aexpr_to_leaf_names_iter(node, arena).next().unwrap()
 }

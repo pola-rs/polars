@@ -24,7 +24,7 @@ use crate::prelude::optimizer::projection_pushdown::projection::process_projecti
 use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
 use crate::utils::{
-    aexpr_assign_renamed_leaf, aexpr_to_column_nodes, aexpr_to_leaf_names, check_input_node,
+    aexpr_assign_renamed_leaf, aexpr_to_column_nodes, aexpr_to_leaf_column_names, check_input_node,
     expr_is_projected_upstream,
 };
 
@@ -45,7 +45,7 @@ fn get_scan_columns(
     if !acc_projections.is_empty() {
         let mut columns = Vec::with_capacity(acc_projections.len());
         for expr in acc_projections {
-            for name in aexpr_to_leaf_names(*expr, expr_arena) {
+            for name in aexpr_to_leaf_column_names(*expr, expr_arena) {
                 // we shouldn't project the row-count column, as that is generated
                 // in the scan
                 let push = match row_count {
@@ -86,7 +86,7 @@ fn split_acc_projections(
             .partition(|expr| check_input_node(*expr, down_schema, expr_arena));
         let mut names = init_set();
         for proj in &acc_projections {
-            for name in aexpr_to_leaf_names(*proj, expr_arena) {
+            for name in aexpr_to_leaf_column_names(*proj, expr_arena) {
                 names.insert(name);
             }
         }
@@ -132,7 +132,7 @@ fn update_scan_schema(
     let mut new_schema = Schema::with_capacity(acc_projections.len());
     let mut new_cols = Vec::with_capacity(acc_projections.len());
     for node in acc_projections.iter() {
-        for name in aexpr_to_leaf_names(*node, expr_arena) {
+        for name in aexpr_to_leaf_column_names(*node, expr_arena) {
             let item = schema.get_full(&name).ok_or_else(|| {
                 polars_err!(ComputeError: "column '{}' not available in schema {:?}", name, schema)
             })?;
@@ -218,7 +218,7 @@ impl ProjectionPushDown {
     ) -> (bool, bool) {
         let mut pushed_at_least_one = false;
         let mut already_projected = false;
-        let names = aexpr_to_leaf_names(proj, expr_arena);
+        let names = aexpr_to_leaf_column_names(proj, expr_arena);
         let root_projections = aexpr_to_column_nodes(proj, expr_arena);
 
         for (name, root_projection) in names.into_iter().zip(root_projections) {

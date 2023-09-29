@@ -248,7 +248,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 AExpr::Literal(LiteralValue::Boolean(false))
             ) =>
             {
-                let names = aexpr_to_leaf_names(*truthy, expr_arena);
+                let names = aexpr_to_leaf_column_names(*truthy, expr_arena);
                 let name = names.get(0).map(Arc::clone).unwrap_or_else(|| "".into());
                 Some(AExpr::Alias(*falsy, name))
             },

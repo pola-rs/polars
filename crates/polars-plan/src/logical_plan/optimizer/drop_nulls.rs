@@ -4,7 +4,7 @@ use super::*;
 use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::iterator::*;
-use crate::utils::aexpr_to_leaf_names;
+use crate::utils::aexpr_to_leaf_column_names;
 
 /// If we realize that a predicate drops nulls on a subset
 /// we replace it with an explicit df.drop_nulls call, as this
@@ -72,7 +72,7 @@ impl OptimizationRule for ReplaceDropNulls {
                     }
                 }
                 if not_null_count == column_count && binary_and_count < column_count {
-                    let subset = Arc::from(aexpr_to_leaf_names(*predicate, expr_arena));
+                    let subset = Arc::from(aexpr_to_leaf_column_names(*predicate, expr_arena));
 
                     Some(ALogicalPlan::MapFunction {
                         input: *input,
