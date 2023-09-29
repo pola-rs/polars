@@ -1,6 +1,8 @@
 name: Release Python
 
 on:
+  pull_request:
+  workflow_dispatch:
   push:
     tags:
       - py-*
@@ -9,14 +11,13 @@ env:
   RUST_TOOLCHAIN: nightly-2023-08-26
   PYTHON_VERSION: '3.8'
   MATURIN_VERSION: '1.2.3'
-  MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
 
 defaults:
   run:
     shell: bash
 
 jobs:
-  publish-wheels:
+  build-wheels:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -31,7 +32,7 @@ jobs:
             cpu: x86-64
           - os: macos-latest
             cpu: aarch64
-          - os: windows-32gb-ram
+          - os: windows-latest
             cpu: x86-64
           - os: ubuntu-latest
             cpu: x86-64
@@ -93,12 +94,58 @@ jobs:
         run: |
           echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
 
-      - name: Publish wheel
+      - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
-          command: publish
+          command: build
           target: ${{ steps.target.outputs.target }}
           working-directory: py-polars
-          args: --skip-existing ${{ !matrix.sdist && '--no-sdist' || ''}}
+          args: ${{ matrix.sdist && '--sdist' || ''}}  # --release
           maturin-version: ${{ env.MATURIN_VERSION }}
           rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
+          manylinux: auto
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: py-polars/target/wheels/*
+
+  publish-to-pypi:
+    environment:
+      name: release-python
+      url: https://pypi.org/p/polars
+    runs-on: ubuntu-latest
+    needs: build-wheels
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: wheels
+          path: wheels
+
+      - name: Separate wheels per package
+        run: |
+          mv wheels/polars-* wheels-polars/
+          mv wheels/polars_lts_cpu-* wheels-polars-lts-cpu/
+          mv wheels/polars_u64_idx* wheels-polars-u64-idx/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: wheels-polars
+          verbose: true
+
+      - name: Publish to PyPi - polars-lts-cpu
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: wheels-polars-lts-cpu
+          verbose: true
+
+      - name: Publish to PyPi - polars-u64-idx
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: wheels-polars-u64-idx
+          verbose: true
