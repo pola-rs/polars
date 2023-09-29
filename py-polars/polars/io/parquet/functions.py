@@ -239,12 +239,12 @@ def scan_parquet(
     --------
     >>> source = "s3://bucket/*.parquet"
     >>> pl.scan_parquet(source)  # doctest: +SKIP
+    Pass in storage options to connect to the cloud provider:
     >>> storage_options = {
     ...     "aws_access_key_id": "<secret>",
     ...     "aws_secret_access_key": "<secret>",
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
-
     If you get a missing region error then you can set the region in the storage options:
     >>> source = "s3://bucket/*.parquet"
     >>> storage_options = {
