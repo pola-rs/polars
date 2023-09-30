@@ -149,52 +149,6 @@ fn format_object_array(
     }
 }
 
-macro_rules! format_nullarray {
-    ($f:ident, $length:expr, $dtype:expr, $name:expr, $array_type:expr) => {{
-        write!(
-            $f,
-            "shape: ({},)\n{}: '{}' [{}]\n[\n",
-            fmt_uint(&$length),
-            $array_type,
-            $name,
-            $dtype
-        )?;
-        let limit: usize = {
-            let limit = std::env::var(FMT_MAX_ROWS)
-                .as_deref()
-                .unwrap_or("")
-                .parse()
-                .map_or(LIMIT, |n: i64| if n < 0 { $length } else { n as usize });
-            std::cmp::min(limit, $length.clone())
-        };
-        let write_fn = |v, f: &mut Formatter| -> fmt::Result {
-            write!(f, "\t{}\n", v)?;
-
-            Ok(())
-        };
-        let v = "null";
-        if (limit == 0 && $length > 0) || ($length > limit + 1) {
-            if limit > 0 {
-                for _i in 0..std::cmp::max((limit / 2), 1) {
-                    write_fn(v, $f)?;
-                }
-            }
-            write!($f, "\t…\n")?;
-            if limit > 1 {
-                for _i in ($length - (limit + 1) / 2)..$length {
-                    write_fn(v, $f)?;
-                }
-            }
-        } else {
-            for _i in 0..$length {
-                write_fn(v, $f)?;
-            }
-        }
-
-        write!($f, "]")
-    }};
-}
-
 impl<T> Debug for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -359,7 +313,7 @@ impl Debug for Series {
                 "Series"
             ),
             DataType::Null => {
-                format_nullarray!(f, self.len(), "nullarray", self.name(), "Series")
+                format_array!(f, self.null().unwrap(), "null", self.name(), "Series")
             },
             DataType::Binary => {
                 format_array!(f, self.binary().unwrap(), "binary", self.name(), "Series")
