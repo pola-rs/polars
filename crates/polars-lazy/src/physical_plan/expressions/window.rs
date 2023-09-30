@@ -321,7 +321,7 @@ impl WindowExpr {
         sorted_keys: bool,
         gb: &GroupBy,
     ) -> PolarsResult<MapStrategy> {
-        match (self.options.mapping, agg_state) {
+        match (self.options.mapping().unwrap(), agg_state) {
             // Explode
             // `(col("x").sum() * col("y")).list().over("groups").flatten()`
             (WindowMapping::Explode, _) => Ok(MapStrategy::Explode),
@@ -423,7 +423,7 @@ impl PhysicalExpr for WindowExpr {
         let explicit_list_agg = self.is_explicit_list_agg();
 
         // if we flatten this column we need to make sure the groups are sorted.
-        let mut sort_groups = matches!(self.options.mapping, WindowMapping::Explode) ||
+        let mut sort_groups = matches!(self.options.mapping().unwrap(), WindowMapping::Explode) ||
             // if not
             //      `col().over()`
             // and not

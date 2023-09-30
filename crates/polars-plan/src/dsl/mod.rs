@@ -936,7 +936,7 @@ impl Expr {
     pub fn over_with_options<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
         partition_by: E,
-        options: WindowOptions,
+        options: WindowMapping,
     ) -> Self {
         let partition_by = partition_by
             .as_ref()
@@ -946,7 +946,7 @@ impl Expr {
         Expr::Window {
             function: Box::new(self),
             partition_by,
-            options,
+            options: options.into(),
         }
     }
 
