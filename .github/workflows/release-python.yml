@@ -51,23 +51,26 @@ jobs:
           rm py-polars/README.md
           cp README.md py-polars/README.md
 
-      - name: Install GNU sed for macOS
-        if: runner.os == 'macOS' && (matrix.lts-cpu || matrix.u64-idx)
-        run: |
-          brew install gnu-sed
-          shopt -s expand_aliases
-          alias sed="gsed"
+      # - name: Install GNU sed for macOS
+      #   if: runner.os == 'macOS' && (matrix.lts-cpu || matrix.u64-idx)
+      #   run: |
+      #     brew install gnu-sed
+      #     shopt -s expand_aliases
+      #     alias sed="gsed"
+
+      - name: Install yq
+        if: matrix.lts-cpu || matrix.u64-idx
+        run: pip install yq
 
       - name: Update package name
         if: matrix.lts-cpu || matrix.u64-idx
         run: |
           NAME=${{ matrix.lts-cpu && 'polars-lts-cpu' || 'polars-u64-idx' }}
-          sed -i "s/name = \"polars\"/name = \"$NAME\"/" py-polars/pyproject.toml
+          tomlq -i -t ".project.name = \"$NAME\"" py-polars/pyproject.toml
 
       - name: Add bigidx feature
         if: matrix.u64-idx
-        # A brittle hack to insert the 'bigidx' feature
-        run: sed -i 's/"dynamic_group_by",/"dynamic_group_by",\n"bigidx",/' py-polars/Cargo.toml
+        run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
 
       - name: Set RUSTFLAGS for x86-64
         if: matrix.cpu == 'x86-64' && !matrix.lts-cpu
