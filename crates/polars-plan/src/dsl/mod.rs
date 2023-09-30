@@ -946,7 +946,6 @@ impl Expr {
         Expr::Window {
             function: Box::new(self),
             partition_by,
-            order_by: None,
             options,
         }
     }

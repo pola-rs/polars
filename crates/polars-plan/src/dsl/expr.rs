@@ -120,7 +120,6 @@ pub enum Expr {
         /// Also has the input. i.e. avg("foo")
         function: Box<Expr>,
         partition_by: Vec<Expr>,
-        order_by: Option<Box<Expr>>,
         options: WindowOptions,
     },
     Wildcard,
