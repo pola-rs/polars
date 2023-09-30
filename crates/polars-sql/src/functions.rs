@@ -837,11 +837,14 @@ impl SqlFunctionVisitor<'_> {
         }
     }
 
-    fn visit_variadic(&self, f: impl Fn(&[Expr]) -> Expr) -> PolarsResult<Expr> {
+    fn visit_variadic(&mut self, f: impl Fn(&[Expr]) -> Expr) -> PolarsResult<Expr> {
         self.try_visit_variadic(|e| Ok(f(e)))
     }
 
-    fn try_visit_variadic(&self, f: impl Fn(&[Expr]) -> PolarsResult<Expr>) -> PolarsResult<Expr> {
+    fn try_visit_variadic(
+        &mut self,
+        f: impl Fn(&[Expr]) -> PolarsResult<Expr>,
+    ) -> PolarsResult<Expr> {
         let function = self.func;
         let args = extract_args(function);
         let mut expr_args = vec![];

@@ -64,12 +64,6 @@ impl AsRef<Expr> for AggExpr {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SubLogicalPlan(pub LogicalPlan);
 
-impl PartialEq for SubLogicalPlan {
-    fn eq(&self, _other: &SubLogicalPlan) -> bool {
-        false
-    }
-}
-
 impl From<LogicalPlan> for SubLogicalPlan {
     fn from(item: LogicalPlan) -> Self {
         SubLogicalPlan(item)
@@ -169,7 +163,7 @@ pub enum Expr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
-    SubPlan(Box<SubLogicalPlan>, Vec<String>),
+    SubPlan(SpecialEq<Arc<SubLogicalPlan>>, Vec<String>),
     /// Expressions in this node should only be expanding
     /// e.g.
     /// `Expr::Columns`
