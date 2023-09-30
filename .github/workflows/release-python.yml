@@ -51,13 +51,6 @@ jobs:
           rm py-polars/README.md
           cp README.md py-polars/README.md
 
-      # - name: Install GNU sed for macOS
-      #   if: runner.os == 'macOS' && (matrix.lts-cpu || matrix.u64-idx)
-      #   run: |
-      #     brew install gnu-sed
-      #     shopt -s expand_aliases
-      #     alias sed="gsed"
-
       - name: Install yq
         if: matrix.lts-cpu || matrix.u64-idx
         run: pip install yq
