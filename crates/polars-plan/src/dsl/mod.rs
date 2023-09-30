@@ -165,27 +165,22 @@ impl Expr {
         let lower_bound_expr = lower_bound.into();
         let upper_bound_expr = upper_bound.into();
 
-        binary_expr(
-            binary_expr(
-                lower_bound_expr,
-                match closed {
-                    "none" | "right" => Operator::Lt,
-                    "both" | "left" => Operator::LtEq,
-                    _ => panic!("Invalid value for 'closed' parameter"),
-                },
-                self.clone(),
-            ),
-            Operator::And,
-            binary_expr(
-                self,
-                match closed {
-                    "none" | "left" => Operator::Lt,
-                    "both" | "right" => Operator::LtEq,
-                    _ => panic!("Invalid value for 'closed' parameter"),
-                },
-                upper_bound_expr,
-            ),
-        )
+        let left_op = match closed {
+            "none" | "right" => Operator::Gt,
+            "both" | "left" => Operator::GtEq,
+            _ => panic!("Invalid value for 'closed' parameter"),
+        };
+
+        let right_op = match closed {
+            "none" | "left" => Operator::Lt,
+            "both" | "right" => Operator::LtEq,
+            _ => panic!("Invalid value for 'closed' parameter"),
+        };
+
+        let left_expr = binary_expr(self.clone(), left_op, lower_bound_expr);
+        let right_expr = binary_expr(self, right_op, upper_bound_expr);
+
+        binary_expr(left_expr, Operator::And, right_expr)
     }
 
     /// Negate `Expr`.

@@ -5058,11 +5058,11 @@ class Expr:
         └─────┴────────────┘
 
         """
-        lower_bound = self._from_pyexpr(parse_as_expression(lower_bound))
-        upper_bound = self._from_pyexpr(parse_as_expression(upper_bound))
+        lower_bound = parse_as_expression(lower_bound)
+        upper_bound = parse_as_expression(upper_bound)
 
         return self._from_pyexpr(
-            self._pyexpr.is_between(lower_bound._pyexpr, upper_bound._pyexpr, closed)
+            self._pyexpr.is_between(lower_bound, upper_bound, closed)
         )
 
     def hash(
