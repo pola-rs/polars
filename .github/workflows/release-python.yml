@@ -20,26 +20,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            cpu: x86-64
-            sdist: true
-          - os: ubuntu-latest
-            cpu: aarch64
-          - os: macos-latest
-            cpu: x86-64
-          - os: macos-latest
-            cpu: aarch64
+        os: [ubuntu-latest, macos-latest, windows-32gb-ram]
+        cpu: [x86-64, aarch64]
+        lts-cpu: [false, true]
+        u64-idx: [false, true]
+        exclude:
           - os: windows-32gb-ram
-            cpu: x86-64
-          - os: ubuntu-latest
-            cpu: x86-64
-            lts-cpu: true
-            sdist: true
-          - os: ubuntu-latest
-            cpu: x86-64
+            cpu: aarch64
+          - lts-cpu: true
             u64-idx: true
-            sdist: true
 
     steps:
       - uses: actions/checkout@v3
@@ -61,16 +50,19 @@ jobs:
           rm py-polars/README.md
           cp README.md py-polars/README.md
 
-      - name: Prepare lts-cpu
-        if: matrix.lts-cpu
-        run: sed -i 's/name = "polars"/name = "polars-lts-cpu"/' py-polars/pyproject.toml
+      - name: Install yq
+        if: matrix.lts-cpu || matrix.u64-idx
+        run: pip install yq
 
-      - name: Prepare u64-idx
-        if: matrix.u64-idx
+      - name: Update package name
+        if: matrix.lts-cpu || matrix.u64-idx
         run: |
-          sed -i 's/name = "polars"/name = "polars-u64-idx"/' py-polars/pyproject.toml
-          # A brittle hack to insert the 'bigidx' feature
-          sed -i 's/"dynamic_group_by",/"dynamic_group_by",\n"bigidx",/' py-polars/Cargo.toml
+          NAME=${{ matrix.lts-cpu && 'polars-lts-cpu' || 'polars-u64-idx' }}
+          tomlq -i -t ".project.name = \"$NAME\"" py-polars/pyproject.toml
+
+      - name: Add bigidx feature
+        if: matrix.u64-idx
+        run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
 
       - name: Set RUSTFLAGS for x86-64
         if: matrix.cpu == 'x86-64' && !matrix.lts-cpu
@@ -98,7 +90,7 @@ jobs:
           command: build
           target: ${{ steps.target.outputs.target }}
           working-directory: py-polars
-          args: --release ${{ matrix.sdist && '--sdist' || ''}}
+          args: --release ${{ matrix.os == 'ubuntu-latest' && matrix.cpu == 'x86-64' && '--sdist' || ''}}
           maturin-version: ${{ env.MATURIN_VERSION }}
           rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
           manylinux: auto
