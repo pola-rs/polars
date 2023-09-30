@@ -244,12 +244,6 @@ impl Debug for LogicalPlan {
     }
 }
 
-impl Debug for SubLogicalPlan {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.0._format(f, 0)
-    }
-}
-
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Debug::fmt(self, f)

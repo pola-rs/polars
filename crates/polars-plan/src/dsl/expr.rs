@@ -60,16 +60,6 @@ impl AsRef<Expr> for AggExpr {
     }
 }
 
-#[derive(Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct SubLogicalPlan(pub LogicalPlan);
-
-impl From<LogicalPlan> for SubLogicalPlan {
-    fn from(item: LogicalPlan) -> Self {
-        SubLogicalPlan(item)
-    }
-}
-
 /// Expressions that can be used in various contexts. Queries consist of multiple expressions. When using the polars
 /// lazy API, don't construct an `Expr` directly; instead, create one using the functions in the `polars_lazy::dsl`
 /// module. See that module's docs for more info.
@@ -163,7 +153,7 @@ pub enum Expr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
-    SubPlan(SpecialEq<Arc<SubLogicalPlan>>, Vec<String>),
+    SubPlan(SpecialEq<Arc<LogicalPlan>>, Vec<String>),
     /// Expressions in this node should only be expanding
     /// e.g.
     /// `Expr::Columns`
