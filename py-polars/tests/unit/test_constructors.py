@@ -611,7 +611,7 @@ def test_null_array_print_format() -> None:
     pa_tbl_null = pa.table({"a": [None, None]})
     df_null = pl.from_arrow(pa_tbl_null)
     assert df_null.shape == (2, 1)
-    assert df_null.dtypes == pl.Null  # type: ignore[union-attr]
+    assert df_null.dtypes == [pl.Null]  # type: ignore[union-attr]
     assert df_null.rows() == [(None,), (None,)]  # type: ignore[union-attr]
 
     assert (
