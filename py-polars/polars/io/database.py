@@ -47,6 +47,11 @@ _ARROW_DRIVER_REGISTRY_: dict[str, _DriverProperties_] = {
         "fetch_batches": None,
         "exact_batch_size": None,
     },
+    "arrow_odbc": {
+        "fetch_all": "fetchall",
+        "fetch_batches": "fetchmany",
+        "exact_batch_size": True,
+    },
     "databricks": {
         "fetch_all": "fetchall_arrow",
         "fetch_batches": "fetchmany_arrow",
@@ -84,6 +89,35 @@ _INVALID_QUERY_TYPES = {
 }
 
 
+class ODBCCursorProxy:
+    """Proxy cursor for `arrow-odbc` connections."""
+
+    def __init__(self, connection_string: str) -> None:
+        self.connection_string = connection_string
+        self.query: str | None = None
+
+    def close(self) -> None:
+        """Close the cursor (n/a)."""
+
+    def execute(self, query: str) -> None:
+        """Execute a query (n/a)."""
+        self.query = query
+
+    def fetchmany(
+        self, batch_size: int = 10_000
+    ) -> Iterable[pa.RecordBatch | pa.Table]:
+        """Fetch results in batches."""
+        from arrow_odbc import read_arrow_batches_from_odbc
+
+        yield from read_arrow_batches_from_odbc(
+            query=self.query,
+            batch_size=batch_size,
+            connection_string=self.connection_string,
+        )
+
+    fetchall = fetchmany
+
+
 class ConnectionExecutor:
     """Abstraction for querying databases with user-supplied connection objects."""
 
@@ -93,7 +127,11 @@ class ConnectionExecutor:
     acquired_cursor: bool = False
 
     def __init__(self, connection: ConnectionOrCursor) -> None:
-        self.driver_name = type(connection).__module__.split(".", 1)[0].lower()
+        self.driver_name = (
+            "arrow_odbc"
+            if isinstance(connection, ODBCCursorProxy)
+            else type(connection).__module__.split(".", 1)[0].lower()
+        )
         self.cursor = self._normalise_cursor(connection)
         self.result: Any = None
 
@@ -268,7 +306,7 @@ class ConnectionExecutor:
 @deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
 def read_database(  # noqa: D417
     query: str | Selectable,
-    connection: ConnectionOrCursor,
+    connection: ConnectionOrCursor | str,
     *,
     batch_size: int | None = None,
     schema_overrides: SchemaDict | None = None,
@@ -284,7 +322,8 @@ def read_database(  # noqa: D417
         be a suitable "Selectable", otherwise it is expected to be a string).
     connection
         An instantiated connection (or cursor/client object) that the query can be
-        executed against.
+        executed against. Can also use a valid ODBC connection string if you have
+        installed the ``arrow-odbc`` driver/package.
     batch_size
         Enable batched data fetching (internally) instead of collecting all rows at
         once; this can be helpful for minimising the peak memory used for very large
@@ -340,22 +379,41 @@ def read_database(  # noqa: D417
     ...     schema_overrides={"normalised_score": pl.UInt8},
     ... )  # doctest: +SKIP
 
+    Instantiate a DataFrame using an ODBC connection string (requires ``arrow-odbc``):
+
+    >>> df = pl.read_database(
+    ...     "SELECT * FROM test_data",
+    ...     "Driver={PostgreSQL};Server=localhost;Port=5432;Database=test;Uid=usr;Pwd=",
+    ... )
+
     """
     if isinstance(connection, str):
-        issue_deprecation_warning(
-            message="Use of a string URI with 'read_database' is deprecated; use 'read_database_uri' instead",
-            version="0.19.0",
-        )
-        if not isinstance(query, (list, str)):
-            raise TypeError(
-                f"`read_database_uri` expects one or more string queries; found {type(query)}"
+        if re.sub(r"\s", "", connection[:20]).lower().startswith("driver="):
+            try:
+                import arrow_odbc  # noqa: F401
+            except ModuleNotFoundError:
+                raise ModuleNotFoundError(
+                    "use of an ODBC connection string requires the `arrow-odbc` package."
+                    "\n\nPlease run `pip install arrow-odbc`."
+                ) from None
+
+            connection = ODBCCursorProxy(connection)
+        else:
+            issue_deprecation_warning(
+                message="Use of a string URI with 'read_database' is deprecated; use 'read_database_uri' instead",
+                version="0.19.0",
             )
-        return read_database_uri(
-            query, uri=connection, schema_overrides=schema_overrides, **kwargs
-        )
-    elif kwargs:
+            if not isinstance(query, (list, str)):
+                raise TypeError(
+                    f"`read_database_uri` expects one or more string queries; found {type(query)}"
+                )
+            return read_database_uri(
+                query, uri=connection, schema_overrides=schema_overrides, **kwargs
+            )
+
+    if kwargs:
         raise ValueError(
-            f"`read_database` **kwargs only exist for deprecating string URIs: found {kwargs!r}"
+            f"`read_database` **kwargs only exist for passthrough to `read_database_uri`: found {kwargs!r}"
         )
 
     with ConnectionExecutor(connection) as cx:
