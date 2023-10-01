@@ -183,11 +183,13 @@ class ConnectionExecutor:
                         schema_overrides=schema_overrides,
                     )
         except Exception as err:
-            if (
-                self.driver_name != "turbodbc"
-                # eg: turbodbc compiled without arrow support...
-                or "does not support Apache Arrow" not in str(err)
-            ):
+            # eg: valid turbodbc/snowflake connection, but no arrow support
+            # available in the underlying driver or this connection
+            arrow_not_supported = (
+                "does not support Apache Arrow",
+                "Apache Arrow format is not supported",
+            )
+            if not any(e in str(err) for e in arrow_not_supported):
                 raise
 
         return None
