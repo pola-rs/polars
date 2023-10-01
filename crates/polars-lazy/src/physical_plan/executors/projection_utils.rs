@@ -37,6 +37,7 @@ fn execute_projection_cached_window_fns(
     // String: partition_name,
     // u32: index,
     let mut windows: PlHashMap<SmartString, Vec<IdAndExpression>> = PlHashMap::default();
+    #[cfg(feature = "dynamic_group_by")]
     let mut rolling: PlHashMap<&RollingGroupOptions, Vec<IdAndExpression>> = PlHashMap::default();
     let mut other = Vec::with_capacity(exprs.len());
 
@@ -58,6 +59,7 @@ fn execute_projection_cached_window_fns(
                         let group_by = format_smartstring!("{:?}", partition_by.as_slice());
                         windows.entry(group_by).or_insert_with(Vec::new)
                     },
+                    #[cfg(feature = "dynamic_group_by")]
                     WindowType::Rolling(options) => rolling.entry(options).or_insert_with(Vec::new),
                 };
                 entry.push((index, phys.clone()));
@@ -80,6 +82,7 @@ fn execute_projection_cached_window_fns(
     // Run partitioned rolling expressions.
     // Per partition we run in parallel. We compute the groups before and store them once per partition.
     // The rolling expression knows how to fetch the groups.
+    #[cfg(feature = "dynamic_group_by")]
     for (options, partition) in rolling {
         // clear the cache for every partitioned group
         let state = state.split();

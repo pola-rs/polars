@@ -950,6 +950,7 @@ impl Expr {
         }
     }
 
+    #[cfg(feature = "dynamic_group_by")]
     pub fn rolling(self, options: RollingGroupOptions) -> Self {
         Expr::Window {
             function: Box::new(self),

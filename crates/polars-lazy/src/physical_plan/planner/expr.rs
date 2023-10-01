@@ -151,6 +151,7 @@ pub(crate) fn create_physical_expr(
                         expr,
                     }))
                 },
+                #[cfg(feature = "dynamic_group_by")]
                 WindowType::Rolling(options) => Ok(Arc::new(RollingExpr {
                     function: function_expr,
                     phys_function,

@@ -1,4 +1,5 @@
 use polars_ops::prelude::{JoinArgs, JoinType};
+#[cfg(feature = "dynamic_group_by")]
 use polars_time::RollingGroupOptions;
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
