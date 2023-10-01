@@ -46,7 +46,7 @@ gevent
 # TOOLING
 # -------
 
-hypothesis==6.82.6
+hypothesis==6.87.1
 maturin==1.2.3
 patchelf; platform_system == 'Linux'  # Extra dependency for maturin, only for Linux
 pytest==7.4.0
