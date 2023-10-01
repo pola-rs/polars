@@ -2366,18 +2366,18 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
-        >>> df.select(pl.col("foo").shift(1))
-        shape: (4, 1)
-        ┌──────┐
-        │ foo  │
-        │ ---  │
-        │ i64  │
-        ╞══════╡
-        │ null │
-        │ 1    │
-        │ 2    │
-        │ 3    │
-        └──────┘
+        >>> df.with_columns(foo_shifted=pl.col("foo").shift(1))
+        shape: (4, 2)
+        ┌─────┬─────────────┐
+        │ foo ┆ foo_shifted │
+        │ --- ┆ ---         │
+        │ i64 ┆ i64         │
+        ╞═════╪═════════════╡
+        │ 1   ┆ null        │
+        │ 2   ┆ 1           │
+        │ 3   ┆ 2           │
+        │ 4   ┆ 3           │
+        └─────┴─────────────┘
 
         """
         return self._from_pyexpr(self._pyexpr.shift(periods))
@@ -2401,18 +2401,18 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
-        >>> df.select(pl.col("foo").shift_and_fill("a", periods=1))
-        shape: (4, 1)
-        ┌─────┐
-        │ foo │
-        │ --- │
-        │ str │
-        ╞═════╡
-        │ a   │
-        │ 1   │
-        │ 2   │
-        │ 3   │
-        └─────┘
+        >>> df.with_columns(foo_shifted=pl.col("foo").shift_and_fill("a", periods=1))
+        shape: (4, 2)
+        ┌─────┬─────────────┐
+        │ foo ┆ foo_shifted │
+        │ --- ┆ ---         │
+        │ i64 ┆ str         │
+        ╞═════╪═════════════╡
+        │ 1   ┆ a           │
+        │ 2   ┆ 1           │
+        │ 3   ┆ 2           │
+        │ 4   ┆ 3           │
+        └─────┴─────────────┘
 
         """
         fill_value = parse_as_expression(fill_value, str_as_lit=True)
