@@ -47,7 +47,7 @@ _ARROW_DRIVER_REGISTRY_: dict[str, _DriverProperties_] = {
         "fetch_batches": None,
         "exact_batch_size": None,
     },
-    "arrow_odbc": {
+    "arrow_odbc_proxy": {
         "fetch_all": "fetchall",
         "fetch_batches": "fetchmany",
         "exact_batch_size": True,
@@ -90,17 +90,17 @@ _INVALID_QUERY_TYPES = {
 
 
 class ODBCCursorProxy:
-    """Proxy cursor for `arrow-odbc` connections."""
+    """Cursor proxy for ODBC connections (requires `arrow-odbc`)."""
 
     def __init__(self, connection_string: str) -> None:
         self.connection_string = connection_string
         self.query: str | None = None
 
     def close(self) -> None:
-        """Close the cursor (n/a)."""
+        """Close the cursor (n/a: nothing to close)."""
 
     def execute(self, query: str) -> None:
-        """Execute a query (n/a)."""
+        """Execute a query (n/a: just store query for the fetch* methods)."""
         self.query = query
 
     def fetchmany(
@@ -128,7 +128,7 @@ class ConnectionExecutor:
 
     def __init__(self, connection: ConnectionOrCursor) -> None:
         self.driver_name = (
-            "arrow_odbc"
+            "arrow_odbc_proxy"
             if isinstance(connection, ODBCCursorProxy)
             else type(connection).__module__.split(".", 1)[0].lower()
         )
@@ -322,8 +322,8 @@ def read_database(  # noqa: D417
         be a suitable "Selectable", otherwise it is expected to be a string).
     connection
         An instantiated connection (or cursor/client object) that the query can be
-        executed against. Can also use a valid ODBC connection string if you have
-        installed the ``arrow-odbc`` driver/package.
+        executed against. Can also pass a valid ODBC connection string here, if you
+        have installed the ``arrow-odbc`` driver/package.
     batch_size
         Enable batched data fetching (internally) instead of collecting all rows at
         once; this can be helpful for minimising the peak memory used for very large
@@ -382,11 +382,11 @@ def read_database(  # noqa: D417
     Instantiate a DataFrame using an ODBC connection string (requires ``arrow-odbc``):
 
     >>> df = pl.read_database(
-    ...     "SELECT * FROM test_data",
-    ...     "Driver={PostgreSQL};Server=localhost;Port=5432;Database=test;Uid=usr;Pwd=",
-    ... )
+    ...     query="SELECT * FROM test_data",
+    ...     connection="Driver={PostgreSQL};Server=localhost;Port=5432;Database=test;Uid=usr;Pwd=",
+    ... )  # doctest: +SKIP
 
-    """
+    """  # noqa: W505
     if isinstance(connection, str):
         if re.sub(r"\s", "", connection[:20]).lower().startswith("driver="):
             try:
