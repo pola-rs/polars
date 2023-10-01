@@ -63,7 +63,7 @@ impl Default for JoinOptions {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum WindowOptions {
+pub enum WindowType {
     /// Explode the aggregated list and just do a hstack instead of a join
     /// this requires the groups to be sorted to make any sense
     Over(WindowMapping),
@@ -71,22 +71,13 @@ pub enum WindowOptions {
     Rolling(RollingGroupOptions),
 }
 
-impl WindowOptions {
-    pub fn mapping(&self) -> Option<&WindowMapping> {
-        match self {
-            Self::Over(mapping) => Some(mapping),
-            _ => None,
-        }
-    }
-}
-
-impl From<WindowMapping> for WindowOptions {
+impl From<WindowMapping> for WindowType {
     fn from(value: WindowMapping) -> Self {
         Self::Over(value)
     }
 }
 
-impl Default for WindowOptions {
+impl Default for WindowType {
     fn default() -> Self {
         Self::Over(WindowMapping::default())
     }

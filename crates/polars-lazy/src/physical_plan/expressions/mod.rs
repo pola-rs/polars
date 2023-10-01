@@ -8,6 +8,8 @@ mod count;
 mod filter;
 mod group_iter;
 mod literal;
+#[cfg(feature = "dynamic_group_by")]
+mod rolling;
 mod slice;
 mod sort;
 mod sortby;
