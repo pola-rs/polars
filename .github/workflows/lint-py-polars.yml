@@ -30,7 +30,7 @@ jobs:
         working-directory: py-polars
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Rust
         run: rustup component add rustfmt clippy
