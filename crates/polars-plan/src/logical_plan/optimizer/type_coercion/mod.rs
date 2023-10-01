@@ -367,19 +367,15 @@ impl OptimizationRule for TypeCoercionRule {
                     // can't check for more granular time_unit in less-granular time_unit data,   
                     // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
                     (DataType::Datetime(lhs_unit, _), DataType::Datetime(rhs_unit, _)) => {
-                        match (lhs_unit, rhs_unit) {
-                            (TimeUnit::Nanoseconds, _) => return Ok(None),
-                            (TimeUnit::Microseconds, TimeUnit::Microseconds | TimeUnit::Milliseconds) => return Ok(None),
-                            (TimeUnit::Milliseconds, TimeUnit::Milliseconds) => return Ok(None),
-                            _ => polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Datetime data", &rhs_unit, &lhs_unit) 
+                        if lhs_unit <= rhs_unit { return Ok(None) }
+                        else {
+                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Datetime data", &rhs_unit, &lhs_unit) 
                         }
                     },
                     (DataType::Duration(lhs_unit), DataType::Duration(rhs_unit)) => {
-                        match (lhs_unit, rhs_unit) {
-                            (TimeUnit::Nanoseconds, _) => return Ok(None),
-                            (TimeUnit::Microseconds, TimeUnit::Microseconds | TimeUnit::Milliseconds) => return Ok(None),
-                            (TimeUnit::Milliseconds, TimeUnit::Milliseconds) => return Ok(None),
-                            _ => polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit) 
+                        if lhs_unit <= rhs_unit { return Ok(None) }
+                        else {
+                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit) 
                         }
                     },
                     // don't attempt to cast between obviously mismatched types; 
