@@ -2408,9 +2408,9 @@ dependencies = [
 
 [[package]]
 name = "simd-json"
-version = "0.10.7"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80ea1dfc2c400965867fc4ddd6f502572be2de2074b39f90984ed15fbdbdd8eb"
+checksum = "474b451aaac1828ed12f6454a80fe58b940ae2998d10389d41533940a6f641bf"
 dependencies = [
  "ahash",
  "getrandom",
