@@ -554,7 +554,7 @@ impl PyExpr {
             .collect::<Vec<Expr>>();
         self.clone()
             .inner
-            .over_with_options(partition_by, WindowType { mapping: mapping.0 })
+            .over_with_options(partition_by,  mapping.0)
             .into()
     }
 

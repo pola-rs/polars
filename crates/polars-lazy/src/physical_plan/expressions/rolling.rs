@@ -17,10 +17,15 @@ pub(crate) struct RollingExpr {
 
 impl PhysicalExpr for RollingExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
-        let (_time_key, _keys, groups) = df.group_by_rolling(vec![], &self.options)?;
+        let groups_map = state.group_tuples.read().unwrap();
+        // Groups must be set by expression runner.
+        let groups = groups_map
+            .get(self.options.index_column.as_str())
+            .expect("impl error");
+
         let agg = self
             .phys_function
-            .evaluate_on_groups(df, &groups, state)?
+            .evaluate_on_groups(df, groups, state)?
             .finalize();
         polars_ensure!(agg.len() == groups.len(), agg_len = agg.len(), groups.len());
         Ok(agg)
