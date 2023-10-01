@@ -40,6 +40,25 @@ def test_union_duplicates() -> None:
     )
 
 
+def test_cse_with_struct_expr_11116() -> None:
+    df = pl.DataFrame([{"s": {"a": 1, "b": 4}, "c": 3}]).lazy()
+    out = df.with_columns(
+        pl.col("s").struct.field("a").alias("s_a"),
+        pl.col("s").struct.field("b").alias("s_b"),
+        (
+            (pl.col("s").struct.field("a") <= pl.col("c"))
+            & (pl.col("s").struct.field("b") > pl.col("c"))
+        ).alias("c_between_a_and_b"),
+    ).collect(comm_subexpr_elim=True)
+    assert out.to_dict(False) == {
+        "s": [{"a": 1, "b": 4}],
+        "c": [3],
+        "s_a": [1],
+        "s_b": [4],
+        "c_between_a_and_b": [True],
+    }
+
+
 def test_cse_schema_6081() -> None:
     df = pl.DataFrame(
         data=[

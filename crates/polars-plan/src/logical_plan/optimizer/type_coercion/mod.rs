@@ -331,6 +331,7 @@ impl OptimizationRule for TypeCoercionRule {
                 op,
                 right: node_right,
             } => return process_binary(expr_arena, lp_arena, lp_node, node_left, op, node_right),
+
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 function: FunctionExpr::Boolean(BooleanFunction::IsIn),
@@ -356,30 +357,65 @@ impl OptimizationRule for TypeCoercionRule {
                         AExpr::Cast {
                             expr: other_node,
                             data_type: DataType::Categorical(None),
-                            // does not matter
                             strict: false,
                         }
                     },
-                    (dt, DataType::Utf8) => {
-                        polars_bail!(ComputeError: "cannot compare {:?} to {:?} type in 'is_in' operation", dt, type_other)
+                    #[cfg(feature = "dtype-decimal")]
+                    (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
+                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
                     },
-                    (DataType::List(_), _) | (_, DataType::List(_)) => return Ok(None),
+                    // can't check for more granular time_unit in less-granular time_unit data,   
+                    // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
+                    (DataType::Datetime(lhs_unit, _), DataType::Datetime(rhs_unit, _)) => {
+                        if lhs_unit <= rhs_unit { return Ok(None) }
+                        else {
+                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Datetime data", &rhs_unit, &lhs_unit) 
+                        }
+                    },
+                    (DataType::Duration(lhs_unit), DataType::Duration(rhs_unit)) => {
+                        if lhs_unit <= rhs_unit { return Ok(None) }
+                        else {
+                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit) 
+                        }
+                    },
+                    // don't attempt to cast between obviously mismatched types; 
+                    // we should error early/explicitly on invalid comparisons
+                    (
+                        _,
+                        | DataType::Datetime(_, _)
+                        | DataType::Duration(_)
+                        | DataType::Date
+                        | DataType::Time
+                        | DataType::Boolean
+                        | DataType::Binary
+                        | DataType::Utf8,
+                    )
+                    | (
+                        | DataType::Datetime(_, _)
+                        | DataType::Duration(_)
+                        | DataType::Date
+                        | DataType::Time
+                        | DataType::Boolean
+                        | DataType::Binary
+                        | DataType::Utf8,
+                        _,
+                    ) => {
+                        match type_other {
+                            // all-null can represent anything (and/or empty list), so cast to target dtype
+                            DataType::Null => AExpr::Cast {expr: other_node, data_type: type_left, strict: false},
+                            _ => polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
+                        }
+                    },
                     #[cfg(feature = "dtype-struct")]
                     (DataType::Struct(_), _) | (_, DataType::Struct(_)) => return Ok(None),
-                    // if right is another type, we cast it to left
-                    // we do not use super-type as an `is_in` operation should not
-                    // cast the whole column implicitly.
+                    (DataType::List(_), _) | (_, DataType::List(_)) => return Ok(None),
+                    // if rhs is another type, we cast it to lhs (we do not use supertype
+                    // as `is_in` operation should not implicitly cast the whole column)
                     (a, b)
-                        if a != b
-                        // For integer/ float comparison we let them use supertypes.
-                        && !(a.is_integer() && b.is_float()) =>
+                        // for integer/float comparison we let them use supertypes.
+                        if !(a.is_integer() && b.is_float()) =>
                     {
-                        AExpr::Cast {
-                            expr: other_node,
-                            data_type: type_left,
-                            // does not matter
-                            strict: false,
-                        }
+                        AExpr::Cast {expr: other_node, data_type: type_left, strict: false }
                     },
                     // do nothing
                     _ => return Ok(None),
@@ -519,28 +555,56 @@ fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
     }
 }
 
-// TODO: Fix this test and re-enable it (currently does not compile)
-// #[cfg(test)]
-// #[cfg(feature = "dtype-categorical")]
-// mod test {
-//     use polars_core::prelude::*;
+#[cfg(test)]
+#[cfg(feature = "dtype-categorical")]
+mod test {
+    use polars_core::prelude::*;
 
-//     use super::*;
-//     use crate::prelude::*;
+    use super::*;
 
-//     #[test]
-//     fn test_categorical_utf8() {
-//         let mut rules: Vec<Box<dyn OptimizationRule>> = vec![Box::new(TypeCoercionRule {})];
-//         let schema = Schema::from_iter([Field::new("fruits", DataType::Categorical(None))]);
+    #[test]
+    fn test_categorical_utf8() {
+        let mut expr_arena = Arena::new();
+        let mut lp_arena = Arena::new();
+        let optimizer = StackOptimizer {};
+        let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(TypeCoercionRule {})];
 
-//         let expr = col("fruits").eq(lit("somestr"));
-//         let out = optimize_expr(expr.clone(), schema.clone(), &mut rules);
-//         // we test that the fruits column is not casted to utf8 for the comparison
-//         assert_eq!(out, expr);
+        let df = DataFrame::new(Vec::from([Series::new_empty(
+            "fruits",
+            &DataType::Categorical(None),
+        )]))
+        .unwrap();
 
-//         let expr = col("fruits") + (lit("somestr"));
-//         let out = optimize_expr(expr, schema, &mut rules);
-//         let expected = col("fruits").cast(DataType::Utf8) + lit("somestr");
-//         assert_eq!(out, expected);
-//     }
-// }
+        let expr_in = vec![col("fruits").eq(lit("somestr"))];
+        let lp = LogicalPlanBuilder::from_existing_df(df.clone())
+            .project(expr_in.clone(), Default::default())
+            .build();
+
+        let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
+        lp_top = optimizer
+            .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
+            .unwrap();
+        let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
+
+        // we test that the fruits column is not casted to utf8 for the comparison
+        if let LogicalPlan::Projection { expr, .. } = lp {
+            assert_eq!(expr, expr_in);
+        };
+
+        let expr_in = vec![col("fruits") + (lit("somestr"))];
+        let lp = LogicalPlanBuilder::from_existing_df(df)
+            .project(expr_in, Default::default())
+            .build();
+        let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
+        lp_top = optimizer
+            .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
+            .unwrap();
+        let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
+
+        // we test that the fruits column is casted to utf8 for the addition
+        let expected = vec![col("fruits").cast(DataType::Utf8) + lit("somestr")];
+        if let LogicalPlan::Projection { expr, .. } = lp {
+            assert_eq!(expr, expected);
+        };
+    }
+}

@@ -16,6 +16,10 @@ from polars.utils.deprecation import (
 if TYPE_CHECKING:
     from types import TracebackType
 
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
@@ -24,6 +28,11 @@ if TYPE_CHECKING:
     from polars import DataFrame
     from polars.dependencies import pyarrow as pa
     from polars.type_aliases import ConnectionOrCursor, Cursor, DbReadEngine, SchemaDict
+
+    try:
+        from sqlalchemy.sql.expression import Selectable
+    except ImportError:
+        Selectable: TypeAlias = Any  # type: ignore[no-redef]
 
 
 class _DriverProperties_(TypedDict):
@@ -41,6 +50,11 @@ _ARROW_DRIVER_REGISTRY_: dict[str, _DriverProperties_] = {
     "databricks": {
         "fetch_all": "fetchall_arrow",
         "fetch_batches": "fetchmany_arrow",
+        "exact_batch_size": True,
+    },
+    "duckdb": {
+        "fetch_all": "fetch_arrow_table",
+        "fetch_batches": "fetch_record_batch",
         "exact_batch_size": True,
     },
     "snowflake": {
@@ -123,10 +137,7 @@ class ConnectionExecutor:
         result: Cursor, fetch_method: str, batch_size: int | None
     ) -> Iterable[pa.RecordBatch | pa.Table]:
         """Iterate over the result set, fetching arrow data in batches."""
-        size = (batch_size,) if batch_size else ()
-        while result:  # type: ignore[truthy-bool]
-            result = getattr(result, fetch_method)(*size)
-            yield result
+        yield from getattr(result, fetch_method)(batch_size)
 
     @staticmethod
     def _fetchall_rows(result: Cursor) -> Iterable[Sequence[Any]]:
@@ -156,27 +167,28 @@ class ConnectionExecutor:
         self, batch_size: int | None, schema_overrides: SchemaDict | None
     ) -> DataFrame | None:
         """Return resultset data in Arrow format for frame init."""
-        from polars import DataFrame
+        from polars import from_arrow
 
-        for driver, driver_properties in _ARROW_DRIVER_REGISTRY_.items():
-            if re.match(f"^{driver}$", self.driver_name):
-                size = batch_size if driver_properties["exact_batch_size"] else None
-                fetch_batches = driver_properties["fetch_batches"]
-                return DataFrame(
-                    data=(
-                        self._fetch_arrow(self.result, fetch_batches, size)
-                        if batch_size and fetch_batches is not None
-                        else getattr(self.result, driver_properties["fetch_all"])()
-                    ),
-                    schema_overrides=schema_overrides,
-                )
-
-        if self.driver_name == "duckdb":
-            exec_kwargs = {"rows_per_batch": batch_size} if batch_size else {}
-            return DataFrame(
-                self.result.arrow(**exec_kwargs),
-                schema_overrides=schema_overrides,
-            )
+        try:
+            for driver, driver_properties in _ARROW_DRIVER_REGISTRY_.items():
+                if re.match(f"^{driver}$", self.driver_name):
+                    size = batch_size if driver_properties["exact_batch_size"] else None
+                    fetch_batches = driver_properties["fetch_batches"]
+                    return from_arrow(  # type: ignore[return-value]
+                        data=(
+                            self._fetch_arrow(self.result, fetch_batches, size)
+                            if batch_size and fetch_batches is not None
+                            else getattr(self.result, driver_properties["fetch_all"])()
+                        ),
+                        schema_overrides=schema_overrides,
+                    )
+        except Exception as err:
+            if (
+                self.driver_name != "turbodbc"
+                # eg: turbodbc compiled without arrow support...
+                or "does not support Apache Arrow" not in str(err)
+            ):
+                raise
 
         return None
 
@@ -207,17 +219,17 @@ class ConnectionExecutor:
 
     @deprecate_nonkeyword_arguments(allowed_args=["self", "query"], version="0.19.3")
     def execute(
-        self, query: str, select_queries_only: bool = True  # noqa: FBT001
+        self, query: str | Selectable, select_queries_only: bool = True  # noqa: FBT001
     ) -> Self:
         """Execute a query and reference the result set."""
-        if select_queries_only:
+        if select_queries_only and isinstance(query, str):
             q = re.search(r"\w{3,}", re.sub(r"/\*(.|[\r\n])*?\*/", "", query))
             if (query_type := "" if not q else q.group(0)) in _INVALID_QUERY_TYPES:
                 raise UnsuitableSQLError(
                     f"{query_type} statements are not valid 'read' queries"
                 )
 
-        if self.driver_name == "sqlalchemy":
+        if self.driver_name == "sqlalchemy" and isinstance(query, str):
             from sqlalchemy.sql import text
 
             query = text(query)  # type: ignore[assignment]
@@ -255,7 +267,7 @@ class ConnectionExecutor:
 
 @deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
 def read_database(  # noqa: D417
-    query: str,
+    query: str | Selectable,
     connection: ConnectionOrCursor,
     *,
     batch_size: int | None = None,
@@ -268,14 +280,20 @@ def read_database(  # noqa: D417
     Parameters
     ----------
     query
-        String SQL query to execute.
+        SQL query to execute (if using a SQLAlchemy connection object this can
+        be a suitable "Selectable", otherwise it is expected to be a string).
     connection
         An instantiated connection (or cursor/client object) that the query can be
         executed against.
     batch_size
-        The number of rows to fetch each time as data is collected; if this option is
-        supported by the backend it will be passed to the underlying query execution
-        method (if the backend does not have such support it is ignored without error).
+        Enable batched data fetching (internally) instead of collecting all rows at
+        once; this can be helpful for minimising the peak memory used for very large
+        resultsets. Note that this parameter is *not* equivalent to a "limit"; you
+        will always load all rows. If supported by the backend, this value is passed
+        to the underlying query execution method (note that very low values will
+        typically result in poor performance as it will result in many round-trips to
+        the database as the data is returned). If the backend does not support changing
+        the batch size, this parameter is ignored without error.
     schema_overrides
         A dictionary mapping column names to dtypes, used to override the schema
         inferred from the query cursor or given by the incoming Arrow data (depending
@@ -328,6 +346,10 @@ def read_database(  # noqa: D417
             message="Use of a string URI with 'read_database' is deprecated; use 'read_database_uri' instead",
             version="0.19.0",
         )
+        if not isinstance(query, (list, str)):
+            raise TypeError(
+                f"`read_database_uri` expects one or more string queries; found {type(query)}"
+            )
         return read_database_uri(
             query, uri=connection, schema_overrides=schema_overrides, **kwargs
         )

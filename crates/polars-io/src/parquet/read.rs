@@ -3,13 +3,15 @@ use std::sync::Arc;
 
 use arrow::io::parquet::read;
 use arrow::io::parquet::write::FileMetaData;
-#[cfg(feature = "cloud")]
-use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
+#[cfg(feature = "cloud")]
+use polars_core::utils::concat_df;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::read_impl::FetchRowGroupsFromMmapReader;
+#[cfg(feature = "cloud")]
+use crate::cloud::CloudOptions;
 use crate::mmap::MmapBytesReader;
 #[cfg(feature = "cloud")]
 use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
@@ -17,6 +19,8 @@ use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
 use crate::parquet::async_impl::ParquetObjectStore;
 use crate::parquet::read_impl::read_parquet;
 pub use crate::parquet::read_impl::BatchedParquetReader;
+#[cfg(feature = "cloud")]
+use crate::predicates::apply_predicate;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use crate::RowCount;
@@ -48,6 +52,7 @@ pub struct ParquetReader<R: Read + Seek> {
     row_count: Option<RowCount>,
     low_memory: bool,
     metadata: Option<FileMetaData>,
+    hive_partition_columns: Option<Vec<Series>>,
     use_statistics: bool,
 }
 
@@ -74,6 +79,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
             self.parallel,
             self.row_count,
             self.use_statistics,
+            self.hive_partition_columns.as_deref(),
         )
         .map(|mut df| {
             if rechunk {
@@ -141,6 +147,11 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         Ok(metadata.num_rows)
     }
 
+    pub fn with_hive_partition_columns(mut self, columns: Option<Vec<Series>>) -> Self {
+        self.hive_partition_columns = columns;
+        self
+    }
+
     fn get_metadata(&mut self) -> PolarsResult<&FileMetaData> {
         if self.metadata.is_none() {
             self.metadata = Some(read::read_metadata(&mut self.reader)?);
@@ -153,7 +164,7 @@ impl<R: MmapBytesReader + 'static> ParquetReader<R> {
     pub fn batched(mut self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
         let metadata = read::read_metadata(&mut self.reader)?;
 
-        let row_group_fetcher = Box::new(FetchRowGroupsFromMmapReader::new(Box::new(self.reader))?);
+        let row_group_fetcher = FetchRowGroupsFromMmapReader::new(Box::new(self.reader))?.into();
         BatchedParquetReader::new(
             row_group_fetcher,
             metadata,
@@ -162,6 +173,7 @@ impl<R: MmapBytesReader + 'static> ParquetReader<R> {
             self.row_count,
             chunk_size,
             self.use_statistics,
+            self.hive_partition_columns,
         )
     }
 }
@@ -180,6 +192,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             low_memory: false,
             metadata: None,
             use_statistics: true,
+            hive_partition_columns: None,
         }
     }
 
@@ -206,6 +219,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             self.parallel,
             self.row_count,
             self.use_statistics,
+            self.hive_partition_columns.as_deref(),
         )
         .map(|mut df| {
             if self.rechunk {
@@ -221,28 +235,28 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
 #[cfg(feature = "cloud")]
 pub struct ParquetAsyncReader {
     reader: ParquetObjectStore,
-    rechunk: bool,
     n_rows: Option<usize>,
+    rechunk: bool,
     projection: Option<Vec<usize>>,
     row_count: Option<RowCount>,
-    low_memory: bool,
     use_statistics: bool,
+    hive_partition_columns: Option<Vec<Series>>,
 }
 
 #[cfg(feature = "cloud")]
 impl ParquetAsyncReader {
-    pub fn from_uri(
+    pub async fn from_uri(
         uri: &str,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<ParquetAsyncReader> {
         Ok(ParquetAsyncReader {
-            reader: ParquetObjectStore::from_uri(uri, cloud_options)?,
+            reader: ParquetObjectStore::from_uri(uri, cloud_options).await?,
             rechunk: false,
             n_rows: None,
             projection: None,
             row_count: None,
-            low_memory: false,
             use_statistics: true,
+            hive_partition_columns: None,
         })
     }
 
@@ -252,7 +266,7 @@ impl ParquetAsyncReader {
         uri: &str,
         options: Option<&CloudOptions>,
     ) -> PolarsResult<(Schema, usize)> {
-        let mut reader = ParquetAsyncReader::from_uri(uri, options)?;
+        let mut reader = ParquetAsyncReader::from_uri(uri, options).await?;
         let schema = reader.schema().await?;
         let num_rows = reader.num_rows().await?;
         Ok((schema, num_rows))
@@ -280,11 +294,6 @@ impl ParquetAsyncReader {
         self
     }
 
-    pub fn set_low_memory(mut self, low_memory: bool) -> Self {
-        self.low_memory = low_memory;
-        self
-    }
-
     pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
         self.projection = projection;
         self
@@ -297,14 +306,16 @@ impl ParquetAsyncReader {
         self
     }
 
-    #[tokio::main(flavor = "current_thread")]
+    pub fn with_hive_partition_columns(mut self, columns: Option<Vec<Series>>) -> Self {
+        self.hive_partition_columns = columns;
+        self
+    }
+
     pub async fn batched(mut self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
         let metadata = self.reader.get_metadata().await?.to_owned();
-        let row_group_fetcher = Box::new(FetchRowGroupsFromObjectStore::new(
-            self.reader,
-            &metadata,
-            &self.projection,
-        )?);
+        // row group fetched deals with projection
+        let row_group_fetcher =
+            FetchRowGroupsFromObjectStore::new(self.reader, &metadata, &self.projection)?.into();
         BatchedParquetReader::new(
             row_group_fetcher,
             metadata,
@@ -313,6 +324,33 @@ impl ParquetAsyncReader {
             self.row_count,
             chunk_size,
             self.use_statistics,
+            self.hive_partition_columns,
         )
+    }
+
+    pub async fn finish(
+        self,
+        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    ) -> PolarsResult<DataFrame> {
+        let rechunk = self.rechunk;
+
+        // batched reader deals with slice pushdown
+        let reader = self.batched(usize::MAX).await?;
+        let mut iter = reader.iter(16);
+
+        let mut chunks = Vec::with_capacity(16);
+        while let Some(result) = iter.next_().await {
+            let out = result.and_then(|mut df| {
+                apply_predicate(&mut df, predicate.as_deref(), true)?;
+                Ok(df)
+            })?;
+            chunks.push(out)
+        }
+        let mut df = concat_df(&chunks)?;
+
+        if rechunk {
+            df.as_single_chunk_par();
+        }
+        Ok(df)
     }
 }

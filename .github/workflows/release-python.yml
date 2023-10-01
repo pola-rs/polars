@@ -8,133 +8,40 @@ on:
 env:
   RUST_TOOLCHAIN: nightly-2023-08-26
   PYTHON_VERSION: '3.8'
-  MATURIN_VERSION: '1.2.1'
-  MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+  MATURIN_VERSION: '1.2.3'
 
 defaults:
   run:
     shell: bash
 
 jobs:
-  manylinux-x64_64:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
-        with:
-          command: publish
-          args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-
-  # Needed for Docker on Apple M1
-  manylinux-aarch64:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      # Needed to avoid out-of-memory error
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
-
-      - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
-        env:
-          JEMALLOC_SYS_WITH_LG_PAGE: 16
-        with:
-          command: publish
-          args: -m py-polars/Cargo.toml --skip-existing --no-sdist -o wheels -i python -u ritchie46
-          target: aarch64-unknown-linux-gnu
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-
-  manylinux-bigidx:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-
-      - name: Prepare bigidx
-        run: |
-          sed -i 's/name = "polars"/name = "polars-u64-idx"/' py-polars/pyproject.toml
-          # A brittle hack to insert the 'bigidx' feature
-          sed -i 's/"dynamic_group_by",/"dynamic_group_by",\n"bigidx",/' py-polars/Cargo.toml
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
-        with:
-          command: publish
-          args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-
-  manylinux-x64_64-lts-cpu:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-
-      - name: Prepare lts-cpu
-        run: sed -i 's/name = "polars"/name = "polars-lts-cpu"/' py-polars/pyproject.toml
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc
-        with:
-          command: publish
-          args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-
-  win-macos:
+  build-wheels:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-32gb-ram]
+        cpu: [x86-64, aarch64]
+        lts-cpu: [false, true]
+        u64-idx: [false, true]
+        exclude:
+          - os: windows-32gb-ram
+            cpu: aarch64
+          - lts-cpu: true
+            u64-idx: true
 
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+
+      # Avoid potential out-of-memory errors
+      - name: Set swap space for Linux
+        if: matrix.os == 'ubuntu-latest'
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -143,35 +50,73 @@ jobs:
           rm py-polars/README.md
           cp README.md py-polars/README.md
 
-      - name: Publish wheel
+      - name: Install yq
+        if: matrix.lts-cpu || matrix.u64-idx
+        run: pip install yq
+
+      - name: Update package name
+        if: matrix.lts-cpu || matrix.u64-idx
+        run: |
+          NAME=${{ matrix.lts-cpu && 'polars-lts-cpu' || 'polars-u64-idx' }}
+          tomlq -i -t ".project.name = \"$NAME\"" py-polars/pyproject.toml
+
+      - name: Add bigidx feature
+        if: matrix.u64-idx
+        run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
+
+      - name: Set RUSTFLAGS for x86-64
+        if: matrix.cpu == 'x86-64' && !matrix.lts-cpu
+        run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma" >> $GITHUB_ENV
+
+      - name: Set RUSTFLAGS for x86-64 LTS CPU
+        if: matrix.cpu == 'x86-64' && matrix.lts-cpu
+        run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc" >> $GITHUB_ENV
+
+      - name: Set Rust target for aarch64
+        if: matrix.cpu == 'aarch64'
+        id: target
+        run: |
+          TARGET=${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || 'aarch64-unknown-linux-gnu'}}
+          echo "target=$TARGET" >> $GITHUB_OUTPUT
+
+      - name: Set jemalloc for aarch64 Linux
+        if: matrix.cpu == 'aarch64' && matrix.os == 'ubuntu-latest'
+        run: |
+          echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
+
+      - name: Build wheel
         uses: PyO3/maturin-action@v1
-        env:
-          RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
         with:
-          command: publish
-          args: -m py-polars/Cargo.toml --no-sdist --skip-existing -o wheels -i python -u ritchie46
+          command: build
+          target: ${{ steps.target.outputs.target }}
+          working-directory: py-polars
+          args: --release ${{ matrix.os == 'ubuntu-latest' && matrix.cpu == 'x86-64' && '--sdist' || ''}}
           maturin-version: ${{ env.MATURIN_VERSION }}
           rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
+          manylinux: auto
 
-  macos-aarch64:
-    runs-on: macos-latest
+      - name: Upload wheel
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist
+          path: py-polars/target/wheels/*
+
+  publish-to-pypi:
+    needs: build-wheels
+    environment:
+      name: release-python
+      url: https://pypi.org/project/polars
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/download-artifact@v3
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          name: dist
+          path: dist
 
-      - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
-
-      - name: Set up Rust targets
-        run: rustup target add aarch64-apple-darwin
-
-      - name: Publish wheel
-        uses: PyO3/maturin-action@v1
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          command: publish
-          args: -m py-polars/Cargo.toml --target aarch64-apple-darwin --no-sdist -o wheels -i python -u ritchie46
-          maturin-version: ${{ env.MATURIN_VERSION }}
+          verbose: true

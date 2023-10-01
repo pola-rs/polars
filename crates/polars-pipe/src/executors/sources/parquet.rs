@@ -1,13 +1,15 @@
 use std::path::PathBuf;
 
-use polars_core::cloud::CloudOptions;
 use polars_core::error::PolarsResult;
 use polars_core::schema::*;
 use polars_core::POOL;
+use polars_io::cloud::CloudOptions;
 use polars_io::parquet::{BatchedParquetReader, ParquetReader};
+use polars_io::pl_async::get_runtime;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::{is_cloud_url, SerReader};
+use polars_plan::logical_plan::FileInfo;
 use polars_plan::prelude::{FileScanOptions, ParquetOptions};
 use polars_utils::IdxSize;
 
@@ -23,7 +25,7 @@ pub struct ParquetSource {
     file_options: Option<FileScanOptions>,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
-    schema: Option<SchemaRef>,
+    file_info: FileInfo,
     verbose: bool,
 }
 
@@ -35,7 +37,7 @@ impl ParquetSource {
         let path = self.path.take().unwrap();
         let options = self.options.take().unwrap();
         let file_options = self.file_options.take().unwrap();
-        let schema = self.schema.take().unwrap();
+        let schema = self.file_info.schema.clone();
         let projection: Option<Vec<_>> = file_options.with_columns.map(|with_columns| {
             with_columns
                 .iter()
@@ -60,12 +62,22 @@ impl ParquetSource {
             #[cfg(feature = "async")]
             {
                 let uri = path.to_string_lossy();
-                ParquetAsyncReader::from_uri(&uri, self.cloud_options.as_ref())?
-                    .with_n_rows(file_options.n_rows)
-                    .with_row_count(file_options.row_count)
-                    .with_projection(projection)
-                    .use_statistics(options.use_statistics)
-                    .batched(chunk_size)?
+                polars_io::pl_async::get_runtime().block_on(async {
+                    ParquetAsyncReader::from_uri(&uri, self.cloud_options.as_ref())
+                        .await?
+                        .with_n_rows(file_options.n_rows)
+                        .with_row_count(file_options.row_count)
+                        .with_projection(projection)
+                        .use_statistics(options.use_statistics)
+                        .with_hive_partition_columns(
+                            self.file_info
+                                .hive_parts
+                                .as_ref()
+                                .map(|hive| hive.materialize_partition_columns()),
+                        )
+                        .batched(chunk_size)
+                        .await
+                })?
             }
         } else {
             let file = std::fs::File::open(path).unwrap();
@@ -75,6 +87,12 @@ impl ParquetSource {
                 .with_row_count(file_options.row_count)
                 .with_projection(projection)
                 .use_statistics(options.use_statistics)
+                .with_hive_partition_columns(
+                    self.file_info
+                        .hive_parts
+                        .as_ref()
+                        .map(|hive| hive.materialize_partition_columns()),
+                )
                 .batched(chunk_size)?
         };
         self.batched_reader = Some(batched_reader);
@@ -87,7 +105,7 @@ impl ParquetSource {
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
-        schema: SchemaRef,
+        file_info: FileInfo,
         verbose: bool,
     ) -> PolarsResult<Self> {
         let n_threads = POOL.current_num_threads();
@@ -100,7 +118,7 @@ impl ParquetSource {
             file_options: Some(file_options),
             path: Some(path),
             cloud_options,
-            schema: Some(schema),
+            file_info,
             verbose,
         })
     }
@@ -111,11 +129,12 @@ impl Source for ParquetSource {
         if self.batched_reader.is_none() {
             self.init_reader()?;
         }
-        let batches = self
-            .batched_reader
-            .as_mut()
-            .unwrap()
-            .next_batches(self.n_threads)?;
+        let batches = get_runtime().block_on(
+            self.batched_reader
+                .as_mut()
+                .unwrap()
+                .next_batches(self.n_threads),
+        )?;
         Ok(match batches {
             None => SourceResult::Finished,
             Some(batches) => SourceResult::GotMoreData(

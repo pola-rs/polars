@@ -45,7 +45,7 @@ impl FunctionExpr {
                         DataType::Datetime(tu, _) => DataType::Datetime(tu, None),
                         dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
                     },
-                    Truncate(..) => mapper.with_same_dtype().unwrap().dtype,
+                    Truncate(_) => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "date_offset")]
                     MonthStart => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "date_offset")]
@@ -100,19 +100,30 @@ impl FunctionExpr {
                     Concat => mapper.map_to_list_supertype(),
                     #[cfg(feature = "is_in")]
                     Contains => mapper.with_dtype(DataType::Boolean),
+                    #[cfg(feature = "list_drop_nulls")]
+                    DropNulls => mapper.with_same_dtype(),
                     Slice => mapper.with_same_dtype(),
+                    Shift => mapper.with_same_dtype(),
                     Get => mapper.map_to_list_inner_dtype(),
                     #[cfg(feature = "list_take")]
                     Take(_) => mapper.with_same_dtype(),
                     #[cfg(feature = "list_count")]
                     CountMatches => mapper.with_dtype(IDX_DTYPE),
                     Sum => mapper.nested_sum_type(),
+                    Min => mapper.map_to_list_inner_dtype(),
+                    Max => mapper.map_to_list_inner_dtype(),
+                    Mean => mapper.with_dtype(DataType::Float64),
+                    Sort(_) => mapper.with_same_dtype(),
+                    Reverse => mapper.with_same_dtype(),
+                    Unique(_) => mapper.with_same_dtype(),
+                    Length => mapper.with_dtype(IDX_DTYPE),
                     #[cfg(feature = "list_sets")]
                     SetOperation(_) => mapper.with_same_dtype(),
                     #[cfg(feature = "list_any_all")]
                     Any => mapper.with_dtype(DataType::Boolean),
                     #[cfg(feature = "list_any_all")]
                     All => mapper.with_dtype(DataType::Boolean),
+                    Join => mapper.with_dtype(DataType::Utf8),
                 }
             },
             #[cfg(feature = "dtype-array")]
@@ -131,39 +142,14 @@ impl FunctionExpr {
                 }
             },
             #[cfg(feature = "dtype-struct")]
-            StructExpr(s) => {
-                use polars_core::utils::slice_offsets;
-                use StructFunction::*;
-                match s {
-                    FieldByIndex(index) => {
-                        let (index, _) = slice_offsets(*index, 0, fields.len());
-                        if let DataType::Struct(flds) = &fields[0].dtype {
-                            flds.get(index).cloned().ok_or_else(
-                                || polars_err!(ComputeError: "index out of bounds in `struct.field`")
-                            )
-                        } else {
-                            polars_bail!(
-                                ComputeError: "expected struct dtype, got: `{}`", &fields[0].dtype
-                            )
-                        }
-                    },
-                    FieldByName(name) => {
-                        if let DataType::Struct(flds) = &fields[0].dtype {
-                            let fld = flds
-                                .iter()
-                                .find(|fld| fld.name() == name.as_ref())
-                                .ok_or_else(
-                                    || polars_err!(StructFieldNotFound: "{}", name.as_ref()),
-                                )?;
-                            Ok(fld.clone())
-                        } else {
-                            polars_bail!(StructFieldNotFound: "{}", name.as_ref());
-                        }
-                    },
-                }
-            },
+            AsStruct => Ok(Field::new(
+                fields[0].name(),
+                DataType::Struct(fields.to_vec()),
+            )),
+            #[cfg(feature = "dtype-struct")]
+            StructExpr(s) => s.get_field(mapper),
             #[cfg(feature = "top_k")]
-            TopK { .. } => mapper.with_same_dtype(),
+            TopK(_) => mapper.with_same_dtype(),
             Shift(..) | Reverse => mapper.with_same_dtype(),
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "dtype-categorical")]
@@ -240,33 +226,53 @@ impl FunctionExpr {
             #[cfg(feature = "random")]
             Random { .. } => mapper.with_same_dtype(),
             SetSortedFlag(_) => mapper.with_same_dtype(),
+            #[cfg(feature = "ffi_plugin")]
+            FfiPlugin { lib, symbol } => unsafe {
+                plugin::plugin_field(fields, lib, &format!("__polars_field_{}", symbol.as_ref()))
+            },
         }
     }
 }
 
-pub(super) struct FieldsMapper<'a> {
+pub struct FieldsMapper<'a> {
     fields: &'a [Field],
 }
 
 impl<'a> FieldsMapper<'a> {
+    pub fn new(fields: &'a [Field]) -> Self {
+        Self { fields }
+    }
+
     /// Field with the same dtype.
-    pub(super) fn with_same_dtype(&self) -> PolarsResult<Field> {
+    pub fn with_same_dtype(&self) -> PolarsResult<Field> {
         self.map_dtype(|dtype| dtype.clone())
     }
 
     /// Set a dtype.
-    pub(super) fn with_dtype(&self, dtype: DataType) -> PolarsResult<Field> {
+    pub fn with_dtype(&self, dtype: DataType) -> PolarsResult<Field> {
         Ok(Field::new(self.fields[0].name(), dtype))
     }
 
     /// Map a single dtype.
-    pub(super) fn map_dtype(&self, func: impl Fn(&DataType) -> DataType) -> PolarsResult<Field> {
+    pub fn map_dtype(&self, func: impl Fn(&DataType) -> DataType) -> PolarsResult<Field> {
         let dtype = func(self.fields[0].data_type());
         Ok(Field::new(self.fields[0].name(), dtype))
     }
 
+    pub fn get_fields_lens(&self) -> usize {
+        self.fields.len()
+    }
+
+    /// Map a single field with a potentially failing mapper function.
+    pub fn try_map_field(
+        &self,
+        func: impl Fn(&Field) -> PolarsResult<Field>,
+    ) -> PolarsResult<Field> {
+        func(&self.fields[0])
+    }
+
     /// Map to a float supertype.
-    pub(super) fn map_to_float_dtype(&self) -> PolarsResult<Field> {
+    pub fn map_to_float_dtype(&self) -> PolarsResult<Field> {
         self.map_dtype(|dtype| match dtype {
             DataType::Float32 => DataType::Float32,
             _ => DataType::Float64,
@@ -274,13 +280,13 @@ impl<'a> FieldsMapper<'a> {
     }
 
     /// Map to a physical type.
-    pub(super) fn to_physical_type(&self) -> PolarsResult<Field> {
+    pub fn to_physical_type(&self) -> PolarsResult<Field> {
         self.map_dtype(|dtype| dtype.to_physical())
     }
 
     /// Map a single dtype with a potentially failing mapper function.
     #[cfg(any(feature = "timezones", feature = "dtype-array"))]
-    pub(super) fn try_map_dtype(
+    pub fn try_map_dtype(
         &self,
         func: impl Fn(&DataType) -> PolarsResult<DataType>,
     ) -> PolarsResult<Field> {
@@ -289,7 +295,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     /// Map all dtypes with a potentially failing mapper function.
-    pub(super) fn try_map_dtypes(
+    pub fn try_map_dtypes(
         &self,
         func: impl Fn(&[&DataType]) -> PolarsResult<DataType>,
     ) -> PolarsResult<Field> {
@@ -305,7 +311,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     /// Map the dtype to the "supertype" of all fields.
-    pub(super) fn map_to_supertype(&self) -> PolarsResult<Field> {
+    pub fn map_to_supertype(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         let mut st = first.data_type().clone();
         for field in &self.fields[1..] {
@@ -316,7 +322,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     /// Map the dtype to the dtype of the list elements.
-    pub(super) fn map_to_list_inner_dtype(&self) -> PolarsResult<Field> {
+    pub fn map_to_list_inner_dtype(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         let dt = first
             .data_type()
@@ -328,7 +334,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     /// Map the dtypes to the "supertype" of a list of lists.
-    pub(super) fn map_to_list_supertype(&self) -> PolarsResult<Field> {
+    pub fn map_to_list_supertype(&self) -> PolarsResult<Field> {
         self.try_map_dtypes(|dts| {
             let mut super_type_inner = None;
 
@@ -354,7 +360,7 @@ impl<'a> FieldsMapper<'a> {
 
     /// Set the timezone of a datetime dtype.
     #[cfg(feature = "timezones")]
-    pub(super) fn map_datetime_dtype_timezone(&self, tz: Option<&TimeZone>) -> PolarsResult<Field> {
+    pub fn map_datetime_dtype_timezone(&self, tz: Option<&TimeZone>) -> PolarsResult<Field> {
         self.try_map_dtype(|dt| {
             if let DataType::Datetime(tu, _) = dt {
                 Ok(DataType::Datetime(*tu, tz.cloned()))
@@ -364,7 +370,7 @@ impl<'a> FieldsMapper<'a> {
         })
     }
 
-    fn nested_sum_type(&self) -> PolarsResult<Field> {
+    pub fn nested_sum_type(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         use DataType::*;
         let dt = first.data_type().inner_dtype().cloned().unwrap_or(Unknown);
@@ -378,7 +384,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    pub(super) fn with_opt_dtype(&self, dtype: Option<DataType>) -> PolarsResult<Field> {
+    pub fn with_opt_dtype(&self, dtype: Option<DataType>) -> PolarsResult<Field> {
         let dtype = dtype.unwrap_or(DataType::Unknown);
         self.with_dtype(dtype)
     }

@@ -116,7 +116,7 @@ fn includes_null_predicate_3038() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "dtype-categorical")]
 fn test_when_then_otherwise_cats() -> PolarsResult<()> {
-    polars::enable_string_cache(true);
+    polars::enable_string_cache();
 
     let lf = df!["book" => [Some("bookA"),
         None,

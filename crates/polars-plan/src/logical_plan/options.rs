@@ -101,6 +101,7 @@ pub struct FileScanOptions {
     pub row_count: Option<RowCount>,
     pub rechunk: bool,
     pub file_counter: FileCount,
+    pub hive_partitioning: bool,
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]
@@ -147,7 +148,7 @@ pub struct DistinctOptions {
 pub enum ApplyOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
-    // e.g. [g1, g1, g2] -> [[g1, g2], g2]
+    // e.g. [g1, g1, g2] -> [[g1, g1], g2]
     ApplyGroups,
     // collect groups to a list and then apply
     // e.g. [g1, g1, g2] -> list([g1, g1, g2])
@@ -313,7 +314,7 @@ pub enum SinkType {
     Cloud {
         uri: Arc<String>,
         file_type: FileType,
-        cloud_options: Option<polars_core::cloud::CloudOptions>,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
     },
 }
 

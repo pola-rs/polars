@@ -427,7 +427,7 @@ impl PartitionedAggregation for AggregationExpr {
                             let ca = unsafe {
                                 // Safety
                                 // The indexes of the group_by operation are never out of bounds
-                                ca.take_unchecked(idx.into())
+                                ca.take_unchecked(idx)
                             };
                             process_group(ca)?;
                         }

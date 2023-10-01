@@ -13,7 +13,12 @@ if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars import Expr, Series
-    from polars.type_aliases import IntoExpr, NullBehavior, ToStructStrategy
+    from polars.type_aliases import (
+        IntoExpr,
+        IntoExprColumn,
+        NullBehavior,
+        ToStructStrategy,
+    )
 
 
 class ExprListNameSpace:
@@ -101,6 +106,30 @@ class ExprListNameSpace:
 
         """
         return wrap_expr(self._pyexpr.list_lengths())
+
+    def drop_nulls(self) -> Expr:
+        """
+        Drop all null values in the list.
+
+        The original order of the remaining elements is preserved.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[None, 1, None, 2], [None], [3, 4]]})
+        >>> df.select(pl.col("values").list.drop_nulls())
+        shape: (3, 1)
+        ┌───────────┐
+        │ values    │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [1, 2]    │
+        │ []        │
+        │ [3, 4]    │
+        └───────────┘
+
+        """
+        return wrap_expr(self._pyexpr.list_drop_nulls())
 
     def sum(self) -> Expr:
         """
@@ -459,7 +488,7 @@ class ExprListNameSpace:
         item = parse_as_expression(item, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_contains(item))
 
-    def join(self, separator: str) -> Expr:
+    def join(self, separator: IntoExpr) -> Expr:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -489,7 +518,21 @@ class ExprListNameSpace:
         │ x y   │
         └───────┘
 
+        >>> df = pl.DataFrame(
+        ...     {"s": [["a", "b", "c"], ["x", "y"]], "separator": ["*", "_"]}
+        ... )
+        >>> df.select(pl.col("s").list.join(pl.col("separator")))
+        shape: (2, 1)
+        ┌───────┐
+        │ s     │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │ a*b*c │
+        │ x_y   │
+        └───────┘
         """
+        separator = parse_as_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_join(separator))
 
     def arg_min(self) -> Expr:
@@ -604,7 +647,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_diff(n, null_behavior))
 
-    def shift(self, periods: int = 1) -> Expr:
+    def shift(self, periods: int | IntoExprColumn = 1) -> Expr:
         """
         Shift values by the given period.
 
@@ -625,6 +668,7 @@ class ExprListNameSpace:
         ]
 
         """
+        periods = parse_as_expression(periods)
         return wrap_expr(self._pyexpr.list_shift(periods))
 
     def slice(

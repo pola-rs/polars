@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import warnings
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -44,19 +45,19 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import dataframe_api_compat, subprocess
-from polars.io._utils import _is_local_file
+from polars.io._utils import _is_local_file, _is_supported_cloud
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.selectors import _expand_selectors, expand_selector
 from polars.slice import LazyPolarsSlice
-from polars.utils._async import _AsyncDataFrameResult
+from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_df, wrap_expr
-from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.convert import _negate_duration, _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_renamed_function,
@@ -66,6 +67,7 @@ from polars.utils.various import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
+    find_stacklevel,
     normalize_filepath,
 )
 
@@ -75,8 +77,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from io import IOBase
-    from queue import Queue
-    from typing import Literal
+    from typing import Awaitable, Literal
 
     import pyarrow as pa
 
@@ -92,6 +93,7 @@ if TYPE_CHECKING:
         IntoExpr,
         JoinStrategy,
         JoinValidation,
+        Label,
         Orientation,
         ParallelStrategy,
         PolarsDataType,
@@ -396,6 +398,8 @@ class LazyFrame:
         storage_options: dict[str, object] | None = None,
         low_memory: bool = False,
         use_statistics: bool = True,
+        hive_partitioning: bool = True,
+        retries: int = 0,
     ) -> Self:
         """
         Lazily read from a parquet file or multiple files via glob patterns.
@@ -408,13 +412,16 @@ class LazyFrame:
 
         """
         # try fsspec scanner
-        if not _is_local_file(source):
+        if not _is_local_file(source) and not _is_supported_cloud(source):
             scan = _scan_parquet_fsspec(source, storage_options)
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
                 scan = scan.with_row_count(row_count_name, row_count_offset)
             return scan  # type: ignore[return-value]
+
+        if storage_options is not None:
+            storage_options = list(storage_options.items())  #  type: ignore[assignment]
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(
@@ -427,6 +434,8 @@ class LazyFrame:
             low_memory,
             cloud_options=storage_options,
             use_statistics=use_statistics,
+            hive_partitioning=hive_partitioning,
+            retries=retries,
         )
         return self
 
@@ -1703,10 +1712,44 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return wrap_df(ldf.collect())
 
+    @overload
     def collect_async(
         self,
-        queue: Queue[DataFrame | Exception],
         *,
+        gevent: Literal[True],
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = True,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        streaming: bool = True,
+    ) -> _GeventDataFrameResult[DataFrame]:
+        ...
+
+    @overload
+    def collect_async(
+        self,
+        *,
+        gevent: Literal[False] = False,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = True,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        streaming: bool = True,
+    ) -> Awaitable[DataFrame]:
+        ...
+
+    def collect_async(
+        self,
+        *,
+        gevent: bool = False,
         type_coercion: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
@@ -1716,33 +1759,44 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = False,
-    ) -> _AsyncDataFrameResult[DataFrame]:
+    ) -> Awaitable[DataFrame] | _GeventDataFrameResult[DataFrame]:
         """
         Collect DataFrame asynchronously in thread pool.
 
-        Collects into a DataFrame, like :func:`collect`
-        but instead of returning DataFrame directly its collected inside thread pool
-        and gets put into `queue` with `put_nowait` method,
+        Collects into a DataFrame (like :func:`collect`), but instead of returning
+        dataframe directly, they are scheduled to be collected inside thread pool,
         while this method returns almost instantly.
 
         May be useful if you use gevent or asyncio and want to release control to other
         greenlets/tasks while LazyFrames are being collected.
-        You must use correct queue in that case.
-        Given `queue` must be thread safe!
 
-        For gevent use
-        [`gevent.queue.Queue`](https://www.gevent.org/api/gevent.queue.html#gevent.queue.Queue).
-
-        For asyncio
-        [`asyncio.queues.Queue`](https://docs.python.org/3/library/asyncio-queue.html#queue)
-        can not be used, since it's not thread safe!
-        For that purpose use [janus](https://github.com/aio-libs/janus) library.
+        Parameters
+        ----------
+        gevent
+            Return wrapper to `gevent.event.AsyncResult` instead of Awaitable
+        type_coercion
+            Do type coercion optimization.
+        predicate_pushdown
+            Do predicate pushdown optimization.
+        projection_pushdown
+            Do projection pushdown optimization.
+        simplify_expression
+            Run simplify expressions optimization.
+        no_optimization
+            Turn off (certain) optimizations.
+        slice_pushdown
+            Slice pushdown optimization.
+        comm_subplan_elim
+            Will try to cache branching subplans that occur on self-joins or unions.
+        comm_subexpr_elim
+            Common subexpressions will be cached and reused.
+        streaming
+            Run parts of the query in a streaming fashion (this is in an alpha state)
 
         Notes
         -----
-        Results are put in queue exactly once using `put_nowait`.
-        If error occurred then Exception will be put in the queue instead of result
-        which is then raised by returned wrapper `get` method.
+        In case of error `set_exception` is used on
+        `asyncio.Future`/`gevent.event.AsyncResult` and will be reraised by them.
 
         Warnings
         --------
@@ -1756,12 +1810,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Returns
         -------
-        Wrapper that has `get` method and `queue` attribute with given queue.
-        `get` accepts kwargs that are passed down to `queue.get`.
+        If `gevent=False` (default) then returns awaitable.
+
+        If `gevent=True` then returns wrapper that has
+        `.get(block=True, timeout=None)` method.
 
         Examples
         --------
-        >>> import queue
+        >>> import asyncio
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": ["a", "b", "a", "b", "b", "c"],
@@ -1769,12 +1825,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> a = (
-        ...     lf.group_by("a", maintain_order=True)
-        ...     .agg(pl.all().sum())
-        ...     .collect_async(queue.Queue())
-        ... )
-        >>> a.get()
+        >>> async def main():
+        ...     return await (
+        ...         lf.group_by("a", maintain_order=True)
+        ...         .agg(pl.all().sum())
+        ...         .collect_async()
+        ...     )
+        ...
+        >>> asyncio.run(main())
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -1785,7 +1843,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b   ┆ 11  ┆ 10  │
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
-
         """
         if no_optimization:
             predicate_pushdown = False
@@ -1809,9 +1866,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             eager=False,
         )
 
-        result = _AsyncDataFrameResult(queue)
-        ldf.collect_with_callback(result._callback)
-        return result
+        result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+        ldf.collect_with_callback(result._callback)  # type: ignore[attr-defined]
+        return result  # type: ignore[return-value]
 
     def sink_parquet(
         self,
@@ -2861,7 +2918,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         index_column = parse_as_expression(index_column)
         if offset is None:
-            offset = f"-{_timedelta_to_pl_duration(period)}"
+            offset = _negate_duration(_timedelta_to_pl_duration(period))
 
         pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
         period = _timedelta_to_pl_duration(period)
@@ -2879,9 +2936,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every: str | timedelta,
         period: str | timedelta | None = None,
         offset: str | timedelta | None = None,
-        truncate: bool = True,
+        truncate: bool | None = None,
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
+        label: Label = "left",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
         check_sorted: bool = True,
@@ -2890,47 +2948,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Group based on a time value (or index value of type Int32, Int64).
 
         Time windows are calculated and rows are assigned to windows. Different from a
-        normal group by is that a row can be member of multiple groups. The time/index
-        window could be seen as a rolling window, with a window size determined by
-        dates/times/values instead of slots in the DataFrame.
+        normal group by is that a row can be member of multiple groups.
+        By default, the windows look like:
 
-        A window is defined by:
+        - [start, start + period)
+        - [start + every, start + every + period)
+        - [start + 2*every, start + 2*every + period)
+        - ...
 
-        - every: interval of the window
-        - period: length of the window
-        - offset: offset of the window
-
-        The `every`, `period` and `offset` arguments are created with
-        the following string language:
-
-        - 1ns   (1 nanosecond)
-        - 1us   (1 microsecond)
-        - 1ms   (1 millisecond)
-        - 1s    (1 second)
-        - 1m    (1 minute)
-        - 1h    (1 hour)
-        - 1d    (1 calendar day)
-        - 1w    (1 calendar week)
-        - 1mo   (1 calendar month)
-        - 1q    (1 calendar quarter)
-        - 1y    (1 calendar year)
-        - 1i    (1 index count)
-
-        Or combine them:
-        "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-        Suffix with `"_saturating"` to indicate that dates too large for
-        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-        instead of erroring.
-
-        By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, due to daylight savings). Similarly for "calendar week",
-        "calendar month", "calendar quarter", and "calendar year".
-
-        In case of a group_by_dynamic on an integer column, the windows are defined by:
-
-        - "1i"      # length 1
-        - "10i"     # length 10
+        where `start` is determined by `start_by`, `offset`, and `every` (see parameter
+        descriptions below).
 
         .. warning::
             The index column must be sorted in ascending order. If `by` is passed, then
@@ -2950,24 +2977,36 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every
             interval of the window
         period
-            length of the window, if None it is equal to 'every'
+            length of the window, if None it will equal 'every'
         offset
-            offset of the window if None and period is None it will be equal to negative
-            `every`
+            offset of the window, only takes effect if `start_by` is `'window'`.
+            Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
+
+            .. deprecated:: 0.19.4
+                Use `label` instead.
         include_boundaries
             Add the lower and upper bound of the window to the "_lower_bound" and
             "_upper_bound" columns. This will impact performance because it's harder to
             parallelize
-        closed : {'right', 'left', 'both', 'none'}
+        closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
+        label : {'left', 'right', 'datapoint'}
+            Define which label to use for the window:
+
+            - 'left': lower boundary of the window
+            - 'right': upper boundary of the window
+            - 'datapoint': the first value of the index column in the given window.
+              If you don't need the label to be at one of the boundaries, choose this
+              option for maximum performance
         by
             Also group by this column/these columns
         start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
 
-            * 'window': Truncate the start of the window with the 'every' argument.
+            * 'window': Start by taking the earliest timestamp, truncating it with
+              `every`, and then adding `offset`.
               Note that weekly windows start on Monday.
             * 'datapoint': Start from the first encountered data point.
             * a day of the week (only takes effect if `every` contains ``'w'``):
@@ -2996,28 +3035,59 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        If you're coming from pandas, then
+        1) If you're coming from pandas, then
 
-        .. code-block:: python
+           .. code-block:: python
 
-            # polars
-            df.group_by_dynamic("ts", every="1d").agg(pl.col("value").sum())
+               # polars
+               df.group_by_dynamic("ts", every="1d").agg(pl.col("value").sum())
 
-        is equivalent to
+           is equivalent to
 
-        .. code-block:: python
+           .. code-block:: python
 
-            # pandas
-            df.set_index("ts").resample("D")["value"].sum().reset_index()
+               # pandas
+               df.set_index("ts").resample("D")["value"].sum().reset_index()
 
-        though note that, unlike pandas, polars doesn't add extra rows for empty
-        windows. If you need `index_column` to be evenly spaced, then please combine
-        with :func:`DataFrame.upsample`.
+           though note that, unlike pandas, polars doesn't add extra rows for empty
+           windows. If you need `index_column` to be evenly spaced, then please combine
+           with :func:`DataFrame.upsample`.
+
+        2) The `every`, `period` and `offset` arguments are created with
+           the following string language:
+
+           - 1ns   (1 nanosecond)
+           - 1us   (1 microsecond)
+           - 1ms   (1 millisecond)
+           - 1s    (1 second)
+           - 1m    (1 minute)
+           - 1h    (1 hour)
+           - 1d    (1 calendar day)
+           - 1w    (1 calendar week)
+           - 1mo   (1 calendar month)
+           - 1q    (1 calendar quarter)
+           - 1y    (1 calendar year)
+           - 1i    (1 index count)
+
+           Or combine them:
+           "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+           Suffix with `"_saturating"` to indicate that dates too large for
+           their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+           instead of erroring.
+
+           By "calendar day", we mean the corresponding time on the next day (which may
+           not be 24 hours, due to daylight savings). Similarly for "calendar week",
+           "calendar month", "calendar quarter", and "calendar year".
+
+           In case of a group_by_dynamic on an integer column, the windows are defined by:
+
+           - "1i"      # length 1
+           - "10i"     # length 10
 
         Examples
         --------
         >>> from datetime import datetime
-        >>> # create an example dataframe
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "time": pl.datetime_range(
@@ -3048,130 +3118,112 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Group by windows of 1 hour starting at 2021-12-16 00:00:00.
 
         >>> lf.group_by_dynamic("time", every="1h", closed="right").agg(
-        ...     [
-        ...         pl.col("time").min().alias("time_min"),
-        ...         pl.col("time").max().alias("time_max"),
-        ...     ]
+        ...     pl.col("n")
         ... ).collect()
-        shape: (4, 3)
-        ┌─────────────────────┬─────────────────────┬─────────────────────┐
-        │ time                ┆ time_min            ┆ time_max            │
-        │ ---                 ┆ ---                 ┆ ---                 │
-        │ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        │
-        ╞═════════════════════╪═════════════════════╪═════════════════════╡
-        │ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 00:00:00 │
-        │ 2021-12-16 00:00:00 ┆ 2021-12-16 00:30:00 ┆ 2021-12-16 01:00:00 │
-        │ 2021-12-16 01:00:00 ┆ 2021-12-16 01:30:00 ┆ 2021-12-16 02:00:00 │
-        │ 2021-12-16 02:00:00 ┆ 2021-12-16 02:30:00 ┆ 2021-12-16 03:00:00 │
-        └─────────────────────┴─────────────────────┴─────────────────────┘
+        shape: (4, 2)
+        ┌─────────────────────┬───────────┐
+        │ time                ┆ n         │
+        │ ---                 ┆ ---       │
+        │ datetime[μs]        ┆ list[i64] │
+        ╞═════════════════════╪═══════════╡
+        │ 2021-12-15 23:00:00 ┆ [0]       │
+        │ 2021-12-16 00:00:00 ┆ [1, 2]    │
+        │ 2021-12-16 01:00:00 ┆ [3, 4]    │
+        │ 2021-12-16 02:00:00 ┆ [5, 6]    │
+        └─────────────────────┴───────────┘
 
         The window boundaries can also be added to the aggregation result
 
         >>> lf.group_by_dynamic(
         ...     "time", every="1h", include_boundaries=True, closed="right"
-        ... ).agg([pl.col("time").count().alias("time_count")]).collect()
+        ... ).agg(pl.col("n").mean()).collect()
         shape: (4, 4)
-        ┌─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
-        │ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
-        │ ---                 ┆ ---                 ┆ ---                 ┆ ---        │
-        │ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ u32        │
-        ╞═════════════════════╪═════════════════════╪═════════════════════╪════════════╡
-        │ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-15 23:00:00 ┆ 1          │
-        │ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ 2          │
-        │ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ 2          │
-        │ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 2          │
-        └─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
+        ┌─────────────────────┬─────────────────────┬─────────────────────┬─────┐
+        │ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ n   │
+        │ ---                 ┆ ---                 ┆ ---                 ┆ --- │
+        │ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ f64 │
+        ╞═════════════════════╪═════════════════════╪═════════════════════╪═════╡
+        │ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-15 23:00:00 ┆ 0.0 │
+        │ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ 1.5 │
+        │ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ 3.5 │
+        │ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 5.5 │
+        └─────────────────────┴─────────────────────┴─────────────────────┴─────┘
 
-        When closed="left", should not include right end of interval
+        When closed="left", the window excludes the right end of interval:
         [lower_bound, upper_bound)
 
         >>> lf.group_by_dynamic("time", every="1h", closed="left").agg(
-        ...     [
-        ...         pl.col("time").count().alias("time_count"),
-        ...         pl.col("time").alias("time_agg_list"),
-        ...     ]
+        ...     pl.col("n")
         ... ).collect()
-        shape: (4, 3)
-        ┌─────────────────────┬────────────┬───────────────────────────────────┐
-        │ time                ┆ time_count ┆ time_agg_list                     │
-        │ ---                 ┆ ---        ┆ ---                               │
-        │ datetime[μs]        ┆ u32        ┆ list[datetime[μs]]                │
-        ╞═════════════════════╪════════════╪═══════════════════════════════════╡
-        │ 2021-12-16 00:00:00 ┆ 2          ┆ [2021-12-16 00:00:00, 2021-12-16… │
-        │ 2021-12-16 01:00:00 ┆ 2          ┆ [2021-12-16 01:00:00, 2021-12-16… │
-        │ 2021-12-16 02:00:00 ┆ 2          ┆ [2021-12-16 02:00:00, 2021-12-16… │
-        │ 2021-12-16 03:00:00 ┆ 1          ┆ [2021-12-16 03:00:00]             │
-        └─────────────────────┴────────────┴───────────────────────────────────┘
+        shape: (4, 2)
+        ┌─────────────────────┬───────────┐
+        │ time                ┆ n         │
+        │ ---                 ┆ ---       │
+        │ datetime[μs]        ┆ list[i64] │
+        ╞═════════════════════╪═══════════╡
+        │ 2021-12-16 00:00:00 ┆ [0, 1]    │
+        │ 2021-12-16 01:00:00 ┆ [2, 3]    │
+        │ 2021-12-16 02:00:00 ┆ [4, 5]    │
+        │ 2021-12-16 03:00:00 ┆ [6]       │
+        └─────────────────────┴───────────┘
 
         When closed="both" the time values at the window boundaries belong to 2 groups.
 
         >>> lf.group_by_dynamic("time", every="1h", closed="both").agg(
-        ...     pl.col("time").count().alias("time_count")
+        ...     pl.col("n")
         ... ).collect()
         shape: (5, 2)
-        ┌─────────────────────┬────────────┐
-        │ time                ┆ time_count │
-        │ ---                 ┆ ---        │
-        │ datetime[μs]        ┆ u32        │
-        ╞═════════════════════╪════════════╡
-        │ 2021-12-15 23:00:00 ┆ 1          │
-        │ 2021-12-16 00:00:00 ┆ 3          │
-        │ 2021-12-16 01:00:00 ┆ 3          │
-        │ 2021-12-16 02:00:00 ┆ 3          │
-        │ 2021-12-16 03:00:00 ┆ 1          │
-        └─────────────────────┴────────────┘
+        ┌─────────────────────┬───────────┐
+        │ time                ┆ n         │
+        │ ---                 ┆ ---       │
+        │ datetime[μs]        ┆ list[i64] │
+        ╞═════════════════════╪═══════════╡
+        │ 2021-12-15 23:00:00 ┆ [0]       │
+        │ 2021-12-16 00:00:00 ┆ [0, 1, 2] │
+        │ 2021-12-16 01:00:00 ┆ [2, 3, 4] │
+        │ 2021-12-16 02:00:00 ┆ [4, 5, 6] │
+        │ 2021-12-16 03:00:00 ┆ [6]       │
+        └─────────────────────┴───────────┘
 
         Dynamic group bys can also be combined with grouping on normal keys
 
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "time": pl.datetime_range(
-        ...             start=datetime(2021, 12, 16),
-        ...             end=datetime(2021, 12, 16, 3),
-        ...             interval="30m",
-        ...             eager=True,
-        ...         ),
-        ...         "groups": ["a", "a", "a", "b", "b", "a", "a"],
-        ...     }
-        ... )
+        >>> lf = lf.with_columns(groups=pl.Series(["a", "a", "a", "b", "b", "a", "a"]))
         >>> lf.collect()
-        shape: (7, 2)
-        ┌─────────────────────┬────────┐
-        │ time                ┆ groups │
-        │ ---                 ┆ ---    │
-        │ datetime[μs]        ┆ str    │
-        ╞═════════════════════╪════════╡
-        │ 2021-12-16 00:00:00 ┆ a      │
-        │ 2021-12-16 00:30:00 ┆ a      │
-        │ 2021-12-16 01:00:00 ┆ a      │
-        │ 2021-12-16 01:30:00 ┆ b      │
-        │ 2021-12-16 02:00:00 ┆ b      │
-        │ 2021-12-16 02:30:00 ┆ a      │
-        │ 2021-12-16 03:00:00 ┆ a      │
-        └─────────────────────┴────────┘
-        >>> (
-        ...     lf.group_by_dynamic(
-        ...         "time",
-        ...         every="1h",
-        ...         closed="both",
-        ...         by="groups",
-        ...         include_boundaries=True,
-        ...     )
-        ... ).agg([pl.col("time").count().alias("time_count")]).collect()
+        shape: (7, 3)
+        ┌─────────────────────┬─────┬────────┐
+        │ time                ┆ n   ┆ groups │
+        │ ---                 ┆ --- ┆ ---    │
+        │ datetime[μs]        ┆ i64 ┆ str    │
+        ╞═════════════════════╪═════╪════════╡
+        │ 2021-12-16 00:00:00 ┆ 0   ┆ a      │
+        │ 2021-12-16 00:30:00 ┆ 1   ┆ a      │
+        │ 2021-12-16 01:00:00 ┆ 2   ┆ a      │
+        │ 2021-12-16 01:30:00 ┆ 3   ┆ b      │
+        │ 2021-12-16 02:00:00 ┆ 4   ┆ b      │
+        │ 2021-12-16 02:30:00 ┆ 5   ┆ a      │
+        │ 2021-12-16 03:00:00 ┆ 6   ┆ a      │
+        └─────────────────────┴─────┴────────┘
+        >>> lf.group_by_dynamic(
+        ...     "time",
+        ...     every="1h",
+        ...     closed="both",
+        ...     by="groups",
+        ...     include_boundaries=True,
+        ... ).agg(pl.col("n")).collect()
         shape: (7, 5)
-        ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
-        │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
-        │ ---    ┆ ---                 ┆ ---                 ┆ ---                 ┆ ---        │
-        │ str    ┆ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ u32        │
-        ╞════════╪═════════════════════╪═════════════════════╪═════════════════════╪════════════╡
-        │ a      ┆ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-15 23:00:00 ┆ 1          │
-        │ a      ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ 3          │
-        │ a      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ 1          │
-        │ a      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 2          │
-        │ a      ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 04:00:00 ┆ 2021-12-16 03:00:00 ┆ 1          │
-        │ b      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ 2          │
-        │ b      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 1          │
-        └────────┴─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
+        ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬───────────┐
+        │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ n         │
+        │ ---    ┆ ---                 ┆ ---                 ┆ ---                 ┆ ---       │
+        │ str    ┆ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ list[i64] │
+        ╞════════╪═════════════════════╪═════════════════════╪═════════════════════╪═══════════╡
+        │ a      ┆ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-15 23:00:00 ┆ [0]       │
+        │ a      ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ [0, 1, 2] │
+        │ a      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ [2]       │
+        │ a      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ [5, 6]    │
+        │ a      ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 04:00:00 ┆ 2021-12-16 03:00:00 ┆ [6]       │
+        │ b      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ [3, 4]    │
+        │ b      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ [4]       │
+        └────────┴─────────────────────┴─────────────────────┴─────────────────────┴───────────┘
 
         Dynamic group by on an index column
 
@@ -3188,21 +3240,35 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     include_boundaries=True,
         ...     closed="right",
         ... ).agg(pl.col("A").alias("A_agg_list")).collect()
-        shape: (3, 4)
+        shape: (4, 4)
         ┌─────────────────┬─────────────────┬─────┬─────────────────┐
         │ _lower_boundary ┆ _upper_boundary ┆ idx ┆ A_agg_list      │
         │ ---             ┆ ---             ┆ --- ┆ ---             │
         │ i64             ┆ i64             ┆ i64 ┆ list[str]       │
         ╞═════════════════╪═════════════════╪═════╪═════════════════╡
+        │ -2              ┆ 1               ┆ -2  ┆ ["A", "A"]      │
         │ 0               ┆ 3               ┆ 0   ┆ ["A", "B", "B"] │
         │ 2               ┆ 5               ┆ 2   ┆ ["B", "B", "C"] │
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
         """  # noqa: W505
+        if truncate is not None:
+            if truncate:
+                label = "left"
+            else:
+                label = "datapoint"
+            warnings.warn(
+                f"`truncate` is deprecated and will be removed in a future version. "
+                f"Please replace `truncate={truncate}` with `label='{label}'` to "
+                "silence this warning.",
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
+
         index_column = parse_as_expression(index_column)
         if offset is None:
-            offset = f"-{_timedelta_to_pl_duration(every)}" if period is None else "0ns"
+            offset = _negate_duration(_timedelta_to_pl_duration(every))
 
         if period is None:
             period = every
@@ -3217,7 +3283,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             every,
             period,
             offset,
-            truncate,
+            label,
             include_boundaries,
             closed,
             pyexprs_by,
@@ -5430,10 +5496,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Update the values in this `LazyFrame` with the non-null values in `other`.
 
-        Notes
-        -----
-        This is syntactic sugar for a left/inner join + coalesce
-
         Warnings
         --------
         This functionality is experimental and may change without it being considered a
@@ -5449,6 +5511,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         how : {'left', 'inner'}
             'left' will keep the left table rows as is.
             'inner' will remove rows that are not found in other
+
+        Notes
+        -----
+        This is syntactic sugar for a left/inner join + coalesce
 
         Examples
         --------
@@ -5668,10 +5734,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every
             interval of the window
         period
-            length of the window, if None it is equal to 'every'
+            length of the window, if None it will equal 'every'
         offset
-            offset of the window if None and period is None it will be equal to negative
-            `every`
+            offset of the window, only takes effect if `start_by` is ``'window'``.
+            Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
         include_boundaries
@@ -5685,7 +5751,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
 
-            * 'window': Truncate the start of the window with the 'every' argument.
+            * 'window': Start by taking the earliest timestamp, truncating it with
+              `every`, and then adding `offset`.
               Note that weekly windows start on Monday.
             * 'datapoint': Start from the first encountered data point.
             * a day of the week (only takes effect if `every` contains ``'w'``):

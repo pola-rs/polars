@@ -40,7 +40,7 @@
   -
   <a href="https://stackoverflow.com/questions/tagged/r-polars">R</a>
   |
-  <a href="https://pola-rs.github.io/polars-book/">User Guide</a>
+  <a href="https://pola-rs.github.io/polars/">User Guide</a>
   |
   <a href="https://discord.gg/4UfP5cfBE7">Discord</a>
 </p>
@@ -58,7 +58,7 @@ Polars is a DataFrame interface on top of an OLAP Query Engine implemented in Ru
 - Hybrid Streaming (larger than RAM datasets)
 - Rust | Python | NodeJS | R | ...
 
-To learn more, read the [User Guide](https://pola-rs.github.io/polars-book/).
+To learn more, read the [User Guide](https://pola-rs.github.io/polars/).
 
 ## Python
 
@@ -208,6 +208,7 @@ You can also install the dependencies directly.
 | xlsx2csv   | Support for reading from Excel files                                         |
 | openpyxl   | Support for reading from Excel files with native types                       |
 | deltalake  | Support for reading from Delta Lake Tables                                   |
+| pyiceberg  | Support for reading from Apache Iceberg tables                               |
 | timezone   | Timezone support, only needed if are on Python<3.9 or you are on Windows     |
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
@@ -266,12 +267,6 @@ Don't use this unless you hit the row boundary as the default polars is faster a
 Do you want polars to run on an old CPU (e.g. dating from before 2011)? Install `pip install polars-lts-cpu`. This polars project is
 compiled without [avx](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target features.
 
-## Acknowledgements
-
-Development of Polars is proudly powered by
-
-[![Xomnia](https://raw.githubusercontent.com/pola-rs/polars-static/master/sponsors/xomnia.png)](https://www.xomnia.com/)
-
 ## Sponsors
 
-[<img src="https://raw.githubusercontent.com/pola-rs/polars-static/master/sponsors/xomnia.png" height="40" />](https://www.xomnia.com/) &emsp; [<img src="https://www.jetbrains.com/company/brand/img/jetbrains_logo.png" height="50" />](https://www.jetbrains.com)
+[<img src="https://www.jetbrains.com/company/brand/img/jetbrains_logo.png" height="50" />](https://www.jetbrains.com)

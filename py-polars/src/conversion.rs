@@ -11,11 +11,12 @@ use polars::io::avro::AvroCompression;
 use polars::io::ipc::IpcCompression;
 use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
-use polars_core::frame::hash_join::JoinValidation;
 use polars_core::frame::row::any_values_to_dtype;
 use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
 use polars_core::utils::arrow::types::NativeType;
 use polars_lazy::prelude::*;
+#[cfg(feature = "cloud")]
+use polars_rs::io::cloud::CloudOptions;
 use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -153,6 +154,7 @@ impl<'a> FromPyObject<'a> for Wrap<BinaryChunked> {
     }
 }
 
+#[cfg(feature = "csv")]
 impl<'a> FromPyObject<'a> for Wrap<NullValues> {
     fn extract(ob: &'a PyAny) -> PyResult<Self> {
         if let Ok(s) = ob.extract::<String>() {
@@ -1162,6 +1164,7 @@ impl FromPyObject<'_> for Wrap<ClosedWindow> {
     }
 }
 
+#[cfg(feature = "csv")]
 impl FromPyObject<'_> for Wrap<CsvEncoding> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {
@@ -1208,6 +1211,22 @@ impl FromPyObject<'_> for Wrap<JoinType> {
                 return Err(PyValueError::new_err(format!(
                 "`how` must be one of {{'inner', 'left', 'outer', 'semi', 'anti', 'cross'}}, got {v}",
             )))
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl FromPyObject<'_> for Wrap<Label> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "left" => Label::Left,
+            "right" => Label::Right,
+            "datapoint" => Label::DataPoint,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`label` must be one of {{'left', 'right', 'datapoint'}}, got {v}",
+                )))
             },
         };
         Ok(Wrap(parsed))
@@ -1378,6 +1397,7 @@ impl FromPyObject<'_> for Wrap<IpcCompression> {
     }
 }
 
+#[cfg(feature = "search_sorted")]
 impl FromPyObject<'_> for Wrap<SearchSortedSide> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {
@@ -1427,6 +1447,7 @@ impl FromPyObject<'_> for Wrap<JoinValidation> {
     }
 }
 
+#[cfg(feature = "csv")]
 impl FromPyObject<'_> for Wrap<QuoteStyle> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let parsed = match ob.extract::<&str>()? {
@@ -1442,6 +1463,12 @@ impl FromPyObject<'_> for Wrap<QuoteStyle> {
         };
         Ok(Wrap(parsed))
     }
+}
+
+#[cfg(feature = "cloud")]
+pub(crate) fn parse_cloud_options(uri: &str, kv: Vec<(String, String)>) -> PyResult<CloudOptions> {
+    let out = CloudOptions::from_untyped_config(uri, kv).map_err(PyPolarsErr::from)?;
+    Ok(out)
 }
 
 #[cfg(feature = "list_sets")]

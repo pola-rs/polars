@@ -19,8 +19,6 @@ use crate::chunked_array::ops::ToBitRepr;
 use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
-#[cfg(feature = "algorithm_join")]
-use crate::frame::hash_join::*;
 use crate::prelude::*;
 
 macro_rules! impl_dyn_series {
@@ -109,19 +107,6 @@ macro_rules! impl_dyn_series {
                     .agg_list(groups)
                     .cast(&DataType::List(Box::new(self.dtype().clone())))
                     .unwrap()
-            }
-
-#[cfg(feature = "algorithm_join")]
-            unsafe fn zip_outer_join_column(
-                &self,
-                right_column: &Series,
-                opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-            ) -> Series {
-                let right_column = right_column.to_physical_repr().into_owned();
-                self.0
-                    .zip_outer_join_column(&right_column, opt_join_tuples)
-                    .$into_logical()
-                    .into_series()
             }
 
             fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
@@ -245,43 +230,19 @@ macro_rules! impl_dyn_series {
             }
 
             fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-                self.0.deref().take(indices.into())
-                    .map(|ca| ca.$into_logical().into_series())
+                Ok(self.0.take(indices)?.$into_logical().into_series())
             }
 
-            fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-                self.0.deref().take(iter.into())
-                    .map(|ca| ca.$into_logical().into_series())
+            unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+                self.0.take_unchecked(indices).$into_logical().into_series()
             }
 
-            unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-                self.0.deref().take_unchecked(iter.into())
-                    .$into_logical()
-                    .into_series()
+            fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+                Ok(self.0.take(indices)?.$into_logical().into_series())
             }
 
-            unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-                let mut out = self.0.deref().take_unchecked(idx.into());
-
-                if self.0.is_sorted_ascending_flag()
-                    && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
-                {
-                    out.set_sorted_flag(idx.is_sorted_flag())
-                }
-
-                Ok(out.$into_logical().into_series())
-            }
-
-            unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-                self.0.deref().take_unchecked(iter.into())
-                    .$into_logical()
-                    .into_series()
-            }
-
-            #[cfg(feature = "take_opt_iter")]
-            fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-                self.0.deref().take(iter.into())
-                    .map(|ca| ca.$into_logical().into_series())
+            unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+                self.0.take_unchecked(indices).$into_logical().into_series()
             }
 
             fn len(&self) -> usize {
@@ -301,6 +262,7 @@ macro_rules! impl_dyn_series {
 
             fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
                 match (self.dtype(), data_type) {
+                    #[cfg(feature="dtype-date")]
                     (DataType::Date, DataType::Utf8) => Ok(self
                         .0
                         .clone()
@@ -309,6 +271,7 @@ macro_rules! impl_dyn_series {
                         .unwrap()
                         .to_string("%Y-%m-%d")
                         .into_series()),
+                    #[cfg(feature="dtype-time")]
                     (DataType::Time, DataType::Utf8) => Ok(self
                         .0
                         .clone()

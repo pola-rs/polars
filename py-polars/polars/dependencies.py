@@ -11,11 +11,13 @@ from typing import TYPE_CHECKING, Any, ClassVar, Hashable, cast
 _DATAFRAME_API_COMPAT_AVAILABLE = True
 _DELTALAKE_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
+_GEVENT_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
 _NUMPY_AVAILABLE = True
 _PANDAS_AVAILABLE = True
 _PYARROW_AVAILABLE = True
 _PYDANTIC_AVAILABLE = True
+_PYICEBERG_AVAILABLE = True
 _ZONEINFO_AVAILABLE = True
 
 
@@ -155,11 +157,13 @@ if TYPE_CHECKING:
     import dataframe_api_compat
     import deltalake
     import fsspec
+    import gevent
     import hypothesis
     import numpy
     import pandas
     import pyarrow
     import pydantic
+    import pyiceberg
 
     if sys.version_info >= (3, 9):
         import zoneinfo
@@ -184,11 +188,13 @@ else:
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
     pydantic, _PYDANTIC_AVAILABLE = _lazy_import("pydantic")
+    pyiceberg, _PYICEBERG_AVAILABLE = _lazy_import("pyiceberg")
     zoneinfo, _ZONEINFO_AVAILABLE = (
         _lazy_import("zoneinfo")
         if sys.version_info >= (3, 9)
         else _lazy_import("backports.zoneinfo")
     )
+    gevent, _GEVENT_AVAILABLE = _lazy_import("gevent")
 
 
 @lru_cache(maxsize=None)
@@ -228,9 +234,11 @@ __all__ = [
     "dataframe_api_compat",
     "deltalake",
     "fsspec",
+    "gevent",
     "numpy",
     "pandas",
     "pydantic",
+    "pyiceberg",
     "pyarrow",
     "zoneinfo",
     # lazy utilities
@@ -241,7 +249,9 @@ __all__ = [
     "_LazyModule",
     # exported flags/guards
     "_DELTALAKE_AVAILABLE",
+    "_PYICEBERG_AVAILABLE",
     "_FSSPEC_AVAILABLE",
+    "_GEVENT_AVAILABLE",
     "_HYPOTHESIS_AVAILABLE",
     "_NUMPY_AVAILABLE",
     "_PANDAS_AVAILABLE",

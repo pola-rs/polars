@@ -5,10 +5,13 @@ pub struct BinaryNameSpace(pub(crate) Expr);
 
 impl BinaryNameSpace {
     /// Check if a binary value contains a literal binary.
-    pub fn contains_literal<S: AsRef<[u8]>>(self, pat: S) -> Expr {
-        let pat = pat.as_ref().into();
-        self.0
-            .map_private(BinaryFunction::Contains { pat, literal: true }.into())
+    pub fn contains_literal(self, pat: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::BinaryExpr(BinaryFunction::Contains),
+            &[pat],
+            true,
+            true,
+        )
     }
 
     /// Check if a binary value ends with the given sequence.
@@ -16,6 +19,7 @@ impl BinaryNameSpace {
         self.0.map_many_private(
             FunctionExpr::BinaryExpr(BinaryFunction::EndsWith),
             &[sub],
+            true,
             true,
         )
     }
@@ -25,6 +29,7 @@ impl BinaryNameSpace {
         self.0.map_many_private(
             FunctionExpr::BinaryExpr(BinaryFunction::StartsWith),
             &[sub],
+            true,
             true,
         )
     }

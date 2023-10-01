@@ -175,7 +175,7 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
         let schema = match self {
             #[cfg(feature = "python")]
-            PythonScan { options, .. } => &options.schema,
+            PythonScan { options, .. } => options.output_schema.as_ref().unwrap_or(&options.schema),
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
             Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),

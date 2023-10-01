@@ -55,18 +55,22 @@ PythonDataType: TypeAlias = Union[
 ]
 
 SchemaDefinition: TypeAlias = Union[
-    Sequence[str],
     Mapping[str, Union[PolarsDataType, PythonDataType]],
     Sequence[Union[str, Tuple[str, Union[PolarsDataType, PythonDataType, None]]]],
 ]
 SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
-# literal types that are allowed in expressions (auto-converted to pl.lit)
+NumericLiteral: TypeAlias = Union[int, float, Decimal]
+TemporalLiteral: TypeAlias = Union[date, time, datetime, timedelta]
+# Python literal types (can convert into a `lit` expression)
 PythonLiteral: TypeAlias = Union[
-    str, int, float, bool, date, time, datetime, timedelta, bytes, Decimal, List[Any]
+    NumericLiteral, TemporalLiteral, str, bool, bytes, List[Any]
 ]
+# Inputs that can convert into a `col` expression
+IntoExprColumn: TypeAlias = Union["Expr", "Series", str]
+# Inputs that can convert into an expression
+IntoExpr: TypeAlias = Union[PythonLiteral, IntoExprColumn, None]
 
-IntoExpr: TypeAlias = Union["Expr", PythonLiteral, "Series", None]
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
 
 # selector type, and related collection/sequence
@@ -86,6 +90,7 @@ FloatFmt: TypeAlias = Literal["full", "mixed"]
 IndexOrder: TypeAlias = Literal["c", "fortran"]
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 JoinValidation: TypeAlias = Literal["m:m", "m:1", "1:m", "1:1"]
+Label: TypeAlias = Literal["left", "right", "datapoint"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
 NullStrategy: TypeAlias = Literal["ignore", "propagate"]
 ParallelStrategy: TypeAlias = Literal["auto", "columns", "row_groups", "none"]

@@ -623,7 +623,7 @@ impl PhysicalIoExpr for PhysicalIoHelper {
     }
 }
 
-pub(super) fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
+pub(crate) fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
     let has_window_function = if let Some(expr) = expr.as_expression() {
         expr.into_iter()
             .any(|expr| matches!(expr, Expr::Window { .. }))

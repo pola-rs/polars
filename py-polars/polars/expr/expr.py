@@ -27,6 +27,7 @@ from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
     Categorical,
+    Null,
     Struct,
     UInt32,
     Utf8,
@@ -75,13 +76,16 @@ if TYPE_CHECKING:
         FillNullStrategy,
         InterpolationMethod,
         IntoExpr,
+        IntoExprColumn,
         MapElementsStrategy,
         NullBehavior,
+        NumericLiteral,
         PolarsDataType,
         PythonLiteral,
         RankMethod,
         RollingInterpolationMethod,
         SearchSortedSide,
+        TemporalLiteral,
         WindowMappingStrategy,
     )
 
@@ -195,7 +199,10 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.neq(self._to_expr(other)._pyexpr))
 
     def __neg__(self) -> Expr:
-        return F.lit(0) - self
+        neg_expr = F.lit(0) - self
+        if (name := self.meta.output_name(raise_if_undetermined=False)) is not None:
+            neg_expr = neg_expr.alias(name)
+        return neg_expr
 
     def __or__(self, other: Expr | int | bool) -> Self:
         return self._from_pyexpr(self._pyexpr._or(self._to_pyexpr(other)))
@@ -204,7 +211,10 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other)._or(self._pyexpr))
 
     def __pos__(self) -> Expr:
-        return F.lit(0) + self
+        pos_expr = F.lit(0) + self
+        if (name := self.meta.output_name(raise_if_undetermined=False)) is not None:
+            pos_expr = pos_expr.alias(name)
+        return pos_expr
 
     def __pow__(self, power: int | float | Series | Expr) -> Self:
         return self.pow(power)
@@ -1938,7 +1948,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sort_with(descending, nulls_last))
 
-    def top_k(self, k: int = 5) -> Self:
+    def top_k(self, k: int | IntoExprColumn = 5) -> Self:
         r"""
         Return the `k` largest elements.
 
@@ -1982,9 +1992,10 @@ class Expr:
         └───────┴──────────┘
 
         """
+        k = parse_as_expression(k)
         return self._from_pyexpr(self._pyexpr.top_k(k))
 
-    def bottom_k(self, k: int = 5) -> Self:
+    def bottom_k(self, k: int | IntoExprColumn = 5) -> Self:
         r"""
         Return the `k` smallest elements.
 
@@ -2028,6 +2039,7 @@ class Expr:
         └───────┴──────────┘
 
         """
+        k = parse_as_expression(k)
         return self._from_pyexpr(self._pyexpr.bottom_k(k))
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
@@ -3191,9 +3203,9 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.is_unique())
 
-    def is_first(self) -> Self:
+    def is_first_distinct(self) -> Self:
         """
-        Get a mask of the first unique value.
+        Return a boolean mask indicating the first occurrence of each distinct value.
 
         Returns
         -------
@@ -3202,31 +3214,27 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "num": [1, 2, 3, 1, 5],
-        ...     }
-        ... )
-        >>> df.with_columns(pl.col("num").is_first().alias("is_first"))
+        >>> df = pl.DataFrame({"a": [1, 1, 2, 3, 2]})
+        >>> df.with_columns(pl.col("a").is_first_distinct().alias("first"))
         shape: (5, 2)
-        ┌─────┬──────────┐
-        │ num ┆ is_first │
-        │ --- ┆ ---      │
-        │ i64 ┆ bool     │
-        ╞═════╪══════════╡
-        │ 1   ┆ true     │
-        │ 2   ┆ true     │
-        │ 3   ┆ true     │
-        │ 1   ┆ false    │
-        │ 5   ┆ true     │
-        └─────┴──────────┘
+        ┌─────┬───────┐
+        │ a   ┆ first │
+        │ --- ┆ ---   │
+        │ i64 ┆ bool  │
+        ╞═════╪═══════╡
+        │ 1   ┆ true  │
+        │ 1   ┆ false │
+        │ 2   ┆ true  │
+        │ 3   ┆ true  │
+        │ 2   ┆ false │
+        └─────┴───────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.is_first())
+        return self._from_pyexpr(self._pyexpr.is_first_distinct())
 
-    def is_last(self) -> Self:
+    def is_last_distinct(self) -> Self:
         """
-        Get a mask of the last unique value.
+        Return a boolean mask indicating the last occurrence of each distinct value.
 
         Returns
         -------
@@ -3235,31 +3243,32 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "num": [1, 2, 3, 1, 5],
-        ...     }
-        ... )
-        >>> df.with_columns(pl.col("num").is_last().alias("is_last"))
+        >>> df = pl.DataFrame({"a": [1, 1, 2, 3, 2]})
+        >>> df.with_columns(pl.col("a").is_last_distinct().alias("last"))
         shape: (5, 2)
-        ┌─────┬─────────┐
-        │ num ┆ is_last │
-        │ --- ┆ ---     │
-        │ i64 ┆ bool    │
-        ╞═════╪═════════╡
-        │ 1   ┆ false   │
-        │ 2   ┆ true    │
-        │ 3   ┆ true    │
-        │ 1   ┆ true    │
-        │ 5   ┆ true    │
-        └─────┴─────────┘
+        ┌─────┬───────┐
+        │ a   ┆ last  │
+        │ --- ┆ ---   │
+        │ i64 ┆ bool  │
+        ╞═════╪═══════╡
+        │ 1   ┆ false │
+        │ 1   ┆ true  │
+        │ 2   ┆ false │
+        │ 3   ┆ true  │
+        │ 2   ┆ true  │
+        └─────┴───────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.is_last())
+        return self._from_pyexpr(self._pyexpr.is_last_distinct())
 
     def is_duplicated(self) -> Self:
         """
-        Get mask of duplicated values.
+        Return a boolean mask indicating duplicated values.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -3694,7 +3703,7 @@ class Expr:
         represented by an expression using a third-party library.
 
         Read more in `the book
-        <https://pola-rs.github.io/polars-book/user-guide/expressions/user-defined-functions>`_.
+        <https://pola-rs.github.io/polars/user-guide/expressions/user-defined-functions>`_.
 
         Parameters
         ----------
@@ -3707,7 +3716,7 @@ class Expr:
 
         Notes
         -----
-        If you are looking to map a function over a window function or groupby context,
+        If you are looking to map a function over a window function or group_by context,
         refer to func:`map_elements` instead.
 
         Warnings
@@ -4922,8 +4931,8 @@ class Expr:
         if isinstance(other, Collection) and not isinstance(other, str):
             if isinstance(other, (Set, FrozenSet)):
                 other = list(other)
-            other = F.lit(pl.Series(other))
-            other = other._pyexpr
+            implied_dtype = Null if len(other) == 0 else None
+            other = F.lit(pl.Series(other, dtype=implied_dtype))._pyexpr
         else:
             other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr.is_in(other))
@@ -7393,7 +7402,7 @@ class Expr:
         variance. If Fisher's definition is used, then 3.0 is subtracted from
         the result to give 0.0 for a normal distribution.
         If bias is False then the kurtosis is calculated using k statistics to
-        eliminate bias coming from biased moment estimators
+        eliminate bias coming from biased moment estimators.
 
         See scipy.stats for more information
 
@@ -7421,11 +7430,15 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.kurtosis(fisher, bias))
 
-    def clip(self, lower_bound: int | float, upper_bound: int | float) -> Self:
+    def clip(
+        self,
+        lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn,
+        upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn,
+    ) -> Self:
         """
         Clip (limit) the values in an array to a `min` and `max` boundary.
 
-        Only works for numerical types.
+        Only works for physical numerical types.
 
         If you want to clip other dtypes, consider writing a "when, then, otherwise"
         expression. See :func:`when` for more information.
@@ -7454,13 +7467,17 @@ class Expr:
         └──────┴─────────────┘
 
         """
+        lower_bound = parse_as_expression(lower_bound, str_as_lit=True)
+        upper_bound = parse_as_expression(upper_bound, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.clip(lower_bound, upper_bound))
 
-    def clip_min(self, lower_bound: int | float) -> Self:
+    def clip_min(
+        self, lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Self:
         """
         Clip (limit) the values in an array to a `min` boundary.
 
-        Only works for numerical types.
+        Only works for physical numerical types.
 
         If you want to clip other dtypes, consider writing a "when, then, otherwise"
         expression. See :func:`when` for more information.
@@ -7487,13 +7504,16 @@ class Expr:
         └──────┴─────────────┘
 
         """
+        lower_bound = parse_as_expression(lower_bound, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.clip_min(lower_bound))
 
-    def clip_max(self, upper_bound: int | float) -> Self:
+    def clip_max(
+        self, upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Self:
         """
         Clip (limit) the values in an array to a `max` boundary.
 
-        Only works for numerical types.
+        Only works for physical numerical types.
 
         If you want to clip other dtypes, consider writing a "when, then, otherwise"
         expression. See :func:`when` for more information.
@@ -7520,6 +7540,7 @@ class Expr:
         └──────┴─────────────┘
 
         """
+        upper_bound = parse_as_expression(upper_bound, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.clip_max(upper_bound))
 
     def lower_bound(self) -> Self:
@@ -8035,7 +8056,7 @@ class Expr:
 
     def sample(
         self,
-        n: int | None = None,
+        n: int | Expr | None = None,
         *,
         fraction: float | None = None,
         with_replacement: bool = False,
@@ -8086,6 +8107,7 @@ class Expr:
 
         if n is None:
             n = 1
+        n = parse_as_expression(n)
         return self._from_pyexpr(
             self._pyexpr.sample_n(n, with_replacement, shuffle, seed)
         )
@@ -9263,6 +9285,96 @@ class Expr:
         """
         return self.rolling_map(
             function, window_size, weights, min_periods, center=center
+        )
+
+    @deprecate_renamed_function("is_first_distinct", version="0.19.3")
+    def is_first(self) -> Self:
+        """
+        Return a boolean mask indicating the first occurrence of each distinct value.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`Expr.is_first_distinct`.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        """
+        return self.is_first_distinct()
+
+    @deprecate_renamed_function("is_last_distinct", version="0.19.3")
+    def is_last(self) -> Self:
+        """
+        Return a boolean mask indicating the last occurrence of each distinct value.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`Expr.is_last_distinct`.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        """
+        return self.is_last_distinct()
+
+    def _register_plugin(
+        self,
+        lib: str,
+        symbol: str,
+        args: list[IntoExpr] | None = None,
+        *,
+        is_elementwise: bool = False,
+        input_wildcard_expansion: bool = False,
+        auto_explode: bool = False,
+        cast_to_supertypes: bool = False,
+    ) -> Self:
+        """
+        Register a shared library as a plugin.
+
+        .. warning::
+            This is highly unsafe as this will call the C function
+            loaded by ``lib::symbol``
+
+        .. note::
+            This functionality is unstable and may change without it
+            being considered breaking.
+
+        Parameters
+        ----------
+        lib
+            Library to load.
+        symbol
+            Function to load.
+        args
+            Arguments (other than self) passed to this function.
+        is_elementwise
+            If the function only operates on scalars
+            this will trigger fast paths.
+        input_wildcard_expansion
+            Expand expressions as input of this function.
+        auto_explode
+            Explode the results in a group_by.
+            This is recommended for aggregation functions.
+        cast_to_supertypes
+            Cast the input datatypes to their supertype.
+
+        """
+        if args is None:
+            args = []
+        else:
+            args = [parse_as_expression(a) for a in args]
+        return self._from_pyexpr(
+            self._pyexpr.register_plugin(
+                lib,
+                symbol,
+                args,
+                is_elementwise,
+                input_wildcard_expansion,
+                auto_explode,
+                cast_to_supertypes,
+            )
         )
 
     @property

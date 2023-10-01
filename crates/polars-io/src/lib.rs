@@ -4,7 +4,6 @@
 
 #[cfg(feature = "avro")]
 pub mod avro;
-#[cfg(feature = "cloud")]
 pub mod cloud;
 #[cfg(any(feature = "csv", feature = "json"))]
 pub mod csv;
@@ -19,12 +18,6 @@ pub mod ndjson;
 #[cfg(feature = "cloud")]
 pub use crate::cloud::glob as async_glob;
 
-#[cfg(any(
-    feature = "csv",
-    feature = "parquet",
-    feature = "ipc",
-    feature = "json"
-))]
 pub mod mmap;
 mod options;
 #[cfg(feature = "parquet")]
@@ -33,10 +26,14 @@ pub mod predicates;
 pub mod prelude;
 #[cfg(all(test, feature = "csv"))]
 mod tests;
-pub(crate) mod utils;
+pub mod utils;
+use once_cell::sync::Lazy;
+use regex::Regex;
 
 #[cfg(feature = "partition")]
 pub mod partition;
+#[cfg(feature = "async")]
+pub mod pl_async;
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -169,9 +166,13 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     }
 }
 
+static CLOUD_URL: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(s3|gs|gs|gcs|file|abfs|abfss|azure|az|adl)\:\/\/.+$").unwrap());
+
 /// Check if the path is a cloud url.
 pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {
-    p.as_ref().starts_with("s3://")
-        || p.as_ref().starts_with("file://")
-        || p.as_ref().starts_with("gcs://")
+    match p.as_ref().as_os_str().to_str() {
+        Some(s) => CLOUD_URL.is_match(s),
+        _ => false,
+    }
 }

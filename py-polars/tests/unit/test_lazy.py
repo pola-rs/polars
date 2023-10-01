@@ -69,8 +69,9 @@ def test_lazyframe_membership_operator() -> None:
 
 def test_apply() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    new = ldf.with_columns_seq(pl.col("a").map_batches(lambda s: s * 2).alias("foo"))
-
+    new = ldf.with_columns_seq(
+        pl.col("a").map_batches(lambda s: s * 2, return_dtype=pl.Int64).alias("foo")
+    )
     expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
     assert_frame_equal(new, expected)
     assert_frame_equal(new.collect(), expected.collect())
@@ -285,24 +286,6 @@ def test_is_unique() -> None:
     df = pl.DataFrame({"a": [4, 1, 4]})
     result = df.select(pl.col("a").is_unique())["a"]
     assert_series_equal(result, pl.Series("a", [False, True, False]))
-
-
-def test_is_first() -> None:
-    ldf = pl.LazyFrame({"a": [4, 1, 4]})
-    result = ldf.select(pl.col("a").is_first()).collect()["a"]
-    assert_series_equal(result, pl.Series("a", [True, True, False]))
-
-    # struct
-    ldf = pl.LazyFrame({"a": [1, 2, 3, 2, None, 2, 1], "b": [0, 2, 3, 2, None, 2, 0]})
-
-    assert ldf.select(pl.struct(["a", "b"]).is_first()).collect().to_dict(False) == {
-        "a": [True, True, True, False, True, False, False]
-    }
-
-    ldf = pl.LazyFrame({"a": [[1, 2], [3], [1, 2], [4, 5], [4, 5]]})
-    assert ldf.select(pl.col("a").is_first()).collect().to_dict(False) == {
-        "a": [True, True, False, True, False]
-    }
 
 
 def test_is_duplicated() -> None:

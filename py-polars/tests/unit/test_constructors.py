@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from collections import namedtuple
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
@@ -10,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
@@ -267,37 +268,43 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
 
 
 def test_init_pydantic_2x() -> None:
-    class PageView(BaseModel):
-        user_id: str
-        ts: datetime = Field(alias=["ts", "$date"])  # type: ignore[literal-required, arg-type]
-        path: str = Field("?", alias=["url", "path"])  # type: ignore[literal-required, arg-type]
-        referer: str = Field("?", alias="referer")
-        event: Literal["leave", "enter"] = Field("enter")
-        time_on_page: int = Field(0, serialization_alias="top")
+    try:
+        # don't fail if manually testing with pydantic 1.x
+        from pydantic import TypeAdapter
 
-    data_json = """
-    [{
-        "user_id": "x",
-        "ts": {"$date": "2021-01-01T00:00:00.000Z"},
-        "url": "/latest/foobar",
-        "referer": "https://google.com",
-        "event": "enter",
-        "top": 123
-    }]
-    """
-    adapter: TypeAdapter[Any] = TypeAdapter(List[PageView])
-    models = adapter.validate_json(data_json)
+        class PageView(BaseModel):
+            user_id: str
+            ts: datetime = Field(alias=["ts", "$date"])  # type: ignore[literal-required, arg-type]
+            path: str = Field("?", alias=["url", "path"])  # type: ignore[literal-required, arg-type]
+            referer: str = Field("?", alias="referer")
+            event: Literal["leave", "enter"] = Field("enter")
+            time_on_page: int = Field(0, serialization_alias="top")
 
-    result = pl.DataFrame(models)
+        data_json = """
+        [{
+            "user_id": "x",
+            "ts": {"$date": "2021-01-01T00:00:00.000Z"},
+            "url": "/latest/foobar",
+            "referer": "https://google.com",
+            "event": "enter",
+            "top": 123
+        }]
+        """
+        adapter: TypeAdapter[Any] = TypeAdapter(List[PageView])
+        models = adapter.validate_json(data_json)
 
-    assert result.to_dict(False) == {
-        "user_id": ["x"],
-        "ts": [datetime(2021, 1, 1, 0, 0)],
-        "path": ["?"],
-        "referer": ["https://google.com"],
-        "event": ["enter"],
-        "time_on_page": [0],
-    }
+        result = pl.DataFrame(models)
+
+        assert result.to_dict(False) == {
+            "user_id": ["x"],
+            "ts": [datetime(2021, 1, 1, 0, 0)],
+            "path": ["?"],
+            "referer": ["https://google.com"],
+            "event": ["enter"],
+            "time_on_page": [0],
+        }
+    except ImportError:
+        pass
 
 
 def test_init_structured_objects_unhashable() -> None:
@@ -454,6 +461,24 @@ def test_dataclasses_initvar_typing() -> None:
 
     # ...but should not load the initvar field into the DataFrame
     assert dataclasses.asdict(abc) == df.rows(named=True)[0]
+
+
+def test_collections_namedtuple() -> None:
+    TestData = namedtuple("TestData", ["id", "info"])
+    nt_data = [TestData(1, "a"), TestData(2, "b"), TestData(3, "c")]
+
+    df1 = pl.DataFrame(nt_data)
+    assert df1.to_dict(False) == {"id": [1, 2, 3], "info": ["a", "b", "c"]}
+
+    df2 = pl.DataFrame({"data": nt_data, "misc": ["x", "y", "z"]})
+    assert df2.to_dict(False) == {
+        "data": [
+            {"id": 1, "info": "a"},
+            {"id": 2, "info": "b"},
+            {"id": 3, "info": "c"},
+        ],
+        "misc": ["x", "y", "z"],
+    }
 
 
 def test_init_ndarray(monkeypatch: Any) -> None:

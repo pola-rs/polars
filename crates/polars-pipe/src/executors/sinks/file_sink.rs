@@ -9,7 +9,7 @@ use polars_io::csv::CsvWriter;
 use polars_io::parquet::ParquetWriter;
 #[cfg(feature = "ipc")]
 use polars_io::prelude::IpcWriter;
-#[cfg(feature = "ipc")]
+#[cfg(any(feature = "ipc", feature = "csv"))]
 use polars_io::SerWriter;
 use polars_plan::prelude::*;
 
@@ -103,13 +103,14 @@ pub struct ParquetCloudSink {}
 #[cfg(all(feature = "parquet", feature = "cloud"))]
 impl ParquetCloudSink {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(
+    #[tokio::main(flavor = "current_thread")]
+    pub async fn new(
         uri: &str,
-        cloud_options: Option<&polars_core::cloud::CloudOptions>,
+        cloud_options: Option<&polars_io::cloud::CloudOptions>,
         parquet_options: ParquetWriteOptions,
         schema: &Schema,
     ) -> PolarsResult<FilesSink> {
-        let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options)?;
+        let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options).await?;
         let writer = ParquetWriter::new(cloud_writer)
             .with_compression(parquet_options.compression)
             .with_data_pagesize_limit(parquet_options.data_pagesize_limit)
@@ -212,7 +213,7 @@ impl CsvSink {
     }
 }
 
-#[cfg(any(feature = "parquet", feature = "ipc"))]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 fn init_writer_thread(
     receiver: Receiver<Option<DataChunk>>,
     mut writer: Box<dyn SinkWriter + Send>,

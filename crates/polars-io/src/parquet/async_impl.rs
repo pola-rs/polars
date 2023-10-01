@@ -7,37 +7,34 @@ use arrow::io::parquet::read::{
 };
 use arrow::io::parquet::write::FileMetaData;
 use futures::future::BoxFuture;
-use futures::lock::Mutex;
 use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
-use polars_core::cloud::CloudOptions;
 use polars_core::config::verbose;
 use polars_core::datatypes::PlHashMap;
 use polars_core::error::{to_compute_err, PolarsResult};
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
 
-use super::cloud::{build, CloudLocation, CloudReader};
+use super::cloud::{build_object_store, CloudLocation, CloudReader};
 use super::mmap;
 use super::mmap::ColumnStore;
-use super::read_impl::FetchRowGroups;
+use crate::cloud::CloudOptions;
 
 pub struct ParquetObjectStore {
-    store: Arc<Mutex<Box<dyn ObjectStore>>>,
+    store: Arc<dyn ObjectStore>,
     path: ObjectPath,
     length: Option<u64>,
     metadata: Option<FileMetaData>,
 }
 
 impl ParquetObjectStore {
-    pub fn from_uri(uri: &str, options: Option<&CloudOptions>) -> PolarsResult<Self> {
-        let (CloudLocation { prefix, .. }, store) = build(uri, options)?;
-        let store = Arc::new(Mutex::from(store));
+    pub async fn from_uri(uri: &str, options: Option<&CloudOptions>) -> PolarsResult<Self> {
+        let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options).await?;
 
         Ok(ParquetObjectStore {
             store,
-            path: prefix.into(),
+            path: ObjectPath::from_url_path(prefix).map_err(to_compute_err)?,
             length: None,
             metadata: None,
         })
@@ -48,9 +45,13 @@ impl ParquetObjectStore {
         if self.length.is_some() {
             return Ok(());
         }
-        let path = self.path.clone();
-        let locked_store = self.store.lock().await;
-        self.length = Some(locked_store.head(&path).await.map_err(to_compute_err)?.size as u64);
+        self.length = Some(
+            self.store
+                .head(&self.path)
+                .await
+                .map_err(to_compute_err)?
+                .size as u64,
+        );
         Ok(())
     }
 
@@ -98,7 +99,6 @@ type RowGroupChunks<'a> = Vec<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>>;
 
 /// Download rowgroups for the column whose indexes are given in `projection`.
 /// We concurrently download the columns for each field.
-#[tokio::main(flavor = "current_thread")]
 async fn download_projection<'a: 'b, 'b>(
     projection: &[usize],
     row_groups: &'a [RowGroupMetaData],
@@ -138,7 +138,7 @@ async fn download_projection<'a: 'b, 'b>(
         .await
 }
 
-pub(crate) struct FetchRowGroupsFromObjectStore {
+pub struct FetchRowGroupsFromObjectStore {
     reader: ParquetObjectStore,
     row_groups_metadata: Vec<RowGroupMetaData>,
     projection: Vec<usize>,
@@ -167,10 +167,11 @@ impl FetchRowGroupsFromObjectStore {
             schema,
         })
     }
-}
 
-impl FetchRowGroups for FetchRowGroupsFromObjectStore {
-    fn fetch_row_groups(&mut self, row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
+    pub(crate) async fn fetch_row_groups(
+        &mut self,
+        row_groups: Range<usize>,
+    ) -> PolarsResult<ColumnStore> {
         // Fetch the required row groups.
         let row_groups = &self
             .row_groups_metadata
@@ -184,7 +185,8 @@ impl FetchRowGroups for FetchRowGroupsFromObjectStore {
 
         // Package in the format required by ColumnStore.
         let downloaded =
-            download_projection(&self.projection, row_groups, &self.schema, &self.reader)?;
+            download_projection(&self.projection, row_groups, &self.schema, &self.reader).await?;
+
         if self.logging {
             eprintln!(
                 "BatchedParquetReader: fetched {} row_groups for {} fields, yielding {} column chunks.",

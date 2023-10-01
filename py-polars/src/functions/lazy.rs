@@ -71,7 +71,7 @@ pub fn arg_where(condition: PyExpr) -> PyExpr {
 #[pyfunction]
 pub fn as_struct(exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
-    dsl::as_struct(&exprs).into()
+    dsl::as_struct(exprs).into()
 }
 
 #[pyfunction]
@@ -193,11 +193,13 @@ pub fn cov(a: PyExpr, b: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
+#[cfg(feature = "trigonometry")]
 pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
     y.inner.arctan2(x.inner).into()
 }
 
 #[pyfunction]
+#[cfg(feature = "trigonometry")]
 pub fn arctan2d(y: PyExpr, x: PyExpr) -> PyExpr {
     y.inner.arctan2(x.inner).degrees().into()
 }

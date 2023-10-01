@@ -773,6 +773,35 @@ def test_sql_trim(foods_ipc_path: Path) -> None:
     }
 
 
+def test_sql_nullif_coalesce(foods_ipc_path: Path) -> None:
+    nums = pl.LazyFrame(
+        {
+            "x": [1, None, 2, 3, None, 4],
+            "y": [5, 4, None, 3, None, 2],
+            "z": [3, 4, None, 3, None, None],
+        }
+    )
+
+    res = pl.SQLContext(df=nums).execute(
+        """
+        SELECT
+        COALESCE(x,y,z) as "coal",
+        NULLIF(x,y) as "nullif x_y",
+        NULLIF(y,z) as "nullif y_z",
+        COALESCE(x, NULLIF(y,z)) as "both"
+        FROM df
+        """,
+        eager=True,
+    )
+
+    assert res.to_dict(False) == {
+        "coal": [1, 4, 2, 3, None, 4],
+        "nullif x_y": [1, None, 2, None, None, 4],
+        "nullif y_z": [5, None, None, None, None, 2],
+        "both": [1, None, 2, 3, None, 4],
+    }
+
+
 def test_sql_order_by(foods_ipc_path: Path) -> None:
     foods = pl.scan_ipc(foods_ipc_path)
     nums = pl.LazyFrame(

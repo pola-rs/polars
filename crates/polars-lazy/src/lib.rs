@@ -206,6 +206,7 @@ pub mod dsl;
 pub mod frame;
 pub mod physical_plan;
 pub mod prelude;
+mod scan;
 #[cfg(test)]
 mod tests;
 pub mod utils;

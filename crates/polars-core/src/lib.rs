@@ -10,11 +10,8 @@ extern crate core;
 #[macro_use]
 pub mod utils;
 pub mod chunked_array;
-pub mod cloud;
 pub mod config;
 pub mod datatypes;
-#[cfg(feature = "docs")]
-pub mod doc;
 pub mod error;
 pub mod export;
 pub mod fmt;
@@ -41,7 +38,7 @@ use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 
 #[cfg(feature = "dtype-categorical")]
-pub use crate::chunked_array::logical::categorical::stringcache::*;
+pub use crate::chunked_array::logical::categorical::string_cache::*;
 
 pub static PROCESS_ID: Lazy<u128> = Lazy::new(|| {
     SystemTime::now()

@@ -47,7 +47,7 @@ pub(crate) mod private {
     use super::*;
     use crate::chunked_array::ops::compare_inner::{PartialEqInner, PartialOrdInner};
     use crate::chunked_array::Settings;
-    #[cfg(feature = "rows")]
+    #[cfg(feature = "algorithm_group_by")]
     use crate::frame::group_by::GroupsProxy;
 
     pub trait PrivateSeriesNumeric {
@@ -151,14 +151,6 @@ pub(crate) mod private {
         #[cfg(feature = "algorithm_group_by")]
         unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
             Series::full_null(self._field().name(), groups.len(), self._dtype())
-        }
-
-        unsafe fn zip_outer_join_column(
-            &self,
-            _right_column: &Series,
-            _opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-        ) -> Series {
-            invalid_operation_panic!(zip_outer_join_column, self)
         }
 
         fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
@@ -275,40 +267,23 @@ pub trait SeriesTrait:
     #[cfg(feature = "chunked_ids")]
     unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series;
 
-    /// Take by index from an iterator. This operation clones the data.
-    fn take_iter(&self, _iter: &mut dyn TakeIterator) -> PolarsResult<Series>;
+    /// Take by index. This operation is clone.
+    fn take(&self, _indices: &IdxCa) -> PolarsResult<Series>;
 
-    /// Take by index from an iterator. This operation clones the data.
-    ///
-    /// # Safety
-    ///
-    /// - This doesn't check any bounds.
-    /// - Iterator must be TrustedLen
-    unsafe fn take_iter_unchecked(&self, _iter: &mut dyn TakeIterator) -> Series;
-
-    /// Take by index if ChunkedArray contains a single chunk.
+    /// Take by index.
     ///
     /// # Safety
     /// This doesn't check any bounds.
-    unsafe fn take_unchecked(&self, _idx: &IdxCa) -> PolarsResult<Series>;
-
-    /// Take by index from an iterator. This operation clones the data.
-    ///
-    /// # Safety
-    ///
-    /// - This doesn't check any bounds.
-    /// - Iterator must be TrustedLen
-    unsafe fn take_opt_iter_unchecked(&self, _iter: &mut dyn TakeIteratorNulls) -> Series;
-
-    /// Take by index from an iterator. This operation clones the data.
-    /// todo! remove?
-    #[cfg(feature = "take_opt_iter")]
-    fn take_opt_iter(&self, _iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-        invalid_operation_panic!(take_opt_iter, self)
-    }
+    unsafe fn take_unchecked(&self, _idx: &IdxCa) -> Series;
 
     /// Take by index. This operation is clone.
-    fn take(&self, _indices: &IdxCa) -> PolarsResult<Series>;
+    fn take_slice(&self, _indices: &[IdxSize]) -> PolarsResult<Series>;
+
+    /// Take by index.
+    ///
+    /// # Safety
+    /// This doesn't check any bounds.
+    unsafe fn take_slice_unchecked(&self, _idx: &[IdxSize]) -> Series;
 
     /// Get length of series.
     fn len(&self) -> usize;

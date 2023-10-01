@@ -178,7 +178,6 @@ pub enum AExpr {
     Window {
         function: Node,
         partition_by: Vec<Node>,
-        order_by: Option<Node>,
         options: WindowOptions,
     },
     #[default]
@@ -314,13 +313,9 @@ impl AExpr {
             Window {
                 function,
                 partition_by,
-                order_by,
                 options: _,
             } => {
                 for e in partition_by.iter().rev() {
-                    container.push(*e);
-                }
-                if let Some(e) = order_by {
                     container.push(*e);
                 }
                 // latest so that it is popped first
@@ -398,14 +393,12 @@ impl AExpr {
             Window {
                 function,
                 partition_by,
-                order_by,
                 ..
             } => {
                 *function = *inputs.last().unwrap();
                 partition_by.clear();
                 partition_by.extend_from_slice(&inputs[..inputs.len() - 1]);
 
-                assert!(order_by.is_none());
                 return self;
             },
         };

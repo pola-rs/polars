@@ -127,7 +127,7 @@ impl<'a> AnyValueBuffer<'a> {
         self.add(val.clone()).ok_or_else(|| {
             polars_err!(
                 ComputeError: "could not append value: {} of type: {} to the builder; make sure that all rows \
-                have the same schema or consider increasing `schema_inference_length`\n\
+                have the same schema or consider increasing `infer_schema_length`\n\
                 \n\
                 it might also be that a value overflows the data-type's capacity", val, val.dtype()
             )

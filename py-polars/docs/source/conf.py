@@ -106,7 +106,7 @@ html_theme_options = {
     "external_links": [
         {
             "name": "User Guide",
-            "url": f"{web_root}/polars-book/user-guide/index.html",
+            "url": f"{web_root}/polars/user-guide/index.html",
         },
         {
             "name": "Powered by Xomnia",
@@ -138,6 +138,7 @@ html_theme_options = {
         "json_url": f"{web_root}/polars/docs/python/dev/_static/version_switcher.json",
         "version_match": switcher_version,
     },
+    "show_version_warning_banner": False,
     "navbar_end": ["version-switcher", "navbar-icon-links"],
     "check_switcher": False,
 }

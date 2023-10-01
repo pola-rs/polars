@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -15,6 +14,8 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars.type_aliases import ParquetCompression
 
 
@@ -29,6 +30,7 @@ COMPRESSIONS = [
 ]
 
 
+@pytest.mark.write_disk()
 def test_write_parquet_using_pyarrow_9753(tmpdir: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     df.write_parquet(
@@ -486,10 +488,8 @@ def test_parquet_string_cache() -> None:
     assert_series_equal(pl.read_parquet(f)["a"].cast(str), df["a"].cast(str))
 
 
-def test_tz_aware_parquet_9586() -> None:
-    result = pl.read_parquet(
-        Path("tests") / "unit" / "io" / "files" / "tz_aware.parquet"
-    )
+def test_tz_aware_parquet_9586(io_files_path: Path) -> None:
+    result = pl.read_parquet(io_files_path / "tz_aware.parquet")
     expected = pl.DataFrame(
         {"UTC_DATETIME_ID": [datetime(2023, 6, 26, 14, 15, 0, tzinfo=timezone.utc)]}
     ).select(pl.col("*").cast(pl.Datetime("ns", "UTC")))

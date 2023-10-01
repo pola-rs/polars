@@ -34,6 +34,12 @@ impl Debug for Schema {
     }
 }
 
+impl From<&[Series]> for Schema {
+    fn from(value: &[Series]) -> Self {
+        value.iter().map(|s| s.field().into_owned()).collect()
+    }
+}
+
 impl<F> FromIterator<F> for Schema
 where
     F: Into<Field>,
@@ -129,7 +135,7 @@ impl Schema {
     ) -> PolarsResult<Self> {
         polars_ensure!(
             index <= self.len(),
-            ComputeError:
+            OutOfBounds:
                 "index {} is out of bounds for schema with length {} (the max index allowed is self.len())",
                     index,
                     self.len()
@@ -167,7 +173,7 @@ impl Schema {
     ) -> PolarsResult<Option<DataType>> {
         polars_ensure!(
             index <= self.len(),
-            ComputeError:
+            OutOfBounds:
                 "index {} is out of bounds for schema with length {} (the max index allowed is self.len())",
                     index,
                     self.len()

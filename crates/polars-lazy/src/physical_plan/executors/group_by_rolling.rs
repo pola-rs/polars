@@ -66,14 +66,13 @@ impl GroupByRollingExec {
                         // can be empty, but we still want to know the first value
                         // of that group
                         for key in keys.iter_mut() {
-                            *key = key.take_unchecked_from_slice(first).unwrap();
+                            *key = key.take_unchecked_from_slice(first);
                         }
                     },
                     GroupsProxy::Slice { groups, .. } => {
                         for key in keys.iter_mut() {
-                            let iter = &mut groups.iter().map(|[first, _len]| *first as usize)
-                                as &mut dyn TakeIterator<Item = usize>;
-                            *key = key.take_iter_unchecked(iter);
+                            let indices = groups.iter().map(|[first, _len]| *first).collect_ca("");
+                            *key = key.take_unchecked(&indices);
                         }
                     },
                 }

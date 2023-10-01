@@ -128,12 +128,10 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::Window {
             function,
             partition_by,
-            order_by,
             options,
         } => AExpr::Window {
             function: to_aexpr(*function, arena),
             partition_by: to_aexprs(partition_by, arena),
-            order_by: order_by.map(|ob| to_aexpr(*ob, arena)),
             options,
         },
         Expr::Slice {
@@ -565,16 +563,13 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         AExpr::Window {
             function,
             partition_by,
-            order_by,
             options,
         } => {
             let function = Box::new(node_to_expr(function, expr_arena));
             let partition_by = nodes_to_exprs(&partition_by, expr_arena);
-            let order_by = order_by.map(|ob| Box::new(node_to_expr(ob, expr_arena)));
             Expr::Window {
                 function,
                 partition_by,
-                order_by,
                 options,
             }
         },

@@ -4,13 +4,13 @@ use std::sync::Arc;
 use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_core::export::arrow::bitmap::Bitmap;
 use polars_core::frame::group_by::{GroupBy, GroupsProxy};
-use polars_core::frame::hash_join::{
-    default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
-};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
+use polars_ops::frame::join::{
+    default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
+};
 use polars_utils::format_smartstring;
 use polars_utils::sort::perfect_sort;
 use polars_utils::sync::SyncPtr;
@@ -120,7 +120,7 @@ impl WindowExpr {
 
         // Safety:
         // groups should always be in bounds.
-        unsafe { flattened.take_unchecked(&idx) }
+        unsafe { Ok(flattened.take_unchecked(&idx)) }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -495,7 +495,7 @@ impl PhysicalExpr for WindowExpr {
         // Worst case is that a categorical is created with indexes from the string
         // cache which is fine, as the physical representation is undefined.
         #[cfg(feature = "dtype-categorical")]
-        let _sc = polars_core::IUseStringCache::hold();
+        let _sc = polars_core::StringCacheHolder::hold();
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         use MapStrategy::*;
@@ -635,9 +635,7 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Se
 
         match join_opt_ids {
             Either::Left(ids) => unsafe {
-                out_column.take_opt_iter_unchecked(
-                    &mut ids.iter().map(|&opt_i| opt_i.map(|i| i as usize)),
-                )
+                out_column.take_unchecked(&ids.iter().copied().collect_ca(""))
             },
             Either::Right(ids) => unsafe { out_column._take_opt_chunked_unchecked(ids) },
         }
@@ -645,9 +643,7 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Se
 
     #[cfg(not(feature = "chunked_ids"))]
     unsafe {
-        out_column.take_opt_iter_unchecked(
-            &mut join_opt_ids.iter().map(|&opt_i| opt_i.map(|i| i as usize)),
-        )
+        out_column.take_unchecked(&join_opt_ids.iter().copied().collect_ca(""))
     }
 }
 

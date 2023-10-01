@@ -40,11 +40,11 @@ use crate::chunked_array::ops::compare_inner::{
     IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner,
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
+#[cfg(feature = "chunked_ids")]
+use crate::chunked_array::ops::take::TakeChunked;
 use crate::chunked_array::AsSinglePtr;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
-#[cfg(feature = "algorithm_join")]
-use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 #[cfg(feature = "checked_arithmetic")]
 use crate::series::arithmetic::checked::NumOpsDispatchChecked;
@@ -188,14 +188,6 @@ macro_rules! impl_dyn_series {
                 self.0.agg_list(groups)
             }
 
-            #[cfg(feature = "algorithm_join")]
-            unsafe fn zip_outer_join_column(
-                &self,
-                right_column: &Series,
-                opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-            ) -> Series {
-                ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
-            }
             fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
                 NumOpsDispatch::subtract(&self.0, rhs)
             }
@@ -321,44 +313,19 @@ macro_rules! impl_dyn_series {
             }
 
             fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-                let indices = if indices.chunks.len() > 1 {
-                    Cow::Owned(indices.rechunk())
-                } else {
-                    Cow::Borrowed(indices)
-                };
-                Ok(self.0.take((&*indices).into())?.into_series())
+                Ok(self.0.take(indices)?.into_series())
             }
 
-            fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-                Ok(self.0.take(iter.into())?.into_series())
+            unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+                self.0.take_unchecked(indices).into_series()
             }
 
-            unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-                self.0.take_unchecked(iter.into()).into_series()
+            fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+                Ok(self.0.take(indices)?.into_series())
             }
 
-            unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-                let idx = if idx.chunks.len() > 1 {
-                    Cow::Owned(idx.rechunk())
-                } else {
-                    Cow::Borrowed(idx)
-                };
-                let mut out = self.0.take_unchecked((&*idx).into());
-                if self.0.is_sorted_ascending_flag()
-                    && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
-                {
-                    out.set_sorted_flag(idx.is_sorted_flag())
-                }
-                Ok(out.into_series())
-            }
-
-            unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-                self.0.take_unchecked(iter.into()).into_series()
-            }
-
-            #[cfg(feature = "take_opt_iter")]
-            fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-                Ok(self.0.take(iter.into())?.into_series())
+            unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+                self.0.take_unchecked(indices).into_series()
             }
 
             fn len(&self) -> usize {

@@ -16,17 +16,11 @@ use crate::utils::{slice_offsets, split_ca, split_df, try_get_supertype, NoNull}
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
-#[cfg(feature = "asof_join")]
-pub(crate) mod asof_join;
 mod chunks;
-#[cfg(feature = "cross_join")]
-pub(crate) mod cross_join;
 pub mod explode;
 mod from;
 #[cfg(feature = "algorithm_group_by")]
 pub mod group_by;
-#[cfg(feature = "algorithm_join")]
-pub mod hash_join;
 #[cfg(feature = "rows")]
 pub mod row;
 mod top_k;
@@ -40,7 +34,7 @@ use smartstring::alias::String as SmartString;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::GroupsIndicator;
 #[cfg(feature = "row_hash")]
-use crate::hashing::df_rows_to_hashes_threaded_vertical;
+use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 #[cfg(feature = "zip_with")]
 use crate::prelude::min_max_binary::min_max_binary_series;
 use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
@@ -507,7 +501,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn schema(&self) -> Schema {
-        self.iter().map(|s| s.field().into_owned()).collect()
+        self.columns.as_slice().into()
     }
 
     /// Get a reference to the [`DataFrame`] columns.
@@ -1674,103 +1668,6 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(new_col))
     }
 
-    /// Take [`DataFrame`] value by indexes from an iterator.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use polars_core::prelude::*;
-    /// fn example(df: &DataFrame) -> PolarsResult<DataFrame> {
-    ///     let iterator = (0..9).into_iter();
-    ///     df.take_iter(iterator)
-    /// }
-    /// ```
-    pub fn take_iter<I>(&self, iter: I) -> PolarsResult<Self>
-    where
-        I: Iterator<Item = usize> + Clone + Sync + TrustedLen,
-    {
-        let new_col = self.try_apply_columns_par(&|s| {
-            let mut i = iter.clone();
-            s.take_iter(&mut i)
-        })?;
-
-        Ok(DataFrame::new_no_checks(new_col))
-    }
-
-    /// Take [`DataFrame`] values by indexes from an iterator.
-    ///
-    /// # Safety
-    ///
-    /// This doesn't do any bound checking but checks null validity.
-    #[must_use]
-    pub unsafe fn take_iter_unchecked<I>(&self, mut iter: I) -> Self
-    where
-        I: Iterator<Item = usize> + Clone + Sync + TrustedLen,
-    {
-        let n_chunks = self.n_chunks();
-        let has_utf8 = self
-            .columns
-            .iter()
-            .any(|s| matches!(s.dtype(), DataType::Utf8));
-
-        if (n_chunks == 1 && self.width() > 1) || has_utf8 {
-            let idx_ca: NoNull<IdxCa> = iter.map(|idx| idx as IdxSize).collect();
-            let idx_ca = idx_ca.into_inner();
-            return self.take_unchecked(&idx_ca);
-        }
-
-        let new_col = if self.width() == 1 {
-            self.columns
-                .iter()
-                .map(|s| s.take_iter_unchecked(&mut iter))
-                .collect::<Vec<_>>()
-        } else {
-            self.apply_columns_par(&|s| {
-                let mut i = iter.clone();
-                s.take_iter_unchecked(&mut i)
-            })
-        };
-        DataFrame::new_no_checks(new_col)
-    }
-
-    /// Take [`DataFrame`] values by indexes from an iterator that may contain None values.
-    ///
-    /// # Safety
-    ///
-    /// This doesn't do any bound checking. Out of bounds may access uninitialized memory.
-    /// Null validity is checked
-    #[must_use]
-    pub unsafe fn take_opt_iter_unchecked<I>(&self, mut iter: I) -> Self
-    where
-        I: Iterator<Item = Option<usize>> + Clone + Sync + TrustedLen,
-    {
-        let n_chunks = self.n_chunks();
-
-        let has_utf8 = self
-            .columns
-            .iter()
-            .any(|s| matches!(s.dtype(), DataType::Utf8));
-
-        if (n_chunks == 1 && self.width() > 1) || has_utf8 {
-            let idx_ca: IdxCa = iter.map(|opt| opt.map(|v| v as IdxSize)).collect();
-            return self.take_unchecked(&idx_ca);
-        }
-
-        let new_col = if self.width() == 1 {
-            self.columns
-                .iter()
-                .map(|s| s.take_opt_iter_unchecked(&mut iter))
-                .collect::<Vec<_>>()
-        } else {
-            self.apply_columns_par(&|s| {
-                let mut i = iter.clone();
-                s.take_opt_iter_unchecked(&mut i)
-            })
-        };
-
-        DataFrame::new_no_checks(new_col)
-    }
-
     /// Take [`DataFrame`] rows by index values.
     ///
     /// # Example
@@ -1783,22 +1680,19 @@ impl DataFrame {
     /// }
     /// ```
     pub fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
-        let indices = if indices.chunks.len() > 1 {
-            Cow::Owned(indices.rechunk())
-        } else {
-            Cow::Borrowed(indices)
-        };
         let new_col = POOL.install(|| {
             self.try_apply_columns_par(&|s| match s.dtype() {
-                DataType::Utf8 => s.take_threaded(&indices, true),
-                _ => s.take(&indices),
+                DataType::Utf8 => s.take_threaded(indices, true),
+                _ => s.take(indices),
             })
         })?;
 
         Ok(DataFrame::new_no_checks(new_col))
     }
 
-    pub(crate) unsafe fn take_unchecked(&self, idx: &IdxCa) -> Self {
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn take_unchecked(&self, idx: &IdxCa) -> Self {
         self.take_unchecked_impl(idx, true)
     }
 
@@ -1806,14 +1700,32 @@ impl DataFrame {
         let cols = if allow_threads {
             POOL.install(|| {
                 self.apply_columns_par(&|s| match s.dtype() {
-                    DataType::Utf8 => s.take_unchecked_threaded(idx, true).unwrap(),
-                    _ => s.take_unchecked(idx).unwrap(),
+                    DataType::Utf8 => s.take_unchecked_threaded(idx, true),
+                    _ => s.take_unchecked(idx),
+                })
+            })
+        } else {
+            self.columns.iter().map(|s| s.take_unchecked(idx)).collect()
+        };
+        DataFrame::new_no_checks(cols)
+    }
+
+    pub(crate) unsafe fn take_slice_unchecked(&self, idx: &[IdxSize]) -> Self {
+        self.take_slice_unchecked_impl(idx, true)
+    }
+
+    unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
+        let cols = if allow_threads {
+            POOL.install(|| {
+                self.apply_columns_par(&|s| match s.dtype() {
+                    DataType::Utf8 => s.take_slice_unchecked_threaded(idx, true),
+                    _ => s.take_slice_unchecked(idx),
                 })
             })
         } else {
             self.columns
                 .iter()
-                .map(|s| s.take_unchecked(idx).unwrap())
+                .map(|s| s.take_slice_unchecked(idx))
                 .collect()
         };
         DataFrame::new_no_checks(cols)
@@ -3231,7 +3143,7 @@ impl DataFrame {
         hasher_builder: Option<ahash::RandomState>,
     ) -> PolarsResult<UInt64Chunked> {
         let dfs = split_df(self, POOL.current_num_threads())?;
-        let (cas, _) = df_rows_to_hashes_threaded_vertical(&dfs, hasher_builder)?;
+        let (cas, _) = _df_rows_to_hashes_threaded_vertical(&dfs, hasher_builder)?;
 
         let mut iter = cas.into_iter();
         let mut acc_ca = iter.next().unwrap();
@@ -3276,7 +3188,9 @@ impl DataFrame {
     }
 
     #[cfg(feature = "chunked_ids")]
-    pub(crate) unsafe fn take_chunked_unchecked(&self, idx: &[ChunkId], sorted: IsSorted) -> Self {
+    /// # Safety
+    /// Doesn't perform any bound checks
+    pub unsafe fn _take_chunked_unchecked(&self, idx: &[ChunkId], sorted: IsSorted) -> Self {
         let cols = self.apply_columns_par(&|s| match s.dtype() {
             DataType::Utf8 => s._take_chunked_unchecked_threaded(idx, sorted, true),
             _ => s._take_chunked_unchecked(idx, sorted),
@@ -3286,7 +3200,9 @@ impl DataFrame {
     }
 
     #[cfg(feature = "chunked_ids")]
-    pub(crate) unsafe fn take_opt_chunked_unchecked(&self, idx: &[Option<ChunkId>]) -> Self {
+    /// # Safety
+    /// Doesn't perform any bound checks
+    pub unsafe fn _take_opt_chunked_unchecked(&self, idx: &[Option<ChunkId>]) -> Self {
         let cols = self.apply_columns_par(&|s| match s.dtype() {
             DataType::Utf8 => s._take_opt_chunked_unchecked_threaded(idx, true),
             _ => s._take_opt_chunked_unchecked(idx),

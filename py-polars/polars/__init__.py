@@ -67,6 +67,7 @@ from polars.exceptions import (
     DuplicateError,
     InvalidOperationError,
     NoDataError,
+    OutOfBoundsError,
     PolarsPanicError,
     SchemaError,
     SchemaFieldNotFoundError,
@@ -172,6 +173,7 @@ from polars.io import (
     read_parquet_schema,
     scan_csv,
     scan_delta,
+    scan_iceberg,
     scan_ipc,
     scan_ndjson,
     scan_parquet,
@@ -180,7 +182,12 @@ from polars.io import (
 from polars.lazyframe import LazyFrame
 from polars.series import Series
 from polars.sql import SQLContext
-from polars.string_cache import StringCache, enable_string_cache, using_string_cache
+from polars.string_cache import (
+    StringCache,
+    disable_string_cache,
+    enable_string_cache,
+    using_string_cache,
+)
 from polars.type_aliases import PolarsDataType
 from polars.utils import build_info, get_index_type, show_versions, threadpool_size
 
@@ -202,6 +209,7 @@ __all__ = [
     "DuplicateError",
     "InvalidOperationError",
     "NoDataError",
+    "OutOfBoundsError",
     "PolarsPanicError",
     "SchemaError",
     "SchemaFieldNotFoundError",
@@ -267,12 +275,14 @@ __all__ = [
     "read_parquet_schema",
     "scan_csv",
     "scan_delta",
+    "scan_iceberg",
     "scan_ipc",
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
     # polars.stringcache
     "StringCache",
+    "disable_string_cache",
     "enable_string_cache",
     "using_string_cache",
     # polars.config

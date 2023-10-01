@@ -1,18 +1,8 @@
 //! Lazy variant of a [DataFrame].
-#[cfg(feature = "csv")]
-mod csv;
-#[cfg(feature = "ipc")]
-mod ipc;
-#[cfg(feature = "json")]
-mod ndjson;
-#[cfg(feature = "parquet")]
-mod parquet;
 #[cfg(feature = "python")]
 mod python;
 
-mod anonymous_scan;
 mod err;
-mod file_list_reader;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
@@ -33,7 +23,6 @@ pub use ndjson::*;
 pub use parquet::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::explode::MeltArgs;
-use polars_core::frame::hash_join::{JoinType, JoinValidation};
 use polars_core::prelude::*;
 use polars_io::RowCount;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
@@ -46,7 +35,7 @@ use smartstring::alias::String as SmartString;
 
 use crate::fallible;
 use crate::physical_plan::executors::Executor;
-use crate::physical_plan::planner::create_physical_plan;
+use crate::physical_plan::planner::{create_physical_expr, create_physical_plan};
 use crate::physical_plan::state::ExecutionState;
 #[cfg(feature = "streaming")]
 use crate::physical_plan::streaming::insert_streaming_nodes;
@@ -561,7 +550,25 @@ impl LazyFrame {
             );
             opt_state.comm_subplan_elim = false;
         }
-        let lp_top = optimize(self.logical_plan, opt_state, lp_arena, expr_arena, scratch)?;
+        let lp_top = optimize(
+            self.logical_plan,
+            opt_state,
+            lp_arena,
+            expr_arena,
+            scratch,
+            Some(&|node, expr_arena| {
+                let phys_expr = create_physical_expr(
+                    node,
+                    Context::Default,
+                    expr_arena,
+                    None,
+                    &mut Default::default(),
+                )
+                .ok()?;
+                let io_expr = phys_expr_to_io_expr(phys_expr);
+                Some(io_expr)
+            }),
+        )?;
 
         if streaming {
             #[cfg(feature = "streaming")]
@@ -689,7 +696,7 @@ impl LazyFrame {
     pub fn sink_parquet_cloud(
         mut self,
         uri: String,
-        cloud_options: Option<polars_core::cloud::CloudOptions>,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
         parquet_options: ParquetWriteOptions,
     ) -> PolarsResult<()> {
         self.opt_state.streaming = true;

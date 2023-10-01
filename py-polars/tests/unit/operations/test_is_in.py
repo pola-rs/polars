@@ -36,6 +36,12 @@ def test_is_in_bool() -> None:
     }
 
 
+def test_is_in_bool_11216() -> None:
+    s = pl.Series([False]).is_in([False, None])
+    expected = pl.Series([True])
+    assert_series_equal(s, expected)
+
+
 def test_is_in_empty_list_4559() -> None:
     assert pl.Series(["a"]).is_in([]).to_list() == [False]
 
@@ -74,7 +80,12 @@ def test_is_in_null_prop() -> None:
         .item()
         is None
     )
-    assert pl.Series([None], dtype=pl.Boolean).is_in(pl.Series([42])).item() is None
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="`is_in` cannot check for Int64 values in Boolean data",
+    ):
+        _res = pl.Series([None], dtype=pl.Boolean).is_in(pl.Series([42])).item()
+
     assert (
         pl.Series([{"a": None}], dtype=pl.Struct({"a": pl.Boolean}))
         .is_in(pl.Series([{"a": 42}]))
@@ -130,7 +141,10 @@ def test_is_in_series() -> None:
     ]
     assert df.select(pl.col("b").is_in([])).to_series().to_list() == [False] * df.height
 
-    with pytest.raises(pl.ComputeError, match=r"cannot compare"):
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=r"`is_in` cannot check for Utf8 values in Int64 data",
+    ):
         df.select(pl.col("b").is_in(["x", "x"]))
 
     # check we don't shallow-copy and accidentally modify 'a' (see: #10072)
@@ -139,6 +153,13 @@ def test_is_in_series() -> None:
 
     assert a.name == "a"
     assert_series_equal(b, pl.Series("b", [True, False]))
+
+
+def test_is_in_null() -> None:
+    s = pl.Series([None, None], dtype=pl.Null)
+    result = s.is_in([1, 2, None])
+    expected = pl.Series([None, None], dtype=pl.Boolean)
+    assert_series_equal(result, expected)
 
 
 def test_is_in_invalid_shape() -> None:

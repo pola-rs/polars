@@ -128,38 +128,19 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        let indices = if indices.chunks.len() > 1 {
-            Cow::Owned(indices.rechunk())
-        } else {
-            Cow::Borrowed(indices)
-        };
-        Ok(self.0.take((&*indices).into())?.into_series())
+        Ok(self.0.take(indices)?.into_series())
     }
 
-    fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        Ok(self.0.take(iter.into())?.into_series())
+    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+        self.0.take_unchecked(indices).into_series()
     }
 
-    unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        self.0.take_unchecked(iter.into()).into_series()
+    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+        Ok(self.0.take(indices)?.into_series())
     }
 
-    unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-        let idx = if idx.chunks.len() > 1 {
-            Cow::Owned(idx.rechunk())
-        } else {
-            Cow::Borrowed(idx)
-        };
-        Ok(self.0.take_unchecked((&*idx).into()).into_series())
-    }
-
-    unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        self.0.take_unchecked(iter.into()).into_series()
-    }
-
-    #[cfg(feature = "take_opt_iter")]
-    fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-        Ok(self.0.take(iter.into())?.into_series())
+    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+        self.0.take_unchecked(indices).into_series()
     }
 
     fn len(&self) -> usize {
@@ -196,6 +177,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     #[cfg(feature = "group_by_list")]
+    #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
         if !self.inner_dtype().is_numeric() {
             polars_bail!(opq = unique, self.dtype());
@@ -212,6 +194,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     #[cfg(feature = "group_by_list")]
+    #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
         if !self.inner_dtype().is_numeric() {
             polars_bail!(opq = n_unique, self.dtype());
@@ -229,6 +212,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     #[cfg(feature = "group_by_list")]
+    #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         if !self.inner_dtype().is_numeric() {
             polars_bail!(opq = arg_unique, self.dtype());

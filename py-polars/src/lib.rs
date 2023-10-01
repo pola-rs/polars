@@ -51,9 +51,11 @@ use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::{
     ArrowErrorException, ColumnNotFoundError, ComputeError, DuplicateError, InvalidOperationError,
-    NoDataError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
+    NoDataError, OutOfBoundsError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError,
+    StructFieldNotFoundError,
 };
 use crate::expr::PyExpr;
+use crate::functions::string_cache::PyStringCacheHolder;
 use crate::lazyframe::PyLazyFrame;
 use crate::lazygroupby::PyLazyGroupBy;
 use crate::series::PySeries;
@@ -74,6 +76,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyLazyFrame>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<PyExpr>().unwrap();
+    m.add_class::<PyStringCacheHolder>().unwrap();
     #[cfg(feature = "csv")]
     m.add_class::<batched_csv::PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]
@@ -150,8 +153,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::cumreduce))
         .unwrap();
+    #[cfg(feature = "trigonometry")]
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arctan2))
         .unwrap();
+    #[cfg(feature = "trigonometry")]
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arctan2d))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::datetime))
@@ -208,10 +213,18 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::meta::threadpool_size))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::enable_string_cache))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::meta::using_string_cache))
-        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(
+        functions::string_cache::enable_string_cache
+    ))
+    .unwrap();
+    m.add_wrapped(wrap_pyfunction!(
+        functions::string_cache::disable_string_cache
+    ))
+    .unwrap();
+    m.add_wrapped(wrap_pyfunction!(
+        functions::string_cache::using_string_cache
+    ))
+    .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::meta::set_float_fmt))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::meta::get_float_fmt))
@@ -243,6 +256,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     )
     .unwrap();
     m.add("NoDataError", py.get_type::<NoDataError>()).unwrap();
+    m.add("OutOfBoundsError", py.get_type::<OutOfBoundsError>())
+        .unwrap();
     m.add("PolarsPanicError", py.get_type::<PanicException>())
         .unwrap();
     m.add("SchemaError", py.get_type::<SchemaError>()).unwrap();

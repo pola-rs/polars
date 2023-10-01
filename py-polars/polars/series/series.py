@@ -121,7 +121,9 @@ if TYPE_CHECKING:
         FillNullStrategy,
         InterpolationMethod,
         IntoExpr,
+        IntoExprColumn,
         NullBehavior,
+        NumericLiteral,
         OneOrMoreDataTypes,
         PolarsDataType,
         PythonLiteral,
@@ -129,6 +131,7 @@ if TYPE_CHECKING:
         RollingInterpolationMethod,
         SearchSortedSide,
         SizeUnit,
+        TemporalLiteral,
     )
 
     if sys.version_info >= (3, 11):
@@ -924,20 +927,18 @@ class Series:
         return self.clone()
 
     def __contains__(self, item: Any) -> bool:
-        # TODO: optimize via `is_in` and `SORTED` flags
-        try:
-            return (self == item).any()
-        except ValueError:
-            return False
+        if item is None:
+            return self.null_count() > 0
+        return self.implode().list.contains(item).item()
 
     def __iter__(self) -> Generator[Any, None, None]:
         if self.dtype == List:
             # TODO: either make a change and return py-native list data here, or find
-            #  a faster way to return nested/List series; sequential 'get_idx' calls
+            #  a faster way to return nested/List series; sequential 'get_index' calls
             #  make this path a lot slower (~10x) than it needs to be.
-            get_idx = self._s.get_idx
+            get_index = self._s.get_index
             for idx in range(self.len()):
-                yield get_idx(idx)
+                yield get_index(idx)
         else:
             buffer_size = 25_000
             for offset in range(0, self.len(), buffer_size):
@@ -1019,17 +1020,15 @@ class Series:
         elif _check_for_numpy(item) and isinstance(item, np.ndarray):
             return self._take_with_series(numpy_to_idxs(item, self.len()))
 
-        # Integer.
+        # Integer
         elif isinstance(item, int):
-            if item < 0:
-                item = self.len() + item
-            return self._s.get_idx(item)
+            return self._s.get_index_signed(item)
 
-        # Slice.
+        # Slice
         elif isinstance(item, slice):
             return PolarsSlice(self).apply(item)
 
-        # Range.
+        # Range
         elif isinstance(item, range):
             return self[range_to_slice(item)]
 
@@ -1097,7 +1096,7 @@ class Series:
         Ensures that `np.asarray(pl.Series(..))` works as expected, see
         https://numpy.org/devdocs/user/basics.interoperability.html#the-array-method.
         """
-        if not dtype and self.dtype == Utf8 and not self.has_validity():
+        if not dtype and self.dtype == Utf8 and not self.null_count():
             dtype = np.dtype("U")
         if dtype:
             return self.to_numpy().__array__(dtype)
@@ -1191,12 +1190,13 @@ class Series:
         """Format output data in HTML for display in Jupyter Notebooks."""
         return self.to_frame()._repr_html_(from_series=True)
 
-    def item(self, row: int | None = None) -> Any:
+    @deprecate_renamed_parameter("row", "index", version="0.19.3")
+    def item(self, index: int | None = None) -> Any:
         """
-        Return the series as a scalar, or return the element at the given row index.
+        Return the series as a scalar, or return the element at the given index.
 
-        If no row index is provided, this is equivalent to ``s[0]``, with a check
-        that the shape is (1,). With a row index, this is equivalent to ``s[row]``.
+        If no index is provided, this is equivalent to ``s[0]``, with a check
+        that the shape is (1,). With an index, this is equivalent to ``s[index]``.
 
         Examples
         --------
@@ -1208,12 +1208,15 @@ class Series:
         24
 
         """
-        if row is None and len(self) != 1:
-            raise ValueError(
-                f"can only call '.item()' if the series is of length 1, or an"
-                f" explicit row index is provided (series is of length {len(self)})"
-            )
-        return self[row or 0]
+        if index is None:
+            if len(self) != 1:
+                raise ValueError(
+                    "can only call '.item()' if the series is of length 1,"
+                    f" or an explicit index is provided (series is of length {len(self)})"
+                )
+            return self._s.get_index(0)
+
+        return self._s.get_index_signed(index)
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
@@ -3047,7 +3050,7 @@ class Series:
         else:
             return self._from_pyseries(self._s.sort(descending))
 
-    def top_k(self, k: int = 5) -> Series:
+    def top_k(self, k: int | IntoExprColumn = 5) -> Series:
         r"""
         Return the `k` largest elements.
 
@@ -3078,7 +3081,7 @@ class Series:
 
         """
 
-    def bottom_k(self, k: int = 5) -> Series:
+    def bottom_k(self, k: int | IntoExprColumn = 5) -> Series:
         r"""
         Return the `k` smallest elements.
 
@@ -3284,8 +3287,16 @@ class Series:
         """
         Return True if the Series has a validity bitmask.
 
-        If there is none, it means that there are no null values.
-        Use this to swiftly assert a Series does not have null values.
+        If there is no mask, it means that there are no ``null`` values.
+
+        Notes
+        -----
+        While the *absence* of a validity bitmask guarantees that a Series does not
+        have ``null`` values, the converse is not true, eg: the *presence* of a
+        bitmask does not mean that there are null values, as every value of the
+        bitmask could be ``false``.
+
+        To confirm that a column has ``null`` values use :func:`null_count`.
 
         """
         return self._s.has_validity()
@@ -3581,24 +3592,53 @@ class Series:
 
         """
 
-    def is_first(self) -> Series:
+    def is_first_distinct(self) -> Series:
         """
-        Get a mask of the first unique value.
+        Return a boolean mask indicating the first occurrence of each distinct value.
 
         Returns
         -------
         Series
             Series of data type :class:`Boolean`.
 
+        Examples
+        --------
+        >>> s = pl.Series([1, 1, 2, 3, 2])
+        >>> s.is_first_distinct()
+        shape: (5,)
+        Series: '' [bool]
+        [
+                true
+                false
+                true
+                true
+                false
+        ]
+
         """
 
-    def is_last(self) -> Series:
+    def is_last_distinct(self) -> Series:
         """
-        Get a mask of the last unique value.
+        Return a boolean mask indicating the last occurrence of each distinct value.
 
         Returns
         -------
-        Boolean Series
+        Series
+            Series of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 1, 2, 3, 2])
+        >>> s.is_last_distinct()
+        shape: (5,)
+        Series: '' [bool]
+        [
+                false
+                true
+                false
+                true
+                true
+        ]
 
         """
 
@@ -4017,7 +4057,7 @@ class Series:
 
         """
         if not ignore_nulls:
-            assert not self.has_validity()
+            assert not self.null_count()
 
         from polars.series._numpy import SeriesView, _ptr_to_numpy
 
@@ -4115,7 +4155,7 @@ class Series:
             # note: there is no native numpy "time" dtype
             return np.array(self.to_list(), dtype="object")
         else:
-            if not self.has_validity():
+            if not self.null_count():
                 if self.is_temporal():
                     np_array = convert_to_date(self.view(ignore_nulls=True))
                 elif self.is_numeric():
@@ -5672,8 +5712,8 @@ class Series:
         shuffle
             Shuffle the order of sampled data points.
         seed
-            Seed for the random number generator. If set to None (default), a random
-            seed is generated using the ``random`` module.
+            Seed for the random number generator. If set to None (default), a
+            random seed is generated for each sample operation.
 
         Examples
         --------
@@ -6070,11 +6110,15 @@ class Series:
         """
         return self._s.kurtosis(fisher, bias)
 
-    def clip(self, lower_bound: int | float, upper_bound: int | float) -> Series:
+    def clip(
+        self,
+        lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn,
+        upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn,
+    ) -> Series:
         """
         Clip (limit) the values in an array to a `min` and `max` boundary.
 
-        Only works for numerical types.
+        Only works for physical numerical types.
 
         If you want to clip other dtypes, consider writing a "when, then, otherwise"
         expression. See :func:`when` for more information.
@@ -6101,11 +6145,13 @@ class Series:
 
         """
 
-    def clip_min(self, lower_bound: int | float) -> Series:
+    def clip_min(
+        self, lower_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Series:
         """
         Clip (limit) the values in an array to a `min` boundary.
 
-        Only works for numerical types.
+        Only works for physical numerical types.
 
         If you want to clip other dtypes, consider writing a "when, then, otherwise"
         expression. See :func:`when` for more information.
@@ -6117,11 +6163,13 @@ class Series:
 
         """
 
-    def clip_max(self, upper_bound: int | float) -> Series:
+    def clip_max(
+        self, upper_bound: NumericLiteral | TemporalLiteral | IntoExprColumn
+    ) -> Series:
         """
         Clip (limit) the values in an array to a `max` boundary.
 
-        Only works for numerical types.
+        Only works for physical numerical types.
 
         If you want to clip other dtypes, consider writing a "when, then, otherwise"
         expression. See :func:`when` for more information.
@@ -6311,8 +6359,8 @@ class Series:
         Parameters
         ----------
         seed
-            Seed for the random number generator. If set to None (default), a random
-            seed is generated using the ``random`` module.
+            Seed for the random number generator. If set to None (default), a
+            random seed is generated each time the shuffle is called.
 
         Examples
         --------
@@ -6698,6 +6746,36 @@ class Series:
             a result. If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
+
+        """
+
+    @deprecate_renamed_function("is_first_distinct", version="0.19.3")
+    def is_first(self) -> Series:
+        """
+        Return a boolean mask indicating the first occurrence of each distinct value.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`Series.is_first_distinct`.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
+        """
+
+    @deprecate_renamed_function("is_last_distinct", version="0.19.3")
+    def is_last(self) -> Series:
+        """
+        Return a boolean mask indicating the last occurrence of each distinct value.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`Series.is_last_distinct`.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
 
         """
 
