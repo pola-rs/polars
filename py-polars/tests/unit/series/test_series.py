@@ -1105,6 +1105,9 @@ def test_describe() -> None:
     str_s = pl.Series(["abc", "pqr", "xyz"])
     bool_s = pl.Series([True, False, None, True, True])
     date_s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
+    object_s = pl.Series(
+        [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 5, "b": 6}], dtype=pl.Object
+    )
     empty_s = pl.Series(np.empty(0))
 
     assert dict(num_s.describe().rows()) == {  # type: ignore[arg-type]
@@ -1145,6 +1148,10 @@ def test_describe() -> None:
         "50%": "2021-01-02",
         "max": "2021-01-03",
         "null_count": "0",
+    }
+    assert dict(object_s.describe().rows()) == {  # type: ignore[arg-type]
+        "count": 3,
+        "null_count": 0,
     }
 
     with pytest.raises(ValueError):

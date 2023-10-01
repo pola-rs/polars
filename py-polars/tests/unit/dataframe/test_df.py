@@ -1258,6 +1258,35 @@ def test_describe() -> None:
         ("max", 2.0, None, None),
     ]
 
+    # object
+    df = pl.DataFrame(
+        {
+            "numerical": [1, 2, 1],
+            "object": pl.Series(
+                [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 5, "b": 6}], dtype=pl.Object
+            ),
+        }
+    )
+    described = df.describe(percentiles=(0.2, 0.4))
+
+    assert described.schema == {
+        "describe": pl.Utf8,
+        "numerical": pl.Float64,
+        "object": pl.Utf8,
+    }
+
+    assert described.rows() == [
+        ("count", 3.0, "3"),
+        ("null_count", 0.0, "0"),
+        ("mean", 1.3333333333333333, None),
+        ("std", 0.5773502691896257, None),
+        ("min", 1.0, None),
+        ("20%", 1.0, None),
+        ("40%", 1.0, None),
+        ("50%", 1.0, None),
+        ("max", 2.0, None),
+    ]
+
 
 def test_duration_arithmetic() -> None:
     df = pl.DataFrame(

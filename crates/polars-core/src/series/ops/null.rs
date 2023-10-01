@@ -51,6 +51,12 @@ impl Series {
                     .collect::<Vec<_>>();
                 StructChunked::new(name, &fields).unwrap().into_series()
             },
+            #[cfg(feature = "object")]
+            DataType::Object(_) => {
+                let series = vec![Series::full_null(name, size, &DataType::Utf8)];
+                let struct_chunked = StructChunked::new(name, &series).unwrap();
+                struct_chunked.into_series()
+            },
             DataType::Null => Series::new_null(name, size),
             _ => {
                 macro_rules! primitive {
