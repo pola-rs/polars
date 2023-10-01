@@ -97,8 +97,21 @@ pub(crate) fn create_physical_expr(
             partition_by,
             options,
         } => {
+            state.set_window();
+            let phys_function =
+                create_physical_expr(function, Context::Aggregation, expr_arena, schema, state)?;
+
+            let mut out_name = None;
+            if let Alias(expr, name) = expr_arena.get(function) {
+                function = *expr;
+                out_name = Some(name.clone());
+            };
+            let function_expr = node_to_expr(function, expr_arena);
+            let expr = node_to_expr(expression, expr_arena);
+
             match options {
                 WindowType::Over(mapping) => {
+                    // set again as the state can be reset
                     state.set_window();
                     // TODO! Order by
                     let group_by = create_physical_expressions(
@@ -108,17 +121,6 @@ pub(crate) fn create_physical_expr(
                         schema,
                         state,
                     )?;
-
-                    // set again as the state can be reset
-                    state.set_window();
-                    let phys_function = create_physical_expr(
-                        function,
-                        Context::Aggregation,
-                        expr_arena,
-                        schema,
-                        state,
-                    )?;
-                    let mut out_name = None;
                     let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
                     // sort and then dedup removes consecutive duplicates == all duplicates
                     apply_columns.sort();
@@ -139,25 +141,23 @@ pub(crate) fn create_physical_expr(
                         }
                     }
 
-                    if let Alias(expr, name) = expr_arena.get(function) {
-                        function = *expr;
-                        out_name = Some(name.clone());
-                    };
-                    let function = node_to_expr(function, expr_arena);
-
                     Ok(Arc::new(WindowExpr {
                         group_by,
                         apply_columns,
                         out_name,
-                        function,
+                        function: function_expr,
                         phys_function,
                         mapping,
-                        expr: node_to_expr(expression, expr_arena),
+                        expr,
                     }))
                 },
-                WindowType::Rolling(_) => {
-                    todo!()
-                },
+                WindowType::Rolling(options) => Ok(Arc::new(RollingExpr {
+                    function: function_expr,
+                    phys_function,
+                    out_name,
+                    options,
+                    expr,
+                })),
             }
         },
         Literal(value) => {

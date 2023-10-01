@@ -950,6 +950,14 @@ impl Expr {
         }
     }
 
+    pub fn rolling(self, options: RollingGroupOptions) -> Self {
+        Expr::Window {
+            function: Box::new(self),
+            partition_by: vec![],
+            options: WindowType::Rolling(options),
+        }
+    }
+
     fn fill_null_impl(self, fill_value: Expr) -> Self {
         let input = vec![self, fill_value];
 

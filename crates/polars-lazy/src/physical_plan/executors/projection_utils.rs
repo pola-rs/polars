@@ -85,8 +85,12 @@ fn execute_projection_cached_window_fns(
         let state = state.split();
         let (_time_key, _keys, groups) = df.group_by_rolling(vec![], options)?;
         // Set the groups so all expressions in partition can use it.
-        let mut groups_map = state.group_tuples.write().unwrap();
-        groups_map.insert(options.index_column.to_string(), groups);
+        // Create a separate scope, so the lock is dropped, otherwise we deadlock when the
+        // rolling expression try to get read access.
+        {
+            let mut groups_map = state.group_tuples.write().unwrap();
+            groups_map.insert(options.index_column.to_string(), groups);
+        }
 
         let results = POOL.install(|| {
             partition

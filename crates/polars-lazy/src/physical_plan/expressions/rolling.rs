@@ -11,6 +11,7 @@ pub(crate) struct RollingExpr {
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
+    pub(crate) out_name: Option<Arc<str>>,
     pub(crate) options: RollingGroupOptions,
     pub(crate) expr: Expr,
 }
@@ -23,12 +24,15 @@ impl PhysicalExpr for RollingExpr {
             .get(self.options.index_column.as_str())
             .expect("impl error");
 
-        let agg = self
+        let mut out = self
             .phys_function
             .evaluate_on_groups(df, groups, state)?
             .finalize();
-        polars_ensure!(agg.len() == groups.len(), agg_len = agg.len(), groups.len());
-        Ok(agg)
+        polars_ensure!(out.len() == groups.len(), agg_len = out.len(), groups.len());
+        if let Some(name) = &self.out_name {
+            out.rename(name.as_ref());
+        }
+        Ok(out)
     }
 
     fn evaluate_on_groups<'a>(
