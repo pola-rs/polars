@@ -91,7 +91,7 @@ proptest = { version = "1", default_features = false, features = ["std"] }
 # use for flaky testing
 rand = { workspace = true }
 # use for generating and testing random data samples
-sample-arrow2 = "0.1"
+sample-arrow2 = "0.17"
 sample-std = "0.1"
 sample-test = "0.1"
 # used to test async readers
