@@ -3,13 +3,15 @@ from __future__ import annotations
 import io
 import re
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.datatypes.convert import dtype_to_py_type
+from polars.exceptions import InvalidOperationError
 
 if TYPE_CHECKING:
     from polars.type_aliases import ConcatMethod
@@ -691,6 +693,53 @@ def test_empty_inputs_error() -> None:
         pl.ComputeError, match="expression: 'fold' didn't get any inputs"
     ):
         df.select(pl.sum_horizontal(pl.exclude("col1")))
+
+
+@pytest.mark.parametrize(
+    ("colname", "values", "expected"),
+    [
+        ("a", [2], [False, True, False]),
+        ("a", [True, False], None),
+        ("a", ["2", "3", "4"], None),
+        ("b", [Decimal("3.14")], None),
+        ("c", [-2, -1, 0, 1, 2], None),
+        (
+            "d",
+            pl.datetime_range(
+                datetime.now(),
+                datetime.now(),
+                interval="2345ns",
+                time_unit="ns",
+                eager=True,
+            ),
+            None,
+        ),
+        ("d", [time(10, 30)], None),
+        ("e", [datetime(1999, 12, 31, 10, 30)], None),
+        ("f", ["xx", "zz"], None),
+    ],
+)
+def test_invalid_is_in_dtypes(
+    colname: str, values: list[Any], expected: list[Any] | None
+) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [-2.5, 0.0, 2.5],
+            "c": [True, None, False],
+            "d": [datetime(2001, 10, 30), None, datetime(2009, 7, 5)],
+            "e": [date(2029, 12, 31), date(1999, 12, 31), None],
+            "f": [b"xx", b"yy", b"zz"],
+        }
+    )
+    if expected is None:
+        with pytest.raises(
+            InvalidOperationError,
+            match="`is_in` cannot check for .*? values in .*? data",
+        ):
+            df.select(pl.col(colname).is_in(values))
+    else:
+        assert df.select(pl.col(colname).is_in(values))[colname].to_list() == expected
 
 
 def test_sort_by_error() -> None:

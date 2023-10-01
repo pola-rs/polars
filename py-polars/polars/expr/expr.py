@@ -27,6 +27,7 @@ from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
     Categorical,
+    Null,
     Struct,
     UInt32,
     Utf8,
@@ -4930,8 +4931,8 @@ class Expr:
         if isinstance(other, Collection) and not isinstance(other, str):
             if isinstance(other, (Set, FrozenSet)):
                 other = list(other)
-            other = F.lit(pl.Series(other))
-            other = other._pyexpr
+            implied_dtype = Null if len(other) == 0 else None
+            other = F.lit(pl.Series(other, dtype=implied_dtype))._pyexpr
         else:
             other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr.is_in(other))
@@ -5350,7 +5351,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype Datetime.
+            be of dtype Datetime or Date.
 
             .. warning::
                 If passed, the column must be sorted in ascending order. Otherwise,
@@ -5560,7 +5561,7 @@ class Expr:
         by
             If the `window_size` is temporal, for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype Datetime.
+            be of dtype Datetime or Date.
         closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive); only
             applicable if `by` has been set.
@@ -5793,7 +5794,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype Datetime.
+            be of dtype Datetime or Date.
 
             .. warning::
                 If passed, the column must be sorted in ascending order. Otherwise,
@@ -6260,7 +6261,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype Datetime.
+            be of dtype Datetime or Date.
 
             .. warning::
                 If passed, the column must be sorted in ascending order. Otherwise,
@@ -6496,7 +6497,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype Datetime.
+            be of dtype Datetime or Date.
 
             .. warning::
                 If passed, the column must be sorted in ascending order. Otherwise,
@@ -6737,7 +6738,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype Datetime.
+            be of dtype Datetime or Date.
 
             .. warning::
                 If passed, the column must be sorted in ascending order. Otherwise,
@@ -6902,7 +6903,7 @@ class Expr:
         by
             If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
-            be of dtype Datetime.
+            be of dtype Datetime or Date.
 
             .. warning::
                 If passed, the column must be sorted in ascending order. Otherwise,

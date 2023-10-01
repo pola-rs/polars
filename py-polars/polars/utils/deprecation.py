@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     import sys
     from typing import Mapping
 
+    from polars import Expr
     from polars.type_aliases import Ambiguous
 
     if sys.version_info >= (3, 10):
@@ -20,8 +21,7 @@ if TYPE_CHECKING:
 
     P = ParamSpec("P")
     T = TypeVar("T")
-if TYPE_CHECKING:
-    from polars import Expr
+
 
 USE_EARLIEST_TO_AMBIGUOUS: Mapping[bool, Ambiguous] = {
     True: "earliest",
@@ -60,6 +60,7 @@ def deprecate_function(
             )
             return function(*args, **kwargs)
 
+        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
         return wrapper
 
     return decorate
@@ -94,6 +95,7 @@ def deprecate_renamed_parameter(
             )
             return function(*args, **kwargs)
 
+        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
         return wrapper
 
     return decorate
@@ -232,6 +234,7 @@ def warn_closed_future_change() -> Callable[[Callable[P, T]], Callable[P, T]]:
                 )
             return function(*args, **kwargs)
 
+        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
         return wrapper
 
     return decorate

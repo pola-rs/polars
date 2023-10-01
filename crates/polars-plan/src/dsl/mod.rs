@@ -1250,7 +1250,11 @@ impl Expr {
                         DataType::Datetime(tu, tz) => {
                             (by.cast(&DataType::Datetime(*tu, None))?, tz)
                         },
-                        _ => (by.clone(), &None),
+                        DataType::Date => (
+                            by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
+                            &None,
+                        ),
+                        dt => polars_bail!(opq = expr_name, got = dt, expected = "date/datetime"),
                     };
                     ensure_sorted_arg(&by, expr_name)?;
                     let by = by.datetime().unwrap();
