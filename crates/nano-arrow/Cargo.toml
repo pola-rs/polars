@@ -82,7 +82,7 @@ features = ["async"]
 
 [dev-dependencies]
 avro-rs = { version = "0.13", features = ["snappy"] }
-criterion = "0.4"
+criterion = "0.5"
 crossbeam-channel = { workspace = true }
 doc-comment = "0.3"
 flate2 = "1"
