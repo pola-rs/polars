@@ -6,7 +6,7 @@ on:
       - py-*
 
 env:
-  RUST_TOOLCHAIN: nightly-2023-08-26
+  RUST_TOOLCHAIN: nightly-2023-10-02
   PYTHON_VERSION: '3.8'
   MATURIN_VERSION: '1.2.3'
 

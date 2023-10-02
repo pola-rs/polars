@@ -230,7 +230,7 @@ impl<'a> LazyCsvReader<'a> {
                 Some(globresult) => globresult?,
                 None => polars_bail!(ComputeError: "globbing pattern did not match any files"),
             };
-            polars_utils::open_file(&path)
+            polars_utils::open_file(path)
         } else {
             polars_utils::open_file(&self.path)
         }?;
