@@ -49,7 +49,7 @@ where
             arr.iter()
                 .unwrap_optional()
                 .filter_map(|opt| opt.copied())
-                .reduce(|a, b| min_or_max_fn(a, b))
+                .reduce(min_or_max_fn)
         };
         match cum_agg {
             None => cum_agg = agg,

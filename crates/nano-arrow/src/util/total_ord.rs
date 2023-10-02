@@ -70,11 +70,14 @@ pub trait TotalOrd: TotalEq {
 /// generic w.r.t Hash while being able to hash floats.
 pub trait TotalHash {
     fn tot_hash<H>(&self, state: &mut H)
-       where H: Hasher;
+    where
+        H: Hasher;
 
     fn tot_hash_slice<H>(data: &[Self], state: &mut H)
-       where H: Hasher,
-             Self: Sized {
+    where
+        H: Hasher,
+        Self: Sized,
+    {
         for piece in data {
             piece.tot_hash(state)
         }
@@ -186,10 +189,11 @@ macro_rules! impl_trivial_eq_ord_hash {
                 self >= other
             }
         }
-        
+
         impl TotalHash for $T {
             fn tot_hash<H>(&self, state: &mut H)
-                where H: Hasher
+            where
+                H: Hasher,
             {
                 self.hash(state);
             }
@@ -277,14 +281,18 @@ impl_eq_ord_float!(f64);
 
 impl TotalHash for f32 {
     fn tot_hash<H>(&self, state: &mut H)
-       where H: Hasher {
+    where
+        H: Hasher,
+    {
         canonical_f32_bits(*self).hash(state)
     }
 }
 
 impl TotalHash for f64 {
     fn tot_hash<H>(&self, state: &mut H)
-       where H: Hasher {
+    where
+        H: Hasher,
+    {
         canonical_f64_bits(*self).hash(state)
     }
 }
@@ -352,7 +360,9 @@ impl<T: TotalOrd> TotalOrd for Option<T> {
 
 impl<T: TotalHash> TotalHash for Option<T> {
     fn tot_hash<H>(&self, state: &mut H)
-       where H: Hasher {
+    where
+        H: Hasher,
+    {
         self.is_some().tot_hash(state);
         if let Some(slf) = self {
             slf.tot_hash(state)
@@ -401,7 +411,9 @@ impl<T: TotalOrd + ?Sized> TotalOrd for &T {
 
 impl<T: TotalHash + ?Sized> TotalHash for &T {
     fn tot_hash<H>(&self, state: &mut H)
-       where H: Hasher {
+    where
+        H: Hasher,
+    {
         (*self).tot_hash(state)
     }
 }
