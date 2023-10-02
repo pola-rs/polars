@@ -350,15 +350,11 @@ class ExprListNameSpace:
         return F.concat_list(other_list)
 
     def cum_concat(self) -> Expr:
-        """
-        asdgasdgasdg
-        """
+        """Asdgasdgasdg."""
         return wrap_expr(self._pyexpr.list_cum_concat())
 
     def cum_set_union(self) -> Expr:
-        """
-        asdgasdgasdg
-        """
+        """Asdgasdgasdg."""
         return wrap_expr(self._pyexpr.list_cum_set_union())
 
     def get(self, index: int | Expr | str) -> Expr:

@@ -1,9 +1,9 @@
 use std::option::Option;
 use std::vec::Vec;
+
 use polars_core::prelude::*;
 
 pub fn list_cum_concat(a: &ListChunked) -> PolarsResult<ListChunked> {
-
     let mut values: Vec<Option<Series>> = Vec::new();
     let mut acc: Option<Series> = None;
     for value in a {
@@ -25,11 +25,9 @@ pub fn list_cum_concat(a: &ListChunked) -> PolarsResult<ListChunked> {
     let mut ca: ListChunked = values.into_iter().collect();
     ca.rename(a.name());
     Ok(ca)
-
 }
 
 pub fn list_cum_set_union(a: &ListChunked) -> PolarsResult<ListChunked> {
-
     let mut values: Vec<Option<Series>> = Vec::new();
     let mut acc: Option<Series> = None;
     for value in a {
@@ -54,5 +52,4 @@ pub fn list_cum_set_union(a: &ListChunked) -> PolarsResult<ListChunked> {
     let mut ca: ListChunked = values.into_iter().collect();
     ca.rename(a.name());
     Ok(ca)
-
 }

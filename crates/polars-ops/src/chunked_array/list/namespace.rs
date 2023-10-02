@@ -555,7 +555,6 @@ pub trait ListNameSpaceImpl: AsList {
     fn lst_cum_set_union(&self) -> PolarsResult<ListChunked> {
         list_cum_set_union(&self.as_list())
     }
-
 }
 
 impl ListNameSpaceImpl for ListChunked {}

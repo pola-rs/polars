@@ -14,11 +14,11 @@ mod sum_mean;
 #[cfg(feature = "list_to_struct")]
 mod to_struct;
 
-pub use cum::*;
 #[cfg(feature = "list_count")]
 pub use count::*;
 #[cfg(not(feature = "list_count"))]
 use count::*;
+pub use cum::*;
 pub use namespace::*;
 #[cfg(feature = "list_sets")]
 pub use sets::*;
