@@ -318,15 +318,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
-        let out = self.0.logical().repeat_by(by)?;
-        let casted = out
-            .cast(&DataType::List(Box::new(self.dtype().clone())))
-            .unwrap();
-        Ok(casted.list().unwrap().clone())
-    }
-
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<Series> {
         let cats = self.0.logical().mode()?;
