@@ -134,6 +134,12 @@ impl<T: TotalEq + TotalOrd> PartialEq for TotalOrdWrap<T> {
 
 impl<T: TotalEq + TotalOrd> Eq for TotalOrdWrap<T> {}
 
+impl<T: TotalHash> Hash for TotalOrdWrap<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.tot_hash(state);
+    }
+}
+
 macro_rules! impl_trivial_eq {
     ($T: ty) => {
         impl TotalEq for $T {
