@@ -98,55 +98,68 @@ pub(crate) fn create_physical_expr(
             options,
         } => {
             state.set_window();
-            // TODO! Order by
-            let group_by = create_physical_expressions(
-                &partition_by,
-                Context::Default,
-                expr_arena,
-                schema,
-                state,
-            )?;
-
-            // set again as the state can be reset
-            state.set_window();
             let phys_function =
                 create_physical_expr(function, Context::Aggregation, expr_arena, schema, state)?;
+
             let mut out_name = None;
-            let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
-            // sort and then dedup removes consecutive duplicates == all duplicates
-            apply_columns.sort();
-            apply_columns.dedup();
-
-            if apply_columns.is_empty() {
-                if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
-                    apply_columns.push(Arc::from("literal"))
-                } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Count)) {
-                    apply_columns.push(Arc::from("count"))
-                } else {
-                    let e = node_to_expr(function, expr_arena);
-                    polars_bail!(
-                        ComputeError:
-                        "cannot apply a window function, did not find a root column; \
-                        this is likely due to a syntax error in this expression: {:?}", e
-                    );
-                }
-            }
-
             if let Alias(expr, name) = expr_arena.get(function) {
                 function = *expr;
                 out_name = Some(name.clone());
             };
-            let function = node_to_expr(function, expr_arena);
+            let function_expr = node_to_expr(function, expr_arena);
+            let expr = node_to_expr(expression, expr_arena);
 
-            Ok(Arc::new(WindowExpr {
-                group_by,
-                apply_columns,
-                out_name,
-                function,
-                phys_function,
-                options,
-                expr: node_to_expr(expression, expr_arena),
-            }))
+            match options {
+                WindowType::Over(mapping) => {
+                    // set again as the state can be reset
+                    state.set_window();
+                    // TODO! Order by
+                    let group_by = create_physical_expressions(
+                        &partition_by,
+                        Context::Default,
+                        expr_arena,
+                        schema,
+                        state,
+                    )?;
+                    let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
+                    // sort and then dedup removes consecutive duplicates == all duplicates
+                    apply_columns.sort();
+                    apply_columns.dedup();
+
+                    if apply_columns.is_empty() {
+                        if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
+                            apply_columns.push(Arc::from("literal"))
+                        } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Count)) {
+                            apply_columns.push(Arc::from("count"))
+                        } else {
+                            let e = node_to_expr(function, expr_arena);
+                            polars_bail!(
+                                ComputeError:
+                                "cannot apply a window function, did not find a root column; \
+                                this is likely due to a syntax error in this expression: {:?}", e
+                            );
+                        }
+                    }
+
+                    Ok(Arc::new(WindowExpr {
+                        group_by,
+                        apply_columns,
+                        out_name,
+                        function: function_expr,
+                        phys_function,
+                        mapping,
+                        expr,
+                    }))
+                },
+                #[cfg(feature = "dynamic_group_by")]
+                WindowType::Rolling(options) => Ok(Arc::new(RollingExpr {
+                    function: function_expr,
+                    phys_function,
+                    out_name,
+                    options,
+                    expr,
+                })),
+            }
         },
         Literal(value) => {
             state.local.has_lit = true;

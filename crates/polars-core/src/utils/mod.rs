@@ -336,6 +336,19 @@ macro_rules! with_match_physical_integer_type {(
 })}
 
 #[macro_export]
+macro_rules! with_match_physical_float_polars_type {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use $crate::datatypes::DataType::*;
+    match $key_type {
+        Float32 => __with_ty__! { Float32Type },
+        Float64 => __with_ty__! { Float64Type },
+        _ => unimplemented!()
+    }
+})}
+
+#[macro_export]
 macro_rules! with_match_physical_numeric_polars_type {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({

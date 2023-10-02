@@ -299,6 +299,14 @@ impl Series {
         }
     }
 
+    /// Cast numerical types to f64, and keep floats as is.
+    pub fn to_float(&self) -> PolarsResult<Series> {
+        match self.dtype() {
+            DataType::Float32 | DataType::Float64 => Ok(self.clone()),
+            _ => self.cast(&DataType::Float64),
+        }
+    }
+
     /// Compute the sum of all values in this Series.
     /// Returns `Some(0)` if the array is empty, and `None` if the array only
     /// contains null values.
