@@ -98,6 +98,7 @@ impl FunctionExpr {
                 use ListFunction::*;
                 match l {
                     Concat => mapper.map_to_list_supertype(),
+                    CumConcat => mapper.with_same_dtype(),
                     #[cfg(feature = "is_in")]
                     Contains => mapper.with_dtype(DataType::Boolean),
                     #[cfg(feature = "list_drop_nulls")]

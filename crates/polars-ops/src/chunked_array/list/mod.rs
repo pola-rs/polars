@@ -3,6 +3,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "list_any_all")]
 mod any_all;
 mod count;
+mod cum;
 #[cfg(feature = "hash")]
 pub(crate) mod hash;
 mod min_max;
@@ -13,6 +14,7 @@ mod sum_mean;
 #[cfg(feature = "list_to_struct")]
 mod to_struct;
 
+pub use cum::*;
 #[cfg(feature = "list_count")]
 pub use count::*;
 #[cfg(not(feature = "list_count"))]

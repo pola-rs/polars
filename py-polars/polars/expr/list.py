@@ -349,6 +349,12 @@ class ExprListNameSpace:
         other_list.insert(0, wrap_expr(self._pyexpr))
         return F.concat_list(other_list)
 
+    def cum_concat(self) -> Expr:
+        """
+        asdgasdgasdg
+        """
+        return wrap_expr(self._pyexpr.list_cum_concat())
+
     def get(self, index: int | Expr | str) -> Expr:
         """
         Get the value by index in the sublists.

@@ -170,4 +170,8 @@ impl PyExpr {
         }
         .into()
     }
+
+    fn list_cum_concat(&self) -> Self {
+        self.inner.clone().list().cum_concat().into()
+    }
 }

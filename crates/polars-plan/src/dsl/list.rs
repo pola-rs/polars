@@ -329,4 +329,8 @@ impl ListNameSpace {
         let other = other.into();
         self.set_operation(other, SetOperation::SymmetricDifference)
     }
+
+    pub fn cum_concat(self) -> Expr {
+        self.0.map_private(FunctionExpr::ListExpr(ListFunction::CumConcat))
+    }
 }

@@ -7,6 +7,7 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ListFunction {
     Concat,
+    CumConcat,
     #[cfg(feature = "is_in")]
     Contains,
     #[cfg(feature = "list_drop_nulls")]
@@ -41,6 +42,7 @@ impl Display for ListFunction {
 
         let name = match self {
             Concat => "concat",
+            CumConcat => "cum_concat",
             #[cfg(feature = "is_in")]
             Contains => "contains",
             #[cfg(feature = "list_drop_nulls")]
@@ -223,6 +225,10 @@ pub(super) fn concat(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     }
 
     first_ca.lst_concat(other).map(|ca| Some(ca.into_series()))
+}
+
+pub(super) fn cum_concat(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_cum_concat()?.into_series())
 }
 
 pub(super) fn get(s: &mut [Series]) -> PolarsResult<Option<Series>> {

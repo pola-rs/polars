@@ -498,6 +498,22 @@ def test_list_tail_underflow_9087() -> None:
     ]
 
 
+def test_list_cum_concat() -> None:
+    a = pl.DataFrame({"a": [None, [0], [], None, [1, 5, 9], [0], [], None]})
+    print(a.select(pl.col("a").list.cum_concat())["a"])
+    print(a.select(pl.col("a").list.cum_concat())["a"].to_list())
+    # assert a.select(pl.col("a").list.cum_concat())["a"].to_list() == [
+    #     None,
+    #     [0],
+    #     [0],
+    #     None
+    #     [0, 1, 5, 9],
+    #     [0, 1, 5, 9, 0],
+    #     [0, 1, 5, 9, 0],
+    #     None
+    # ]
+
+
 def test_list_count_match_boolean_nulls_9141() -> None:
     a = pl.DataFrame({"a": [[True, None, False]]})
     assert a.select(pl.col("a").list.count_matches(True))["a"].to_list() == [1]

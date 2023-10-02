@@ -547,6 +547,11 @@ pub trait ListNameSpaceImpl: AsList {
         };
         Ok(out)
     }
+
+    fn lst_cum_concat(&self) -> PolarsResult<ListChunked> {
+        list_cum_concat(&self.as_list())
+    }
+
 }
 
 impl ListNameSpaceImpl for ListChunked {}
