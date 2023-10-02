@@ -607,6 +607,26 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     assert df2.rows() == [(1.0, 4.0), (2.5, None), (None, 6.5)]
 
 
+def test_null_array_print_format() -> None:
+    pa_tbl_null = pa.table({"a": [None, None]})
+    df_null = pl.from_arrow(pa_tbl_null)
+    assert df_null.shape == (2, 1)
+    assert df_null.dtypes == [pl.Null]  # type: ignore[union-attr]
+    assert df_null.rows() == [(None,), (None,)]  # type: ignore[union-attr]
+
+    assert (
+        str(df_null) == "shape: (2, 1)\n"
+        "┌──────┐\n"
+        "│ a    │\n"
+        "│ ---  │\n"
+        "│ null │\n"
+        "╞══════╡\n"
+        "│ null │\n"
+        "│ null │\n"
+        "└──────┘"
+    )
+
+
 def test_init_arrow() -> None:
     # Handle unnamed column
     df = pl.DataFrame(pa.table({"a": [1, 2], None: [3, 4]}))
