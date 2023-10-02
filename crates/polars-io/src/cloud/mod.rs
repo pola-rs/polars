@@ -19,6 +19,7 @@ mod adaptors;
 #[cfg(feature = "cloud")]
 mod glob;
 pub mod options;
+
 #[cfg(feature = "cloud")]
 pub use adaptors::*;
 #[cfg(feature = "cloud")]
@@ -46,7 +47,7 @@ fn err_missing_configuration(feature: &str, scheme: &str) -> BuildResult {
 
 /// Build an [`ObjectStore`] based on the URL and passed in url. Return the cloud location and an implementation of the object store.
 #[cfg(feature = "cloud")]
-pub fn build_object_store(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
+pub async fn build_object_store(url: &str, _options: Option<&CloudOptions>) -> BuildResult {
     let cloud_location = CloudLocation::new(url)?;
     let store = match CloudType::from_str(url)? {
         CloudType::File => {
@@ -59,7 +60,7 @@ pub fn build_object_store(url: &str, _options: Option<&CloudOptions>) -> BuildRe
                 let options = _options
                     .map(Cow::Borrowed)
                     .unwrap_or_else(|| Cow::Owned(Default::default()));
-                let store = options.build_aws(url)?;
+                let store = options.build_aws(url).await?;
                 Ok::<_, PolarsError>(Arc::new(store) as Arc<dyn ObjectStore>)
             }
             #[cfg(not(feature = "aws"))]

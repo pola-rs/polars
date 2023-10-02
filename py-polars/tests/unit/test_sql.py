@@ -70,6 +70,48 @@ def test_sql_cast() -> None:
     ]
 
 
+def test_sql_any_all() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [-1, 0, 1, 2, 3, 4],
+            "y": [1, 0, 0, 1, 2, 3],
+        }
+    )
+
+    sql = pl.SQLContext(df=df)
+
+    res = sql.execute(
+        """
+        SELECT
+        x >= ALL(df.y) as 'All Geq',
+        x > ALL(df.y) as 'All G',
+        x < ALL(df.y) as 'All L',
+        x <= ALL(df.y) as 'All Leq',
+        x >= ANY(df.y) as 'Any Geq',
+        x > ANY(df.y) as 'Any G',
+        x < ANY(df.y) as 'Any L',
+        x <= ANY(df.y) as 'Any Leq',
+        x == ANY(df.y) as 'Any eq',
+        x != ANY(df.y) as 'Any Neq',
+        FROM df
+        """,
+        eager=True,
+    )
+
+    assert res.to_dict(False) == {
+        "All Geq": [0, 0, 0, 0, 1, 1],
+        "All G": [0, 0, 0, 0, 0, 1],
+        "All L": [1, 0, 0, 0, 0, 0],
+        "All Leq": [1, 1, 0, 0, 0, 0],
+        "Any Geq": [0, 1, 1, 1, 1, 1],
+        "Any G": [0, 0, 1, 1, 1, 1],
+        "Any L": [1, 1, 1, 1, 0, 0],
+        "Any Leq": [1, 1, 1, 1, 1, 0],
+        "Any eq": [0, 1, 1, 1, 1, 0],
+        "Any Neq": [1, 0, 0, 0, 0, 1],
+    }
+
+
 def test_sql_distinct() -> None:
     df = pl.DataFrame(
         {

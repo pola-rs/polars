@@ -1144,7 +1144,7 @@ def test_to_numpy(order: IndexOrder, f_contiguous: bool, c_contiguous: bool) -> 
         df.to_numpy(structured=True),
         np.array([("x",), ("y",), (None,)], dtype=[("s", "O")]),
     )
-    assert df["s"][:2].has_validity()
+    assert not df["s"][:2].has_validity()
     assert_array_equal(
         df[:2].to_numpy(structured=True),
         np.array([("x",), ("y",)], dtype=[("s", "<U1")]),

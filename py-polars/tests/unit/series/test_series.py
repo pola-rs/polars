@@ -723,7 +723,7 @@ def test_view() -> None:
         b.view()
 
     assert np.all(b[:2].view() == np.array([1, 2]))
-    assert b[:2].has_validity()
+    assert not b[:2].has_validity()
 
 
 def test_ufunc() -> None:

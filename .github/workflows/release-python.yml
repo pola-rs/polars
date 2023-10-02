@@ -6,44 +6,33 @@ on:
       - py-*
 
 env:
-  RUST_TOOLCHAIN: nightly-2023-08-26
   PYTHON_VERSION: '3.8'
-  MATURIN_VERSION: '1.2.3'
-  MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
 
 defaults:
   run:
     shell: bash
 
 jobs:
-  publish-wheels:
+  build-wheels:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            cpu: x86-64
-            sdist: true
-          - os: ubuntu-latest
-            cpu: aarch64
-          - os: macos-latest
-            cpu: x86-64
-          - os: macos-latest
-            cpu: aarch64
+        os: [ubuntu-latest, macos-latest, windows-32gb-ram]
+        cpu: [x86-64, aarch64]
+        lts-cpu: [false, true]
+        u64-idx: [false, true]
+        exclude:
           - os: windows-32gb-ram
-            cpu: x86-64
-          - os: ubuntu-latest
-            cpu: x86-64
-            lts-cpu: true
-            sdist: true
-          - os: ubuntu-latest
-            cpu: x86-64
+            cpu: aarch64
+          - lts-cpu: true
             u64-idx: true
-            sdist: true
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       # Avoid potential out-of-memory errors
       - name: Set swap space for Linux
@@ -62,16 +51,19 @@ jobs:
           rm py-polars/README.md
           cp README.md py-polars/README.md
 
-      - name: Prepare lts-cpu
-        if: matrix.lts-cpu
-        run: sed -i 's/name = "polars"/name = "polars-lts-cpu"/' py-polars/pyproject.toml
+      - name: Install yq
+        if: matrix.lts-cpu || matrix.u64-idx
+        run: pip install yq
 
-      - name: Prepare u64-idx
-        if: matrix.u64-idx
+      - name: Update package name
+        if: matrix.lts-cpu || matrix.u64-idx
         run: |
-          sed -i 's/name = "polars"/name = "polars-u64-idx"/' py-polars/pyproject.toml
-          # A brittle hack to insert the 'bigidx' feature
-          sed -i 's/"dynamic_group_by",/"dynamic_group_by",\n"bigidx",/' py-polars/Cargo.toml
+          NAME=${{ matrix.lts-cpu && 'polars-lts-cpu' || 'polars-u64-idx' }}
+          tomlq -i -t ".project.name = \"$NAME\"" py-polars/pyproject.toml
+
+      - name: Add bigidx feature
+        if: matrix.u64-idx
+        run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
 
       - name: Set RUSTFLAGS for x86-64
         if: matrix.cpu == 'x86-64' && !matrix.lts-cpu
@@ -93,12 +85,54 @@ jobs:
         run: |
           echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
 
-      - name: Publish wheel
+      - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
-          command: publish
+          command: build
           target: ${{ steps.target.outputs.target }}
           working-directory: py-polars
-          args: --skip-existing ${{ !matrix.sdist && '--no-sdist' || ''}}
-          maturin-version: ${{ env.MATURIN_VERSION }}
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
+          args: --release ${{ matrix.os == 'ubuntu-latest' && matrix.cpu == 'x86-64' && '--sdist' || ''}}
+          manylinux: auto
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist
+          path: py-polars/target/wheels/*
+
+  publish-to-pypi:
+    needs: build-wheels
+    environment:
+      name: release-python
+      url: https://pypi.org/project/polars
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: dist
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
+
+  update-github-release:
+    needs: build-wheels
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: dist
+          path: dist
+
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file: dist/polars-*
+          file_glob: true
+          overwrite: true

@@ -1,3 +1,5 @@
+use polars_utils::format_smartstring;
+use polars_utils::iter::EnumerateIdxTrait;
 use smartstring::alias::String as SmartString;
 
 use super::*;
@@ -17,6 +19,8 @@ pub(super) fn profile_name(
     }
 }
 
+type IdAndExpression = (u32, Arc<dyn PhysicalExpr>);
+
 fn execute_projection_cached_window_fns(
     df: &DataFrame,
     exprs: &[Arc<dyn PhysicalExpr>],
@@ -32,31 +36,39 @@ fn execute_projection_cached_window_fns(
     #[allow(clippy::type_complexity)]
     // String: partition_name,
     // u32: index,
-    let mut windows: Vec<(String, Vec<(u32, Arc<dyn PhysicalExpr>)>)> = vec![];
+    let mut windows: PlHashMap<SmartString, Vec<IdAndExpression>> = PlHashMap::default();
+    #[cfg(feature = "dynamic_group_by")]
+    let mut rolling: PlHashMap<&RollingGroupOptions, Vec<IdAndExpression>> = PlHashMap::default();
     let mut other = Vec::with_capacity(exprs.len());
 
     // first we partition the window function by the values they group over.
     // the group_by values should be cached
-    let mut index = 0u32;
-    exprs.iter().for_each(|phys| {
-        index += 1;
+    exprs.iter().enumerate_u32().for_each(|(index, phys)| {
         let e = phys.as_expression().unwrap();
 
         let mut is_window = false;
         for e in e.into_iter() {
-            if let Expr::Window { partition_by, .. } = e {
-                let group_by = format!("{:?}", partition_by.as_slice());
-                if let Some(tpl) = windows.iter_mut().find(|tpl| tpl.0 == group_by) {
-                    tpl.1.push((index, phys.clone()))
-                } else {
-                    windows.push((group_by, vec![(index, phys.clone())]))
-                }
+            if let Expr::Window {
+                partition_by,
+                options,
+                ..
+            } = e
+            {
+                let entry = match options {
+                    WindowType::Over(_) => {
+                        let group_by = format_smartstring!("{:?}", partition_by.as_slice());
+                        windows.entry(group_by).or_insert_with(Vec::new)
+                    },
+                    #[cfg(feature = "dynamic_group_by")]
+                    WindowType::Rolling(options) => rolling.entry(options).or_insert_with(Vec::new),
+                };
+                entry.push((index, phys.clone()));
                 is_window = true;
                 break;
             }
         }
         if !is_window {
-            other.push((index, phys))
+            other.push((index, phys.as_ref()))
         }
     });
 
@@ -66,6 +78,31 @@ fn execute_projection_cached_window_fns(
             .map(|(idx, expr)| expr.evaluate(df, state).map(|s| (*idx, s)))
             .collect::<PolarsResult<Vec<_>>>()
     })?;
+
+    // Run partitioned rolling expressions.
+    // Per partition we run in parallel. We compute the groups before and store them once per partition.
+    // The rolling expression knows how to fetch the groups.
+    #[cfg(feature = "dynamic_group_by")]
+    for (options, partition) in rolling {
+        // clear the cache for every partitioned group
+        let state = state.split();
+        let (_time_key, _keys, groups) = df.group_by_rolling(vec![], options)?;
+        // Set the groups so all expressions in partition can use it.
+        // Create a separate scope, so the lock is dropped, otherwise we deadlock when the
+        // rolling expression try to get read access.
+        {
+            let mut groups_map = state.group_tuples.write().unwrap();
+            groups_map.insert(options.index_column.to_string(), groups);
+        }
+
+        let results = POOL.install(|| {
+            partition
+                .par_iter()
+                .map(|(idx, expr)| expr.evaluate(df, &state).map(|s| (*idx, s)))
+                .collect::<PolarsResult<Vec<_>>>()
+        })?;
+        selected_columns.extend_from_slice(&results);
+    }
 
     for partition in windows {
         // clear the cache for every partitioned group

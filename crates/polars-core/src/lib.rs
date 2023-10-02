@@ -1,10 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![allow(ambiguous_glob_reexports)]
-#![cfg_attr(
-    feature = "nightly",
-    allow(clippy::incorrect_partial_ord_impl_on_ord_type)
-)] // remove once stable
+#![cfg_attr(feature = "nightly", allow(clippy::non_canonical_partial_ord_impl))] // remove once stable
 extern crate core;
 
 #[macro_use]

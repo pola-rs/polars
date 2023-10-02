@@ -2884,11 +2884,11 @@ impl DataFrame {
                 let columns = self
                     .columns
                     .iter()
-                    .cloned()
                     .filter(|s| {
                         let dtype = s.dtype();
                         dtype.is_numeric() || matches!(dtype, DataType::Boolean)
                     })
+                    .cloned()
                     .collect();
                 let numeric_df = DataFrame::new_no_checks(columns);
 

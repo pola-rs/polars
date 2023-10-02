@@ -53,6 +53,12 @@ pub struct FastFixedCache<K, V> {
     hash_builder: RandomState,
 }
 
+impl<K: Hash + Eq, V> Default for FastFixedCache<K, V> {
+    fn default() -> Self {
+        Self::new(MIN_FAST_FIXED_CACHE_SIZE)
+    }
+}
+
 impl<K: Hash + Eq, V> FastFixedCache<K, V> {
     pub fn new(n: usize) -> Self {
         let n = (n.max(MIN_FAST_FIXED_CACHE_SIZE)).next_power_of_two();

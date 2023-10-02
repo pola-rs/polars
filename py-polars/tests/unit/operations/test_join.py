@@ -585,3 +585,13 @@ def test_join_validation() -> None:
 
         # right longer
         test_each_join_validation(short_unique, long_duplicate, how)
+
+
+def test_outer_join_bool() -> None:
+    df1 = pl.DataFrame({"id": [True, False], "val": [1, 2]})
+    df2 = pl.DataFrame({"id": [True, False], "val": [0, -1]})
+    assert df1.join(df2, on="id", how="outer").to_dict(False) == {
+        "id": [True, False],
+        "val": [1, 2],
+        "val_right": [0, -1],
+    }

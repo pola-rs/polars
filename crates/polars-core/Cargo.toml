@@ -80,7 +80,6 @@ rows = []
 zip_with = []
 round_series = []
 checked_arithmetic = []
-repeat_by = []
 is_first_distinct = []
 is_last_distinct = []
 asof_join = []
@@ -147,7 +146,6 @@ docs-selection = [
   "zip_with",
   "round_series",
   "checked_arithmetic",
-  "repeat_by",
   "is_first_distinct",
   "is_last_distinct",
   "asof_join",

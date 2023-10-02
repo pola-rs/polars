@@ -1134,12 +1134,9 @@ fn test_fill_forward() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .select([col("b").forward_fill(None).over_with_options(
-            [col("a")],
-            WindowOptions {
-                mapping: WindowMapping::Join,
-            },
-        )])
+        .select([col("b")
+            .forward_fill(None)
+            .over_with_options([col("a")], WindowMapping::Join.into())])
         .collect()?;
     let agg = out.column("b")?.list()?;
 
@@ -1299,12 +1296,7 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
             col("B")
                 .shift(1)
                 .filter(col("B").shift(1).gt(lit(4)))
-                .over_with_options(
-                    [col("fruits")],
-                    WindowOptions {
-                        mapping: WindowMapping::Join,
-                    },
-                )
+                .over_with_options([col("fruits")], WindowMapping::Join.into())
                 .alias("filtered"),
         ])
         .collect()?;
@@ -1663,12 +1655,7 @@ fn test_single_ranked_group() -> PolarsResult<()> {
                 },
                 None,
             )
-            .over_with_options(
-                [col("group")],
-                WindowOptions {
-                    mapping: WindowMapping::Join,
-                },
-            )])
+            .over_with_options([col("group")], WindowMapping::Join.into())])
         .collect()?;
 
     let out = out.column("value")?.explode()?;

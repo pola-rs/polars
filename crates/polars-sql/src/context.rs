@@ -7,8 +7,8 @@ use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
 use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{
-    Distinct, ExcludeSelectItem, Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName,
-    ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator,
+    Distinct, ExcludeSelectItem, Expr as SqlExpr, FunctionArg, GroupByExpr, JoinOperator,
+    ObjectName, ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator,
     SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins, Value as SQLValue,
     WildcardAdditionalOptions,
 };
@@ -344,28 +344,31 @@ impl SQLContext {
             .collect::<PolarsResult<_>>()?;
 
         // Check for group by (after projections since there might be numbers).
-        let group_by_keys: Vec<Expr> = select_stmt
-            .group_by
-            .iter()
-            .map(|e| match e {
-                SqlExpr::Value(SQLValue::Number(idx, _)) => {
-                    let idx = match idx.parse::<usize>() {
-                        Ok(0) | Err(_) => Err(polars_err!(
-                            ComputeError:
-                            "group_by error: a positive number or an expression expected, got {}",
-                            idx
-                        )),
-                        Ok(idx) => Ok(idx),
-                    }?;
-                    Ok(projections[idx].clone())
-                },
-                SqlExpr::Value(_) => Err(polars_err!(
-                    ComputeError:
-                    "group_by error: a positive number or an expression expected",
-                )),
-                _ => parse_sql_expr(e, self),
-            })
-            .collect::<PolarsResult<_>>()?;
+        let group_by_keys: Vec<Expr>;
+        if let GroupByExpr::Expressions(group_by_exprs) = &select_stmt.group_by {
+            group_by_keys = group_by_exprs.iter()
+                .map(|e| match e {
+                    SqlExpr::Value(SQLValue::Number(idx, _)) => {
+                        let idx = match idx.parse::<usize>() {
+                            Ok(0) | Err(_) => Err(polars_err!(
+                                ComputeError:
+                                "group_by error: a positive number or an expression expected, got {}",
+                                idx
+                            )),
+                            Ok(idx) => Ok(idx),
+                        }?;
+                        Ok(projections[idx].clone())
+                    },
+                    SqlExpr::Value(_) => Err(polars_err!(
+                        ComputeError:
+                        "group_by error: a positive number or an expression expected",
+                    )),
+                    _ => parse_sql_expr(e, self),
+                })
+                .collect::<PolarsResult<_>>()?
+        } else {
+            polars_bail!(ComputeError: "not implemented");
+        };
 
         lf = if group_by_keys.is_empty() {
             if query.order_by.is_empty() {
