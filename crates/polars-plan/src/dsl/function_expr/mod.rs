@@ -554,6 +554,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 match lf {
                     Concat => wrap!(list::concat),
                     CumConcat => map!(list::cum_concat),
+                    CumSetUnion => map!(list::cum_set_union),
                     #[cfg(feature = "is_in")]
                     Contains => wrap!(list::contains),
                     #[cfg(feature = "list_drop_nulls")]

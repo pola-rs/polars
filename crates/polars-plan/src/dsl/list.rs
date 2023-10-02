@@ -333,4 +333,8 @@ impl ListNameSpace {
     pub fn cum_concat(self) -> Expr {
         self.0.map_private(FunctionExpr::ListExpr(ListFunction::CumConcat))
     }
+
+    pub fn cum_set_union(self) -> Expr {
+        self.0.map_private(FunctionExpr::ListExpr(ListFunction::CumSetUnion))
+    }
 }
