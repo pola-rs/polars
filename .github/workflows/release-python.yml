@@ -21,15 +21,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        package: [polars, polars-lts-cpu, polars-u64-idx]
         os: [ubuntu-latest, macos-latest, windows-32gb-ram]
         cpu: [x86-64, aarch64]
-        lts-cpu: [false, true]
-        u64-idx: [false, true]
         exclude:
           - os: windows-32gb-ram
             cpu: aarch64
-          - lts-cpu: true
-            u64-idx: true
 
     steps:
       - uses: actions/checkout@v4
@@ -52,25 +49,23 @@ jobs:
           cp README.md py-polars/README.md
 
       - name: Install yq
-        if: matrix.lts-cpu || matrix.u64-idx
+        if: matrix.package != 'polars'
         run: pip install yq
 
       - name: Update package name
-        if: matrix.lts-cpu || matrix.u64-idx
-        run: |
-          NAME=${{ matrix.lts-cpu && 'polars-lts-cpu' || 'polars-u64-idx' }}
-          tomlq -i -t ".project.name = \"$NAME\"" py-polars/pyproject.toml
+        if: matrix.package != 'polars'
+        run: tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
 
       - name: Add bigidx feature
-        if: matrix.u64-idx
+        if: matrix.package == 'polars-u64-idx'
         run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
 
       - name: Set RUSTFLAGS for x86-64
-        if: matrix.cpu == 'x86-64' && !matrix.lts-cpu
+        if: matrix.cpu == 'x86-64' && matrix.package != 'polars-lts-cpu'
         run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma" >> $GITHUB_ENV
 
       - name: Set RUSTFLAGS for x86-64 LTS CPU
-        if: matrix.cpu == 'x86-64' && matrix.lts-cpu
+        if: matrix.cpu == 'x86-64' && matrix.package == 'polars-lts-cpu'
         run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc" >> $GITHUB_ENV
 
       - name: Set Rust target for aarch64
