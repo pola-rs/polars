@@ -153,6 +153,7 @@ pub enum Expr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
+    SubPlan(SpecialEq<Arc<LogicalPlan>>, Vec<String>),
     /// Expressions in this node should only be expanding
     /// e.g.
     /// `Expr::Columns`

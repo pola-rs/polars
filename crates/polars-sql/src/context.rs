@@ -139,7 +139,7 @@ impl SQLContext {
         self.cte_map.borrow_mut().insert(name.to_owned(), lf);
     }
 
-    fn get_table_from_current_scope(&mut self, name: &str) -> Option<LazyFrame> {
+    fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
         let table_name = self.table_map.get(name).cloned();
         table_name.or_else(|| self.cte_map.borrow().get(name).cloned())
     }
@@ -163,14 +163,20 @@ impl SQLContext {
 
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         self.register_ctes(query)?;
+
+        self.execute_query_no_ctes(query)
+    }
+
+    pub(crate) fn execute_query_no_ctes(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         let lf = self.process_set_expr(&query.body, query)?;
+
         self.process_limit_offset(lf, &query.limit, &query.offset)
     }
 
     fn process_set_expr(&mut self, expr: &SetExpr, query: &Query) -> PolarsResult<LazyFrame> {
         match expr {
             SetExpr::Select(select_stmt) => self.execute_select(select_stmt, query),
-            SetExpr::Query(query) => self.execute_query(query),
+            SetExpr::Query(query) => self.execute_query_no_ctes(query),
             SetExpr::SetOperation {
                 op: SetOperator::Union,
                 set_quantifier,
@@ -264,23 +270,23 @@ impl SQLContext {
         if !tbl_expr.joins.is_empty() {
             for tbl in &tbl_expr.joins {
                 let (join_tbl_name, join_tbl) = self.get_table(&tbl.relation)?;
-                match &tbl.join_operator {
+                lf = match &tbl.join_operator {
                     JoinOperator::Inner(constraint) => {
                         let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
-                        lf = lf.inner_join(join_tbl, left_on, right_on)
+                        lf.inner_join(join_tbl, left_on, right_on)
                     },
                     JoinOperator::LeftOuter(constraint) => {
                         let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
-                        lf = lf.left_join(join_tbl, left_on, right_on)
+                        lf.left_join(join_tbl, left_on, right_on)
                     },
                     JoinOperator::FullOuter(constraint) => {
                         let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
-                        lf = lf.outer_join(join_tbl, left_on, right_on)
+                        lf.outer_join(join_tbl, left_on, right_on)
                     },
-                    JoinOperator::CrossJoin => lf = lf.cross_join(join_tbl),
+                    JoinOperator::CrossJoin => lf.cross_join(join_tbl),
                     join_type => {
                         polars_bail!(
                             InvalidOperation:
@@ -309,8 +315,9 @@ impl SQLContext {
 
         // Filter expression.
         if let Some(expr) = select_stmt.selection.as_ref() {
-            let filter_expression = parse_sql_expr(expr, self)?;
-            lf = lf.filter(filter_expression)
+            let mut filter_expression = parse_sql_expr(expr, self)?;
+            lf = self.process_subqueries(lf, vec![&mut filter_expression]);
+            lf = lf.filter(filter_expression);
         }
 
         // Column projections.
@@ -480,6 +487,28 @@ impl SQLContext {
         Ok(lf)
     }
 
+    fn process_subqueries(&self, lf: LazyFrame, exprs: Vec<&mut Expr>) -> LazyFrame {
+        let mut contexts = vec![];
+        for expr in exprs {
+            expr.mutate().apply(|e| {
+                if let Expr::SubPlan(lp, names) = e {
+                    contexts.push(<LazyFrame>::from((***lp).clone()));
+
+                    if names.len() == 1 {
+                        *e = Expr::Column(names[0].as_str().into());
+                    }
+                };
+                true
+            })
+        }
+
+        if contexts.is_empty() {
+            lf
+        } else {
+            lf.with_context(contexts)
+        }
+    }
+
     fn execute_create_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         if let Statement::CreateTable {
             if_not_exists,
@@ -627,7 +656,7 @@ impl SQLContext {
     }
 
     fn process_limit_offset(
-        &mut self,
+        &self,
         lf: LazyFrame,
         limit: &Option<SqlExpr>,
         offset: &Option<Offset>,

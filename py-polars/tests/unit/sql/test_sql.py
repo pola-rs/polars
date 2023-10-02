@@ -13,7 +13,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 # TODO: Do not rely on I/O for these tests
 @pytest.fixture()
 def foods_ipc_path() -> Path:
-    return Path(__file__).parent / "io" / "files" / "foods1.ipc"
+    return Path(__file__).parent.parent / "io" / "files" / "foods1.ipc"
 
 
 def test_sql_cast() -> None:

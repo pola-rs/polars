@@ -89,6 +89,7 @@ macro_rules! push_expr {
             Exclude(e, _) => $push(e),
             KeepName(e) => $push(e),
             RenameAlias { expr, .. } => $push(expr),
+            SubPlan { .. } => {},
             // pass
             Selector(_) => {},
         }
