@@ -44,7 +44,7 @@ jobs:
         run: make html
 
       - name: Deploy Python docs for latest development version
-        if: ${{ github.ref_name == 'main' }}
+        if: ${{ github.ref_name == 'main' and github.repository == 'pola-rs/polars' }}
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
@@ -63,7 +63,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Python docs for latest release version - versioned
-        if: ${{ github.ref_type == 'tag' }}
+        if: ${{ github.ref_type == 'tag' and github.repository == 'pola-rs/polars' }}
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
@@ -71,7 +71,7 @@ jobs:
           single-commit: true
 
       - name: Deploy Python docs for latest release version - stable
-        if: ${{ github.ref_type == 'tag' }}
+        if: ${{ github.ref_type == 'tag' and github.repository == 'pola-rs/polars' }}
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
