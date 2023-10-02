@@ -1,11 +1,36 @@
 use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 
 use bytemuck::TransparentWrapper;
 
 use crate::array::Array;
 
-/// Alternative trait for Ord. By consistently using this we can still be
-/// generic w.r.t Ord while getting a total ordering for floats.
+/// Converts an f32 into a canonical form, where -0 == 0 and all NaNs map to
+/// the same value.
+pub fn canonical_f32_bits(x: f32) -> u32 {
+    // -0.0 + 0.0 becomes 0.0.
+    let convert_zero = x + 0.0;
+    if convert_zero.is_nan() {
+        0x7fc00000 // Canonical quiet NaN.
+    } else {
+        x.to_bits()
+    }
+}
+
+/// Converts an f64 into a canonical form, where -0 == 0 and all NaNs map to
+/// the same value.
+pub fn canonical_f64_bits(x: f64) -> u64 {
+    // -0.0 + 0.0 becomes 0.0.
+    let convert_zero = x + 0.0;
+    if convert_zero.is_nan() {
+        0x7ff8000000000000 // Canonical quiet NaN.
+    } else {
+        x.to_bits()
+    }
+}
+
+/// Alternative trait for Eq. By consistently using this we can still be
+/// generic w.r.t Eq while getting a total ordering for floats.
 pub trait TotalEq {
     fn tot_eq(&self, other: &Self) -> bool;
 
@@ -15,8 +40,8 @@ pub trait TotalEq {
     }
 }
 
-/// Alternative traits for Eq. By consistently using this we can still be
-/// generic w.r.t Eq while getting a total ordering for floats.
+/// Alternative trait for Ord. By consistently using this we can still be
+/// generic w.r.t Ord while getting a total ordering for floats.
 pub trait TotalOrd: TotalEq {
     fn tot_cmp(&self, other: &Self) -> Ordering;
 
@@ -38,6 +63,21 @@ pub trait TotalOrd: TotalEq {
     #[inline(always)]
     fn tot_ge(&self, other: &Self) -> bool {
         self.tot_cmp(other) != Ordering::Less
+    }
+}
+
+/// Alternative trait for Hash. By consistently using this we can still be
+/// generic w.r.t Hash while being able to hash floats.
+pub trait TotalHash {
+    fn tot_hash<H>(&self, state: &mut H)
+       where H: Hasher;
+
+    fn tot_hash_slice<H>(data: &[Self], state: &mut H)
+       where H: Hasher,
+             Self: Sized {
+        for piece in data {
+            piece.tot_hash(state)
+        }
     }
 }
 
@@ -110,7 +150,7 @@ macro_rules! impl_trivial_eq {
     };
 }
 
-macro_rules! impl_trivial_eq_ord {
+macro_rules! impl_trivial_eq_ord_hash {
     ($T: ty) => {
         impl_trivial_eq!($T);
 
@@ -140,76 +180,108 @@ macro_rules! impl_trivial_eq_ord {
                 self >= other
             }
         }
+        
+        impl TotalHash for $T {
+            fn tot_hash<H>(&self, state: &mut H)
+                where H: Hasher
+            {
+                self.hash(state);
+            }
+        }
     };
 }
 
 // We can't do a blanket impl because Rust complains f32 might implement
 // Ord / Eq someday.
-impl_trivial_eq_ord!(bool);
-impl_trivial_eq_ord!(u8);
-impl_trivial_eq_ord!(u16);
-impl_trivial_eq_ord!(u32);
-impl_trivial_eq_ord!(u64);
-impl_trivial_eq_ord!(u128);
-impl_trivial_eq_ord!(usize);
-impl_trivial_eq_ord!(i8);
-impl_trivial_eq_ord!(i16);
-impl_trivial_eq_ord!(i32);
-impl_trivial_eq_ord!(i64);
-impl_trivial_eq_ord!(i128);
-impl_trivial_eq_ord!(isize);
-impl_trivial_eq_ord!(char);
-impl_trivial_eq_ord!(&str);
-impl_trivial_eq_ord!(&[u8]);
-impl_trivial_eq_ord!(String);
+impl_trivial_eq_ord_hash!(bool);
+impl_trivial_eq_ord_hash!(u8);
+impl_trivial_eq_ord_hash!(u16);
+impl_trivial_eq_ord_hash!(u32);
+impl_trivial_eq_ord_hash!(u64);
+impl_trivial_eq_ord_hash!(u128);
+impl_trivial_eq_ord_hash!(usize);
+impl_trivial_eq_ord_hash!(i8);
+impl_trivial_eq_ord_hash!(i16);
+impl_trivial_eq_ord_hash!(i32);
+impl_trivial_eq_ord_hash!(i64);
+impl_trivial_eq_ord_hash!(i128);
+impl_trivial_eq_ord_hash!(isize);
+impl_trivial_eq_ord_hash!(char);
+impl_trivial_eq_ord_hash!(&str);
+impl_trivial_eq_ord_hash!(&[u8]);
+impl_trivial_eq_ord_hash!(String);
 impl_trivial_eq!(&dyn Array);
 impl_trivial_eq!(Box<dyn Array>);
 
-macro_rules! impl_polars_eq_ord_float {
+macro_rules! impl_eq_ord_float {
     ($f:ty) => {
         impl TotalEq for $f {
             #[inline(always)]
             fn tot_eq(&self, other: &Self) -> bool {
-                self.to_bits() == other.to_bits()
-            }
-
-            #[inline(always)]
-            fn tot_ne(&self, other: &Self) -> bool {
-                self.to_bits() != other.to_bits()
+                if self.is_nan() && other.is_nan() {
+                    true
+                } else {
+                    self == other
+                }
             }
         }
 
         impl TotalOrd for $f {
             #[inline(always)]
             fn tot_cmp(&self, other: &Self) -> Ordering {
-                self.total_cmp(other)
+                if self.tot_lt(other) {
+                    Ordering::Less
+                } else if self.tot_gt(other) {
+                    Ordering::Greater
+                } else {
+                    Ordering::Equal
+                }
             }
 
             #[inline(always)]
             fn tot_lt(&self, other: &Self) -> bool {
-                self.total_cmp(other) == Ordering::Less
+                !self.tot_ge(other)
             }
 
             #[inline(always)]
             fn tot_gt(&self, other: &Self) -> bool {
-                self.total_cmp(other) == Ordering::Greater
+                other.tot_lt(self)
             }
 
             #[inline(always)]
             fn tot_le(&self, other: &Self) -> bool {
-                self.total_cmp(other) != Ordering::Greater
+                other.tot_ge(self)
             }
 
             #[inline(always)]
             fn tot_ge(&self, other: &Self) -> bool {
-                self.total_cmp(other) != Ordering::Less
+                // We consider all NaNs equal, and NaN is the largest possible
+                // value. Thus if self is NaN we always return true. Otherwise
+                // self >= other is correct. If other is not NaN it is trivially
+                // correct, and if it is we note that nothing can be greater or
+                // equal to NaN except NaN itself, which we already handled earlier.
+                self.is_nan() | (self >= other)
             }
         }
     };
 }
 
-impl_polars_eq_ord_float!(f32);
-impl_polars_eq_ord_float!(f64);
+impl_eq_ord_float!(f32);
+impl_eq_ord_float!(f64);
+
+impl TotalHash for f32 {
+    fn tot_hash<H>(&self, state: &mut H)
+       where H: Hasher {
+        canonical_f32_bits(*self).hash(state)
+    }
+}
+
+impl TotalHash for f64 {
+    fn tot_hash<H>(&self, state: &mut H)
+       where H: Hasher {
+        canonical_f64_bits(*self).hash(state)
+    }
+}
 
 // Blanket implementations.
 impl<T: TotalEq> TotalEq for Option<T> {
@@ -272,6 +344,16 @@ impl<T: TotalOrd> TotalOrd for Option<T> {
     }
 }
 
+impl<T: TotalHash> TotalHash for Option<T> {
+    fn tot_hash<H>(&self, state: &mut H)
+       where H: Hasher {
+        self.is_some().tot_hash(state);
+        if let Some(slf) = self {
+            slf.tot_hash(state)
+        }
+    }
+}
+
 impl<T: TotalEq + ?Sized> TotalEq for &T {
     #[inline(always)]
     fn tot_eq(&self, other: &Self) -> bool {
@@ -308,5 +390,12 @@ impl<T: TotalOrd + ?Sized> TotalOrd for &T {
     #[inline(always)]
     fn tot_ge(&self, other: &Self) -> bool {
         (*self).tot_ge(*other)
+    }
+}
+
+impl<T: TotalHash + ?Sized> TotalHash for &T {
+    fn tot_hash<H>(&self, state: &mut H)
+       where H: Hasher {
+        (*self).tot_hash(state)
     }
 }
