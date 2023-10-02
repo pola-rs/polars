@@ -8,7 +8,6 @@ on:
 env:
   RUST_TOOLCHAIN: nightly-2023-10-02
   PYTHON_VERSION: '3.8'
-  MATURIN_VERSION: '1.2.3'
 
 defaults:
   run:
@@ -91,7 +90,6 @@ jobs:
           target: ${{ steps.target.outputs.target }}
           working-directory: py-polars
           args: --release ${{ matrix.os == 'ubuntu-latest' && matrix.cpu == 'x86-64' && '--sdist' || ''}}
-          maturin-version: ${{ env.MATURIN_VERSION }}
           rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
           manylinux: auto
 
