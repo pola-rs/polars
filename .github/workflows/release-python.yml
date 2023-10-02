@@ -1,6 +1,7 @@
 name: Release Python
 
 on:
+  pull_request:
   push:
     tags:
       - py-*
@@ -21,12 +22,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [polars, polars-lts-cpu, polars-u64-idx]
-        os: [ubuntu-latest, macos-latest, windows-32gb-ram]
+        package: [polars, polars-lts-cpu]  #, polars-u64-idx]
+        os: [ubuntu-latest]  #, macos-latest, windows-32gb-ram]
         architecture: [x86-64, aarch64]
-        exclude:
-          - os: windows-32gb-ram
-            cpu: aarch64
 
     steps:
       - uses: actions/checkout@v4
