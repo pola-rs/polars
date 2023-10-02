@@ -82,10 +82,10 @@ pub trait TotalHash {
 }
 
 #[repr(transparent)]
-pub struct TotalOrdWrap<T>(T);
+pub struct TotalOrdWrap<T>(pub T);
 unsafe impl<T> TransparentWrapper<T> for TotalOrdWrap<T> {}
 
-impl<T: TotalEq + TotalOrd> PartialOrd for TotalOrdWrap<T> {
+impl<T: TotalOrd> PartialOrd for TotalOrdWrap<T> {
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -112,14 +112,14 @@ impl<T: TotalEq + TotalOrd> PartialOrd for TotalOrdWrap<T> {
     }
 }
 
-impl<T: TotalEq + TotalOrd> Ord for TotalOrdWrap<T> {
+impl<T: TotalOrd> Ord for TotalOrdWrap<T> {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> Ordering {
         self.0.tot_cmp(&other.0)
     }
 }
 
-impl<T: TotalEq + TotalOrd> PartialEq for TotalOrdWrap<T> {
+impl<T: TotalEq> PartialEq for TotalOrdWrap<T> {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.0.tot_eq(&other.0)
@@ -132,7 +132,7 @@ impl<T: TotalEq + TotalOrd> PartialEq for TotalOrdWrap<T> {
     }
 }
 
-impl<T: TotalEq + TotalOrd> Eq for TotalOrdWrap<T> {}
+impl<T: TotalEq> Eq for TotalOrdWrap<T> {}
 
 impl<T: TotalHash> Hash for TotalOrdWrap<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
