@@ -127,8 +127,8 @@ pub fn repeat_by(s: &Series, by: &IdxCa) -> PolarsResult<ListChunked> {
         },
         _ => polars_bail!(opq = repeat_by, s.dtype()),
     };
-    out.map(|mut ca| {
-        ca.set_inner_dtype(s.dtype().clone());
-        ca
+    out.and_then(|ca| {
+        let logical_type = s.dtype();
+        ca.apply_to_inner(&|s| unsafe { s.cast_unchecked(logical_type) })
     })
 }
