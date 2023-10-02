@@ -23,7 +23,7 @@ jobs:
       matrix:
         package: [polars, polars-lts-cpu, polars-u64-idx]
         os: [ubuntu-latest, macos-latest, windows-32gb-ram]
-        cpu: [x86-64, aarch64]
+        architecture: [x86-64, aarch64]
         exclude:
           - os: windows-32gb-ram
             cpu: aarch64
@@ -61,22 +61,22 @@ jobs:
         run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
 
       - name: Set RUSTFLAGS for x86-64
-        if: matrix.cpu == 'x86-64' && matrix.package != 'polars-lts-cpu'
+        if: matrix.architecture == 'x86-64' && matrix.package != 'polars-lts-cpu'
         run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma" >> $GITHUB_ENV
 
       - name: Set RUSTFLAGS for x86-64 LTS CPU
-        if: matrix.cpu == 'x86-64' && matrix.package == 'polars-lts-cpu'
+        if: matrix.architecture == 'x86-64' && matrix.package == 'polars-lts-cpu'
         run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc" >> $GITHUB_ENV
 
       - name: Set Rust target for aarch64
-        if: matrix.cpu == 'aarch64'
+        if: matrix.architecture == 'aarch64'
         id: target
         run: |
           TARGET=${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || 'aarch64-unknown-linux-gnu'}}
           echo "target=$TARGET" >> $GITHUB_OUTPUT
 
       - name: Set jemalloc for aarch64 Linux
-        if: matrix.cpu == 'aarch64' && matrix.os == 'ubuntu-latest'
+        if: matrix.architecture == 'aarch64' && matrix.os == 'ubuntu-latest'
         run: |
           echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
 
@@ -86,7 +86,7 @@ jobs:
           command: build
           target: ${{ steps.target.outputs.target }}
           working-directory: py-polars
-          args: --release ${{ matrix.os == 'ubuntu-latest' && matrix.cpu == 'x86-64' && '--sdist' || ''}}
+          args: --release ${{ matrix.os == 'ubuntu-latest' && matrix.architecture == 'x86-64' && '--sdist' || ''}}
           manylinux: auto
 
       - name: Upload wheel
