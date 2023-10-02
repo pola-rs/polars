@@ -498,20 +498,32 @@ def test_list_tail_underflow_9087() -> None:
     ]
 
 
-def test_list_cum_concat() -> None:
+def test_list_cum_concat():
     a = pl.DataFrame({"a": [None, [0], [], None, [1, 5, 9], [0], [], None]})
-    print(a.select(pl.col("a").list.cum_concat())["a"])
-    print(a.select(pl.col("a").list.cum_concat())["a"].to_list())
-    # assert a.select(pl.col("a").list.cum_concat())["a"].to_list() == [
-    #     None,
-    #     [0],
-    #     [0],
-    #     None
-    #     [0, 1, 5, 9],
-    #     [0, 1, 5, 9, 0],
-    #     [0, 1, 5, 9, 0],
-    #     None
-    # ]
+    assert a.select(pl.col("a").list.cum_concat())["a"].to_list() == [
+        None,
+        [0],
+        [0],
+        None
+        [0, 1, 5, 9],
+        [0, 1, 5, 9, 0],
+        [0, 1, 5, 9, 0],
+        None
+    ]
+
+
+def test_list_cum_set_union():
+    a = pl.DataFrame({"a": [None, [0], [], None, [1, 5, 9], [0], [], None]})
+    assert a.select(pl.col("a").list.cum_set_union())["a"].to_list() == [
+        None,
+        [0],
+        [0],
+        None
+        [0, 1, 5, 9],
+        [0, 1, 5, 9],
+        [0, 1, 5, 9],
+        None
+    ]
 
 
 def test_list_count_match_boolean_nulls_9141() -> None:

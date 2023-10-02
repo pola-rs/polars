@@ -355,6 +355,12 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_cum_concat())
 
+    def cum_set_union(self) -> Expr:
+        """
+        asdgasdgasdg
+        """
+        return wrap_expr(self._pyexpr.list_cum_set_union())
+
     def get(self, index: int | Expr | str) -> Expr:
         """
         Get the value by index in the sublists.
