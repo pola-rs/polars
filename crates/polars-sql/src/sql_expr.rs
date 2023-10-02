@@ -294,7 +294,7 @@ impl SqlExprVisitor<'_> {
     ///
     /// e.g. `a > ALL(y)`
     fn visit_all(
-        &self,
+        &mut self,
         left: &SqlExpr,
         compare_op: &BinaryOperator,
         right: &SqlExpr,
@@ -317,7 +317,7 @@ impl SqlExprVisitor<'_> {
     ///
     /// e.g. `a != ANY(y)`
     fn visit_any(
-        &self,
+        &mut self,
         left: &SqlExpr,
         compare_op: &BinaryOperator,
         right: &SqlExpr,
