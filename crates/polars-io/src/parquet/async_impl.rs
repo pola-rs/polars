@@ -3,10 +3,11 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use arrow::io::parquet::read::{
-    self as parquet2_read, read_columns_async, ColumnChunkMetaData, RowGroupMetaData,
+    self as parquet2_read, get_field_columns, ColumnChunkMetaData, RowGroupMetaData,
 };
 use arrow::io::parquet::write::FileMetaData;
-use futures::future::BoxFuture;
+use bytes::Bytes;
+use futures::future::try_join_all;
 use futures::TryFutureExt;
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
@@ -95,7 +96,83 @@ impl ParquetObjectStore {
 /// A RowGroup will have 1 or more columns, for each column we store:
 ///   - a reference to its metadata
 ///   - the actual content as downloaded from object storage (generally cloud).
-type RowGroupChunks<'a> = Vec<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>>;
+type RowGroupChunks<'a> = Vec<Vec<(&'a ColumnChunkMetaData, Bytes)>>;
+
+async fn read_single_column_async<'a>(
+    async_reader: &ParquetObjectStore,
+    meta: &'a ColumnChunkMetaData,
+) -> PolarsResult<(&'a ColumnChunkMetaData, Bytes)> {
+    let (start, length) = meta.byte_range();
+    let start = start as usize;
+    let length = length as usize;
+    dbg!(start, start + length);
+    let chunk = async_reader
+        .store
+        .get_range(&async_reader.path, start..start + length)
+        .await
+        .map_err(to_compute_err)?;
+    Ok((meta, chunk))
+}
+
+async fn download_row_group<'a>(
+    async_reader: &ParquetObjectStore,
+    columns: &'a [ColumnChunkMetaData],
+    field_name: &str,
+) {
+
+    {
+        let ranges = get_field_columns(columns, field_name).iter().map(|meta| {
+            let (start, len) = meta.byte_range();
+            (start, start + len)
+        }).collect::<Vec<_>>();
+
+        let mut clustered = Vec::with_capacity(ranges.len());
+        let first_range = ranges[0];
+        let start = first_range.0;
+        let mut previous_end = first_range.1;
+        clustered.push((start, previous_end, vec![first_range]));
+        for (start, end) in ranges.iter().copied() {
+            let this_range = (start, end);
+
+            if start == previous_end {
+                let (_start, total_end, members) = clustered.last_mut().unwrap();
+                *total_end += end;
+                members.push(this_range);
+            } else {
+                clustered.push((start, end, vec![this_range]))
+            }
+            previous_end = end;
+        }
+        dbg!(clustered);
+    }
+
+}
+
+async fn read_columns_async<'a>(
+    async_reader: &ParquetObjectStore,
+    columns: &'a [ColumnChunkMetaData],
+    field_name: &str,
+) -> PolarsResult<Vec<(&'a ColumnChunkMetaData, Bytes)>> {
+
+
+
+
+
+    let futures = get_field_columns(columns, field_name)
+        .into_iter()
+        .map(|meta| async { read_single_column_async(async_reader, meta).await });
+
+    try_join_all(futures).await
+}
+
+async fn download_projection_rg<'a: 'b, 'b>(
+    projection: &[usize],
+    row_groups: &'a RowGroupMetaData,
+    schema: &ArrowSchema,
+    async_reader: &'b ParquetObjectStore,
+) -> PolarsResult<RowGroupChunks<'a>> {
+    todo!()
+}
 
 /// Download rowgroups for the column whose indexes are given in `projection`.
 /// We concurrently download the columns for each field.
@@ -110,28 +187,18 @@ async fn download_projection<'a: 'b, 'b>(
         .map(|i| schema.fields[*i].name.clone())
         .collect::<Vec<_>>();
 
-    let reader_factory = || {
-        let object_store = async_reader.store.clone();
-        let path = async_reader.path.clone();
-        Box::pin(futures::future::ready(Ok(CloudReader::new(
-            async_reader.length,
-            object_store,
-            path,
-        ))))
-    }
-        as BoxFuture<'static, std::result::Result<CloudReader, std::io::Error>>;
-
     // Build the cartesian product of the fields and the row groups.
     let product_futures = fields
         .into_iter()
-        .flat_map(|f| row_groups.iter().map(move |r| (f.clone(), r)))
+        .flat_map(|name| row_groups.iter().map(move |r| (name.clone(), r)))
         .map(|(name, row_group)| async move {
             let columns = row_group.columns();
-            read_columns_async(reader_factory, columns, name.as_ref())
+            read_columns_async(async_reader, columns, name.as_ref())
                 .map_err(to_compute_err)
                 .await
         });
 
+    // Download concurrently
     futures::future::try_join_all(product_futures).await
 }
 
