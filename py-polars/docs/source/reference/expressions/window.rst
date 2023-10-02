@@ -7,3 +7,4 @@ Window
    :toctree: api/
 
     Expr.over
+    Expr.rolling
