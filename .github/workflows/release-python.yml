@@ -89,11 +89,18 @@ jobs:
           args: --release ${{ matrix.os == 'ubuntu-latest' && matrix.architecture == 'x86-64' && '--sdist' || ''}}
           manylinux: auto
 
-      - name: Upload wheel
+      - name: Upload sdist
+        if: matrix.os == 'ubuntu-latest' && matrix.architecture == 'x86-64'
         uses: actions/upload-artifact@v3
         with:
-          name: dist
-          path: py-polars/target/wheels/*
+          name: sdist
+          path: py-polars/target/wheels/*.tar.gz
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: py-polars/target/wheels/*.whl
 
   publish-to-pypi:
     needs: build-wheels
@@ -105,9 +112,16 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/download-artifact@v3
+      - name: Download sdist
+        uses: actions/download-artifact@v3
         with:
-          name: dist
+          name: sdist
+          path: dist
+
+      - name: Download wheels
+        uses: actions/download-artifact@v3
+        with:
+          name: wheels
           path: dist
 
       - name: Publish to PyPI
@@ -120,14 +134,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/download-artifact@v3
+      - name: Download sdist
+        uses: actions/download-artifact@v3
         with:
-          name: dist
+          name: sdist
           path: dist
 
       - name: Upload sdist as asset to GitHub release
         uses: svenstaro/upload-release-action@v2
         with:
-          file: dist/polars-*.tar-gz
+          file: dist/polars-*.tar.gz
           file_glob: true
           overwrite: true
