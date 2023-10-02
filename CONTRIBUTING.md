@@ -88,7 +88,7 @@ This will do a number of things:
 
 - Use Python to create a virtual environment in the `.venv` folder.
 - Use [pip](https://pip.pypa.io/) to install all Python dependencies for development, linting, and building documentation.
-- Use Rust to compile and install Polars in your virtual environment.
+- Use Rust to compile and install Polars in your virtual environment. _At least 8GB of RAM is recommended for this step to run smoothly._
 - Use [pytest](https://docs.pytest.org/) to run the Python unittests in your virtual environment
 
 Check if linting also works correctly by running:
