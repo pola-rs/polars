@@ -404,6 +404,11 @@ pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
                 is_in_numeric(ca, other)
             })
         },
-        dt => polars_bail!(opq = is_int, dt),
+        DataType::Null => {
+            let series_bool = s.cast(&DataType::Boolean)?;
+            let ca = series_bool.bool().unwrap();
+            Ok(ca.clone())
+        },
+        dt => polars_bail!(opq = is_in, dt),
     }
 }

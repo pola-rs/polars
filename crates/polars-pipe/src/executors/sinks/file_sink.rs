@@ -103,13 +103,14 @@ pub struct ParquetCloudSink {}
 #[cfg(all(feature = "parquet", feature = "cloud"))]
 impl ParquetCloudSink {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new(
+    #[tokio::main(flavor = "current_thread")]
+    pub async fn new(
         uri: &str,
         cloud_options: Option<&polars_io::cloud::CloudOptions>,
         parquet_options: ParquetWriteOptions,
         schema: &Schema,
     ) -> PolarsResult<FilesSink> {
-        let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options)?;
+        let cloud_writer = polars_io::cloud::CloudWriter::new(uri, cloud_options).await?;
         let writer = ParquetWriter::new(cloud_writer)
             .with_compression(parquet_options.compression)
             .with_data_pagesize_limit(parquet_options.data_pagesize_limit)

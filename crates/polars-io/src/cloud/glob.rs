@@ -102,7 +102,11 @@ impl CloudLocation {
                 .to_string();
             (bucket, key)
         };
-        let (mut prefix, expansion) = extract_prefix_expansion(key)?;
+
+        let key = percent_encoding::percent_decode_str(key)
+            .decode_utf8()
+            .map_err(to_compute_err)?;
+        let (mut prefix, expansion) = extract_prefix_expansion(&key)?;
         if is_local && key.starts_with(DELIMITER) {
             prefix.insert(0, DELIMITER);
         }
@@ -162,7 +166,7 @@ pub async fn glob(url: &str, cloud_options: Option<&CloudOptions>) -> PolarsResu
             expansion,
         },
         store,
-    ) = super::build_object_store(url, cloud_options)?;
+    ) = super::build_object_store(url, cloud_options).await?;
     let matcher = Matcher::new(prefix.clone(), expansion.as_deref())?;
 
     let list_stream = store

@@ -1,11 +1,12 @@
 use polars_arrow::prelude::FromData;
+use polars_core::prelude::*;
 #[cfg(feature = "random")]
 use rand::prelude::SliceRandom;
 use rand::prelude::*;
 #[cfg(feature = "random")]
 use rand::{rngs::SmallRng, SeedableRng};
 
-use crate::prelude::*;
+use crate::prelude::SeriesSealed;
 
 #[derive(Copy, Clone)]
 pub enum RankMethod {
@@ -41,7 +42,7 @@ fn get_random_seed() -> u64 {
     rng.next_u64()
 }
 
-pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> Series {
+fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> Series {
     match s.len() {
         1 => {
             return match method {
@@ -239,13 +240,13 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
                     let validity = validity.downcast_iter().next().unwrap();
                     let validity = validity.values().clone();
 
-                    let arr = dense.downcast_iter().next().unwrap();
+                    let arr = &dense.chunks()[0];
                     let arr = arr.with_validity(Some(validity));
                     let dtype = arr.data_type().clone();
 
                     // SAFETY: given dtype is correct.
                     unsafe {
-                        Series::try_from_arrow_unchecked(s.name(), vec![arr], &dtype).unwrap()
+                        Series::_try_from_arrow_unchecked(s.name(), vec![arr], &dtype).unwrap()
                     }
                 };
             }
@@ -305,6 +306,14 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Optio
         },
     }
 }
+
+pub trait SeriesRank: SeriesSealed {
+    fn rank(&self, options: RankOptions, seed: Option<u64>) -> Series {
+        rank(self.as_series(), options.method, options.descending, seed)
+    }
+}
+
+impl SeriesRank for Series {}
 
 #[cfg(test)]
 mod test {

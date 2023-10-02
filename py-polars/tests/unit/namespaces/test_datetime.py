@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -784,24 +784,18 @@ def test_offset_by_expressions() -> None:
         e=pl.col("a").dt.replace_time_zone("Europe/London").dt.offset_by(pl.col("b")),
         f=pl.col("a").dt.date().dt.offset_by(pl.col("b")),
     )
-    expected = cast(
-        pl.DataFrame,
-        pl.from_repr(
-            """
-shape: (5, 4)
-┌─────────────────────┬─────────────────────┬─────────────────────────────┬────────────┐
-│ c                   ┆ d                   ┆ e                           ┆ f          │
-│ ---                 ┆ ---                 ┆ ---                         ┆ ---        │
-│ datetime[μs]        ┆ datetime[ms]        ┆ datetime[μs, Europe/London] ┆ date       │
-╞═════════════════════╪═════════════════════╪═════════════════════════════╪════════════╡
-│ null                ┆ null                ┆ null                        ┆ null       │
-│ null                ┆ null                ┆ null                        ┆ null       │
-│ 2020-10-26 00:00:00 ┆ 2020-10-26 00:00:00 ┆ 2020-10-26 00:00:00 GMT     ┆ 2020-10-26 │
-│ 2021-01-12 00:00:00 ┆ 2021-01-12 00:00:00 ┆ 2021-01-12 00:00:00 GMT     ┆ 2021-01-12 │
-│ null                ┆ null                ┆ null                        ┆ null       │
-└─────────────────────┴─────────────────────┴─────────────────────────────┴────────────┘
-"""
-        ),
+
+    expected = pl.DataFrame(
+        {
+            "c": [None, None, datetime(2020, 10, 26), datetime(2021, 1, 12), None],
+            "d": [None, None, datetime(2020, 10, 26), datetime(2021, 1, 12), None],
+            "e": [None, None, datetime(2020, 10, 26), datetime(2021, 1, 12), None],
+            "f": [None, None, date(2020, 10, 26), date(2021, 1, 12), None],
+        },
+        schema_overrides={
+            "d": pl.Datetime("ms"),
+            "e": pl.Datetime(time_zone="Europe/London"),
+        },
     )
     assert_frame_equal(result, expected)
     assert result.flags == {

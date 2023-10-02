@@ -167,13 +167,13 @@ impl ListNameSpace {
     }
 
     /// Shift every sublist.
-    pub fn shift(self, periods: i64) -> Expr {
-        self.0
-            .map(
-                move |s| Ok(Some(s.list()?.lst_shift(periods).into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("list.shift")
+    pub fn shift(self, periods: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::Shift),
+            &[periods],
+            false,
+            false,
+        )
     }
 
     /// Slice every sublist.

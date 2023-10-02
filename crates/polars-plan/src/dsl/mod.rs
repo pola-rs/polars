@@ -474,22 +474,16 @@ impl Expr {
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn top_k(self, k: usize) -> Self {
-        self.apply_private(FunctionExpr::TopK {
-            k,
-            descending: false,
-        })
+    pub fn top_k(self, k: Expr) -> Self {
+        self.apply_many_private(FunctionExpr::TopK(false), &[k], false, false)
     }
 
     /// Returns the `k` smallest elements.
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn bottom_k(self, k: usize) -> Self {
-        self.apply_private(FunctionExpr::TopK {
-            k,
-            descending: true,
-        })
+    pub fn bottom_k(self, k: Expr) -> Self {
+        self.apply_many_private(FunctionExpr::TopK(true), &[k], false, false)
     }
 
     /// Reverse column
@@ -952,7 +946,6 @@ impl Expr {
         Expr::Window {
             function: Box::new(self),
             partition_by,
-            order_by: None,
             options,
         }
     }
@@ -1257,7 +1250,11 @@ impl Expr {
                         DataType::Datetime(tu, tz) => {
                             (by.cast(&DataType::Datetime(*tu, None))?, tz)
                         },
-                        _ => (by.clone(), &None),
+                        DataType::Date => (
+                            by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
+                            &None,
+                        ),
+                        dt => polars_bail!(opq = expr_name, got = dt, expected = "date/datetime"),
                     };
                     ensure_sorted_arg(&by, expr_name)?;
                     let by = by.datetime().unwrap();

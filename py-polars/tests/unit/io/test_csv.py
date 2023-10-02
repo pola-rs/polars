@@ -6,7 +6,7 @@ import sys
 import textwrap
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import TYPE_CHECKING, TypedDict
 
 import numpy as np
 import pyarrow as pa
@@ -41,45 +41,26 @@ def test_quoted_date() -> None:
     assert_frame_equal(result, expected)
 
 
+# Issue: https://github.com/pola-rs/polars/issues/10826
 def test_date_pattern_with_datetime_override_10826() -> None:
     result = pl.read_csv(
         source=io.StringIO("col\n2023-01-01\n2023-02-01\n2023-03-01"),
         dtypes={"col": pl.Datetime},
     )
-    expected = pl.from_repr(
-        """
-        shape: (3, 1)
-        ┌─────────────────────┐
-        │ col                 │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2023-01-01 00:00:00 │
-        │ 2023-02-01 00:00:00 │
-        │ 2023-03-01 00:00:00 │
-        └─────────────────────┘
-        """
-    )
-    assert_frame_equal(result, cast(pl.DataFrame, expected))
+    expected = pl.Series(
+        "col", [datetime(2023, 1, 1), datetime(2023, 2, 1), datetime(2023, 3, 1)]
+    ).to_frame()
+    assert_frame_equal(result, expected)
+
     result = pl.read_csv(
         source=io.StringIO("col\n2023-01-01T01:02:03\n2023-02-01\n2023-03-01"),
         dtypes={"col": pl.Datetime},
     )
-    expected = pl.from_repr(
-        """
-        shape: (3, 1)
-        ┌─────────────────────┐
-        │ col                 │
-        │ ---                 │
-        │ datetime[μs]        │
-        ╞═════════════════════╡
-        │ 2023-01-01 01:02:03 │
-        │ 2023-02-01 00:00:00 │
-        │ 2023-03-01 00:00:00 │
-        └─────────────────────┘
-        """
-    )
-    assert_frame_equal(result, cast(pl.DataFrame, expected))
+    expected = pl.Series(
+        "col",
+        [datetime(2023, 1, 1, 1, 2, 3), datetime(2023, 2, 1), datetime(2023, 3, 1)],
+    ).to_frame()
+    assert_frame_equal(result, expected)
 
 
 def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:

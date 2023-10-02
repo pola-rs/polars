@@ -121,10 +121,11 @@ impl<O: Offset> ListArray<O> {
     /// # Safety
     /// The caller must ensure that `offset + length < self.len()`.
     pub unsafe fn slice_unchecked(&mut self, offset: usize, length: usize) {
-        self.validity.as_mut().and_then(|bitmap| {
-            bitmap.slice_unchecked(offset, length);
-            (bitmap.unset_bits() > 0).then(|| bitmap)
-        });
+        self.validity = self
+            .validity
+            .take()
+            .map(|bitmap| bitmap.sliced_unchecked(offset, length))
+            .filter(|bitmap| bitmap.unset_bits() > 0);
         self.offsets.slice_unchecked(offset, length + 1);
     }
 

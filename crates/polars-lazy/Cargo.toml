@@ -26,6 +26,7 @@ once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 smartstring = { workspace = true }
+tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
@@ -42,7 +43,7 @@ async = [
   "polars-io/cloud",
   "polars-pipe?/async",
 ]
-cloud = ["async", "polars-pipe?/cloud", "polars-plan/cloud"]
+cloud = ["async", "polars-pipe?/cloud", "polars-plan/cloud", "tokio"]
 cloud_write = ["cloud"]
 ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc"]
 json = ["polars-io/json", "polars-plan/json", "polars-json"]

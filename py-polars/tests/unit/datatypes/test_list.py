@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pickle
 from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Any
 
@@ -7,7 +8,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars import PolarsDataType
@@ -513,6 +514,11 @@ def test_list_null_list_categorical_cast() -> None:
     s = pl.Series([[]], dtype=pl.List(pl.Null)).cast(expected)
     assert s.dtype == expected
     assert s.to_list() == [[]]
+
+
+def test_list_null_pickle() -> None:
+    df = pl.DataFrame([{"a": None}], schema={"a": pl.List(pl.Int64)})
+    assert_frame_equal(df, pickle.loads(pickle.dumps(df)))
 
 
 def test_struct_with_nulls_as_list() -> None:

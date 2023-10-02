@@ -47,7 +47,7 @@ pub(crate) mod private {
     use super::*;
     use crate::chunked_array::ops::compare_inner::{PartialEqInner, PartialOrdInner};
     use crate::chunked_array::Settings;
-    #[cfg(feature = "rows")]
+    #[cfg(feature = "algorithm_group_by")]
     use crate::frame::group_by::GroupsProxy;
 
     pub trait PrivateSeriesNumeric {

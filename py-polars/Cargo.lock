@@ -303,10 +303,8 @@ checksum = "7f2c685bad3eb3d45a01354cedb7d5faa66194d1d58ba6e267a8de788f79db38"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
- "js-sys",
  "num-traits",
  "serde",
- "wasm-bindgen",
  "windows-targets",
 ]
 
@@ -785,6 +783,12 @@ name = "heck"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8"
+
+[[package]]
+name = "hermit-abi"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d77f7ec81a6d05a3abb01ab6eb7590f6083d08449fe5a1c8b1e620283546ccb7"
 
 [[package]]
 name = "hex"
@@ -1399,6 +1403,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_cpus"
+version = "1.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4161fcb6d602d4d2081af7c3a45852d875a03dd337a6bfdd6e06407b61342a43"
+dependencies = [
+ "hermit-abi",
+ "libc",
+]
+
+[[package]]
 name = "numpy"
 version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1636,6 +1650,7 @@ version = "0.33.2"
 dependencies = [
  "ahash",
  "bitflags 2.4.0",
+ "bytemuck",
  "chrono",
  "chrono-tz",
  "comfy-table",
@@ -1703,6 +1718,7 @@ dependencies = [
  "num-traits",
  "object_store",
  "once_cell",
+ "percent-encoding",
  "polars-arrow",
  "polars-core",
  "polars-error",
@@ -1711,11 +1727,13 @@ dependencies = [
  "polars-utils",
  "rayon",
  "regex",
+ "reqwest",
  "ryu",
  "serde",
  "serde_json",
  "simd-json",
  "simdutf8",
+ "smartstring",
  "tokio",
  "tokio-util",
  "url",
@@ -1761,6 +1779,7 @@ dependencies = [
  "pyo3",
  "rayon",
  "smartstring",
+ "tokio",
  "version_check",
 ]
 
@@ -1771,6 +1790,7 @@ dependencies = [
  "ahash",
  "argminmax",
  "base64",
+ "bytemuck",
  "chrono",
  "chrono-tz",
  "either",
@@ -1786,6 +1806,8 @@ dependencies = [
  "polars-error",
  "polars-json",
  "polars-utils",
+ "rand",
+ "rand_distr",
  "rayon",
  "regex",
  "serde",
@@ -1812,6 +1834,7 @@ dependencies = [
  "polars-utils",
  "rayon",
  "smartstring",
+ "tokio",
  "version_check",
 ]
 
@@ -1917,7 +1940,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.19.3"
+version = "0.19.6"
 dependencies = [
  "ahash",
  "built",
@@ -2385,9 +2408,9 @@ dependencies = [
 
 [[package]]
 name = "simd-json"
-version = "0.10.7"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80ea1dfc2c400965867fc4ddd6f502572be2de2074b39f90984ed15fbdbdd8eb"
+checksum = "474b451aaac1828ed12f6454a80fe58b940ae2998d10389d41533940a6f641bf"
 dependencies = [
  "ahash",
  "getrandom",
@@ -2654,6 +2677,7 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
+ "num_cpus",
  "pin-project-lite",
  "socket2 0.5.4",
  "tokio-macros",

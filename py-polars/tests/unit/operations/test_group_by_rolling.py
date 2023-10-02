@@ -272,3 +272,22 @@ def test_group_by_rolling_empty_groups_9973() -> None:
     ).agg(pl.col("value"))
 
     assert_frame_equal(out, expected)
+
+
+def test_group_by_rolling_duplicates_11281() -> None:
+    df = pl.DataFrame(
+        {
+            "ts": [
+                datetime(2020, 1, 1),
+                datetime(2020, 1, 2),
+                datetime(2020, 1, 2),
+                datetime(2020, 1, 2),
+                datetime(2020, 1, 3),
+                datetime(2020, 1, 4),
+            ],
+            "val": [1, 2, 2, 2, 3, 4],
+        }
+    ).sort("ts")
+    result = df.group_by_rolling("ts", period="1d", closed="left").agg(pl.col("val"))
+    expected = df.with_columns(val=pl.Series([[], [1], [1], [1], [2, 2, 2], [3]]))
+    assert_frame_equal(result, expected)

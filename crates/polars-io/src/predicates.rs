@@ -129,6 +129,10 @@ impl ColumnStats {
         }
     }
 
+    pub fn get_min_state(&self) -> Option<&Series> {
+        self.min_value.as_ref()
+    }
+
     pub fn to_min(&self) -> Option<&Series> {
         let min_val = self.min_value.as_ref()?;
         let dtype = min_val.dtype();
@@ -160,7 +164,7 @@ impl ColumnStats {
     }
 
     fn use_min_max(dtype: &DataType) -> bool {
-        dtype.is_numeric() || matches!(dtype, DataType::Utf8 | DataType::Binary)
+        dtype.is_numeric() || matches!(dtype, DataType::Utf8 | DataType::Binary | DataType::Boolean)
     }
 }
 

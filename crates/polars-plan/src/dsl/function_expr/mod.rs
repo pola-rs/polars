@@ -146,10 +146,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "dtype-struct")]
     AsStruct,
     #[cfg(feature = "top_k")]
-    TopK {
-        k: usize,
-        descending: bool,
-    },
+    TopK(bool),
     Shift(i64),
     Cumcount {
         reverse: bool,
@@ -333,7 +330,13 @@ impl Display for FunctionExpr {
             #[cfg(feature = "dtype-struct")]
             AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
-            TopK { .. } => "top_k",
+            TopK(descending) => {
+                if *descending {
+                    "top_k"
+                } else {
+                    "bottom_k"
+                }
+            },
             Shift(_) => "shift",
             Cumcount { .. } => "cumcount",
             Cumsum { .. } => "cumsum",
@@ -555,6 +558,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     #[cfg(feature = "list_drop_nulls")]
                     DropNulls => map!(list::drop_nulls),
                     Slice => wrap!(list::slice),
+                    Shift => map_as_slice!(list::shift),
                     Get => wrap!(list::get),
                     #[cfg(feature = "list_take")]
                     Take(null_ob_oob) => map_as_slice!(list::take, null_ob_oob),
@@ -601,8 +605,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(coerce::as_struct)
             },
             #[cfg(feature = "top_k")]
-            TopK { k, descending } => {
-                map!(top_k, k, descending)
+            TopK(descending) => {
+                map_as_slice!(top_k, descending)
             },
             Shift(periods) => map!(dispatch::shift, periods),
             Cumcount { reverse } => map!(cum::cumcount, reverse),

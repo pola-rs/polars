@@ -95,7 +95,6 @@ pub(crate) fn create_physical_expr(
         Window {
             mut function,
             partition_by,
-            order_by: _,
             options,
         } => {
             state.set_window();

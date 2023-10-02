@@ -30,6 +30,7 @@ use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
+use bytemuck::Zeroable;
 pub use dtype::*;
 pub use field::*;
 use num_traits::{Bounded, FromPrimitive, Num, NumCast, One, Zero};
@@ -58,7 +59,11 @@ use crate::utils::Wrap;
 /// The StaticArray and dtype return must be correct.
 pub unsafe trait PolarsDataType: Send + Sync + Sized {
     type Physical<'a>;
-    type Array: for<'a> StaticArray<ValueT<'a> = Self::Physical<'a>>;
+    type ZeroablePhysical<'a>: Zeroable + From<Self::Physical<'a>>;
+    type Array: for<'a> StaticArray<
+        ValueT<'a> = Self::Physical<'a>,
+        ZeroableValueT<'a> = Self::ZeroablePhysical<'a>,
+    >;
 
     fn get_dtype() -> DataType
     where
@@ -67,7 +72,11 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized {
 
 pub trait PolarsNumericType: 'static
 where
-    Self: for<'a> PolarsDataType<Physical<'a> = Self::Native, Array = PrimitiveArray<Self::Native>>,
+    Self: for<'a> PolarsDataType<
+        Physical<'a> = Self::Native,
+        ZeroablePhysical<'a> = Self::Native,
+        Array = PrimitiveArray<Self::Native>,
+    >,
 {
     type Native: NumericNative;
 }
@@ -82,6 +91,7 @@ macro_rules! impl_polars_num_datatype {
 
         unsafe impl PolarsDataType for $ca {
             type Physical<'a> = $physical;
+            type ZeroablePhysical<'a> = $physical;
             type Array = PrimitiveArray<$physical>;
 
             #[inline]
@@ -99,12 +109,13 @@ macro_rules! impl_polars_num_datatype {
 }
 
 macro_rules! impl_polars_datatype {
-    ($ca:ident, $variant:ident, $arr:ty, $lt:lifetime, $phys:ty) => {
+    ($ca:ident, $variant:ident, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty) => {
         #[derive(Clone, Copy)]
         pub struct $ca {}
 
         unsafe impl PolarsDataType for $ca {
             type Physical<$lt> = $phys;
+            type ZeroablePhysical<$lt> = $zerophys;
             type Array = $arr;
 
             #[inline]
@@ -125,21 +136,22 @@ impl_polars_num_datatype!(PolarsIntegerType, Int32Type, Int32, i32);
 impl_polars_num_datatype!(PolarsIntegerType, Int64Type, Int64, i64);
 impl_polars_num_datatype!(PolarsFloatType, Float32Type, Float32, f32);
 impl_polars_num_datatype!(PolarsFloatType, Float64Type, Float64, f64);
-impl_polars_datatype!(DateType, Date, PrimitiveArray<i32>, 'a, i32);
+impl_polars_datatype!(DateType, Date, PrimitiveArray<i32>, 'a, i32, i32);
 #[cfg(feature = "dtype-decimal")]
-impl_polars_datatype!(DecimalType, Unknown, PrimitiveArray<i128>, 'a, i128);
-impl_polars_datatype!(DatetimeType, Unknown, PrimitiveArray<i64>, 'a, i64);
-impl_polars_datatype!(DurationType, Unknown, PrimitiveArray<i64>, 'a, i64);
-impl_polars_datatype!(CategoricalType, Unknown, PrimitiveArray<u32>, 'a, u32);
-impl_polars_datatype!(TimeType, Time, PrimitiveArray<i64>, 'a, i64);
-impl_polars_datatype!(Utf8Type, Utf8, Utf8Array<i64>, 'a, &'a str);
-impl_polars_datatype!(BinaryType, Binary, BinaryArray<i64>, 'a, &'a [u8]);
-impl_polars_datatype!(BooleanType, Boolean, BooleanArray, 'a, bool);
+impl_polars_datatype!(DecimalType, Unknown, PrimitiveArray<i128>, 'a, i128, i128);
+impl_polars_datatype!(DatetimeType, Unknown, PrimitiveArray<i64>, 'a, i64, i64);
+impl_polars_datatype!(DurationType, Unknown, PrimitiveArray<i64>, 'a, i64, i64);
+impl_polars_datatype!(CategoricalType, Unknown, PrimitiveArray<u32>, 'a, u32, u32);
+impl_polars_datatype!(TimeType, Time, PrimitiveArray<i64>, 'a, i64, i64);
+impl_polars_datatype!(Utf8Type, Utf8, Utf8Array<i64>, 'a, &'a str, Option<&'a str>);
+impl_polars_datatype!(BinaryType, Binary, BinaryArray<i64>, 'a, &'a [u8], Option<&'a [u8]>);
+impl_polars_datatype!(BooleanType, Boolean, BooleanArray, 'a, bool, bool);
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}
 unsafe impl PolarsDataType for ListType {
     type Physical<'a> = Box<dyn Array>;
+    type ZeroablePhysical<'a> = Option<Box<dyn Array>>;
     type Array = ListArray<i64>;
 
     fn get_dtype() -> DataType {
@@ -153,6 +165,7 @@ pub struct FixedSizeListType {}
 #[cfg(feature = "dtype-array")]
 unsafe impl PolarsDataType for FixedSizeListType {
     type Physical<'a> = Box<dyn Array>;
+    type ZeroablePhysical<'a> = Option<Box<dyn Array>>;
     type Array = FixedSizeListArray;
 
     fn get_dtype() -> DataType {
@@ -165,6 +178,7 @@ pub struct Int128Type {}
 #[cfg(feature = "dtype-decimal")]
 unsafe impl PolarsDataType for Int128Type {
     type Physical<'a> = i128;
+    type ZeroablePhysical<'a> = i128;
     type Array = PrimitiveArray<i128>;
 
     fn get_dtype() -> DataType {
@@ -183,6 +197,7 @@ pub struct ObjectType<T>(T);
 #[cfg(feature = "object")]
 unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     type Physical<'a> = &'a T;
+    type ZeroablePhysical<'a> = Option<&'a T>;
     type Array = ObjectArray<T>;
 
     fn get_dtype() -> DataType {

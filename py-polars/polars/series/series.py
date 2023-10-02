@@ -927,11 +927,9 @@ class Series:
         return self.clone()
 
     def __contains__(self, item: Any) -> bool:
-        # TODO: optimize via `is_in` and `SORTED` flags
-        try:
-            return (self == item).any()
-        except ValueError:
-            return False
+        if item is None:
+            return self.null_count() > 0
+        return self.implode().list.contains(item).item()
 
     def __iter__(self) -> Generator[Any, None, None]:
         if self.dtype == List:
@@ -3052,7 +3050,7 @@ class Series:
         else:
             return self._from_pyseries(self._s.sort(descending))
 
-    def top_k(self, k: int = 5) -> Series:
+    def top_k(self, k: int | IntoExprColumn = 5) -> Series:
         r"""
         Return the `k` largest elements.
 
@@ -3083,7 +3081,7 @@ class Series:
 
         """
 
-    def bottom_k(self, k: int = 5) -> Series:
+    def bottom_k(self, k: int | IntoExprColumn = 5) -> Series:
         r"""
         Return the `k` smallest elements.
 

@@ -93,6 +93,7 @@ pub fn set_estimated_row_counts(
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &Arena<AExpr>,
     mut _filter_count: usize,
+    scratch: &mut Vec<Node>,
 ) -> (Option<usize>, usize, usize) {
     use ALogicalPlan::*;
 
@@ -110,11 +111,12 @@ pub fn set_estimated_row_counts(
                 .filter(|(_, ae)| matches!(ae, AExpr::BinaryExpr { .. }))
                 .count()
                 + 1;
-            set_estimated_row_counts(*input, lp_arena, expr_arena, _filter_count)
+            set_estimated_row_counts(*input, lp_arena, expr_arena, _filter_count, scratch)
         },
         Slice { input, len, .. } => {
             let len = *len as usize;
-            let mut out = set_estimated_row_counts(*input, lp_arena, expr_arena, _filter_count);
+            let mut out =
+                set_estimated_row_counts(*input, lp_arena, expr_arena, _filter_count, scratch);
             apply_slice(&mut out, Some((0, len)));
             out
         },
@@ -126,7 +128,8 @@ pub fn set_estimated_row_counts(
             {
                 let mut sum_output = (None, 0);
                 for input in &inputs {
-                    let mut out = set_estimated_row_counts(*input, lp_arena, expr_arena, 0);
+                    let mut out =
+                        set_estimated_row_counts(*input, lp_arena, expr_arena, 0, scratch);
                     if let Some((_offset, len)) = options.slice {
                         apply_slice(&mut out, Some((0, len)))
                     }
@@ -153,11 +156,11 @@ pub fn set_estimated_row_counts(
             {
                 let mut_options = Arc::make_mut(&mut options);
                 let (known_size, estimated_size, filter_count_left) =
-                    set_estimated_row_counts(input_left, lp_arena, expr_arena, 0);
+                    set_estimated_row_counts(input_left, lp_arena, expr_arena, 0, scratch);
                 mut_options.rows_left =
                     estimate_sizes(known_size, estimated_size, filter_count_left);
                 let (known_size, estimated_size, filter_count_right) =
-                    set_estimated_row_counts(input_right, lp_arena, expr_arena, 0);
+                    set_estimated_row_counts(input_right, lp_arena, expr_arena, 0, scratch);
                 mut_options.rows_right =
                     estimate_sizes(known_size, estimated_size, filter_count_right);
 
@@ -221,8 +224,19 @@ pub fn set_estimated_row_counts(
             (size, size.unwrap_or(usize::MAX), _filter_count)
         },
         lp => {
-            let input = lp.get_input().unwrap();
-            set_estimated_row_counts(input, lp_arena, expr_arena, _filter_count)
+            lp.copy_inputs(scratch);
+            let mut sum_output = (None, 0, 0);
+            while let Some(input) = scratch.pop() {
+                let out =
+                    set_estimated_row_counts(input, lp_arena, expr_arena, _filter_count, scratch);
+                sum_output.1 += out.1;
+                sum_output.2 += out.2;
+                sum_output.0 = match sum_output.0 {
+                    None => out.0,
+                    p => p,
+                };
+            }
+            sum_output
         },
     }
 }

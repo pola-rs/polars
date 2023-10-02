@@ -10,6 +10,8 @@ import pytest
 import polars as pl
 from polars.dependencies import gevent
 
+pytestmark = pytest.mark.slow()
+
 
 async def _aio_collect_async(raises: bool = False) -> pl.DataFrame:
     lf = (
