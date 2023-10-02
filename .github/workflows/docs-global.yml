@@ -77,7 +77,7 @@ jobs:
         run: touch .nojekyll
 
       - name: Deploy docs
-        if: ${{ github.ref_type == 'tag' and github.repository == 'pola-rs/polars' }}
+        if: ${{ github.ref_type == 'tag' && github.repository == 'pola-rs/polars' }}
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: site

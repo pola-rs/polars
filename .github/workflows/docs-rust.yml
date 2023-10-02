@@ -42,7 +42,7 @@ jobs:
           touch target/doc/.nojekyll
 
       - name: Deploy Rust docs
-        if: ${{ github.ref_name == 'main' and github.repository == 'pola-rs/polars' }}
+        if: ${{ github.ref_name == 'main' && github.repository == 'pola-rs/polars' }}
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: target/doc
