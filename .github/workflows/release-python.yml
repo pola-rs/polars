@@ -125,9 +125,9 @@ jobs:
           name: dist
           path: dist
 
-      - name: Upload binaries to release
+      - name: Upload sdist as asset to GitHub release
         uses: svenstaro/upload-release-action@v2
         with:
-          file: dist/polars-*
+          file: dist/polars-*.tar-gz
           file_glob: true
           overwrite: true
