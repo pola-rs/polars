@@ -85,8 +85,11 @@ jobs:
         with:
           command: build
           target: ${{ steps.target.outputs.target }}
-          working-directory: py-polars
-          args: --release ${{ matrix.os == 'ubuntu-latest' && matrix.architecture == 'x86-64' && '--sdist' || ''}}
+          args: >
+            --release
+            --manifest-path py-polars/Cargo.toml
+            --out dist
+            ${{ matrix.os == 'ubuntu-latest' && matrix.architecture == 'x86-64' && '--sdist' || ''}}
           manylinux: auto
 
       - name: Upload sdist
@@ -94,13 +97,13 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: sdist
-          path: py-polars/target/wheels/*.tar.gz
+          path: dist/*.tar.gz
 
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
           name: wheels
-          path: py-polars/target/wheels/*.whl
+          path: dist/*.whl
 
   publish-to-pypi:
     needs: build-wheels
