@@ -15,6 +15,7 @@ pub(super) fn peak_min(s: &Series) -> PolarsResult<Series> {
         DataType::Int64 => pmin(s.i64()?).into_series(),
         DataType::Float32 => pmin(s.f32()?).into_series(),
         DataType::Float64 => pmin(s.f64()?).into_series(),
+        #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => pmin(s.decimal()?).into_series(),
         DataType::Date => pmin(s.date()?).into_series(),
         DataType::Datetime(_, _) => pmin(s.datetime()?).into_series(),
@@ -38,6 +39,7 @@ pub(super) fn peak_max(s: &Series) -> PolarsResult<Series> {
         DataType::Int64 => pmax(s.i64()?).into_series(),
         DataType::Float32 => pmax(s.f32()?).into_series(),
         DataType::Float64 => pmax(s.f64()?).into_series(),
+        #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => pmax(s.decimal()?).into_series(),
         DataType::Date => pmax(s.date()?).into_series(),
         DataType::Datetime(_, _) => pmax(s.datetime()?).into_series(),
