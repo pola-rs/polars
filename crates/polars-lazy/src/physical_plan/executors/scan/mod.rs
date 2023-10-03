@@ -8,6 +8,7 @@ mod ndjson;
 mod parquet;
 
 use std::mem;
+use std::ops::Deref;
 
 #[cfg(feature = "csv")]
 pub(crate) use csv::CsvExec;
@@ -41,18 +42,19 @@ fn prepare_scan_args(
     schema: &mut SchemaRef,
     n_rows: Option<usize>,
     has_row_count: bool,
+    hive_partitions: Option<&[Series]>,
 ) -> (Option<std::fs::File>, Projection, StopNRows, Predicate) {
     let file = std::fs::File::open(path).ok();
 
     let with_columns = mem::take(with_columns);
     let schema = mem::take(schema);
 
-    let projection: Option<Vec<_>> = with_columns.map(|with_columns| {
-        with_columns
-            .iter()
-            .map(|name| schema.index_of(name).unwrap() - has_row_count as usize)
-            .collect()
-    });
+    let projection = materialize_projection(
+        with_columns.as_deref().map(|cols| cols.deref()),
+        &schema,
+        hive_partitions,
+        has_row_count,
+    );
 
     let n_rows = _set_n_rows_for_scan(n_rows);
     let predicate = predicate.clone().map(phys_expr_to_io_expr);

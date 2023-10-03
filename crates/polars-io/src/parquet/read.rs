@@ -83,7 +83,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         )
         .map(|mut df| {
             if rechunk {
-                df.align_chunks();
+                df.as_single_chunk_par();
             };
             df
         })

@@ -39,6 +39,12 @@ impl ParquetExec {
     }
 
     fn read(&mut self) -> PolarsResult<DataFrame> {
+        let hive_partitions = self
+            .file_info
+            .hive_parts
+            .as_ref()
+            .map(|hive| hive.materialize_partition_columns());
+
         let (file, projection, n_rows, predicate) = prepare_scan_args(
             &self.path,
             &self.predicate,
@@ -46,6 +52,7 @@ impl ParquetExec {
             &mut self.file_info.schema.clone(),
             self.file_options.n_rows,
             self.file_options.row_count.is_some(),
+            hive_partitions.as_deref(),
         );
 
         if let Some(file) = file {
@@ -56,12 +63,7 @@ impl ParquetExec {
                 .set_rechunk(self.file_options.rechunk)
                 .set_low_memory(self.options.low_memory)
                 .use_statistics(self.options.use_statistics)
-                .with_hive_partition_columns(
-                    self.file_info
-                        .hive_parts
-                        .as_ref()
-                        .map(|hive| hive.materialize_partition_columns()),
-                )
+                .with_hive_partition_columns(hive_partitions)
                 ._finish_with_scan_ops(predicate, projection.as_ref().map(|v| v.as_ref()))
         } else if is_cloud_url(self.path.as_path()) {
             #[cfg(feature = "cloud")]
@@ -77,12 +79,7 @@ impl ParquetExec {
                     .with_n_rows(n_rows)
                     .with_row_count(mem::take(&mut self.file_options.row_count))
                     .use_statistics(self.options.use_statistics)
-                    .with_hive_partition_columns(
-                        self.file_info
-                            .hive_parts
-                            .as_ref()
-                            .map(|hive| hive.materialize_partition_columns()),
-                    );
+                    .with_hive_partition_columns(hive_partitions);
 
                     reader.finish(predicate).await
                 })

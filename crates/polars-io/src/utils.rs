@@ -166,6 +166,38 @@ pub static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
         .unwrap()
 });
 
+pub fn materialize_projection(
+    with_columns: Option<&[String]>,
+    schema: &Schema,
+    hive_partitions: Option<&[Series]>,
+    has_row_count: bool,
+) -> Option<Vec<usize>> {
+    match hive_partitions {
+        None => with_columns.map(|with_columns| {
+            with_columns
+                .iter()
+                .map(|name| schema.index_of(name).unwrap() - has_row_count as usize)
+                .collect()
+        }),
+        Some(part_cols) => {
+            with_columns.map(|with_columns| {
+                with_columns
+                    .iter()
+                    .flat_map(|name| {
+                        // the hive partitions are added at the end of the schema, but we don't want to project
+                        // them from the file
+                        if part_cols.iter().any(|s| s.name() == name.as_str()) {
+                            None
+                        } else {
+                            Some(schema.index_of(name).unwrap() - has_row_count as usize)
+                        }
+                    })
+                    .collect()
+            })
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
