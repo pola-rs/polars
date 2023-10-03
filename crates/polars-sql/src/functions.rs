@@ -14,7 +14,7 @@ use crate::SQLContext;
 
 pub(crate) struct SqlFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
-    pub(crate) ctx: &'a SQLContext,
+    pub(crate) ctx: &'a mut SQLContext,
 }
 
 /// SQL functions that are supported by Polars
@@ -550,7 +550,7 @@ impl PolarsSqlFunctions {
 }
 
 impl SqlFunctionVisitor<'_> {
-    pub(crate) fn visit_function(&self) -> PolarsResult<Expr> {
+    pub(crate) fn visit_function(&mut self) -> PolarsResult<Expr> {
         let function = self.func;
         let function_name = PolarsSqlFunctions::try_from_sql(function, self.ctx)?;
 
@@ -722,7 +722,7 @@ impl SqlFunctionVisitor<'_> {
         }
     }
 
-    fn visit_udf(&self, func_name: &str) -> PolarsResult<Expr> {
+    fn visit_udf(&mut self, func_name: &str) -> PolarsResult<Expr> {
         let function = self.func;
 
         let args = extract_args(function);
@@ -743,7 +743,7 @@ impl SqlFunctionVisitor<'_> {
         }
     }
 
-    fn visit_unary(&self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
+    fn visit_unary(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
         self.visit_unary_no_window(f)
             .and_then(|e| self.apply_window_spec(e, &self.func.over))
     }
@@ -754,7 +754,7 @@ impl SqlFunctionVisitor<'_> {
     /// if there is a cumulative window spec, it will apply the cumulative function,
     /// otherwise it will apply the function
     fn visit_unary_with_opt_cumulative(
-        &self,
+        &mut self,
         f: impl Fn(Expr) -> Expr,
         cumulative_f: impl Fn(Expr, bool) -> Expr,
     ) -> PolarsResult<Expr> {
@@ -772,7 +772,7 @@ impl SqlFunctionVisitor<'_> {
     /// Window specs without partition bys are essentially cumulative functions
     /// e.g. SUM(a) OVER (ORDER BY b DESC) -> CUMSUM(a, false)
     fn apply_cumulative_window(
-        &self,
+        &mut self,
         f: impl Fn(Expr) -> Expr,
         cumulative_f: impl Fn(Expr, bool) -> Expr,
         WindowSpec {
@@ -800,7 +800,7 @@ impl SqlFunctionVisitor<'_> {
         }
     }
 
-    fn visit_unary_no_window(&self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
+    fn visit_unary_no_window(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
         let function = self.func;
 
         let args = extract_args(function);
@@ -814,12 +814,15 @@ impl SqlFunctionVisitor<'_> {
         }
     }
 
-    fn visit_binary<Arg: FromSqlExpr>(&self, f: impl Fn(Expr, Arg) -> Expr) -> PolarsResult<Expr> {
+    fn visit_binary<Arg: FromSqlExpr>(
+        &mut self,
+        f: impl Fn(Expr, Arg) -> Expr,
+    ) -> PolarsResult<Expr> {
         self.try_visit_binary(|e, a| Ok(f(e, a)))
     }
 
     fn try_visit_binary<Arg: FromSqlExpr>(
-        &self,
+        &mut self,
         f: impl Fn(Expr, Arg) -> PolarsResult<Expr>,
     ) -> PolarsResult<Expr> {
         let function = self.func;
@@ -834,11 +837,14 @@ impl SqlFunctionVisitor<'_> {
         }
     }
 
-    fn visit_variadic(&self, f: impl Fn(&[Expr]) -> Expr) -> PolarsResult<Expr> {
+    fn visit_variadic(&mut self, f: impl Fn(&[Expr]) -> Expr) -> PolarsResult<Expr> {
         self.try_visit_variadic(|e| Ok(f(e)))
     }
 
-    fn try_visit_variadic(&self, f: impl Fn(&[Expr]) -> PolarsResult<Expr>) -> PolarsResult<Expr> {
+    fn try_visit_variadic(
+        &mut self,
+        f: impl Fn(&[Expr]) -> PolarsResult<Expr>,
+    ) -> PolarsResult<Expr> {
         let function = self.func;
         let args = extract_args(function);
         let mut expr_args = vec![];
@@ -860,7 +866,7 @@ impl SqlFunctionVisitor<'_> {
     // }
 
     fn try_visit_ternary<Arg: FromSqlExpr>(
-        &self,
+        &mut self,
         f: impl Fn(Expr, Arg, Arg) -> PolarsResult<Expr>,
     ) -> PolarsResult<Expr> {
         let function = self.func;
@@ -885,23 +891,23 @@ impl SqlFunctionVisitor<'_> {
         Ok(f())
     }
 
-    fn visit_count(&self) -> PolarsResult<Expr> {
+    fn visit_count(&mut self) -> PolarsResult<Expr> {
         let args = extract_args(self.func);
         match (self.func.distinct, args.as_slice()) {
             // count()
             (false, []) => Ok(count()),
             // count(column_name)
             (false, [FunctionArgExpr::Expr(sql_expr)]) => {
-                let expr =
-                    self.apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &self.func.over)?;
+                let expr = parse_sql_expr(sql_expr, self.ctx)?;
+                let expr = self.apply_window_spec(expr, &self.func.over)?;
                 Ok(expr.count())
             },
             // count(*)
             (false, [FunctionArgExpr::Wildcard]) => Ok(count()),
             // count(distinct column_name)
             (true, [FunctionArgExpr::Expr(sql_expr)]) => {
-                let expr =
-                    self.apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &self.func.over)?;
+                let expr = parse_sql_expr(sql_expr, self.ctx)?;
+                let expr = self.apply_window_spec(expr, &self.func.over)?;
                 Ok(expr.n_unique())
             },
             _ => self.not_supported_error(),
@@ -909,7 +915,7 @@ impl SqlFunctionVisitor<'_> {
     }
 
     fn apply_window_spec(
-        &self,
+        &mut self,
         expr: Expr,
         window_type: &Option<WindowType>,
     ) -> PolarsResult<Expr> {
@@ -967,13 +973,13 @@ fn extract_args(sql_function: &SQLFunction) -> Vec<&FunctionArgExpr> {
 }
 
 pub(crate) trait FromSqlExpr {
-    fn from_sql_expr(expr: &SqlExpr, ctx: &SQLContext) -> PolarsResult<Self>
+    fn from_sql_expr(expr: &SqlExpr, ctx: &mut SQLContext) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 
 impl FromSqlExpr for f64 {
-    fn from_sql_expr(expr: &SqlExpr, _ctx: &SQLContext) -> PolarsResult<Self>
+    fn from_sql_expr(expr: &SqlExpr, _ctx: &mut SQLContext) -> PolarsResult<Self>
     where
         Self: Sized,
     {
@@ -990,7 +996,7 @@ impl FromSqlExpr for f64 {
 }
 
 impl FromSqlExpr for String {
-    fn from_sql_expr(expr: &SqlExpr, _: &SQLContext) -> PolarsResult<Self>
+    fn from_sql_expr(expr: &SqlExpr, _: &mut SQLContext) -> PolarsResult<Self>
     where
         Self: Sized,
     {
@@ -1005,7 +1011,7 @@ impl FromSqlExpr for String {
 }
 
 impl FromSqlExpr for Expr {
-    fn from_sql_expr(expr: &SqlExpr, ctx: &SQLContext) -> PolarsResult<Self>
+    fn from_sql_expr(expr: &SqlExpr, ctx: &mut SQLContext) -> PolarsResult<Self>
     where
         Self: Sized,
     {

@@ -178,7 +178,7 @@ pub enum AExpr {
     Window {
         function: Node,
         partition_by: Vec<Node>,
-        options: WindowOptions,
+        options: WindowType,
     },
     #[default]
     Wildcard,

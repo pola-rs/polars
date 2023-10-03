@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::series::implementations::null::NullChunked;
 
 macro_rules! unpack_chunked {
     ($series:expr, $expected:pat => $ca:ty, $name:expr) => {
@@ -151,5 +152,10 @@ impl Series {
             }
         }
         unpack_chunked!(self, DataType::Struct(_) => StructChunked, "Struct")
+    }
+
+    /// Unpack to [`ChunkedArray`] of dtype `[DataType::Null]`
+    pub fn null(&self) -> PolarsResult<&NullChunked> {
+        unpack_chunked!(self, DataType::Null => NullChunked, "Null")
     }
 }

@@ -166,6 +166,27 @@ impl<'a> Deserialize<'a> for SpecialEq<Series> {
     }
 }
 
+#[cfg(feature = "serde")]
+impl Serialize for SpecialEq<Arc<LogicalPlan>> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'a> Deserialize<'a> for SpecialEq<Arc<LogicalPlan>> {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        let t = LogicalPlan::deserialize(deserializer)?;
+        Ok(SpecialEq(Arc::new(t)))
+    }
+}
+
 impl<T> SpecialEq<T> {
     pub fn new(val: T) -> Self {
         SpecialEq(val)

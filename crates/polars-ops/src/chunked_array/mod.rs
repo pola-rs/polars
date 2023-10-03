@@ -15,6 +15,8 @@ mod sum;
 mod top_k;
 
 pub mod gather_skip_nulls;
+#[cfg(feature = "repeat_by")]
+mod repeat_by;
 
 pub use binary::*;
 #[cfg(feature = "timezones")]
@@ -24,6 +26,8 @@ pub use interpolate::*;
 pub use list::*;
 #[allow(unused_imports)]
 use polars_core::prelude::*;
+#[cfg(feature = "repeat_by")]
+pub use repeat_by::*;
 pub use set::ChunkedSet;
 pub use strings::*;
 #[cfg(feature = "top_k")]

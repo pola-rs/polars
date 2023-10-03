@@ -16,7 +16,7 @@ use super::file_cache::FileCache;
 use crate::physical_plan::node_timer::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
-pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;
+pub type GroupsProxyCache = Arc<RwLock<PlHashMap<String, GroupsProxy>>>;
 
 bitflags! {
     #[repr(transparent)]
@@ -149,7 +149,7 @@ impl ExecutionState {
             schema_cache: Default::default(),
             #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
             file_cache: FileCache::new(finger_prints),
-            group_tuples: Arc::new(Mutex::new(PlHashMap::default())),
+            group_tuples: Arc::new(RwLock::new(PlHashMap::default())),
             join_tuples: Arc::new(Mutex::new(PlHashMap::default())),
             branch_idx: 0,
             flags: AtomicU8::new(StateFlags::init().as_u8()),
@@ -204,7 +204,7 @@ impl ExecutionState {
     /// Clear the cache used by the Window expressions
     pub(crate) fn clear_window_expr_cache(&self) {
         {
-            let mut lock = self.group_tuples.lock().unwrap();
+            let mut lock = self.group_tuples.write().unwrap();
             lock.clear();
         }
         let mut lock = self.join_tuples.lock().unwrap();

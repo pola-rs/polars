@@ -55,7 +55,7 @@ impl Default for DynamicGroupOptions {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RollingGroupOptions {
     /// Time or index column.

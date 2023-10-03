@@ -48,7 +48,6 @@ You may use the issue to discuss possible solutions.
 ### Setting up your local environment
 
 Polars development flow relies on both Rust and Python, which means setting up your local development environment is not trivial.
-For contributing to Node.js Polars, please check out the [Node.js Polars](https://github.com/pola-rs/nodejs-polars) repository.
 If you run into problems, please contact us on [Discord](https://discord.gg/4UfP5cfBE7).
 
 _Note that if you are a Windows user, the steps below might not work as expected; try developing using [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)._
@@ -56,7 +55,7 @@ _Note that if you are a Windows user, the steps below might not work as expected
 Start by [forking](https://docs.github.com/en/get-started/quickstart/fork-a-repo) the Polars repository, then clone your forked repository using `git`:
 
 ```bash
-git clone git@github.com:<username>/polars.git
+git clone https://github.com/<username>/polars.git
 cd polars
 ```
 
@@ -89,7 +88,7 @@ This will do a number of things:
 
 - Use Python to create a virtual environment in the `.venv` folder.
 - Use [pip](https://pip.pypa.io/) to install all Python dependencies for development, linting, and building documentation.
-- Use Rust to compile and install Polars in your virtual environment.
+- Use Rust to compile and install Polars in your virtual environment. _At least 8GB of RAM is recommended for this step to run smoothly._
 - Use [pytest](https://docs.pytest.org/) to run the Python unittests in your virtual environment
 
 Check if linting also works correctly by running:
@@ -181,10 +180,6 @@ The resulting HTML files will be in `py-polars/docs/build/html`.
 
 New additions to the API should be added manually to the API reference by adding an entry to the correct `.rst` file in the `py-polars/docs/source/reference` directory.
 
-#### Node.js
-
-For contributions to Node.js Polars, please refer to the official [Node.js Polars repository](https://github.com/pola-rs/nodejs-polars).
-
 ### StackOverflow
 
 We use StackOverflow to create a database of high quality questions and answers that is searchable and remains up-to-date.
@@ -192,7 +187,6 @@ There is a separate tag for each language:
 
 - [Python Polars](https://stackoverflow.com/questions/tagged/python-polars)
 - [Rust Polars](https://stackoverflow.com/questions/tagged/rust-polars)
-- [Node.js Polars](https://stackoverflow.com/questions/tagged/nodejs-polars)
 
 Contributions in the form of well-formulated questions or answers are always welcome!
 If you add a new question, please notify us by adding a [matching issue](https://github.com/pola-rs/polars/issues/new?&labels=question&template=question.yml) to our GitHub issue tracker.

@@ -488,10 +488,6 @@ pub trait SeriesTrait:
         invalid_operation_panic!(peak_min, self)
     }
 
-    #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, _by: &IdxCa) -> PolarsResult<ListChunked> {
-        polars_bail!(opq = repeat_by, self._dtype());
-    }
     #[cfg(feature = "checked_arithmetic")]
     fn checked_div(&self, _rhs: &Series) -> PolarsResult<Series> {
         polars_bail!(opq = checked_div, self._dtype());

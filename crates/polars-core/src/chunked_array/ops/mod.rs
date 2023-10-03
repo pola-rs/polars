@@ -38,8 +38,6 @@ mod len;
 pub(crate) mod min_max_binary;
 mod nulls;
 mod peaks;
-#[cfg(feature = "repeat_by")]
-mod repeat_by;
 mod reverse;
 pub(crate) mod rolling_window;
 mod set;
@@ -645,15 +643,6 @@ pub trait ChunkPeaks {
 
     /// Get a boolean mask of the local minimum peaks.
     fn peak_min(&self) -> BooleanChunked {
-        unimplemented!()
-    }
-}
-
-/// Repeat the values `n` times.
-#[cfg(feature = "repeat_by")]
-pub trait RepeatBy {
-    /// Repeat the values `n` times, where `n` is determined by the values in `by`.
-    fn repeat_by(&self, _by: &IdxCa) -> PolarsResult<ListChunked> {
         unimplemented!()
     }
 }

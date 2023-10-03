@@ -120,7 +120,7 @@ pub enum Expr {
         /// Also has the input. i.e. avg("foo")
         function: Box<Expr>,
         partition_by: Vec<Expr>,
-        options: WindowOptions,
+        options: WindowType,
     },
     Wildcard,
     Slice {
@@ -153,6 +153,7 @@ pub enum Expr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
+    SubPlan(SpecialEq<Arc<LogicalPlan>>, Vec<String>),
     /// Expressions in this node should only be expanding
     /// e.g.
     /// `Expr::Columns`

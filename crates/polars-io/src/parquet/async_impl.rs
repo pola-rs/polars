@@ -7,7 +7,7 @@ use arrow::io::parquet::read::{
 };
 use arrow::io::parquet::write::FileMetaData;
 use futures::future::BoxFuture;
-use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
+use futures::TryFutureExt;
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
 use polars_core::config::verbose;
@@ -122,20 +122,17 @@ async fn download_projection<'a: 'b, 'b>(
         as BoxFuture<'static, std::result::Result<CloudReader, std::io::Error>>;
 
     // Build the cartesian product of the fields and the row groups.
-    let product = fields
+    let product_futures = fields
         .into_iter()
-        .flat_map(|f| row_groups.iter().map(move |r| (f.clone(), r)));
-
-    // Download them all concurrently.
-    stream::iter(product)
-        .then(move |(name, row_group)| async move {
+        .flat_map(|f| row_groups.iter().map(move |r| (f.clone(), r)))
+        .map(|(name, row_group)| async move {
             let columns = row_group.columns();
             read_columns_async(reader_factory, columns, name.as_ref())
                 .map_err(to_compute_err)
                 .await
-        })
-        .try_collect()
-        .await
+        });
+
+    futures::future::try_join_all(product_futures).await
 }
 
 pub struct FetchRowGroupsFromObjectStore {
