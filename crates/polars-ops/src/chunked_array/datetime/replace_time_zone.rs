@@ -20,7 +20,10 @@ pub fn replace_time_zone(
     let from_time_zone = datetime.time_zone().as_deref().unwrap_or("UTC");
     let from_tz = parse_time_zone(from_time_zone)?;
     let to_tz = parse_time_zone(time_zone.unwrap_or("UTC"))?;
-    if (from_tz == to_tz) & ((from_tz == UTC) | (ambiguous.get(0) == Some("raise"))) {
+    if (from_tz == to_tz)
+        & ((from_tz == UTC)
+            | ((ambiguous.len() == 1) & (unsafe { ambiguous.get_unchecked(0) } == Some("raise"))))
+    {
         let mut out = datetime
             .0
             .clone()
@@ -39,7 +42,7 @@ pub fn replace_time_zone(
         TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
     };
     let out = match ambiguous.len() {
-        1 => match ambiguous.get(0) {
+        1 => match unsafe { ambiguous.get_unchecked(0) } {
             Some(ambiguous) => datetime.0.try_apply(|timestamp| {
                 let ndt = timestamp_to_datetime(timestamp);
                 Ok(datetime_to_timestamp(convert_to_naive_local(
