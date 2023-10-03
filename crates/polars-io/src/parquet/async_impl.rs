@@ -232,10 +232,10 @@ async fn read_columns_async<'a>(
 
 /// Download rowgroups for the column whose indexes are given in `projection`.
 /// We concurrently download the columns for each field.
-async fn download_projection<'a: 'b, 'b>(
+async fn download_projection(
     fields: &[SmartString],
-    row_groups: &'a [RowGroupMetaData],
-    async_reader: &'b ParquetObjectStore,
+    row_groups: &[RowGroupMetaData],
+    async_reader: &ParquetObjectStore,
 ) -> PolarsResult<Vec<Vec<(u64, Bytes)>>> {
 
     // Build the cartesian product of the fields and the row groups.
