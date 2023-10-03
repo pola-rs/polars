@@ -554,8 +554,13 @@ pub(super) fn concat(s: &Series, delimiter: &str) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "concat_str")]
-pub(super) fn concat_hor(s: &[Series], delimiter: &str) -> PolarsResult<Series> {
-    polars_core::functions::concat_str(s, delimiter).map(|ca| ca.into_series())
+pub(super) fn concat_hor(series: &[Series], delimiter: &str) -> PolarsResult<Series> {
+    let str_series: Vec<_> = series
+        .iter()
+        .map(|s| s.cast(&DataType::Utf8))
+        .collect::<PolarsResult<_>>()?;
+    let cas: Vec<_> = str_series.iter().map(|s| s.utf8().unwrap()).collect();
+    Ok(polars_ops::chunked_array::hor_str_concat(&cas, delimiter)?.into_series())
 }
 
 impl From<StringFunction> for FunctionExpr {
