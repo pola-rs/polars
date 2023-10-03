@@ -15,8 +15,14 @@ from polars.io._utils import _is_supported_cloud
         ("azure://container@account/file.tmp", True),
         ("az://container@account/file.tmp", True),
         ("adl://account/file.tmp", True),
-        ("file:///local/file.tmp", True,),
-        ("/local/file.tmp", False,),
+        (
+            "file:///local/file.tmp",
+            True,
+        ),
+        (
+            "/local/file.tmp",
+            False,
+        ),
     ],
 )
 def test_is_cloud_url(possible_url: str, expected_result: bool) -> None:
