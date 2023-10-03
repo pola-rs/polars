@@ -3413,15 +3413,18 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
         >>> df.select(pl.col("a").peak_max())
-        shape: (5,)
-        Series: 'a' [bool]
-        [
-                false
-                false
-                false
-                false
-                true
-        ]
+        shape: (5, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ false │
+        │ false │
+        │ false │
+        │ false │
+        │ true  │
+        └───────┘
 
         """
         return self._from_pyexpr(self._pyexpr.peak_max())
@@ -3434,16 +3437,19 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [4, 1, 3, 2, 5]})
         >>> df.select(pl.col("a").peak_min())
-        >>> s.peak_min()
-        shape: (5,)
-        Series: 'a' [bool]
-        [
-            false
-            true
-            false
-            true
-            false
-        ]
+        >>> df.peak_min()
+        shape: (5, 1)
+        ┌───────┐
+        │ a     │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ false │
+        │ true  │
+        │ false │
+        │ true  │
+        │ false │
+        └───────┘
 
         """
         return self._from_pyexpr(self._pyexpr.peak_min())
