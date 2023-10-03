@@ -178,7 +178,9 @@ impl<O: Offset, I: Pages> Iterator for NestedIter<O, I> {
             );
             match maybe_state {
                 MaybeNext::Some(Ok((nested, decoded))) => {
-                    return Some(finish(&self.data_type, decoded.0, decoded.1).map(|array| (nested, array)))
+                    return Some(
+                        finish(&self.data_type, decoded.0, decoded.1).map(|array| (nested, array)),
+                    )
                 },
                 MaybeNext::Some(Err(e)) => return Some(Err(e)),
                 MaybeNext::None => return None,
