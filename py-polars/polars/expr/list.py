@@ -395,7 +395,7 @@ class ExprListNameSpace:
         │ str  │
         ╞══════╡
         │ a    │
-        │ axy  │
+        │ ayx  │
         │ null │
         │ bayx │
         └──────┘
