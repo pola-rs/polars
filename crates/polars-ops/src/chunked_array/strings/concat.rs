@@ -35,11 +35,7 @@ where
     Utf8Chunked::with_chunk(name, arr)
 }
 
-pub fn str_concat<T>(ca: &ChunkedArray<T>, delimiter: &str) -> Utf8Chunked
-where
-    T: PolarsDataType,
-    for<'a> T::Physical<'a>: Display,
-{
+pub fn str_concat(ca: &Utf8Chunked, delimiter: &str) -> Utf8Chunked {
     str_concat_impl(
         ca.downcast_iter().flat_map(|a| a.iter()),
         delimiter,
@@ -54,7 +50,8 @@ mod test {
     #[test]
     fn test_str_concat() {
         let ca = Int32Chunked::new("foo", &[Some(1), None, Some(3)]);
-        let out = str_concat::<Int32Type>(&ca, "-");
+        let ca_str = ca.cast(&DataType::Utf8).unwrap();
+        let out = str_concat(&ca_str.utf8().unwrap(), "-");
 
         let out = out.get(0);
         assert_eq!(out, Some("1-null-3"));

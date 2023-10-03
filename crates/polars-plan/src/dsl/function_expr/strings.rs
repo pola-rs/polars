@@ -548,7 +548,9 @@ fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
 
 #[cfg(feature = "concat_str")]
 pub(super) fn concat(s: &Series, delimiter: &str) -> PolarsResult<Series> {
-    Ok(s.str_concat(delimiter).into_series())
+    let str_s = s.cast(&DataType::Utf8)?;
+    let concat = polars_ops::chunked_array::str_concat(str_s.utf8()?, delimiter);
+    Ok(concat.into_series())
 }
 
 #[cfg(feature = "concat_str")]
