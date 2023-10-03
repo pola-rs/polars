@@ -84,9 +84,9 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           command: build
-          # Temporarily pin maturin version here due to bug:
+          # Temporarily pin Rust toolchain version here due to bug:
           # https://github.com/PyO3/maturin-action/issues/215
-          maturin-version: nightly-2023-10-02
+          rust-toolchain: nightly-2023-10-02
           target: ${{ steps.target.outputs.target }}
           args: >
             --release
