@@ -33,7 +33,6 @@ pub mod full;
 pub mod gather;
 #[cfg(feature = "interpolate")]
 mod interpolate;
-mod len;
 #[cfg(feature = "zip_with")]
 pub(crate) mod min_max_binary;
 mod nulls;
