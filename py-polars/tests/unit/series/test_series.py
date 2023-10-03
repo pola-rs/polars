@@ -1863,11 +1863,11 @@ def test_dot() -> None:
 def test_peak_max_peak_min() -> None:
     s = pl.Series("a", [4, 1, 3, 2, 5])
     result = s.peak_min()
-    expected = pl.Series([False, True, False, True, False])
+    expected = pl.Series("a", [False, True, False, True, False])
     assert_series_equal(result, expected)
 
     result = s.peak_max()
-    expected = pl.Series([True, False, True, False, True])
+    expected = pl.Series("a", [True, False, True, False, True])
     assert_series_equal(result, expected)
 
 
