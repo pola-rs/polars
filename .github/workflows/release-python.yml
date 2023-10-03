@@ -1,9 +1,21 @@
 name: Release Python
 
 on:
-  push:
-    tags:
-      - py-*
+  workflow_dispatch:
+    inputs:
+      # Latest commit to include with the release. If omitted, use the latest commit on the main branch.
+      sha:
+        description: Commit SHA
+        type: string
+      # Create the sdist and build the wheels, but do not publish to PyPI / GitHub.
+      dry-run:
+        description: Dry run
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   PYTHON_VERSION: '3.8'
@@ -25,6 +37,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
 
       # Avoid potential out-of-memory errors
       - name: Set swap space for Linux
@@ -60,7 +74,7 @@ jobs:
 
       - name: Test sdist
         run: |
-          TOOLCHAIN=$(cat rust-toolchain.toml | grep -oP 'channel = "\K[^"]+')
+          TOOLCHAIN=$(grep -oP 'channel = "\K[^"]+' rust-toolchain.toml)
           rustup default $TOOLCHAIN
           pip install --force-reinstall --verbose dist/*.tar.gz
           python -c 'import polars'
@@ -85,6 +99,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
 
       # Avoid potential out-of-memory errors
       - name: Set swap space for Linux
@@ -154,6 +170,7 @@ jobs:
           path: dist/*.whl
 
   publish-to-pypi:
+    if: inputs.dry-run == false
     needs: [create-sdist, build-wheels]
     environment:
       name: release-python
@@ -180,20 +197,52 @@ jobs:
         with:
           verbose: true
 
-  update-github-release:
-    needs: create-sdist
+  publish-to-github:
+    needs: publish-to-pypi
     runs-on: ubuntu-latest
-
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+
       - name: Download sdist
         uses: actions/download-artifact@v3
         with:
           name: sdist
           path: dist
 
+      - name: Get version from Cargo.toml
+        id: version
+        working-directory: py-polars
+        run: |
+          VERSION=$(grep -m 1 -oP 'version = "\K[^"]+' Cargo.toml)
+          if [[ "$VERSION" == *"-"* ]]; then
+            IS_PRERELEASE=true
+          else
+            IS_PRERELEASE=false
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+
+      - name: Create and publish GitHub release
+        id: release
+        uses: release-drafter/release-drafter@v5
+        with:
+          config-name: release-drafter-python.yml
+          name: Python Polars ${{ steps.version.outputs.version }}
+          tag: py-${{ steps.version.outputs.version }}
+          version: ${{ steps.version.outputs.version }}
+          prerelease: ${{ steps.version.outputs.is_prerelease }}
+          commitish: ${{ inputs.sha }}
+          publish: true
+          disable-autolabeler: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Upload sdist as asset to GitHub release
         uses: svenstaro/upload-release-action@v2
         with:
           file: dist/polars-*.tar.gz
           file_glob: true
+          tag: ${{ steps.release.outputs.tag_name }}
           overwrite: true
