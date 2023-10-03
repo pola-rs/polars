@@ -4,44 +4,39 @@ use arrow::array::Utf8Array;
 use polars_arrow::array::default_arrays::FromDataUtf8;
 use polars_core::prelude::*;
 
-fn fmt_and_write<T: Display>(value: Option<T>, buf: &mut String) {
-    match value {
-        None => buf.push_str("null"),
-        Some(v) => {
-            write!(buf, "{v}").unwrap();
-        },
+// Vertically concatenate all strings in a Utf8Chunked.
+pub fn str_concat(ca: &Utf8Chunked, delimiter: &str) -> Utf8Chunked {
+    if ca.len() <= 1 {
+        return ca.clone();
     }
-}
 
-fn str_concat_impl<I, T>(mut iter: I, delimiter: &str, name: &str) -> Utf8Chunked
-where
-    I: Iterator<Item = Option<T>>,
-    T: Display,
-{
-    let mut buf = String::with_capacity(iter.size_hint().0 * 5);
+    // Calculate capacity.
+    let null_str_len = 4;
+    let capacity =
+        ca.get_values_size() + ca.null_count() * null_str_len + delimiter.len() * (ca.len() - 1);
 
-    if let Some(first) = iter.next() {
-        fmt_and_write(first, &mut buf);
+    let mut buf = String::with_capacity(capacity);
+    let mut first = true;
+    for arr in ca.downcast_iter() {
+        for val in arr.into_iter() {
+            if !first {
+                buf.push_str(delimiter);
+            }
 
-        for val in iter {
-            buf.push_str(delimiter);
-            fmt_and_write(val, &mut buf);
+            if let Some(s) = val {
+                buf.push_str(s);
+            } else {
+                buf.push_str("null");
+            }
+
+            first = false;
         }
     }
-    buf.shrink_to_fit();
+
     let buf = buf.into_bytes();
     let offsets = vec![0, buf.len() as i64];
     let arr = unsafe { Utf8Array::from_data_unchecked_default(offsets.into(), buf.into(), None) };
-    Utf8Chunked::with_chunk(name, arr)
-}
-
-// Vertically concatenate all strings in a Utf8Chunked.
-pub fn str_concat(ca: &Utf8Chunked, delimiter: &str) -> Utf8Chunked {
-    str_concat_impl(
-        ca.downcast_iter().flat_map(|a| a.iter()),
-        delimiter,
-        ca.name(),
-    )
+    Utf8Chunked::with_chunk(ca.name(), arr)
 }
 
 enum ColumnIter<I, T> {
