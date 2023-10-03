@@ -350,11 +350,67 @@ class ExprListNameSpace:
         return F.concat_list(other_list)
 
     def cum_concat(self) -> Expr:
-        """Asdgasdgasdg."""
+        """
+        Cumulatively concatenate the arrays in a Series dtype List in linear time.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [
+                        ["a"], 
+                        ["x", "y"], 
+                        None, 
+                        ["a", "b"]
+                    ],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").list.cum_concat())
+        shape: (2, 1)
+        ┌───────────────────────────┐
+        │ a                         │
+        │ ---                       │
+        │ list[str]                 │
+        ╞═══════════════════════════╡
+        │ ["a"]                     │
+        │ ["a", "x", "y"]           │
+        │ null                      │
+        │ ["a", "x", "y", "a", "b"] │
+        └───────────────────────────┘
+
+        """
         return wrap_expr(self._pyexpr.list_cum_concat())
 
     def cum_set_union(self) -> Expr:
-        """Asdgasdgasdg."""
+        """
+        Cumulatively apply a set union to the arrays in a Series dtype List in linear time.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [
+                        ["a"], 
+                        ["x", "y"], 
+                        None, 
+                        ["a", "b"]
+                    ],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").list.cum_set_union())
+        shape: (2, 1)
+        ┌──────────────────────┐
+        │ a                    │
+        │ ---                  │
+        │ list[str]            │
+        ╞══════════════════════╡
+        │ ["a"]                │
+        │ ["a", "x", "y"]      │
+        │ null                 │
+        │ ["a", "b", "x", "y"] │
+        └──────────────────────┘
+
+        """
         return wrap_expr(self._pyexpr.list_cum_set_union())
 
     def get(self, index: int | Expr | str) -> Expr:

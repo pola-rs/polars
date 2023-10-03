@@ -513,15 +513,15 @@ def test_list_cum_concat() -> None:
 
 
 def test_list_cum_set_union() -> None:
-    a = pl.DataFrame({"a": [None, [0], [], None, [1, 5, 9], [0], [], None]})
+    a = pl.DataFrame({"a": [None, [0], [1, 5], None, [1, 5, 9], [0], [2, 0, 5], None]})
     assert a.select(pl.col("a").list.cum_set_union())["a"].to_list() == [
         None,
         [0],
-        [0],
+        [0, 1, 5],
         None,
         [0, 1, 5, 9],
         [0, 1, 5, 9],
-        [0, 1, 5, 9],
+        [0, 1, 2, 5, 9],
         None,
     ]
 
