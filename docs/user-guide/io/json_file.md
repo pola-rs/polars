@@ -1,6 +1,7 @@
 # JSON files
+Polars can read and write both standard JSON and newline-delimited JSON (NDJSON).
 
-## Read & write
+## Read
 
 ### JSON
 
@@ -12,13 +13,15 @@ Reading a JSON file should look familiar:
 
 JSON objects that are delimited by newlines can be read into polars in a much more performant way than standard json.
 
+Polars can read an ND-JSON file into a `DataFrame` using the `read_ndjson` function:
+
 {{code_block('user-guide/io/json-file','readnd',['read_ndjson'])}}
 
 ## Write
-
 {{code_block('user-guide/io/json-file','write',['write_json','write_ndjson'])}}
 
-## Scan
+
+## Scan NDJSON
 
 `Polars` allows you to _scan_ a JSON input **only for newline delimited json**. Scanning delays the actual parsing of the
 file and instead returns a lazy computation holder called a `LazyFrame`.

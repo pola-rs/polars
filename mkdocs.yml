@@ -64,7 +64,7 @@ nav:
       - user-guide/io/json_file.md
       - user-guide/io/multiple.md
       - user-guide/io/database.md
-      - user-guide/io/aws.md
+      - user-guide/io/cloud-storage.md
       - user-guide/io/bigquery.md
     - SQL:
       - user-guide/sql/intro.md

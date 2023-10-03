@@ -10,6 +10,8 @@ Writing a CSV file is similar with the `write_csv` function:
 
 {{code_block('user-guide/io/csv','write',['write_csv'])}}
 
+For reading and writing a CSV from a cloud storage provider, see [Cloud storage](cloud-storage.md).
+
 ## Scan
 
 `Polars` allows you to _scan_ a CSV input. Scanning delays the actual parsing of the
