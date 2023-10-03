@@ -21,15 +21,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        package: [polars, polars-lts-cpu, polars-u64-idx]
         os: [ubuntu-latest, macos-latest, windows-32gb-ram]
-        cpu: [x86-64, aarch64]
-        lts-cpu: [false, true]
-        u64-idx: [false, true]
+        architecture: [x86-64, aarch64]
         exclude:
           - os: windows-32gb-ram
             cpu: aarch64
-          - lts-cpu: true
-            u64-idx: true
 
     steps:
       - uses: actions/checkout@v4
@@ -52,36 +49,34 @@ jobs:
           cp README.md py-polars/README.md
 
       - name: Install yq
-        if: matrix.lts-cpu || matrix.u64-idx
+        if: matrix.package != 'polars'
         run: pip install yq
 
       - name: Update package name
-        if: matrix.lts-cpu || matrix.u64-idx
-        run: |
-          NAME=${{ matrix.lts-cpu && 'polars-lts-cpu' || 'polars-u64-idx' }}
-          tomlq -i -t ".project.name = \"$NAME\"" py-polars/pyproject.toml
+        if: matrix.package != 'polars'
+        run: tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
 
       - name: Add bigidx feature
-        if: matrix.u64-idx
+        if: matrix.package == 'polars-u64-idx'
         run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
 
       - name: Set RUSTFLAGS for x86-64
-        if: matrix.cpu == 'x86-64' && !matrix.lts-cpu
+        if: matrix.architecture == 'x86-64' && matrix.package != 'polars-lts-cpu'
         run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma" >> $GITHUB_ENV
 
       - name: Set RUSTFLAGS for x86-64 LTS CPU
-        if: matrix.cpu == 'x86-64' && matrix.lts-cpu
+        if: matrix.architecture == 'x86-64' && matrix.package == 'polars-lts-cpu'
         run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc" >> $GITHUB_ENV
 
       - name: Set Rust target for aarch64
-        if: matrix.cpu == 'aarch64'
+        if: matrix.architecture == 'aarch64'
         id: target
         run: |
           TARGET=${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || 'aarch64-unknown-linux-gnu'}}
           echo "target=$TARGET" >> $GITHUB_OUTPUT
 
       - name: Set jemalloc for aarch64 Linux
-        if: matrix.cpu == 'aarch64' && matrix.os == 'ubuntu-latest'
+        if: matrix.architecture == 'aarch64' && matrix.os == 'ubuntu-latest'
         run: |
           echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> $GITHUB_ENV
 
@@ -89,16 +84,29 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           command: build
+          # Temporarily pin maturin version here due to bug:
+          # https://github.com/PyO3/maturin-action/issues/215
+          maturin-version: nightly-2023-10-02
           target: ${{ steps.target.outputs.target }}
-          working-directory: py-polars
-          args: --release ${{ matrix.os == 'ubuntu-latest' && matrix.cpu == 'x86-64' && '--sdist' || ''}}
+          args: >
+            --release
+            --manifest-path py-polars/Cargo.toml
+            --out dist
+            ${{ matrix.os == 'ubuntu-latest' && matrix.architecture == 'x86-64' && '--sdist' || ''}}
           manylinux: auto
 
-      - name: Upload wheel
+      - name: Upload sdist
+        if: matrix.os == 'ubuntu-latest' && matrix.architecture == 'x86-64'
         uses: actions/upload-artifact@v3
         with:
-          name: dist
-          path: py-polars/target/wheels/*
+          name: sdist
+          path: dist/*.tar.gz
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: dist/*.whl
 
   publish-to-pypi:
     needs: build-wheels
@@ -110,9 +118,16 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/download-artifact@v3
+      - name: Download sdist
+        uses: actions/download-artifact@v3
         with:
-          name: dist
+          name: sdist
+          path: dist
+
+      - name: Download wheels
+        uses: actions/download-artifact@v3
+        with:
+          name: wheels
           path: dist
 
       - name: Publish to PyPI
@@ -125,14 +140,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/download-artifact@v3
+      - name: Download sdist
+        uses: actions/download-artifact@v3
         with:
-          name: dist
+          name: sdist
           path: dist
 
-      - name: Upload binaries to release
+      - name: Upload sdist as asset to GitHub release
         uses: svenstaro/upload-release-action@v2
         with:
-          file: dist/polars-*
+          file: dist/polars-*.tar.gz
           file_glob: true
           overwrite: true
