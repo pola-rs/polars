@@ -23,7 +23,7 @@ jobs:
       matrix:
         package: [polars, polars-lts-cpu, polars-u64-idx]
         os: [ubuntu-latest, macos-latest, windows-32gb-ram]
-        architecture: [x86-64, aarch64]
+        architecture: [x86_64, aarch64]
         exclude:
           - os: windows-32gb-ram
             architecture: aarch64
@@ -61,18 +61,24 @@ jobs:
         run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
 
       - name: Set RUSTFLAGS for x86-64
-        if: matrix.architecture == 'x86-64' && matrix.package != 'polars-lts-cpu'
-        run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma" >> $GITHUB_ENV
+        if: matrix.architecture == 'x86_64' && matrix.package != 'polars-lts-cpu'
+        run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt" >> $GITHUB_ENV
 
       - name: Set RUSTFLAGS for x86-64 LTS CPU
-        if: matrix.architecture == 'x86-64' && matrix.package == 'polars-lts-cpu'
+        if: matrix.architecture == 'x86_64' && matrix.package == 'polars-lts-cpu'
         run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc" >> $GITHUB_ENV
 
-      - name: Set Rust target for aarch64
-        if: matrix.architecture == 'aarch64'
+      - name: Set Rust target
         id: target
         run: |
-          TARGET=${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || 'aarch64-unknown-linux-gnu'}}
+          if [ ${{ matrix.os == 'ubuntu-latest'}} = true ]; then
+            VENDOR_SYS=unknown-linux-gnu
+          elif [ ${{ matrix.os == 'macos-latest'}} = true ]; then
+            VENDOR_SYS=apple-darwin
+          else
+            VENDOR_SYS=pc-windows-msvc
+          fi
+          TARGET=${{ matrix.architecture }}-$VENDOR_SYS
           echo "target=$TARGET" >> $GITHUB_OUTPUT
 
       - name: Set jemalloc for aarch64 Linux
@@ -92,11 +98,11 @@ jobs:
             --release
             --manifest-path py-polars/Cargo.toml
             --out dist
-            ${{ matrix.os == 'ubuntu-latest' && matrix.architecture == 'x86-64' && '--sdist' || ''}}
+            ${{ matrix.os == 'ubuntu-latest' && matrix.architecture == 'x86_64' && '--sdist' || ''}}
           manylinux: auto
 
       - name: Upload sdist
-        if: matrix.os == 'ubuntu-latest' && matrix.architecture == 'x86-64'
+        if: matrix.os == 'ubuntu-latest' && matrix.architecture == 'x86_64'
         uses: actions/upload-artifact@v3
         with:
           name: sdist
