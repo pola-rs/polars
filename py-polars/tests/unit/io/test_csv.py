@@ -584,6 +584,10 @@ def test_csv_quote_char() -> None:
         assert out.shape == (9, 3)
         assert_frame_equal(out, expected)
 
+    # non-standard quote char
+    df = pl.DataFrame({"x": ["", "0*0", "xyz"]})
+    assert df.write_csv(quote="*") == "x\n**\n*0**0*\nxyz\n"
+
 
 def test_csv_empty_quotes_char_1622() -> None:
     pl.read_csv(b"a,b,c,d\nA1,B1,C1,1\nA2,B2,C2,2\n", quote_char="")
