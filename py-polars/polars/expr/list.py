@@ -357,12 +357,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [
-                        ["a"], 
-                        ["x", "y"], 
-                        None, 
-                        ["a", "b"]
-                    ],
+        ...         "a": [["a"], ["x", "y"], None, ["a", "b"]],
         ...     }
         ... )
         >>> df.select(pl.col("a").list.cum_concat())
@@ -383,18 +378,13 @@ class ExprListNameSpace:
 
     def cum_set_union(self) -> Expr:
         """
-        Cumulatively apply a set union to the arrays in a Series dtype List in linear time.
+        Cumulatively apply a set union to the arrays in a Series dtype List.
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [
-                        ["a"], 
-                        ["x", "y"], 
-                        None, 
-                        ["a", "b"]
-                    ],
+        ...         "a": [["a"], ["x", "y"], None, ["a", "b"]],
         ...     }
         ... )
         >>> df.select(pl.col("a").list.cum_set_union())

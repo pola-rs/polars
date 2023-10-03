@@ -549,11 +549,11 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     fn lst_cum_concat(&self) -> PolarsResult<ListChunked> {
-        list_cum_concat(&self.as_list())
+        list_cum_concat(self.as_list())
     }
 
     fn lst_cum_set_union(&self) -> PolarsResult<ListChunked> {
-        list_cum_set_union(&self.as_list())
+        list_cum_set_union(self.as_list())
     }
 }
 

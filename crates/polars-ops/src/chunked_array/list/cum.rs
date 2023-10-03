@@ -9,7 +9,7 @@ pub fn list_cum_concat(a: &ListChunked) -> PolarsResult<ListChunked> {
     for value in a {
         match (&mut acc, &value) {
             (Some(acc_inner), Some(v)) => {
-                acc_inner.append(&v)?;
+                acc_inner.append(v)?;
                 values.push(Some(acc_inner.clone()));
             },
             (None, Some(v)) => {
@@ -34,7 +34,7 @@ pub fn list_cum_set_union(a: &ListChunked) -> PolarsResult<ListChunked> {
         match (&mut acc, &value) {
             (Some(acc_inner), Some(v)) => {
                 let mut new_acc = acc_inner.clone();
-                new_acc.append(&v)?;
+                new_acc.append(v)?;
                 new_acc = new_acc.0.unique()?;
                 acc = Some(new_acc.clone());
                 values.push(Some(new_acc));
