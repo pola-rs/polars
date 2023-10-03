@@ -241,6 +241,7 @@ pub struct ParquetAsyncReader {
     row_count: Option<RowCount>,
     use_statistics: bool,
     hive_partition_columns: Option<Vec<Series>>,
+    schema: Option<SchemaRef>,
 }
 
 #[cfg(feature = "cloud")]
@@ -248,6 +249,7 @@ impl ParquetAsyncReader {
     pub async fn from_uri(
         uri: &str,
         cloud_options: Option<&CloudOptions>,
+        schema: Option<SchemaRef>,
     ) -> PolarsResult<ParquetAsyncReader> {
         Ok(ParquetAsyncReader {
             reader: ParquetObjectStore::from_uri(uri, cloud_options).await?,
@@ -257,6 +259,7 @@ impl ParquetAsyncReader {
             row_count: None,
             use_statistics: true,
             hive_partition_columns: None,
+            schema,
         })
     }
 
@@ -266,7 +269,7 @@ impl ParquetAsyncReader {
         uri: &str,
         options: Option<&CloudOptions>,
     ) -> PolarsResult<(Schema, usize)> {
-        let mut reader = ParquetAsyncReader::from_uri(uri, options).await?;
+        let mut reader = ParquetAsyncReader::from_uri(uri, options, None).await?;
         let schema = reader.schema().await?;
         let num_rows = reader.num_rows().await?;
         Ok((schema, num_rows))
@@ -314,8 +317,13 @@ impl ParquetAsyncReader {
     pub async fn batched(mut self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
         let metadata = self.reader.get_metadata().await?.to_owned();
         // row group fetched deals with projection
-        let row_group_fetcher =
-            FetchRowGroupsFromObjectStore::new(self.reader, &metadata, &self.projection)?.into();
+        let row_group_fetcher = FetchRowGroupsFromObjectStore::new(
+            self.reader,
+            &metadata,
+            self.schema.unwrap(),
+            self.projection.as_deref(),
+        )?
+        .into();
         BatchedParquetReader::new(
             row_group_fetcher,
             metadata,

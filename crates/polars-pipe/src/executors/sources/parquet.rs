@@ -63,20 +63,24 @@ impl ParquetSource {
             {
                 let uri = path.to_string_lossy();
                 polars_io::pl_async::get_runtime().block_on(async {
-                    ParquetAsyncReader::from_uri(&uri, self.cloud_options.as_ref())
-                        .await?
-                        .with_n_rows(file_options.n_rows)
-                        .with_row_count(file_options.row_count)
-                        .with_projection(projection)
-                        .use_statistics(options.use_statistics)
-                        .with_hive_partition_columns(
-                            self.file_info
-                                .hive_parts
-                                .as_ref()
-                                .map(|hive| hive.materialize_partition_columns()),
-                        )
-                        .batched(chunk_size)
-                        .await
+                    ParquetAsyncReader::from_uri(
+                        &uri,
+                        self.cloud_options.as_ref(),
+                        Some(self.file_info.schema.clone()),
+                    )
+                    .await?
+                    .with_n_rows(file_options.n_rows)
+                    .with_row_count(file_options.row_count)
+                    .with_projection(projection)
+                    .use_statistics(options.use_statistics)
+                    .with_hive_partition_columns(
+                        self.file_info
+                            .hive_parts
+                            .as_ref()
+                            .map(|hive| hive.materialize_partition_columns()),
+                    )
+                    .batched(chunk_size)
+                    .await
                 })?
             }
         } else {

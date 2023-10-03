@@ -2,13 +2,10 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use arrow::io::parquet::read::{
-    self as parquet2_read, get_field_columns, ColumnChunkMetaData, RowGroupMetaData,
-};
+use arrow::io::parquet::read::{self as parquet2_read, RowGroupMetaData};
 use arrow::io::parquet::write::FileMetaData;
 use bytes::Bytes;
 use futures::future::try_join_all;
-use futures::TryFutureExt;
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
 use polars_core::config::verbose;
@@ -110,9 +107,9 @@ async fn read_columns_async2(
     async_reader: &ParquetObjectStore,
     ranges: &[(u64, u64)],
 ) -> PolarsResult<Vec<(u64, Bytes)>> {
-    let futures = ranges
-        .iter()
-        .map(|(start, length)| async { read_single_column_async(async_reader, *start as usize, *length as usize).await });
+    let futures = ranges.iter().map(|(start, length)| async {
+        read_single_column_async(async_reader, *start as usize, *length as usize).await
+    });
 
     try_join_all(futures).await
 }
@@ -124,24 +121,25 @@ async fn download_projection(
     row_groups: &[RowGroupMetaData],
     async_reader: &Arc<ParquetObjectStore>,
 ) -> PolarsResult<Vec<Vec<(u64, Bytes)>>> {
-
     // Build the cartesian product of the fields and the row groups.
     let product_futures = fields
         .iter()
         .flat_map(|name| row_groups.iter().map(move |r| (name.clone(), r)))
         .map(|(name, row_group)| async move {
             let columns = row_group.columns();
-            let ranges = columns.iter().filter_map(|meta| {
-                if meta.descriptor().path_in_schema[0] == name.as_str() {
-                   Some(meta.byte_range())
-                } else {
-                    None
-                }
-            }).collect::<Vec<_>>();
+            let ranges = columns
+                .iter()
+                .filter_map(|meta| {
+                    if meta.descriptor().path_in_schema[0] == name.as_str() {
+                        Some(meta.byte_range())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
             let async_reader = async_reader.clone();
-            let handle = tokio::spawn(async move {
-                read_columns_async2(&async_reader, &ranges).await
-            });
+            let handle =
+                tokio::spawn(async move { read_columns_async2(&async_reader, &ranges).await });
             handle.await.unwrap()
         });
 
@@ -153,37 +151,33 @@ pub struct FetchRowGroupsFromObjectStore {
     reader: Arc<ParquetObjectStore>,
     row_groups_metadata: Vec<RowGroupMetaData>,
     projected_fields: Vec<SmartString>,
-    projection: Vec<usize>,
     logging: bool,
-    schema: ArrowSchema,
 }
 
 impl FetchRowGroupsFromObjectStore {
     pub fn new(
         reader: ParquetObjectStore,
         metadata: &FileMetaData,
-        projection: &Option<Vec<usize>>,
+        schema: SchemaRef,
+        projection: Option<&[usize]>,
     ) -> PolarsResult<Self> {
         // TODO! schema should already be known
-        let schema = parquet2_read::schema::infer_schema(metadata)?;
         let logging = verbose();
 
-        let projection = projection.to_owned()
-            .unwrap_or_else(|| (0usize..schema.fields.len()).collect());
-
         let projected_fields = projection
-            .iter()
-            .map(|i| (&schema.fields[*i].name).into())
-            .collect::<Vec<_>>();
-
+            .map(|projection| {
+                projection
+                    .iter()
+                    .map(|i| schema.get_at_index(*i).unwrap().0.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| schema.iter().map(|tpl| tpl.0).cloned().collect());
 
         Ok(FetchRowGroupsFromObjectStore {
             reader: Arc::new(reader),
             row_groups_metadata: metadata.row_groups.to_owned(),
             projected_fields,
-            projection,
             logging,
-            schema,
         })
     }
 
@@ -216,9 +210,7 @@ impl FetchRowGroupsFromObjectStore {
         }
         let downloaded_per_filepos = downloaded
             .into_iter()
-            .flat_map(|rg| {
-                rg.into_iter()
-            })
+            .flat_map(|rg| rg.into_iter())
             .collect::<PlHashMap<_, _>>();
 
         if self.logging {

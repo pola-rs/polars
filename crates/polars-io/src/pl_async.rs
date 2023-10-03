@@ -1,7 +1,7 @@
 use std::ops::Deref;
-use polars_core::POOL;
 
 use once_cell::sync::Lazy;
+use polars_core::POOL;
 use tokio::runtime::{Builder, Runtime};
 
 static RUNTIME: Lazy<Runtime> = Lazy::new(|| {

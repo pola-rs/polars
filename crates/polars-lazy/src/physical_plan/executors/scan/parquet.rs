@@ -39,7 +39,7 @@ impl ParquetExec {
             &self.path,
             &self.predicate,
             &mut self.file_options.with_columns,
-            &mut self.file_info.schema,
+            &mut self.file_info.schema.clone(),
             self.file_options.n_rows,
             self.file_options.row_count.is_some(),
         );
@@ -66,6 +66,7 @@ impl ParquetExec {
                     let reader = ParquetAsyncReader::from_uri(
                         &self.path.to_string_lossy(),
                         self.cloud_options.as_ref(),
+                        Some(self.file_info.schema.clone()),
                     )
                     .await?
                     .with_n_rows(n_rows)
