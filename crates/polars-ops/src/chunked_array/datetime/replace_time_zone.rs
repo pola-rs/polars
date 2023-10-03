@@ -20,7 +20,7 @@ pub fn replace_time_zone(
     let from_time_zone = datetime.time_zone().as_deref().unwrap_or("UTC");
     let from_tz = parse_time_zone(from_time_zone)?;
     let to_tz = parse_time_zone(time_zone.unwrap_or("UTC"))?;
-    if (from_tz == to_tz) & (from_tz == UTC) {
+    if (from_tz == to_tz) & ((from_tz == UTC) | (ambiguous.get(0) == Some("raise"))) {
         let mut out = datetime
             .0
             .clone()
