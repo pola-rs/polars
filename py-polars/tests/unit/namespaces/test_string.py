@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import cast
 from datetime import datetime
+from typing import cast
 
 import pytest
 
@@ -31,7 +31,10 @@ def test_str_concat2() -> None:
 def test_str_concat_datetime() -> None:
     df = pl.DataFrame({"d": [datetime(2020, 1, 1), None, datetime(2022, 1, 1)]})
     df = df.select(pl.col("d").str.concat("|"))
-    assert cast(str, df.item()) == "2020-01-01 00:00:00.000000|null|2022-01-01 00:00:00.000000"
+    assert (
+        cast(str, df.item())
+        == "2020-01-01 00:00:00.000000|null|2022-01-01 00:00:00.000000"
+    )
 
 
 def test_str_lengths() -> None:
