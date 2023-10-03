@@ -17,7 +17,7 @@ def _is_glob_pattern(file: str) -> bool:
 
 
 def _is_supported_cloud(file: str) -> bool:
-    return bool(re.match("^(s3a?|gs|gcs|file|abfs|abfss|azure|az|adl)://", str(file)))
+    return bool(re.match("^(s3a?|gs|gcs|file|abfss?|azure|az|adl)://", str(file)))
 
 
 def _is_local_file(file: str) -> bool:
