@@ -660,13 +660,3 @@ pub trait IsLastDistinct<T: PolarsDataType> {
         polars_bail!(opq = is_last_distinct, T::get_dtype());
     }
 }
-
-#[cfg(feature = "concat_str")]
-/// Concat the values into a string array.
-pub trait StrConcat {
-    /// Concat the values into a string array.
-    /// # Arguments
-    ///
-    /// * `delimiter` - A string that will act as delimiter between values.
-    fn str_concat(&self, delimiter: &str) -> Utf8Chunked;
-}
