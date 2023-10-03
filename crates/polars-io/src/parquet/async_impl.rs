@@ -165,7 +165,6 @@ impl FetchRowGroupsFromObjectStore {
         schema: SchemaRef,
         projection: Option<&[usize]>,
     ) -> PolarsResult<Self> {
-        // TODO! schema should already be known
         let logging = verbose();
 
         let projected_fields = projection
