@@ -178,7 +178,7 @@ operations = [
   "top_k",
   "propagate_nans",
   "timezones",
-  "peaks"
+  "peaks",
 ]
 
 io = [
