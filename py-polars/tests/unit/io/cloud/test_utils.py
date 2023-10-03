@@ -1,4 +1,5 @@
 import pytest
+
 from polars.io._utils import _is_supported_cloud
 
 
