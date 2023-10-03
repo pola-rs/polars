@@ -8,6 +8,7 @@ mod interpolate;
 pub mod list;
 #[cfg(feature = "propagate_nans")]
 pub mod nan_propagating_aggregate;
+pub mod peaks;
 mod set;
 mod strings;
 mod sum;

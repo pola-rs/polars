@@ -5747,7 +5747,6 @@ class Series:
         ]
 
         """
-        return self._from_pyseries(self._s.peak_max())
 
     def peak_min(self) -> Self:
         """
@@ -5768,7 +5767,6 @@ class Series:
         ]
 
         """
-        return self._from_pyseries(self._s.peak_min())
 
     def n_unique(self) -> int:
         """
