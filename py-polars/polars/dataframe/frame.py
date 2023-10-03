@@ -9739,7 +9739,8 @@ class DataFrame:
         right_on
            Join column(s) of the right DataFrame.
         how : {'left', 'inner'}
-            'left' will keep the left table rows as is.
+            'left' will keep all rows from the left table. Rows may be duplicated if
+            multiple rows in right frame match left row's `on` key.
             'inner' will remove rows that are not found in other
 
         Examples
