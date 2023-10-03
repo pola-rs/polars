@@ -86,8 +86,8 @@ impl ParquetObjectStore {
 
     /// Fetch and memoize the metadata of the parquet file.
     pub async fn get_metadata(&mut self) -> PolarsResult<&Arc<FileMetaData>> {
-        self.initialize_length().await?;
         if self.metadata.is_none() {
+            self.initialize_length().await?;
             self.metadata = Some(Arc::new(self.fetch_metadata().await?));
         }
         Ok(self.metadata.as_ref().unwrap())
