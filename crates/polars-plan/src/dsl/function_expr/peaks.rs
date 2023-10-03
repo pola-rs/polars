@@ -17,9 +17,13 @@ pub(super) fn peak_min(s: &Series) -> PolarsResult<Series> {
         DataType::Float64 => pmin(s.f64()?).into_series(),
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => pmin(s.decimal()?).into_series(),
+        #[cfg(feature = "dtype-date")]
         DataType::Date => pmin(s.date()?).into_series(),
+        #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(_, _) => pmin(s.datetime()?).into_series(),
+        #[cfg(feature = "dtype-duration")]
         DataType::Duration(_) => pmin(s.duration()?).into_series(),
+        #[cfg(feature = "dtype-time")]
         DataType::Time => pmin(s.time()?).into_series(),
         _ => unimplemented!(),
     };
@@ -41,9 +45,13 @@ pub(super) fn peak_max(s: &Series) -> PolarsResult<Series> {
         DataType::Float64 => pmax(s.f64()?).into_series(),
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => pmax(s.decimal()?).into_series(),
+        #[cfg(feature = "dtype-date")]
         DataType::Date => pmax(s.date()?).into_series(),
+        #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(_, _) => pmax(s.datetime()?).into_series(),
+        #[cfg(feature = "dtype-duration")]
         DataType::Duration(_) => pmax(s.duration()?).into_series(),
+        #[cfg(feature = "dtype-time")]
         DataType::Time => pmax(s.time()?).into_series(),
         _ => unimplemented!(),
     };
