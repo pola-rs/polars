@@ -1475,12 +1475,14 @@ impl Expr {
         .with_fmt("rolling_map_float")
     }
 
+    #[cfg(feature = "peaks")]
     pub fn peak_min(self) -> Expr {
-        self.map_private(FunctionExpr::PeakMin)
+        self.apply_private(FunctionExpr::PeakMin)
     }
 
+    #[cfg(feature = "peaks")]
     pub fn peak_max(self) -> Expr {
-        self.map_private(FunctionExpr::PeakMax)
+        self.apply_private(FunctionExpr::PeakMax)
     }
 
     #[cfg(feature = "rank")]
