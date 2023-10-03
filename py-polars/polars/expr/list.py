@@ -360,18 +360,18 @@ class ExprListNameSpace:
         ...         "a": [["a"], ["x", "y"], None, ["a", "b"]],
         ...     }
         ... )
-        >>> df.select(pl.col("a").list.cum_concat())
-        shape: (2, 1)
-        ┌───────────────────────────┐
-        │ a                         │
-        │ ---                       │
-        │ list[str]                 │
-        ╞═══════════════════════════╡
-        │ ["a"]                     │
-        │ ["a", "x", "y"]           │
-        │ null                      │
-        │ ["a", "x", "y", "a", "b"] │
-        └───────────────────────────┘
+        >>> df.select(pl.col("a").list.cum_concat().list.join(""))
+        shape: (4, 1)
+        ┌─────────┐
+        │ a       │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ "a"     │
+        │ "axy"   │
+        │ null    │
+        │ "axyab" │
+        └─────────┘
 
         """
         return wrap_expr(self._pyexpr.list_cum_concat())
@@ -387,18 +387,18 @@ class ExprListNameSpace:
         ...         "a": [["a"], ["x", "y"], None, ["a", "b"]],
         ...     }
         ... )
-        >>> df.select(pl.col("a").list.cum_set_union())
-        shape: (2, 1)
-        ┌──────────────────────┐
-        │ a                    │
-        │ ---                  │
-        │ list[str]            │
-        ╞══════════════════════╡
-        │ ["a"]                │
-        │ ["a", "x", "y"]      │
-        │ null                 │
-        │ ["a", "b", "x", "y"] │
-        └──────────────────────┘
+        >>> df.select(pl.col("a").list.cum_set_union().list.join(""))
+        shape: (4, 1)
+        ┌────────┐
+        │ a      │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │ "a"    │
+        │ "axy"  │
+        │ null   │
+        │ "abxy" │
+        └────────┘
 
         """
         return wrap_expr(self._pyexpr.list_cum_set_union())
