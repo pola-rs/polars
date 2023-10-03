@@ -222,7 +222,8 @@ where
                     // infer
                     let inner_dtype = if let BorrowedValue::Array(values) = &json_value {
                         // struct types may have missing fields so find supertype
-                        values.iter()
+                        values
+                            .iter()
                             .take(self.infer_schema_len.unwrap_or(usize::MAX))
                             .map(|value| {
                                 infer(value)
@@ -253,7 +254,8 @@ where
                                 .into_iter()
                                 .map(|(name, dt)| Field::new(&name, dt))
                                 .collect(),
-                        ).to_arrow()
+                        )
+                        .to_arrow()
                     } else {
                         inner_dtype
                     }
@@ -261,9 +263,7 @@ where
 
                 let dtype = if let BorrowedValue::Array(_) = &json_value {
                     ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
-                        "item",
-                        dtype,
-                        true,
+                        "item", dtype, true,
                     )))
                 } else {
                     dtype
