@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
@@ -91,7 +91,9 @@ def lit(
             raise TypeError(
                 f"time zone of dtype ({dtype.time_zone!r}) differs from time zone of value ({value.tzinfo!r})"  # type: ignore[union-attr]
             )
-        e = lit(_datetime_to_pl_timestamp(value, time_unit)).cast(Datetime(time_unit))
+        e = lit(
+            _datetime_to_pl_timestamp(value.replace(tzinfo=timezone.utc), time_unit)
+        ).cast(Datetime(time_unit))
         if time_zone is not None:
             return e.dt.replace_time_zone(
                 str(time_zone), ambiguous="earliest" if value.fold == 0 else "latest"
