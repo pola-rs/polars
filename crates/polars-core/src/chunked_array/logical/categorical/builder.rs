@@ -512,12 +512,12 @@ impl CategoricalChunked {
 mod test {
     use crate::chunked_array::categorical::CategoricalChunkedBuilder;
     use crate::prelude::*;
-    use crate::{enable_string_cache, reset_string_cache, SINGLE_LOCK};
+    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 
     #[test]
     fn test_categorical_rev() -> PolarsResult<()> {
         let _lock = SINGLE_LOCK.lock();
-        reset_string_cache();
+        disable_string_cache();
         let slice = &[
             Some("foo"),
             None,
@@ -532,7 +532,7 @@ mod test {
         assert_eq!(out.get_rev_map().len(), 2);
 
         // test the global branch
-        enable_string_cache(true);
+        enable_string_cache();
         // empty global cache
         let out = ca.cast(&DataType::Categorical(None))?;
         let out = out.categorical().unwrap().clone();
@@ -556,11 +556,13 @@ mod test {
 
     #[test]
     fn test_categorical_builder() {
-        use crate::{enable_string_cache, reset_string_cache};
+        use crate::{disable_string_cache, enable_string_cache};
         let _lock = crate::SINGLE_LOCK.lock();
-        for b in &[false, true] {
-            reset_string_cache();
-            enable_string_cache(*b);
+        for use_string_cache in [false, true] {
+            disable_string_cache();
+            if use_string_cache {
+                enable_string_cache();
+            }
 
             // Use 2 builders to check if the global string cache
             // does not interfere with the index mapping

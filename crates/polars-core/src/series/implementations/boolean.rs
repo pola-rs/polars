@@ -315,11 +315,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
-        RepeatBy::repeat_by(&self.0, by)
-    }
-
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<Series> {
         Ok(self.0.mode()?.into_series())

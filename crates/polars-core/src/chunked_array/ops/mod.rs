@@ -33,13 +33,9 @@ pub mod full;
 pub mod gather;
 #[cfg(feature = "interpolate")]
 mod interpolate;
-mod len;
 #[cfg(feature = "zip_with")]
 pub(crate) mod min_max_binary;
 mod nulls;
-mod peaks;
-#[cfg(feature = "repeat_by")]
-mod repeat_by;
 mod reverse;
 pub(crate) mod rolling_window;
 mod set;
@@ -634,28 +630,6 @@ pub trait ChunkApplyKernel<A: Array> {
     fn apply_kernel_cast<S>(&self, f: &dyn Fn(&A) -> ArrayRef) -> ChunkedArray<S>
     where
         S: PolarsDataType;
-}
-
-/// Find local minima/ maxima
-pub trait ChunkPeaks {
-    /// Get a boolean mask of the local maximum peaks.
-    fn peak_max(&self) -> BooleanChunked {
-        unimplemented!()
-    }
-
-    /// Get a boolean mask of the local minimum peaks.
-    fn peak_min(&self) -> BooleanChunked {
-        unimplemented!()
-    }
-}
-
-/// Repeat the values `n` times.
-#[cfg(feature = "repeat_by")]
-pub trait RepeatBy {
-    /// Repeat the values `n` times, where `n` is determined by the values in `by`.
-    fn repeat_by(&self, _by: &IdxCa) -> PolarsResult<ListChunked> {
-        unimplemented!()
-    }
 }
 
 #[cfg(feature = "is_first_distinct")]

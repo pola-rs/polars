@@ -1,6 +1,6 @@
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use ahash::RandomState;
 use hashbrown::hash_map::RawEntryMut;
@@ -11,80 +11,103 @@ use crate::datatypes::PlIdHashMap;
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::InitHashMaps;
 
-/// We use atomic reference counting
-/// to determine how many threads use the string cache
-/// if the refcount is zero, we may clear the string cache.
-pub(crate) static USE_STRING_CACHE: AtomicU32 = AtomicU32::new(0);
+/// We use atomic reference counting to determine how many threads use the
+/// string cache. If the refcount is zero, we may clear the string cache.
+static STRING_CACHE_REFCOUNT: Mutex<u32> = Mutex::new(0);
+static STRING_CACHE_ENABLED_GLOBALLY: AtomicBool = AtomicBool::new(false);
 static STRING_CACHE_UUID_CTR: AtomicU32 = AtomicU32::new(0);
 
-/// RAII for the string cache
-/// If an operation creates categoricals and uses them in a join
-/// or comparison that operation must hold this cache via
-/// `let handle = IUseStringCache::hold()`
-/// The cache is valid until `handle` is dropped.
+/// Enable the global string cache as long as the object is alive ([RAII]).
+///
+/// # Examples
+///
+/// Enable the string cache by initializing the object:
+///
+/// ```
+/// use polars_core::StringCacheHolder;
+///
+/// let _sc = StringCacheHolder::hold();
+/// ```
+///
+/// The string cache is enabled until `handle` is dropped.
 ///
 /// # De-allocation
+///
 /// Multiple threads can hold the string cache at the same time.
-/// The contents of the cache will only get dropped when no
-/// thread holds it.
-pub struct IUseStringCache {
+/// The contents of the cache will only get dropped when no thread holds it.
+///
+/// [RAII]: https://en.wikipedia.org/wiki/Resource_acquisition_is_initialization
+pub struct StringCacheHolder {
     // only added so that it will never be constructed directly
     #[allow(dead_code)]
     private_zst: (),
 }
 
-impl Default for IUseStringCache {
+impl Default for StringCacheHolder {
     fn default() -> Self {
         Self::hold()
     }
 }
 
-impl IUseStringCache {
+impl StringCacheHolder {
     /// Hold the StringCache
-    pub fn hold() -> IUseStringCache {
-        enable_string_cache(true);
-        IUseStringCache { private_zst: () }
+    pub fn hold() -> StringCacheHolder {
+        increment_string_cache_refcount();
+        StringCacheHolder { private_zst: () }
     }
 }
 
-impl Drop for IUseStringCache {
+impl Drop for StringCacheHolder {
     fn drop(&mut self) {
-        enable_string_cache(false)
+        decrement_string_cache_refcount();
     }
 }
 
-pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
-    enable_string_cache(true);
-    let out = func();
-    enable_string_cache(false);
-    out
+fn increment_string_cache_refcount() {
+    let mut refcount = STRING_CACHE_REFCOUNT.lock().unwrap();
+    *refcount += 1;
+}
+fn decrement_string_cache_refcount() {
+    let mut refcount = STRING_CACHE_REFCOUNT.lock().unwrap();
+    *refcount -= 1;
+    if *refcount == 0 {
+        STRING_CACHE.clear()
+    }
 }
 
-/// Use a global string cache for the Categorical Types.
+/// Enable the global string cache.
 ///
-/// This is used to cache the string categories locally.
-/// This allows join operations on categorical types.
-pub fn enable_string_cache(toggle: bool) {
-    if toggle {
-        USE_STRING_CACHE.fetch_add(1, Ordering::Release);
-    } else {
-        let previous = USE_STRING_CACHE.fetch_sub(1, Ordering::Release);
-        if previous == 0 || previous == 1 {
-            USE_STRING_CACHE.store(0, Ordering::Release);
-            STRING_CACHE.clear()
-        }
+/// [`Categorical`] columns created under the same global string cache have the
+/// same underlying physical value when string values are equal. This allows the
+/// columns to be concatenated or used in a join operation, for example.
+///
+/// Note that enabling the global string cache introduces some overhead.
+/// The amount of overhead depends on the number of categories in your data.
+/// It is advised to enable the global string cache only when strictly necessary.
+///
+/// [`Categorical`]: crate::datatypes::DataType::Categorical
+pub fn enable_string_cache() {
+    let was_enabled = STRING_CACHE_ENABLED_GLOBALLY.swap(true, Ordering::AcqRel);
+    if !was_enabled {
+        increment_string_cache_refcount();
     }
 }
 
-/// Reset the global string cache used for the Categorical Types.
-pub fn reset_string_cache() {
-    USE_STRING_CACHE.store(0, Ordering::Release);
-    STRING_CACHE.clear()
+/// Disable and clear the global string cache.
+///
+/// Note: Consider using [`StringCacheHolder`] for a more reliable way of
+/// enabling and disabling the string cache.
+pub fn disable_string_cache() {
+    let was_enabled = STRING_CACHE_ENABLED_GLOBALLY.swap(false, Ordering::AcqRel);
+    if was_enabled {
+        decrement_string_cache_refcount();
+    }
 }
 
-/// Check if string cache is set.
+/// Check whether the global string cache is enabled.
 pub fn using_string_cache() -> bool {
-    USE_STRING_CACHE.load(Ordering::Acquire) > 0
+    let refcount = STRING_CACHE_REFCOUNT.lock().unwrap();
+    *refcount > 0
 }
 
 // This is the hash and the Index offset in the linear buffer

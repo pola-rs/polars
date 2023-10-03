@@ -231,13 +231,15 @@ pub fn create_physical_plan(
                 FileScan::Parquet {
                     options,
                     cloud_options,
+                    metadata
                 } => Ok(Box::new(executors::ParquetExec::new(
                     path,
-                    file_info.schema,
+                    file_info,
                     predicate,
                     options,
                     cloud_options,
                     file_options,
+                    metadata
                 ))),
             }
         },

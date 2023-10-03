@@ -100,13 +100,15 @@ where
                 FileScan::Parquet {
                     options: parquet_options,
                     cloud_options,
+                    metadata,
                 } => {
                     let src = sources::ParquetSource::new(
                         path,
                         parquet_options,
                         cloud_options,
+                        metadata,
                         file_options,
-                        file_info.schema,
+                        file_info,
                         verbose,
                     )?;
                     Ok(Box::new(src) as Box<dyn Source>)

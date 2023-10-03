@@ -78,10 +78,13 @@ fn init_files() {
 
                 match ext {
                     ".parquet" => {
-                        ParquetWriter::new(f)
-                            .with_statistics(true)
-                            .finish(&mut df)
-                            .unwrap();
+                        #[cfg(feature = "parquet")]
+                        {
+                            ParquetWriter::new(f)
+                                .with_statistics(true)
+                                .finish(&mut df)
+                                .unwrap();
+                        }
                     },
                     ".ipc" => {
                         IpcWriter::new(f).finish(&mut df).unwrap();

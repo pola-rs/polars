@@ -61,23 +61,23 @@ impl Window {
     }
 
     /// Round the given ns timestamp by the window boundary.
-    pub fn round_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    pub fn round_ns(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
         let t = t + self.every.duration_ns() / 2_i64;
-        self.truncate_ns(t, tz, "raise")
+        self.truncate_ns(t, tz, ambiguous)
     }
 
     /// Round the given us timestamp by the window boundary.
-    pub fn round_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    pub fn round_us(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
         let t = t + self.every.duration_ns()
             / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Microsecond) as i64);
-        self.truncate_us(t, tz, "raise")
+        self.truncate_us(t, tz, ambiguous)
     }
 
     /// Round the given ms timestamp by the window boundary.
-    pub fn round_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    pub fn round_ms(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
         let t = t + self.every.duration_ns()
             / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Millisecond) as i64);
-        self.truncate_ms(t, tz, "raise")
+        self.truncate_ms(t, tz, ambiguous)
     }
 
     /// returns the bounds for the earliest window bounds

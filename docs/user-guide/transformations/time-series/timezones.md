@@ -32,14 +32,14 @@ The main methods for setting and converting between time zones are:
 
 Let's look at some examples of common operations:
 
-{{code_block('user-guide/transformations/time-series/timezones','example',['strptime','replace_time_zone'])}}
+{{code_block('user-guide/transformations/time-series/timezones','example',['str.to_datetime','dt.replace_time_zone'])}}
 
 ```python exec="on" result="text" session="user-guide/transformations/ts/timezones"
 --8<-- "python/user-guide/transformations/time-series/timezones.py:setup"
 --8<-- "python/user-guide/transformations/time-series/timezones.py:example"
 ```
 
-{{code_block('user-guide/transformations/time-series/timezones','example2',['convert_time_zone','replace_time_zone'])}}
+{{code_block('user-guide/transformations/time-series/timezones','example2',['dt.convert_time_zone','dt.replace_time_zone'])}}
 
 ```python exec="on" result="text" session="user-guide/transformations/ts/timezones"
 --8<-- "python/user-guide/transformations/time-series/timezones.py:example2"

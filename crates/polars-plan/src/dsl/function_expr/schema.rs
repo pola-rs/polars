@@ -100,7 +100,10 @@ impl FunctionExpr {
                     Concat => mapper.map_to_list_supertype(),
                     #[cfg(feature = "is_in")]
                     Contains => mapper.with_dtype(DataType::Boolean),
+                    #[cfg(feature = "list_drop_nulls")]
+                    DropNulls => mapper.with_same_dtype(),
                     Slice => mapper.with_same_dtype(),
+                    Shift => mapper.with_same_dtype(),
                     Get => mapper.map_to_list_inner_dtype(),
                     #[cfg(feature = "list_take")]
                     Take(_) => mapper.with_same_dtype(),
@@ -146,7 +149,7 @@ impl FunctionExpr {
             #[cfg(feature = "dtype-struct")]
             StructExpr(s) => s.get_field(mapper),
             #[cfg(feature = "top_k")]
-            TopK { .. } => mapper.with_same_dtype(),
+            TopK(_) => mapper.with_same_dtype(),
             Shift(..) | Reverse => mapper.with_same_dtype(),
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "dtype-categorical")]
@@ -206,6 +209,8 @@ impl FunctionExpr {
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr(_) => mapper.map_to_supertype(),
             Correlation { .. } => mapper.map_to_float_dtype(),
+            PeakMin => mapper.with_same_dtype(),
+            PeakMax => mapper.with_same_dtype(),
             #[cfg(feature = "cutqcut")]
             Cut { .. } => mapper.with_dtype(DataType::Categorical(None)),
             #[cfg(feature = "cutqcut")]

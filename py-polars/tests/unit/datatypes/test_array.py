@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
 
 
@@ -77,6 +78,18 @@ def test_array_in_group_by() -> None:
             "a": pl.List(pl.Array(inner=pl.Int64, width=2)),
         }
         assert out.to_dict(False) == {"g": [1, 2], "a": [[[1, 2], [2, 2]], [[1, 4]]]}
+
+
+def test_array_invalid_operation() -> None:
+    s = pl.Series(
+        [[1, 2], [8, 9]],
+        dtype=pl.Array(width=2, inner=pl.Int32),
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"`sign` operation not supported for dtype `array\[",
+    ):
+        s.sign()
 
 
 def test_array_concat() -> None:

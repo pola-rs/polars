@@ -713,9 +713,17 @@ def test_arrow() -> None:
 
 
 def test_view() -> None:
-    a = pl.Series("a", [1.0, 2.0, 3.0])
+    a = pl.Series("a", [1.0, 2.5, 3.0])
     assert isinstance(a.view(), np.ndarray)
-    assert np.all(a.view() == np.array([1, 2, 3]))
+    assert np.all(a.view() == np.array([1.0, 2.5, 3.0]))
+
+    b = pl.Series("b", [1, 2, None])
+    assert b.has_validity()
+    with pytest.raises(AssertionError):
+        b.view()
+
+    assert np.all(b[:2].view() == np.array([1, 2]))
+    assert not b[:2].has_validity()
 
 
 def test_ufunc() -> None:
@@ -1855,11 +1863,11 @@ def test_dot() -> None:
 def test_peak_max_peak_min() -> None:
     s = pl.Series("a", [4, 1, 3, 2, 5])
     result = s.peak_min()
-    expected = pl.Series([False, True, False, True, False])
+    expected = pl.Series("a", [False, True, False, True, False])
     assert_series_equal(result, expected)
 
     result = s.peak_max()
-    expected = pl.Series([True, False, True, False, True])
+    expected = pl.Series("a", [True, False, True, False, True])
     assert_series_equal(result, expected)
 
 

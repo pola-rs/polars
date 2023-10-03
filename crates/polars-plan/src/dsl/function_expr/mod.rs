@@ -25,6 +25,7 @@ mod list;
 #[cfg(feature = "log")]
 mod log;
 mod nan;
+mod peaks;
 #[cfg(feature = "ffi_plugin")]
 mod plugin;
 mod pow;
@@ -135,8 +136,8 @@ pub enum FunctionExpr {
     DropNans,
     #[cfg(feature = "round_series")]
     Clip {
-        min: Option<AnyValue<'static>>,
-        max: Option<AnyValue<'static>>,
+        has_min: bool,
+        has_max: bool,
     },
     ListExpr(ListFunction),
     #[cfg(feature = "dtype-array")]
@@ -146,10 +147,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "dtype-struct")]
     AsStruct,
     #[cfg(feature = "top_k")]
-    TopK {
-        k: usize,
-        descending: bool,
-    },
+    TopK(bool),
     Shift(i64),
     Cumcount {
         reverse: bool,
@@ -209,6 +207,8 @@ pub enum FunctionExpr {
         method: correlation::CorrelationMethod,
         ddof: u8,
     },
+    PeakMin,
+    PeakMax,
     #[cfg(feature = "cutqcut")]
     Cut {
         breaks: Vec<f64>,
@@ -321,10 +321,10 @@ impl Display for FunctionExpr {
             ShiftAndFill { .. } => "shift_and_fill",
             DropNans => "drop_nans",
             #[cfg(feature = "round_series")]
-            Clip { min, max } => match (min, max) {
-                (Some(_), Some(_)) => "clip",
-                (None, Some(_)) => "clip_max",
-                (Some(_), None) => "clip_min",
+            Clip { has_min, has_max } => match (has_min, has_max) {
+                (true, true) => "clip",
+                (false, true) => "clip_max",
+                (true, false) => "clip_min",
                 _ => unreachable!(),
             },
             ListExpr(func) => return write!(f, "{func}"),
@@ -333,7 +333,13 @@ impl Display for FunctionExpr {
             #[cfg(feature = "dtype-struct")]
             AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
-            TopK { .. } => "top_k",
+            TopK(descending) => {
+                if *descending {
+                    "top_k"
+                } else {
+                    "bottom_k"
+                }
+            },
             Shift(_) => "shift",
             Cumcount { .. } => "cumcount",
             Cumsum { .. } => "cumsum",
@@ -381,6 +387,8 @@ impl Display for FunctionExpr {
             ArrayExpr(af) => return Display::fmt(af, f),
             ConcatExpr(_) => "concat_expr",
             Correlation { method, .. } => return Display::fmt(method, f),
+            PeakMin => "peak_min",
+            PeakMax => "peak_min",
             #[cfg(feature = "cutqcut")]
             Cut { .. } => "cut",
             #[cfg(feature = "cutqcut")]
@@ -543,8 +551,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             DropNans => map_owned!(nan::drop_nans),
             #[cfg(feature = "round_series")]
-            Clip { min, max } => {
-                map_owned!(clip::clip, min.clone(), max.clone())
+            Clip { has_min, has_max } => {
+                map_as_slice!(clip::clip, has_min, has_max)
             },
             ListExpr(lf) => {
                 use ListFunction::*;
@@ -552,7 +560,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Concat => wrap!(list::concat),
                     #[cfg(feature = "is_in")]
                     Contains => wrap!(list::contains),
+                    #[cfg(feature = "list_drop_nulls")]
+                    DropNulls => map!(list::drop_nulls),
                     Slice => wrap!(list::slice),
+                    Shift => map_as_slice!(list::shift),
                     Get => wrap!(list::get),
                     #[cfg(feature = "list_take")]
                     Take(null_ob_oob) => map_as_slice!(list::take, null_ob_oob),
@@ -599,8 +610,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(coerce::as_struct)
             },
             #[cfg(feature = "top_k")]
-            TopK { k, descending } => {
-                map!(top_k, k, descending)
+            TopK(descending) => {
+                map_as_slice!(top_k, descending)
             },
             Shift(periods) => map!(dispatch::shift, periods),
             Cumcount { reverse } => map!(cum::cumcount, reverse),
@@ -643,6 +654,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Fused(op) => map_as_slice!(fused::fused, op),
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
             Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
+            PeakMin => map!(peaks::peak_min),
+            PeakMax => map!(peaks::peak_max),
             #[cfg(feature = "cutqcut")]
             Cut {
                 breaks,
@@ -677,7 +690,21 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             RLEID => map!(rle_id),
             ToPhysical => map!(dispatch::to_physical),
             #[cfg(feature = "random")]
-            Random { method, seed } => map!(random::random, method, seed),
+            Random { method, seed } => {
+                use RandomMethod::*;
+                match method {
+                    Shuffle => map!(random::shuffle, seed),
+                    SampleFrac {
+                        frac,
+                        with_replacement,
+                        shuffle,
+                    } => map!(random::sample_frac, frac, with_replacement, shuffle, seed),
+                    SampleN {
+                        with_replacement,
+                        shuffle,
+                    } => map_as_slice!(random::sample_n, with_replacement, shuffle, seed),
+                }
+            },
             SetSortedFlag(sorted) => map!(dispatch::set_sorted_flag, sorted),
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => unsafe {
@@ -731,9 +758,9 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(strings::split, inclusive)
             },
             #[cfg(feature = "dtype-struct")]
-            SplitExact { by, n, inclusive } => map!(strings::split_exact, &by, n, inclusive),
+            SplitExact { n, inclusive } => map_as_slice!(strings::split_exact, n, inclusive),
             #[cfg(feature = "dtype-struct")]
-            SplitN { by, n } => map!(strings::splitn, &by, n),
+            SplitN(n) => map_as_slice!(strings::splitn, n),
             #[cfg(feature = "concat_str")]
             ConcatVertical(delimiter) => map!(strings::concat, &delimiter),
             #[cfg(feature = "concat_str")]
@@ -744,9 +771,9 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Lowercase => map!(strings::lowercase),
             #[cfg(feature = "nightly")]
             Titlecase => map!(strings::titlecase),
-            StripChars(matches) => map!(strings::strip_chars, matches.as_deref()),
-            StripCharsStart(matches) => map!(strings::strip_chars_start, matches.as_deref()),
-            StripCharsEnd(matches) => map!(strings::strip_chars_end, matches.as_deref()),
+            StripChars => map_as_slice!(strings::strip_chars),
+            StripCharsStart => map_as_slice!(strings::strip_chars_start),
+            StripCharsEnd => map_as_slice!(strings::strip_chars_end),
             StripPrefix => map_as_slice!(strings::strip_prefix),
             StripSuffix => map_as_slice!(strings::strip_suffix),
             #[cfg(feature = "string_from_radix")]
@@ -816,7 +843,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             BaseUtcOffset => map!(datetime::base_utc_offset),
             #[cfg(feature = "timezones")]
             DSTOffset => map!(datetime::dst_offset),
-            Round(every, offset) => map!(datetime::round, &every, &offset),
+            Round(every, offset) => map_as_slice!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(tz) => {
                 map_as_slice!(dispatch::replace_time_zone, tz.as_deref())

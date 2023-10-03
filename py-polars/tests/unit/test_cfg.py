@@ -8,8 +8,6 @@ import pytest
 
 import polars as pl
 from polars.config import _POLARS_CFG_ENV_VARS, _get_float_fmt
-from polars.exceptions import StringCacheMismatchError
-from polars.testing import assert_frame_equal
 
 
 @pytest.fixture(autouse=True)
@@ -509,33 +507,6 @@ def test_shape_format_for_big_numbers() -> None:
         "│ 1       ┆ … │\n"
         "╰─────────┴───╯"
     )
-
-
-def test_string_cache() -> None:
-    df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
-    df2 = pl.DataFrame({"a": ["foo", "spam", "eggs"], "c": [3, 2, 2]})
-
-    # ensure cache is off when casting to categorical; the join will fail
-    pl.enable_string_cache(False)
-    assert pl.using_string_cache() is False
-
-    df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
-    df2a = df2.with_columns(pl.col("a").cast(pl.Categorical))
-    with pytest.raises(StringCacheMismatchError):
-        _ = df1a.join(df2a, on="a", how="inner")
-
-    # now turn on the cache
-    pl.enable_string_cache(True)
-    assert pl.using_string_cache() is True
-
-    df1b = df1.with_columns(pl.col("a").cast(pl.Categorical))
-    df2b = df2.with_columns(pl.col("a").cast(pl.Categorical))
-    out = df1b.join(df2b, on="a", how="inner")
-
-    expected = pl.DataFrame(
-        {"a": ["foo"], "b": [1], "c": [3]}, schema_overrides={"a": pl.Categorical}
-    )
-    assert_frame_equal(out, expected)
 
 
 @pytest.mark.write_disk()

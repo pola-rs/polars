@@ -98,7 +98,9 @@ impl Series {
             Float32 => Float32Chunked::from_chunks(name, chunks).into_series(),
             Float64 => Float64Chunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-struct")]
-            Struct(_) => Series::try_from_arrow_unchecked(name, chunks, &dtype.to_arrow()).unwrap(),
+            Struct(_) => {
+                Series::_try_from_arrow_unchecked(name, chunks, &dtype.to_arrow()).unwrap()
+            },
             #[cfg(feature = "object")]
             Object(_) => {
                 assert_eq!(chunks.len(), 1);
@@ -124,10 +126,11 @@ impl Series {
         }
     }
 
-    // Create a new Series without checking if the inner dtype of the chunks is correct
-    // # Safety
-    // The caller must ensure that the given `dtype` matches all the `ArrayRef` dtypes.
-    pub(crate) unsafe fn try_from_arrow_unchecked(
+    /// Create a new Series without checking if the inner dtype of the chunks is correct
+    ///
+    /// # Safety
+    /// The caller must ensure that the given `dtype` matches all the `ArrayRef` dtypes.
+    pub unsafe fn _try_from_arrow_unchecked(
         name: &str,
         chunks: Vec<ArrayRef>,
         dtype: &ArrowDataType,
@@ -384,7 +387,7 @@ impl Series {
                     .iter()
                     .zip(dtype_fields)
                     .map(|(arr, field)| {
-                        Series::try_from_arrow_unchecked(
+                        Series::_try_from_arrow_unchecked(
                             &field.name,
                             vec![arr.clone()],
                             &field.data_type,
@@ -500,7 +503,7 @@ fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataType) {
             feature_gated!("dtype-categorical", {
                 let s = unsafe {
                     let dt = dt.clone();
-                    Series::try_from_arrow_unchecked("", arrays, &dt)
+                    Series::_try_from_arrow_unchecked("", arrays, &dt)
                 }
                 .unwrap();
                 (s.chunks().clone(), s.dtype().clone())
@@ -639,7 +642,7 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
         }
         // Safety:
         // dtype is checked
-        unsafe { Series::try_from_arrow_unchecked(name, chunks, &data_type) }
+        unsafe { Series::_try_from_arrow_unchecked(name, chunks, &data_type) }
     }
 }
 

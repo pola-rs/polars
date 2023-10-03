@@ -1,7 +1,5 @@
 use std::io::{Read, Seek};
 
-use futures::future::{try_join_all, BoxFuture};
-use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use parquet2::indexes::FilteredPage;
 use parquet2::metadata::ColumnChunkMetaData;
 use parquet2::read::{BasicDecompressor, IndexedPageReader, PageMetaData, PageReader};
@@ -133,48 +131,6 @@ where
     Ok((meta, chunk))
 }
 
-async fn _read_single_column_async<'b, R, F>(
-    reader_factory: F,
-    meta: &ColumnChunkMetaData,
-) -> Result<(&ColumnChunkMetaData, Vec<u8>)>
-where
-    R: AsyncRead + AsyncSeek + Send + Unpin,
-    F: Fn() -> BoxFuture<'b, std::io::Result<R>>,
-{
-    let mut reader = reader_factory().await?;
-    let (start, length) = meta.byte_range();
-    reader.seek(std::io::SeekFrom::Start(start)).await?;
-
-    let mut chunk = vec![];
-    chunk.try_reserve(length as usize)?;
-    reader.take(length).read_to_end(&mut chunk).await?;
-    Result::Ok((meta, chunk))
-}
-
-/// Reads all columns that are part of the parquet field `field_name`
-/// # Implementation
-/// This operation is IO-bounded `O(C)` where C is the number of columns associated to
-/// the field (one for non-nested types)
-///
-/// It does so asynchronously via a single `join_all` over all the necessary columns for
-/// `field_name`.
-pub async fn read_columns_async<
-    'a,
-    'b,
-    R: AsyncRead + AsyncSeek + Send + Unpin,
-    F: Fn() -> BoxFuture<'b, std::io::Result<R>> + Clone,
->(
-    reader_factory: F,
-    columns: &'a [ColumnChunkMetaData],
-    field_name: &str,
-) -> Result<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>> {
-    let futures = get_field_columns(columns, field_name)
-        .into_iter()
-        .map(|meta| async { _read_single_column_async(reader_factory.clone(), meta).await });
-
-    try_join_all(futures).await
-}
-
 type Pages = Box<
     dyn Iterator<Item = std::result::Result<parquet2::page::CompressedPage, parquet2::error::Error>>
         + Sync
@@ -286,53 +242,6 @@ pub fn read_columns_many<'a, R: Read + Seek>(
         field_columns
             .into_iter()
             .zip(fields)
-            .map(|(columns, field)| to_deserializer(columns, field, num_rows, chunk_size, None))
-            .collect()
-    }
-}
-
-/// Returns a vector of iterators of [`Array`] corresponding to the top level parquet fields whose
-/// name matches `fields`'s names.
-///
-/// # Implementation
-/// This operation is IO-bounded `O(C)` where C is the number of columns in the row group -
-/// it reads all the columns to memory from the row group associated to the requested fields.
-/// It does so asynchronously via `join_all`
-pub async fn read_columns_many_async<
-    'a,
-    'b,
-    R: AsyncRead + AsyncSeek + Send + Unpin,
-    F: Fn() -> BoxFuture<'b, std::io::Result<R>> + Clone,
->(
-    reader_factory: F,
-    row_group: &RowGroupMetaData,
-    fields: Vec<Field>,
-    chunk_size: Option<usize>,
-    limit: Option<usize>,
-    pages: Option<Vec<Vec<Vec<FilteredPage>>>>,
-) -> Result<Vec<ArrayIter<'a>>> {
-    let num_rows = row_group.num_rows();
-    let num_rows = limit.map(|limit| limit.min(num_rows)).unwrap_or(num_rows);
-
-    let futures = fields
-        .iter()
-        .map(|field| read_columns_async(reader_factory.clone(), row_group.columns(), &field.name));
-
-    let field_columns = try_join_all(futures).await?;
-
-    if let Some(pages) = pages {
-        field_columns
-            .into_iter()
-            .zip(fields)
-            .zip(pages)
-            .map(|((columns, field), pages)| {
-                to_deserializer(columns, field, num_rows, chunk_size, Some(pages))
-            })
-            .collect()
-    } else {
-        field_columns
-            .into_iter()
-            .zip(fields.into_iter())
             .map(|(columns, field)| to_deserializer(columns, field, num_rows, chunk_size, None))
             .collect()
     }

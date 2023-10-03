@@ -169,6 +169,34 @@ impl DataFrame {
     /// Sample n datapoints from this [`DataFrame`].
     pub fn sample_n(
         &self,
+        n: &Series,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> PolarsResult<Self> {
+        polars_ensure!(
+        n.len() == 1,
+        ComputeError: "Sample size must be a single value."
+        );
+
+        let n = n.cast(&IDX_DTYPE)?;
+        let n = n.idx()?;
+
+        match n.get(0) {
+            Some(n) => self.sample_n_literal(n as usize, with_replacement, shuffle, seed),
+            None => {
+                let new_cols = self
+                    .columns
+                    .iter()
+                    .map(|c| Series::new_empty(c.name(), c.dtype()))
+                    .collect_trusted();
+                Ok(DataFrame::new_no_checks(new_cols))
+            },
+        }
+    }
+
+    pub fn sample_n_literal(
+        &self,
         n: usize,
         with_replacement: bool,
         shuffle: bool,
@@ -194,7 +222,7 @@ impl DataFrame {
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         let n = (self.height() as f64 * frac) as usize;
-        self.sample_n(n, with_replacement, shuffle, seed)
+        self.sample_n_literal(n, with_replacement, shuffle, seed)
     }
 }
 
@@ -268,14 +296,20 @@ mod test {
         .unwrap();
 
         // default samples are random and don't require seeds
-        assert!(df.sample_n(3, false, false, None).is_ok());
+        assert!(df
+            .sample_n(&Series::new("s", &[3]), false, false, None)
+            .is_ok());
         assert!(df.sample_frac(0.4, false, false, None).is_ok());
         // with seeding
-        assert!(df.sample_n(3, false, false, Some(0)).is_ok());
+        assert!(df
+            .sample_n(&Series::new("s", &[3]), false, false, Some(0))
+            .is_ok());
         assert!(df.sample_frac(0.4, false, false, Some(0)).is_ok());
         // without replacement can not sample more than 100%
         assert!(df.sample_frac(2.0, false, false, Some(0)).is_err());
-        assert!(df.sample_n(3, true, false, Some(0)).is_ok());
+        assert!(df
+            .sample_n(&Series::new("s", &[3]), true, false, Some(0))
+            .is_ok());
         assert!(df.sample_frac(0.4, true, false, Some(0)).is_ok());
         // with replacement can sample more than 100%
         assert!(df.sample_frac(2.0, true, false, Some(0)).is_ok());

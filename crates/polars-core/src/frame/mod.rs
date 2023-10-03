@@ -501,7 +501,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn schema(&self) -> Schema {
-        self.iter().map(|s| s.field().into_owned()).collect()
+        self.columns.as_slice().into()
     }
 
     /// Get a reference to the [`DataFrame`] columns.
@@ -2884,11 +2884,11 @@ impl DataFrame {
                 let columns = self
                     .columns
                     .iter()
-                    .cloned()
                     .filter(|s| {
                         let dtype = s.dtype();
                         dtype.is_numeric() || matches!(dtype, DataType::Boolean)
                     })
+                    .cloned()
                     .collect();
                 let numeric_df = DataFrame::new_no_checks(columns);
 

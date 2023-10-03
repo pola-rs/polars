@@ -557,23 +557,7 @@ impl<'a> CoreReader<'a> {
 
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
-            // TODO! add DataFrame::new_from_schema
-            let buffers = init_buffers(
-                &projection,
-                0,
-                &self.schema,
-                &self.init_string_size_stats(&str_columns, 0),
-                self.quote_char,
-                self.encoding,
-                self.ignore_errors,
-            )?;
-            let df = DataFrame::new_no_checks(
-                buffers
-                    .into_iter()
-                    .map(|buf| buf.into_series())
-                    .collect::<PolarsResult<_>>()?,
-            );
-            return Ok(df);
+            return Ok(DataFrame::from(self.schema.as_ref()));
         }
 
         // all the buffers returned from the threads

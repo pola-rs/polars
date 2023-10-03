@@ -219,7 +219,7 @@ impl<'a> CoreReader<'a> {
         // RAII structure that will ensure we maintain a global stringcache
         #[cfg(feature = "dtype-categorical")]
         let _cat_lock = if _has_cat {
-            Some(polars_core::IUseStringCache::hold())
+            Some(polars_core::StringCacheHolder::hold())
         } else {
             None
         };
@@ -279,7 +279,7 @@ pub struct BatchedCsvReaderRead<'a> {
     schema: SchemaRef,
     rows_read: IdxSize,
     #[cfg(feature = "dtype-categorical")]
-    _cat_lock: Option<polars_core::IUseStringCache>,
+    _cat_lock: Option<polars_core::StringCacheHolder>,
     #[cfg(not(feature = "dtype-categorical"))]
     _cat_lock: Option<u8>,
 }

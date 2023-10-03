@@ -47,7 +47,7 @@ pub(crate) mod private {
     use super::*;
     use crate::chunked_array::ops::compare_inner::{PartialEqInner, PartialOrdInner};
     use crate::chunked_array::Settings;
-    #[cfg(feature = "rows")]
+    #[cfg(feature = "algorithm_group_by")]
     use crate::frame::group_by::GroupsProxy;
 
     pub trait PrivateSeriesNumeric {
@@ -478,20 +478,6 @@ pub trait SeriesTrait:
         invalid_operation_panic!(as_any_mut, self)
     }
 
-    /// Get a boolean mask of the local maximum peaks.
-    fn peak_max(&self) -> BooleanChunked {
-        invalid_operation_panic!(peak_max, self)
-    }
-
-    /// Get a boolean mask of the local minimum peaks.
-    fn peak_min(&self) -> BooleanChunked {
-        invalid_operation_panic!(peak_min, self)
-    }
-
-    #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, _by: &IdxCa) -> PolarsResult<ListChunked> {
-        polars_bail!(opq = repeat_by, self._dtype());
-    }
     #[cfg(feature = "checked_arithmetic")]
     fn checked_div(&self, _rhs: &Series) -> PolarsResult<Series> {
         polars_bail!(opq = checked_div, self._dtype());

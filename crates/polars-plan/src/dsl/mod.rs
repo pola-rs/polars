@@ -54,7 +54,7 @@ use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
 use polars_core::utils::{try_get_supertype, NoNull};
 #[cfg(feature = "rolling_window")]
-use polars_time::series::SeriesOpsTime;
+use polars_time::prelude::SeriesOpsTime;
 pub(crate) use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
@@ -474,22 +474,16 @@ impl Expr {
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn top_k(self, k: usize) -> Self {
-        self.apply_private(FunctionExpr::TopK {
-            k,
-            descending: false,
-        })
+    pub fn top_k(self, k: Expr) -> Self {
+        self.apply_many_private(FunctionExpr::TopK(false), &[k], false, false)
     }
 
     /// Returns the `k` smallest elements.
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn bottom_k(self, k: usize) -> Self {
-        self.apply_private(FunctionExpr::TopK {
-            k,
-            descending: true,
-        })
+    pub fn bottom_k(self, k: Expr) -> Self {
+        self.apply_many_private(FunctionExpr::TopK(true), &[k], false, false)
     }
 
     /// Reverse column
@@ -690,6 +684,7 @@ impl Expr {
         self,
         function_expr: FunctionExpr,
         arguments: &[Expr],
+        auto_explode: bool,
         cast_to_supertypes: bool,
     ) -> Self {
         let mut input = Vec::with_capacity(arguments.len() + 1);
@@ -701,7 +696,7 @@ impl Expr {
             function: function_expr,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                auto_explode: true,
+                auto_explode,
                 cast_to_supertypes,
                 ..Default::default()
             },
@@ -838,29 +833,44 @@ impl Expr {
 
     /// Clip underlying values to a set boundary.
     #[cfg(feature = "round_series")]
-    pub fn clip(self, min: AnyValue<'_>, max: AnyValue<'_>) -> Self {
-        self.map_private(FunctionExpr::Clip {
-            min: Some(min.into_static().unwrap()),
-            max: Some(max.into_static().unwrap()),
-        })
+    pub fn clip(self, min: Expr, max: Expr) -> Self {
+        self.map_many_private(
+            FunctionExpr::Clip {
+                has_min: true,
+                has_max: true,
+            },
+            &[min, max],
+            false,
+            false,
+        )
     }
 
     /// Clip underlying values to a set boundary.
     #[cfg(feature = "round_series")]
-    pub fn clip_max(self, max: AnyValue<'_>) -> Self {
-        self.map_private(FunctionExpr::Clip {
-            min: None,
-            max: Some(max.into_static().unwrap()),
-        })
+    pub fn clip_max(self, max: Expr) -> Self {
+        self.map_many_private(
+            FunctionExpr::Clip {
+                has_min: false,
+                has_max: true,
+            },
+            &[max],
+            false,
+            false,
+        )
     }
 
     /// Clip underlying values to a set boundary.
     #[cfg(feature = "round_series")]
-    pub fn clip_min(self, min: AnyValue<'_>) -> Self {
-        self.map_private(FunctionExpr::Clip {
-            min: Some(min.into_static().unwrap()),
-            max: None,
-        })
+    pub fn clip_min(self, min: Expr) -> Self {
+        self.map_many_private(
+            FunctionExpr::Clip {
+                has_min: true,
+                has_max: false,
+            },
+            &[min],
+            false,
+            false,
+        )
     }
 
     /// Convert all values to their absolute/positive value.
@@ -926,7 +936,7 @@ impl Expr {
     pub fn over_with_options<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
         partition_by: E,
-        options: WindowOptions,
+        options: WindowMapping,
     ) -> Self {
         let partition_by = partition_by
             .as_ref()
@@ -936,8 +946,16 @@ impl Expr {
         Expr::Window {
             function: Box::new(self),
             partition_by,
-            order_by: None,
-            options,
+            options: options.into(),
+        }
+    }
+
+    #[cfg(feature = "dynamic_group_by")]
+    pub fn rolling(self, options: RollingGroupOptions) -> Self {
+        Expr::Window {
+            function: Box::new(self),
+            partition_by: vec![],
+            options: WindowType::Rolling(options),
         }
     }
 
@@ -1053,7 +1071,7 @@ impl Expr {
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
         if has_literal {
-            self.map_many_private(BooleanFunction::IsIn.into(), arguments, true)
+            self.map_many_private(BooleanFunction::IsIn.into(), arguments, true, true)
         } else {
             self.apply_many_private(BooleanFunction::IsIn.into(), arguments, true, true)
         }
@@ -1081,7 +1099,7 @@ impl Expr {
             let by = &s[1];
             let s = &s[0];
             let by = by.cast(&IDX_DTYPE)?;
-            Ok(Some(s.repeat_by(by.idx()?)?.into_series()))
+            Ok(Some(repeat_by(s, by.idx()?)?.into_series()))
         };
 
         self.apply_many(
@@ -1241,7 +1259,11 @@ impl Expr {
                         DataType::Datetime(tu, tz) => {
                             (by.cast(&DataType::Datetime(*tu, None))?, tz)
                         },
-                        _ => (by.clone(), &None),
+                        DataType::Date => (
+                            by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
+                            &None,
+                        ),
+                        dt => polars_bail!(opq = expr_name, got = dt, expected = "date/datetime"),
                     };
                     ensure_sorted_arg(&by, expr_name)?;
                     let by = by.datetime().unwrap();
@@ -1451,6 +1473,14 @@ impl Expr {
             }),
         )
         .with_fmt("rolling_map_float")
+    }
+
+    pub fn peak_min(self) -> Expr {
+        self.map_private(FunctionExpr::PeakMin)
+    }
+
+    pub fn peak_max(self) -> Expr {
+        self.map_private(FunctionExpr::PeakMax)
     }
 
     #[cfg(feature = "rank")]

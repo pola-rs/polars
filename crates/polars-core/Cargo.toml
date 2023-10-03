@@ -17,6 +17,7 @@ polars-utils = { workspace = true }
 ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }
+bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 comfy-table = { version = "7.0.1", default_features = false, optional = true }
@@ -28,7 +29,7 @@ ndarray = { version = "0.15", optional = true, default_features = false }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
 rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
-rand_distr = { version = "0.4", optional = true }
+rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true, optional = true }
 # activate if you want serde support for Series and DataFrames
@@ -79,7 +80,6 @@ rows = []
 zip_with = []
 round_series = []
 checked_arithmetic = []
-repeat_by = []
 is_first_distinct = []
 is_last_distinct = []
 asof_join = []
@@ -95,7 +95,6 @@ group_by_list = []
 cum_agg = []
 # rolling window functions
 rolling_window = []
-rank = ["rand"]
 diff = []
 pct_change = ["diff"]
 moment = []
@@ -147,7 +146,6 @@ docs-selection = [
   "zip_with",
   "round_series",
   "checked_arithmetic",
-  "repeat_by",
   "is_first_distinct",
   "is_last_distinct",
   "asof_join",
@@ -161,7 +159,6 @@ docs-selection = [
   "moment",
   "dtype-categorical",
   "dtype-decimal",
-  "rank",
   "diagonal_concat",
   "horizontal_concat",
   "abs",

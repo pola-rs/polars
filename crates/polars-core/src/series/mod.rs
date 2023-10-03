@@ -28,8 +28,6 @@ use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
 use crate::chunked_array::Settings;
-#[cfg(feature = "rank")]
-use crate::prelude::unique::rank::rank;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{_split_offsets, get_casting_failures, split_ca, split_series, Wrap};
@@ -298,6 +296,14 @@ impl Series {
             },
             DataType::Binary => self.binary().unwrap().cast_unchecked(dtype),
             _ => self.cast(dtype),
+        }
+    }
+
+    /// Cast numerical types to f64, and keep floats as is.
+    pub fn to_float(&self) -> PolarsResult<Series> {
+        match self.dtype() {
+            DataType::Float32 | DataType::Float64 => Ok(self.clone()),
+            _ => self.cast(&DataType::Float64),
         }
     }
 
@@ -716,11 +722,6 @@ impl Series {
         {
             panic!("activate 'product' feature")
         }
-    }
-
-    #[cfg(feature = "rank")]
-    pub fn rank(&self, options: RankOptions, seed: Option<u64>) -> Series {
-        rank(self, options.method, options.descending, seed)
     }
 
     /// Cast throws an error if conversion had overflows

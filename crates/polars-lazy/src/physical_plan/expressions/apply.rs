@@ -5,9 +5,7 @@ use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 #[cfg(feature = "parquet")]
-use polars_io::parquet::predicates::BatchStats;
-#[cfg(feature = "parquet")]
-use polars_io::predicates::StatsEvaluator;
+use polars_io::predicates::{BatchStats, StatsEvaluator};
 #[cfg(feature = "parquet")]
 use polars_plan::dsl::FunctionExpr;
 use rayon::prelude::*;
@@ -467,8 +465,8 @@ impl ApplyExpr {
                     let min = st.to_min()?;
                     let max = st.to_max()?;
 
-                    let all_smaller = || Some(ChunkCompare::lt(input, &min).ok()?.all());
-                    let all_bigger = || Some(ChunkCompare::gt(input, &max).ok()?.all());
+                    let all_smaller = || Some(ChunkCompare::lt(input, min).ok()?.all());
+                    let all_bigger = || Some(ChunkCompare::gt(input, max).ok()?.all());
                     Some(!all_smaller()? && !all_bigger()?)
                 };
 

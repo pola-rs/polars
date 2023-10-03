@@ -13,7 +13,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 # TODO: Do not rely on I/O for these tests
 @pytest.fixture()
 def foods_ipc_path() -> Path:
-    return Path(__file__).parent / "io" / "files" / "foods1.ipc"
+    return Path(__file__).parent.parent / "io" / "files" / "foods1.ipc"
 
 
 def test_sql_cast() -> None:
@@ -68,6 +68,48 @@ def test_sql_cast() -> None:
         (4.0, 4.0, 4, 4, 4, 0, "4", "4.4", b"d", b"d", "false"),
         (5.0, 5.0, 5, 5, 5, 1, "5", "5.5", b"e", b"e", "true"),
     ]
+
+
+def test_sql_any_all() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [-1, 0, 1, 2, 3, 4],
+            "y": [1, 0, 0, 1, 2, 3],
+        }
+    )
+
+    sql = pl.SQLContext(df=df)
+
+    res = sql.execute(
+        """
+        SELECT
+        x >= ALL(df.y) as 'All Geq',
+        x > ALL(df.y) as 'All G',
+        x < ALL(df.y) as 'All L',
+        x <= ALL(df.y) as 'All Leq',
+        x >= ANY(df.y) as 'Any Geq',
+        x > ANY(df.y) as 'Any G',
+        x < ANY(df.y) as 'Any L',
+        x <= ANY(df.y) as 'Any Leq',
+        x == ANY(df.y) as 'Any eq',
+        x != ANY(df.y) as 'Any Neq',
+        FROM df
+        """,
+        eager=True,
+    )
+
+    assert res.to_dict(False) == {
+        "All Geq": [0, 0, 0, 0, 1, 1],
+        "All G": [0, 0, 0, 0, 0, 1],
+        "All L": [1, 0, 0, 0, 0, 0],
+        "All Leq": [1, 1, 0, 0, 0, 0],
+        "Any Geq": [0, 1, 1, 1, 1, 1],
+        "Any G": [0, 0, 1, 1, 1, 1],
+        "Any L": [1, 1, 1, 1, 0, 0],
+        "Any Leq": [1, 1, 1, 1, 1, 0],
+        "Any eq": [0, 1, 1, 1, 1, 0],
+        "Any Neq": [1, 0, 0, 0, 0, 1],
+    }
 
 
 def test_sql_distinct() -> None:

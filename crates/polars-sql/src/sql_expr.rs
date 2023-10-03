@@ -2,11 +2,14 @@ use polars_arrow::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::*;
+use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{col, lit, when};
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
 use sqlparser::ast::{
     ArrayAgg, BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType,
-    Expr as SqlExpr, Function as SQLFunction, JoinConstraint, OrderByExpr, SelectItem,
-    TrimWhereField, UnaryOperator, Value as SqlValue,
+    Expr as SqlExpr, Function as SQLFunction, Ident, JoinConstraint, OrderByExpr,
+    Query as Subquery, SelectItem, TrimWhereField, UnaryOperator, Value as SqlValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -52,16 +55,33 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
     })
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+pub enum SubqueryRestriction {
+    // SingleValue,
+    SingleColumn,
+    // SingleRow,
+    // Any
+}
+
 /// Recursively walks a SQL Expr to create a polars Expr
 pub(crate) struct SqlExprVisitor<'a> {
-    ctx: &'a SQLContext,
+    ctx: &'a mut SQLContext,
 }
 
 impl SqlExprVisitor<'_> {
-    fn visit_expr(&self, expr: &SqlExpr) -> PolarsResult<Expr> {
+    fn visit_expr(&mut self, expr: &SqlExpr) -> PolarsResult<Expr> {
         match expr {
-            SqlExpr::AllOp(_) => Ok(self.visit_expr(expr)?.all(true)),
-            SqlExpr::AnyOp(expr) => Ok(self.visit_expr(expr)?.any(true)),
+            SqlExpr::AllOp {
+                left,
+                compare_op,
+                right,
+            } => self.visit_all(left, compare_op, right),
+            SqlExpr::AnyOp {
+                left,
+                compare_op,
+                right,
+            } => self.visit_any(left, compare_op, right),
             SqlExpr::ArrayAgg(expr) => self.visit_arr_agg(expr),
             SqlExpr::Between {
                 expr,
@@ -80,7 +100,13 @@ impl SqlExprVisitor<'_> {
                 expr,
                 list,
                 negated,
-            } => self.visit_is_in(expr, list, *negated),
+            } => self.visit_in_list(expr, list, *negated),
+            SqlExpr::InSubquery {
+                expr,
+                subquery,
+                negated,
+            } => self.visit_in_subquery(expr, subquery, *negated),
+            SqlExpr::Subquery(_) => polars_bail!(InvalidOperation: "Unexpected SQL Subquery"),
             SqlExpr::IsDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
             },
@@ -108,10 +134,47 @@ impl SqlExprVisitor<'_> {
         }
     }
 
+    fn visit_subquery(
+        &mut self,
+        subquery: &Subquery,
+        restriction: SubqueryRestriction,
+    ) -> PolarsResult<Expr> {
+        if subquery.with.is_some() {
+            polars_bail!(InvalidOperation: "SQL subquery cannot be given CTEs");
+        }
+
+        let mut lf = self.ctx.execute_query_no_ctes(subquery)?;
+
+        let schema = lf.schema()?;
+        if restriction == SubqueryRestriction::SingleColumn {
+            if schema.len() != 1 {
+                polars_bail!(InvalidOperation: "SQL subquery will return more than one column");
+            }
+            let rand_string: String = thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(16)
+                .map(char::from)
+                .collect();
+
+            let schema_entry = schema.get_at_index(0);
+            if let Some((old_name, _)) = schema_entry {
+                let new_name = String::from(old_name.as_str()) + rand_string.as_str();
+                lf = lf.rename([old_name.to_string()], [new_name.clone()]);
+
+                return Ok(Expr::SubPlan(
+                    SpecialEq::new(Arc::new(lf.logical_plan)),
+                    vec![new_name],
+                ));
+            }
+        };
+
+        polars_bail!(InvalidOperation: "SQL subquery type not supported");
+    }
+
     /// Visit a compound identifier
     ///
     /// e.g. df.column or "df"."column"
-    fn visit_compound_identifier(&self, idents: &[sqlparser::ast::Ident]) -> PolarsResult<Expr> {
+    fn visit_compound_identifier(&self, idents: &[Ident]) -> PolarsResult<Expr> {
         match idents {
             [tbl_name, column_name] => {
                 let lf = self.ctx.table_map.get(&tbl_name.value).ok_or_else(|| {
@@ -139,7 +202,7 @@ impl SqlExprVisitor<'_> {
         }
     }
 
-    fn visit_unary_op(&self, op: &UnaryOperator, expr: &SqlExpr) -> PolarsResult<Expr> {
+    fn visit_unary_op(&mut self, op: &UnaryOperator, expr: &SqlExpr) -> PolarsResult<Expr> {
         let expr = self.visit_expr(expr)?;
         Ok(match op {
             UnaryOperator::Plus => lit(0) + expr,
@@ -152,7 +215,7 @@ impl SqlExprVisitor<'_> {
     /// Visit a single identifier
     ///
     /// e.g. column
-    fn visit_identifier(&self, ident: &sqlparser::ast::Ident) -> PolarsResult<Expr> {
+    fn visit_identifier(&self, ident: &Ident) -> PolarsResult<Expr> {
         Ok(col(&ident.value))
     }
 
@@ -160,7 +223,7 @@ impl SqlExprVisitor<'_> {
     ///
     /// e.g. column + 1 or column1 / column2
     fn visit_binary_op(
-        &self,
+        &mut self,
         left: &SqlExpr,
         op: &BinaryOperator,
         right: &SqlExpr,
@@ -219,18 +282,64 @@ impl SqlExprVisitor<'_> {
     /// e.g. SUM(column) or COUNT(*)
     ///
     /// See [SqlFunctionVisitor] for more details
-    fn visit_function(&self, function: &SQLFunction) -> PolarsResult<Expr> {
-        let visitor = SqlFunctionVisitor {
+    fn visit_function(&mut self, function: &SQLFunction) -> PolarsResult<Expr> {
+        let mut visitor = SqlFunctionVisitor {
             func: function,
             ctx: self.ctx,
         };
         visitor.visit_function()
     }
 
+    /// Visit a SQL ALL
+    ///
+    /// e.g. `a > ALL(y)`
+    fn visit_all(
+        &mut self,
+        left: &SqlExpr,
+        compare_op: &BinaryOperator,
+        right: &SqlExpr,
+    ) -> PolarsResult<Expr> {
+        let left = self.visit_expr(left)?;
+        let right = self.visit_expr(right)?;
+
+        match compare_op {
+            BinaryOperator::Gt => Ok(left.gt(right.max())),
+            BinaryOperator::Lt => Ok(left.lt(right.min())),
+            BinaryOperator::GtEq => Ok(left.gt_eq(right.max())),
+            BinaryOperator::LtEq => Ok(left.lt_eq(right.min())),
+            BinaryOperator::Eq => polars_bail!(ComputeError: "ALL cannot be used with ="),
+            BinaryOperator::NotEq => polars_bail!(ComputeError: "ALL cannot be used with !="),
+            _ => polars_bail!(ComputeError: "Invalid comparison operator"),
+        }
+    }
+
+    /// Visit a SQL ANY
+    ///
+    /// e.g. `a != ANY(y)`
+    fn visit_any(
+        &mut self,
+        left: &SqlExpr,
+        compare_op: &BinaryOperator,
+        right: &SqlExpr,
+    ) -> PolarsResult<Expr> {
+        let left = self.visit_expr(left)?;
+        let right = self.visit_expr(right)?;
+
+        match compare_op {
+            BinaryOperator::Gt => Ok(left.gt(right.min())),
+            BinaryOperator::Lt => Ok(left.lt(right.max())),
+            BinaryOperator::GtEq => Ok(left.gt_eq(right.min())),
+            BinaryOperator::LtEq => Ok(left.lt_eq(right.max())),
+            BinaryOperator::Eq => Ok(left.is_in(right)),
+            BinaryOperator::NotEq => Ok(left.is_in(right).not()),
+            _ => polars_bail!(ComputeError: "Invalid comparison operator"),
+        }
+    }
+
     /// Visit a SQL CAST
     ///
     /// e.g. `CAST(column AS INT)` or `column::INT`
-    fn visit_cast(&self, expr: &SqlExpr, data_type: &SQLDataType) -> PolarsResult<Expr> {
+    fn visit_cast(&mut self, expr: &SqlExpr, data_type: &SQLDataType) -> PolarsResult<Expr> {
         let polars_type = map_sql_polars_datatype(data_type)?;
         let expr = self.visit_expr(expr)?;
 
@@ -288,7 +397,7 @@ impl SqlExprVisitor<'_> {
     /// Visit a SQL `BETWEEN` expression
     /// See [sqlparser::ast::Expr::Between] for more details
     fn visit_between(
-        &self,
+        &mut self,
         expr: &SqlExpr,
         negated: bool,
         low: &SqlExpr,
@@ -308,7 +417,7 @@ impl SqlExprVisitor<'_> {
     /// Visit a SQL 'TRIM' function
     /// See [sqlparser::ast::Expr::Trim] for more details
     fn visit_trim(
-        &self,
+        &mut self,
         expr: &SqlExpr,
         trim_where: &Option<TrimWhereField>,
         trim_what: &Option<Box<SqlExpr>>,
@@ -322,17 +431,17 @@ impl SqlExprVisitor<'_> {
         };
 
         Ok(match (trim_where, trim_what) {
-            (None | Some(TrimWhereField::Both), None) => expr.str().strip_chars(None),
-            (None | Some(TrimWhereField::Both), Some(val)) => expr.str().strip_chars(Some(val)),
-            (Some(TrimWhereField::Leading), None) => expr.str().strip_chars_start(None),
-            (Some(TrimWhereField::Leading), Some(val)) => expr.str().strip_chars_start(Some(val)),
-            (Some(TrimWhereField::Trailing), None) => expr.str().strip_chars_end(None),
-            (Some(TrimWhereField::Trailing), Some(val)) => expr.str().strip_chars_end(Some(val)),
+            (None | Some(TrimWhereField::Both), None) => expr.str().strip_chars(lit(Null)),
+            (None | Some(TrimWhereField::Both), Some(val)) => expr.str().strip_chars(lit(val)),
+            (Some(TrimWhereField::Leading), None) => expr.str().strip_chars_start(lit(Null)),
+            (Some(TrimWhereField::Leading), Some(val)) => expr.str().strip_chars_start(lit(val)),
+            (Some(TrimWhereField::Trailing), None) => expr.str().strip_chars_end(lit(Null)),
+            (Some(TrimWhereField::Trailing), Some(val)) => expr.str().strip_chars_end(lit(val)),
         })
     }
 
     /// Visit a SQL `ARRAY_AGG` expression
-    fn visit_arr_agg(&self, expr: &ArrayAgg) -> PolarsResult<Expr> {
+    fn visit_arr_agg(&mut self, expr: &ArrayAgg) -> PolarsResult<Expr> {
         let mut base = self.visit_expr(&expr.expr)?;
 
         if let Some(order_by) = expr.order_by.as_ref() {
@@ -363,7 +472,12 @@ impl SqlExprVisitor<'_> {
     }
 
     /// Visit a SQL `IN` expression
-    fn visit_is_in(&self, expr: &SqlExpr, list: &[SqlExpr], negated: bool) -> PolarsResult<Expr> {
+    fn visit_in_list(
+        &mut self,
+        expr: &SqlExpr,
+        list: &[SqlExpr],
+        negated: bool,
+    ) -> PolarsResult<Expr> {
         let expr = self.visit_expr(expr)?;
         let list = list
             .iter()
@@ -385,7 +499,24 @@ impl SqlExprVisitor<'_> {
         }
     }
 
-    fn visit_order_by(&self, order_by: &[OrderByExpr]) -> PolarsResult<(Vec<Expr>, Vec<bool>)> {
+    fn visit_in_subquery(
+        &mut self,
+        expr: &SqlExpr,
+        subquery: &Subquery,
+        negated: bool,
+    ) -> PolarsResult<Expr> {
+        let expr = self.visit_expr(expr)?;
+
+        let subquery_result = self.visit_subquery(subquery, SubqueryRestriction::SingleColumn)?;
+
+        if negated {
+            Ok(expr.is_in(subquery_result).not())
+        } else {
+            Ok(expr.is_in(subquery_result))
+        }
+    }
+
+    fn visit_order_by(&mut self, order_by: &[OrderByExpr]) -> PolarsResult<(Vec<Expr>, Vec<bool>)> {
         let mut expr = Vec::with_capacity(order_by.len());
         let mut descending = Vec::with_capacity(order_by.len());
         for order_by_expr in order_by {
@@ -398,7 +529,7 @@ impl SqlExprVisitor<'_> {
         Ok((expr, descending))
     }
 
-    fn visit_when_then(&self, expr: &SqlExpr) -> PolarsResult<Expr> {
+    fn visit_when_then(&mut self, expr: &SqlExpr) -> PolarsResult<Expr> {
         if let SqlExpr::Case {
             operand,
             conditions,
@@ -487,8 +618,8 @@ impl SqlExprVisitor<'_> {
     }
 }
 
-pub(crate) fn parse_sql_expr(expr: &SqlExpr, ctx: &SQLContext) -> PolarsResult<Expr> {
-    let visitor = SqlExprVisitor { ctx };
+pub(crate) fn parse_sql_expr(expr: &SqlExpr, ctx: &mut SQLContext) -> PolarsResult<Expr> {
+    let mut visitor = SqlExprVisitor { ctx };
     visitor.visit_expr(expr)
 }
 
@@ -548,7 +679,7 @@ pub(super) fn process_join_constraint(
 /// # }
 /// ```
 pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
-    let ctx = SQLContext::new();
+    let mut ctx = SQLContext::new();
 
     let mut parser = Parser::new(&GenericDialect);
     parser = parser.with_options(ParserOptions {
@@ -561,10 +692,10 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
 
     Ok(match &expr {
         SelectItem::ExprWithAlias { expr, alias } => {
-            let expr = parse_sql_expr(expr, &ctx)?;
+            let expr = parse_sql_expr(expr, &mut ctx)?;
             expr.alias(&alias.value)
         },
-        SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &ctx)?,
+        SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx)?,
         _ => polars_bail!(InvalidOperation: "Unable to parse '{}' as Expr", s.as_ref()),
     })
 }

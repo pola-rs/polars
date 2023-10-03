@@ -71,9 +71,11 @@ pub(crate) fn insert_streaming_nodes(
     // to streaming
     allow_partial: bool,
 ) -> PolarsResult<bool> {
+    scratch.clear();
+
     // this is needed to determine which side of the joins should be
     // traversed first
-    set_estimated_row_counts(root, lp_arena, expr_arena, 0);
+    set_estimated_row_counts(root, lp_arena, expr_arena, 0, scratch);
 
     scratch.clear();
 

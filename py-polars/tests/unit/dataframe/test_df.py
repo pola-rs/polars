@@ -295,187 +295,6 @@ def test_from_arrow(monkeypatch: Any) -> None:
         pl.from_arrow(data=(x for x in (1, 2, 3)))
 
 
-def test_from_dict_with_column_order() -> None:
-    # expect schema/columns order to take precedence
-    schema = {"a": pl.UInt8, "b": pl.UInt32}
-    data = {"b": [3, 4], "a": [1, 2]}
-    for df in (
-        pl.DataFrame(data, schema=schema),
-        pl.DataFrame(data, schema=["a", "b"], schema_overrides=schema),
-    ):
-        # ┌─────┬─────┐
-        # │ a   ┆ b   │
-        # │ --- ┆ --- │
-        # │ u8  ┆ u32 │
-        # ╞═════╪═════╡
-        # │ 1   ┆ 3   │
-        # │ 2   ┆ 4   │
-        # └─────┴─────┘
-        assert df.columns == ["a", "b"]
-        assert df.schema == {"a": pl.UInt8, "b": pl.UInt32}
-        assert df.rows() == [(1, 3), (2, 4)]
-
-        # expect an error
-        mismatched_schema = {"x": pl.UInt8, "b": pl.UInt32}
-        with pytest.raises(ValueError):
-            pl.DataFrame({"b": [3, 4], "a": [1, 2]}, schema=mismatched_schema)
-
-
-def test_from_dict_with_scalars() -> None:
-    import polars as pl
-
-    # one or more valid arrays, with some scalars (inc. None)
-    df1 = pl.DataFrame(
-        {"key": ["aa", "bb", "cc"], "misc": "xyz", "other": None, "value": 0}
-    )
-    assert df1.to_dict(False) == {
-        "key": ["aa", "bb", "cc"],
-        "misc": ["xyz", "xyz", "xyz"],
-        "other": [None, None, None],
-        "value": [0, 0, 0],
-    }
-
-    # edge-case: all scalars
-    df2 = pl.DataFrame({"key": "aa", "misc": "xyz", "other": None, "value": 0})
-    assert df2.to_dict(False) == {
-        "key": ["aa"],
-        "misc": ["xyz"],
-        "other": [None],
-        "value": [0],
-    }
-
-    # edge-case: single unsized generator
-    df3 = pl.DataFrame({"vals": map(float, [1, 2, 3])})
-    assert df3.to_dict(False) == {"vals": [1.0, 2.0, 3.0]}
-
-    # ensure we don't accidentally consume or expand map/range/generator
-    # cols, and can properly apply schema dtype/ordering directives
-    df4 = pl.DataFrame(
-        {
-            "key": range(1, 4),
-            "misc": (x for x in [4, 5, 6]),
-            "other": map(float, [7, 8, 9]),
-            "value": {0: "x", 1: "y", 2: "z"}.values(),
-        },
-        schema={
-            "value": pl.Utf8,
-            "other": pl.Float32,
-            "misc": pl.Int32,
-            "key": pl.Int8,
-        },
-    )
-    assert df4.columns == ["value", "other", "misc", "key"]
-    assert df4.to_dict(False) == {
-        "value": ["x", "y", "z"],
-        "other": [7.0, 8.0, 9.0],
-        "misc": [4, 5, 6],
-        "key": [1, 2, 3],
-    }
-    assert df4.schema == {
-        "value": pl.Utf8,
-        "other": pl.Float32,
-        "misc": pl.Int32,
-        "key": pl.Int8,
-    }
-
-    # mixed with struct cols
-    for df5 in (
-        pl.from_dict(
-            {"x": {"b": [1, 3], "c": [2, 4]}, "y": [5, 6], "z": "x"},
-            schema_overrides={"y": pl.Int8},
-        ),
-        pl.from_dict(
-            {"x": {"b": [1, 3], "c": [2, 4]}, "y": [5, 6], "z": "x"},
-            schema=["x", ("y", pl.Int8), "z"],
-        ),
-    ):
-        assert df5.rows() == [({"b": 1, "c": 2}, 5, "x"), ({"b": 3, "c": 4}, 6, "x")]
-        assert df5.schema == {
-            "x": pl.Struct([pl.Field("b", pl.Int64), pl.Field("c", pl.Int64)]),
-            "y": pl.Int8,
-            "z": pl.Utf8,
-        }
-
-    # mixed with numpy cols...
-    df6 = pl.DataFrame(
-        {"x": np.ones(3), "y": np.zeros(3), "z": 1.0},
-    )
-    assert df6.rows() == [(1.0, 0.0, 1.0), (1.0, 0.0, 1.0), (1.0, 0.0, 1.0)]
-
-    # ...and trigger multithreaded load codepath
-    df7 = pl.DataFrame(
-        {
-            "w": np.zeros(1001, dtype=np.uint8),
-            "x": np.ones(1001, dtype=np.uint8),
-            "y": np.zeros(1001, dtype=np.uint8),
-            "z": 1,
-        },
-        schema_overrides={"z": pl.UInt8},
-    )
-    assert df7[999:].rows() == [(0, 1, 0, 1), (0, 1, 0, 1)]
-    assert df7.schema == {
-        "w": pl.UInt8,
-        "x": pl.UInt8,
-        "y": pl.UInt8,
-        "z": pl.UInt8,
-    }
-
-    # a bit of everything
-    mixed_dtype_data: dict[str, Any] = {
-        "a": 0,
-        "b": 8,
-        "c": 9.5,
-        "d": None,
-        "e": True,
-        "f": False,
-        "g": time(0, 1, 2),
-        "h": date(2023, 3, 14),
-        "i": timedelta(seconds=3601),
-        "j": datetime(2111, 11, 11, 11, 11, 11, 11),
-        "k": "「趣味でヒーローをやっている者だ」",
-    }
-    # note: deliberately set this value large; if all dtypes are
-    # on the fast-path it'll only take ~0.03secs. if it becomes
-    # even remotely noticeable that will indicate a regression.
-    n_range = 1_000_000
-    index_and_data: dict[str, Any] = {"idx": range(n_range)}
-    index_and_data.update(mixed_dtype_data.items())
-    df8 = pl.DataFrame(
-        data=index_and_data,
-        schema={
-            "idx": pl.Int32,
-            "a": pl.UInt16,
-            "b": pl.UInt32,
-            "c": pl.Float64,
-            "d": pl.Float32,
-            "e": pl.Boolean,
-            "f": pl.Boolean,
-            "g": pl.Time,
-            "h": pl.Date,
-            "i": pl.Duration,
-            "j": pl.Datetime,
-            "k": pl.Utf8,
-        },
-    )
-    dfx = df8.select(pl.exclude("idx"))
-
-    assert len(df8) == n_range
-    assert dfx[:5].rows() == dfx[5:10].rows()
-    assert dfx[-10:-5].rows() == dfx[-5:].rows()
-    assert dfx.row(n_range // 2, named=True) == mixed_dtype_data
-
-    # misc generators/iterables
-    df9 = pl.DataFrame(
-        {
-            "a": iter([0, 1, 2]),
-            "b": (2, 1, 0).__iter__(),
-            "c": (v for v in (0, 0, 0)),
-            "d": "x",
-        }
-    )
-    assert df9.rows() == [(0, 2, 0, "x"), (1, 1, 0, "x"), (2, 0, 0, "x")]
-
-
 def test_dataframe_membership_operator() -> None:
     # cf. issue #4032
     df = pl.DataFrame({"name": ["Jane", "John"], "age": [20, 30]})
@@ -1290,45 +1109,6 @@ def test_duration_arithmetic() -> None:
     )
 
 
-def test_string_cache_eager_lazy() -> None:
-    # tests if the global string cache is really global and not interfered by the lazy
-    # execution. first the global settings was thread-local and this breaks with the
-    # parallel execution of lazy
-    with pl.StringCache():
-        df1 = pl.DataFrame(
-            {"region_ids": ["reg1", "reg2", "reg3", "reg4", "reg5"]}
-        ).select([pl.col("region_ids").cast(pl.Categorical)])
-
-        df2 = pl.DataFrame(
-            {"seq_name": ["reg4", "reg2", "reg1"], "score": [3.0, 1.0, 2.0]}
-        ).select([pl.col("seq_name").cast(pl.Categorical), pl.col("score")])
-
-        expected = pl.DataFrame(
-            {
-                "region_ids": ["reg1", "reg2", "reg3", "reg4", "reg5"],
-                "score": [2.0, 1.0, None, 3.0, None],
-            }
-        ).with_columns(pl.col("region_ids").cast(pl.Categorical))
-
-        result = df1.join(df2, left_on="region_ids", right_on="seq_name", how="left")
-        assert_frame_equal(result, expected)
-
-        # also check row-wise categorical insert.
-        # (column-wise is preferred, but this shouldn't fail)
-        for params in (
-            {"schema": [("region_ids", pl.Categorical)]},
-            {
-                "schema": ["region_ids"],
-                "schema_overrides": {"region_ids": pl.Categorical},
-            },
-        ):
-            df3 = pl.DataFrame(  # type: ignore[arg-type]
-                data=[["reg1"], ["reg2"], ["reg3"], ["reg4"], ["reg5"]],
-                **params,
-            )
-            assert_frame_equal(df1, df3)
-
-
 def test_assign() -> None:
     # check if can assign in case of a single column
     df = pl.DataFrame({"a": [1, 2, 3]})
@@ -1357,6 +1137,19 @@ def test_to_numpy(order: IndexOrder, f_contiguous: bool, c_contiguous: bool) -> 
     assert_array_equal(structured_array, expected_array)
     assert structured_array.flags["F_CONTIGUOUS"]
 
+    # check string conversion; if no nulls can optimise as a fixed-width dtype
+    df = pl.DataFrame({"s": ["x", "y", None]})
+    assert df["s"].has_validity()
+    assert_array_equal(
+        df.to_numpy(structured=True),
+        np.array([("x",), ("y",), (None,)], dtype=[("s", "O")]),
+    )
+    assert not df["s"][:2].has_validity()
+    assert_array_equal(
+        df[:2].to_numpy(structured=True),
+        np.array([("x",), ("y",)], dtype=[("s", "<U1")]),
+    )
+
 
 def test_to_numpy_structured() -> None:
     # round-trip structured array: validate init/export
@@ -1375,7 +1168,6 @@ def test_to_numpy_structured() -> None:
             ]
         ),
     )
-
     df = pl.from_numpy(structured_array)
     assert df.schema == {
         "product": pl.Utf8,
@@ -3519,11 +3311,95 @@ def test_deadlocks_3409() -> None:
 
 
 def test_clip() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
-    assert df.select(pl.col("a").clip(2, 4))["a"].to_list() == [2, 2, 3, 4, 4]
-    assert pl.Series([1, 2, 3, 4, 5]).clip(2, 4).to_list() == [2, 2, 3, 4, 4]
-    assert pl.Series([1, 2, 3, 4, 5]).clip_min(3).to_list() == [3, 3, 3, 4, 5]
-    assert pl.Series([1, 2, 3, 4, 5]).clip_max(3).to_list() == [1, 2, 3, 3, 3]
+    clip_exprs = [
+        pl.col("a").clip(pl.col("min"), pl.col("max")).alias("clip"),
+        pl.col("a").clip_min(pl.col("min")).alias("clip_min"),
+        pl.col("a").clip_max(pl.col("max")).alias("clip_max"),
+    ]
+
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "min": [0, -1, 4, None, 4],
+            "max": [2, 1, 8, 5, None],
+        }
+    )
+
+    assert df.select(clip_exprs).to_dict(False) == {
+        "clip": [1, 1, 4, None, None],
+        "clip_min": [1, 2, 4, None, 5],
+        "clip_max": [1, 1, 3, 4, None],
+    }
+
+    df = pl.DataFrame(
+        {
+            "a": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "min": [0, -1.0, 4.0, None, 4.0],
+            "max": [2.0, 1.0, 8.0, 5.0, None],
+        }
+    )
+
+    assert df.select(clip_exprs).to_dict(False) == {
+        "clip": [1.0, 1.0, 4.0, None, None],
+        "clip_min": [1.0, 2.0, 4.0, None, 5.0],
+        "clip_max": [1.0, 1.0, 3.0, 4.0, None],
+    }
+
+    df = pl.DataFrame(
+        {
+            "a": [
+                datetime(1995, 6, 5, 10, 30),
+                datetime(1995, 6, 5),
+                datetime(2023, 10, 20, 18, 30, 6),
+                None,
+                datetime(2023, 9, 24),
+                datetime(2000, 1, 10),
+            ],
+            "min": [
+                datetime(1995, 6, 5, 10, 29),
+                datetime(1996, 6, 5),
+                datetime(2020, 9, 24),
+                datetime(2020, 1, 1),
+                None,
+                datetime(2000, 1, 1),
+            ],
+            "max": [
+                datetime(1995, 7, 21, 10, 30),
+                datetime(2000, 1, 1),
+                datetime(2023, 9, 20, 18, 30, 6),
+                datetime(2000, 1, 1),
+                datetime(1993, 3, 13),
+                None,
+            ],
+        }
+    )
+
+    assert df.select(clip_exprs).to_dict(False) == {
+        "clip": [
+            datetime(1995, 6, 5, 10, 30),
+            datetime(1996, 6, 5),
+            datetime(2023, 9, 20, 18, 30, 6),
+            None,
+            None,
+            None,
+        ],
+        "clip_min": [
+            datetime(1995, 6, 5, 10, 30),
+            datetime(1996, 6, 5),
+            datetime(2023, 10, 20, 18, 30, 6),
+            None,
+            None,
+            datetime(2000, 1, 10),
+        ],
+        "clip_max": [
+            datetime(1995, 6, 5, 10, 30),
+            datetime(1995, 6, 5),
+            datetime(2023, 9, 20, 18, 30, 6),
+            None,
+            datetime(1993, 3, 13),
+            None,
+        ],
+    }
 
 
 def test_cum_agg() -> None:

@@ -19,6 +19,7 @@ ahash = { workspace = true }
 argminmax = { version = "0.6.1", default-features = false, features = ["float"] }
 arrow = { workspace = true }
 base64 = { workspace = true, optional = true }
+bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 either = { workspace = true }
@@ -28,11 +29,16 @@ indexmap = { workspace = true }
 jsonpath_lib = { version = "0.3", optional = true, git = "https://github.com/ritchie46/jsonpath", branch = "improve_compiled" }
 memchr = { workspace = true }
 num-traits = { workspace = true }
+rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
+rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, optional = true }
 smartstring = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -65,6 +71,8 @@ fused = []
 cutqcut = ["dtype-categorical", "dtype-struct"]
 rle = ["dtype-struct"]
 timezones = ["chrono-tz", "chrono"]
+random = ["rand", "rand_distr"]
+rank = ["rand"]
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]
@@ -96,6 +104,8 @@ semi_anti_join = []
 list_take = []
 list_sets = []
 list_any_all = []
+list_drop_nulls = []
 extract_groups = ["dtype-struct", "polars-core/regex"]
 is_in = ["polars-core/reinterpret"]
 convert_index = []
+repeat_by = []

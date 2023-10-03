@@ -52,7 +52,7 @@ Polars will interpret a `dict` sent to the `Series` constructor as a `Struct`:
 
 Let's say that we needed to obtain just the `movie` value in the `Series` that we created above. We can use the `field` method to do so:
 
-{{code_block('user-guide/expressions/structs','series_struct_extract',['field'])}}
+{{code_block('user-guide/expressions/structs','series_struct_extract',['struct.field'])}}
 
 ```python exec="on" result="text" session="user-guide/structs"
 --8<-- "python/user-guide/expressions/structs.py:series_struct_extract"
@@ -62,7 +62,7 @@ Let's say that we needed to obtain just the `movie` value in the `Series` that w
 
 What if we need to rename individual `field`s of a `Struct` column? We first convert the `rating_Series` object to a `DataFrame` so that we can view the changes easily, and then use the `rename_fields` method:
 
-{{code_block('user-guide/expressions/structs','series_struct_rename',['rename_fields'])}}
+{{code_block('user-guide/expressions/structs','series_struct_rename',['struct.rename_fields'])}}
 
 ```python exec="on" result="text" session="user-guide/structs"
 --8<-- "python/user-guide/expressions/structs.py:series_struct_rename"

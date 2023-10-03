@@ -11,6 +11,7 @@ The following methods are available under the `Series.list` attribute.
 
     Series.list.all
     Series.list.any
+    Series.list.drop_nulls
     Series.list.arg_max
     Series.list.arg_min
     Series.list.concat

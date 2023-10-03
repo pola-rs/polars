@@ -25,8 +25,6 @@ pub use crate::chunked_array::object::PolarsObject;
 pub use crate::chunked_array::ops::aggregate::*;
 #[cfg(feature = "rolling_window")]
 pub use crate::chunked_array::ops::rolling_window::RollingOptionsFixedWindow;
-#[cfg(feature = "rank")]
-pub use crate::chunked_array::ops::unique::rank::{RankMethod, RankOptions};
 pub use crate::chunked_array::ops::*;
 #[cfg(feature = "temporal")]
 pub use crate::chunked_array::temporal::conversion::*;

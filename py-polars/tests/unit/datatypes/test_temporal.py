@@ -2151,9 +2151,9 @@ def test_replace_time_zone_ambiguous_raises() -> None:
     [
         ("Europe/London", False, "earliest"),
         ("Europe/London", False, "raise"),
-        ("UTC", False, "earliest"),
+        ("UTC", True, "earliest"),
         ("UTC", True, "raise"),
-        (None, False, "earliest"),
+        (None, True, "earliest"),
         (None, True, "raise"),
     ],
 )
@@ -2171,18 +2171,18 @@ def test_replace_time_zone_sortedness_series(
 
 
 @pytest.mark.parametrize(
-    ("from_tz", "ambiguous"),
+    ("from_tz", "expected_sortedness", "ambiguous"),
     [
-        ("Europe/London", "earliest"),
-        ("Europe/London", "raise"),
-        ("UTC", "earliest"),
-        ("UTC", "raise"),
-        (None, "earliest"),
-        (None, "raise"),
+        ("Europe/London", False, "earliest"),
+        ("Europe/London", False, "raise"),
+        ("UTC", True, "earliest"),
+        ("UTC", True, "raise"),
+        (None, True, "earliest"),
+        (None, True, "raise"),
     ],
 )
 def test_replace_time_zone_sortedness_expressions(
-    from_tz: str | None, ambiguous: str
+    from_tz: str | None, expected_sortedness: bool, ambiguous: str
 ) -> None:
     df = (
         pl.Series("ts", [1603584000000000, 1603587600000000])
@@ -2195,7 +2195,7 @@ def test_replace_time_zone_sortedness_expressions(
     result = df.select(
         pl.col("ts").dt.replace_time_zone("UTC", ambiguous=pl.col("ambiguous"))
     )
-    assert not result["ts"].flags["SORTED_ASC"]
+    assert result["ts"].flags["SORTED_ASC"] == expected_sortedness
 
 
 def test_use_earliest_deprecation() -> None:
@@ -2805,6 +2805,56 @@ def test_truncate_ambiguous() -> None:
         match="datetime '2020-10-25 01:00:00' is ambiguous in time zone 'Europe/London'",
     ):
         ser.dt.truncate("30m")
+
+
+def test_round_ambiguous() -> None:
+    t = pl.datetime_range(
+        date(2020, 10, 25),
+        datetime(2020, 10, 25, 2),
+        "30m",
+        eager=True,
+        time_zone="Europe/London",
+    ).dt.offset_by("15m")
+
+    with pytest.raises(
+        ComputeError,
+        match="datetime '2020-10-25 01:00:00' is ambiguous in time zone 'Europe/London'",
+    ):
+        t.dt.round("30m", ambiguous="raise")
+
+    df = pl.DataFrame(
+        {
+            "date": pl.datetime_range(
+                date(2020, 10, 25),
+                datetime(2020, 10, 25, 2),
+                "30m",
+                eager=True,
+                time_zone="Europe/London",
+            ).dt.offset_by("15m"),
+            "ambiguous": [
+                "raise",
+                "earliest",
+                "earliest",
+                "latest",
+                "latest",
+                "latest",
+                "raise",
+            ],
+        }
+    )
+
+    df = df.select(pl.col("date").dt.round("30m", ambiguous=pl.col("ambiguous")))
+    assert df.to_dict(False) == {
+        "date": [
+            datetime(2020, 10, 25, 0, 30, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 1, 30, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 2, tzinfo=ZoneInfo(key="Europe/London")),
+            datetime(2020, 10, 25, 2, 30, tzinfo=ZoneInfo(key="Europe/London")),
+        ]
+    }
 
 
 def test_round_by_week() -> None:

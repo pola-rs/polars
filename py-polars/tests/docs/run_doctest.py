@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 def doctest_teardown(d: doctest.DocTest) -> None:
     # don't let config changes or string cache state leak between tests
     polars.Config.restore_defaults()
-    polars.enable_string_cache(False)
+    polars.disable_string_cache()
 
 
 def modules_in_path(p: Path) -> Iterator[ModuleType]:

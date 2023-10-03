@@ -76,7 +76,7 @@ fn test_special_group_by_schemas() -> PolarsResult<()> {
                 every: Duration::parse("2i"),
                 period: Duration::parse("2i"),
                 offset: Duration::parse("0i"),
-                truncate: false,
+                label: Label::DataPoint,
                 include_boundaries: false,
                 closed_window: ClosedWindow::Left,
                 ..Default::default()

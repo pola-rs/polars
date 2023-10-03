@@ -195,6 +195,49 @@ def test_str_parse_int_df() -> None:
         )
 
 
+def test_str_strip_chars_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "s": [" hello ", "^^world^^", "&&hi&&", "  polars  ", None],
+            "pat": [" ", "^", "&", None, "anything"],
+        }
+    )
+
+    all_expr = df.select(
+        [
+            pl.col("s").str.strip_chars(pl.col("pat")).alias("strip_chars"),
+            pl.col("s").str.strip_chars_start(pl.col("pat")).alias("strip_chars_start"),
+            pl.col("s").str.strip_chars_end(pl.col("pat")).alias("strip_chars_end"),
+        ]
+    )
+
+    expected = pl.DataFrame(
+        {
+            "strip_chars": ["hello", "world", "hi", "polars", None],
+            "strip_chars_start": ["hello ", "world^^", "hi&&", "polars  ", None],
+            "strip_chars_end": [" hello", "^^world", "&&hi", "  polars", None],
+        }
+    )
+
+    assert_frame_equal(all_expr, expected)
+
+    strip_by_null = df.select(
+        pl.col("s").str.strip_chars(None).alias("strip_chars"),
+        pl.col("s").str.strip_chars_start(None).alias("strip_chars_start"),
+        pl.col("s").str.strip_chars_end(None).alias("strip_chars_end"),
+    )
+
+    # only whitespace are striped.
+    expected = pl.DataFrame(
+        {
+            "strip_chars": ["hello", "^^world^^", "&&hi&&", "polars", None],
+            "strip_chars_start": ["hello ", "^^world^^", "&&hi&&", "polars  ", None],
+            "strip_chars_end": [" hello", "^^world^^", "&&hi&&", "  polars", None],
+        }
+    )
+    assert_frame_equal(strip_by_null, expected)
+
+
 def test_str_strip_chars() -> None:
     s = pl.Series([" hello ", "world\t "])
     expected = pl.Series(["hello", "world"])
@@ -921,6 +964,39 @@ def test_split_exact() -> None:
     assert df["x"].str.split_exact("_", 1, inclusive=False).dtype == pl.Struct
 
 
+def test_split_exact_expr() -> None:
+    df = pl.DataFrame(
+        {"x": ["a_a", None, "b", "c^c^c", "d#d"], "by": ["_", "&", "$", "^", None]}
+    )
+
+    out = df.select(
+        pl.col("x").str.split_exact(pl.col("by"), 2, inclusive=False)
+    ).unnest("x")
+
+    expected = pl.DataFrame(
+        {
+            "field_0": ["a", None, "b", "c", None],
+            "field_1": ["a", None, None, "c", None],
+            "field_2": pl.Series([None, None, None, "c", None], dtype=pl.Utf8),
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+    out2 = df.select(
+        pl.col("x").str.split_exact(pl.col("by"), 2, inclusive=True)
+    ).unnest("x")
+
+    expected2 = pl.DataFrame(
+        {
+            "field_0": ["a_", None, "b", "c^", None],
+            "field_1": ["a", None, None, "c^", None],
+            "field_2": pl.Series([None, None, None, "c", None], dtype=pl.Utf8),
+        }
+    )
+    assert_frame_equal(out2, expected2)
+
+
 def test_splitn() -> None:
     df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
     out = df.select([pl.col("x").str.splitn("_", 2)]).unnest("x")
@@ -931,6 +1007,23 @@ def test_splitn() -> None:
 
     assert_frame_equal(out, expected)
     assert_frame_equal(df["x"].str.splitn("_", 2).to_frame().unnest("x"), expected)
+
+
+def test_splitn_expr() -> None:
+    df = pl.DataFrame(
+        {"x": ["a_a", None, "b", "c^c^c", "d#d"], "by": ["_", "&", "$", "^", None]}
+    )
+
+    out = df.select(pl.col("x").str.splitn(pl.col("by"), 2)).unnest("x")
+
+    expected = pl.DataFrame(
+        {
+            "field_0": ["a", None, "b", "c", None],
+            "field_1": ["a", None, None, "c^c", None],
+        }
+    )
+
+    assert_frame_equal(out, expected)
 
 
 def test_titlecase() -> None:

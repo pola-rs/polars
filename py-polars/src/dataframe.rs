@@ -886,14 +886,14 @@ impl PyDataFrame {
 
     pub fn sample_n(
         &self,
-        n: usize,
+        n: &PySeries,
         with_replacement: bool,
         shuffle: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         let df = self
             .df
-            .sample_n(n, with_replacement, shuffle, seed)
+            .sample_n(&n.series, with_replacement, shuffle, seed)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }

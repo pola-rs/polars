@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use polars_core::prelude::*;
 use polars_io::RowCount;
 
-use super::{LazyFileListReader, LazyFrame, ScanArgsAnonymous};
+use super::*;
+use crate::prelude::{LazyFrame, ScanArgsAnonymous};
 
 #[derive(Clone)]
 pub struct LazyJsonLineReader {
