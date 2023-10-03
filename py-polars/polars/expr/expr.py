@@ -3437,7 +3437,6 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [4, 1, 3, 2, 5]})
         >>> df.select(pl.col("a").peak_min())
-        >>> df.peak_min()
         shape: (5, 1)
         ┌───────┐
         │ a     │
