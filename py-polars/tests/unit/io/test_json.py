@@ -32,6 +32,25 @@ def test_to_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
     assert_frame_equal(df, out, categorical_as_str=True)
 
 
+def test_to_from_buffer_arraywise_schema() -> None:
+    buf = io.StringIO("""
+    [
+        {"a": 5, "b": "string", "c": null},
+        {"a": 11.4, "b": null, "c": true, "d": 8},
+        {"a": -25.8, "b": "strung", "c": false}
+    ]""")
+
+    read_df = pl.read_json(buf, schema={
+        "b": pl.Utf8,
+        "e": pl.Int16
+    })
+
+    assert_frame_equal(read_df, pl.DataFrame({
+        "b": pl.Series(["string", None, "strung"], dtype=pl.Utf8),
+        "e": pl.Series([None, None, None], dtype=pl.Int16)
+    }))
+
+
 def test_write_json_to_string() -> None:
     # Tests if it runs if no arg given
     df = pl.DataFrame({"a": [1, 2, 3]})
