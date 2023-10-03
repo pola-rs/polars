@@ -251,18 +251,7 @@ impl PyLazyFrame {
         hive_partitioning: bool,
         retries: usize,
     ) -> PyResult<Self> {
-        let mut cloud_options = cloud_options
-            .map(|kv| parse_cloud_options(&path, kv))
-            .transpose()?;
-        if retries > 0 {
-            cloud_options =
-                cloud_options
-                    .or_else(|| Some(CloudOptions::default()))
-                    .map(|mut options| {
-                        options.max_retries = retries;
-                        options
-                    });
-        }
+        let mut cloud_options = prepare_cloud_options(&path, cloud_options, retries)
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsParquet {
             n_rows,
@@ -484,18 +473,19 @@ impl PyLazyFrame {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "parquet"))]
-    #[pyo3(signature = (path, compression, compression_level, statistics, row_group_size, data_pagesize_limit, maintain_order))]
+    #[pyo3(signature = (path, compression, compression_level, statistics, row_group_size, data_pagesize_limit, maintain_order, cloud_options))]
     fn sink_parquet(
         &self,
         py: Python,
-        path: PathBuf,
+        path: &str,
         compression: &str,
         compression_level: Option<i32>,
         statistics: bool,
         row_group_size: Option<usize>,
         data_pagesize_limit: Option<usize>,
         maintain_order: bool,
-        cloud_options: &PyDict,
+        cloud_options: Option<Vec<String, String>>,
+        retries: int,
     ) -> PyResult<()> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
@@ -507,47 +497,17 @@ impl PyLazyFrame {
             maintain_order,
         };
 
-        // TODO: convert 'cloud_options' into CloudOptions
-        // TODO: switch between sink_parquet & sink_parquet_cloud based on `is_cloud_url`
+        let mut cloud_options = cloud_options.unwrap_or(vec![]);
+        let converted_cloud_options = prepare_cloud_options(&path, cloud_options, retries)
+
+        // TODO: redirect to sink_parquet_cloud or sink_parquet
+        //       based on  _is_supported_cloud(source)
 
         // if we don't allow threads and we have udfs trying to acquire the gil from different
         // threads we deadlock.
         py.allow_threads(|| {
             let ldf = self.ldf.clone();
             ldf.sink_parquet(path, options).map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    #[cfg(all(feature = "streaming", feature = "cloud_write", feature = "parquet"))]
-    #[pyo3(signature = (path, compression, compression_level, statistics, row_group_size, data_pagesize_limit, maintain_order))]
-    fn sink_parquet_cloud(
-        &self,
-        py: Python,
-        path: PathBuf,
-        compression: &str,
-        compression_level: Option<i32>,
-        statistics: bool,
-        row_group_size: Option<usize>,
-        data_pagesize_limit: Option<usize>,
-        maintain_order: bool,
-    ) -> PyResult<()> {
-        let compression = parse_parquet_compression(compression, compression_level)?;
-
-        let options = ParquetWriteOptions {
-            compression,
-            statistics,
-            row_group_size,
-            data_pagesize_limit,
-            maintain_order,
-        };
-
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        py.allow_threads(|| {
-            let ldf = self.ldf.clone();
-            ldf.sink_parquet_cloud(path, options).map_err(PyPolarsErr::from)
         })?;
         Ok(())
     }

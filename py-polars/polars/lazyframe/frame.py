@@ -1877,6 +1877,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compression: str = "zstd",
         compression_level: int | None = None,
         storage_options: dict[str, object] | None = None,
+        retries: int = 0,
         statistics: bool = False,
         row_group_size: int | None = None,
         data_pagesize_limit: int | None = None,
@@ -1922,6 +1923,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             If ``storage_options`` are not provided we will try to infer them from the
             environment variables.
+        retries
+            Number of retries if accessing a cloud instance fails.
         statistics
             Write statistics to the parquet headers. This requires extra compute.
         row_group_size
@@ -1954,8 +1957,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
+        Sinking to a local file:
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_parquet("out.parquet")  # doctest: +SKIP
+
+        Sinking to a cloud target:
+        >>> lf = pl.scan_csv("s3://bucket/my_larger_than_ram_file.csv")  # doctest: +SKIP
+        >>> storage_options = {
+        ...     "aws_access_key_id": "<secret>",
+        ...     "aws_secret_access_key": "<secret>",
+        ...     "aws_region": "us-east-1",
+        ... }
+        >>> lf.sink_parquet("s3://bucket/out.parquet", storage_options=storage_options)  # doctest: +SKIP
 
         """
         lf = self._set_sink_optimizations(
@@ -1967,23 +1980,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown=slice_pushdown,
         )
 
-        arguments = dict(
-            path=path,
+        return lf.sink_parquet(
+            path=str(path),
             compression=compression,
             compression_level=compression_level,
             statistics=statistics,
             row_group_size=row_group_size,
             data_pagesize_limit=data_pagesize_limit,
             maintain_order=maintain_order,
+            cloud_options=storage_options or {},
+            retries=retries,
         )
-
-        if storage_options:
-            arguments['cloud_options'] = list(storage_options.items())
-
-        if storage_options or _is_supported_cloud(path):
-            return lf.sink_parquet_cloud(**arguments)
-
-        return lf.sink_parquet(**arguments)
 
     def sink_ipc(
         self,
