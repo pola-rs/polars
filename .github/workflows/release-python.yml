@@ -62,7 +62,7 @@ jobs:
 
       - name: Set RUSTFLAGS for x86-64
         if: matrix.architecture == 'x86-64' && matrix.package != 'polars-lts-cpu'
-        run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma" >> $GITHUB_ENV
+        run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt" >> $GITHUB_ENV
 
       - name: Set RUSTFLAGS for x86-64 LTS CPU
         if: matrix.architecture == 'x86-64' && matrix.package == 'polars-lts-cpu'
