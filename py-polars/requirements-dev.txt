@@ -4,6 +4,13 @@
 
 --prefer-binary
 
+# -----
+# BUILD
+# -----
+
+maturin
+patchelf; platform_system == 'Linux'  # Extra dependency for maturin, only for Linux
+
 # ------------
 # DEPENDENCIES
 # ------------
@@ -47,8 +54,6 @@ gevent
 # -------
 
 hypothesis==6.87.1
-maturin==1.2.3
-patchelf; platform_system == 'Linux'  # Extra dependency for maturin, only for Linux
 pytest==7.4.0
 pytest-cov==4.1.0
 pytest-xdist==3.3.1
