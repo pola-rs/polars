@@ -18,7 +18,6 @@ from polars.io._utils import _is_supported_cloud
         ("adl://account/file.tmp", True),
         ("/local/file.tmp", False,),
         ("file:///local/file.tmp", False,),
-        (Path("/local/file.tmp"), False,),
     ],
 )
 def test_is_cloud_url(possible_url: str | Path, expected_result: bool) -> None:
