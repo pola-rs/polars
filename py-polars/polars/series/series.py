@@ -5737,7 +5737,7 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
         >>> s.peak_max()
         shape: (5,)
-        Series: '' [bool]
+        Series: 'a' [bool]
         [
                 false
                 false
@@ -5757,7 +5757,7 @@ class Series:
         >>> s = pl.Series("a", [4, 1, 3, 2, 5])
         >>> s.peak_min()
         shape: (5,)
-        Series: '' [bool]
+        Series: 'a' [bool]
         [
             false
             true

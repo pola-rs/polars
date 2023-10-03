@@ -3414,7 +3414,7 @@ class Expr:
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
         >>> df.select(pl.col("a").peak_max())
         shape: (5,)
-        Series: '' [bool]
+        Series: 'a' [bool]
         [
                 false
                 false
@@ -3436,7 +3436,7 @@ class Expr:
         >>> df.select(pl.col("a").peak_min())
         >>> s.peak_min()
         shape: (5,)
-        Series: '' [bool]
+        Series: 'a' [bool]
         [
             false
             true
