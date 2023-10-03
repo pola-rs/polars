@@ -1,13 +1,14 @@
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
-use polars_core::schema::*;
 use polars_core::utils::arrow::io::parquet::read::FileMetaData;
 use polars_core::POOL;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::{BatchedParquetReader, ParquetReader};
 use polars_io::pl_async::get_runtime;
+use polars_io::prelude::materialize_projection;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::{is_cloud_url, SerReader};
@@ -41,12 +42,22 @@ impl ParquetSource {
         let options = self.options.take().unwrap();
         let file_options = self.file_options.take().unwrap();
         let schema = self.file_info.schema.clone();
-        let projection: Option<Vec<_>> = file_options.with_columns.map(|with_columns| {
-            with_columns
-                .iter()
-                .map(|name| schema.index_of(name).unwrap())
-                .collect()
-        });
+
+        let hive_partitions = self
+            .file_info
+            .hive_parts
+            .as_ref()
+            .map(|hive| hive.materialize_partition_columns());
+
+        let projection = materialize_projection(
+            file_options
+                .with_columns
+                .as_deref()
+                .map(|cols| cols.deref()),
+            &schema,
+            hive_partitions.as_deref(),
+            false,
+        );
 
         let n_cols = projection.as_ref().map(|v| v.len()).unwrap_or(schema.len());
         let chunk_size = determine_chunk_size(n_cols, self.n_threads)?;
