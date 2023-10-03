@@ -404,7 +404,7 @@ pub struct BatchedParquetReader {
     limit: usize,
     projection: Vec<usize>,
     schema: ArrowSchema,
-    metadata: FileMetaData,
+    metadata: Arc<FileMetaData>,
     row_count: Option<RowCount>,
     rows_read: IdxSize,
     row_group_offset: usize,
@@ -420,7 +420,7 @@ impl BatchedParquetReader {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         row_group_fetcher: RowGroupFetcher,
-        metadata: FileMetaData,
+        metadata: Arc<FileMetaData>,
         limit: usize,
         projection: Option<Vec<usize>>,
         row_count: Option<RowCount>,

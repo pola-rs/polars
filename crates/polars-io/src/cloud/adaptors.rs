@@ -46,6 +46,13 @@ impl CloudReader {
         }
     }
 
+    pub async fn get_range(&self, start: usize, end: usize) -> PolarsResult<Bytes> {
+        self.object_store
+            .get_range(&self.path, start..end)
+            .await
+            .map_err(to_compute_err)
+    }
+
     /// For each read request we create a new future.
     async fn read_operation(
         mut self: Pin<&mut Self>,

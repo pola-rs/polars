@@ -24,18 +24,22 @@ pub struct ParquetObjectStore {
     store: Arc<dyn ObjectStore>,
     path: ObjectPath,
     length: Option<u64>,
-    metadata: Option<FileMetaData>,
+    metadata: Option<Arc<FileMetaData>>,
 }
 
 impl ParquetObjectStore {
-    pub async fn from_uri(uri: &str, options: Option<&CloudOptions>) -> PolarsResult<Self> {
+    pub async fn from_uri(
+        uri: &str,
+        options: Option<&CloudOptions>,
+        metadata: Option<Arc<FileMetaData>>,
+    ) -> PolarsResult<Self> {
         let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options).await?;
 
         Ok(ParquetObjectStore {
             store,
             path: ObjectPath::from_url_path(prefix).map_err(to_compute_err)?,
             length: None,
-            metadata: None,
+            metadata,
         })
     }
 
@@ -81,10 +85,10 @@ impl ParquetObjectStore {
     }
 
     /// Fetch and memoize the metadata of the parquet file.
-    pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetaData> {
+    pub async fn get_metadata(&mut self) -> PolarsResult<&Arc<FileMetaData>> {
         self.initialize_length().await?;
         if self.metadata.is_none() {
-            self.metadata = Some(self.fetch_metadata().await?);
+            self.metadata = Some(Arc::new(self.fetch_metadata().await?));
         }
         Ok(self.metadata.as_ref().unwrap())
     }

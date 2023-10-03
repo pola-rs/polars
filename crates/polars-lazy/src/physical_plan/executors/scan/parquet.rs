@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use polars_core::utils::arrow::io::parquet::read::FileMetaData;
 use polars_io::cloud::CloudOptions;
 use polars_io::is_cloud_url;
 
@@ -13,6 +14,7 @@ pub struct ParquetExec {
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
+    metadata: Option<Arc<FileMetaData>>,
 }
 
 impl ParquetExec {
@@ -23,6 +25,7 @@ impl ParquetExec {
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
+        metadata: Option<Arc<FileMetaData>>,
     ) -> Self {
         ParquetExec {
             path,
@@ -31,6 +34,7 @@ impl ParquetExec {
             options,
             cloud_options,
             file_options,
+            metadata,
         }
     }
 
@@ -67,6 +71,7 @@ impl ParquetExec {
                         &self.path.to_string_lossy(),
                         self.cloud_options.as_ref(),
                         Some(self.file_info.schema.clone()),
+                        self.metadata.clone(),
                     )
                     .await?
                     .with_n_rows(n_rows)

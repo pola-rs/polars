@@ -1,7 +1,9 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
 use polars_core::schema::*;
+use polars_core::utils::arrow::io::parquet::read::FileMetaData;
 use polars_core::POOL;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::{BatchedParquetReader, ParquetReader};
@@ -25,6 +27,7 @@ pub struct ParquetSource {
     file_options: Option<FileScanOptions>,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
+    metadata: Option<Arc<FileMetaData>>,
     file_info: FileInfo,
     verbose: bool,
 }
@@ -67,6 +70,7 @@ impl ParquetSource {
                         &uri,
                         self.cloud_options.as_ref(),
                         Some(self.file_info.schema.clone()),
+                        self.metadata.clone(),
                     )
                     .await?
                     .with_n_rows(file_options.n_rows)
@@ -108,6 +112,7 @@ impl ParquetSource {
         path: PathBuf,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
+        metadata: Option<Arc<FileMetaData>>,
         file_options: FileScanOptions,
         file_info: FileInfo,
         verbose: bool,
@@ -122,6 +127,7 @@ impl ParquetSource {
             file_options: Some(file_options),
             path: Some(path),
             cloud_options,
+            metadata,
             file_info,
             verbose,
         })
