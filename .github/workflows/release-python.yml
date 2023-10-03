@@ -26,7 +26,7 @@ jobs:
         architecture: [x86-64, aarch64]
         exclude:
           - os: windows-32gb-ram
-            cpu: aarch64
+            architecture: aarch64
 
     steps:
       - uses: actions/checkout@v4
