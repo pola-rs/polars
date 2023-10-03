@@ -16,6 +16,61 @@ defaults:
     shell: bash
 
 jobs:
+  create-sdist:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [polars, polars-lts-cpu, polars-u64-idx]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Avoid potential out-of-memory errors
+      - name: Set swap space for Linux
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Fix README symlink
+        run: rm py-polars/README.md && cp README.md py-polars/README.md
+
+      - name: Install yq
+        if: matrix.package != 'polars'
+        run: pip install yq
+      - name: Update package name
+        if: matrix.package != 'polars'
+        run: tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
+      - name: Add bigidx feature
+        if: matrix.package == 'polars-u64-idx'
+        run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
+
+      - name: Create source distribution
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: >
+            --manifest-path py-polars/Cargo.toml
+            --out dist
+
+      - name: Test sdist
+        run: |
+          TOOLCHAIN=$(cat rust-toolchain.toml | grep -oP 'channel = "\K[^"]+')
+          rustup default $TOOLCHAIN
+          pip install --force-reinstall --verbose dist/*.tar.gz
+          python -c 'import polars'
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v3
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
   build-wheels:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -44,18 +99,14 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Fix README symlink
-        run: |
-          rm py-polars/README.md
-          cp README.md py-polars/README.md
+        run: rm py-polars/README.md && cp README.md py-polars/README.md
 
       - name: Install yq
         if: matrix.package != 'polars'
         run: pip install yq
-
       - name: Update package name
         if: matrix.package != 'polars'
         run: tomlq -i -t ".project.name = \"${{ matrix.package }}\"" py-polars/pyproject.toml
-
       - name: Add bigidx feature
         if: matrix.package == 'polars-u64-idx'
         run: tomlq -i -t '.dependencies.polars.features += ["bigidx"]' py-polars/Cargo.toml
@@ -63,7 +114,6 @@ jobs:
       - name: Set RUSTFLAGS for x86-64
         if: matrix.architecture == 'x86-64' && matrix.package != 'polars-lts-cpu'
         run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma" >> $GITHUB_ENV
-
       - name: Set RUSTFLAGS for x86-64 LTS CPU
         if: matrix.architecture == 'x86-64' && matrix.package == 'polars-lts-cpu'
         run: echo "RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc" >> $GITHUB_ENV
@@ -92,24 +142,16 @@ jobs:
             --release
             --manifest-path py-polars/Cargo.toml
             --out dist
-            ${{ matrix.os == 'ubuntu-latest' && matrix.architecture == 'x86-64' && '--sdist' || ''}}
           manylinux: auto
 
-      - name: Upload sdist
-        if: matrix.os == 'ubuntu-latest' && matrix.architecture == 'x86-64'
-        uses: actions/upload-artifact@v3
-        with:
-          name: sdist
-          path: dist/*.tar.gz
-
-      - name: Upload wheels
+      - name: Upload wheel
         uses: actions/upload-artifact@v3
         with:
           name: wheels
           path: dist/*.whl
 
   publish-to-pypi:
-    needs: build-wheels
+    needs: [create-sdist, build-wheels]
     environment:
       name: release-python
       url: https://pypi.org/project/polars
@@ -136,7 +178,7 @@ jobs:
           verbose: true
 
   update-github-release:
-    needs: build-wheels
+    needs: create-sdist
     runs-on: ubuntu-latest
 
     steps:
