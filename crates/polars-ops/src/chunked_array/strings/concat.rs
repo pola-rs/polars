@@ -1,5 +1,3 @@
-use std::fmt::{Display, Write};
-
 use arrow::array::Utf8Array;
 use polars_arrow::array::default_arrays::FromDataUtf8;
 use polars_core::prelude::*;
