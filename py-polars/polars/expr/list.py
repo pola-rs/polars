@@ -387,7 +387,7 @@ class ExprListNameSpace:
         ...         "a": [["a"], ["x", "y"], None, ["a", "b"]],
         ...     }
         ... )
-        >>> df.select(pl.col("a").list.cum_set_union().list.join(""))
+        >>> df.select(pl.col("a").list.cum_set_union().list.sort().list.join(""))
         shape: (4, 1)
         ┌──────┐
         │ a    │
@@ -395,9 +395,9 @@ class ExprListNameSpace:
         │ str  │
         ╞══════╡
         │ a    │
-        │ ayx  │
+        │ axy  │
         │ null │
-        │ bayx │
+        │ abxy │
         └──────┘
 
         """
