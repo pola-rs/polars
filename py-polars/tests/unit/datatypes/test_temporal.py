@@ -532,7 +532,7 @@ def test_datetime_comp_tz_aware_invalid() -> None:
     other = datetime(2020, 1, 1)
     with pytest.raises(
         TypeError,
-        match="Time zone of datetime 'None' does not match Series timezone 'Asia/Kathmandu'",
+        match="Datetime time zone 'None' does not match Series timezone 'Asia/Kathmandu'",
     ):
         _ = a > other
 
