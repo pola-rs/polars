@@ -1474,7 +1474,7 @@ impl Expr {
         )
         .with_fmt("rolling_map_float")
     }
-    
+
     pub fn peak_min(self) -> Expr {
         self.map_private(FunctionExpr::PeakMin)
     }

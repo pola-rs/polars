@@ -1,5 +1,4 @@
 use num_traits::Zero;
-
 use polars_core::prelude::*;
 
 /// Get a boolean mask of the local maximum peaks.

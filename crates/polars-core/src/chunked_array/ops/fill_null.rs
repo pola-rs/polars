@@ -287,8 +287,12 @@ where
         FillNullStrategy::Forward(Some(limit)) => fill_forward_limit(ca, limit),
         FillNullStrategy::Backward(None) => fill_backward(ca),
         FillNullStrategy::Backward(Some(limit)) => fill_backward_limit(ca, limit),
-        FillNullStrategy::Min => ca.fill_null_with_values(ChunkAgg::min(ca).ok_or_else(err_fill_null)?)?,
-        FillNullStrategy::Max => ca.fill_null_with_values(ChunkAgg::max(ca).ok_or_else(err_fill_null)?)?,
+        FillNullStrategy::Min => {
+            ca.fill_null_with_values(ChunkAgg::min(ca).ok_or_else(err_fill_null)?)?
+        },
+        FillNullStrategy::Max => {
+            ca.fill_null_with_values(ChunkAgg::max(ca).ok_or_else(err_fill_null)?)?
+        },
         FillNullStrategy::Mean => ca.fill_null_with_values(
             ca.mean()
                 .map(|v| NumCast::from(v).unwrap())

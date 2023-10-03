@@ -1,6 +1,6 @@
-use super::*;
+use polars_ops::chunked_array::peaks::{peak_max as pmax, peak_min as pmin};
 
-use polars_ops::chunked_array::peaks::{peak_min as pmin, peak_max as pmax};
+use super::*;
 
 pub(super) fn peak_min(s: &Series) -> PolarsResult<Series> {
     let s = match s.dtype() {

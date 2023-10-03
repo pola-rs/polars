@@ -292,11 +292,11 @@ impl PyExpr {
     fn bottom_k(&self, k: Self) -> Self {
         self.inner.clone().bottom_k(k.inner).into()
     }
-    
+
     fn peak_min(&self) -> Self {
         self.clone().inner.peak_min().into()
     }
-    
+
     fn peak_max(&self) -> Self {
         self.clone().inner.peak_max().into()
     }
