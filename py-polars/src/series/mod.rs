@@ -579,14 +579,6 @@ impl PySeries {
         Some(ca.get_as_series(index)?.into())
     }
 
-    fn peak_max(&self) -> Self {
-        self.series.peak_max().into_series().into()
-    }
-
-    fn peak_min(&self) -> Self {
-        self.series.peak_min().into_series().into()
-    }
-
     fn n_unique(&self) -> PyResult<usize> {
         let n = self.series.n_unique().map_err(PyPolarsErr::from)?;
         Ok(n)
