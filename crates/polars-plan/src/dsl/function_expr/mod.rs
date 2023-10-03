@@ -25,6 +25,7 @@ mod list;
 #[cfg(feature = "log")]
 mod log;
 mod nan;
+mod peaks;
 #[cfg(feature = "ffi_plugin")]
 mod plugin;
 mod pow;
@@ -206,6 +207,8 @@ pub enum FunctionExpr {
         method: correlation::CorrelationMethod,
         ddof: u8,
     },
+    PeakMin,
+    PeakMax,
     #[cfg(feature = "cutqcut")]
     Cut {
         breaks: Vec<f64>,
@@ -384,6 +387,8 @@ impl Display for FunctionExpr {
             ArrayExpr(af) => return Display::fmt(af, f),
             ConcatExpr(_) => "concat_expr",
             Correlation { method, .. } => return Display::fmt(method, f),
+            PeakMin => "peak_min",
+            PeakMax => "peak_min",
             #[cfg(feature = "cutqcut")]
             Cut { .. } => "cut",
             #[cfg(feature = "cutqcut")]
@@ -649,6 +654,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Fused(op) => map_as_slice!(fused::fused, op),
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
             Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
+            PeakMin => map!(peaks::peak_min),
+            PeakMax => map!(peaks::peak_max),
             #[cfg(feature = "cutqcut")]
             Cut {
                 breaks,

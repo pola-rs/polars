@@ -5737,7 +5737,7 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
         >>> s.peak_max()
         shape: (5,)
-        Series: '' [bool]
+        Series: 'a' [bool]
         [
                 false
                 false
@@ -5747,7 +5747,6 @@ class Series:
         ]
 
         """
-        return self._from_pyseries(self._s.peak_max())
 
     def peak_min(self) -> Self:
         """
@@ -5758,7 +5757,7 @@ class Series:
         >>> s = pl.Series("a", [4, 1, 3, 2, 5])
         >>> s.peak_min()
         shape: (5,)
-        Series: '' [bool]
+        Series: 'a' [bool]
         [
             false
             true
@@ -5768,7 +5767,6 @@ class Series:
         ]
 
         """
-        return self._from_pyseries(self._s.peak_min())
 
     def n_unique(self) -> int:
         """
