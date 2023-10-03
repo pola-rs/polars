@@ -18,5 +18,5 @@ from polars.io._utils import _is_supported_cloud
         ("/local/file.tmp", False,),
     ],
 )
-def test_is_cloud_url(possible_url: Path, expected_result: bool) -> None:
+def test_is_cloud_url(possible_url: str, expected_result: bool) -> None:
     assert _is_supported_cloud(possible_url) is expected_result
