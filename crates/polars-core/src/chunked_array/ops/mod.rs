@@ -16,8 +16,6 @@ pub mod arity;
 mod bit_repr;
 pub(crate) mod chunkops;
 pub(crate) mod compare_inner;
-#[cfg(feature = "concat_str")]
-mod concat_str;
 #[cfg(feature = "cum_agg")]
 mod cum_agg;
 #[cfg(feature = "dtype-decimal")]
