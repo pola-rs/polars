@@ -19,6 +19,8 @@ mod strip;
 #[cfg(feature = "strings")]
 mod substring;
 
+#[cfg(feature = "strings")]
+pub use concat::*;
 #[cfg(feature = "extract_jsonpath")]
 pub use json_path::*;
 #[cfg(feature = "strings")]
@@ -28,8 +30,6 @@ use polars_core::prelude::*;
 pub use split::*;
 #[cfg(feature = "strings")]
 pub use strip::*;
-#[cfg(feature = "strings")]
-pub use concat::*;
 
 pub trait AsUtf8 {
     fn as_utf8(&self) -> &Utf8Chunked;

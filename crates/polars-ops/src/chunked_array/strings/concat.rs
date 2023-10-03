@@ -50,7 +50,7 @@ enum ColumnIter<I, T> {
 }
 
 /// Horizontally concatenate all strings.
-/// 
+///
 /// Each array should have length 1 or a length equal to the maximum length.
 pub fn hor_str_concat(cas: &[&Utf8Chunked], delimiter: &str) -> PolarsResult<Utf8Chunked> {
     if cas.is_empty() {
@@ -61,7 +61,12 @@ pub fn hor_str_concat(cas: &[&Utf8Chunked], delimiter: &str) -> PolarsResult<Utf
     }
 
     // Calculate the post-broadcast length and ensure everything is consistent.
-    let len = cas.iter().map(|ca| ca.len()).filter(|l| *l != 1).max().unwrap_or(1);
+    let len = cas
+        .iter()
+        .map(|ca| ca.len())
+        .filter(|l| *l != 1)
+        .max()
+        .unwrap_or(1);
     polars_ensure!(
         cas.iter().all(|ca| ca.len() == 1 || ca.len() == len),
         ComputeError: "all series in `hor_str_concat` should have equal or unit length"
@@ -81,15 +86,18 @@ pub fn hor_str_concat(cas: &[&Utf8Chunked], delimiter: &str) -> PolarsResult<Utf
         .sum();
     let capacity = tot_strings_bytes + (cas.len() - 1) * delimiter.len() * len;
     let mut builder = Utf8ChunkedBuilder::new(cas[0].name(), len, capacity);
-    
+
     // Broadcast if appropriate.
-    let mut cols: Vec<_> = cas.iter().map(|ca| {
-        if ca.len() > 1 {
-            ColumnIter::Iter(ca.into_iter())
-        } else {
-            ColumnIter::Broadcast(ca.get(0))
-        }
-    }).collect();
+    let mut cols: Vec<_> = cas
+        .iter()
+        .map(|ca| {
+            if ca.len() > 1 {
+                ColumnIter::Iter(ca.into_iter())
+            } else {
+                ColumnIter::Broadcast(ca.get(0))
+            }
+        })
+        .collect();
 
     // Build concatenated string.
     let mut buf = String::with_capacity(1024);
@@ -118,7 +126,7 @@ pub fn hor_str_concat(cas: &[&Utf8Chunked], delimiter: &str) -> PolarsResult<Utf
         }
         buf.clear();
     }
-    
+
     Ok(builder.finish())
 }
 
