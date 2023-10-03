@@ -11,6 +11,7 @@ use polars_io::ipc::IpcReader;
 use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
+#[cfg(all(feature = "cloud", feature = "parquet"))]
 use polars_io::pl_async::get_runtime;
 #[cfg(any(
     feature = "parquet",
