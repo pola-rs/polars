@@ -16,6 +16,7 @@ use polars_core::datatypes::PlHashMap;
 use polars_core::error::{to_compute_err, PolarsResult};
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
+use smartstring::alias::String as SmartString;
 
 use super::cloud::{build_object_store, CloudLocation, CloudReader};
 use super::mmap;
@@ -96,68 +97,84 @@ impl ParquetObjectStore {
 /// A RowGroup will have 1 or more columns, for each column we store:
 ///   - a reference to its metadata
 ///   - the actual content as downloaded from object storage (generally cloud).
-type RowGroupChunks<'a> = Vec<Vec<(&'a ColumnChunkMetaData, Bytes)>>;
+type RowGroupChunks = Vec<Vec<(u64, Bytes)>>;
 
-async fn read_single_column_async<'a>(
+async fn read_single_column_async(
     async_reader: &ParquetObjectStore,
-    meta: &'a ColumnChunkMetaData,
-) -> PolarsResult<(&'a ColumnChunkMetaData, Bytes)> {
+    meta: &ColumnChunkMetaData,
+) -> PolarsResult<(u64, Bytes)> {
     let (start, length) = meta.byte_range();
     let start = start as usize;
     let length = length as usize;
-    dbg!(start, start + length);
     let chunk = async_reader
         .store
         .get_range(&async_reader.path, start..start + length)
         .await
         .map_err(to_compute_err)?;
-    Ok((meta, chunk))
+    Ok((start as u64, chunk))
 }
 
-async fn download_row_group<'a>(
-    async_reader: &ParquetObjectStore,
-    columns: &'a [ColumnChunkMetaData],
-    field_name: &str,
-) {
-
-    {
-        let ranges = get_field_columns(columns, field_name).iter().map(|meta| {
-            let (start, len) = meta.byte_range();
-            (start, start + len)
-        }).collect::<Vec<_>>();
-
-        let mut clustered = Vec::with_capacity(ranges.len());
-        let first_range = ranges[0];
-        let start = first_range.0;
-        let mut previous_end = first_range.1;
-        clustered.push((start, previous_end, vec![first_range]));
-        for (start, end) in ranges.iter().copied() {
-            let this_range = (start, end);
-
-            if start == previous_end {
-                let (_start, total_end, members) = clustered.last_mut().unwrap();
-                *total_end += end;
-                members.push(this_range);
-            } else {
-                clustered.push((start, end, vec![this_range]))
-            }
-            previous_end = end;
-        }
-        dbg!(clustered);
-    }
-
-}
+// async fn download_row_group<'a>(
+//     async_reader: &ParquetObjectStore,
+//     columns: &'a [ColumnChunkMetaData],
+//     field_name: &str,
+// ) {
+//
+//     {
+//         let ranges = get_field_columns(columns, field_name).iter().map(|meta| {
+//             let (start, len) = meta.byte_range();
+//             (start, start + len)
+//         }).collect::<Vec<_>>();
+//
+//         let mut clustered = Vec::with_capacity(ranges.len());
+//         let first_range = ranges[0];
+//         let start = first_range.0;
+//         let mut previous_end = first_range.1;
+//         clustered.push((start, previous_end, vec![first_range]));
+//         for (start, end) in ranges.iter().copied() {
+//             let this_range = (start, end);
+//
+//             if start == previous_end {
+//                 let (_start, total_end, members) = clustered.last_mut().unwrap();
+//                 *total_end += end;
+//                 members.push(this_range);
+//             } else {
+//                 clustered.push((start, end, vec![this_range]))
+//             }
+//             previous_end = end;
+//         }
+//         dbg!(clustered);
+//     }
+//
+// }
+//
+// fn cluster_ranges(ranges: &[(u64, u64)]) -> Vec<(u64, u64, Vec<(u64, u64)>)> {
+//
+//     let mut clustered = Vec::with_capacity(ranges.len());
+//     let first_range = ranges[0];
+//     let start = first_range.0;
+//     let mut previous_end = first_range.1;
+//     clustered.push((start, previous_end, vec![first_range]));
+//     for (start, end) in ranges.iter().copied().skip(1) {
+//         let this_range = (start, end);
+//
+//         if start == previous_end {
+//             let (_start, total_end, members) = clustered.last_mut().unwrap();
+//             *total_end += end;
+//             members.push(this_range);
+//         } else {
+//             clustered.push((start, end, vec![this_range]))
+//         }
+//         previous_end = end;
+//     }
+//     dbg!(clustered)
+// }
 
 async fn read_columns_async<'a>(
     async_reader: &ParquetObjectStore,
     columns: &'a [ColumnChunkMetaData],
     field_name: &str,
-) -> PolarsResult<Vec<(&'a ColumnChunkMetaData, Bytes)>> {
-
-
-
-
-
+) -> PolarsResult<Vec<(u64, Bytes)>> {
     let futures = get_field_columns(columns, field_name)
         .into_iter()
         .map(|meta| async { read_single_column_async(async_reader, meta).await });
@@ -165,31 +182,65 @@ async fn read_columns_async<'a>(
     try_join_all(futures).await
 }
 
-async fn download_projection_rg<'a: 'b, 'b>(
-    projection: &[usize],
-    row_groups: &'a RowGroupMetaData,
-    schema: &ArrowSchema,
-    async_reader: &'b ParquetObjectStore,
-) -> PolarsResult<RowGroupChunks<'a>> {
-    todo!()
-}
+// async fn download_projection_rg<'a: 'b, 'b>(
+//     fields: &[SmartString],
+//     projection: &[usize],
+//     row_group: &'a RowGroupMetaData,
+//     async_reader: &'b ParquetObjectStore,
+// ) -> PolarsResult<RowGroupChunks<'a>> {
+//
+//     let mut ranges = vec![];
+//
+//     // - index of the buffer
+//     // - start
+//     // - len
+//     let mut mapping = vec![];
+//
+//     let mut current_range = (0, 0);
+//
+//     let mut buf_idx = 0usize;
+//     let mut previous_col_idx = projection[0].overflowing_sub(1).0;
+//     // let mut first_iter = true;
+//     for (field_name, &col_idx) in fields.iter().zip(projection) {
+//         let columns = row_group.columns();
+//         let col_chunk_meta = get_field_columns(columns, field_name);
+//         let start = col_chunk_meta.iter().map(|meta| meta.byte_range().0).next().unwrap();
+//         let end = col_chunk_meta.iter().map(|meta| {
+//             let (start, len) = meta.byte_range();
+//             let end = start + len;
+//             end
+//         } ).last().unwrap();
+//
+//         mapping.push((buf_idx, start - current_range.0, end));
+//
+//         // Same cluster;
+//         if col_idx == previous_col_idx.overflowing_add(1).0 {
+//             current_range.1 = end;
+//         // New cluster
+//         } else {
+//             buf_idx += 1;
+//             current_range = (start, end);
+//         }
+//
+//         previous_col_idx = col_idx;
+//     }
+//     ranges.push(current_range);
+//     dbg!(ranges, mapping);
+//
+//     todo!()
+// }
 
 /// Download rowgroups for the column whose indexes are given in `projection`.
 /// We concurrently download the columns for each field.
 async fn download_projection<'a: 'b, 'b>(
-    projection: &[usize],
+    fields: &[SmartString],
     row_groups: &'a [RowGroupMetaData],
-    schema: &ArrowSchema,
     async_reader: &'b ParquetObjectStore,
-) -> PolarsResult<RowGroupChunks<'a>> {
-    let fields = projection
-        .iter()
-        .map(|i| schema.fields[*i].name.clone())
-        .collect::<Vec<_>>();
+) -> PolarsResult<Vec<Vec<(u64, Bytes)>>> {
 
     // Build the cartesian product of the fields and the row groups.
     let product_futures = fields
-        .into_iter()
+        .iter()
         .flat_map(|name| row_groups.iter().map(move |r| (name.clone(), r)))
         .map(|(name, row_group)| async move {
             let columns = row_group.columns();
@@ -202,9 +253,34 @@ async fn download_projection<'a: 'b, 'b>(
     futures::future::try_join_all(product_futures).await
 }
 
+// async fn download_projection2<'a: 'b, 'b>(
+//     fields: &[smartstring],
+//     row_groups: &'a [RowGroupMetaData],
+//     async_reader: &'b ParquetObjectStore,
+// ) -> PolarsResult<RowGroupChunks<'a>> {
+//
+//     // Build the cartesian product of the fields and the row groups.
+//     let product_futures = fields
+//         .iter()
+//         .flat_map(|name| row_groups.iter().map(move |r| (name.clone(), r)))
+//         .map(|(name, row_group)| async move {
+//             let columns = row_group.columns();
+//
+//             let handle = tokio::spawn(async move {
+//                 read_columns_async(async_reader, columns, name.as_ref())
+//                     .map_err(to_compute_err).await
+//             });
+//             handle.await.unwrap()
+//         });
+//
+//     // Download concurrently
+//     futures::future::try_join_all(product_futures).await
+// }
+
 pub struct FetchRowGroupsFromObjectStore {
     reader: ParquetObjectStore,
     row_groups_metadata: Vec<RowGroupMetaData>,
+    projected_fields: Vec<SmartString>,
     projection: Vec<usize>,
     logging: bool,
     schema: ArrowSchema,
@@ -216,16 +292,23 @@ impl FetchRowGroupsFromObjectStore {
         metadata: &FileMetaData,
         projection: &Option<Vec<usize>>,
     ) -> PolarsResult<Self> {
+        // TODO! schema should already be known
         let schema = parquet2_read::schema::infer_schema(metadata)?;
         let logging = verbose();
 
-        let projection = projection
-            .to_owned()
-            .unwrap_or_else(|| (0usize..schema.fields.len()).collect::<Vec<_>>());
+        let projection = projection.to_owned()
+            .unwrap_or_else(|| (0usize..schema.fields.len()).collect());
+
+        let projected_fields = projection
+            .iter()
+            .map(|i| (&schema.fields[*i].name).into())
+            .collect::<Vec<_>>();
+
 
         Ok(FetchRowGroupsFromObjectStore {
             reader,
             row_groups_metadata: metadata.row_groups.to_owned(),
+            projected_fields,
             projection,
             logging,
             schema,
@@ -249,13 +332,16 @@ impl FetchRowGroupsFromObjectStore {
 
         // Package in the format required by ColumnStore.
         let downloaded =
-            download_projection(&self.projection, row_groups, &self.schema, &self.reader).await?;
+            download_projection(&self.projected_fields, row_groups, &self.reader).await?;
+
+        // let downloaded =
+        //     download_projection_rg(&self.projected_fields, &self.projection, &row_groups[0], &self.reader).await?;
 
         if self.logging {
             eprintln!(
                 "BatchedParquetReader: fetched {} row_groups for {} fields, yielding {} column chunks.",
                 row_groups.len(),
-                self.projection.len(),
+                self.projected_fields.len(),
                 downloaded.len(),
             );
         }
@@ -263,7 +349,6 @@ impl FetchRowGroupsFromObjectStore {
             .into_iter()
             .flat_map(|rg| {
                 rg.into_iter()
-                    .map(|(meta, data)| (meta.byte_range().0, data))
             })
             .collect::<PlHashMap<_, _>>();
 
