@@ -68,4 +68,5 @@ def test_hive_partitioned_projection_pushdown(
 
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
     columns = ["sugars_g", "category"]
-    assert q.select(columns).collect().columns == columns
+    for streaming in [True, False]:
+        assert q.select(columns).collect(streaming=streaming).columns == columns

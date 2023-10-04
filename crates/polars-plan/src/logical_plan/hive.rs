@@ -87,6 +87,10 @@ impl HivePartitions {
         }
     }
 
+    pub(crate) fn schema(&self) -> &Schema {
+        self.get_statistics().schema()
+    }
+
     pub fn materialize_partition_columns(&self) -> Vec<Series> {
         self.get_statistics()
             .column_stats()
