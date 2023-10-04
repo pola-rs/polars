@@ -607,6 +607,7 @@ impl PySeries {
         self.series.dot(&other.series)
     }
 
+    #[cfg(feature = "ipc_streaming")]
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
         let mut buf: Vec<u8> = vec![];
@@ -618,6 +619,7 @@ impl PySeries {
         Ok(PyBytes::new(py, &buf).to_object(py))
     }
 
+    #[cfg(feature = "ipc_streaming")]
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
         match state.extract::<&PyBytes>(py) {
