@@ -540,6 +540,65 @@ def test_sql_limit_offset() -> None:
         assert len(out) == min(limit, n_values - offset)
 
 
+def test_sql_join_anti_semi() -> None:
+    frames = {
+        "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, 0, 6], "c": ["w", "y", "z"]}),
+        "tbl_b": pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
+        "tbl_c": pl.DataFrame({"c": ["w", "y", "z"], "d": [10.5, -50.0, 25.5]}),
+    }
+    c = pl.SQLContext(frames, eager_execution=True)
+
+    out = c.execute(
+        """
+        SELECT *
+        FROM tbl_a
+        LEFT SEMI JOIN tbl_b USING (b)
+        LEFT SEMI JOIN tbl_c USING (c)
+        """
+    )
+    assert_frame_equal(pl.DataFrame({"a": [1, 3], "b": [4, 6], "c": ["w", "z"]}), out)
+
+    out = c.execute(
+        """
+        SELECT *
+        FROM tbl_a
+        LEFT ANTI JOIN tbl_b USING (b)
+        LEFT SEMI JOIN tbl_c USING (c)
+        """
+    )
+    assert_frame_equal(pl.DataFrame({"a": [2], "b": [0], "c": ["y"]}), out)
+
+    out = c.execute(
+        """
+        SELECT *
+        FROM tbl_a
+        RIGHT ANTI JOIN tbl_b USING (b)
+        LEFT SEMI JOIN tbl_c USING (c)
+        """
+    )
+    assert_frame_equal(pl.DataFrame({"a": [2], "b": [5], "c": ["y"]}), out)
+
+    out = c.execute(
+        """
+        SELECT *
+        FROM tbl_a
+        RIGHT SEMI JOIN tbl_b USING (b)
+        RIGHT SEMI JOIN tbl_c USING (c)
+        """
+    )
+    assert_frame_equal(pl.DataFrame({"c": ["z"], "d": [25.5]}), out)
+
+    out = c.execute(
+        """
+        SELECT *
+        FROM tbl_a
+        RIGHT SEMI JOIN tbl_b USING (b)
+        RIGHT ANTI JOIN tbl_c USING (c)
+        """
+    )
+    assert_frame_equal(pl.DataFrame({"c": ["w", "y"], "d": [10.5, -50.0]}), out)
+
+
 def test_sql_join_inner(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
