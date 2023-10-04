@@ -809,6 +809,29 @@ def test_sql_round_ndigits_errors() -> None:
         ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
 
 
+def test_sql_string_case() -> None:
+    df = pl.DataFrame({"words": ["Test SOME words"]})
+
+    with pl.SQLContext(frame=df) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              words,
+              INITCAP(words) as cap,
+              UPPER(words) as upper,
+              LOWER(words) as lower,
+            FROM frame
+            """
+        ).collect()
+
+        assert res.to_dict(False) == {
+            "words": ["Test SOME words"],
+            "cap": ["Test Some Words"],
+            "upper": ["TEST SOME WORDS"],
+            "lower": ["test some words"],
+        }
+
+
 def test_sql_string_lengths() -> None:
     df = pl.DataFrame({"words": ["Café", None, "東京"]})
 
