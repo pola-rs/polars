@@ -271,22 +271,46 @@ impl SQLContext {
             for tbl in &tbl_expr.joins {
                 let (join_tbl_name, join_tbl) = self.get_table(&tbl.relation)?;
                 lf = match &tbl.join_operator {
+                    JoinOperator::CrossJoin => lf.cross_join(join_tbl),
+                    JoinOperator::FullOuter(constraint) => {
+                        let (left_on, right_on) =
+                            process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
+                        lf.outer_join(join_tbl, left_on, right_on)
+                    },
                     JoinOperator::Inner(constraint) => {
                         let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
                         lf.inner_join(join_tbl, left_on, right_on)
+                    },
+                    #[cfg(feature = "semi_anti_join")]
+                    JoinOperator::LeftAnti(constraint) => {
+                        let (left_on, right_on) =
+                            process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
+                        lf.anti_join(join_tbl, left_on, right_on)
                     },
                     JoinOperator::LeftOuter(constraint) => {
                         let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
                         lf.left_join(join_tbl, left_on, right_on)
                     },
-                    JoinOperator::FullOuter(constraint) => {
+                    #[cfg(feature = "semi_anti_join")]
+                    JoinOperator::LeftSemi(constraint) => {
                         let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
-                        lf.outer_join(join_tbl, left_on, right_on)
+                        lf.semi_join(join_tbl, left_on, right_on)
                     },
-                    JoinOperator::CrossJoin => lf.cross_join(join_tbl),
+                    #[cfg(feature = "semi_anti_join")]
+                    JoinOperator::RightAnti(constraint) => {
+                        let (left_on, right_on) =
+                            process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
+                        join_tbl.anti_join(lf, right_on, left_on)
+                    },
+                    #[cfg(feature = "semi_anti_join")]
+                    JoinOperator::RightSemi(constraint) => {
+                        let (left_on, right_on) =
+                            process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
+                        join_tbl.semi_join(lf, right_on, left_on)
+                    },
                     join_type => {
                         polars_bail!(
                             InvalidOperation:

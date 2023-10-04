@@ -7,6 +7,8 @@ mod export;
 mod numpy_ufunc;
 mod set_at_idx;
 
+use std::io::Cursor;
+
 use polars_algo::hist;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
@@ -597,22 +599,37 @@ impl PySeries {
         self.series.dot(&other.series)
     }
 
+    #[cfg(feature = "ipc_streaming")]
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
-        let mut writer: Vec<u8> = vec![];
-        ciborium::ser::into_writer(&self.series, &mut writer)
-            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
-
-        Ok(PyBytes::new(py, &writer).to_object(py))
+        let mut buf: Vec<u8> = vec![];
+        // IPC only support DataFrames so we need to convert it
+        let mut df = self.series.clone().into_frame();
+        IpcStreamWriter::new(&mut buf)
+            .finish(&mut df)
+            .expect("ipc writer");
+        Ok(PyBytes::new(py, &buf).to_object(py))
     }
 
+    #[cfg(feature = "ipc_streaming")]
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
-                self.series = ciborium::de::from_reader(s.as_bytes())
-                    .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
-                Ok(())
+                let c = Cursor::new(s.as_bytes());
+                let reader = IpcStreamReader::new(c);
+                let mut df = reader.finish().map_err(PyPolarsErr::from)?;
+
+                df.pop()
+                    .map(|s| {
+                        self.series = s;
+                    })
+                    .ok_or_else(|| {
+                        PyPolarsErr::from(PolarsError::NoData(
+                            "No columns found in IPC byte stream".into(),
+                        ))
+                        .into()
+                    })
             },
             Err(e) => Err(e),
         }
