@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 import pytest
 
 from polars.io._utils import _is_supported_cloud
 
 
 @pytest.mark.parametrize(
-    ("possible_url", "expected_result"),
+    ("url", "expected"),
     [
         ("s3://bucket/file.tmp", True),
         ("s3a://bucket/file.tmp", True),
@@ -15,15 +17,9 @@ from polars.io._utils import _is_supported_cloud
         ("azure://container@account/file.tmp", True),
         ("az://container@account/file.tmp", True),
         ("adl://account/file.tmp", True),
-        (
-            "file:///local/file.tmp",
-            True,
-        ),
-        (
-            "/local/file.tmp",
-            False,
-        ),
+        ("file:///local/file.tmp", True),
+        ("/local/file.tmp", False),
     ],
 )
-def test_is_cloud_url(possible_url: str, expected_result: bool) -> None:
-    assert _is_supported_cloud(possible_url) is expected_result
+def test_is_cloud_url(url: str, expected: bool) -> None:
+    assert _is_supported_cloud(url) is expected
