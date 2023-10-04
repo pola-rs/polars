@@ -224,8 +224,14 @@ impl<'a> BitMask<'a> {
     /// absolute (and starts at the beginning), not relative to end.
     pub fn nth_set_bit_idx_rev(&self, mut n: usize, mut end: usize) -> Option<usize> {
         while end > 0 {
-            let u32_mask_start = end.saturating_sub(32);
-            let next_u32_mask = self.get_u32(u32_mask_start);
+            // We want to find bits *before* end, so if end < 32 we must mask
+            // out the bits after the endth.
+            let (u32_mask_start, u32_mask_mask) = if end >= 32 {
+                (end - 32, u32::MAX)
+            } else {
+                (0, (1 << end) - 1)
+            };
+            let next_u32_mask = self.get_u32(u32_mask_start) & u32_mask_mask;
             if next_u32_mask == u32::MAX {
                 // Happy fast path for dense non-null section.
                 if n < 32 {
