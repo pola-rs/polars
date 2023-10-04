@@ -282,6 +282,7 @@ impl SQLContext {
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
                         lf.inner_join(join_tbl, left_on, right_on)
                     },
+                    #[cfg(feature = "semi_anti_join")]
                     JoinOperator::LeftAnti(constraint) => {
                         let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
@@ -292,16 +293,19 @@ impl SQLContext {
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
                         lf.left_join(join_tbl, left_on, right_on)
                     },
+                    #[cfg(feature = "semi_anti_join")]
                     JoinOperator::LeftSemi(constraint) => {
                         let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
                         lf.semi_join(join_tbl, left_on, right_on)
                     },
+                    #[cfg(feature = "semi_anti_join")]
                     JoinOperator::RightAnti(constraint) => {
                         let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
                         join_tbl.anti_join(lf, right_on, left_on)
                     },
+                    #[cfg(feature = "semi_anti_join")]
                     JoinOperator::RightSemi(constraint) => {
                         let (left_on, right_on) =
                             process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
