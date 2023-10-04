@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 inf = float("inf")
 
@@ -9,7 +11,7 @@ inf = float("inf")
 def test_cut() -> None:
     s = pl.Series("a", [-2, -1, 0, 1, 2])
 
-    out = s.cut([-1, 1])
+    result = s.cut([-1, 1])
 
     expected = pl.Series(
         "a",
@@ -22,7 +24,19 @@ def test_cut() -> None:
         ],
         dtype=pl.Categorical,
     )
-    assert_series_equal(out, expected, categorical_as_str=True)
+    assert_series_equal(result, expected, categorical_as_str=True)
+
+
+def test_cut_lazy_schema() -> None:
+    lf = pl.LazyFrame({"a": [-2, -1, 0, 1, 2]})
+
+    result = lf.select(pl.col("a").cut([-1, 1]))
+
+    expected = pl.LazyFrame(
+        {"a": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"]},
+        schema={"a": pl.Categorical},
+    )
+    assert_frame_equal(result, expected, categorical_as_str=True)
 
 
 def test_cut_include_breaks() -> None:
@@ -38,6 +52,24 @@ def test_cut_include_breaks() -> None:
         schema_overrides={"category": pl.Categorical},
     ).to_struct("a")
     assert_series_equal(out, expected, categorical_as_str=True)
+
+
+# https://github.com/pola-rs/polars/issues/11255
+def test_cut_include_breaks_lazy_schema() -> None:
+    lf = pl.LazyFrame({"a": [-2, -1, 0, 1, 2]})
+
+    result = lf.select(
+        pl.col("a").cut([-1, 1], include_breaks=True).alias("cut")
+    ).unnest("cut")
+
+    expected = pl.LazyFrame(
+        {
+            "brk": [-1.0, -1.0, 1.0, 1.0, inf],
+            "a_bin": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"],
+        },
+        schema_overrides={"a_bin": pl.Categorical},
+    )
+    assert_frame_equal(result, expected, categorical_as_str=True)
 
 
 def test_cut_null_values() -> None:
