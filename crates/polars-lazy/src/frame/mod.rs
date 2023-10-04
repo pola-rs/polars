@@ -1496,8 +1496,9 @@ impl LazyFrame {
             LogicalPlan::Scan {
                 file_options: options,
                 file_info,
+                scan_type,
                 ..
-            } => {
+            } if !matches!(scan_type, FileScan::Anonymous { .. }) => {
                 options.row_count = Some(RowCount {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),

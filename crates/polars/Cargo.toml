@@ -193,6 +193,7 @@ list_drop_nulls = ["polars-lazy?/list_drop_nulls"]
 cutqcut = ["polars-lazy?/cutqcut"]
 rle = ["polars-lazy?/rle"]
 extract_groups = ["polars-lazy?/extract_groups"]
+peaks = ["polars-lazy/peaks"]
 
 test = [
   "lazy",
