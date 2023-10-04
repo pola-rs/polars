@@ -209,7 +209,9 @@ impl FunctionExpr {
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr(_) => mapper.map_to_supertype(),
             Correlation { .. } => mapper.map_to_float_dtype(),
+            #[cfg(feature = "peaks")]
             PeakMin => mapper.with_same_dtype(),
+            #[cfg(feature = "peaks")]
             PeakMax => mapper.with_same_dtype(),
             #[cfg(feature = "cutqcut")]
             Cut { .. } => mapper.with_dtype(DataType::Categorical(None)),

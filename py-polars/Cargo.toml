@@ -143,6 +143,7 @@ rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
 ffi_plugin = ["polars-plan/ffi_plugin"]
 cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure"]
+peaks = ["polars/peaks"]
 
 dtypes = [
   "dtype-i8",
@@ -177,6 +178,7 @@ operations = [
   "top_k",
   "propagate_nans",
   "timezones",
+  "peaks",
 ]
 
 io = [
