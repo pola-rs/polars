@@ -47,7 +47,7 @@ def s3(s3_base: str, io_files_path: Path) -> str:
     client = boto3.client("s3", region_name=region, endpoint_url=s3_base)
     client.create_bucket(Bucket="bucket")
 
-    files = ["foods1.csv", "foods1.ipc", "foods1.parquet"]
+    files = ["foods1.csv", "foods1.ipc", "foods1.parquet", "foods1.ndjson"]
     for file in files:
         client.upload_file(io_files_path / file, Bucket="bucket", Key=file)
     return s3_base
@@ -59,6 +59,7 @@ def s3(s3_base: str, io_files_path: Path) -> str:
         (pl.read_csv, "csv"),
         (pl.read_ipc, "ipc"),
         (pl.read_parquet, "parquet"),
+        (pl.read_ndjson, "ndjson"),
     ],
 )
 def test_read_s3(s3: str, function: Callable[..., Any], extension: str) -> None:
@@ -73,7 +74,10 @@ def test_read_s3(s3: str, function: Callable[..., Any], extension: str) -> None:
 @pytest.mark.parametrize(
     ("function", "extension"),
     [
+        (pl.scan_csv, "csv"),
         (pl.scan_ipc, "ipc"),
+        (pl.scan_parquet, "parquet"),
+        (pl.scan_ndjson, "ndjson"),
     ],
 )
 def test_scan_s3(s3: str, function: Callable[..., Any], extension: str) -> None:
