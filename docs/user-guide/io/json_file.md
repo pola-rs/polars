@@ -1,4 +1,5 @@
 # JSON files
+
 Polars can read and write both standard JSON and newline-delimited JSON (NDJSON).
 
 ## Read
@@ -18,8 +19,8 @@ Polars can read an ND-JSON file into a `DataFrame` using the `read_ndjson` funct
 {{code_block('user-guide/io/json-file','readnd',['read_ndjson'])}}
 
 ## Write
-{{code_block('user-guide/io/json-file','write',['write_json','write_ndjson'])}}
 
+{{code_block('user-guide/io/json-file','write',['write_json','write_ndjson'])}}
 
 ## Scan NDJSON
 

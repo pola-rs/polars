@@ -2,7 +2,7 @@
 
 ## Read from a database
 
-Polars can read from a database using either the `pl.read_database_uri` and `pl.read_database` functions. 
+Polars can read from a database using either the `pl.read_database_uri` and `pl.read_database` functions.
 
 ### Difference between the `read_database` functions
 

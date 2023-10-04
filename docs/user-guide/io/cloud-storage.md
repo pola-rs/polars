@@ -36,12 +36,14 @@ If we create a lazy query with [predicate and projection pushdowns](/polars/user
 {{code_block('user-guide/io/cloud-storage','scan_parquet_query',[])}}
 
 ## Scanning with PyArrow
+
 We can also scan from cloud storage using PyArrow. This is particularly useful for partitioned datasets such as Hive partitioning.
 
 We first create a PyArrow dataset and then create a `LazyFrame` from the dataset.
 {{code_block('user-guide/io/cloud-storage','scan_pyarrow_dataset',[scan_pyarrow_dataset])}}
 
 ## Writing to cloud storage
+
 We can write a `DataFrame` to cloud storage in Python using s3fs for S3, adlfs for Azure Blob Storage and gcsfs for Google Cloud Storage. In this example we write a Parquet file to S3.
 
 {{code_block('user-guide/io/cloud-storage','write_parquet',[write_parquet])}}
