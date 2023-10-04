@@ -255,68 +255,46 @@ impl<'a> PredicatePushDown<'a> {
                     }
                 }
 
-                let lp = match (predicate, &scan_type) {
+                let mut do_optimization = match &scan_type {
                     #[cfg(feature = "csv")]
-                    (Some(predicate), FileScan::Csv {..}) => {
-                        let lp = Scan {
-                            path,
-                            file_info,
-                            predicate: None,
-                            file_options: options,
-                            output_schema,
-                            scan_type
-                        };
+                    FileScan::Csv {..} => false,
+                    FileScan::Anonymous {function, ..} => function.allows_predicate_pushdown(),
+                    _ => true
+                };
+                do_optimization &= predicate.is_some();
+
+                let lp = if do_optimization {
+                    Scan {
+                        path,
+                        file_info,
+                        predicate,
+                        file_options: options,
+                        output_schema,
+                        scan_type
+                    }
+                } else {
+                    let lp = Scan {
+                        path,
+                        file_info,
+                        predicate: None,
+                        file_options: options,
+                        output_schema,
+                        scan_type
+                    };
+                    if let Some(predicate) = predicate {
                         let input = lp_arena.add(lp);
                         Selection {
                             input,
                             predicate
                         }
-                    },
-                    _ => {
-                        Scan {
-                            path,
-                            file_info,
-                            predicate,
-                            file_options: options,
-                            output_schema,
-                            scan_type
-                        }
+                    } else {
+                        lp
                     }
                 };
 
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
 
             }
-            AnonymousScan {
-                function,
-                file_info,
-                output_schema,
-                options,
-                predicate,
-            } => {
-                if function.allows_predicate_pushdown() {
-                    let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
-                    let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
-                    let lp = AnonymousScan {
-                        function,
-                        file_info,
-                        output_schema,
-                        options,
-                        predicate,
-                    };
-                    Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
-                } else {
-                    let lp = AnonymousScan {
-                        function,
-                        file_info,
-                        output_schema,
-                        options,
-                        predicate,
-                    };
-                    self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
-                }
-            }
-
             Distinct {
                 input,
                 options

@@ -19,7 +19,6 @@ impl LogicalPlan {
             Cache { input, .. } => input.schema(),
             Sort { input, .. } => input.schema(),
             DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),
-            AnonymousScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             Selection { input, .. } => input.schema(),
             Projection { schema, .. } => Ok(Cow::Borrowed(schema)),
             Aggregate { schema, .. } => Ok(Cow::Borrowed(schema)),
@@ -218,10 +217,6 @@ pub fn set_estimated_row_counts(
         PythonScan { .. } => {
             // TODO! get row estimation.
             (None, usize::MAX, _filter_count)
-        },
-        AnonymousScan { options, .. } => {
-            let size = options.n_rows;
-            (size, size.unwrap_or(usize::MAX), _filter_count)
         },
         lp => {
             lp.copy_inputs(scratch);

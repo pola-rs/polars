@@ -15,13 +15,6 @@ use crate::utils::PushNode;
 /// [`ALogicalPlan`] is a representation of [`LogicalPlan`] with [`Node`]s which are allocated in an [`Arena`]
 #[derive(Clone, Debug)]
 pub enum ALogicalPlan {
-    AnonymousScan {
-        function: Arc<dyn AnonymousScan>,
-        file_info: FileInfo,
-        output_schema: Option<SchemaRef>,
-        predicate: Option<Node>,
-        options: Arc<AnonymousScanOptions>,
-    },
     #[cfg(feature = "python")]
     PythonScan {
         options: PythonOptions,
@@ -136,7 +129,6 @@ impl ALogicalPlan {
             Scan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "python")]
             PythonScan { options, .. } => &options.schema,
-            AnonymousScan { file_info, .. } => &file_info.schema,
             _ => unreachable!(),
         }
     }
@@ -145,7 +137,6 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
         match self {
             Scan { scan_type, .. } => scan_type.into(),
-            AnonymousScan { .. } => "anonymous_scan",
             #[cfg(feature = "python")]
             PythonScan { .. } => "python_scan",
             Slice { .. } => "slice",
@@ -189,11 +180,6 @@ impl ALogicalPlan {
                 output_schema,
                 ..
             } => output_schema.as_ref().unwrap_or(schema),
-            AnonymousScan {
-                file_info,
-                output_schema,
-                ..
-            } => output_schema.as_ref().unwrap_or(&file_info.schema),
             Selection { input, .. } => return arena.get(*input).schema(arena),
             Projection { schema, .. } => schema,
             Aggregate { schema, .. } => schema,
@@ -347,26 +333,6 @@ impl ALogicalPlan {
                     selection: new_selection,
                 }
             },
-            AnonymousScan {
-                function,
-                file_info,
-                output_schema,
-                predicate,
-                options,
-            } => {
-                let mut new_predicate = None;
-                if predicate.is_some() {
-                    new_predicate = exprs.pop()
-                }
-
-                AnonymousScan {
-                    function: function.clone(),
-                    file_info: file_info.clone(),
-                    output_schema: output_schema.clone(),
-                    predicate: new_predicate,
-                    options: options.clone(),
-                }
-            },
             MapFunction { function, .. } => MapFunction {
                 input: inputs[0],
                 function: function.clone(),
@@ -414,11 +380,6 @@ impl ALogicalPlan {
             },
             #[cfg(feature = "python")]
             PythonScan { .. } => {},
-            AnonymousScan { predicate, .. } => {
-                if let Some(node) = predicate {
-                    container.push(*node)
-                }
-            },
             ExtContext { .. } | Sink { .. } => {},
         }
     }
@@ -474,7 +435,6 @@ impl ALogicalPlan {
             },
             Scan { .. } => return,
             DataFrameScan { .. } => return,
-            AnonymousScan { .. } => return,
             #[cfg(feature = "python")]
             PythonScan { .. } => return,
         };

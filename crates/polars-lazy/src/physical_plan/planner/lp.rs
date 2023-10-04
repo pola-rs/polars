@@ -196,6 +196,7 @@ pub fn create_physical_plan(
             predicate,
             file_options,
         } => {
+            let mut state = ExpressionConversionState::default();
             let predicate = predicate
                 .map(|pred| {
                     create_physical_expr(
@@ -203,7 +204,7 @@ pub fn create_physical_plan(
                         Context::Default,
                         expr_arena,
                         output_schema.as_ref(),
-                        &mut Default::default(),
+                        &mut state,
                     )
                 })
                 .map_or(Ok(None), |v| v.map(Some))?;
@@ -241,6 +242,20 @@ pub fn create_physical_plan(
                     file_options,
                     metadata
                 ))),
+                FileScan::Anonymous {
+                    function,
+                    ..
+                } => {
+                    Ok(Box::new(executors::AnonymousScanExec {
+                        function,
+                        predicate,
+                        file_options,
+                        file_info,
+                        output_schema,
+                        predicate_has_windows: state.has_windows,
+                    }))
+
+                }
             }
         },
         Projection {
@@ -301,33 +316,6 @@ pub fn create_physical_plan(
                 df,
                 projection,
                 selection,
-                predicate_has_windows: state.has_windows,
-            }))
-        },
-        AnonymousScan {
-            function,
-            predicate,
-            options,
-            output_schema,
-            ..
-        } => {
-            let mut state = ExpressionConversionState::default();
-            let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
-            let predicate = predicate
-                .map(|pred| {
-                    create_physical_expr(
-                        pred,
-                        Context::Default,
-                        expr_arena,
-                        output_schema.as_ref(),
-                        &mut state,
-                    )
-                })
-                .map_or(Ok(None), |v| v.map(Some))?;
-            Ok(Box::new(executors::AnonymousScanExec {
-                function,
-                predicate,
-                options,
                 predicate_has_windows: state.has_windows,
             }))
         },

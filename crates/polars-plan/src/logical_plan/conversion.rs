@@ -180,18 +180,6 @@ pub fn to_alp(
             scan_type,
             file_options: options,
         },
-        LogicalPlan::AnonymousScan {
-            function,
-            file_info,
-            predicate,
-            options,
-        } => ALogicalPlan::AnonymousScan {
-            function,
-            file_info,
-            output_schema: None,
-            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
-            options,
-        },
         #[cfg(feature = "python")]
         LogicalPlan::PythonScan { options } => ALogicalPlan::PythonScan {
             options,
@@ -621,18 +609,6 @@ impl ALogicalPlan {
                 predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
                 scan_type,
                 file_options: options,
-            },
-            ALogicalPlan::AnonymousScan {
-                function,
-                file_info,
-                output_schema: _,
-                predicate,
-                options,
-            } => LogicalPlan::AnonymousScan {
-                function,
-                file_info,
-                predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-                options,
             },
             #[cfg(feature = "python")]
             ALogicalPlan::PythonScan { options, .. } => LogicalPlan::PythonScan { options },

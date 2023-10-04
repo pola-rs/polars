@@ -17,7 +17,6 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
-use crate::prelude::Expr;
 
 pub type FileCount = u32;
 
@@ -293,12 +292,7 @@ pub struct PythonOptions {
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct AnonymousScanOptions {
-    pub schema: SchemaRef,
-    pub output_schema: Option<SchemaRef>,
     pub skip_rows: Option<usize>,
-    pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<Vec<String>>>,
-    pub predicate: Option<Expr>,
     pub fmt_str: &'static str,
 }
 
