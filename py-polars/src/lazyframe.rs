@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::io::BufWriter;
 use std::path::PathBuf;
 
+#[cfg(feature = "parquet")]
+use polars::io::is_cloud_url;
 #[cfg(feature = "csv")]
 use polars::io::csv::SerializeOptions;
 use polars::io::RowCount;
@@ -19,7 +21,6 @@ use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::*;
 use polars_ops::prelude::AsOfOptions;
-use polars_rs::io::cloud::CloudOptions;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
@@ -473,11 +474,11 @@ impl PyLazyFrame {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "parquet"))]
-    #[pyo3(signature = (path, compression, compression_level, statistics, row_group_size, data_pagesize_limit, maintain_order, cloud_options))]
+    #[pyo3(signature = (path, compression, compression_level, statistics, row_group_size, data_pagesize_limit, maintain_order, cloud_options, retries))]
     fn sink_parquet(
         &self,
         py: Python,
-        path: &str,
+        path: String,
         compression: &str,
         compression_level: Option<i32>,
         statistics: bool,
@@ -485,7 +486,7 @@ impl PyLazyFrame {
         data_pagesize_limit: Option<usize>,
         maintain_order: bool,
         cloud_options: Option<Vec<(String, String)>>,
-        retries: int,
+        retries: usize,
     ) -> PyResult<()> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
@@ -502,12 +503,12 @@ impl PyLazyFrame {
         py.allow_threads(|| {
             let ldf = self.ldf.clone();
 
-            if is_cloud_url(path) {
+            if is_cloud_url(path.clone()) {
                 let converted_cloud_options = prepare_cloud_options(&path, cloud_options, retries);
-                ldf.sink_parquet_cloud(path, converted_cloud_options, options).map_err(PyPolarsErr::from);
+                ldf.sink_parquet_cloud(path, converted_cloud_options, options).map_err(PyPolarsErr::from)
             }
             else {
-                ldf.sink_parquet(PathBuf::from(path), options).map_err(PyPolarsErr::from);
+                ldf.sink_parquet(PathBuf::from(path), options).map_err(PyPolarsErr::from)
             }
         })?;
         Ok(())
