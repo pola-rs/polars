@@ -632,7 +632,6 @@ impl PySeries {
                 df.pop()
                     .map(|s| {
                         self.series = s;
-                        ()
                     })
                     .ok_or_else(|| {
                         PyPolarsErr::from(PolarsError::NoData(

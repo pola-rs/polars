@@ -109,9 +109,8 @@ impl PyDataFrame {
                     .finish()
                     .map(|df| {
                         self.df = df;
-                        ()
                     })
-                    .or_else(|e| Err(PyPolarsErr::from(e).into()))
+                    .map_err(|e| PyPolarsErr::from(e).into())
             },
             Err(e) => Err(e),
         }
