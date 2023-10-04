@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import glob
-import re
 from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -17,7 +16,7 @@ def _is_glob_pattern(file: str) -> bool:
 
 
 def _is_supported_cloud(file: str) -> bool:
-    return re.match(r"^(s3a?|gs|gcs|file|abfs|abfss|azure|az|adl)://", str(file)) is not None
+    return file.startswith(("s3", "gs", "az", "adl", "abfs"))
 
 
 def _is_local_file(file: str) -> bool:
