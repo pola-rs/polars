@@ -7,10 +7,10 @@ use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
 use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{
-    Distinct, ExcludeSelectItem, Expr as SqlExpr, FunctionArg, GroupByExpr, JoinConstraint,
-    JoinOperator, ObjectName, ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr,
-    SetOperator, SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins,
-    Value as SQLValue, WildcardAdditionalOptions,
+    Distinct, ExcludeSelectItem, Expr as SqlExpr, FunctionArg, GroupByExpr, JoinOperator,
+    ObjectName, ObjectType, Offset, OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator,
+    SetQuantifier, Statement, TableAlias, TableFactor, TableWithJoins, Value as SQLValue,
+    WildcardAdditionalOptions,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};

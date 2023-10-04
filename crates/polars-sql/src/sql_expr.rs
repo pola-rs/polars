@@ -627,11 +627,11 @@ pub(super) fn process_join(
     left_tbl: LazyFrame,
     right_tbl: LazyFrame,
     constraint: &JoinConstraint,
-    tbl_name: &String,
-    join_tbl_name: &String,
+    tbl_name: &str,
+    join_tbl_name: &str,
     join_type: JoinType,
 ) -> PolarsResult<LazyFrame> {
-    let (left_on, right_on) = process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
+    let (left_on, right_on) = process_join_constraint(constraint, tbl_name, join_tbl_name)?;
 
     Ok(left_tbl
         .join_builder()
@@ -639,8 +639,7 @@ pub(super) fn process_join(
         .left_on(left_on)
         .right_on(right_on)
         .how(join_type)
-        .finish()
-        .into())
+        .finish())
 }
 
 pub(super) fn process_join_constraint(
@@ -675,7 +674,7 @@ pub(super) fn process_join_constraint(
     if let JoinConstraint::Using(idents) = constraint {
         if !idents.is_empty() {
             let mut using = Vec::with_capacity(idents.len());
-            using.extend(idents.into_iter().map(|id| col(&id.value)));
+            using.extend(idents.iter().map(|id| col(&id.value)));
             return Ok((using.clone(), using.clone()));
         }
     }
