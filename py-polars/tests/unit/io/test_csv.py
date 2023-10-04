@@ -561,7 +561,6 @@ def test_csv_quote_char() -> None:
             ),
         ]
     )
-
     rolling_stones = textwrap.dedent(
         """\
         linenum,last_name,first_name
@@ -576,13 +575,19 @@ def test_csv_quote_char() -> None:
         9,J"o"ne"s,Brian
         """
     )
-
     for use_pyarrow in (False, True):
         out = pl.read_csv(
             rolling_stones.encode(), quote_char=None, use_pyarrow=use_pyarrow
         )
         assert out.shape == (9, 3)
         assert_frame_equal(out, expected)
+
+    # non-standard quote char
+    df = pl.DataFrame({"x": ["", "0*0", "xyz"]})
+    csv_data = df.write_csv(quote="*")
+
+    assert csv_data == "x\n**\n*0**0*\nxyz\n"
+    assert_frame_equal(df, pl.read_csv(io.StringIO(csv_data), quote_char="*"))
 
 
 def test_csv_empty_quotes_char_1622() -> None:

@@ -88,10 +88,16 @@ pub(super) fn array_iter_to_series(
     }
 }
 
-fn materialize_hive_partitions(df: &mut DataFrame, hive_partition_columns: Option<&[Series]>) {
+/// Materializes hive partitions.
+/// We have a special num_rows arg, as df can be empty.
+fn materialize_hive_partitions(
+    df: &mut DataFrame,
+    hive_partition_columns: Option<&[Series]>,
+    num_rows: usize,
+) {
     if let Some(hive_columns) = hive_partition_columns {
         for s in hive_columns {
-            unsafe { df.with_column_unchecked(s.new_from_index(0, df.height())) };
+            unsafe { df.with_column_unchecked(s.new_from_index(0, num_rows)) };
         }
     }
 }
@@ -161,7 +167,7 @@ fn rg_to_dfs(
         if let Some(rc) = &row_count {
             df.with_row_count_mut(&rc.name, Some(*previous_row_count + rc.offset));
         }
-        materialize_hive_partitions(&mut df, hive_partition_columns);
+        materialize_hive_partitions(&mut df, hive_partition_columns, md.num_rows());
 
         apply_predicate(&mut df, predicate.as_deref(), true)?;
 
@@ -237,7 +243,7 @@ fn rg_to_dfs_par(
             if let Some(rc) = &row_count {
                 df.with_row_count_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
             }
-            materialize_hive_partitions(&mut df, hive_partition_columns);
+            materialize_hive_partitions(&mut df, hive_partition_columns, md.num_rows());
 
             apply_predicate(&mut df, predicate.as_deref(), false)?;
 
@@ -404,7 +410,7 @@ pub struct BatchedParquetReader {
     limit: usize,
     projection: Vec<usize>,
     schema: ArrowSchema,
-    metadata: FileMetaData,
+    metadata: Arc<FileMetaData>,
     row_count: Option<RowCount>,
     rows_read: IdxSize,
     row_group_offset: usize,
@@ -420,7 +426,7 @@ impl BatchedParquetReader {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         row_group_fetcher: RowGroupFetcher,
-        metadata: FileMetaData,
+        metadata: Arc<FileMetaData>,
         limit: usize,
         projection: Option<Vec<usize>>,
         row_count: Option<RowCount>,
