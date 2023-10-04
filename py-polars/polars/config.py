@@ -404,9 +404,10 @@ class Config(contextlib.ContextDecorator):
 
         Examples
         --------
-        >>> df = pl.DataFrame({"v":range(10),"v2":range(10,20)})
+        >>> df = pl.DataFrame({"v": range(10), "v2": range(10, 20)})
         >>> with pl.Config(set_auto_structify=True):
         ...     out = df.select(pl.all())
+        ...
         >>> out
         shape: (10, 1)
         ┌───────────┐
@@ -447,6 +448,7 @@ class Config(contextlib.ContextDecorator):
         >>> s = pl.Series([1.2304980958725870923])
         >>> with pl.Config(set_fmt_float="mixed"):
         ...     print(s)
+        ...
         shape: (1,)
         Series: '' [f64]
         [
@@ -455,6 +457,7 @@ class Config(contextlib.ContextDecorator):
 
         >>> with pl.Config(set_fmt_float="full"):
         ...     print(s)
+        ...
         shape: (1,)
         Series: '' [f64]
         [
