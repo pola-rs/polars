@@ -197,7 +197,7 @@ rust:
     feature_flags: ['json']
   read_ndjson:
     name: JsonLineReader
-    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_io/ndjson_core/ndjson/struct.JsonLineReader.html
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_io/ndjson/core/struct.JsonLineReader.html
     feature_flags: ['json']
   write_json:
     name: JsonWriter

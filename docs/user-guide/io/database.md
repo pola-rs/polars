@@ -48,7 +48,7 @@ $ pip install adbc-driver-sqlite
 
 As ADBC is not the default engine you must specify the engine as an argument to `pl.read_database`
 
-{{code_block('user-guide/io/database','adbc',['read_database'])}}
+{{code_block('user-guide/io/database','adbc',['read_database_uri'])}}
 
 ## Write to a database
 
