@@ -16,7 +16,7 @@ endif
 
 .PHONY: requirements
 requirements: .venv  ## Install/refresh Python project requirements
-	$(VENV_BIN)/python3 -m ensurepip --upgrade
+	$(VENV_BIN)/python -m ensurepip --upgrade
 	$(VENV_BIN)/pip3 install --upgrade -r py-polars/requirements-dev.txt
 	$(VENV_BIN)/pip3 install --upgrade -r py-polars/requirements-lint.txt
 	$(VENV_BIN)/pip3 install --upgrade -r py-polars/docs/requirements-docs.txt
