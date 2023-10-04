@@ -16,8 +16,7 @@ fn nan_min<T: IsFloat + PartialOrd + Copy>(a: T, b: T) -> T {
     // If b is nan, min is nan, because the comparison failed. We have
     // to poison the result if a is nan.
     let min = if a < b { a } else { b };
-    #[allow(clippy::eq_op)]
-    if a != a {
+    if a.is_nan() {
         a
     } else {
         min
@@ -28,8 +27,7 @@ fn nan_min<T: IsFloat + PartialOrd + Copy>(a: T, b: T) -> T {
 fn nan_max<T: IsFloat + PartialOrd + Copy>(a: T, b: T) -> T {
     // See nan_min.
     let max = if a > b { a } else { b };
-    #[allow(clippy::eq_op)]
-    if a != a {
+    if a.is_nan() {
         a
     } else {
         max
