@@ -107,19 +107,28 @@ impl LogicalPlanBuilder {
         });
 
         let file_info = FileInfo::new(schema.clone(), (n_rows, n_rows.unwrap_or(usize::MAX)));
-        Ok(LogicalPlan::AnonymousScan {
-            function,
+        let file_options = FileScanOptions {
+            n_rows,
+            with_columns: None,
+            cache: false,
+            row_count: None,
+            rechunk: false,
+            file_counter: Default::default(),
+            hive_partitioning: false,
+        };
+
+        Ok(LogicalPlan::Scan {
+            path: "".into(),
             file_info,
             predicate: None,
-            options: Arc::new(AnonymousScanOptions {
-                fmt_str: name,
-                schema,
-                skip_rows,
-                n_rows,
-                output_schema: None,
-                with_columns: None,
-                predicate: None,
-            }),
+            file_options,
+            scan_type: FileScan::Anonymous {
+                function,
+                options: Arc::new(AnonymousScanOptions {
+                    fmt_str: name,
+                    skip_rows,
+                }),
+            },
         }
         .into())
     }

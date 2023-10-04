@@ -17,6 +17,11 @@ pub enum FileScan {
     },
     #[cfg(feature = "ipc")]
     Ipc { options: IpcScanOptions },
+    #[cfg_attr(feature = "serde", serde(skip))]
+    Anonymous {
+        options: Arc<AnonymousScanOptions>,
+        function: Arc<dyn AnonymousScan>,
+    },
 }
 
 impl PartialEq for FileScan {

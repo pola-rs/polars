@@ -142,13 +142,6 @@ impl From<PolarsError> for ErrorStateSync {
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum LogicalPlan {
-    #[cfg_attr(feature = "serde", serde(skip))]
-    AnonymousScan {
-        function: Arc<dyn AnonymousScan>,
-        file_info: FileInfo,
-        predicate: Option<Expr>,
-        options: Arc<AnonymousScanOptions>,
-    },
     #[cfg(feature = "python")]
     PythonScan { options: PythonOptions },
     /// Filter on a boolean mask
