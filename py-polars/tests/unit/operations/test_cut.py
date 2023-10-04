@@ -9,11 +9,12 @@ inf = float("inf")
 
 
 def test_cut() -> None:
-    # series
-    s = pl.Series("foo", [-2, -1, 0, 1, 2])
-    out = s.cut([-1, 1])
+    s = pl.Series("a", [-2, -1, 0, 1, 2])
+
+    result = s.cut([-1, 1])
+
     expected = pl.Series(
-        "foo",
+        "a",
         [
             "(-inf, -1]",
             "(-inf, -1]",
@@ -23,40 +24,26 @@ def test_cut() -> None:
         ],
         dtype=pl.Categorical,
     )
-    assert_series_equal(out, expected, categorical_as_str=True)
-
-    # expr
-    df = pl.DataFrame(s)
-    df_out = df.select(pl.col("foo").cut([-1, 1]))
-    df_expected = pl.DataFrame(expected)
-    assert_frame_equal(df_out, df_expected, categorical_as_str=True)
+    assert_series_equal(result, expected, categorical_as_str=True)
 
 
-def test_cut_with_labels() -> None:
-    # series
-    s = pl.Series("foo", [-2, -1, 0, 1, 2])
-    out = s.cut([-1, 1], labels=["a", "b", "c"])
-    expected = pl.Series("foo", ["a", "a", "b", "b", "c"], dtype=pl.Categorical)
-    assert_series_equal(out, expected, categorical_as_str=True)
+def test_cut_lazy_schema() -> None:
+    lf = pl.LazyFrame({"a": [-2, -1, 0, 1, 2]})
 
-    # dataframe
-    df = pl.DataFrame(s)
-    df_out = df.with_columns(
-        pl.col("foo").cut([-1, 1], labels=["a", "b", "c"]).alias("cut")
+    result = lf.select(pl.col("a").cut([-1, 1]))
+
+    expected = pl.LazyFrame(
+        {"a": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"]},
+        schema={"a": pl.Categorical},
     )
-    df_expected = pl.DataFrame(
-        {
-            "foo": [-2, -1, 0, 1, 2],
-            "cut": pl.Series(["a", "a", "b", "b", "c"], dtype=pl.Categorical),
-        }
-    )
-    assert_frame_equal(df_out, df_expected, categorical_as_str=True)
+    assert_frame_equal(result, expected, categorical_as_str=True)
 
 
 def test_cut_include_breaks() -> None:
-    # series
     s = pl.Series("a", [-2, -1, 0, 1, 2])
+
     out = s.cut([-1.5, 0.25, 1.0], labels=["a", "b", "c", "d"], include_breaks=True)
+
     expected = pl.DataFrame(
         {
             "break_point": [-1.5, 0.25, 0.25, 1.0, inf],
@@ -66,41 +53,23 @@ def test_cut_include_breaks() -> None:
     ).to_struct("a")
     assert_series_equal(out, expected, categorical_as_str=True)
 
-    # dataframe
-    df = pl.DataFrame(s)
-    df_expected = pl.DataFrame(
-        {
-            "a": [-2, -1, 0, 1, 2],
-            "brk": [-1.0, -1.0, 1.0, 1.0, inf],
-            "a_bin": pl.Series(
-                [
-                    "(-inf, -1]",
-                    "(-inf, -1]",
-                    "(-1, 1]",
-                    "(-1, 1]",
-                    "(1, inf]",
-                ],
-                dtype=pl.Categorical,
-            ),
-        }
-    )
 
-    # eager
-    df_out = df.with_columns(
+# https://github.com/pola-rs/polars/issues/11255
+def test_cut_include_breaks_lazy_schema() -> None:
+    lf = pl.LazyFrame({"a": [-2, -1, 0, 1, 2]})
+
+    result = lf.select(
         pl.col("a").cut([-1, 1], include_breaks=True).alias("cut")
     ).unnest("cut")
-    assert df_out.schema == {"a": pl.Int64, "brk": pl.Float64, "a_bin": pl.Categorical}
-    assert_frame_equal(df_out, df_expected, categorical_as_str=True)
 
-    # lazy
-    df_out = (
-        df.lazy()
-        .with_columns(pl.col("a").cut([-1, 1], include_breaks=True).alias("cut"))
-        .unnest("cut")
-        .collect()
+    expected = pl.LazyFrame(
+        {
+            "brk": [-1.0, -1.0, 1.0, 1.0, inf],
+            "a_bin": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"],
+        },
+        schema_overrides={"a_bin": pl.Categorical},
     )
-    assert df_out.schema == {"a": pl.Int64, "brk": pl.Float64, "a_bin": pl.Categorical}
-    assert_frame_equal(df_out, df_expected, categorical_as_str=True)
+    assert_frame_equal(result, expected, categorical_as_str=True)
 
 
 def test_cut_null_values() -> None:

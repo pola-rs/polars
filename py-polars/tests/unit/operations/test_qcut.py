@@ -11,7 +11,7 @@ inf = float("inf")
 def test_qcut() -> None:
     s = pl.Series("a", [-2, -1, 0, 1, 2])
 
-    out = s.qcut([0.25, 0.50])
+    result = s.qcut([0.25, 0.50])
 
     expected = pl.Series(
         "a",
@@ -24,7 +24,19 @@ def test_qcut() -> None:
         ],
         dtype=pl.Categorical,
     )
-    assert_series_equal(out, expected, categorical_as_str=True)
+    assert_series_equal(result, expected, categorical_as_str=True)
+
+
+def test_qcut_lazy_schema() -> None:
+    lf = pl.LazyFrame({"a": [-2, -1, 0, 1, 2]})
+
+    result = lf.select(pl.col("a").qcut([0.25, 0.75]))
+
+    expected = pl.LazyFrame(
+        {"a": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"]},
+        schema={"a": pl.Categorical},
+    )
+    assert_frame_equal(result, expected, categorical_as_str=True)
 
 
 def test_qcut_n() -> None:
@@ -49,6 +61,24 @@ def test_qcut_include_breaks() -> None:
         schema_overrides={"category": pl.Categorical},
     ).to_struct("a")
     assert_series_equal(out, expected, categorical_as_str=True)
+
+
+# https://github.com/pola-rs/polars/issues/11255
+def test_qcut_include_breaks_lazy_schema() -> None:
+    lf = pl.LazyFrame({"a": [-2, -1, 0, 1, 2]})
+
+    result = lf.select(
+        pl.col("a").qcut([0.25, 0.75], include_breaks=True).alias("qcut")
+    ).unnest("qcut")
+
+    expected = pl.LazyFrame(
+        {
+            "brk": [-1.0, -1.0, 1.0, 1.0, inf],
+            "a_bin": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"],
+        },
+        schema_overrides={"a_bin": pl.Categorical},
+    )
+    assert_frame_equal(result, expected, categorical_as_str=True)
 
 
 def test_qcut_null_values() -> None:
@@ -100,134 +130,3 @@ def test_qcut_deprecated_label_name() -> None:
         s.qcut([0.1], category_label="x")
     with pytest.deprecated_call():
         s.qcut([0.1], break_point_label="x")
-
-
-def test_qcut2() -> None:
-    # series
-    s = pl.Series("foo", [-2, -1, 0, 1, 2])
-    expected = pl.Series(
-        "foo",
-        [
-            "(-inf, -1]",
-            "(-inf, -1]",
-            "(-1, 1]",
-            "(-1, 1]",
-            "(1, inf]",
-        ],
-        dtype=pl.Categorical,
-    )
-    out = s.qcut([0.25, 0.75])
-    assert_series_equal(out, expected, categorical_as_str=True)
-
-    # dataframe
-    df = pl.DataFrame(s)
-
-    # pre-defined quantile probabilities
-    df_expected = pl.DataFrame({"foo": [-2, -1, 0, 1, 2], "qcut": expected})
-
-    # eager
-    df_out = df.with_columns(pl.col("foo").qcut([0.25, 0.75]).alias("qcut"))
-    assert_frame_equal(df_out, df_expected, categorical_as_str=True)
-
-    # lazy
-    df_out = (
-        df.lazy().with_columns(pl.col("foo").qcut([0.25, 0.75]).alias("qcut")).collect()
-    )
-    assert df_out.schema == {"foo": pl.Int64, "qcut": pl.Categorical}
-    assert_frame_equal(df_out, df_expected, categorical_as_str=True)
-
-
-def test_qcut_with_labels() -> None:
-    # series
-    s = pl.Series("foo", [-2, -1, 0, 1, 2])
-    expected = pl.Series("foo", ["a", "a", "b", "b", "c"], dtype=pl.Categorical)
-    out = s.qcut([0.25, 0.75], labels=["a", "b", "c"])
-    assert_series_equal(out, expected, categorical_as_str=True)
-
-    # dataframe
-    df = pl.DataFrame(s)
-
-    # pre-defined quantile probabilities
-    df_expected = pl.DataFrame({"foo": [-2, -1, 0, 1, 2], "qcut": expected})
-
-    # eager
-    df_out = df.with_columns(
-        pl.col("foo").qcut([0.25, 0.75], labels=["a", "b", "c"]).alias("qcut")
-    )
-    assert_frame_equal(df_out, df_expected, categorical_as_str=True)
-
-    # lazy
-    df_out = (
-        df.lazy()
-        .with_columns(
-            pl.col("foo").qcut([0.25, 0.75], labels=["a", "b", "c"]).alias("qcut")
-        )
-        .collect()
-    )
-    assert df_out.schema == {"foo": pl.Int64, "qcut": pl.Categorical}
-    assert_frame_equal(df_out, df_expected, categorical_as_str=True)
-
-    # uniform quantile probabilities
-    df_expected = pl.DataFrame(
-        {
-            "foo": [-2, -1, 0, 1, 2],
-            "qcut": pl.Series(
-                ["low", "low", "high", "high", "high"], dtype=pl.Categorical
-            ),
-        }
-    )
-    # eager
-    df_out = df.with_columns(
-        pl.col("foo").qcut(2, labels=["low", "high"], left_closed=True).alias("qcut")
-    )
-    assert_frame_equal(df_out, df_expected, categorical_as_str=True)
-
-    # lazy
-    df_out = (
-        df.lazy()
-        .with_columns(
-            pl.col("foo")
-            .qcut(2, labels=["low", "high"], left_closed=True)
-            .alias("qcut")
-        )
-        .collect()
-    )
-    assert df_out.schema == {"foo": pl.Int64, "qcut": pl.Categorical}
-    assert_frame_equal(df_out, df_expected, categorical_as_str=True)
-
-
-def test_qcut_include_breaks2() -> None:
-    df = pl.DataFrame({"foo": [-2, -1, 0, 1, 2]})
-
-    expected = pl.DataFrame(
-        {
-            "foo": [-2, -1, 0, 1, 2],
-            "brk": [-1.0, -1.0, 1.0, 1.0, inf],
-            "foo_bin": pl.Series(
-                [
-                    "(-inf, -1]",
-                    "(-inf, -1]",
-                    "(-1, 1]",
-                    "(-1, 1]",
-                    "(1, inf]",
-                ],
-                dtype=pl.Categorical,
-            ),
-        }
-    )
-    # eager
-    out = df.with_columns(
-        pl.col("foo").qcut([0.25, 0.75], include_breaks=True).alias("qcut")
-    ).unnest("qcut")
-    assert_frame_equal(out, expected, categorical_as_str=True)
-    # lazy
-    out = (
-        df.lazy()
-        .with_columns(
-            pl.col("foo").qcut([0.25, 0.75], include_breaks=True).alias("qcut")
-        )
-        .unnest("qcut")
-        .collect()
-    )
-    assert out.schema == {"foo": pl.Int64, "brk": pl.Float64, "foo_bin": pl.Categorical}
-    assert_frame_equal(out, expected, categorical_as_str=True)
