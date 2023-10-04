@@ -251,7 +251,7 @@ impl PyLazyFrame {
         hive_partitioning: bool,
         retries: usize,
     ) -> PyResult<Self> {
-        let mut cloud_options = prepare_cloud_options(&path, cloud_options, retries)
+        let cloud_options = prepare_cloud_options(&path, cloud_options, retries);
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsParquet {
             n_rows,
@@ -484,7 +484,7 @@ impl PyLazyFrame {
         row_group_size: Option<usize>,
         data_pagesize_limit: Option<usize>,
         maintain_order: bool,
-        cloud_options: Option<Vec<String, String>>,
+        cloud_options: Option<Vec<(String, String)>>,
         retries: int,
     ) -> PyResult<()> {
         let compression = parse_parquet_compression(compression, compression_level)?;
@@ -497,17 +497,18 @@ impl PyLazyFrame {
             maintain_order,
         };
 
-        let mut cloud_options = cloud_options.unwrap_or(vec![]);
-        let converted_cloud_options = prepare_cloud_options(&path, cloud_options, retries)
-
-        // TODO: redirect to sink_parquet_cloud or sink_parquet
-        //       based on  _is_supported_cloud(source)
-
         // if we don't allow threads and we have udfs trying to acquire the gil from different
         // threads we deadlock.
         py.allow_threads(|| {
             let ldf = self.ldf.clone();
-            ldf.sink_parquet(path, options).map_err(PyPolarsErr::from)
+
+            if is_cloud_url(path) {
+                let converted_cloud_options = prepare_cloud_options(&path, cloud_options, retries);
+                ldf.sink_parquet_cloud(path, converted_cloud_options, options).map_err(PyPolarsErr::from);
+            }
+            else {
+                ldf.sink_parquet(PathBuf::from(path), options).map_err(PyPolarsErr::from);
+            }
         })?;
         Ok(())
     }

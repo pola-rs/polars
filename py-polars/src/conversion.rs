@@ -1466,21 +1466,25 @@ impl FromPyObject<'_> for Wrap<QuoteStyle> {
 }
 
 #[cfg(feature = "cloud")]
-pub(crate) fn prepare_cloud_options(uri: &str, cloud_options: Vec<(String, String)>, retries: usize) -> PyResult<CloudOptions> {
-    let converted_options = cloud_options
-        .map(|kv| {CloudOptions::from_untyped_config(uri, kv).map_err(PyPolarsErr::from)?;})
-        .transpose()?;
-    if retries > 0 {
-        converted_options =
-            converted_options
-                .or_else(|| Some(CloudOptions::default()))
-                .map(|mut options| {
-                    options.max_retries = retries;
-                    options
-                });
+pub(crate) fn prepare_cloud_options(
+    uri: &str,
+    cloud_options: Option<Vec<(String, String)>>,
+    retries: usize,
+) -> Option<CloudOptions> {
+    if cloud_options.is_none() && retries == 0 {
+        return None;
     }
 
-    Ok(converted_options)
+    let mut options = cloud_options.map(|kv| CloudOptions::from_untyped_config(uri, kv))
+        .transpose()
+        .ok()?
+        .unwrap_or_default();
+
+    if retries > 0 {
+        options.max_retries = retries;
+    }
+
+    Some(options)
 }
 
 #[cfg(feature = "list_sets")]
