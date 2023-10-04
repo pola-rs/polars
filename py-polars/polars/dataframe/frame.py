@@ -9711,6 +9711,8 @@ class DataFrame:
         self,
         other: DataFrame,
         on: str | Sequence[str] | None = None,
+        left_on: str | Sequence[str] | None = None,
+        right_on: str | Sequence[str] | None = None,
         how: Literal["left", "inner"] = "left",
     ) -> DataFrame:
         """
@@ -9732,8 +9734,13 @@ class DataFrame:
         on
             Column names that will be joined on.
             If none given the row count is used.
+        left_on
+           Join column(s) of the left DataFrame.
+        right_on
+           Join column(s) of the right DataFrame.
         how : {'left', 'inner'}
-            'left' will keep the left table rows as is.
+            'left' will keep all rows from the left table. Rows may be duplicated if
+            multiple rows in right frame match left row's `on` key.
             'inner' will remove rows that are not found in other
 
         Examples
@@ -9787,7 +9794,11 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        return self.lazy().update(other.lazy(), on, how).collect(eager=True)
+        return (
+            self.lazy()
+            .update(other.lazy(), on, left_on, right_on, how)
+            .collect(eager=True)
+        )
 
     @deprecate_renamed_function("group_by", version="0.19.0")
     def groupby(
