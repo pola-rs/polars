@@ -16,11 +16,12 @@ endif
 
 .PHONY: requirements
 requirements: .venv  ## Install/refresh Python project requirements
-	$(VENV_BIN)/python -m ensurepip --upgrade
-	$(VENV_BIN)/pip3 install --upgrade -r py-polars/requirements-dev.txt
-	$(VENV_BIN)/pip3 install --upgrade -r py-polars/requirements-lint.txt
-	$(VENV_BIN)/pip3 install --upgrade -r py-polars/docs/requirements-docs.txt
-	$(VENV_BIN)/pip3 install --upgrade -r docs/requirements.txt
+	test -f $(VENV_BIN)/pip && $(VENV_BIN)/python -m ensurepip --default-pip
+	$(VENV_BIN)/python -m pip install --upgrade pip
+	$(VENV_BIN)/pip install --upgrade -r py-polars/requirements-dev.txt
+	$(VENV_BIN)/pip install --upgrade -r py-polars/requirements-lint.txt
+	$(VENV_BIN)/pip install --upgrade -r py-polars/docs/requirements-docs.txt
+	$(VENV_BIN)/pip install --upgrade -r docs/requirements.txt
 
 .PHONY: build-python
 build-python: .venv  ## Compile and install Python Polars for development
