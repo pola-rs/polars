@@ -12,8 +12,6 @@ python:
   write_csv: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_csv.html
   read_json: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_json.html
   write_json: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_json.html
-  read_parquet: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_parquet.html
-  write_parquet: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_parquet.html
   min: https://pola-rs.github.io/polars/py-polars/html/reference/series/api/polars.Series.min.html
   max: https://pola-rs.github.io/polars/py-polars/html/reference/series/api/polars.Series.max.html
   value_counts: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.value_counts.html
@@ -65,6 +63,7 @@ python:
   write_database:
     name: write_database
     link: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_database.html
+  read_database_uri: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_database_uri.html
   read_parquet: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_parquet.html
   write_parquet: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_parquet.html
   scan_parquet: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.scan_parquet.html
@@ -73,6 +72,7 @@ python:
   write_ndjson: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_ndjson.html
   write_json: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_json.html
   scan_ndjson: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.scan_ndjson.html
+  scan_pyarrow_dataset: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.scan_pyarrow_dataset.html
   from_arrow:
     name: from_arrow
     link: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.from_arrow.html
