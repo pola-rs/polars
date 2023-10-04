@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pytest
 
 import polars as pl
@@ -99,7 +101,6 @@ def test_cut_include_breaks() -> None:
     )
     assert df_out.schema == {"a": pl.Int64, "brk": pl.Float64, "a_bin": pl.Categorical}
     assert_frame_equal(df_out, df_expected, categorical_as_str=True)
-
 
 
 def test_cut_null_values() -> None:
