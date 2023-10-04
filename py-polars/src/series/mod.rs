@@ -626,11 +626,8 @@ impl PySeries {
             Ok(s) => {
                 let c = Cursor::new(s.as_bytes());
                 let reader = IpcStreamReader::new(c);
+                let mut df = reader.finish().map_err(|e| PyPolarsErr::from(e))?;
 
-                let mut df = match reader.finish() {
-                    Ok(df) => df,
-                    Err(e) => return Err(PyPolarsErr::from(e).into()),
-                };
                 df.pop()
                     .map(|s| {
                         self.series = s;
