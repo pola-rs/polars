@@ -217,8 +217,14 @@ pub(crate) enum PolarsSqlFunctions {
     /// ```
     Radians,
 
+    // ----
     // Date Functions
     // ----
+    /// SQL 'date' function
+    /// ```sql
+    /// SELECT DATE('2021-03-15') from df;
+    /// SELECT DATE('2021-03', '%Y-%m') from df;
+    /// ```
     Date,
 
     // ----
