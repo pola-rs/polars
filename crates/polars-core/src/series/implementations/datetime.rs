@@ -410,13 +410,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    fn peak_max(&self) -> BooleanChunked {
-        self.0.peak_max()
-    }
-
-    fn peak_min(&self) -> BooleanChunked {
-        self.0.peak_min()
-    }
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<Series> {
         self.0.mode().map(|ca| {

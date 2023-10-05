@@ -515,6 +515,28 @@ def test_date_comp(one: PolarsTemporalType, two: PolarsTemporalType) -> None:
     assert (a <= one).to_list() == [True, False]
 
 
+def test_datetime_comp_tz_aware() -> None:
+    a = pl.Series(
+        "a", [datetime(2020, 1, 1), datetime(2020, 1, 2)]
+    ).dt.replace_time_zone("Asia/Kathmandu")
+    other = datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))
+    result = a > other
+    expected = pl.Series("a", [False, True])
+    assert_series_equal(result, expected)
+
+
+def test_datetime_comp_tz_aware_invalid() -> None:
+    a = pl.Series(
+        "a", [datetime(2020, 1, 1), datetime(2020, 1, 2)]
+    ).dt.replace_time_zone("Asia/Kathmandu")
+    other = datetime(2020, 1, 1)
+    with pytest.raises(
+        TypeError,
+        match="Datetime time zone 'None' does not match Series timezone 'Asia/Kathmandu'",
+    ):
+        _ = a > other
+
+
 @pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
 def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
     time_zone = tzinfo.key if tzinfo is not None else None
@@ -2151,9 +2173,9 @@ def test_replace_time_zone_ambiguous_raises() -> None:
     [
         ("Europe/London", False, "earliest"),
         ("Europe/London", False, "raise"),
-        ("UTC", False, "earliest"),
+        ("UTC", True, "earliest"),
         ("UTC", True, "raise"),
-        (None, False, "earliest"),
+        (None, True, "earliest"),
         (None, True, "raise"),
     ],
 )
@@ -2171,18 +2193,18 @@ def test_replace_time_zone_sortedness_series(
 
 
 @pytest.mark.parametrize(
-    ("from_tz", "ambiguous"),
+    ("from_tz", "expected_sortedness", "ambiguous"),
     [
-        ("Europe/London", "earliest"),
-        ("Europe/London", "raise"),
-        ("UTC", "earliest"),
-        ("UTC", "raise"),
-        (None, "earliest"),
-        (None, "raise"),
+        ("Europe/London", False, "earliest"),
+        ("Europe/London", False, "raise"),
+        ("UTC", True, "earliest"),
+        ("UTC", True, "raise"),
+        (None, True, "earliest"),
+        (None, True, "raise"),
     ],
 )
 def test_replace_time_zone_sortedness_expressions(
-    from_tz: str | None, ambiguous: str
+    from_tz: str | None, expected_sortedness: bool, ambiguous: str
 ) -> None:
     df = (
         pl.Series("ts", [1603584000000000, 1603587600000000])
@@ -2195,7 +2217,7 @@ def test_replace_time_zone_sortedness_expressions(
     result = df.select(
         pl.col("ts").dt.replace_time_zone("UTC", ambiguous=pl.col("ambiguous"))
     )
-    assert not result["ts"].flags["SORTED_ASC"]
+    assert result["ts"].flags["SORTED_ASC"] == expected_sortedness
 
 
 def test_use_earliest_deprecation() -> None:

@@ -11,6 +11,27 @@ def test_is_first_distinct() -> None:
     assert_series_equal(result, expected)
 
 
+def test_is_first_distinct_bool_bit_chunk_index_calc() -> None:
+    # The fast path activates on sizes >=64 and processes in chunks of 64-bits.
+    # It calculates the indexes using the bit counts, which needs to be from the
+    # correct side.
+    assert pl.arange(0, 64, eager=True).filter(
+        pl.Series([True] + 63 * [False]).is_first_distinct()
+    ).to_list() == [0, 1]
+
+    assert pl.arange(0, 64, eager=True).filter(
+        pl.Series([False] + 63 * [True]).is_first_distinct()
+    ).to_list() == [0, 1]
+
+    assert pl.arange(0, 64, eager=True).filter(
+        pl.Series(2 * [True] + 2 * [False] + 60 * [None]).is_first_distinct()
+    ).to_list() == [0, 2, 4]
+
+    assert pl.arange(0, 64, eager=True).filter(
+        pl.Series(2 * [False] + 2 * [None] + 60 * [True]).is_first_distinct()
+    ).to_list() == [0, 2, 4]
+
+
 def test_is_first_distinct_struct() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3, 2, None, 2, 1], "b": [0, 2, 3, 2, None, 2, 0]})
     result = lf.select(pl.struct("a", "b").is_first_distinct())

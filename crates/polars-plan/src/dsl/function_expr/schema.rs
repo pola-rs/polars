@@ -209,10 +209,46 @@ impl FunctionExpr {
             Fused(_) => mapper.map_to_supertype(),
             ConcatExpr(_) => mapper.map_to_supertype(),
             Correlation { .. } => mapper.map_to_float_dtype(),
+            #[cfg(feature = "peaks")]
+            PeakMin => mapper.with_same_dtype(),
+            #[cfg(feature = "peaks")]
+            PeakMax => mapper.with_same_dtype(),
             #[cfg(feature = "cutqcut")]
-            Cut { .. } => mapper.with_dtype(DataType::Categorical(None)),
+            Cut {
+                include_breaks: false,
+                ..
+            } => mapper.with_dtype(DataType::Categorical(None)),
             #[cfg(feature = "cutqcut")]
-            QCut { .. } => mapper.with_dtype(DataType::Categorical(None)),
+            Cut {
+                include_breaks: true,
+                ..
+            } => {
+                let name = fields[0].name();
+                let name_bin = format!("{}_bin", name);
+                let struct_dt = DataType::Struct(vec![
+                    Field::new("brk", DataType::Float64),
+                    Field::new(name_bin.as_str(), DataType::Categorical(None)),
+                ]);
+                mapper.with_dtype(struct_dt)
+            },
+            #[cfg(feature = "cutqcut")]
+            QCut {
+                include_breaks: false,
+                ..
+            } => mapper.with_dtype(DataType::Categorical(None)),
+            #[cfg(feature = "cutqcut")]
+            QCut {
+                include_breaks: true,
+                ..
+            } => {
+                let name = fields[0].name();
+                let name_bin = format!("{}_bin", name);
+                let struct_dt = DataType::Struct(vec![
+                    Field::new("brk", DataType::Float64),
+                    Field::new(name_bin.as_str(), DataType::Categorical(None)),
+                ]);
+                mapper.with_dtype(struct_dt)
+            },
             #[cfg(feature = "rle")]
             RLE => mapper.map_dtype(|dt| {
                 DataType::Struct(vec![

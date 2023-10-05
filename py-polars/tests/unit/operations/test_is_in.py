@@ -105,7 +105,6 @@ def test_is_in_float_list_10764() -> None:
             "n": [3.0, 2.0],
         }
     )
-
     assert df.select(pl.col("n").is_in("lst").alias("is_in")).to_dict(False) == {
         "is_in": [True, False]
     }
@@ -165,3 +164,47 @@ def test_is_in_null() -> None:
 def test_is_in_invalid_shape() -> None:
     with pytest.raises(pl.ComputeError):
         pl.Series("a", [1, 2, 3]).is_in([[]])
+
+
+@pytest.mark.parametrize(
+    ("df", "matches", "expected_error"),
+    [
+        (
+            pl.DataFrame({"a": [1, 2], "b": [[1.0, 2.5], [3.0, 4.0]]}),
+            [True, False],
+            None,
+        ),
+        (
+            pl.DataFrame({"a": [2.5, 3.0], "b": [[1, 2], [3, 4]]}),
+            [False, True],
+            None,
+        ),
+        (
+            pl.DataFrame(
+                {"a": [None, None], "b": [[1, 2], [3, 4]]},
+                schema_overrides={"a": pl.Null},
+            ),
+            [None, None],
+            None,
+        ),
+        (
+            pl.DataFrame({"a": ["1", "2"], "b": [[1, 2], [3, 4]]}),
+            None,
+            r"`is_in` cannot check for Utf8 values in List\(Int64\) data",
+        ),
+        (
+            pl.DataFrame({"a": [date.today(), None], "b": [[1, 2], [3, 4]]}),
+            None,
+            r"`is_in` cannot check for Date values in List\(Int64\) data",
+        ),
+    ],
+)
+def test_is_in_expr_list_series(
+    df: pl.DataFrame, matches: list[bool] | None, expected_error: str | None
+) -> None:
+    expr_is_in = pl.col("a").is_in(pl.col("b"))
+    if matches:
+        assert df.select(expr_is_in).to_series().to_list() == matches
+    else:
+        with pytest.raises(pl.InvalidOperationError, match=expected_error):
+            df.select(expr_is_in)

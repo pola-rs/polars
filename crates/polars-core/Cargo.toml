@@ -84,7 +84,6 @@ is_first_distinct = []
 is_last_distinct = []
 asof_join = []
 dot_product = []
-concat_str = []
 row_hash = []
 reinterpret = []
 take_opt_iter = []
@@ -150,7 +149,6 @@ docs-selection = [
   "is_last_distinct",
   "asof_join",
   "dot_product",
-  "concat_str",
   "row_hash",
   "mode",
   "cum_agg",

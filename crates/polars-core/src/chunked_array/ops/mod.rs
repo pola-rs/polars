@@ -16,8 +16,6 @@ pub mod arity;
 mod bit_repr;
 pub(crate) mod chunkops;
 pub(crate) mod compare_inner;
-#[cfg(feature = "concat_str")]
-mod concat_str;
 #[cfg(feature = "cum_agg")]
 mod cum_agg;
 #[cfg(feature = "dtype-decimal")]
@@ -33,11 +31,9 @@ pub mod full;
 pub mod gather;
 #[cfg(feature = "interpolate")]
 mod interpolate;
-mod len;
 #[cfg(feature = "zip_with")]
 pub(crate) mod min_max_binary;
 mod nulls;
-mod peaks;
 mod reverse;
 pub(crate) mod rolling_window;
 mod set;
@@ -634,19 +630,6 @@ pub trait ChunkApplyKernel<A: Array> {
         S: PolarsDataType;
 }
 
-/// Find local minima/ maxima
-pub trait ChunkPeaks {
-    /// Get a boolean mask of the local maximum peaks.
-    fn peak_max(&self) -> BooleanChunked {
-        unimplemented!()
-    }
-
-    /// Get a boolean mask of the local minimum peaks.
-    fn peak_min(&self) -> BooleanChunked {
-        unimplemented!()
-    }
-}
-
 #[cfg(feature = "is_first_distinct")]
 /// Mask the first unique values as `true`
 pub trait IsFirstDistinct<T: PolarsDataType> {
@@ -661,14 +644,4 @@ pub trait IsLastDistinct<T: PolarsDataType> {
     fn is_last_distinct(&self) -> PolarsResult<BooleanChunked> {
         polars_bail!(opq = is_last_distinct, T::get_dtype());
     }
-}
-
-#[cfg(feature = "concat_str")]
-/// Concat the values into a string array.
-pub trait StrConcat {
-    /// Concat the values into a string array.
-    /// # Arguments
-    ///
-    /// * `delimiter` - A string that will act as delimiter between values.
-    fn str_concat(&self, delimiter: &str) -> Utf8Chunked;
 }

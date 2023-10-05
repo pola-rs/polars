@@ -11,6 +11,8 @@ use polars_io::ipc::IpcReader;
 use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
+#[cfg(all(feature = "cloud", feature = "parquet"))]
+use polars_io::pl_async::get_runtime;
 #[cfg(any(
     feature = "parquet",
     feature = "parquet_async",
@@ -105,19 +107,28 @@ impl LogicalPlanBuilder {
         });
 
         let file_info = FileInfo::new(schema.clone(), (n_rows, n_rows.unwrap_or(usize::MAX)));
-        Ok(LogicalPlan::AnonymousScan {
-            function,
+        let file_options = FileScanOptions {
+            n_rows,
+            with_columns: None,
+            cache: false,
+            row_count: None,
+            rechunk: false,
+            file_counter: Default::default(),
+            hive_partitioning: false,
+        };
+
+        Ok(LogicalPlan::Scan {
+            path: "".into(),
             file_info,
             predicate: None,
-            options: Arc::new(AnonymousScanOptions {
-                fmt_str: name,
-                schema,
-                skip_rows,
-                n_rows,
-                output_schema: None,
-                with_columns: None,
-                predicate: None,
-            }),
+            file_options,
+            scan_type: FileScan::Anonymous {
+                function,
+                options: Arc::new(AnonymousScanOptions {
+                    fmt_str: name,
+                    skip_rows,
+                }),
+            },
         }
         .into())
     }
@@ -141,7 +152,7 @@ impl LogicalPlanBuilder {
         use polars_io::{is_cloud_url, SerReader as _};
 
         let path = path.into();
-        let (schema, num_rows) = if is_cloud_url(&path) {
+        let (schema, num_rows, metadata) = if is_cloud_url(&path) {
             #[cfg(not(feature = "cloud"))]
             panic!(
                 "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
@@ -149,14 +160,19 @@ impl LogicalPlanBuilder {
 
             #[cfg(feature = "cloud")]
             if let Some(known_schema) = known_schema {
-                (known_schema, None)
+                (known_schema, None, None)
             } else {
                 let uri = path.to_string_lossy();
-                ParquetAsyncReader::file_info(&uri, cloud_options.as_ref()).map(
-                    |(schema, num_rows)| {
-                        (prepare_schema(schema, row_count.as_ref()), Some(num_rows))
-                    },
-                )?
+                get_runtime().block_on(async {
+                    let mut reader =
+                        ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), None, None)
+                            .await?;
+                    let schema = Arc::new(reader.schema().await?);
+                    let num_rows = reader.num_rows().await?;
+                    let metadata = reader.get_metadata().await?.clone();
+
+                    PolarsResult::Ok((schema, Some(num_rows), Some(metadata)))
+                })?
             }
         } else {
             let file = polars_utils::open_file(&path)?;
@@ -164,6 +180,7 @@ impl LogicalPlanBuilder {
             (
                 prepare_schema(reader.schema()?, row_count.as_ref()),
                 Some(reader.num_rows()?),
+                Some(reader.get_metadata()?.clone()),
             )
         };
 
@@ -192,6 +209,7 @@ impl LogicalPlanBuilder {
                     use_statistics,
                 },
                 cloud_options,
+                metadata,
             },
         }
         .into())

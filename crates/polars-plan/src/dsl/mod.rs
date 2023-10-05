@@ -1475,6 +1475,16 @@ impl Expr {
         .with_fmt("rolling_map_float")
     }
 
+    #[cfg(feature = "peaks")]
+    pub fn peak_min(self) -> Expr {
+        self.apply_private(FunctionExpr::PeakMin)
+    }
+
+    #[cfg(feature = "peaks")]
+    pub fn peak_max(self) -> Expr {
+        self.apply_private(FunctionExpr::PeakMax)
+    }
+
     #[cfg(feature = "rank")]
     /// Assign ranks to data, dealing with ties appropriately.
     pub fn rank(self, options: RankOptions, seed: Option<u64>) -> Expr {

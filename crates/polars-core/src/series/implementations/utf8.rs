@@ -268,9 +268,4 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
     fn mode(&self) -> PolarsResult<Series> {
         Ok(self.0.mode()?.into_series())
     }
-
-    #[cfg(feature = "concat_str")]
-    fn str_concat(&self, delimiter: &str) -> Utf8Chunked {
-        self.0.str_concat(delimiter)
-    }
 }

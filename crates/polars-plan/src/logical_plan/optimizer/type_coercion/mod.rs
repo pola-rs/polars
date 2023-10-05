@@ -350,77 +350,62 @@ impl OptimizationRule for TypeCoercionRule {
                 let casted_expr = match (&type_left, &type_other) {
                     // types are equal, do nothing
                     (a, b) if a == b => return Ok(None),
+                    // all-null can represent anything (and/or empty list), so cast to target dtype
+                    (_, DataType::Null) => AExpr::Cast {
+                        expr: other_node,
+                        data_type: type_left,
+                        strict: false,
+                    },
                     // cast both local and global string cache
                     // note that there might not yet be a rev
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_), DataType::Utf8) => {
-                        AExpr::Cast {
-                            expr: other_node,
-                            data_type: DataType::Categorical(None),
-                            strict: false,
-                        }
+                    (DataType::Categorical(_), DataType::Utf8) => AExpr::Cast {
+                        expr: other_node,
+                        data_type: DataType::Categorical(None),
+                        strict: false,
                     },
                     #[cfg(feature = "dtype-decimal")]
                     (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
                         polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
                     },
-                    // can't check for more granular time_unit in less-granular time_unit data,   
+                    // can't check for more granular time_unit in less-granular time_unit data,
                     // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
                     (DataType::Datetime(lhs_unit, _), DataType::Datetime(rhs_unit, _)) => {
-                        if lhs_unit <= rhs_unit { return Ok(None) }
-                        else {
-                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Datetime data", &rhs_unit, &lhs_unit) 
+                        if lhs_unit <= rhs_unit {
+                            return Ok(None);
+                        } else {
+                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Datetime data", &rhs_unit, &lhs_unit)
                         }
                     },
                     (DataType::Duration(lhs_unit), DataType::Duration(rhs_unit)) => {
-                        if lhs_unit <= rhs_unit { return Ok(None) }
-                        else {
-                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit) 
+                        if lhs_unit <= rhs_unit {
+                            return Ok(None);
+                        } else {
+                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit)
                         }
                     },
-                    // don't attempt to cast between obviously mismatched types; 
-                    // we should error early/explicitly on invalid comparisons
-                    (
-                        _,
-                        | DataType::Datetime(_, _)
-                        | DataType::Duration(_)
-                        | DataType::Date
-                        | DataType::Time
-                        | DataType::Boolean
-                        | DataType::Binary
-                        | DataType::Utf8,
-                    )
-                    | (
-                        | DataType::Datetime(_, _)
-                        | DataType::Duration(_)
-                        | DataType::Date
-                        | DataType::Time
-                        | DataType::Boolean
-                        | DataType::Binary
-                        | DataType::Utf8,
-                        _,
-                    ) => {
-                        match type_other {
-                            // all-null can represent anything (and/or empty list), so cast to target dtype
-                            DataType::Null => AExpr::Cast {expr: other_node, data_type: type_left, strict: false},
-                            _ => polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
+                    (_, DataType::List(other_inner)) => {
+                        if other_inner.as_ref() == &type_left
+                            || (type_left == DataType::Null)
+                            || (other_inner.as_ref() == &DataType::Null)
+                            || (other_inner.as_ref().is_numeric() && type_left.is_numeric())
+                        {
+                            return Ok(None);
                         }
+                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_left, &type_other)
                     },
                     #[cfg(feature = "dtype-struct")]
                     (DataType::Struct(_), _) | (_, DataType::Struct(_)) => return Ok(None),
-                    (DataType::List(_), _) | (_, DataType::List(_)) => return Ok(None),
-                    // if rhs is another type, we cast it to lhs (we do not use supertype
-                    // as `is_in` operation should not implicitly cast the whole column)
-                    (a, b)
-                        // for integer/float comparison we let them use supertypes.
-                        if !(a.is_integer() && b.is_float()) =>
-                    {
-                        AExpr::Cast {expr: other_node, data_type: type_left, strict: false }
-                    },
-                    // do nothing
-                    _ => return Ok(None),
-                };
 
+                    // don't attempt to cast between obviously mismatched types, but
+                    // allow integer/float comparison (will use their supertypes).
+                    (a, b) => {
+                        if (a.is_numeric() && b.is_numeric()) || (a == &DataType::Null) {
+                            return Ok(None);
+                        }
+                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
+                    },
+                };
                 let mut input = input.clone();
                 let other_input = expr_arena.add(casted_expr);
                 input[1] = other_input;

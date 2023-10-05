@@ -483,6 +483,11 @@ class Series:
                 return ~self
 
         if isinstance(other, datetime) and self.dtype == Datetime:
+            time_zone = self.dtype.time_zone  # type: ignore[union-attr]
+            if str(other.tzinfo) != str(time_zone):
+                raise TypeError(
+                    f"Datetime time zone '{other.tzinfo}' does not match Series timezone '{time_zone}'"
+                )
             ts = _datetime_to_pl_timestamp(other, self.dtype.time_unit)  # type: ignore[union-attr]
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
@@ -5737,7 +5742,7 @@ class Series:
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
         >>> s.peak_max()
         shape: (5,)
-        Series: '' [bool]
+        Series: 'a' [bool]
         [
                 false
                 false
@@ -5747,7 +5752,6 @@ class Series:
         ]
 
         """
-        return self._from_pyseries(self._s.peak_max())
 
     def peak_min(self) -> Self:
         """
@@ -5758,7 +5762,7 @@ class Series:
         >>> s = pl.Series("a", [4, 1, 3, 2, 5])
         >>> s.peak_min()
         shape: (5,)
-        Series: '' [bool]
+        Series: 'a' [bool]
         [
             false
             true
@@ -5768,7 +5772,6 @@ class Series:
         ]
 
         """
-        return self._from_pyseries(self._s.peak_min())
 
     def n_unique(self) -> int:
         """

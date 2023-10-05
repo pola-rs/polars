@@ -1,6 +1,8 @@
 #[cfg(feature = "strings")]
 mod case;
 #[cfg(feature = "strings")]
+mod concat;
+#[cfg(feature = "strings")]
 mod extract;
 #[cfg(feature = "extract_jsonpath")]
 mod json_path;
@@ -17,6 +19,8 @@ mod strip;
 #[cfg(feature = "strings")]
 mod substring;
 
+#[cfg(feature = "strings")]
+pub use concat::*;
 #[cfg(feature = "extract_jsonpath")]
 pub use json_path::*;
 #[cfg(feature = "strings")]

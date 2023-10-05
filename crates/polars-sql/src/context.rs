@@ -16,7 +16,7 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::function_registry::{DefaultFunctionRegistry, FunctionRegistry};
-use crate::sql_expr::{parse_sql_expr, process_join_constraint};
+use crate::sql_expr::{parse_sql_expr, process_join};
 use crate::table_functions::PolarsTableFunctions;
 
 /// The SQLContext is the main entry point for executing SQL queries.
@@ -266,27 +266,37 @@ impl SQLContext {
 
     /// execute the 'FROM' part of the query
     fn execute_from_statement(&mut self, tbl_expr: &TableWithJoins) -> PolarsResult<LazyFrame> {
-        let (tbl_name, mut lf) = self.get_table(&tbl_expr.relation)?;
+        let (l_name, mut lf) = self.get_table(&tbl_expr.relation)?;
         if !tbl_expr.joins.is_empty() {
             for tbl in &tbl_expr.joins {
-                let (join_tbl_name, join_tbl) = self.get_table(&tbl.relation)?;
+                let (r_name, rf) = self.get_table(&tbl.relation)?;
                 lf = match &tbl.join_operator {
+                    JoinOperator::CrossJoin => lf.cross_join(rf),
+                    JoinOperator::FullOuter(constraint) => {
+                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Outer)?
+                    },
                     JoinOperator::Inner(constraint) => {
-                        let (left_on, right_on) =
-                            process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
-                        lf.inner_join(join_tbl, left_on, right_on)
+                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Inner)?
                     },
                     JoinOperator::LeftOuter(constraint) => {
-                        let (left_on, right_on) =
-                            process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
-                        lf.left_join(join_tbl, left_on, right_on)
+                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Left)?
                     },
-                    JoinOperator::FullOuter(constraint) => {
-                        let (left_on, right_on) =
-                            process_join_constraint(constraint, &tbl_name, &join_tbl_name)?;
-                        lf.outer_join(join_tbl, left_on, right_on)
+                    #[cfg(feature = "semi_anti_join")]
+                    JoinOperator::LeftAnti(constraint) => {
+                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Anti)?
                     },
-                    JoinOperator::CrossJoin => lf.cross_join(join_tbl),
+                    #[cfg(feature = "semi_anti_join")]
+                    JoinOperator::LeftSemi(constraint) => {
+                        process_join(lf, rf, constraint, &l_name, &r_name, JoinType::Semi)?
+                    },
+                    #[cfg(feature = "semi_anti_join")]
+                    JoinOperator::RightAnti(constraint) => {
+                        process_join(rf, lf, constraint, &l_name, &r_name, JoinType::Anti)?
+                    },
+                    #[cfg(feature = "semi_anti_join")]
+                    JoinOperator::RightSemi(constraint) => {
+                        process_join(rf, lf, constraint, &l_name, &r_name, JoinType::Semi)?
+                    },
                     join_type => {
                         polars_bail!(
                             InvalidOperation:
@@ -296,7 +306,6 @@ impl SQLContext {
                 }
             }
         };
-
         Ok(lf)
     }
 

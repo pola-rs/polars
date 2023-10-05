@@ -623,42 +623,63 @@ pub(crate) fn parse_sql_expr(expr: &SqlExpr, ctx: &mut SQLContext) -> PolarsResu
     visitor.visit_expr(expr)
 }
 
+pub(super) fn process_join(
+    left_tbl: LazyFrame,
+    right_tbl: LazyFrame,
+    constraint: &JoinConstraint,
+    tbl_name: &str,
+    join_tbl_name: &str,
+    join_type: JoinType,
+) -> PolarsResult<LazyFrame> {
+    let (left_on, right_on) = process_join_constraint(constraint, tbl_name, join_tbl_name)?;
+
+    Ok(left_tbl
+        .join_builder()
+        .with(right_tbl)
+        .left_on(left_on)
+        .right_on(right_on)
+        .how(join_type)
+        .finish())
+}
+
 pub(super) fn process_join_constraint(
     constraint: &JoinConstraint,
     left_name: &str,
     right_name: &str,
-) -> PolarsResult<(Expr, Expr)> {
+) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     if let JoinConstraint::On(SqlExpr::BinaryOp { left, op, right }) = constraint {
+        if op != &BinaryOperator::Eq {
+            polars_bail!(InvalidOperation: 
+                "SQL interface (currently) only supports basic equi-join \
+                 constraints; found '{:?}' op in\n{:?}", op, constraint)
+        }
         match (left.as_ref(), right.as_ref()) {
             (SqlExpr::CompoundIdentifier(left), SqlExpr::CompoundIdentifier(right)) => {
                 if left.len() == 2 && right.len() == 2 {
-                    let tbl_a = &left[0].value;
-                    let col_a = &left[1].value;
-                    let tbl_b = &right[0].value;
-                    let col_b = &right[1].value;
+                    let (tbl_a, col_a) = (&left[0].value, &left[1].value);
+                    let (tbl_b, col_b) = (&right[0].value, &right[1].value);
 
-                    if let BinaryOperator::Eq = op {
-                        if left_name == tbl_a && right_name == tbl_b {
-                            return Ok((col(col_a), col(col_b)));
-                        } else if left_name == tbl_b && right_name == tbl_a {
-                            return Ok((col(col_b), col(col_a)));
-                        }
+                    if left_name == tbl_a && right_name == tbl_b {
+                        return Ok((vec![col(col_a)], vec![col(col_b)]));
+                    } else if left_name == tbl_b && right_name == tbl_a {
+                        return Ok((vec![col(col_b)], vec![col(col_a)]));
                     }
                 }
             },
             (SqlExpr::Identifier(left), SqlExpr::Identifier(right)) => {
-                return Ok((col(&left.value), col(&right.value)))
+                return Ok((vec![col(&left.value)], vec![col(&right.value)]))
             },
             _ => {},
         }
     }
     if let JoinConstraint::Using(idents) = constraint {
         if !idents.is_empty() {
-            let cols = &idents[0].value;
-            return Ok((col(cols), col(cols)));
+            let mut using = Vec::with_capacity(idents.len());
+            using.extend(idents.iter().map(|id| col(&id.value)));
+            return Ok((using.clone(), using.clone()));
         }
     }
-    polars_bail!(InvalidOperation: "SQL join constraint {:?} is not yet supported", constraint);
+    polars_bail!(InvalidOperation: "Unsupported SQL join constraint:\n{:?}", constraint);
 }
 
 /// parse a SQL expression to a polars expression
