@@ -409,12 +409,4 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
-
-    #[cfg(feature = "mode")]
-    fn mode(&self) -> PolarsResult<Series> {
-        self.0.mode().map(|ca| {
-            ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-                .into_series()
-        })
-    }
 }

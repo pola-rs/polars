@@ -381,12 +381,6 @@ pub trait ChunkUnique<T: PolarsDataType> {
     fn n_unique(&self) -> PolarsResult<usize> {
         self.arg_unique().map(|v| v.len())
     }
-
-    /// The most occurring value(s). Can return multiple Values
-    #[cfg(feature = "mode")]
-    fn mode(&self) -> PolarsResult<ChunkedArray<T>> {
-        polars_bail!(opq = mode, T::get_dtype());
-    }
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]

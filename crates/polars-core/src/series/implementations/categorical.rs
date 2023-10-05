@@ -317,12 +317,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
-
-    #[cfg(feature = "mode")]
-    fn mode(&self) -> PolarsResult<Series> {
-        let cats = self.0.logical().mode()?;
-        Ok(self.finish_with_state(false, cats).into_series())
-    }
 }
 
 impl private::PrivateSeriesNumeric for SeriesWrap<CategoricalChunked> {

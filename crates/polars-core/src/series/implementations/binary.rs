@@ -246,9 +246,4 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
-
-    #[cfg(feature = "mode")]
-    fn mode(&self) -> PolarsResult<Series> {
-        Ok(self.0.mode()?.into_series())
-    }
 }
