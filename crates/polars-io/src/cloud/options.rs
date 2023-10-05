@@ -12,7 +12,7 @@ use object_store::azure::MicrosoftAzureBuilder;
 use object_store::gcp::GoogleCloudStorageBuilder;
 #[cfg(feature = "gcp")]
 pub use object_store::gcp::GoogleConfigKey;
-#[cfg(feature = "async")]
+#[cfg(feature = "cloud")]
 use object_store::ObjectStore;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use object_store::{BackoffConfig, RetryConfig};
@@ -26,7 +26,7 @@ use polars_utils::cache::FastFixedCache;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "aws")]
 use smartstring::alias::String as SmartString;
-#[cfg(feature = "async")]
+#[cfg(feature = "cloud")]
 use url::Url;
 
 #[cfg(feature = "aws")]
@@ -85,7 +85,7 @@ pub enum CloudType {
 impl FromStr for CloudType {
     type Err = PolarsError;
 
-    #[cfg(feature = "async")]
+    #[cfg(feature = "cloud")]
     fn from_str(url: &str) -> Result<Self, Self::Err> {
         let parsed = Url::parse(url).map_err(to_compute_err)?;
         Ok(match parsed.scheme() {
@@ -97,7 +97,7 @@ impl FromStr for CloudType {
         })
     }
 
-    #[cfg(not(feature = "async"))]
+    #[cfg(not(feature = "cloud"))]
     fn from_str(_s: &str) -> Result<Self, Self::Err> {
         polars_bail!(ComputeError: "at least one of the cloud features must be enabled");
     }

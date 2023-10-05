@@ -4,6 +4,7 @@ use std::thread::JoinHandle;
 
 use crossbeam_channel::{bounded, Receiver, Sender};
 use polars_core::prelude::*;
+#[cfg(feature = "csv")]
 use polars_io::csv::CsvWriter;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetWriter;

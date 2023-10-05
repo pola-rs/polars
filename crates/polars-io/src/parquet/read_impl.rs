@@ -14,7 +14,7 @@ use rayon::prelude::*;
 
 use super::mmap::ColumnStore;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
-#[cfg(feature = "async")]
+#[cfg(feature = "cloud")]
 use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
 use crate::parquet::mmap::mmap_columns;
 use crate::parquet::predicates::read_this_row_group;
@@ -375,12 +375,12 @@ impl FetchRowGroupsFromMmapReader {
 // We couldn't use a trait as async trait gave very hard HRT lifetime errors.
 // Maybe a puzzle for another day.
 pub enum RowGroupFetcher {
-    #[cfg(feature = "async")]
+    #[cfg(feature = "cloud")]
     ObjectStore(FetchRowGroupsFromObjectStore),
     Local(FetchRowGroupsFromMmapReader),
 }
 
-#[cfg(feature = "async")]
+#[cfg(feature = "cloud")]
 impl From<FetchRowGroupsFromObjectStore> for RowGroupFetcher {
     fn from(value: FetchRowGroupsFromObjectStore) -> Self {
         RowGroupFetcher::ObjectStore(value)
@@ -397,7 +397,7 @@ impl RowGroupFetcher {
     async fn fetch_row_groups(&mut self, _row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
         match self {
             RowGroupFetcher::Local(f) => f.fetch_row_groups(_row_groups).await,
-            #[cfg(feature = "async")]
+            #[cfg(feature = "cloud")]
             RowGroupFetcher::ObjectStore(f) => f.fetch_row_groups(_row_groups).await,
         }
     }
