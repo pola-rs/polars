@@ -648,20 +648,21 @@ pub(super) fn process_join_constraint(
     right_name: &str,
 ) -> PolarsResult<(Vec<Expr>, Vec<Expr>)> {
     if let JoinConstraint::On(SqlExpr::BinaryOp { left, op, right }) = constraint {
+        if op != &BinaryOperator::Eq {
+            polars_bail!(InvalidOperation: 
+                "SQL interface (currently) only supports basic equi-join \
+                 constraints; found '{:?}' op in\n{:?}", op, constraint)
+        }
         match (left.as_ref(), right.as_ref()) {
             (SqlExpr::CompoundIdentifier(left), SqlExpr::CompoundIdentifier(right)) => {
                 if left.len() == 2 && right.len() == 2 {
-                    let tbl_a = &left[0].value;
-                    let col_a = &left[1].value;
-                    let tbl_b = &right[0].value;
-                    let col_b = &right[1].value;
+                    let (tbl_a, col_a) = (&left[0].value, &left[1].value);
+                    let (tbl_b, col_b) = (&right[0].value, &right[1].value);
 
-                    if let BinaryOperator::Eq = op {
-                        if left_name == tbl_a && right_name == tbl_b {
-                            return Ok((vec![col(col_a)], vec![col(col_b)]));
-                        } else if left_name == tbl_b && right_name == tbl_a {
-                            return Ok((vec![col(col_b)], vec![col(col_a)]));
-                        }
+                    if left_name == tbl_a && right_name == tbl_b {
+                        return Ok((vec![col(col_a)], vec![col(col_b)]));
+                    } else if left_name == tbl_b && right_name == tbl_a {
+                        return Ok((vec![col(col_b)], vec![col(col_a)]));
                     }
                 }
             },
@@ -678,7 +679,7 @@ pub(super) fn process_join_constraint(
             return Ok((using.clone(), using.clone()));
         }
     }
-    polars_bail!(InvalidOperation: "SQL join constraint {:?} is not yet supported", constraint);
+    polars_bail!(InvalidOperation: "Unsupported SQL join constraint:\n{:?}", constraint);
 }
 
 /// parse a SQL expression to a polars expression
