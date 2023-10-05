@@ -17,16 +17,30 @@ impl Executor for CacheExec {
         }
 
         let cache = state.get_df_cache(self.id);
+        let read_lock = cache.read().unwrap();
         let mut cache_hit = true;
 
-        let df = cache.get_or_try_init(|| {
-            cache_hit = false;
-            self.input.execute(state)
-        })?;
+        let out = match read_lock.as_ref() {
+            None => {
+                drop(read_lock);
+                let mut write_lock = cache.write().unwrap();
+                let out = self.input.execute(state)?;
+                cache_hit = false;
+                *write_lock = Some(out.clone());
+                out
+            },
+            Some(df) => df.clone(),
+        };
 
         // decrement count on cache hits
         if cache_hit {
-            self.count -= 1;
+            self.count = self.count.saturating_sub(1);
+
+            if self.count == 0 {
+                // clear cache
+                let mut write_lock = cache.write().unwrap();
+                *write_lock = None;
+            }
         }
 
         if state.verbose() {
@@ -37,6 +51,6 @@ impl Executor for CacheExec {
             }
         }
 
-        Ok(df.clone())
+        Ok(out)
     }
 }
