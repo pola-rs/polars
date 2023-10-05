@@ -27,15 +27,17 @@ fn create_rand_index_no_replacement(
     shuffle: bool,
 ) -> IdxCa {
     let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
-    let mut buf;
+    let mut buf: Vec<IdxSize>;
     if n == len {
         buf = (0..len as IdxSize).collect();
+        if shuffle {
+            buf.shuffle(&mut rng)
+        }
     } else {
-        buf = vec![0; n];
-        (0..len as IdxSize).choose_multiple_fill(&mut rng, &mut buf);
-    }
-    if shuffle {
-        buf.shuffle(&mut rng)
+        // TODO: avoid extra potential copy (specialization should get rid of it
+        // when IdxSize matches the resulting IndexVec size).
+        let rand_idx_vec = rand::seq::index::sample(&mut rng, len, n);
+        buf = rand_idx_vec.into_iter().map(|x| x as IdxSize).collect();
     }
     IdxCa::new_vec("", buf)
 }
