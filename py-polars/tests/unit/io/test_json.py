@@ -54,6 +54,7 @@ def test_to_from_buffer_arraywise_schema() -> None:
         ),
     )
 
+
 def test_to_from_buffer_arraywise_schema_override() -> None:
     buf = io.StringIO(
         """
@@ -76,7 +77,7 @@ def test_to_from_buffer_arraywise_schema_override() -> None:
                 "d": pl.Series([None, 8, None], dtype=pl.Float64),
             }
         ),
-        check_column_order=False
+        check_column_order=False,
     )
 
 
