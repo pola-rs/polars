@@ -515,6 +515,28 @@ def test_date_comp(one: PolarsTemporalType, two: PolarsTemporalType) -> None:
     assert (a <= one).to_list() == [True, False]
 
 
+def test_datetime_comp_tz_aware() -> None:
+    a = pl.Series(
+        "a", [datetime(2020, 1, 1), datetime(2020, 1, 2)]
+    ).dt.replace_time_zone("Asia/Kathmandu")
+    other = datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))
+    result = a > other
+    expected = pl.Series("a", [False, True])
+    assert_series_equal(result, expected)
+
+
+def test_datetime_comp_tz_aware_invalid() -> None:
+    a = pl.Series(
+        "a", [datetime(2020, 1, 1), datetime(2020, 1, 2)]
+    ).dt.replace_time_zone("Asia/Kathmandu")
+    other = datetime(2020, 1, 1)
+    with pytest.raises(
+        TypeError,
+        match="Datetime time zone 'None' does not match Series timezone 'Asia/Kathmandu'",
+    ):
+        _ = a > other
+
+
 @pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
 def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
     time_zone = tzinfo.key if tzinfo is not None else None

@@ -483,6 +483,11 @@ class Series:
                 return ~self
 
         if isinstance(other, datetime) and self.dtype == Datetime:
+            time_zone = self.dtype.time_zone  # type: ignore[union-attr]
+            if str(other.tzinfo) != str(time_zone):
+                raise TypeError(
+                    f"Datetime time zone '{other.tzinfo}' does not match Series timezone '{time_zone}'"
+                )
             ts = _datetime_to_pl_timestamp(other, self.dtype.time_unit)  # type: ignore[union-attr]
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
