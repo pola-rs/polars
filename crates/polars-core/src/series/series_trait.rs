@@ -499,14 +499,6 @@ pub trait SeriesTrait:
     ) -> PolarsResult<Series> {
         polars_bail!(opq = rolling_map, self._dtype());
     }
-    #[cfg(feature = "concat_str")]
-    /// Concat the values into a string array.
-    /// # Arguments
-    ///
-    /// * `delimiter` - A string that will act as delimiter between values.
-    fn str_concat(&self, _delimiter: &str) -> Utf8Chunked {
-        invalid_operation_panic!(str_concat, self);
-    }
 
     fn tile(&self, _n: usize) -> Series {
         invalid_operation_panic!(tile, self);

@@ -16,8 +16,6 @@ pub mod arity;
 mod bit_repr;
 pub(crate) mod chunkops;
 pub(crate) mod compare_inner;
-#[cfg(feature = "concat_str")]
-mod concat_str;
 #[cfg(feature = "cum_agg")]
 mod cum_agg;
 #[cfg(feature = "dtype-decimal")]
@@ -646,14 +644,4 @@ pub trait IsLastDistinct<T: PolarsDataType> {
     fn is_last_distinct(&self) -> PolarsResult<BooleanChunked> {
         polars_bail!(opq = is_last_distinct, T::get_dtype());
     }
-}
-
-#[cfg(feature = "concat_str")]
-/// Concat the values into a string array.
-pub trait StrConcat {
-    /// Concat the values into a string array.
-    /// # Arguments
-    ///
-    /// * `delimiter` - A string that will act as delimiter between values.
-    fn str_concat(&self, delimiter: &str) -> Utf8Chunked;
 }
