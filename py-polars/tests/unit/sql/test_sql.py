@@ -540,92 +540,84 @@ def test_sql_limit_offset() -> None:
         assert len(out) == min(limit, n_values - offset)
 
 
-def test_sql_join_anti_semi() -> None:
+@pytest.mark.parametrize(
+    ("sql", "expected"),
+    [
+        (
+            "SELECT * FROM tbl_a LEFT SEMI JOIN tbl_b USING (a,c)",
+            pl.DataFrame({"a": [2], "b": [0], "c": ["y"]}),
+        ),
+        (
+            "SELECT * FROM tbl_a LEFT SEMI JOIN tbl_b USING (a)",
+            pl.DataFrame({"a": [1, 2, 3], "b": [4, 0, 6], "c": ["w", "y", "z"]}),
+        ),
+        (
+            "SELECT * FROM tbl_a LEFT ANTI JOIN tbl_b USING (a)",
+            pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.Utf8}),
+        ),
+        (
+            "SELECT * FROM tbl_a LEFT SEMI JOIN tbl_b USING (b) LEFT SEMI JOIN tbl_c USING (c)",
+            pl.DataFrame({"a": [1, 3], "b": [4, 6], "c": ["w", "z"]}),
+        ),
+        (
+            "SELECT * FROM tbl_a LEFT ANTI JOIN tbl_b USING (b) LEFT SEMI JOIN tbl_c USING (c)",
+            pl.DataFrame({"a": [2], "b": [0], "c": ["y"]}),
+        ),
+        (
+            "SELECT * FROM tbl_a RIGHT ANTI JOIN tbl_b USING (b) LEFT SEMI JOIN tbl_c USING (c)",
+            pl.DataFrame({"a": [2], "b": [5], "c": ["y"]}),
+        ),
+        (
+            "SELECT * FROM tbl_a RIGHT SEMI JOIN tbl_b USING (b) RIGHT SEMI JOIN tbl_c USING (c)",
+            pl.DataFrame({"c": ["z"], "d": [25.5]}),
+        ),
+        (
+            "SELECT * FROM tbl_a RIGHT SEMI JOIN tbl_b USING (b) RIGHT ANTI JOIN tbl_c USING (c)",
+            pl.DataFrame({"c": ["w", "y"], "d": [10.5, -50.0]}),
+        ),
+    ],
+)
+def test_sql_join_anti_semi(sql: str, expected: pl.DataFrame) -> None:
     frames = {
         "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, 0, 6], "c": ["w", "y", "z"]}),
         "tbl_b": pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
         "tbl_c": pl.DataFrame({"c": ["w", "y", "z"], "d": [10.5, -50.0, 25.5]}),
     }
     c = pl.SQLContext(frames, eager_execution=True)
-
-    out = c.execute(
-        """
-        SELECT *
-        FROM tbl_a
-        LEFT SEMI JOIN tbl_b USING (b)
-        LEFT SEMI JOIN tbl_c USING (c)
-        """
-    )
-    assert_frame_equal(pl.DataFrame({"a": [1, 3], "b": [4, 6], "c": ["w", "z"]}), out)
-
-    out = c.execute(
-        """
-        SELECT *
-        FROM tbl_a
-        LEFT ANTI JOIN tbl_b USING (b)
-        LEFT SEMI JOIN tbl_c USING (c)
-        """
-    )
-    assert_frame_equal(pl.DataFrame({"a": [2], "b": [0], "c": ["y"]}), out)
-
-    out = c.execute(
-        """
-        SELECT *
-        FROM tbl_a
-        RIGHT ANTI JOIN tbl_b USING (b)
-        LEFT SEMI JOIN tbl_c USING (c)
-        """
-    )
-    assert_frame_equal(pl.DataFrame({"a": [2], "b": [5], "c": ["y"]}), out)
-
-    out = c.execute(
-        """
-        SELECT *
-        FROM tbl_a
-        RIGHT SEMI JOIN tbl_b USING (b)
-        RIGHT SEMI JOIN tbl_c USING (c)
-        """
-    )
-    assert_frame_equal(pl.DataFrame({"c": ["z"], "d": [25.5]}), out)
-
-    out = c.execute(
-        """
-        SELECT *
-        FROM tbl_a
-        RIGHT SEMI JOIN tbl_b USING (b)
-        RIGHT ANTI JOIN tbl_c USING (c)
-        """
-    )
-    assert_frame_equal(pl.DataFrame({"c": ["w", "y"], "d": [10.5, -50.0]}), out)
+    assert_frame_equal(expected, c.execute(sql))
 
 
-def test_sql_join_inner(foods_ipc_path: Path) -> None:
+@pytest.mark.parametrize(
+    "join_clause",
+    [
+        "ON foods1.category = foods2.category",
+        "ON foods2.category = foods1.category",
+        "USING (category)",
+    ],
+)
+def test_sql_join_inner(foods_ipc_path: Path, join_clause: str) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
     c = pl.SQLContext()
     c.register_many(foods1=lf, foods2=lf)
 
-    for join_clause in (
-        "ON foods1.category = foods2.category",
-        "USING (category)",
-    ):
-        out = c.execute(
-            f"""
-            SELECT *
-            FROM foods1
-            INNER JOIN foods2 {join_clause}
-            LIMIT 2
-            """
-        )
-        assert out.collect().to_dict(False) == {
-            "category": ["vegetables", "vegetables"],
-            "calories": [45, 20],
-            "fats_g": [0.5, 0.0],
-            "sugars_g": [2, 2],
-            "calories_right": [45, 45],
-            "fats_g_right": [0.5, 0.5],
-            "sugars_g_right": [2, 2],
-        }
+    out = c.execute(
+        f"""
+        SELECT *
+        FROM foods1
+        INNER JOIN foods2 {join_clause}
+        LIMIT 2
+        """
+    )
+    assert out.collect().to_dict(False) == {
+        "category": ["vegetables", "vegetables"],
+        "calories": [45, 20],
+        "fats_g": [0.5, 0.0],
+        "sugars_g": [2, 2],
+        "calories_right": [45, 45],
+        "fats_g_right": [0.5, 0.5],
+        "sugars_g_right": [2, 2],
+    }
 
 
 def test_sql_join_left() -> None:
@@ -641,13 +633,13 @@ def test_sql_join_left() -> None:
         FROM tbl_a
         LEFT JOIN tbl_b USING (a,b)
         LEFT JOIN tbl_c USING (c)
-        ORDER BY c DESC
+        ORDER BY a DESC
         """
     )
     assert out.collect().rows() == [
-        (1, 4, "z", 25.5),
-        (2, None, "y", -50.0),
         (3, 6, "x", None),
+        (2, None, None, None),
+        (1, 4, "z", 25.5),
     ]
     assert c.tables() == ["tbl_a", "tbl_b", "tbl_c"]
 
