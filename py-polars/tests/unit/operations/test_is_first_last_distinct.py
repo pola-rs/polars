@@ -13,8 +13,8 @@ def test_is_first_distinct() -> None:
 
 def test_is_first_distinct_bool_bit_chunk_index_calc() -> None:
     # The fast path activates on sizes >=64 and processes in chunks of 64-bits.
-    # It calculates the indexes using the bit counts, this test ensures it
-    # counts from the correct side.
+    # It calculates the indexes using the bit counts, which needs to be from the
+    # correct side.
     assert pl.arange(0, 64, eager=True).filter(
         pl.Series("x", [True] + 63 * [False]).is_first_distinct()
     ).to_list() == [0, 1]
