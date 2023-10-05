@@ -646,8 +646,10 @@ def test_sql_join_left() -> None:
     assert ctx.tables() == ["tbl_a", "tbl_b", "tbl_c"]
 
 
-@pytest.mark.parametrize("op", ["!=", ">", ">=", "<", "<="])
-def test_sql_non_equi_joins(op: str) -> None:
+@pytest.mark.parametrize(
+    "constraint", ["tbl.a != tbl.b", "tbl.a > tbl.b", "a >= b", "a < b", "b <= a"]
+)
+def test_sql_non_equi_joins(constraint: str) -> None:
     # no support (yet) for non equi-joins in polars joins
     with pytest.raises(
         pl.InvalidOperationError,
@@ -657,7 +659,7 @@ def test_sql_non_equi_joins(op: str) -> None:
             f"""
             SELECT *
             FROM tbl
-            LEFT JOIN tbl ON tbl.a {op} tbl.b  -- not an equi-join
+            LEFT JOIN tbl ON {constraint}  -- not an equi-join
             """
         )
 
@@ -683,7 +685,6 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
         ("vegetables", 25, 0.0, 2),
         ("vegetables", 22, 0.0, 3),
     ]
-
     out = ctx.execute(
         """
         SELECT *
