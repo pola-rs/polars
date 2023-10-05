@@ -1984,6 +1984,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown=slice_pushdown,
         )
 
+        storage_options = storage_options or {}
         return lf.sink_parquet(
             path=str(path),
             compression=compression,
@@ -1992,7 +1993,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             row_group_size=row_group_size,
             data_pagesize_limit=data_pagesize_limit,
             maintain_order=maintain_order,
-            cloud_options=storage_options or {},
+            cloud_options=list(storage_options.items()),
             retries=retries,
         )
 
