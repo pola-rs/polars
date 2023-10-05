@@ -350,6 +350,12 @@ impl OptimizationRule for TypeCoercionRule {
                 let casted_expr = match (&type_left, &type_other) {
                     // types are equal, do nothing
                     (a, b) if a == b => return Ok(None),
+                    // all-null can represent anything (and/or empty list), so cast to target dtype
+                    (_, DataType::Null) => AExpr::Cast {
+                        expr: other_node,
+                        data_type: type_left,
+                        strict: false,
+                    },
                     // cast both local and global string cache
                     // note that there might not yet be a rev
                     #[cfg(feature = "dtype-categorical")]
@@ -378,10 +384,11 @@ impl OptimizationRule for TypeCoercionRule {
                             polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit)
                         }
                     },
-                    (other, DataType::List(inner)) => {
-                        if inner.as_ref() == other
-                            || (inner.as_ref().is_numeric() && other.is_numeric())
-                            || (other == &DataType::Null)
+                    (_, DataType::List(other_inner)) => {
+                        if other_inner.as_ref() == &type_left
+                            || (type_left == DataType::Null)
+                            || (other_inner.as_ref() == &DataType::Null)
+                            || (other_inner.as_ref().is_numeric() && type_left.is_numeric())
                         {
                             return Ok(None);
                         }
@@ -393,10 +400,7 @@ impl OptimizationRule for TypeCoercionRule {
                     // don't attempt to cast between obviously mismatched types, but
                     // allow integer/float comparison (will use their supertypes).
                     (a, b) => {
-                        if (a.is_numeric() && b.is_numeric())
-                            || (a == &DataType::Null)
-                            || (b == &DataType::Null)
-                        {
+                        if (a.is_numeric() && b.is_numeric()) || (a == &DataType::Null) {
                             return Ok(None);
                         }
                         polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)

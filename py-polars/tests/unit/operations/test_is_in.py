@@ -162,7 +162,7 @@ def test_is_in_null() -> None:
 
 
 def test_is_in_invalid_shape() -> None:
-    with pytest.raises(pl.InvalidOperationError):
+    with pytest.raises(pl.ComputeError):
         pl.Series("a", [1, 2, 3]).is_in([[]])
 
 
