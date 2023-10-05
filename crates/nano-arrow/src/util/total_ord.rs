@@ -7,25 +7,25 @@ use crate::array::Array;
 
 /// Converts an f32 into a canonical form, where -0 == 0 and all NaNs map to
 /// the same value.
-pub fn canonical_f32_bits(x: f32) -> u32 {
+pub fn canonical_f32(x: f32) -> f32 {
     // -0.0 + 0.0 becomes 0.0.
     let convert_zero = x + 0.0;
     if convert_zero.is_nan() {
-        0x7fc00000 // Canonical quiet NaN.
+        f32::from_bits(0x7fc00000) // Canonical quiet NaN.
     } else {
-        x.to_bits()
+        x
     }
 }
 
 /// Converts an f64 into a canonical form, where -0 == 0 and all NaNs map to
 /// the same value.
-pub fn canonical_f64_bits(x: f64) -> u64 {
+pub fn canonical_f64(x: f64) -> f64 {
     // -0.0 + 0.0 becomes 0.0.
     let convert_zero = x + 0.0;
     if convert_zero.is_nan() {
-        0x7ff8000000000000 // Canonical quiet NaN.
+        f64::from_bits(0x7ff8000000000000) // Canonical quiet NaN.
     } else {
-        x.to_bits()
+        x
     }
 }
 
@@ -284,7 +284,7 @@ impl TotalHash for f32 {
     where
         H: Hasher,
     {
-        canonical_f32_bits(*self).hash(state)
+        canonical_f32(*self).to_bits().hash(state)
     }
 }
 
@@ -293,7 +293,7 @@ impl TotalHash for f64 {
     where
         H: Hasher,
     {
-        canonical_f64_bits(*self).hash(state)
+        canonical_f64(*self).to_bits().hash(state)
     }
 }
 

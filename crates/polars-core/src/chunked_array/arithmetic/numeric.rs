@@ -114,7 +114,9 @@ where
             self,
             rhs,
             <T::Native as ArrayArithmetics>::div,
-            |lhs, rhs| lhs / rhs,
+            // Adding zero to divisor ensures x/0 becomes +infinity, ignoring
+            // the sign of the zero.
+            |lhs, rhs| lhs / (rhs + T::Native::zero()),
         )
     }
 }
@@ -194,7 +196,9 @@ where
             self,
             rhs,
             |a, b| arity_assign::binary(a, b, |a, b| a / b),
-            |lhs, rhs| lhs / rhs,
+            // Adding zero to divisor ensures x/0 becomes +infinity, ignoring
+            // the sign of the zero.
+            |lhs, rhs| lhs / (rhs + T::Native::zero()),
         )
     }
 }
@@ -356,7 +360,9 @@ where
     type Output = ChunkedArray<T>;
 
     fn div(self, rhs: N) -> Self::Output {
-        (&self).div(rhs)
+        // Adding zero to divisor ensures x/0 becomes +infinity, ignoring
+        // the sign of the zero.
+        (&self).div(rhs + N::zero())
     }
 }
 
