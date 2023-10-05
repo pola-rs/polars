@@ -1475,7 +1475,8 @@ pub(crate) fn prepare_cloud_options(
         return None;
     }
 
-    let mut options = cloud_options.map(|kv| CloudOptions::from_untyped_config(uri, kv))
+    let mut options = cloud_options
+        .map(|kv| CloudOptions::from_untyped_config(uri, kv))
         .transpose()
         .ok()?
         .unwrap_or_default();

@@ -1962,13 +1962,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_parquet("out.parquet")  # doctest: +SKIP
 
         Sinking to a cloud target:
-        >>> lf = pl.scan_csv("s3://bucket/my_larger_than_ram_file.csv")  # doctest: +SKIP
+        >>> lf = pl.scan_csv(
+        ...     "s3://bucket/my_larger_than_ram_file.csv"
+        ... )  # doctest: +SKIP
         >>> storage_options = {
         ...     "aws_access_key_id": "<secret>",
         ...     "aws_secret_access_key": "<secret>",
         ...     "aws_region": "us-east-1",
         ... }
-        >>> lf.sink_parquet("s3://bucket/out.parquet", storage_options=storage_options)  # doctest: +SKIP
+        >>> lf.sink_parquet(
+        ...     "s3://bucket/out.parquet", storage_options=storage_options
+        ... )  # doctest: +SKIP
 
         """
         lf = self._set_sink_optimizations(

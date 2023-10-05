@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::io::BufWriter;
 use std::path::PathBuf;
 
-#[cfg(feature = "parquet")]
-use polars::io::is_cloud_url;
 #[cfg(feature = "csv")]
 use polars::io::csv::SerializeOptions;
+#[cfg(feature = "parquet")]
+use polars::io::is_cloud_url;
 use polars::io::RowCount;
 #[cfg(feature = "csv")]
 use polars::lazy::frame::LazyCsvReader;
@@ -505,10 +505,11 @@ impl PyLazyFrame {
 
             if is_cloud_url(path.clone()) {
                 let converted_cloud_options = prepare_cloud_options(&path, cloud_options, retries);
-                ldf.sink_parquet_cloud(path, converted_cloud_options, options).map_err(PyPolarsErr::from)
-            }
-            else {
-                ldf.sink_parquet(PathBuf::from(path), options).map_err(PyPolarsErr::from)
+                ldf.sink_parquet_cloud(path, converted_cloud_options, options)
+                    .map_err(PyPolarsErr::from)
+            } else {
+                ldf.sink_parquet(PathBuf::from(path), options)
+                    .map_err(PyPolarsErr::from)
             }
         })?;
         Ok(())
