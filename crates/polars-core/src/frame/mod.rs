@@ -1656,7 +1656,14 @@ impl DataFrame {
             return self.clone().filter_vertical(mask);
         }
         let new_col = self.try_apply_columns_par(&|s| match s.dtype() {
-            DataType::Utf8 => s.filter_threaded(mask, true),
+            DataType::Utf8 => {
+                let ca = s.utf8().unwrap();
+                if ca.get_values_size() / 24 <= ca.len() {
+                    s.filter(mask)
+                } else {
+                    s.filter_threaded(mask, true)
+                }
+            },
             _ => s.filter(mask),
         })?;
         Ok(DataFrame::new_no_checks(new_col))
@@ -1682,7 +1689,14 @@ impl DataFrame {
     pub fn take(&self, indices: &IdxCa) -> PolarsResult<Self> {
         let new_col = POOL.install(|| {
             self.try_apply_columns_par(&|s| match s.dtype() {
-                DataType::Utf8 => s.take_threaded(indices, true),
+                DataType::Utf8 => {
+                    let ca = s.utf8().unwrap();
+                    if ca.get_values_size() / 24 <= ca.len() {
+                        s.take(indices)
+                    } else {
+                        s.take_threaded(indices, true)
+                    }
+                },
                 _ => s.take(indices),
             })
         })?;
