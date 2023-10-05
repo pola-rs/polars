@@ -1,5 +1,5 @@
 //! Definition of basic div operations with primitive arrays
-use std::ops::{Div, Add};
+use std::ops::{Add, Div};
 
 use num_traits::{CheckedDiv, NumCast};
 use strength_reduce::{
@@ -34,7 +34,9 @@ where
     // Adding zero to divisor ensures x/0 becomes +infinity, ignoring
     // the sign of the zero.
     if rhs.null_count() == 0 {
-        binary(lhs, rhs, lhs.data_type().clone(), |a, b| a / (b + T::zeroed()))
+        binary(lhs, rhs, lhs.data_type().clone(), |a, b| {
+            a / (b + T::zeroed())
+        })
     } else {
         check_same_len(lhs, rhs).unwrap();
         let values = lhs.iter().zip(rhs.iter()).map(|(l, r)| match (l, r) {

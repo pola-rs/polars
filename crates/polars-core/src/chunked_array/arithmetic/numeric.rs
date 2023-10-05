@@ -362,6 +362,7 @@ where
     fn div(self, rhs: N) -> Self::Output {
         // Adding zero to divisor ensures x/0 becomes +infinity, ignoring
         // the sign of the zero.
+        #[allow(clippy::suspicious_arithmetic_impl)]
         (&self).div(rhs + N::zero())
     }
 }
