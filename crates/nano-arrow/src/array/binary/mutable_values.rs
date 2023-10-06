@@ -348,7 +348,7 @@ impl<O: Offset, T: AsRef<[u8]>> TryPush<T> for MutableBinaryValuesArray<O> {
     fn try_push(&mut self, value: T) -> Result<()> {
         let bytes = value.as_ref();
         self.values.extend_from_slice(bytes);
-        self.offsets.try_push_usize(bytes.len())
+        self.offsets.try_push(bytes.len())
     }
 }
 

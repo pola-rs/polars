@@ -123,7 +123,7 @@ pub(super) fn binary_to_dictionary_dyn<O: Offset, K: DictionaryKey>(
 fn fixed_size_to_offsets<O: Offset>(values_len: usize, fixed_size: usize) -> Offsets<O> {
     let offsets = (0..(values_len + 1))
         .step_by(fixed_size)
-        .map(|v| O::from_usize(v).unwrap())
+        .map(|v| O::from_as_usize(v))
         .collect();
     // Safety
     // * every element is `>= 0`

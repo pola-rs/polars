@@ -19,7 +19,7 @@ impl<O: Offset> Pushable<usize> for Offsets<O> {
 
     #[inline]
     fn push(&mut self, value: usize) {
-        self.try_push_usize(value).unwrap()
+        self.try_push(value).unwrap()
     }
 
     #[inline]
@@ -53,7 +53,7 @@ impl<O: Offset> Binary<O> {
         }
 
         self.values.extend(v);
-        self.offsets.try_push_usize(v.len()).unwrap()
+        self.offsets.try_push(v.len()).unwrap()
     }
 
     #[inline]
