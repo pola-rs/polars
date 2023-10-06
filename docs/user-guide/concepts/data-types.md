@@ -29,3 +29,20 @@ from `Arrow`, with the exception of `Utf8` (this is actually `LargeUtf8`), `Cate
 |          | `Categorical` | A categorical encoding of a set of strings.                                                                                            |
 
 To learn more about the internal representation of these data types, check the [`Arrow` columnar format](https://arrow.apache.org/docs/format/Columnar.html).
+
+## Floating Point
+
+`Polars` generally follows the IEEE 754 floating point standard for `Float32` and `Float64`, with some exceptions:
+
+- `Polars` does not support signed zero and conceptually only has a single zero value.
+- `Polars` has a single canonical NaN representation and does not support signed NaNs or NaN payloads.
+- The canonical NaN compares equal to itself, and greater than any non-NaN value.
+
+The above canonicalization should be consistently applied for user-facing data, arithmetic
+and file-format I/O, but may be violated for zero-copy in-memory export. In such
+cases `Polars` simply provides no guarantees around which sign or payload NaNs/zeros
+have.
+
+Finally, `Polars` always attempts to provide reasonably accurate results for floating point computations, but does not provide guarantees
+on the error unless mentioned otherwise. Generally speaking 100% accurate results are infeasibly expensive to acquire (requiring
+much larger internal representations than 64-bit floats), and thus some error is always to be expected.

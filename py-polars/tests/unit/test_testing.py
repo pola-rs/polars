@@ -66,7 +66,7 @@ def test_compare_series_nans_assert_equal() -> None:
         if check_exact:
             check_msg = "exact value mismatch"
         else:
-            check_msg = f"value mismatch.*nans_compare_equal={nans_equal}"
+            check_msg = "Series are different.*value mismatch.*"
 
         with pytest.raises(AssertionError, match=check_msg):
             assert_series_equal(

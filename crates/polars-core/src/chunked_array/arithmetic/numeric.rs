@@ -114,7 +114,9 @@ where
             self,
             rhs,
             <T::Native as ArrayArithmetics>::div,
-            |lhs, rhs| lhs / rhs,
+            // Adding zero to divisor ensures x/0 becomes +infinity, ignoring
+            // the sign of the zero.
+            |lhs, rhs| lhs / (rhs + T::Native::zero()),
         )
     }
 }
@@ -194,7 +196,9 @@ where
             self,
             rhs,
             |a, b| arity_assign::binary(a, b, |a, b| a / b),
-            |lhs, rhs| lhs / rhs,
+            // Adding zero to divisor ensures x/0 becomes +infinity, ignoring
+            // the sign of the zero.
+            |lhs, rhs| lhs / (rhs + T::Native::zero()),
         )
     }
 }
@@ -286,7 +290,7 @@ where
         let mut out = self
             .apply_kernel(&|arr| Box::new(<T::Native as ArrayArithmetics>::div_scalar(arr, &rhs)));
 
-        if rhs < T::Native::zero() {
+        if rhs.tot_lt(&T::Native::zero()) {
             out.set_sorted_flag(self.is_sorted_flag().reverse());
         } else {
             out.set_sorted_flag(self.is_sorted_flag());
@@ -356,7 +360,10 @@ where
     type Output = ChunkedArray<T>;
 
     fn div(self, rhs: N) -> Self::Output {
-        (&self).div(rhs)
+        // Adding zero to divisor ensures x/0 becomes +infinity, ignoring
+        // the sign of the zero.
+        #[allow(clippy::suspicious_arithmetic_impl)]
+        (&self).div(rhs + N::zero())
     }
 }
 

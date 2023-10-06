@@ -1,5 +1,5 @@
 //! Definition of basic div operations with primitive arrays
-use std::ops::Div;
+use std::ops::{Add, Div};
 
 use num_traits::{CheckedDiv, NumCast};
 use strength_reduce::{
@@ -29,14 +29,18 @@ use crate::datatypes::PrimitiveType;
 /// ```
 pub fn div<T>(lhs: &PrimitiveArray<T>, rhs: &PrimitiveArray<T>) -> PrimitiveArray<T>
 where
-    T: NativeArithmetics + Div<Output = T>,
+    T: NativeArithmetics + Add<Output = T> + Div<Output = T>,
 {
+    // Adding zero to divisor ensures x/0 becomes +infinity, ignoring
+    // the sign of the zero.
     if rhs.null_count() == 0 {
-        binary(lhs, rhs, lhs.data_type().clone(), |a, b| a / b)
+        binary(lhs, rhs, lhs.data_type().clone(), |a, b| {
+            a / (b + T::zeroed())
+        })
     } else {
         check_same_len(lhs, rhs).unwrap();
         let values = lhs.iter().zip(rhs.iter()).map(|(l, r)| match (l, r) {
-            (Some(l), Some(r)) => Some(*l / *r),
+            (Some(l), Some(r)) => Some(*l / (*r + T::zeroed())),
             _ => None,
         });
 
@@ -61,9 +65,11 @@ where
 /// ```
 pub fn checked_div<T>(lhs: &PrimitiveArray<T>, rhs: &PrimitiveArray<T>) -> PrimitiveArray<T>
 where
-    T: NativeArithmetics + CheckedDiv<Output = T>,
+    T: NativeArithmetics + Add<Output = T> + CheckedDiv<Output = T>,
 {
-    let op = move |a: T, b: T| a.checked_div(&b);
+    // Adding zero to divisor ensures x/0 becomes +infinity, ignoring
+    // the sign of the zero.
+    let op = move |a: T, b: T| a.checked_div(&(b + T::zeroed()));
 
     binary_checked(lhs, rhs, lhs.data_type().clone(), op)
 }
@@ -71,7 +77,7 @@ where
 // Implementation of ArrayDiv trait for PrimitiveArrays
 impl<T> ArrayDiv<PrimitiveArray<T>> for PrimitiveArray<T>
 where
-    T: NativeArithmetics + Div<Output = T>,
+    T: NativeArithmetics + Add<Output = T> + Div<Output = T>,
 {
     fn div(&self, rhs: &PrimitiveArray<T>) -> Self {
         div(self, rhs)
@@ -81,7 +87,7 @@ where
 // Implementation of ArrayCheckedDiv trait for PrimitiveArrays
 impl<T> ArrayCheckedDiv<PrimitiveArray<T>> for PrimitiveArray<T>
 where
-    T: NativeArithmetics + CheckedDiv<Output = T>,
+    T: NativeArithmetics + Add<Output = T> + CheckedDiv<Output = T>,
 {
     fn checked_div(&self, rhs: &PrimitiveArray<T>) -> Self {
         checked_div(self, rhs)

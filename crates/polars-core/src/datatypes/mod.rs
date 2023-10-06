@@ -54,6 +54,9 @@ use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
 use crate::utils::Wrap;
 
+pub struct Nested;
+pub struct Flat;
+
 /// # Safety
 ///
 /// The StaticArray and dtype return must be correct.
@@ -64,6 +67,7 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized {
         ValueT<'a> = Self::Physical<'a>,
         ZeroableValueT<'a> = Self::ZeroablePhysical<'a>,
     >;
+    type Structure;
 
     fn get_dtype() -> DataType
     where
@@ -76,6 +80,7 @@ where
         Physical<'a> = Self::Native,
         ZeroablePhysical<'a> = Self::Native,
         Array = PrimitiveArray<Self::Native>,
+        Structure = Flat,
     >,
 {
     type Native: NumericNative;
@@ -93,6 +98,7 @@ macro_rules! impl_polars_num_datatype {
             type Physical<'a> = $physical;
             type ZeroablePhysical<'a> = $physical;
             type Array = PrimitiveArray<$physical>;
+            type Structure = Flat;
 
             #[inline]
             fn get_dtype() -> DataType {
@@ -117,6 +123,7 @@ macro_rules! impl_polars_datatype {
             type Physical<$lt> = $phys;
             type ZeroablePhysical<$lt> = $zerophys;
             type Array = $arr;
+            type Structure = Flat;
 
             #[inline]
             fn get_dtype() -> DataType {
@@ -153,6 +160,7 @@ unsafe impl PolarsDataType for ListType {
     type Physical<'a> = Box<dyn Array>;
     type ZeroablePhysical<'a> = Option<Box<dyn Array>>;
     type Array = ListArray<i64>;
+    type Structure = Nested;
 
     fn get_dtype() -> DataType {
         // Null as we cannot know anything without self.
@@ -167,6 +175,7 @@ unsafe impl PolarsDataType for FixedSizeListType {
     type Physical<'a> = Box<dyn Array>;
     type ZeroablePhysical<'a> = Option<Box<dyn Array>>;
     type Array = FixedSizeListArray;
+    type Structure = Nested;
 
     fn get_dtype() -> DataType {
         // Null as we cannot know anything without self.
@@ -180,6 +189,7 @@ unsafe impl PolarsDataType for Int128Type {
     type Physical<'a> = i128;
     type ZeroablePhysical<'a> = i128;
     type Array = PrimitiveArray<i128>;
+    type Structure = Flat;
 
     fn get_dtype() -> DataType {
         // Scale is not None to allow for get_any_value() to work.
@@ -199,6 +209,7 @@ unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     type Physical<'a> = &'a T;
     type ZeroablePhysical<'a> = Option<&'a T>;
     type Array = ObjectArray<T>;
+    type Structure = Nested;
 
     fn get_dtype() -> DataType {
         DataType::Object(T::type_name())
@@ -227,7 +238,8 @@ pub type BinaryChunked = ChunkedArray<BinaryType>;
 pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 
 pub trait NumericNative:
-    PartialOrd
+    TotalOrd
+    + PartialOrd
     + NativeType
     + Num
     + NumCast

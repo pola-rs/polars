@@ -217,6 +217,46 @@ impl<'a> BitMask<'a> {
         None
     }
 
+    /// Computes the index of the nth set bit before end, counting backwards.
+    ///
+    /// Both are zero-indexed, so nth_set_bit_idx_rev(0, len) finds the index of
+    /// the last bit set (which can be 0 as well). The returned index is
+    /// absolute (and starts at the beginning), not relative to end.
+    pub fn nth_set_bit_idx_rev(&self, mut n: usize, mut end: usize) -> Option<usize> {
+        while end > 0 {
+            // We want to find bits *before* end, so if end < 32 we must mask
+            // out the bits after the endth.
+            let (u32_mask_start, u32_mask_mask) = if end >= 32 {
+                (end - 32, u32::MAX)
+            } else {
+                (0, (1 << end) - 1)
+            };
+            let next_u32_mask = self.get_u32(u32_mask_start) & u32_mask_mask;
+            if next_u32_mask == u32::MAX {
+                // Happy fast path for dense non-null section.
+                if n < 32 {
+                    return Some(end - 1 - n);
+                }
+                n -= 32;
+            } else {
+                let ones = next_u32_mask.count_ones() as usize;
+                if n < ones {
+                    let rev_n = ones - 1 - n;
+                    let idx = unsafe {
+                        // SAFETY: we know the rev_nth bit is in the mask.
+                        nth_set_bit_u32(next_u32_mask, rev_n as u32).unwrap_unchecked() as usize
+                    };
+                    return Some(u32_mask_start + idx);
+                }
+                n -= ones;
+            }
+
+            end = u32_mask_start;
+        }
+
+        None
+    }
+
     #[inline]
     pub fn get(&self, idx: usize) -> bool {
         let byte_idx = (self.offset + idx) / 8;

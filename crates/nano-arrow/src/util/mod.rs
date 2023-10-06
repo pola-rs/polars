@@ -22,3 +22,5 @@ pub use lexical::*;
 #[cfg(feature = "benchmarks")]
 #[cfg_attr(docsrs, doc(cfg(feature = "benchmarks")))]
 pub mod bench_util;
+
+pub mod total_ord;

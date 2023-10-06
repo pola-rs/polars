@@ -4,6 +4,7 @@ mod supertype;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
+use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
 use flatten::*;
 use num_traits::{One, Zero};
@@ -828,10 +829,9 @@ where
     let mut offset = 0;
     for validity in iter {
         if let Some(validity) = validity {
-            for (idx, is_valid) in validity.iter().enumerate() {
-                if is_valid {
-                    return Some(offset + idx);
-                }
+            let mask = BitMask::from_bitmap(validity);
+            if let Some(n) = mask.nth_set_bit_idx(0, 0) {
+                return Some(offset + n);
             }
             offset += validity.len()
         } else {
@@ -849,17 +849,16 @@ where
         return None;
     }
     let mut offset = 0;
-    let len = len - 1;
     for validity in iter.rev() {
         if let Some(validity) = validity {
-            for (idx, is_valid) in validity.iter().rev().enumerate() {
-                if is_valid {
-                    return Some(len - (offset + idx));
-                }
+            let mask = BitMask::from_bitmap(validity);
+            if let Some(n) = mask.nth_set_bit_idx_rev(0, mask.len()) {
+                let mask_start = len - offset - mask.len();
+                return Some(mask_start + n);
             }
             offset += validity.len()
         } else {
-            return Some(len - offset);
+            return Some(len - 1 - offset);
         }
     }
     None

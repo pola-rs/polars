@@ -1,7 +1,6 @@
-use std::hash::Hash;
-
 use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
+use arrow::util::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
 
@@ -10,7 +9,7 @@ fn is_unique_ca<'a, T>(ca: &'a ChunkedArray<T>, invert: bool) -> BooleanChunked
 where
     T: PolarsDataType,
     &'a ChunkedArray<T>: IntoIterator,
-    <<&'a ChunkedArray<T> as IntoIterator>::IntoIter as IntoIterator>::Item: Hash + Eq,
+    <<&'a ChunkedArray<T> as IntoIterator>::IntoIter as IntoIterator>::Item: TotalHash + TotalEq,
 {
     let len = ca.len();
     let mut idx_key = PlHashMap::new();
@@ -19,7 +18,7 @@ where
     // just toggle a boolean that's false if a group has multiple entries.
     ca.into_iter().enumerate().for_each(|(idx, key)| {
         idx_key
-            .entry(key)
+            .entry(TotalOrdWrap(key))
             .and_modify(|v: &mut (IdxSize, bool)| v.1 = false)
             .or_insert((idx as IdxSize, true));
     });
@@ -56,12 +55,12 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
             is_unique_ca(ca, invert)
         },
         Float32 => {
-            let ca = s.bit_repr_small();
-            is_unique_ca(&ca, invert)
+            let ca = s.f32().unwrap();
+            is_unique_ca(ca, invert)
         },
         Float64 => {
-            let ca = s.bit_repr_large();
-            is_unique_ca(&ca, invert)
+            let ca = s.f64().unwrap();
+            is_unique_ca(ca, invert)
         },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => {
