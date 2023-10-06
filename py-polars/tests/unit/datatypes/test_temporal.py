@@ -203,6 +203,16 @@ def test_from_pydatetime() -> None:
     assert s.dt[0] == dates[0]
 
 
+def test_from_pytimedelta() -> None:
+    timedeltas = [timedelta(days=1), timedelta(seconds=1), None]
+    s = pl.Series("name", timedeltas)
+    assert s.dtype == pl.Duration
+    assert s.name == "name"
+    assert s.null_count() == 1
+    for idx,td in enumerate(timedeltas):
+        assert s.dt[idx] == td
+
+
 def test_int_to_python_datetime() -> None:
     df = pl.DataFrame({"a": [100_000_000, 200_000_000]}).with_columns(
         [
