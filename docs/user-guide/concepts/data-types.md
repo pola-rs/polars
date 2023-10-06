@@ -34,15 +34,12 @@ To learn more about the internal representation of these data types, check the [
 
 `Polars` generally follows the IEEE 754 floating point standard for `Float32` and `Float64`, with some exceptions:
 
-- `Polars` does not support signed zero and conceptually only has a single zero value.
-- `Polars` has a single canonical NaN representation and does not support signed NaNs or NaN payloads.
-- The canonical NaN compares equal to itself, and greater than any non-NaN value.
+- Any NaN compares equal to any other NaN, and greater than any non-NaN value.
+- Operations do not guarantee any particular behavior on the sign of zero or NaN,
+  nor on the payload of NaN values. This is not just limited to arithmetic operations,
+  e.g. a sort or group by operation may canonicalize all zeroes to +0 and all NaNs
+  to a positive NaN without payload for efficient equality checks.
 
-The above canonicalization should be consistently applied for user-facing data, arithmetic
-and file-format I/O, but may be violated for zero-copy in-memory export. In such
-cases `Polars` simply provides no guarantees around which sign or payload NaNs/zeros
-have.
-
-Finally, `Polars` always attempts to provide reasonably accurate results for floating point computations, but does not provide guarantees
+`Polars` always attempts to provide reasonably accurate results for floating point computations, but does not provide guarantees
 on the error unless mentioned otherwise. Generally speaking 100% accurate results are infeasibly expensive to acquire (requiring
 much larger internal representations than 64-bit floats), and thus some error is always to be expected.
