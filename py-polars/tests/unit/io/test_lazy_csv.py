@@ -158,6 +158,14 @@ def test_scan_csv_schema_new_columns_dtypes(
     assert df4.dtypes == [pl.Utf8, pl.Utf8, pl.Float64, pl.Int64]
     assert df4.columns == ["category", "calories", "fats_g", "sugars_g"]
 
+    # cannot have len(new_columns) > len(actual columns)
+    with pytest.raises(pl.ShapeError):
+        pl.scan_csv(
+            file_path,
+            dtypes=[pl.Utf8, pl.Utf8],
+            new_columns=["category", "calories", "c3", "c4", "c5"],
+        ).collect()
+
     # cannot set both 'new_columns' and 'with_column_names'
     with pytest.raises(ValueError, match="mutually.exclusive"):
         pl.scan_csv(
