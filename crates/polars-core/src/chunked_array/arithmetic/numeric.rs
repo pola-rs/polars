@@ -114,9 +114,7 @@ where
             self,
             rhs,
             <T::Native as ArrayArithmetics>::div,
-            // Adding zero to divisor ensures x/0 becomes +infinity, ignoring
-            // the sign of the zero.
-            |lhs, rhs| lhs / (rhs + T::Native::zero()),
+            |lhs, rhs| lhs / rhs,
         )
     }
 }
@@ -196,9 +194,7 @@ where
             self,
             rhs,
             |a, b| arity_assign::binary(a, b, |a, b| a / b),
-            // Adding zero to divisor ensures x/0 becomes +infinity, ignoring
-            // the sign of the zero.
-            |lhs, rhs| lhs / (rhs + T::Native::zero()),
+            |lhs, rhs| lhs / rhs,
         )
     }
 }
@@ -360,10 +356,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn div(self, rhs: N) -> Self::Output {
-        // Adding zero to divisor ensures x/0 becomes +infinity, ignoring
-        // the sign of the zero.
-        #[allow(clippy::suspicious_arithmetic_impl)]
-        (&self).div(rhs + N::zero())
+        (&self).div(rhs)
     }
 }
 
