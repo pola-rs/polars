@@ -186,7 +186,9 @@ impl LogicalPlanBuilder {
 
         let mut file_info = FileInfo::new(schema, (num_rows, num_rows.unwrap_or(0)));
 
-        file_info.set_hive_partitions(path.as_path());
+        if hive_partitioning {
+            file_info.set_hive_partitions(path.as_path());
+        }
 
         let options = FileScanOptions {
             with_columns: None,
