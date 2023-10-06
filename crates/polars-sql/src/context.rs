@@ -209,8 +209,12 @@ impl SQLContext {
         match quantifier {
             // UNION ALL
             SetQuantifier::All => concatenated,
-            // UNION DISTINCT | UNION
-            _ => concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any)),
+            // UNION [DISTINCT]
+            SetQuantifier::Distinct | SetQuantifier::None => {
+                concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
+            },
+            // TODO: support "UNION [ALL] BY NAME"
+            _ => polars_bail!(InvalidOperation: "UNION {} is not yet supported", quantifier),
         }
     }
 
