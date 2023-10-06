@@ -51,6 +51,9 @@ def test_hive_partitioned_predicate_pushdown(
         err = capfd.readouterr().err
         assert "hive partitioning" in err
 
+    # tests: 11536
+    assert q.filter(pl.col("sugars_g") == 25).collect().shape == (1, 4)
+
 
 @pytest.mark.write_disk()
 def test_hive_partitioned_projection_pushdown(

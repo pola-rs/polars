@@ -103,6 +103,7 @@ impl Executor for UnionExec {
                     .collect::<PolarsResult<Vec<_>>>()
             });
 
+            dbg!(&out);
             concat_df(out?.iter().flat_map(|dfs| dfs.iter()))
         }
         .map(|mut df| {

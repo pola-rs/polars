@@ -354,7 +354,14 @@ pub fn read_parquet<R: MmapBytesReader>(
         } else {
             Cow::Borrowed(schema)
         };
-        Ok(arrow_schema_to_empty_df(&schema))
+        let mut df = arrow_schema_to_empty_df(&schema);
+        if let Some(parts) = hive_partition_columns {
+            for s in parts {
+                // SAFETY: length is equal
+                unsafe { df.with_column_unchecked(s.clear()) };
+            }
+        }
+        Ok(df)
     } else {
         accumulate_dataframes_vertical(dfs)
     }
