@@ -498,9 +498,7 @@ where
     if items.len() > 1 {
         return MaybeNext::Some(Ok(items.pop_front().unwrap()));
     }
-    if (items.len() == 1) && items.front().unwrap().0.len() == chunk_size.unwrap_or(usize::MAX) {
-        return MaybeNext::Some(Ok(items.pop_front().unwrap()));
-    }
+
     if *remaining == 0 {
         return match items.pop_front() {
             Some(decoded) => MaybeNext::Some(Ok(decoded)),
@@ -541,7 +539,7 @@ where
             };
 
             if (items.len() == 1)
-                && items.front().unwrap().0.len() < chunk_size.unwrap_or(usize::MAX)
+                && items.front().unwrap().0.len() < 1 + chunk_size.unwrap_or(usize::MAX - 1)
             {
                 MaybeNext::More
             } else {
