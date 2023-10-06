@@ -799,8 +799,8 @@ def scan_csv(
         Single byte end of line character
     new_columns
         Provide an explicit list of string column names to use (for example, when
-        scanning a headerless CSV file). Note that unlike ``read_csv`` it is considered
-        an error to provide fewer column names than there are columns in the file.
+        scanning a headerless CSV file). If the given list is shorter than the width of
+        the DataFrame the remaining columns will have their original name.
     raise_if_empty
         When there is no data in the source,``NoDataError`` is raised. If this parameter
         is set to False, an empty LazyFrame (with no columns) is returned instead.
@@ -885,8 +885,11 @@ def scan_csv(
             dtypes = dict(zip(new_columns, dtypes))
 
         # wrap new column names as a callable
-        def with_column_names(_cols: list[str]) -> list[str]:
-            return new_columns  # type: ignore[return-value]
+        def with_column_names(cols: list[str]) -> list[str]:
+            if len(cols) > len(new_columns):
+                return new_columns + cols[len(new_columns) :]  # type: ignore[operator]
+            else:
+                return new_columns  # type: ignore[return-value]
 
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("comment_char", comment_char, can_be_empty=False)
