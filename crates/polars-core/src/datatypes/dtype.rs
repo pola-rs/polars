@@ -161,29 +161,29 @@ impl DataType {
         self.is_numeric() | matches!(self, DataType::Boolean | DataType::Utf8 | DataType::Binary)
     }
 
-    /// Check if this [`DataType`] is a numeric type.
+    /// Check if this [`DataType`] is a basic numeric type (excludes Decimal).
     pub fn is_numeric(&self) -> bool {
-        matches!(
-            self,
-            DataType::UInt8
-                | DataType::UInt16
-                | DataType::UInt32
-                | DataType::UInt64
-                | DataType::Int8
-                | DataType::Int16
-                | DataType::Int32
-                | DataType::Int64
-                | DataType::Float32
-                | DataType::Float64
-        )
+        self.is_float() || self.is_integer()
     }
 
+    /// Check if this [`DataType`] is a basic floating point type (excludes Decimal).
     pub fn is_float(&self) -> bool {
         matches!(self, DataType::Float32 | DataType::Float64)
     }
 
+    /// Check if this [`DataType`] is an integer.
     pub fn is_integer(&self) -> bool {
-        self.is_numeric() && !matches!(self, DataType::Float32 | DataType::Float64)
+        matches!(
+            self,
+            DataType::Int8
+                | DataType::Int16
+                | DataType::Int32
+                | DataType::Int64
+                | DataType::UInt8
+                | DataType::UInt16
+                | DataType::UInt32
+                | DataType::UInt64
+        )
     }
 
     pub fn is_signed(&self) -> bool {
