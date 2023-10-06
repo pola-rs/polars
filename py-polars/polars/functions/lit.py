@@ -148,10 +148,10 @@ def lit(
         if isinstance(item, int) and hasattr(value, "dtype"):
             dtype_name = value.dtype.name
             if dtype_name.startswith("datetime64["):
-                time_unit = dtype_name.removeprefix("datetime64[").removesuffix("]")
+                time_unit = dtype_name[len("datetime64["):-1]
                 return lit(item).cast(Datetime(time_unit))
             if dtype_name.startswith("timedelta64["):
-                time_unit = dtype_name.removeprefix("timedelta64[").removesuffix("]")
+                time_unit = dtype_name[len("timedelta64["):-1]
                 return lit(item).cast(Duration(time_unit))
 
     except AttributeError:
