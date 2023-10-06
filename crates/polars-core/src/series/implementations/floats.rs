@@ -339,11 +339,6 @@ macro_rules! impl_dyn_series {
             fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
                 self.0.checked_div(rhs)
             }
-
-            #[cfg(feature = "mode")]
-            fn mode(&self) -> PolarsResult<Series> {
-                Ok(self.0.mode()?.into_series())
-            }
         }
     };
 }

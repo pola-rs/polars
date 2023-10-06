@@ -2,6 +2,8 @@
 //! Domain specific language for the Lazy API.
 #[cfg(feature = "rolling_window")]
 use polars_core::utils::ensure_sorted_arg;
+#[cfg(feature = "mode")]
+use polars_ops::chunked_array::mode::mode;
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
 #[cfg(feature = "dtype-categorical")]
@@ -1143,11 +1145,8 @@ impl Expr {
     #[cfg(feature = "mode")]
     /// Compute the mode(s) of this column. This is the most occurring value.
     pub fn mode(self) -> Expr {
-        self.apply(
-            |s| s.mode().map(|ca| Some(ca.into_series())),
-            GetOutput::same_type(),
-        )
-        .with_fmt("mode")
+        self.apply(|s| mode(&s).map(Some), GetOutput::same_type())
+            .with_fmt("mode")
     }
 
     /// Keep the original root name

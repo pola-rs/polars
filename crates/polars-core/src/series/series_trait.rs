@@ -483,12 +483,6 @@ pub trait SeriesTrait:
         polars_bail!(opq = checked_div, self._dtype());
     }
 
-    #[cfg(feature = "mode")]
-    /// Compute the most occurring element in the array.
-    fn mode(&self) -> PolarsResult<Series> {
-        polars_bail!(opq = mode, self._dtype());
-    }
-
     #[cfg(feature = "rolling_window")]
     /// Apply a custom function over a rolling/ moving window of the array.
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
