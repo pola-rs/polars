@@ -1327,7 +1327,7 @@ class DataFrame:
         Please report any issues to https://github.com/data-apis/dataframe-api-compat.
         """
         return dataframe_api_compat.polars_standard.convert_to_standard_compliant_dataframe(
-            self, api_version=api_version
+            self.lazy(), api_version=api_version
         )
 
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
