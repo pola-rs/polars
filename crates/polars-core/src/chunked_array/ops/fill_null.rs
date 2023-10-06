@@ -279,7 +279,7 @@ where
         + compute::aggregate::SimdOrd<T::Native>,
 {
     // Nothing to fill.
-    if !ca.has_validity() {
+    if ca.null_count() == 0 {
         return Ok(ca.clone());
     }
     let mut out = match strategy {
@@ -309,7 +309,7 @@ where
 
 fn fill_null_bool(ca: &BooleanChunked, strategy: FillNullStrategy) -> PolarsResult<Series> {
     // Nothing to fill.
-    if !ca.has_validity() {
+    if ca.null_count() == 0 {
         return Ok(ca.clone().into_series());
     }
     match strategy {
@@ -347,7 +347,7 @@ fn fill_null_bool(ca: &BooleanChunked, strategy: FillNullStrategy) -> PolarsResu
 
 fn fill_null_binary(ca: &BinaryChunked, strategy: FillNullStrategy) -> PolarsResult<BinaryChunked> {
     // Nothing to fill.
-    if !ca.has_validity() {
+    if ca.null_count() == 0 {
         return Ok(ca.clone());
     }
     match strategy {
@@ -379,7 +379,7 @@ fn fill_null_binary(ca: &BinaryChunked, strategy: FillNullStrategy) -> PolarsRes
 
 fn fill_null_list(ca: &ListChunked, strategy: FillNullStrategy) -> PolarsResult<ListChunked> {
     // Nothing to fill.
-    if !ca.has_validity() {
+    if ca.null_count() == 0 {
         return Ok(ca.clone());
     }
     match strategy {

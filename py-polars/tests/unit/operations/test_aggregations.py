@@ -281,3 +281,9 @@ def test_sum_empty_and_null_set() -> None:
     df = pl.DataFrame({"a": [None, None, None], "b": [1, 1, 1]})
     assert df.select(pl.sum("a")).item() == 0.0
     assert df.group_by("b").agg(pl.sum("a"))["a"].item() == 0.0
+
+
+def test_horizontal_sum_null_to_identity() -> None:
+    assert pl.DataFrame({"a": [1, 5], "b": [10, None]}).select(
+        [pl.sum_horizontal(["a", "b"])]
+    ).to_series().to_list() == [11, 5]
