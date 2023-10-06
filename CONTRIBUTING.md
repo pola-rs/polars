@@ -219,21 +219,14 @@ Start by bumping the version number in the source code:
 
 Directly after merging your pull request, release the new version:
 
-8. Go back to the [releases page](https://github.com/pola-rs/polars/releases) and click _Edit_ on the appropriate draft release.
-9. On the draft release page, click _Publish release_. This will create a new release and a new tag, which will trigger the GitHub Actions release workflow ([Python](https://github.com/pola-rs/polars/actions/workflows/release-python.yml) / [Rust](https://github.com/pola-rs/polars/actions/workflows/release-rust.yml)).
-10. Wait for all release jobs to finish, then check [crates.io](https://crates.io/crates/polars)/[PyPI](https://pypi.org/project/polars/) to verify that the new Polars release is now available.
+8. Go to the release workflow ([Python](https://github.com/pola-rs/polars/actions/workflows/release-python.yml)/[Rust](https://github.com/pola-rs/polars/actions/workflows/release-rust.yml)), click _Run workflow_ in the top right, and click the green button. This will trigger the workflow, which will build all release artifacts and publish them.
+9. Wait for the workflow to finish, then check [crates.io](https://crates.io/crates/polars)/[PyPI](https://pypi.org/project/polars/)/[GitHub](https://github.com/pola-rs/polars/releases) to verify that the new Polars release is now available.
 
 ### Troubleshooting
 
 It may happen that one or multiple release jobs fail. If so, you should first try to simply re-run the failed jobs from the GitHub Actions UI.
 
-If that doesn't help, you will have to figure out what's wrong and commit a fix. Once your fix has made it to the `main` branch, re-trigger the release workflow by updating the git tag associated with the release. Note the commit hash of your fix, and run the following command:
-
-```shell
-git tag -f <version-number> <commit-hash> && git push -f origin <version-number>
-```
-
-This will update the tag to point to the commit of your fix. The release workflows will re-trigger and hopefully succeed this time!
+If that doesn't help, you will have to figure out what's wrong and commit a fix. Once your fix has made it to the `main` branch, simply re-trigger the release workflow.
 
 ## License
 
