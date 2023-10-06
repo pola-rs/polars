@@ -392,13 +392,19 @@ def test_take_every() -> None:
 def test_take_misc(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
 
-    # out of bounds error
+    # Out of bounds error.
     with pytest.raises(pl.ComputeError):
         (
             df.sort("fruits").select(
                 [pl.col("B").reverse().take([1, 2]).implode().over("fruits"), "fruits"]
             )
         )
+
+    # Null indices.
+    assert_frame_equal(
+        df.select(pl.col("fruits").take(pl.Series([0, None]))),
+        pl.DataFrame({"fruits": ["banana", None]}),
+    )
 
     for index in [[0, 1], pl.Series([0, 1]), np.array([0, 1])]:
         out = df.sort("fruits").select(
