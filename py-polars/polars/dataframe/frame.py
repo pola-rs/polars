@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import os
 import random
+import typing
 from collections import defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO, TextIOWrapper
@@ -1317,6 +1318,7 @@ class DataFrame:
 
         return PolarsDataFrame(self, allow_copy=allow_copy)
 
+    @typing.no_type_check
     def __dataframe_consortium_standard__(
         self, *, api_version: str | None = None
     ) -> Any:
