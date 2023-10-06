@@ -147,13 +147,12 @@ def lit(
         # handle 'ns' units
         if isinstance(item, int) and hasattr(value, "dtype"):
             dtype_name = value.dtype.name
-            if dtype_name.startswith(("datetime64[", "timedelta64[")):
-                time_unit = dtype_name[11:-1]
-                return lit(item).cast(
-                    Datetime(time_unit)
-                    if dtype_name.startswith("date")
-                    else Duration(time_unit)
-                )
+            if dtype_name.startswith("datetime64["):
+                time_unit = dtype_name.removeprefix("datetime64[").removesuffix("]")
+                return lit(item).cast(Datetime(time_unit))
+            if dtype_name.startswith("timedelta64["):
+                time_unit = dtype_name.removeprefix("timedelta64[").removesuffix("]")
+                return lit(item).cast(Duration(time_unit))
 
     except AttributeError:
         item = value
