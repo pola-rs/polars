@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 import pandas as pd
@@ -203,12 +203,15 @@ def test_from_pydatetime() -> None:
     assert s.dt[0] == dates[0]
 
 
-def test_from_numpy_timedelta() -> None:
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_from_numpy_timedelta(time_unit: Literal["ns", "us", "ms"]) -> None:
     s = pl.Series(
         "name",
-        np.array([timedelta(days=1), timedelta(seconds=1)], dtype="timedelta64[ms]"),
+        np.array(
+            [timedelta(days=1), timedelta(seconds=1)], dtype=f"timedelta64[{time_unit}]"
+        ),
     )
-    assert s.dtype == pl.Duration
+    assert s.dtype == pl.Duration(time_unit)
     assert s.name == "name"
     assert s.dt[0] == timedelta(days=1)
     assert s.dt[1] == timedelta(seconds=1)
