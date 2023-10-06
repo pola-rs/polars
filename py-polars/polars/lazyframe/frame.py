@@ -1034,7 +1034,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 comm_subplan_elim,
                 comm_subexpr_elim,
                 streaming,
-                eager=False,
+                _eager=False,
             )
             return ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
@@ -1114,7 +1114,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
-            eager=False,
+            _eager=False,
         )
 
         dot = _ldf.to_dot(optimized)
@@ -1568,7 +1568,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
-            eager=False,
+            _eager=False,
         )
         df, timings = ldf.profile()
         (df, timings) = wrap_df(df), wrap_df(timings)
@@ -1631,7 +1631,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = False,
-        **kwargs: Any,
+        _eager: bool = False,
     ) -> DataFrame:
         """
         Collect into a DataFrame.
@@ -1659,8 +1659,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
-        **kwargs
-            For internal use.
 
         Returns
         -------
@@ -1688,8 +1686,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
 
         """
-        eager = kwargs.get("eager", False)
-        if no_optimization or eager:
+        if no_optimization or _eager:
             predicate_pushdown = False
             projection_pushdown = False
             slice_pushdown = False
@@ -1708,7 +1705,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
-            eager,
+            _eager,
         )
         return wrap_df(ldf.collect())
 
@@ -1863,7 +1860,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
-            eager=False,
+            _eager=False,
         )
 
         result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
@@ -2187,7 +2184,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim=False,
             comm_subexpr_elim=False,
             streaming=True,
-            eager=False,
+            _eager=False,
         )
 
     @deprecate_renamed_parameter(
@@ -2288,7 +2285,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
-            eager=False,
+            _eager=False,
         )
         return wrap_df(lf.fetch(n_rows))
 

@@ -349,7 +349,7 @@ impl PyLazyFrame {
         comm_subplan_elim: bool,
         comm_subexpr_elim: bool,
         streaming: bool,
-        eager: bool,
+        _eager: bool,
     ) -> Self {
         let ldf = self.ldf.clone();
         let mut ldf = ldf
@@ -358,7 +358,7 @@ impl PyLazyFrame {
             .with_simplify_expr(simplify_expr)
             .with_slice_pushdown(slice_pushdown)
             .with_streaming(streaming)
-            ._with_eager(eager)
+            ._with_eager(_eager)
             .with_projection_pushdown(projection_pushdown);
 
         #[cfg(feature = "cse")]
