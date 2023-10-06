@@ -178,9 +178,8 @@ impl<'a> BitMask<'a> {
             // SAFETY: we know that at least the first byte is in-bounds.
             // This is partially out of bounds, we have to do extra masking.
             let mask = load_padded_le_u64(unsafe { self.bytes.get_unchecked(start_byte_idx..) });
-            let num_out_of_bounds = idx + 32 - self.len;
-            let shifted = (mask << num_out_of_bounds) >> (num_out_of_bounds + byte_shift);
-            shifted as u32
+            let out_of_bounds_mask = (1u32 << (self.len - idx)) - 1;
+            ((mask >> byte_shift) as u32) & out_of_bounds_mask
         } else {
             0
         }
