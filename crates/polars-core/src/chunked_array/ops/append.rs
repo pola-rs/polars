@@ -6,7 +6,11 @@ pub(crate) fn new_chunks(chunks: &mut Vec<ArrayRef>, other: &[ArrayRef], len: us
     if chunks.len() == 1 && len == 0 {
         *chunks = other.to_owned();
     } else {
-        chunks.extend_from_slice(other);
+        for chunk in other {
+            if chunk.len() > 0 {
+                chunks.push(chunk.clone());
+            }
+        }
     }
 }
 
