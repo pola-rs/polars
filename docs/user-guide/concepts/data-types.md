@@ -30,7 +30,6 @@ from `Arrow`, with the exception of `Utf8` (this is actually `LargeUtf8`), `Cate
 
 To learn more about the internal representation of these data types, check the [`Arrow` columnar format](https://arrow.apache.org/docs/format/Columnar.html).
 
-
 ## Floating Point
 
 `Polars` generally follows the IEEE 754 floating point standard for `Float32` and `Float64`, with some exceptions:
