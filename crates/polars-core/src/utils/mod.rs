@@ -146,7 +146,7 @@ pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
 
 pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
     let total_len = df.height();
-    let chunk_size = std::cmp::max(total_len / n, 3);
+    let chunk_size = std::cmp::max(total_len / n, 1);
 
     if df.n_chunks() == n
         && df.get_columns()[0]
