@@ -6823,7 +6823,7 @@ class Series:
 
 def _resolve_temporal_dtype(
     dtype: PolarsDataType | None,
-    ndtype: np.dtypes.TimeDelta64DType | np.dtypes.DateTime64DType,
+    ndtype: np.dtype[np.datetime64] | np.dtype[np.timedelta64],
 ) -> PolarsDataType | None:
     """Given polars/numpy temporal dtypes, resolve to an explicit unit."""
     PolarsType = Duration if ndtype.type == np.timedelta64 else Datetime

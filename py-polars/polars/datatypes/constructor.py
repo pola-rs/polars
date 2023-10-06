@@ -104,11 +104,13 @@ def numpy_values_and_dtype(
         dtype = values.dtype.type
     elif dtype in [np.datetime64, np.timedelta64]:
         time_unit = np.datetime_data(values.dtype)[0]
-        if time_unit in dt.DTYPE_TEMPORAL_UNITS or time_unit == "D":
+        if time_unit in dt.DTYPE_TEMPORAL_UNITS or (
+            time_unit == "D" and dtype == np.datetime64
+        ):
             values = values.astype(np.int64)
         else:
             raise ValueError(
-                "only 'D', 'ms', 'us', and 'ns' resolutions are supported when converting from numpy.{datetime64,timedelta64}"
+                "'D' (datetime only), 'ms', 'us', and 'ns' resolutions are supported when converting from numpy.{datetime64,timedelta64}"
                 "\n\nPlease cast to the closest supported unit before converting"
             )
     return values, dtype
