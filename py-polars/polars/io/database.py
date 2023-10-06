@@ -351,7 +351,7 @@ def read_database(  # noqa D417
         instead of `i64`).
     execute_options
         These options will be passed through into the underlying query execution method
-        as **kwargs. In the case of connections made using an ODBC string (which use
+        as kwargs. In the case of connections made using an ODBC string (which use
         `arrow-odbc`) these options are passed to the ``read_arrow_batches_from_odbc``
         method.
 
