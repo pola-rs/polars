@@ -1,6 +1,6 @@
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Display, Formatter, Write};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::{fmt, str};
 
@@ -959,7 +959,7 @@ impl Series {
                 let mut result = "[".to_owned();
 
                 for (i, item) in self.iter().enumerate() {
-                    result.push_str(&item.to_string());
+                    write!(result, "{item}").unwrap();
 
                     if i != self.len() - 1 {
                         result.push_str(", ");
@@ -967,7 +967,7 @@ impl Series {
 
                     if i == max_items - 2 {
                         result.push_str("… ");
-                        result.push_str(&self.get(self.len() - 1).unwrap().to_string());
+                        write!(result, "{}", self.get(self.len() - 1).unwrap()).unwrap();
                         break;
                     }
                 }
