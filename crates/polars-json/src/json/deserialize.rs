@@ -85,7 +85,7 @@ fn deserialize_list<'a, A: Borrow<BorrowedValue<'a>>>(
             inner.extend(value.iter());
             validity.push(true);
             offsets
-                .try_push_usize(value.len())
+                .try_push(value.len())
                 .expect("List offset is too large :/");
         },
         BorrowedValue::Static(StaticNode::Null) => {
@@ -95,9 +95,7 @@ fn deserialize_list<'a, A: Borrow<BorrowedValue<'a>>>(
         value @ (BorrowedValue::Static(_) | BorrowedValue::String(_)) => {
             inner.push(value);
             validity.push(true);
-            offsets
-                .try_push_usize(1)
-                .expect("List offset is too large :/");
+            offsets.try_push(1).expect("List offset is too large :/");
         },
         _ => {
             validity.push(false);

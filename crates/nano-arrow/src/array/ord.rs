@@ -1,5 +1,4 @@
 //! Contains functions and function factories to order values within arrays.
-
 use std::cmp::Ordering;
 
 use crate::array::*;
@@ -7,49 +6,15 @@ use crate::datatypes::*;
 use crate::error::{Error, Result};
 use crate::offset::Offset;
 use crate::types::NativeType;
+use crate::util::total_ord::TotalOrd;
 
 /// Compare the values at two arbitrary indices in two arrays.
 pub type DynComparator = Box<dyn Fn(usize, usize) -> Ordering + Send + Sync>;
 
-/// implements comparison using IEEE 754 total ordering for f32
-// Original implementation from https://doc.rust-lang.org/std/primitive.f32.html#method.total_cmp
-// TODO to change to use std when it becomes stable
-#[inline]
-pub fn total_cmp_f32(l: &f32, r: &f32) -> std::cmp::Ordering {
-    let mut left = l.to_bits() as i32;
-    let mut right = r.to_bits() as i32;
-
-    left ^= (((left >> 31) as u32) >> 1) as i32;
-    right ^= (((right >> 31) as u32) >> 1) as i32;
-
-    left.cmp(&right)
-}
-
-/// implements comparison using IEEE 754 total ordering for f64
-// Original implementation from https://doc.rust-lang.org/std/primitive.f64.html#method.total_cmp
-// TODO to change to use std when it becomes stable
-#[inline]
-pub fn total_cmp_f64(l: &f64, r: &f64) -> std::cmp::Ordering {
-    let mut left = l.to_bits() as i64;
-    let mut right = r.to_bits() as i64;
-
-    left ^= (((left >> 63) as u64) >> 1) as i64;
-    right ^= (((right >> 63) as u64) >> 1) as i64;
-
-    left.cmp(&right)
-}
-
-/// Total order of all native types whose Rust implementation
-/// that support total order.
-#[inline]
-pub fn total_cmp<T>(l: &T, r: &T) -> std::cmp::Ordering
-where
-    T: NativeType + Ord,
-{
-    l.cmp(r)
-}
-
-fn compare_primitives<T: NativeType + Ord>(left: &dyn Array, right: &dyn Array) -> DynComparator {
+fn compare_primitives<T: NativeType + TotalOrd>(
+    left: &dyn Array,
+    right: &dyn Array,
+) -> DynComparator {
     let left = left
         .as_any()
         .downcast_ref::<PrimitiveArray<T>>()
@@ -60,7 +25,7 @@ fn compare_primitives<T: NativeType + Ord>(left: &dyn Array, right: &dyn Array) 
         .downcast_ref::<PrimitiveArray<T>>()
         .unwrap()
         .clone();
-    Box::new(move |i, j| total_cmp(&left.value(i), &right.value(j)))
+    Box::new(move |i, j| left.value(i).tot_cmp(&right.value(j)))
 }
 
 fn compare_boolean(left: &dyn Array, right: &dyn Array) -> DynComparator {
@@ -75,34 +40,6 @@ fn compare_boolean(left: &dyn Array, right: &dyn Array) -> DynComparator {
         .unwrap()
         .clone();
     Box::new(move |i, j| left.value(i).cmp(&right.value(j)))
-}
-
-fn compare_f32(left: &dyn Array, right: &dyn Array) -> DynComparator {
-    let left = left
-        .as_any()
-        .downcast_ref::<PrimitiveArray<f32>>()
-        .unwrap()
-        .clone();
-    let right = right
-        .as_any()
-        .downcast_ref::<PrimitiveArray<f32>>()
-        .unwrap()
-        .clone();
-    Box::new(move |i, j| total_cmp_f32(&left.value(i), &right.value(j)))
-}
-
-fn compare_f64(left: &dyn Array, right: &dyn Array) -> DynComparator {
-    let left = left
-        .as_any()
-        .downcast_ref::<PrimitiveArray<f64>>()
-        .unwrap()
-        .clone();
-    let right = right
-        .as_any()
-        .downcast_ref::<PrimitiveArray<f64>>()
-        .unwrap()
-        .clone();
-    Box::new(move |i, j| total_cmp_f64(&left.value(i), &right.value(j)))
 }
 
 fn compare_string<O: Offset>(left: &dyn Array, right: &dyn Array) -> DynComparator {
@@ -212,8 +149,8 @@ pub fn build_compare(left: &dyn Array, right: &dyn Array) -> Result<DynComparato
         | (Duration(Millisecond), Duration(Millisecond))
         | (Duration(Microsecond), Duration(Microsecond))
         | (Duration(Nanosecond), Duration(Nanosecond)) => compare_primitives::<i64>(left, right),
-        (Float32, Float32) => compare_f32(left, right),
-        (Float64, Float64) => compare_f64(left, right),
+        (Float32, Float32) => compare_primitives::<f32>(left, right),
+        (Float64, Float64) => compare_primitives::<f64>(left, right),
         (Decimal(_, _), Decimal(_, _)) => compare_primitives::<i128>(left, right),
         (Utf8, Utf8) => compare_string::<i32>(left, right),
         (LargeUtf8, LargeUtf8) => compare_string::<i64>(left, right),

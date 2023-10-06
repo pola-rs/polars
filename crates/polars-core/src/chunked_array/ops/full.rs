@@ -147,15 +147,22 @@ impl ChunkFullNull for ArrayChunked {
 
 impl ListChunked {
     pub fn full_null_with_dtype(name: &str, length: usize, inner_dtype: &DataType) -> ListChunked {
-        let arr = ListArray::new_null(
+        let arr: ListArray<i64> = ListArray::new_null(
             ArrowDataType::LargeList(Box::new(ArrowField::new(
                 "item",
-                inner_dtype.to_arrow(),
+                inner_dtype.to_physical().to_arrow(),
                 true,
             ))),
             length,
         );
-        ChunkedArray::with_chunk(name, arr)
+        // SAFETY: physical type matches the logical.
+        unsafe {
+            ChunkedArray::from_chunks_and_dtype(
+                name,
+                vec![Box::new(arr)],
+                DataType::List(Box::new(inner_dtype.clone())),
+            )
+        }
     }
 }
 #[cfg(feature = "dtype-struct")]

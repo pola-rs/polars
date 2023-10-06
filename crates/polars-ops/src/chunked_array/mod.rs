@@ -16,6 +16,9 @@ mod sum;
 #[cfg(feature = "top_k")]
 mod top_k;
 
+#[cfg(feature = "mode")]
+pub mod mode;
+
 pub mod gather_skip_nulls;
 #[cfg(feature = "repeat_by")]
 mod repeat_by;

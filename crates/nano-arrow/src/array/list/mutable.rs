@@ -162,7 +162,7 @@ impl<O: Offset, M: MutableArray> MutableListArray<O, M> {
         let offset = self.offsets.last().to_usize();
         let length = total_length.checked_sub(offset).ok_or(Error::Overflow)?;
 
-        self.offsets.try_push_usize(length)?;
+        self.offsets.try_push(length)?;
         if let Some(validity) = &mut self.validity {
             validity.push(true)
         }

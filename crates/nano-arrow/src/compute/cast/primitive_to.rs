@@ -33,7 +33,7 @@ pub fn primitive_to_binary<T: NativeType + lexical_core::ToLexical, O: Offset>(
             let len = lexical_core::write_unchecked(*x, bytes).len();
 
             offset += len;
-            offsets.push(O::from_usize(offset).unwrap());
+            offsets.push(O::from_as_usize(offset));
         }
         values.set_len(offset);
         values.shrink_to_fit();
@@ -101,7 +101,7 @@ pub fn primitive_to_utf8<T: NativeType + lexical_core::ToLexical, O: Offset>(
             let len = lexical_core::write_unchecked(*x, bytes).len();
 
             offset += len;
-            offsets.push(O::from_usize(offset).unwrap());
+            offsets.push(O::from_as_usize(offset));
         }
         values.set_len(offset);
         values.shrink_to_fit();

@@ -25,6 +25,23 @@ use crate::predicates::{apply_predicate, arrow_schema_to_empty_df, PhysicalIoExp
 use crate::utils::{apply_projection, get_reader_bytes};
 use crate::RowCount;
 
+fn enlarge_data_type(mut data_type: ArrowDataType) -> ArrowDataType {
+    match data_type {
+        ArrowDataType::Utf8 => {
+            data_type = ArrowDataType::LargeUtf8;
+        },
+        ArrowDataType::Binary => {
+            data_type = ArrowDataType::LargeBinary;
+        },
+        ArrowDataType::List(mut inner_field) => {
+            inner_field.data_type = enlarge_data_type(inner_field.data_type);
+            data_type = ArrowDataType::LargeList(inner_field);
+        },
+        _ => {},
+    }
+    data_type
+}
+
 fn column_idx_to_series(
     column_i: usize,
     md: &RowGroupMetaData,
@@ -35,16 +52,7 @@ fn column_idx_to_series(
 ) -> PolarsResult<Series> {
     let mut field = schema.fields[column_i].clone();
 
-    match field.data_type {
-        ArrowDataType::Utf8 => {
-            field.data_type = ArrowDataType::LargeUtf8;
-        },
-        ArrowDataType::Binary => {
-            field.data_type = ArrowDataType::LargeBinary;
-        },
-        ArrowDataType::List(fld) => field.data_type = ArrowDataType::LargeList(fld),
-        _ => {},
-    }
+    field.data_type = enlarge_data_type(field.data_type);
 
     let columns = mmap_columns(store, md.columns(), &field.name);
     let iter = mmap::to_deserializer(columns, field.clone(), remaining_rows, Some(chunk_size))?;
@@ -346,7 +354,14 @@ pub fn read_parquet<R: MmapBytesReader>(
         } else {
             Cow::Borrowed(schema)
         };
-        Ok(arrow_schema_to_empty_df(&schema))
+        let mut df = arrow_schema_to_empty_df(&schema);
+        if let Some(parts) = hive_partition_columns {
+            for s in parts {
+                // SAFETY: length is equal
+                unsafe { df.with_column_unchecked(s.clear()) };
+            }
+        }
+        Ok(df)
     } else {
         accumulate_dataframes_vertical(dfs)
     }

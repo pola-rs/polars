@@ -36,7 +36,7 @@ pub trait PolarsObjectSafe: Any + Debug + Send + Sync + Display {
 
 /// Values need to implement this so that they can be stored into a Series and DataFrame
 pub trait PolarsObject:
-    Any + Debug + Clone + Send + Sync + Default + Display + Hash + PartialEq + Eq
+    Any + Debug + Clone + Send + Sync + Default + Display + Hash + PartialEq + Eq + TotalEq
 {
     /// This should be used as type information. Consider this a part of the type system.
     fn type_name() -> &'static str;

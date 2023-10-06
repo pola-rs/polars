@@ -26,8 +26,11 @@ def test_hive_partitioned_predicate_pushdown(
         partition_cols=["category", "fats_g"],
         use_legacy_dataset=True,
     )
+    q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=False)
+    assert q.columns == ["calories", "sugars_g"]
 
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
+    assert q.columns == ["calories", "sugars_g", "category", "fats_g"]
 
     # Partitioning changes the order
     sort_by = ["fats_g", "category", "calories", "sugars_g"]
@@ -47,6 +50,9 @@ def test_hive_partitioned_predicate_pushdown(
         )
         err = capfd.readouterr().err
         assert "hive partitioning" in err
+
+    # tests: 11536
+    assert q.filter(pl.col("sugars_g") == 25).collect().shape == (1, 4)
 
 
 @pytest.mark.write_disk()

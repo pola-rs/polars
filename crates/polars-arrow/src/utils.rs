@@ -69,15 +69,6 @@ pub fn combine_validities_or(opt_l: Option<&Bitmap>, opt_r: Option<&Bitmap>) -> 
 unsafe impl<I, J> arrow::trusted_len::TrustedLen for TrustMyLength<I, J> where I: Iterator<Item = J> {}
 
 pub trait CustomIterTools: Iterator {
-    fn fold_first_<F>(mut self, f: F) -> Option<Self::Item>
-    where
-        Self: Sized,
-        F: FnMut(Self::Item, Self::Item) -> Self::Item,
-    {
-        let first = self.next()?;
-        Some(self.fold(first, f))
-    }
-
     /// Turn any iterator in a trusted length iterator
     ///
     /// # Safety

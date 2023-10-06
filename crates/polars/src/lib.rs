@@ -245,7 +245,7 @@
 //!     - `concat_str` - Concat string data in linear time.
 //!     - `reinterpret` - Utility to reinterpret bits to signed/unsigned
 //!     - `take_opt_iter` - Take from a [`Series`] with [`Iterator<Item=Option<usize>>`](std::iter::Iterator).
-//!     - `mode` - [Return the most occurring value(s)](crate::chunked_array::ops::ChunkUnique::mode)
+//!     - `mode` - [Return the most occurring value(s)](polars_ops::chunked_array::mode)
 //!     - `cum_agg` - [`cumsum`], [`cummin`], [`cummax`] aggregation.
 //!     - `rolling_window` - rolling window functions, like [`rolling_mean`]
 //!     - `interpolate` [interpolate None values](polars_ops::chunked_array::interpolate)

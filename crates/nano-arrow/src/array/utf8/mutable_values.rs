@@ -395,7 +395,7 @@ impl<O: Offset, T: AsRef<str>> TryPush<T> for MutableUtf8ValuesArray<O> {
     fn try_push(&mut self, value: T) -> Result<()> {
         let bytes = value.as_ref().as_bytes();
         self.values.extend_from_slice(bytes);
-        self.offsets.try_push_usize(bytes.len())
+        self.offsets.try_push(bytes.len())
     }
 }
 
