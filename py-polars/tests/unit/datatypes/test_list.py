@@ -544,3 +544,24 @@ def test_list_amortized_iter_clear_settings_10126() -> None:
     )
 
     assert out.to_dict(False) == {"a": [1, 2], "b": [[1, 2, 3], [4]]}
+
+
+def test_list_inner_cast_physical_11513() -> None:
+    df = pl.DataFrame(
+        {
+            "date": ["foo"],
+            "struct": [[]],
+        },
+        schema_overrides={
+            "struct": pl.List(
+                pl.Struct(
+                    {
+                        "field": pl.Struct(
+                            {"subfield": pl.List(pl.Struct({"subsubfield": pl.Date}))}
+                        )
+                    }
+                )
+            )
+        },
+    )
+    assert df.select(pl.col("struct").take(0)).to_dict(False) == {"struct": [[]]}

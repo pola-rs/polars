@@ -171,15 +171,13 @@ where
             dtype @ DataType::Array(_, _) => from_chunks_list_dtype(&mut chunks, dtype),
             dt => dt,
         };
-        // assertions in debug mode
-        // that check if the data types in the arrays are as expected
-        #[cfg(debug_assertions)]
-        {
-            if !chunks.is_empty() && dtype.is_primitive() {
-                assert_eq!(chunks[0].data_type(), &dtype.to_physical().to_arrow())
-            }
-        }
-        let field = Arc::new(Field::new(name, dtype));
+        Self::from_chunks_and_dtype(name, chunks, dtype)
+    }
+
+    /// # Safety
+    /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
+    pub unsafe fn with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
+        let field = self.field.clone();
         let mut out = ChunkedArray {
             field,
             chunks,
@@ -191,10 +189,24 @@ where
         out
     }
 
+    /// Create a new [`ChunkedArray`] from existing chunks.
+    ///
     /// # Safety
     /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
-    pub unsafe fn with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
-        let field = self.field.clone();
+    pub unsafe fn from_chunks_and_dtype(
+        name: &str,
+        chunks: Vec<ArrayRef>,
+        dtype: DataType,
+    ) -> Self {
+        // assertions in debug mode
+        // that check if the data types in the arrays are as expected
+        #[cfg(debug_assertions)]
+        {
+            if !chunks.is_empty() && dtype.is_primitive() {
+                assert_eq!(chunks[0].data_type(), &dtype.to_physical().to_arrow())
+            }
+        }
+        let field = Arc::new(Field::new(name, dtype));
         let mut out = ChunkedArray {
             field,
             chunks,
