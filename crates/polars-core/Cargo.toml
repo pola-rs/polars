@@ -87,7 +87,6 @@ dot_product = []
 row_hash = []
 reinterpret = []
 take_opt_iter = []
-mode = []
 # allow group_by operation on list type
 group_by_list = []
 # cumsum, cummin, etc.
@@ -150,7 +149,6 @@ docs-selection = [
   "asof_join",
   "dot_product",
   "row_hash",
-  "mode",
   "cum_agg",
   "rolling_window",
   "diff",
