@@ -108,7 +108,7 @@ def numpy_values_and_dtype(
             values = values.astype(np.int64)
         else:
             raise ValueError(
-                "only 'D', 'ms', 'us', and 'ns' resolutions are supported when converting from numpy.{datetime64,numpy.timedelta64}"
+                "only 'D', 'ms', 'us', and 'ns' resolutions are supported when converting from numpy.{datetime64,timedelta64}"
                 "\n\nPlease cast to the closest supported unit before converting"
             )
     return values, dtype

@@ -203,14 +203,15 @@ def test_from_pydatetime() -> None:
     assert s.dt[0] == dates[0]
 
 
-def test_from_pytimedelta() -> None:
-    timedeltas = [timedelta(days=1), timedelta(seconds=1), None]
-    s = pl.Series("name", timedeltas)
+def test_from_numpy_timedelta() -> None:
+    s = pl.Series(
+        "name",
+        np.array([timedelta(days=1), timedelta(seconds=1)], dtype="timedelta64[ms]"),
+    )
     assert s.dtype == pl.Duration
     assert s.name == "name"
-    assert s.null_count() == 1
-    for idx,td in enumerate(timedeltas):
-        assert s.dt[idx] == td
+    assert s.dt[0] == timedelta(days=1)
+    assert s.dt[1] == timedelta(seconds=1)
 
 
 def test_int_to_python_datetime() -> None:
