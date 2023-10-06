@@ -442,26 +442,33 @@ class Config(contextlib.ContextDecorator):
         ----------
         fmt : {"mixed", "full"}
             How to format floating point numbers.
+            Mixed limits the number of decimal places and uses
+            scientific notation for large/small values. Full prints the
+            full precision of the floating point number.
 
         Examples
         --------
-        >>> s = pl.Series([1.2304980958725870923])
+        >>> s = pl.Series([1.2304980958725870923,1e6,1e-8])
         >>> with pl.Config(set_fmt_float="mixed"):
         ...     print(s)
         ...
-        shape: (1,)
+        shape: (3,)
         Series: '' [f64]
         [
                 1.230498
+                1e6,
+                1.0000e-8
         ]
 
         >>> with pl.Config(set_fmt_float="full"):
         ...     print(s)
         ...
-        shape: (1,)
+        shape: (3,)
         Series: '' [f64]
         [
-                1.230498095872587
+                1.230498095872587,
+                1000000,
+                0.00000001
         ]
 
         """
