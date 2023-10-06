@@ -2,6 +2,7 @@ use num_traits::{Float, NumCast};
 use polars_error::to_compute_err;
 use rand::distributions::Bernoulli;
 use rand::prelude::*;
+use rand::seq::index::IndexVec;
 use rand_distr::{Distribution, Normal, Standard, StandardNormal, Uniform};
 
 use crate::prelude::*;
@@ -27,15 +28,21 @@ fn create_rand_index_no_replacement(
     shuffle: bool,
 ) -> IdxCa {
     let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
-    let mut buf;
+    let mut buf: Vec<IdxSize>;
     if n == len {
         buf = (0..len as IdxSize).collect();
+        if shuffle {
+            buf.shuffle(&mut rng)
+        }
     } else {
-        buf = vec![0; n];
-        (0..len as IdxSize).choose_multiple_fill(&mut rng, &mut buf);
-    }
-    if shuffle {
-        buf.shuffle(&mut rng)
+        // TODO: avoid extra potential copy by vendoring rand::seq::index::sample,
+        // or genericize take over slices over any unsigned type. The optimizer
+        // should get rid of the extra copy already if IdxSize matches the IndexVec
+        // size returned.
+        buf = match rand::seq::index::sample(&mut rng, len, n) {
+            IndexVec::U32(v) => v.into_iter().map(|x| x as IdxSize).collect(),
+            IndexVec::USize(v) => v.into_iter().map(|x| x as IdxSize).collect(),
+        };
     }
     IdxCa::new_vec("", buf)
 }
@@ -85,14 +92,14 @@ impl Series {
         match with_replacement {
             true => {
                 let idx = create_rand_index_with_replacement(n, len, seed);
-                // SAFETY: we know that we never go out of bounds.
                 debug_assert_eq!(len, self.len());
+                // SAFETY: we know that we never go out of bounds.
                 unsafe { Ok(self.take_unchecked(&idx)) }
             },
             false => {
                 let idx = create_rand_index_no_replacement(n, len, seed, shuffle);
-                // SAFETY: we know that we never go out of bounds.
                 debug_assert_eq!(len, self.len());
+                // SAFETY: we know that we never go out of bounds.
                 unsafe { Ok(self.take_unchecked(&idx)) }
             },
         }
@@ -114,8 +121,8 @@ impl Series {
         let len = self.len();
         let n = len;
         let idx = create_rand_index_no_replacement(n, len, seed, true);
-        // Safety we know that we never go out of bounds
         debug_assert_eq!(len, self.len());
+        // SAFETY: we know that we never go out of bounds.
         unsafe { self.take_unchecked(&idx) }
     }
 }
@@ -139,14 +146,14 @@ where
         match with_replacement {
             true => {
                 let idx = create_rand_index_with_replacement(n, len, seed);
-                // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
+                // SAFETY: we know that we never go out of bounds.
                 unsafe { Ok(self.take_unchecked(&idx)) }
             },
             false => {
                 let idx = create_rand_index_no_replacement(n, len, seed, shuffle);
-                // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
+                // SAFETY: we know that we never go out of bounds.
                 unsafe { Ok(self.take_unchecked(&idx)) }
             },
         }
@@ -203,13 +210,12 @@ impl DataFrame {
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         ensure_shape(n, self.height(), with_replacement)?;
-        // all columns should used the same indices. So we first create the indices.
+        // All columns should used the same indices. So we first create the indices.
         let idx = match with_replacement {
             true => create_rand_index_with_replacement(n, self.height(), seed),
             false => create_rand_index_no_replacement(n, self.height(), seed, shuffle),
         };
-        // Safety:
-        // indices are within bounds
+        // SAFETY: the indices are within bounds.
         Ok(unsafe { self.take_unchecked(&idx) })
     }
 
@@ -295,23 +301,23 @@ mod test {
         ]
         .unwrap();
 
-        // default samples are random and don't require seeds
+        // Default samples are random and don't require seeds.
         assert!(df
             .sample_n(&Series::new("s", &[3]), false, false, None)
             .is_ok());
         assert!(df.sample_frac(0.4, false, false, None).is_ok());
-        // with seeding
+        // With seeding.
         assert!(df
             .sample_n(&Series::new("s", &[3]), false, false, Some(0))
             .is_ok());
         assert!(df.sample_frac(0.4, false, false, Some(0)).is_ok());
-        // without replacement can not sample more than 100%
+        // Without replacement can not sample more than 100%.
         assert!(df.sample_frac(2.0, false, false, Some(0)).is_err());
         assert!(df
             .sample_n(&Series::new("s", &[3]), true, false, Some(0))
             .is_ok());
         assert!(df.sample_frac(0.4, true, false, Some(0)).is_ok());
-        // with replacement can sample more than 100%
+        // With replacement can sample more than 100%.
         assert!(df.sample_frac(2.0, true, false, Some(0)).is_ok());
     }
 }
