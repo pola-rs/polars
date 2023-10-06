@@ -4,7 +4,6 @@ from __future__ import annotations
 import contextlib
 import os
 import random
-import typing
 from collections import defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO, TextIOWrapper
@@ -1318,7 +1317,6 @@ class DataFrame:
 
         return PolarsDataFrame(self, allow_copy=allow_copy)
 
-    @typing.no_type_check
     def __dataframe_consortium_standard__(
         self, *, api_version: str | None = None
     ) -> Any:
@@ -1329,7 +1327,7 @@ class DataFrame:
         Please report any issues to https://github.com/data-apis/dataframe-api-compat.
         """
         return dataframe_api_compat.polars_standard.convert_to_standard_compliant_dataframe(
-            self, api_version=api_version
+            self.lazy(), api_version=api_version
         )
 
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
