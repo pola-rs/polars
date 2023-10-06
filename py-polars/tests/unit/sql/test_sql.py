@@ -1123,3 +1123,23 @@ def test_sql_expr() -> None:
         pl.InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
     ):
         pl.sql_expr("xyz.*")
+
+
+@pytest.mark.parametrize("match_float", [False, True])
+def test_sql_unary_ops_8890(match_float: bool) -> None:
+    with pl.SQLContext(
+        df=pl.DataFrame({"a": [-2, -1, 1, 2], "b": ["w", "x", "y", "z"]}),
+    ) as ctx:
+        in_values = "(-3.0, -1.0, +2.0, +4.0)" if match_float else "(-3, -1, +2, +4)"
+        res = ctx.execute(
+            f"""
+            SELECT *, -(3) as c, (+4) as d
+            FROM df WHERE a IN {in_values}
+            """
+        )
+        assert res.collect().to_dict(False) == {
+            "a": [-1, 2],
+            "b": ["x", "z"],
+            "c": [-3, -3],
+            "d": [4, 4],
+        }

@@ -372,17 +372,32 @@ impl SqlExprVisitor<'_> {
         })
     }
 
-    // similar to visit_literal, but returns an AnyValue instead of Expr
-    fn visit_anyvalue(&self, value: &SqlValue) -> PolarsResult<AnyValue> {
+    /// Visit a SQL literal (like [visit_literal]), but return AnyValue instead of Expr
+    fn visit_anyvalue(
+        &self,
+        value: &SqlValue,
+        op: Option<&UnaryOperator>,
+    ) -> PolarsResult<AnyValue> {
         Ok(match value {
             SqlValue::Boolean(b) => AnyValue::Boolean(*b),
             SqlValue::Null => AnyValue::Null,
             SqlValue::Number(s, _) => {
+                let negate = match op {
+                    Some(UnaryOperator::Minus) => true,
+                    Some(UnaryOperator::Plus) => false,
+                    _ => {
+                        polars_bail!(ComputeError: "Unary op {:?} not supported for numeric SQL value", op)
+                    },
+                };
                 // Check for existence of decimal separator dot
                 if s.contains('.') {
-                    s.parse::<f64>().map(AnyValue::Float64).map_err(|_| ())
+                    s.parse::<f64>()
+                        .map(|n: f64| AnyValue::Float64(if negate { -n } else { n }))
+                        .map_err(|_| ())
                 } else {
-                    s.parse::<i64>().map(AnyValue::Int64).map_err(|_| ())
+                    s.parse::<i64>()
+                        .map(|n: i64| AnyValue::Int64(if negate { -n } else { n }))
+                        .map_err(|_| ())
                 }
                 .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {s:?}"))?
             },
@@ -483,9 +498,17 @@ impl SqlExprVisitor<'_> {
             .iter()
             .map(|e| {
                 if let SqlExpr::Value(v) = e {
-                    let av = self.visit_anyvalue(v)?;
+                    let av = self.visit_anyvalue(v, None)?;
                     Ok(av)
-                } else {
+                } else if let SqlExpr::UnaryOp {op, expr} = e {
+                    match expr.as_ref() {
+                        SqlExpr::Value(v) => {
+                            let av = self.visit_anyvalue(v, Some(op))?;
+                            Ok(av)
+                        },
+                        _ => Err(polars_err!(ComputeError: "SQL expression {:?} is not yet supported", e))
+                    }
+                }else{
                     Err(polars_err!(ComputeError: "SQL expression {:?} is not yet supported", e))
                 }
             })
