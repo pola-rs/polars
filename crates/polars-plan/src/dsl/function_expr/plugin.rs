@@ -1,4 +1,4 @@
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::sync::RwLock;
 
 use arrow::ffi::{import_field_from_c, ArrowSchema};
@@ -44,7 +44,7 @@ pub(super) unsafe fn call_plugin(
             *const SeriesExport,
             usize,
             *const std::os::raw::c_char,
-        ) -> SeriesExport,
+        ) -> *mut SeriesExport,
     > = lib.get(symbol.as_bytes()).unwrap();
 
     let n_args = s.len();
@@ -53,11 +53,25 @@ pub(super) unsafe fn call_plugin(
     let slice_ptr = input.as_ptr();
     let out = symbol(slice_ptr, n_args, kwargs.as_ptr());
 
+    // The inputs get dropped when the ffi side calls the drop callback.
     for e in input {
         std::mem::forget(e);
     }
 
-    import_series(out)
+    if !out.is_null() {
+        let out = Box::from_raw(out);
+        import_series(*out)
+    } else {
+        let symbol: libloading::Symbol<
+            unsafe extern "C" fn() -> *mut std::os::raw::c_char,
+        > = lib.get(b"get_last_error_message\0").unwrap();
+
+        let msg_ptr = symbol();
+        let msg = CString::from_raw(msg_ptr);
+        let msg = msg.to_string_lossy();
+        polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
+    }
+
 }
 
 pub(super) unsafe fn plugin_field(
