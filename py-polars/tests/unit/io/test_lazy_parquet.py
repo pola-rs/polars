@@ -331,7 +331,7 @@ def test_streaming_categorical(tmp_path: Path) -> None:
     with pl.StringCache():
         result = (
             pl.scan_parquet(file_path)
-            .groupby("name")
+            .group_by("name")
             .agg(pl.col("amount").sum())
             .collect()
             .sort("name")
@@ -376,3 +376,26 @@ def test_glob_n_rows(io_files_path: Path) -> None:
         "fats_g": [0.5, 6.0],
         "sugars_g": [2, 2],
     }
+
+
+@pytest.mark.write_disk()
+def test_parquet_statistics_filter_9925(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "codes.parquet"
+    df = pl.DataFrame({"code": [300964, 300972, 500_000, 26]})
+    df.write_parquet(file_path, statistics=True)
+
+    q = pl.scan_parquet(file_path).filter(
+        (pl.col("code").floordiv(100_000)).is_in([0, 3])
+    )
+    assert q.collect().to_dict(False) == {"code": [300964, 300972, 26]}
+
+
+@pytest.mark.write_disk()
+def test_parquet_statistics_filter_11069(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "foo.parquet"
+    pl.DataFrame({"x": [1, None]}).write_parquet(file_path, statistics=False)
+    assert pl.scan_parquet(file_path).filter(pl.col("x").is_null()).collect().to_dict(
+        False
+    ) == {"x": [None]}

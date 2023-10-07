@@ -20,7 +20,7 @@ Notes
   not interesting for us to check. To allow for this behaviour, a custom output checker
   has been created, see below.
 * The doctests depend on the exact string representation staying the same. This may not
-  be true in the future. For instance, in the past, the printout of dataframes has
+  be true in the future. For instance, in the past, the printout of DataFrames has
   changed from rounded corners to less rounded corners. To facilitate such a change,
   whilst not immediately having to add IGNORE_RESULT directives everywhere or changing
   all outputs, set `IGNORE_RESULT_ALL=True` below. Do note that this does mean no output
@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 def doctest_teardown(d: doctest.DocTest) -> None:
     # don't let config changes or string cache state leak between tests
     polars.Config.restore_defaults()
-    polars.enable_string_cache(False)
+    polars.disable_string_cache()
 
 
 def modules_in_path(p: Path) -> Iterator[ModuleType]:
@@ -75,8 +75,11 @@ if __name__ == "__main__":
 
     OutputChecker = doctest.OutputChecker
 
-    class CustomOutputChecker(OutputChecker):
+    class IgnoreResultOutputChecker(OutputChecker):
+        """Python doctest output checker with support for IGNORE_RESULT."""
+
         def check_output(self, want: str, got: str, optionflags: Any) -> bool:
+            """Return True iff the actual output from an example matches the output."""
             if IGNORE_RESULT_ALL:
                 return True
             if IGNORE_RESULT & optionflags:
@@ -84,7 +87,7 @@ if __name__ == "__main__":
             else:
                 return OutputChecker.check_output(self, want, got, optionflags)
 
-    doctest.OutputChecker = CustomOutputChecker  # type: ignore[misc]
+    doctest.OutputChecker = IgnoreResultOutputChecker  # type: ignore[misc]
 
     # We want to be relaxed about whitespace, but strict on True vs 1
     doctest.NORMALIZE_WHITESPACE = True

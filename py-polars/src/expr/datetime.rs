@@ -10,9 +10,8 @@ impl PyExpr {
         self.inner.clone().dt().to_string(format).into()
     }
 
-    fn dt_offset_by(&self, by: &str) -> Self {
-        let by = Duration::parse(by);
-        self.inner.clone().dt().offset_by(by).into()
+    fn dt_offset_by(&self, by: PyExpr) -> Self {
+        self.inner.clone().dt().offset_by(by.inner).into()
     }
 
     fn dt_epoch_seconds(&self) -> Self {
@@ -42,22 +41,21 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
-    fn dt_replace_time_zone(&self, time_zone: Option<String>, use_earliest: Option<bool>) -> Self {
+    #[pyo3(signature = (time_zone, ambiguous))]
+    fn dt_replace_time_zone(&self, time_zone: Option<String>, ambiguous: Self) -> Self {
         self.inner
             .clone()
             .dt()
-            .replace_time_zone(time_zone, use_earliest)
+            .replace_time_zone(time_zone, ambiguous.inner)
             .into()
     }
 
-    #[cfg(feature = "timezones")]
-    #[allow(deprecated)]
-    fn dt_tz_localize(&self, time_zone: String) -> Self {
-        self.inner.clone().dt().tz_localize(time_zone).into()
-    }
-
-    fn dt_truncate(&self, every: &str, offset: &str) -> Self {
-        self.inner.clone().dt().truncate(every, offset).into()
+    fn dt_truncate(&self, every: Self, offset: String, ambiguous: Self) -> Self {
+        self.inner
+            .clone()
+            .dt()
+            .truncate(every.inner, offset, ambiguous.inner)
+            .into()
     }
 
     fn dt_month_start(&self) -> Self {
@@ -77,8 +75,12 @@ impl PyExpr {
         self.inner.clone().dt().dst_offset().into()
     }
 
-    fn dt_round(&self, every: &str, offset: &str) -> Self {
-        self.inner.clone().dt().round(every, offset).into()
+    fn dt_round(&self, every: &str, offset: &str, ambiguous: Self) -> Self {
+        self.inner
+            .clone()
+            .dt()
+            .round(every, offset, ambiguous.inner)
+            .into()
     }
 
     fn dt_combine(&self, time: Self, time_unit: Wrap<TimeUnit>) -> Self {

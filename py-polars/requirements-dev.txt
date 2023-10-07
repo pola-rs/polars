@@ -4,27 +4,65 @@
 
 --prefer-binary
 
-# Dependencies
-deltalake >= 0.10.0
+# -----
+# BUILD
+# -----
+
+maturin
+patchelf; platform_system == 'Linux'  # Extra dependency for maturin, only for Linux
+
+# ------------
+# DEPENDENCIES
+# ------------
+
+# Interoperability
 numpy
 pandas
 pyarrow
-pydantic
+pydantic >= 2.0.0
+# Datetime / time zones
 backports.zoneinfo; python_version < '3.9'
 tzdata; platform_system == 'Windows'
+# Database
 SQLAlchemy
+adbc_driver_sqlite; python_version >= '3.9' and platform_system != 'Windows'
+connectorx
+# Cloud
+cloudpickle
+fsspec
+s3fs[boto3]
+# Spreadsheet
+ezodf
+lxml
+openpyxl
+pyxlsb
 xlsx2csv
 XlsxWriter
-adbc_driver_sqlite; python_version >= '3.9' and platform_system != 'Windows'
-connectorx==0.3.2a5; python_version >= '3.8'  # Latest full release is broken - unpin when 0.3.2 released
+# Deltalake
+# note: pinning deltalake until issues with pyarrow 13 resolved
+# https://github.com/delta-io/delta-rs/pull/1602
+deltalake == 0.10.1
+# Dataframe interchange protocol
+dataframe-api-compat >= 0.1.6
+pyiceberg >= 0.5.0
+# Other
+matplotlib
+gevent
 
-# Tooling
-hypothesis==6.79.4; python_version < '3.8'
-hypothesis==6.80.0; python_version >= '3.8'
-maturin==1.1.0
+# -------
+# TOOLING
+# -------
+
+hypothesis==6.87.1
 pytest==7.4.0
 pytest-cov==4.1.0
 pytest-xdist==3.3.1
 
+# Need moto.server to mock s3fs - see: https://github.com/aio-libs/aiobotocore/issues/755
+moto[s3]==4.2.2
+flask
+flask-cors
+
 # Stub files
 pandas-stubs
+boto3-stubs

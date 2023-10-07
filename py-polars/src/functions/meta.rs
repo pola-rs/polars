@@ -24,16 +24,6 @@ pub fn threadpool_size() -> usize {
 }
 
 #[pyfunction]
-pub fn enable_string_cache(toggle: bool) {
-    polars_core::enable_string_cache(toggle)
-}
-
-#[pyfunction]
-pub fn using_string_cache() -> bool {
-    polars_core::using_string_cache()
-}
-
-#[pyfunction]
 pub fn set_float_fmt(fmt: &str) -> PyResult<()> {
     let fmt = match fmt {
         "full" => FloatFmt::Full,
@@ -42,7 +32,7 @@ pub fn set_float_fmt(fmt: &str) -> PyResult<()> {
             return Err(PyValueError::new_err(format!(
                 "fmt must be one of {{'full', 'mixed'}}, got {e}",
             )))
-        }
+        },
     };
     polars_core::fmt::set_float_fmt(fmt);
     Ok(())

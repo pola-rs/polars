@@ -3,8 +3,7 @@ name: Lint Rust
 on:
   pull_request:
     paths:
-      - polars/**
-      - polars-cli/**
+      - crates/**
       - examples/**
       - Cargo.toml
       - .github/workflows/lint-rust.yml
@@ -12,8 +11,7 @@ on:
     branches:
       - main
     paths:
-      - polars/**
-      - polars-cli/**
+      - crates/**
       - examples/**
       - Cargo.toml
       - .github/workflows/lint-rust.yml
@@ -29,7 +27,7 @@ jobs:
   clippy-nightly:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Rust
         run: rustup component add clippy
@@ -40,13 +38,13 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy with all features enabled
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy -p polars --all-features -- -D warnings
 
   # Default feature set should compile on the stable toolchain
   clippy-stable:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Rust
         run: rustup override set stable && rustup update
@@ -60,13 +58,13 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy -p polars -- -D warnings
 
   rustfmt:
     if: github.ref_name != 'main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Rust
         run: rustup component add rustfmt
@@ -78,7 +76,7 @@ jobs:
     if: github.ref_name != 'main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Rust
         run: rustup component add miri
@@ -90,9 +88,8 @@ jobs:
         env:
           MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows
           POLARS_ALLOW_EXTENSION: '1'
-        run: |
-          cargo miri test \
-          --no-default-features \
-          --features object \
-          -p polars-core \
+        run: >
+          cargo miri test
+          --features object
+          -p polars-core
           -p polars-arrow

@@ -7,6 +7,7 @@ extend-ignore-identifiers-re = [
 ba = "ba"
 Fo = "Fo"
 nd = "nd"
+ND = "ND"
 opt_nd = "opt_nd"
 ser = "ser"
 strat = "strat"
@@ -15,6 +16,7 @@ width_strat = "width_strat"
 [default.extend-words]
 iif = "iif"
 '"r0ot"' = "r0ot"
+wee = "wee"
 
 [type.csv]
 extend-glob = ["*.csv"]

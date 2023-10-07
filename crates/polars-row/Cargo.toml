@@ -1,0 +1,15 @@
+[package]
+name = "polars-row"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Row encodings for the Polars DataFrame library"
+
+[dependencies]
+polars-error = { workspace = true }
+polars-utils = { workspace = true }
+
+arrow = { workspace = true }

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import cast
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_concat_align() -> None:
@@ -15,27 +14,17 @@ def test_concat_align() -> None:
     b = pl.DataFrame({"a": ["a", "b", "c"], "c": [5.5, 6.0, 7.5]})
     c = pl.DataFrame({"a": ["a", "b", "c", "d", "e"], "d": ["w", "x", "y", "z", None]})
 
-    expected = cast(
-        pl.DataFrame,
-        pl.from_repr(
-            """
-            shape: (6, 4)
-            ┌─────┬──────┬──────┬──────┐
-            │ a   ┆ b    ┆ c    ┆ d    │
-            │ --- ┆ ---  ┆ ---  ┆ ---  │
-            │ str ┆ i64  ┆ f64  ┆ str  │
-            ╞═════╪══════╪══════╪══════╡
-            │ a   ┆ 1    ┆ 5.5  ┆ w    │
-            │ b   ┆ 2    ┆ 6.0  ┆ x    │
-            │ c   ┆ null ┆ 7.5  ┆ y    │
-            │ d   ┆ 4    ┆ null ┆ z    │
-            │ e   ┆ 5    ┆ null ┆ null │
-            │ e   ┆ 6    ┆ null ┆ null │
-            └─────┴──────┴──────┴──────┘
-            """
-        ),
+    result = pl.concat([a, b, c], how="align")
+
+    expected = pl.DataFrame(
+        {
+            "a": ["a", "b", "c", "d", "e", "e"],
+            "b": [1, 2, None, 4, 5, 6],
+            "c": [5.5, 6.0, 7.5, None, None, None],
+            "d": ["w", "x", "y", "z", None, None],
+        }
     )
-    assert_frame_equal(pl.concat([a, b, c], how="align"), expected)
+    assert_frame_equal(result, expected)
 
 
 def test_concat_diagonal() -> None:
@@ -79,28 +68,14 @@ def test_concat_vertical() -> None:
     a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]})
     b = pl.DataFrame({"a": ["c", "d", "e"], "b": [3, 4, 5]})
 
-    out = pl.concat([a, b], how="vertical")
-    expected = cast(
-        pl.DataFrame,
-        pl.from_repr(
-            """
-            shape: (5, 2)
-            ┌─────┬─────┐
-            │ a   ┆ b   │
-            │ --- ┆ --- │
-            │ str ┆ i64 │
-            ╞═════╪═════╡
-            │ a   ┆ 1   │
-            │ b   ┆ 2   │
-            │ c   ┆ 3   │
-            │ d   ┆ 4   │
-            │ e   ┆ 5   │
-            └─────┴─────┘
-            """
-        ),
+    result = pl.concat([a, b], how="vertical")
+    expected = pl.DataFrame(
+        {
+            "a": ["a", "b", "c", "d", "e"],
+            "b": [1, 2, 3, 4, 5],
+        }
     )
-    assert_frame_equal(out, expected)
-    assert out.rows() == [("a", 1), ("b", 2), ("c", 3), ("d", 4), ("e", 5)]
+    assert_frame_equal(result, expected)
 
 
 def test_null_handling_correlation() -> None:
@@ -271,26 +246,6 @@ def test_align_frames_duplicate_key() -> None:
     ]
 
 
-def test_nan_aggregations() -> None:
-    df = pl.DataFrame({"a": [1.0, float("nan"), 2.0, 3.0], "b": [1, 1, 1, 1]})
-
-    aggs = [
-        pl.col("a").max().alias("max"),
-        pl.col("a").min().alias("min"),
-        pl.col("a").nan_max().alias("nan_max"),
-        pl.col("a").nan_min().alias("nan_min"),
-    ]
-
-    assert (
-        str(df.select(aggs).to_dict(False))
-        == "{'max': [3.0], 'min': [1.0], 'nan_max': [nan], 'nan_min': [nan]}"
-    )
-    assert (
-        str(df.groupby("b").agg(aggs).to_dict(False))
-        == "{'b': [1], 'max': [3.0], 'min': [2.0], 'nan_max': [nan], 'nan_min': [nan]}"
-    )
-
-
 def test_coalesce() -> None:
     df = pl.DataFrame(
         {
@@ -352,21 +307,21 @@ def test_abs_logical_type() -> None:
     assert s.abs().to_list() == [timedelta(hours=1), timedelta(hours=1)]
 
 
-def test_approx_unique() -> None:
+def test_approx_n_unique() -> None:
     df1 = pl.DataFrame({"a": [None, 1, 2], "b": [None, 2, 1]})
 
     assert_frame_equal(
-        df1.select(pl.approx_unique("b")),
+        df1.select(pl.approx_n_unique("b")),
         pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
     )
 
     assert_frame_equal(
-        df1.select(pl.approx_unique(pl.col("b"))),
+        df1.select(pl.approx_n_unique(pl.col("b"))),
         pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
     )
 
     assert_frame_equal(
-        df1.select(pl.col("b").approx_unique()),
+        df1.select(pl.col("b").approx_n_unique()),
         pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
     )
 
@@ -375,7 +330,8 @@ def test_lazy_functions() -> None:
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
     out = df.select(pl.count("a"))
     assert list(out["a"]) == [3]
-    assert pl.count(df["a"]) == 3
+    with pytest.deprecated_call():
+        assert pl.count(df["a"]) == 3
     out = df.select(
         [
             pl.var("b").alias("1"),
@@ -392,37 +348,43 @@ def test_lazy_functions() -> None:
     )
     expected = 1.0
     assert np.isclose(out.to_series(0), expected)
-    assert np.isclose(pl.var(df["b"]), expected)  # type: ignore[arg-type]
+    assert np.isclose(df["b"].var(), expected)  # type: ignore[arg-type]
+
     expected = 1.0
     assert np.isclose(out.to_series(1), expected)
-    assert np.isclose(pl.std(df["b"]), expected)  # type: ignore[arg-type]
+    assert np.isclose(df["b"].std(), expected)  # type: ignore[arg-type]
+
     expected = 3
     assert np.isclose(out.to_series(2), expected)
-    with pytest.deprecated_call():
-        assert np.isclose(pl.max(df["b"]), expected)  # type: ignore[arg-type]
+    assert np.isclose(df["b"].max(), expected)  # type: ignore[arg-type]
+
     expected = 1
     assert np.isclose(out.to_series(3), expected)
-    with pytest.deprecated_call():
-        assert np.isclose(pl.min(df["b"]), expected)  # type: ignore[arg-type]
+    assert np.isclose(df["b"].min(), expected)  # type: ignore[arg-type]
+
     expected = 6
     assert np.isclose(out.to_series(4), expected)
-    with pytest.deprecated_call():
-        assert np.isclose(pl.sum(df["b"]), expected)
+    assert np.isclose(df["b"].sum(), expected)
+
     expected = 2
     assert np.isclose(out.to_series(5), expected)
-    assert np.isclose(pl.mean(df["b"]), expected)
+    assert np.isclose(df["b"].mean(), expected)  # type: ignore[arg-type]
+
     expected = 2
     assert np.isclose(out.to_series(6), expected)
-    assert np.isclose(pl.median(df["b"]), expected)
+    assert np.isclose(df["b"].median(), expected)  # type: ignore[arg-type]
+
     expected = 3
     assert np.isclose(out.to_series(7), expected)
-    assert np.isclose(pl.n_unique(df["b"]), expected)
+    assert np.isclose(df["b"].n_unique(), expected)
+
     expected = 1
     assert np.isclose(out.to_series(8), expected)
-    assert np.isclose(pl.first(df["b"]), expected)
+    assert np.isclose(df["b"][0], expected)
+
     expected = 3
     assert np.isclose(out.to_series(9), expected)
-    assert np.isclose(pl.last(df["b"]), expected)
+    assert np.isclose(df["b"][-1], expected)
 
     # regex selection
     out = df.select(
@@ -435,3 +397,19 @@ def test_lazy_functions() -> None:
     assert out.rows() == [
         ({"a": "foo", "b": 3}, {"b": 1, "c": 1.0}, {"a": None, "c": 6.0})
     ]
+
+
+def test_head_tail(fruits_cars: pl.DataFrame) -> None:
+    res_expr = fruits_cars.select([pl.head("A", 2)])
+    with pytest.deprecated_call():
+        res_series = pl.head(fruits_cars["A"], 2)
+    expected = pl.Series("A", [1, 2])
+    assert_series_equal(res_expr.to_series(0), expected)
+    assert_series_equal(res_series, expected)
+
+    res_expr = fruits_cars.select([pl.tail("A", 2)])
+    with pytest.deprecated_call():
+        res_series = pl.tail(fruits_cars["A"], 2)
+    expected = pl.Series("A", [4, 5])
+    assert_series_equal(res_expr.to_series(0), expected)
+    assert_series_equal(res_series, expected)

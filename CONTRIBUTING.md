@@ -36,7 +36,7 @@ Please describe the behavior you want and why, and provide examples of how Polar
 ### Picking an issue
 
 Pick an issue by going through the [issue tracker](https://github.com/pola-rs/polars/issues) and finding an issue you would like to work on.
-Feel free to pick any issue that is not already assigned.
+Feel free to pick any issue with an [accepted](https://github.com/pola-rs/polars/issues?q=is%3Aopen+is%3Aissue+label%3Aaccepted) label that is not already assigned.
 We use the [help wanted](https://github.com/pola-rs/polars/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22) label to indicate issues that are high on our wishlist.
 
 If you are a first time contributor, you might want to look for issues labeled [good first issue](https://github.com/pola-rs/polars/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22).
@@ -48,7 +48,6 @@ You may use the issue to discuss possible solutions.
 ### Setting up your local environment
 
 Polars development flow relies on both Rust and Python, which means setting up your local development environment is not trivial.
-For contributing to Node.js Polars, please check out the [Node.js Polars](https://github.com/pola-rs/nodejs-polars) repository.
 If you run into problems, please contact us on [Discord](https://discord.gg/4UfP5cfBE7).
 
 _Note that if you are a Windows user, the steps below might not work as expected; try developing using [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)._
@@ -56,7 +55,7 @@ _Note that if you are a Windows user, the steps below might not work as expected
 Start by [forking](https://docs.github.com/en/get-started/quickstart/fork-a-repo) the Polars repository, then clone your forked repository using `git`:
 
 ```bash
-git clone git@github.com:<username>/polars.git
+git clone https://github.com/<username>/polars.git
 cd polars
 ```
 
@@ -87,9 +86,9 @@ make test
 
 This will do a number of things:
 
-- Use Python to create a virtual environment in the `py-polars/.venv` folder.
+- Use Python to create a virtual environment in the `.venv` folder.
 - Use [pip](https://pip.pypa.io/) to install all Python dependencies for development, linting, and building documentation.
-- Use Rust to compile and install Polars in your virtual environment.
+- Use Rust to compile and install Polars in your virtual environment. _At least 8GB of RAM is recommended for this step to run smoothly._
 - Use [pytest](https://docs.pytest.org/) to run the Python unittests in your virtual environment
 
 Check if linting also works correctly by running:
@@ -114,7 +113,7 @@ If this all runs correctly, you're ready to start contributing to the Polars cod
 
 Create a new git branch from the `main` branch in your local repository, and start coding!
 
-The Rust codebase is located in the `polars` directory, while the Python codebase is located in the `py-polars` directory.
+The Rust code is located in the `crates` directory, while the Python codebase is located in the `py-polars` directory.
 Both directories contain a `Makefile` with helpful commands. Most notably:
 
 - `make test` to run the test suite (see the [test suite docs](/py-polars/tests/README.md) for more info)
@@ -148,16 +147,16 @@ If you are stuck or unsure about your solution, feel free to open a draft pull r
 
 ## Contributing to documentation
 
-The most important components of Polars documentation are the [user guide](https://pola-rs.github.io/polars-book/user-guide/), the API references, and the database of questions on [StackOverflow](https://stackoverflow.com/).
+The most important components of Polars documentation are the [user guide](https://pola-rs.github.io/polars/user-guide/), the API references, and the database of questions on [StackOverflow](https://stackoverflow.com/).
 
 ### User guide
 
-The user guide is maintained in the [polars-book](https://github.com/pola-rs/polars-book) repository.
-For contributing to the user guide, please refer to the [contributing guide](https://github.com/pola-rs/polars-book/blob/master/CONTRIBUTING.md) in that repository.
+The user guide is maintained in the `docs` folder.
+Further contributing information will be added shortly.
 
 ### API reference
 
-Polars has separate API references for [Rust](https://pola-rs.github.io/polars/polars/index.html), [Python](https://pola-rs.github.io/polars/py-polars/html/reference/index.html), and [Node.js](https://pola-rs.github.io/nodejs-polars/index.html).
+Polars has separate API references for [Rust](https://pola-rs.github.io/polars/docs/rust/dev/polars/) and [Python](https://pola-rs.github.io/polars/docs/python/dev/reference/index.html).
 These are generated directly from the codebase, so in order to contribute, you will have to follow the steps outlined in [this section](#contributing-to-the-codebase) above.
 
 #### Rust
@@ -181,10 +180,6 @@ The resulting HTML files will be in `py-polars/docs/build/html`.
 
 New additions to the API should be added manually to the API reference by adding an entry to the correct `.rst` file in the `py-polars/docs/source/reference` directory.
 
-#### Node.js
-
-For contributions to Node.js Polars, please refer to the official [Node.js Polars repository](https://github.com/pola-rs/nodejs-polars).
-
 ### StackOverflow
 
 We use StackOverflow to create a database of high quality questions and answers that is searchable and remains up-to-date.
@@ -192,7 +187,6 @@ There is a separate tag for each language:
 
 - [Python Polars](https://stackoverflow.com/questions/tagged/python-polars)
 - [Rust Polars](https://stackoverflow.com/questions/tagged/rust-polars)
-- [Node.js Polars](https://stackoverflow.com/questions/tagged/nodejs-polars)
 
 Contributions in the form of well-formulated questions or answers are always welcome!
 If you add a new question, please notify us by adding a [matching issue](https://github.com/pola-rs/polars/issues/new?&labels=question&template=question.yml) to our GitHub issue tracker.
@@ -225,21 +219,14 @@ Start by bumping the version number in the source code:
 
 Directly after merging your pull request, release the new version:
 
-8. Go back to the [releases page](https://github.com/pola-rs/polars/releases) and click _Edit_ on the appropriate draft release.
-9. On the draft release page, click _Publish release_. This will create a new release and a new tag, which will trigger the GitHub Actions release workflow ([Python](https://github.com/pola-rs/polars/actions/workflows/release-python.yml) / [Rust](https://github.com/pola-rs/polars/actions/workflows/release-rust.yml)).
-10. Wait for all release jobs to finish, then check [crates.io](https://crates.io/crates/polars)/[PyPI](https://pypi.org/project/polars/) to verify that the new Polars release is now available.
+8. Go to the release workflow ([Python](https://github.com/pola-rs/polars/actions/workflows/release-python.yml)/[Rust](https://github.com/pola-rs/polars/actions/workflows/release-rust.yml)), click _Run workflow_ in the top right, and click the green button. This will trigger the workflow, which will build all release artifacts and publish them.
+9. Wait for the workflow to finish, then check [crates.io](https://crates.io/crates/polars)/[PyPI](https://pypi.org/project/polars/)/[GitHub](https://github.com/pola-rs/polars/releases) to verify that the new Polars release is now available.
 
 ### Troubleshooting
 
 It may happen that one or multiple release jobs fail. If so, you should first try to simply re-run the failed jobs from the GitHub Actions UI.
 
-If that doesn't help, you will have to figure out what's wrong and commit a fix. Once your fix has made it to the `main` branch, re-trigger the release workflow by updating the git tag associated with the release. Note the commit hash of your fix, and run the following command:
-
-```shell
-git tag -f <version-number> <commit-hash> && git push -f origin <version-number>
-```
-
-This will update the tag to point to the commit of your fix. The release workflows will re-trigger and hopefully succeed this time!
+If that doesn't help, you will have to figure out what's wrong and commit a fix. Once your fix has made it to the `main` branch, simply re-trigger the release workflow.
 
 ## License
 

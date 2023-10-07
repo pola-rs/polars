@@ -4,13 +4,15 @@ on:
   pull_request:
     paths:
       - py-polars/**
-      - polars/**
+      - docs/src/python/**
+      - crates/**
       - .github/workflows/test-python.yml
   push:
     branches:
       - main
     paths:
-      - polars/**
+      - crates/**
+      - docs/src/python/**
       - py-polars/**
       - .github/workflows/test-python.yml
 
@@ -34,12 +36,15 @@ jobs:
         python-version: ['3.8', '3.11']
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Set up Graphviz
+        uses: ts-graphviz/setup-graphviz@v1
 
       - name: Create virtual environment
         run: |
@@ -65,11 +70,13 @@ jobs:
 
       - name: Run tests and report coverage
         if: github.ref_name != 'main'
-        run: pytest --cov -n auto --dist worksteal -m "not benchmark"
+        run: pytest --cov -n auto --dist loadgroup -m "not benchmark and not docs"
 
       - name: Run doctests
         if: github.ref_name != 'main'
-        run: python tests/docs/run_doctest.py
+        run: |
+          python tests/docs/run_doctest.py
+          pytest tests/docs/test_user_guide.py -m docs
 
       - name: Check import without optional dependencies
         if: github.ref_name != 'main'
@@ -80,6 +87,7 @@ jobs:
           "matplotlib"
           "backports.zoneinfo"
           "connectorx"
+          "pyiceberg"
           "deltalake"
           "xlsx2csv"
           )
@@ -98,7 +106,7 @@ jobs:
         python-version: ['3.11']
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -125,7 +133,7 @@ jobs:
 
       - name: Run tests
         if: github.ref_name != 'main'
-        run: pytest -n auto --dist worksteal -m "not benchmark"
+        run: pytest -n auto --dist loadgroup -m "not benchmark and not docs"
 
       - name: Check import without optional dependencies
         if: github.ref_name != 'main'

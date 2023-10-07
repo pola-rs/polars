@@ -1,0 +1,175 @@
+[package]
+name = "polars-core"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Core of the Polars DataFrame library"
+
+[dependencies]
+polars-arrow = { workspace = true, features = ["compute"] }
+polars-error = { workspace = true }
+polars-row = { workspace = true }
+polars-utils = { workspace = true }
+
+ahash = { workspace = true }
+arrow = { workspace = true }
+bitflags = { workspace = true }
+bytemuck = { workspace = true }
+chrono = { workspace = true, optional = true }
+chrono-tz = { workspace = true, optional = true }
+comfy-table = { version = "7.0.1", default_features = false, optional = true }
+either = { workspace = true }
+hashbrown = { workspace = true }
+indexmap = { workspace = true }
+itoap = { version = "1", optional = true, features = ["simd"] }
+ndarray = { version = "0.15", optional = true, default_features = false }
+num-traits = { workspace = true }
+once_cell = { workspace = true }
+rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
+rand_distr = { workspace = true, optional = true }
+rayon = { workspace = true }
+regex = { workspace = true, optional = true }
+# activate if you want serde support for Series and DataFrames
+serde = { workspace = true, features = ["derive"], optional = true }
+serde_json = { workspace = true, optional = true }
+smartstring = { workspace = true }
+thiserror = { workspace = true }
+xxhash-rust = { workspace = true }
+
+[dev-dependencies]
+bincode = { version = "1" }
+serde_json = { workspace = true }
+
+[build-dependencies]
+version_check = { workspace = true }
+
+[features]
+simd = ["arrow/simd", "polars-arrow/simd"]
+nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "polars-arrow/nightly"]
+avx512 = []
+docs = []
+temporal = ["regex", "chrono", "polars-error/regex"]
+random = ["rand", "rand_distr"]
+algorithm_group_by = []
+default = ["algorithm_group_by"]
+lazy = []
+
+# ~40% faster collect, needed until trustedlength iter stabilizes
+# more fast paths, slower compilation
+performant = ["polars-arrow/performant", "reinterpret"]
+
+# extra utilities for Utf8Chunked
+strings = ["regex", "polars-arrow/strings", "polars-error/regex"]
+# support for ObjectChunked<T> (downcastable Series of any type)
+object = ["serde_json"]
+
+fmt = ["comfy-table/tty"]
+fmt_no_tty = ["comfy-table"]
+
+# opt-in features
+# sort by multiple columns
+sort_multiple = []
+# create from row values
+# and include pivot operation
+rows = []
+
+# operations
+zip_with = []
+round_series = []
+checked_arithmetic = []
+is_first_distinct = []
+is_last_distinct = []
+asof_join = []
+dot_product = []
+row_hash = []
+reinterpret = []
+take_opt_iter = []
+# allow group_by operation on list type
+group_by_list = []
+# cumsum, cummin, etc.
+cum_agg = []
+# rolling window functions
+rolling_window = []
+diff = []
+pct_change = ["diff"]
+moment = []
+diagonal_concat = []
+horizontal_concat = []
+abs = []
+ewma = []
+dataframe_arithmetic = []
+product = []
+unique_counts = []
+partition_by = []
+chunked_ids = []
+describe = []
+timezones = ["chrono-tz", "arrow/chrono-tz", "polars-arrow/timezones"]
+dynamic_group_by = ["dtype-datetime", "dtype-date"]
+
+# opt-in datatypes for Series
+dtype-date = ["temporal"]
+dtype-datetime = ["temporal"]
+dtype-duration = ["temporal"]
+dtype-time = ["temporal"]
+dtype-array = ["polars-arrow/dtype-array"]
+dtype-i8 = []
+dtype-i16 = []
+dtype-decimal = ["dep:itoap", "polars-arrow/dtype-decimal"]
+dtype-u8 = []
+dtype-u16 = []
+dtype-categorical = []
+dtype-struct = []
+
+parquet = ["arrow/io_parquet"]
+
+# scale to terabytes?
+bigidx = ["polars-arrow/bigidx", "polars-utils/bigidx"]
+python = []
+
+serde = ["dep:serde", "smartstring/serde", "bitflags/serde"]
+serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde", "smartstring/serde", "chrono/serde"]
+
+docs-selection = [
+  "ndarray",
+  "rows",
+  "docs",
+  "strings",
+  "object",
+  "lazy",
+  "temporal",
+  "random",
+  "zip_with",
+  "round_series",
+  "checked_arithmetic",
+  "is_first_distinct",
+  "is_last_distinct",
+  "asof_join",
+  "dot_product",
+  "row_hash",
+  "cum_agg",
+  "rolling_window",
+  "diff",
+  "moment",
+  "dtype-categorical",
+  "dtype-decimal",
+  "diagonal_concat",
+  "horizontal_concat",
+  "abs",
+  "dataframe_arithmetic",
+  "product",
+  "unique_counts",
+  "describe",
+  "chunked_ids",
+  "partition_by",
+  "algorithm_group_by",
+]
+
+[package.metadata.docs.rs]
+# not all because arrow 4.3 does not compile with simd
+# all-features = true
+features = ["docs-selection"]
+# defines the configuration attribute `docsrs`
+rustdoc-args = ["--cfg", "docsrs"]

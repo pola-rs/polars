@@ -7,7 +7,7 @@ from polars.series.utils import expr_dispatch
 if TYPE_CHECKING:
     from polars import Series
     from polars.polars import PySeries
-    from polars.type_aliases import TransferEncoding
+    from polars.type_aliases import IntoExpr, TransferEncoding
 
 
 @expr_dispatch
@@ -19,7 +19,7 @@ class BinaryNameSpace:
     def __init__(self, series: Series):
         self._s: PySeries = series._s
 
-    def contains(self, literal: bytes) -> Series:
+    def contains(self, literal: IntoExpr) -> Series:
         """
         Check if binaries in Series contain a binary substring.
 
@@ -30,11 +30,12 @@ class BinaryNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Series
+            Series of data type :class:`Boolean`.
 
         """
 
-    def ends_with(self, suffix: bytes) -> Series:
+    def ends_with(self, suffix: IntoExpr) -> Series:
         """
         Check if string values end with a binary substring.
 
@@ -45,7 +46,7 @@ class BinaryNameSpace:
 
         """
 
-    def starts_with(self, prefix: bytes) -> Series:
+    def starts_with(self, prefix: IntoExpr) -> Series:
         """
         Check if values start with a binary substring.
 
@@ -81,6 +82,7 @@ class BinaryNameSpace:
 
         Returns
         -------
-        Binary array with values encoded using provided encoding
+        Series
+            Series of data type :class:`Boolean`.
 
         """

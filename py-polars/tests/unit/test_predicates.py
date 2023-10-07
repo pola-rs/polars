@@ -24,23 +24,6 @@ def test_predicate_4906() -> None:
     ).collect().to_dict(False) == {"dt": [date(2022, 9, 10), date(2022, 9, 20)]}
 
 
-def test_when_then_implicit_none() -> None:
-    df = pl.DataFrame(
-        {
-            "team": ["A", "A", "A", "B", "B", "C"],
-            "points": [11, 8, 10, 6, 6, 5],
-        }
-    )
-
-    assert df.select(
-        pl.when(pl.col("points") > 7).then("Foo"),
-        pl.when(pl.col("points") > 7).then("Foo").alias("bar"),
-    ).to_dict(False) == {
-        "literal": ["Foo", "Foo", "Foo", None, None, None],
-        "bar": ["Foo", "Foo", "Foo", None, None, None],
-    }
-
-
 def test_predicate_null_block_asof_join() -> None:
     left = (
         pl.DataFrame(
@@ -88,30 +71,6 @@ def test_predicate_null_block_asof_join() -> None:
         ],
         "value": ["a", "b", "c"],
     }
-
-
-def test_streaming_empty_df() -> None:
-    df = pl.DataFrame(
-        [
-            pl.Series("a", ["a", "b", "c", "b", "a", "a"], dtype=pl.Categorical()),
-            pl.Series("b", ["b", "c", "c", "b", "a", "c"], dtype=pl.Categorical()),
-        ]
-    )
-
-    result = (
-        df.lazy()
-        .join(df.lazy(), on="a", how="inner")
-        .filter(False)
-        .collect(streaming=True)
-    )
-
-    assert result.to_dict(False) == {"a": [], "b": [], "b_right": []}
-
-
-def test_when_then_empty_list_5547() -> None:
-    out = pl.DataFrame({"a": []}).select([pl.when(pl.col("a") > 1).then([1])])
-    assert out.shape == (0, 1)
-    assert out.dtypes == [pl.List(pl.Int64)]
 
 
 def test_predicate_strptime_6558() -> None:
@@ -163,9 +122,60 @@ def test_predicate_pushdown_block_8661() -> None:
     ).collect().to_dict(False) == {"g": [1, 2, 2], "t": [4, 2, 3], "x": [40, 30, 20]}
 
 
+def test_predicate_pushdown_with_context_11014() -> None:
+    df1 = pl.LazyFrame(
+        {
+            "df1_c1": [1, 2, 3],
+            "df1_c2": [2, 3, 4],
+        }
+    )
+
+    df2 = pl.LazyFrame(
+        {
+            "df2_c1": [2, 3, 4],
+            "df2_c2": [3, 4, 5],
+        }
+    )
+
+    out = (
+        df1.with_context(df2)
+        .filter(pl.col("df1_c1").is_in(pl.col("df2_c1")))
+        .collect(predicate_pushdown=True)
+    )
+
+    assert out.to_dict(False) == {"df1_c1": [2, 3], "df1_c2": [3, 4]}
+
+
 def test_predicate_pushdown_cumsum_9566() -> None:
     df = pl.DataFrame({"A": range(10), "B": ["b"] * 5 + ["a"] * 5})
 
     q = df.lazy().sort(["B", "A"]).filter(pl.col("A").is_in([8, 2]).cumsum() == 1)
 
     assert q.collect()["A"].to_list() == [8, 9, 0, 1]
+
+
+def test_predicate_pushdown_join_fill_null_10058() -> None:
+    ids = pl.LazyFrame({"id": [0, 1, 2]})
+    filters = pl.LazyFrame({"id": [0, 1], "filter": [True, False]})
+
+    assert (
+        ids.join(filters, how="left", on="id")
+        .filter(pl.col("filter").fill_null(True))
+        .collect()
+        .to_dict(False)["id"]
+    ) == [0, 2]
+
+
+def test_is_in_join_blocked() -> None:
+    df1 = pl.DataFrame(
+        {"Groups": ["A", "B", "C", "D", "E", "F"], "values0": [1, 2, 3, 4, 5, 6]}
+    ).lazy()
+
+    df2 = pl.DataFrame(
+        {"values22": [1, 2, None, 4, 5, 6], "values20": [1, 2, 3, 4, 5, 6]}
+    ).lazy()
+
+    df_all = df2.join(df1, left_on="values20", right_on="values0", how="left")
+    assert df_all.filter(~pl.col("Groups").is_in(["A", "B", "F"])).collect().to_dict(
+        False
+    ) == {"values22": [None, 4, 5], "values20": [3, 4, 5], "Groups": ["C", "D", "E"]}

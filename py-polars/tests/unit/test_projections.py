@@ -10,7 +10,7 @@ def test_projection_on_semi_join_4789() -> None:
 
     ab = lfa.join(lfb, on="p", how="semi").inspect()
 
-    intermediate_agg = (ab.groupby("a").agg([pl.col("a").alias("seq")])).select(
+    intermediate_agg = (ab.group_by("a").agg([pl.col("a").alias("seq")])).select(
         ["a", "seq"]
     )
 
@@ -25,7 +25,7 @@ def test_melt_projection_pd_block_4997() -> None:
         .with_row_count()
         .lazy()
         .melt(id_vars="row_nr")
-        .groupby("row_nr")
+        .group_by("row_nr")
         .agg(pl.col("variable").alias("result"))
         .collect()
     ).to_dict(False) == {"row_nr": [0], "result": [["col1", "col2"]]}
@@ -43,13 +43,13 @@ def test_double_projection_pushdown() -> None:
     )
 
 
-def test_groupby_projection_pushdown() -> None:
+def test_group_by_projection_pushdown() -> None:
     assert (
         "PROJECT 2/3 COLUMNS"
         in (
             pl.DataFrame({"c0": [], "c1": [], "c2": []})
             .lazy()
-            .groupby("c0")
+            .group_by("c0")
             .agg(
                 [
                     pl.col("c1").sum().alias("sum(c1)"),
@@ -114,16 +114,6 @@ def test_unnest_columns_available() -> None:
     }
 
 
-def test_streaming_duplicate_cols_5537() -> None:
-    assert pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).lazy().with_columns(
-        [(pl.col("a") * 2).alias("foo"), (pl.col("a") * 3)]
-    ).collect(streaming=True).to_dict(False) == {
-        "a": [3, 6, 9],
-        "b": [1, 2, 3],
-        "foo": [2, 4, 6],
-    }
-
-
 def test_double_projection_union() -> None:
     lf1 = pl.DataFrame(
         {
@@ -142,14 +132,14 @@ def test_double_projection_union() -> None:
         }
     ).lazy()
 
-    # in this query the groupby projects only 2 columns, that's one
+    # in this query the group_by projects only 2 columns, that's one
     # less than the upstream projection so the union will fail if
     # the select node does not prune one column
     q = lf1.select(["a", "b", "c"])
 
     q = pl.concat([q, lf2])
 
-    q = q.groupby("c", maintain_order=True).agg([pl.col("a")])
+    q = q.group_by("c", maintain_order=True).agg([pl.col("a")])
     assert q.collect().to_dict(False) == {
         "c": [1, 2, 3],
         "a": [[1, 2, 5, 7], [3, 4, 6], [8]],
@@ -263,7 +253,7 @@ def test_distinct_projection_pd_7578() -> None:
         }
     )
 
-    q = df.lazy().unique().groupby("bar").agg(pl.count())
+    q = df.lazy().unique().group_by("bar").agg(pl.count())
     assert q.collect().sort("bar").to_dict(False) == {
         "bar": ["a", "b"],
         "count": [3, 2],
@@ -288,3 +278,45 @@ def test_join_suffix_collision_9562() -> None:
     assert df.lazy().join(
         other_df.lazy(), how="inner", left_on="ham", right_on="ham", suffix="m"
     ).select("ham").collect().to_dict(False) == {"ham": ["a", "b"]}
+
+
+def test_projection_join_names_9955() -> None:
+    batting = pl.DataFrame(
+        {
+            "playerID": ["abercda01"],
+            "yearID": [1871],
+            "lgID": ["NA"],
+        }
+    ).lazy()
+
+    awards_players = pl.DataFrame(
+        {
+            "playerID": ["bondto01"],
+            "yearID": [1877],
+            "lgID": ["NL"],
+        }
+    ).lazy()
+
+    right = awards_players.filter(pl.col("lgID") == "NL").select("playerID")
+
+    q = batting.join(
+        right,
+        left_on=[pl.col("playerID")],
+        right_on=[pl.col("playerID")],
+        how="inner",
+    )
+
+    q = q.select(batting.columns)
+
+    assert q.collect().schema == {
+        "playerID": pl.Utf8,
+        "yearID": pl.Int64,
+        "lgID": pl.Utf8,
+    }
+
+
+def test_projection_rename_10595() -> None:
+    lf = pl.LazyFrame(schema=["a", "b"])
+    assert lf.select("a", "b").rename({"b": "a", "a": "b"}).select(
+        "a"
+    ).collect().schema == {"a": pl.Float32}

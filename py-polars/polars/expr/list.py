@@ -7,13 +7,18 @@ import polars._reexport as pl
 from polars import functions as F
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars import Expr, Series
-    from polars.type_aliases import IntoExpr, NullBehavior, ToStructStrategy
+    from polars.type_aliases import (
+        IntoExpr,
+        IntoExprColumn,
+        NullBehavior,
+        ToStructStrategy,
+    )
 
 
 class ExprListNameSpace:
@@ -46,7 +51,7 @@ class ExprListNameSpace:
         │ true  │
         │ false │
         │ false │
-        │ false │
+        │ true  │
         │ true  │
         │ null  │
         └───────┘
@@ -101,6 +106,30 @@ class ExprListNameSpace:
 
         """
         return wrap_expr(self._pyexpr.list_lengths())
+
+    def drop_nulls(self) -> Expr:
+        """
+        Drop all null values in the list.
+
+        The original order of the remaining elements is preserved.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[None, 1, None, 2], [None], [3, 4]]})
+        >>> df.select(pl.col("values").list.drop_nulls())
+        shape: (3, 1)
+        ┌───────────┐
+        │ values    │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [1, 2]    │
+        │ []        │
+        │ [3, 4]    │
+        └───────────┘
+
+        """
+        return wrap_expr(self._pyexpr.list_drop_nulls())
 
     def sum(self) -> Expr:
         """
@@ -437,7 +466,8 @@ class ExprListNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Expr
+            Expression of data type :class:`Boolean`.
 
         Examples
         --------
@@ -458,7 +488,7 @@ class ExprListNameSpace:
         item = parse_as_expression(item, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_contains(item))
 
-    def join(self, separator: str) -> Expr:
+    def join(self, separator: IntoExpr) -> Expr:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -471,7 +501,8 @@ class ExprListNameSpace:
 
         Returns
         -------
-        Series of dtype Utf8
+        Expr
+            Expression of data type :class:`Utf8`.
 
         Examples
         --------
@@ -487,7 +518,21 @@ class ExprListNameSpace:
         │ x y   │
         └───────┘
 
+        >>> df = pl.DataFrame(
+        ...     {"s": [["a", "b", "c"], ["x", "y"]], "separator": ["*", "_"]}
+        ... )
+        >>> df.select(pl.col("s").list.join(pl.col("separator")))
+        shape: (2, 1)
+        ┌───────┐
+        │ s     │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │ a*b*c │
+        │ x_y   │
+        └───────┘
         """
+        separator = parse_as_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_join(separator))
 
     def arg_min(self) -> Expr:
@@ -496,7 +541,9 @@ class ExprListNameSpace:
 
         Returns
         -------
-        Series of dtype UInt32/UInt64 (depending on compilation)
+        Expr
+            Expression of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
 
         Examples
         --------
@@ -525,7 +572,9 @@ class ExprListNameSpace:
 
         Returns
         -------
-        Series of dtype UInt32/UInt64 (depending on compilation)
+        Expr
+            Expression of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
 
         Examples
         --------
@@ -598,7 +647,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_diff(n, null_behavior))
 
-    def shift(self, periods: int = 1) -> Expr:
+    def shift(self, periods: int | IntoExprColumn = 1) -> Expr:
         """
         Shift values by the given period.
 
@@ -619,6 +668,7 @@ class ExprListNameSpace:
         ]
 
         """
+        periods = parse_as_expression(periods)
         return wrap_expr(self._pyexpr.list_shift(periods))
 
     def slice(
@@ -704,7 +754,8 @@ class ExprListNameSpace:
 
         Returns
         -------
-        Exploded column with the datatype of the list elements.
+        Expr
+            Expression with the data type of the list elements.
 
         See Also
         --------
@@ -731,7 +782,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.explode())
 
-    def count_match(self, element: IntoExpr) -> Expr:
+    def count_matches(self, element: IntoExpr) -> Expr:
         """
         Count how often the value produced by ``element`` occurs.
 
@@ -743,7 +794,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"listcol": [[0], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]})
-        >>> df.select(pl.col("listcol").list.count_match(2).alias("number_of_twos"))
+        >>> df.select(pl.col("listcol").list.count_matches(2).alias("number_of_twos"))
         shape: (5, 1)
         ┌────────────────┐
         │ number_of_twos │
@@ -759,9 +810,8 @@ class ExprListNameSpace:
 
         """
         element = parse_as_expression(element, str_as_lit=True)
-        return wrap_expr(self._pyexpr.list_count_match(element))
+        return wrap_expr(self._pyexpr.list_count_matches(element))
 
-    @deprecated_alias(name_generator="fields")
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
@@ -779,7 +829,6 @@ class ExprListNameSpace:
             * "first_non_null": set number of fields equal to the length of the
               first non zero-length sublist.
             * "max_width": set number of fields as max length of all sublists.
-
         fields
             If the name and number of the desired fields is known in advance
             a list of field names can be given, which will be assigned by index.
@@ -851,7 +900,7 @@ class ExprListNameSpace:
             Run all expression parallel. Don't activate this blindly.
             Parallelism is worth it if there is enough work to do per thread.
 
-            This likely should not be use in the groupby context, because we already
+            This likely should not be used in the group by context, because we already
             parallel execution per group
 
         Examples
@@ -864,7 +913,7 @@ class ExprListNameSpace:
         ┌─────┬─────┬────────────┐
         │ a   ┆ b   ┆ rank       │
         │ --- ┆ --- ┆ ---        │
-        │ i64 ┆ i64 ┆ list[f32]  │
+        │ i64 ┆ i64 ┆ list[f64]  │
         ╞═════╪═════╪════════════╡
         │ 1   ┆ 4   ┆ [1.0, 2.0] │
         │ 8   ┆ 5   ┆ [2.0, 1.0] │
@@ -874,7 +923,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
 
-    def union(self, other: Expr | IntoExpr) -> Expr:
+    def set_union(self, other: IntoExpr) -> Expr:
         """
         Compute the SET UNION between the elements in this list and the elements of ``other``.
 
@@ -892,7 +941,7 @@ class ExprListNameSpace:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     pl.col("a").list.union("b").alias("union")
+        ...     pl.col("a").list.set_union("b").alias("union")
         ... )  # doctest: +IGNORE_RESULT
         shape: (4, 3)
         ┌───────────┬──────────────┬───────────────┐
@@ -910,7 +959,7 @@ class ExprListNameSpace:
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "union"))
 
-    def difference(self, other: Expr | IntoExpr) -> Expr:
+    def set_difference(self, other: IntoExpr) -> Expr:
         """
         Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
 
@@ -927,7 +976,7 @@ class ExprListNameSpace:
         ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
         ...     }
         ... )
-        >>> df.with_columns(pl.col("a").list.difference("b").alias("difference"))
+        >>> df.with_columns(pl.col("a").list.set_difference("b").alias("difference"))
         shape: (4, 3)
         ┌───────────┬──────────────┬────────────┐
         │ a         ┆ b            ┆ difference │
@@ -948,7 +997,7 @@ class ExprListNameSpace:
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "difference"))
 
-    def intersection(self, other: Expr | IntoExpr) -> Expr:
+    def set_intersection(self, other: IntoExpr) -> Expr:
         """
         Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
 
@@ -965,7 +1014,9 @@ class ExprListNameSpace:
         ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
         ...     }
         ... )
-        >>> df.with_columns(pl.col("a").list.intersection("b").alias("intersection"))
+        >>> df.with_columns(
+        ...     pl.col("a").list.set_intersection("b").alias("intersection")
+        ... )
         shape: (4, 3)
         ┌───────────┬──────────────┬──────────────┐
         │ a         ┆ b            ┆ intersection │
@@ -982,7 +1033,7 @@ class ExprListNameSpace:
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "intersection"))
 
-    def symmetric_difference(self, other: Expr | IntoExpr) -> Expr:
+    def set_symmetric_difference(self, other: IntoExpr) -> Expr:
         """
         Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
 
@@ -1000,7 +1051,9 @@ class ExprListNameSpace:
         ...         "b": [[2, 3, 4], [3], [3, 4, None], [6, 8]],
         ...     }
         ... )
-        >>> df.with_columns(pl.col("b").list.symmetric_difference("a").alias("sdiff"))
+        >>> df.with_columns(
+        ...     pl.col("b").list.set_symmetric_difference("a").alias("sdiff")
+        ... )
         shape: (4, 3)
         ┌───────────┬──────────────┬───────────┐
         │ a         ┆ b            ┆ sdiff     │
@@ -1015,3 +1068,63 @@ class ExprListNameSpace:
         """  # noqa: W505.
         other = parse_as_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
+
+    @deprecate_renamed_function("set_union", version="0.18.10")
+    def union(self, other: IntoExpr) -> Expr:
+        """
+        Compute the SET UNION between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Expr.list.set_union``.
+
+        """  # noqa: W505
+        return self.set_union(other)
+
+    @deprecate_renamed_function("set_difference", version="0.18.10")
+    def difference(self, other: IntoExpr) -> Expr:
+        """
+        Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Expr.list.set_difference``.
+
+        """  # noqa: W505
+        return self.set_difference(other)
+
+    @deprecate_renamed_function("set_intersection", version="0.18.10")
+    def intersection(self, other: IntoExpr) -> Expr:
+        """
+        Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Expr.list.set_intersection``.
+
+        """  # noqa: W505
+        return self.set_intersection(other)
+
+    @deprecate_renamed_function("set_symmetric_difference", version="0.18.10")
+    def symmetric_difference(self, other: IntoExpr) -> Expr:
+        """
+        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Expr.list.set_symmetric_difference``.
+
+        """  # noqa: W505
+        return self.set_symmetric_difference(other)
+
+    @deprecate_renamed_function("count_matches", version="0.19.3")
+    def count_match(self, element: IntoExpr) -> Expr:
+        """
+        Count how often the value produced by ``element`` occurs.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`count_matches`.
+
+        Parameters
+        ----------
+        element
+            An expression that produces a single value
+
+        """
+        return self.count_matches(element)

@@ -1,17 +1,13 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Iterator
+from pathlib import Path
+from typing import Any, Iterator
 
 import pytest
 
 import polars as pl
-from polars.config import _get_float_fmt
-from polars.exceptions import StringCacheMismatchError
-from polars.testing import assert_frame_equal
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from polars.config import _POLARS_CFG_ENV_VARS, _get_float_fmt
 
 
 @pytest.fixture(autouse=True)
@@ -87,6 +83,30 @@ def test_hide_header_elements() -> None:
         "│ 3   ┆ 6   ┆ 9   │\n"
         "└─────┴─────┴─────┘"
     )
+
+
+def test_html_tables() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+
+    # default: header contains names/dtypes
+    header = "<thead><tr><th>a</th><th>b</th><th>c</th></tr><tr><td>i64</td><td>i64</td><td>i64</td></tr></thead>"
+    assert header in df._repr_html_()
+
+    # validate that relevant config options are respected
+    with pl.Config(tbl_hide_column_names=True):
+        header = "<thead><tr><td>i64</td><td>i64</td><td>i64</td></tr></thead>"
+        assert header in df._repr_html_()
+
+    with pl.Config(tbl_hide_column_data_types=True):
+        header = "<thead><tr><th>a</th><th>b</th><th>c</th></tr></thead>"
+        assert header in df._repr_html_()
+
+    with pl.Config(
+        tbl_hide_column_data_types=True,
+        tbl_hide_column_names=True,
+    ):
+        header = "<thead></thead>"
+        assert header in df._repr_html_()
 
 
 def test_set_tbl_cols() -> None:
@@ -328,6 +348,10 @@ def test_set_tbl_formats() -> None:
         "+-----------------+"
     )
 
+    # invalid style
+    with pytest.raises(ValueError, match="invalid table format name: 'NOPE'"):
+        pl.Config().set_tbl_formatting("NOPE")  # type: ignore[arg-type]
+
 
 def test_set_tbl_width_chars() -> None:
     df = pl.DataFrame(
@@ -391,7 +415,7 @@ def test_shape_below_table_and_inlined_dtype() -> None:
         "╰─────────┴─────────┴─────────╯"
     )
     (
-        pl.Config.set_tbl_formatting(rounded_corners=False)
+        pl.Config.set_tbl_formatting(None, rounded_corners=False)
         .set_tbl_column_data_type_inline(False)
         .set_tbl_cell_alignment("RIGHT")
     )
@@ -403,10 +427,11 @@ def test_shape_below_table_and_inlined_dtype() -> None:
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
         "│   1 ┆   3 ┆   5 │\n"
-        "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│   2 ┆   4 ┆   6 │\n"
         "└─────┴─────┴─────┘"
     )
+    with pytest.raises(ValueError):
+        pl.Config.set_tbl_cell_alignment("INVALID")  # type: ignore[arg-type]
 
 
 def test_shape_format_for_big_numbers() -> None:
@@ -484,44 +509,25 @@ def test_shape_format_for_big_numbers() -> None:
     )
 
 
-def test_string_cache() -> None:
-    df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
-    df2 = pl.DataFrame({"a": ["foo", "spam", "eggs"], "c": [3, 2, 2]})
-
-    # ensure cache is off when casting to categorical; the join will fail
-    pl.enable_string_cache(False)
-    assert pl.using_string_cache() is False
-
-    df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
-    df2a = df2.with_columns(pl.col("a").cast(pl.Categorical))
-    with pytest.raises(StringCacheMismatchError):
-        _ = df1a.join(df2a, on="a", how="inner")
-
-    # now turn on the cache
-    pl.enable_string_cache(True)
-    assert pl.using_string_cache() is True
-
-    df1b = df1.with_columns(pl.col("a").cast(pl.Categorical))
-    df2b = df2.with_columns(pl.col("a").cast(pl.Categorical))
-    out = df1b.join(df2b, on="a", how="inner")
-
-    expected = pl.DataFrame(
-        {"a": ["foo"], "b": [1], "c": [3]}, schema_overrides={"a": pl.Categorical}
-    )
-    assert_frame_equal(out, expected)
-
-
 @pytest.mark.write_disk()
 def test_config_load_save(tmp_path: Path) -> None:
-    for file in (None, tmp_path / "polars.config"):
+    for file in (
+        None,
+        tmp_path / "polars.config",
+        str(tmp_path / "polars.config"),
+    ):
         # set some config options...
         pl.Config.set_tbl_cols(12)
         pl.Config.set_verbose(True)
         pl.Config.set_fmt_float("full")
         assert os.environ.get("POLARS_VERBOSE") == "1"
 
-        cfg = pl.Config.save(file)
-        assert isinstance(cfg, str)
+        if file is None:
+            cfg = pl.Config.save()
+            assert isinstance(cfg, str)
+        else:
+            assert pl.Config.save_to_file(file) is None
+
         assert "POLARS_VERBOSE" in pl.Config.state(if_set=True)
 
         # ...modify the same options...
@@ -529,10 +535,21 @@ def test_config_load_save(tmp_path: Path) -> None:
         pl.Config.set_verbose(False)
         assert os.environ.get("POLARS_VERBOSE") == "0"
 
-        # ...load back from config...
-        if file is not None:
-            assert os.path.isfile(cfg)
-        pl.Config.load(cfg)
+        # ...load back from config file/string...
+        if file is None:
+            pl.Config.load(cfg)
+        else:
+            with pytest.raises(ValueError, match="invalid Config file"):
+                pl.Config.load_from_file(cfg)
+
+            if isinstance(file, Path):
+                with pytest.raises(TypeError, match="the JSON object must be str"):
+                    pl.Config.load(file)  # type: ignore[arg-type]
+            else:
+                with pytest.raises(ValueError, match="invalid Config string"):
+                    pl.Config.load(file)
+
+            pl.Config.load_from_file(file)
 
         # ...and confirm the saved options were set.
         assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
@@ -548,6 +565,19 @@ def test_config_load_save(tmp_path: Path) -> None:
         assert os.environ.get("POLARS_FMT_MAX_COLS") is None
         assert os.environ.get("POLARS_VERBOSE") is None
         assert _get_float_fmt() == "mixed"
+
+    # ref: #11094
+    with pl.Config(
+        streaming_chunk_size=100,
+        tbl_cols=2000,
+        tbl_formatting="UTF8_NO_BORDERS",
+        tbl_hide_column_data_types=True,
+        tbl_hide_dtype_separator=True,
+        tbl_rows=2000,
+        tbl_width_chars=2000,
+        verbose=True,
+    ):
+        assert isinstance(repr(pl.DataFrame({"xyz": [0]})), str)
 
 
 def test_config_scope() -> None:
@@ -577,3 +607,113 @@ def test_config_scope() -> None:
 
     # expect scope-exit to restore original state
     assert pl.Config.state() == initial_state
+
+
+def test_config_raise_error_if_not_exist() -> None:
+    with pytest.raises(AttributeError), pl.Config(i_do_not_exist=True):
+        pass
+
+
+def test_config_state_env_only() -> None:
+    pl.Config.set_verbose(False)
+    pl.Config.set_fmt_float("full")
+
+    state_all = pl.Config.state(env_only=False)
+    state_env_only = pl.Config.state(env_only=True)
+    assert len(state_env_only) < len(state_all)
+    assert "set_fmt_float" in state_all
+    assert "set_fmt_float" not in state_env_only
+
+
+def test_activate_decimals() -> None:
+    with pl.Config() as cfg:
+        cfg.activate_decimals(True)
+        assert os.environ.get("POLARS_ACTIVATE_DECIMAL") == "1"
+        cfg.activate_decimals(False)
+        assert "POLARS_ACTIVATE_DECIMAL" not in os.environ
+
+
+def test_set_streaming_chunk_size() -> None:
+    with pl.Config() as cfg:
+        cfg.set_streaming_chunk_size(8)
+        assert os.environ.get("POLARS_STREAMING_CHUNK_SIZE") == "8"
+
+    with pytest.raises(ValueError), pl.Config() as cfg:
+        cfg.set_streaming_chunk_size(0)
+
+
+def test_set_fmt_str_lengths_invalid_length() -> None:
+    with pl.Config() as cfg:
+        with pytest.raises(ValueError):
+            cfg.set_fmt_str_lengths(0)
+        with pytest.raises(ValueError):
+            cfg.set_fmt_str_lengths(-2)
+
+
+@pytest.mark.parametrize(
+    ("environment_variable", "config_setting", "value", "expected"),
+    [
+        ("POLARS_ACTIVATE_DECIMAL", "activate_decimals", True, "1"),
+        ("POLARS_AUTO_STRUCTIFY", "set_auto_structify", True, "1"),
+        ("POLARS_FMT_MAX_COLS", "set_tbl_cols", 12, "12"),
+        ("POLARS_FMT_MAX_ROWS", "set_tbl_rows", 3, "3"),
+        ("POLARS_FMT_STR_LEN", "set_fmt_str_lengths", 42, "42"),
+        ("POLARS_FMT_TABLE_CELL_ALIGNMENT", "set_tbl_cell_alignment", "RIGHT", "RIGHT"),
+        ("POLARS_FMT_TABLE_HIDE_COLUMN_NAMES", "set_tbl_hide_column_names", True, "1"),
+        (
+            "POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW",
+            "set_tbl_dataframe_shape_below",
+            True,
+            "1",
+        ),
+        (
+            "POLARS_FMT_TABLE_FORMATTING",
+            "set_ascii_tables",
+            True,
+            "ASCII_FULL_CONDENSED",
+        ),
+        (
+            "POLARS_FMT_TABLE_FORMATTING",
+            "set_tbl_formatting",
+            "ASCII_MARKDOWN",
+            "ASCII_MARKDOWN",
+        ),
+        (
+            "POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES",
+            "set_tbl_hide_column_data_types",
+            True,
+            "1",
+        ),
+        (
+            "POLARS_FMT_TABLE_HIDE_COLUMN_SEPARATOR",
+            "set_tbl_hide_dtype_separator",
+            True,
+            "1",
+        ),
+        (
+            "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
+            "set_tbl_hide_dataframe_shape",
+            True,
+            "1",
+        ),
+        (
+            "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
+            "set_tbl_column_data_type_inline",
+            True,
+            "1",
+        ),
+        ("POLARS_STREAMING_CHUNK_SIZE", "set_streaming_chunk_size", 100, "100"),
+        ("POLARS_TABLE_WIDTH", "set_tbl_width_chars", 80, "80"),
+        ("POLARS_VERBOSE", "set_verbose", True, "1"),
+    ],
+)
+def test_unset_config_env_vars(
+    environment_variable: str, config_setting: str, value: Any, expected: str
+) -> None:
+    assert environment_variable in _POLARS_CFG_ENV_VARS
+
+    with pl.Config(**{config_setting: value}):
+        assert os.environ[environment_variable] == expected
+
+    with pl.Config(**{config_setting: None}):  # type: ignore[arg-type]
+        assert environment_variable not in os.environ

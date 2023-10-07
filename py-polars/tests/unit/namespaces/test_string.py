@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import cast
 
 import pytest
@@ -27,6 +28,15 @@ def test_str_concat2() -> None:
     assert cast(str, df.item()) == "1-null-2"
 
 
+def test_str_concat_datetime() -> None:
+    df = pl.DataFrame({"d": [datetime(2020, 1, 1), None, datetime(2022, 1, 1)]})
+    df = df.select(pl.col("d").str.concat("|"))
+    assert (
+        cast(str, df.item())
+        == "2020-01-01 00:00:00.000000|null|2022-01-01 00:00:00.000000"
+    )
+
+
 def test_str_lengths() -> None:
     s = pl.Series(["Café", None, "345", "東京"])
     expected = pl.Series([5, None, 3, 6], dtype=pl.UInt32)
@@ -43,6 +53,17 @@ def test_str_contains() -> None:
     s = pl.Series(["messi", "ronaldo", "ibrahimovic"])
     expected = pl.Series([True, False, False])
     assert_series_equal(s.str.contains("mes"), expected)
+
+
+def test_count_match_literal() -> None:
+    s = pl.Series(["12 dbc 3xy", "cat\\w", "1zy3\\d\\d", None])
+    out = s.str.count_matches(r"\d", literal=True)
+    expected = pl.Series([0, 0, 2, None], dtype=pl.UInt32)
+    assert_series_equal(out, expected)
+
+    out = s.str.count_matches(pl.Series([r"\w", r"\w", r"\d", r"\d"]), literal=True)
+    expected = pl.Series([0, 1, 2, None], dtype=pl.UInt32)
+    assert_series_equal(out, expected)
 
 
 def test_str_encode() -> None:
@@ -184,53 +205,148 @@ def test_str_parse_int_df() -> None:
         )
 
 
-def test_str_strip() -> None:
+def test_str_strip_chars_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "s": [" hello ", "^^world^^", "&&hi&&", "  polars  ", None],
+            "pat": [" ", "^", "&", None, "anything"],
+        }
+    )
+
+    all_expr = df.select(
+        [
+            pl.col("s").str.strip_chars(pl.col("pat")).alias("strip_chars"),
+            pl.col("s").str.strip_chars_start(pl.col("pat")).alias("strip_chars_start"),
+            pl.col("s").str.strip_chars_end(pl.col("pat")).alias("strip_chars_end"),
+        ]
+    )
+
+    expected = pl.DataFrame(
+        {
+            "strip_chars": ["hello", "world", "hi", "polars", None],
+            "strip_chars_start": ["hello ", "world^^", "hi&&", "polars  ", None],
+            "strip_chars_end": [" hello", "^^world", "&&hi", "  polars", None],
+        }
+    )
+
+    assert_frame_equal(all_expr, expected)
+
+    strip_by_null = df.select(
+        pl.col("s").str.strip_chars(None).alias("strip_chars"),
+        pl.col("s").str.strip_chars_start(None).alias("strip_chars_start"),
+        pl.col("s").str.strip_chars_end(None).alias("strip_chars_end"),
+    )
+
+    # only whitespace are striped.
+    expected = pl.DataFrame(
+        {
+            "strip_chars": ["hello", "^^world^^", "&&hi&&", "polars", None],
+            "strip_chars_start": ["hello ", "^^world^^", "&&hi&&", "polars  ", None],
+            "strip_chars_end": [" hello", "^^world^^", "&&hi&&", "  polars", None],
+        }
+    )
+    assert_frame_equal(strip_by_null, expected)
+
+
+def test_str_strip_chars() -> None:
     s = pl.Series([" hello ", "world\t "])
     expected = pl.Series(["hello", "world"])
-    assert_series_equal(s.str.strip(), expected)
+    assert_series_equal(s.str.strip_chars(), expected)
 
     expected = pl.Series(["hell", "world"])
-    assert_series_equal(s.str.strip().str.strip("o"), expected)
+    assert_series_equal(s.str.strip_chars().str.strip_chars("o"), expected)
 
     expected = pl.Series(["ell", "rld\t"])
-    assert_series_equal(s.str.strip(" hwo"), expected)
+    assert_series_equal(s.str.strip_chars(" hwo"), expected)
 
 
-def test_str_lstrip() -> None:
+def test_str_strip_chars_start() -> None:
     s = pl.Series([" hello ", "\t world"])
     expected = pl.Series(["hello ", "world"])
-    assert_series_equal(s.str.lstrip(), expected)
+    assert_series_equal(s.str.strip_chars_start(), expected)
 
     expected = pl.Series(["ello ", "world"])
-    assert_series_equal(s.str.lstrip().str.lstrip("h"), expected)
+    assert_series_equal(s.str.strip_chars_start().str.strip_chars_start("h"), expected)
 
     expected = pl.Series(["ello ", "\t world"])
-    assert_series_equal(s.str.lstrip("hw "), expected)
+    assert_series_equal(s.str.strip_chars_start("hw "), expected)
 
 
-def test_str_rstrip() -> None:
+def test_str_strip_chars_end() -> None:
     s = pl.Series([" hello ", "world\t "])
     expected = pl.Series([" hello", "world"])
-    assert_series_equal(s.str.rstrip(), expected)
+    assert_series_equal(s.str.strip_chars_end(), expected)
 
     expected = pl.Series([" hell", "world"])
-    assert_series_equal(s.str.rstrip().str.rstrip("o"), expected)
+    assert_series_equal(s.str.strip_chars_end().str.strip_chars_end("o"), expected)
 
     expected = pl.Series([" he", "wor"])
-    assert_series_equal(s.str.rstrip("odl \t"), expected)
+    assert_series_equal(s.str.strip_chars_end("odl \t"), expected)
 
 
 def test_str_strip_whitespace() -> None:
     s = pl.Series("a", ["trailing  ", "  leading", "  both  "])
 
     expected = pl.Series("a", ["trailing", "  leading", "  both"])
-    assert_series_equal(s.str.rstrip(), expected)
+    assert_series_equal(s.str.strip_chars_end(), expected)
 
     expected = pl.Series("a", ["trailing  ", "leading", "both  "])
-    assert_series_equal(s.str.lstrip(), expected)
+    assert_series_equal(s.str.strip_chars_start(), expected)
 
     expected = pl.Series("a", ["trailing", "leading", "both"])
-    assert_series_equal(s.str.strip(), expected)
+    assert_series_equal(s.str.strip_chars(), expected)
+
+
+def test_str_strip_deprecated() -> None:
+    with pytest.deprecated_call():
+        pl.col("a").str.strip()
+    with pytest.deprecated_call():
+        pl.col("a").str.lstrip()
+    with pytest.deprecated_call():
+        pl.col("a").str.rstrip()
+
+    with pytest.deprecated_call():
+        pl.Series(["a", "b", "c"]).str.strip()
+    with pytest.deprecated_call():
+        pl.Series(["a", "b", "c"]).str.lstrip()
+    with pytest.deprecated_call():
+        pl.Series(["a", "b", "c"]).str.rstrip()
+
+
+def test_str_strip_prefix_literal() -> None:
+    s = pl.Series(["foo:bar", "foofoo:bar", "bar:bar", "foo", "", None])
+    expected = pl.Series([":bar", "foo:bar", "bar:bar", "", "", None])
+    assert_series_equal(s.str.strip_prefix("foo"), expected)
+    # test null literal
+    expected = pl.Series([None, None, None, None, None, None], dtype=pl.Utf8)
+    assert_series_equal(s.str.strip_prefix(pl.lit(None, dtype=pl.Utf8)), expected)
+
+
+def test_str_strip_prefix_suffix_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["foo-bar", "foobarbar", "barfoo", "", "anything", None],
+            "prefix": ["foo", "foobar", "foo", "", None, "bar"],
+            "suffix": ["bar", "barbar", "bar", "", None, "foo"],
+        }
+    )
+    out = df.select(
+        pl.col("s").str.strip_prefix(pl.col("prefix")).alias("strip_prefix"),
+        pl.col("s").str.strip_suffix(pl.col("suffix")).alias("strip_suffix"),
+    )
+    assert out.to_dict(False) == {
+        "strip_prefix": ["-bar", "bar", "barfoo", "", None, None],
+        "strip_suffix": ["foo-", "foo", "barfoo", "", None, None],
+    }
+
+
+def test_str_strip_suffix() -> None:
+    s = pl.Series(["foo:bar", "foo:barbar", "foo:foo", "bar", "", None])
+    expected = pl.Series(["foo:", "foo:bar", "foo:foo", "", "", None])
+    assert_series_equal(s.str.strip_suffix("bar"), expected)
+    # test null literal
+    expected = pl.Series([None, None, None, None, None, None], dtype=pl.Utf8)
+    assert_series_equal(s.str.strip_suffix(pl.lit(None, dtype=pl.Utf8)), expected)
 
 
 def test_str_split() -> None:
@@ -286,6 +402,29 @@ def test_json_extract_lazy_expr() -> None:
     assert_frame_equal(ldf, expected)
 
 
+def test_json_extract_primitive_to_list_11053() -> None:
+    df = pl.DataFrame(
+        {
+            "json": [
+                '{"col1": ["123"], "col2": "123"}',
+                '{"col1": ["xyz"], "col2": null}',
+            ]
+        }
+    )
+    schema = pl.Struct(
+        {
+            "col1": pl.List(pl.Utf8),
+            "col2": pl.List(pl.Utf8),
+        }
+    )
+
+    output = df.select(
+        pl.col("json").str.json_extract(schema).alias("casted_json")
+    ).unnest("casted_json")
+    expected = pl.DataFrame({"col1": [["123"], ["xyz"]], "col2": [["123"], None]})
+    assert_frame_equal(output, expected)
+
+
 def test_jsonpath_single() -> None:
     s = pl.Series(['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}'])
     expected = pl.Series(["1", None, "2", "2.1", "true"])
@@ -316,7 +455,7 @@ def test_auto_explode() -> None:
     )
     pl.col("val").str.concat(delimiter=",")
     grouped = (
-        df.groupby("id")
+        df.group_by("id")
         .agg(pl.col("val").str.concat(delimiter=",").alias("grouped"))
         .get_column("grouped")
     )
@@ -395,8 +534,8 @@ def test_contains_expr() -> None:
             .alias("contains_lit"),
         ]
     ).to_dict(False) == {
-        "contains": [True, True, False, False, False, None],
-        "contains_lit": [False, True, False, False, False, False],
+        "contains": [True, True, False, None, None, None],
+        "contains_lit": [False, True, False, None, None, False],
     }
 
     with pytest.raises(pl.ComputeError):
@@ -518,23 +657,139 @@ def test_replace_expressions() -> None:
 
 
 def test_extract_all_count() -> None:
-    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
+    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xaz 678 910t", "boo", None]})
     assert (
         df.select(
-            [
-                pl.col("foo").str.extract_all(r"a").alias("extract"),
-                pl.col("foo").str.count_match(r"a").alias("count"),
-            ]
+            pl.col("foo").str.extract_all(r"a").alias("extract"),
+            pl.col("foo").str.count_matches(r"a").alias("count"),
         ).to_dict(False)
-    ) == {"extract": [["a", "a"], None], "count": [2, 0]}
+    ) == {"extract": [["a", "a"], ["a"], [], None], "count": [2, 1, 0, None]}
 
     assert df["foo"].str.extract_all(r"a").dtype == pl.List
-    assert df["foo"].str.count_match(r"a").dtype == pl.UInt32
+    assert df["foo"].str.count_matches(r"a").dtype == pl.UInt32
+
+
+def test_count_matches_deprecated_count() -> None:
+    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xaz 678 910t", "boo", None]})
+
+    with pytest.deprecated_call():
+        expr = pl.col("foo").str.count_match(r"a")
+
+    result = df.select(expr)
+
+    expected = pl.Series("foo", [2, 1, 0, None], dtype=pl.UInt32).to_frame()
+    assert_frame_equal(result, expected)
+
+
+def test_count_matches_many() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["123 bla 45 asd", "xyz 678 910t", None, "boo"],
+            "bar": [r"\d", r"[a-z]", r"\d", None],
+        }
+    )
+    assert (
+        df.select(
+            pl.col("foo").str.count_matches(pl.col("bar")).alias("count")
+        ).to_dict(False)
+    ) == {"count": [5, 4, None, None]}
+
+    assert df["foo"].str.count_matches(df["bar"]).dtype == pl.UInt32
+
+    # Test broadcast.
+    broad = df.select(
+        pl.col("foo").str.count_matches(pl.col("bar").first()).alias("count"),
+        pl.col("foo").str.count_matches(pl.col("bar").last()).alias("count_null"),
+    )
+    assert broad.to_dict(False) == {
+        "count": [5, 6, None, 0],
+        "count_null": [None, None, None, None],
+    }
+    assert broad.schema == {"count": pl.UInt32, "count_null": pl.UInt32}
 
 
 def test_extract_all_many() -> None:
-    df = pl.DataFrame({"foo": ["ab", "abc", "abcd"], "re": ["a", "bc", "a.c"]})
-    assert df["foo"].str.extract_all(df["re"]).to_list() == [["a"], ["bc"], ["abc"]]
+    df = pl.DataFrame(
+        {
+            "foo": ["ab", "abc", "abcd", "foo", None, "boo"],
+            "re": ["a", "bc", "a.c", "a", "a", None],
+        }
+    )
+    assert df["foo"].str.extract_all(df["re"]).to_list() == [
+        ["a"],
+        ["bc"],
+        ["abc"],
+        [],
+        None,
+        None,
+    ]
+
+    # Test broadcast.
+    broad = df.select(
+        pl.col("foo").str.extract_all(pl.col("re").first()).alias("a"),
+        pl.col("foo").str.extract_all(pl.col("re").last()).alias("null"),
+    )
+    assert broad.to_dict(False) == {
+        "a": [["a"], ["a"], ["a"], [], None, []],
+        "null": [None] * 6,
+    }
+    assert broad.schema == {"a": pl.List(pl.Utf8), "null": pl.List(pl.Utf8)}
+
+
+def test_extract_groups() -> None:
+    def _named_groups_builder(pattern: str, groups: dict[str, str]) -> str:
+        return pattern.format(
+            **{name: f"(?<{name}>{value})" for name, value in groups.items()}
+        )
+
+    expected = {
+        "authority": ["ISO", "ISO/IEC/IEEE"],
+        "spec_num": ["80000", "29148"],
+        "part_num": ["1", None],
+        "revision_year": ["2009", "2018"],
+    }
+
+    pattern = _named_groups_builder(
+        r"{authority}\s{spec_num}(?:-{part_num})?(?::{revision_year})",
+        {
+            "authority": r"^ISO(?:/[A-Z]+)*",
+            "spec_num": r"\d+",
+            "part_num": r"\d+",
+            "revision_year": r"\d{4}",
+        },
+    )
+
+    df = pl.DataFrame({"iso_code": ["ISO 80000-1:2009", "ISO/IEC/IEEE 29148:2018"]})
+
+    assert (
+        df.select(pl.col("iso_code").str.extract_groups(pattern))
+        .unnest("iso_code")
+        .to_dict(False)
+        == expected
+    )
+
+    assert df.select(pl.col("iso_code").str.extract_groups("")).to_dict(False) == {
+        "iso_code": [{"iso_code": None}, {"iso_code": None}]
+    }
+
+    assert df.select(
+        pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(\d+)")
+    ).to_dict(False) == {
+        "iso_code": [{"1": "ISO", "2": "80000"}, {"1": "ISO/IEC/IEEE", "2": "29148"}]
+    }
+
+    assert df.select(
+        pl.col("iso_code").str.extract_groups(r"\A(ISO\S*).*?(?<year>\d+)\z")
+    ).to_dict(False) == {
+        "iso_code": [
+            {"1": "ISO", "year": "2009"},
+            {"1": "ISO/IEC/IEEE", "year": "2018"},
+        ]
+    }
+
+    assert pl.select(
+        pl.lit(r"foobar").str.extract_groups(r"(?<foo>.{3})|(?<bar>...)")
+    ).to_dict(False) == {"literal": [{"foo": "foo", "bar": None}]}
 
 
 def test_zfill() -> None:
@@ -584,7 +839,10 @@ def test_ljust_and_rjust() -> None:
 
 def test_starts_ends_with() -> None:
     df = pl.DataFrame(
-        {"a": ["hamburger", "nuts", "lollypop"], "sub": ["ham", "ts", None]}
+        {
+            "a": ["hamburger", "nuts", "lollypop", None],
+            "sub": ["ham", "ts", None, "anything"],
+        }
     )
 
     assert df.select(
@@ -597,12 +855,12 @@ def test_starts_ends_with() -> None:
             pl.col("a").str.starts_with(pl.col("sub")).alias("starts_sub"),
         ]
     ).to_dict(False) == {
-        "ends_pop": [False, False, True],
-        "ends_None": [False, False, False],
-        "ends_sub": [False, True, False],
-        "starts_ham": [True, False, False],
-        "starts_None": [False, False, False],
-        "starts_sub": [True, False, False],
+        "ends_pop": [False, False, True, None],
+        "ends_None": [None, None, None, None],
+        "ends_sub": [False, True, None, None],
+        "starts_ham": [True, False, False, None],
+        "starts_None": [None, None, None, None],
+        "starts_sub": [True, False, None, None],
     }
 
 
@@ -665,6 +923,31 @@ def test_split() -> None:
     assert_frame_equal(df["x"].str.split("_", inclusive=True).to_frame(), expected)
 
 
+def test_split_expr() -> None:
+    df = pl.DataFrame({"x": ["a_a", None, "b", "c*c*c"], "by": ["_", "#", "^", "*"]})
+    out = df.select([pl.col("x").str.split(pl.col("by"))])
+    expected = pl.DataFrame(
+        [
+            {"x": ["a", "a"]},
+            {"x": None},
+            {"x": ["b"]},
+            {"x": ["c", "c", "c"]},
+        ]
+    )
+    assert_frame_equal(out, expected)
+
+    out = df.select([pl.col("x").str.split(pl.col("by"), inclusive=True)])
+    expected = pl.DataFrame(
+        [
+            {"x": ["a_", "a"]},
+            {"x": None},
+            {"x": ["b"]},
+            {"x": ["c*", "c*", "c"]},
+        ]
+    )
+    assert_frame_equal(out, expected)
+
+
 def test_split_exact() -> None:
     df = pl.DataFrame({"x": ["a_a", None, "b", "c_c"]})
     out = df.select([pl.col("x").str.split_exact("_", 2, inclusive=False)]).unnest("x")
@@ -691,6 +974,39 @@ def test_split_exact() -> None:
     assert df["x"].str.split_exact("_", 1, inclusive=False).dtype == pl.Struct
 
 
+def test_split_exact_expr() -> None:
+    df = pl.DataFrame(
+        {"x": ["a_a", None, "b", "c^c^c", "d#d"], "by": ["_", "&", "$", "^", None]}
+    )
+
+    out = df.select(
+        pl.col("x").str.split_exact(pl.col("by"), 2, inclusive=False)
+    ).unnest("x")
+
+    expected = pl.DataFrame(
+        {
+            "field_0": ["a", None, "b", "c", None],
+            "field_1": ["a", None, None, "c", None],
+            "field_2": pl.Series([None, None, None, "c", None], dtype=pl.Utf8),
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+    out2 = df.select(
+        pl.col("x").str.split_exact(pl.col("by"), 2, inclusive=True)
+    ).unnest("x")
+
+    expected2 = pl.DataFrame(
+        {
+            "field_0": ["a_", None, "b", "c^", None],
+            "field_1": ["a", None, None, "c^", None],
+            "field_2": pl.Series([None, None, None, "c", None], dtype=pl.Utf8),
+        }
+    )
+    assert_frame_equal(out2, expected2)
+
+
 def test_splitn() -> None:
     df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
     out = df.select([pl.col("x").str.splitn("_", 2)]).unnest("x")
@@ -701,6 +1017,23 @@ def test_splitn() -> None:
 
     assert_frame_equal(out, expected)
     assert_frame_equal(df["x"].str.splitn("_", 2).to_frame().unnest("x"), expected)
+
+
+def test_splitn_expr() -> None:
+    df = pl.DataFrame(
+        {"x": ["a_a", None, "b", "c^c^c", "d#d"], "by": ["_", "&", "$", "^", None]}
+    )
+
+    out = df.select(pl.col("x").str.splitn(pl.col("by"), 2)).unnest("x")
+
+    expected = pl.DataFrame(
+        {
+            "field_0": ["a", None, "b", "c", None],
+            "field_1": ["a", None, None, "c^c", None],
+        }
+    )
+
+    assert_frame_equal(out, expected)
 
 
 def test_titlecase() -> None:
@@ -723,3 +1056,35 @@ def test_titlecase() -> None:
             "And\tA\t Tab",
         ]
     }
+
+
+def test_string_replace_with_nulls_10124() -> None:
+    df = pl.DataFrame({"col1": ["S", "S", "S", None, "S", "S", "S", "S"]})
+
+    assert df.select(
+        pl.col("col1"),
+        pl.col("col1").str.replace("S", "O", n=1).alias("n_1"),
+        pl.col("col1").str.replace("S", "O", n=3).alias("n_3"),
+    ).to_dict(False) == {
+        "col1": ["S", "S", "S", None, "S", "S", "S", "S"],
+        "n_1": ["O", "O", "O", None, "O", "O", "O", "O"],
+        "n_3": ["O", "O", "O", None, "O", "O", "O", "O"],
+    }
+
+
+def test_string_extract_groups_lazy_schema_10305() -> None:
+    df = pl.LazyFrame(
+        data={
+            "url": [
+                "http://vote.com/ballon_dor?candidate=messi&ref=python",
+                "http://vote.com/ballon_dor?candidate=weghorst&ref=polars",
+                "http://vote.com/ballon_dor?error=404&ref=rust",
+            ]
+        }
+    )
+    pattern = r"candidate=(?<candidate>\w+)&ref=(?<ref>\w+)"
+    df = df.select(captures=pl.col("url").str.extract_groups(pattern)).unnest(
+        "captures"
+    )
+
+    assert df.schema == {"candidate": pl.Utf8, "ref": pl.Utf8}

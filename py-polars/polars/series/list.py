@@ -5,14 +5,19 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.decorators import deprecated_alias
+from polars.utils.deprecation import deprecate_renamed_function
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.type_aliases import NullBehavior, ToStructStrategy
+    from polars.type_aliases import (
+        IntoExpr,
+        IntoExprColumn,
+        NullBehavior,
+        ToStructStrategy,
+    )
 
 
 @expr_dispatch
@@ -43,7 +48,7 @@ class ListNameSpace:
         │ true  │
         │ false │
         │ false │
-        │ false │
+        │ true  │
         │ true  │
         │ null  │
         └───────┘
@@ -89,6 +94,26 @@ class ListNameSpace:
         [
             3
             1
+        ]
+
+        """
+
+    def drop_nulls(self) -> Series:
+        """
+        Drop all null values in the list.
+
+        The original order of the remaining elements is preserved.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[None, 1, None, 2], [None], [3, 4]])
+        >>> s.list.drop_nulls()
+        shape: (3,)
+        Series: 'values' [list[i64]]
+        [
+            [1, 2]
+            []
+            [3, 4]
         ]
 
         """
@@ -198,7 +223,7 @@ class ListNameSpace:
     def __getitem__(self, item: int) -> Series:
         return self.get(item)
 
-    def join(self, separator: str) -> Series:
+    def join(self, separator: IntoExpr) -> Series:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -211,7 +236,8 @@ class ListNameSpace:
 
         Returns
         -------
-        Series of dtype Utf8
+        Series
+            Series of data type :class:`Utf8`.
 
         Examples
         --------
@@ -243,7 +269,8 @@ class ListNameSpace:
 
         Returns
         -------
-        Boolean mask
+        Series
+            Series of data type :class:`Boolean`.
 
         """
 
@@ -253,7 +280,9 @@ class ListNameSpace:
 
         Returns
         -------
-        Series of dtype UInt32/UInt64 (depending on compilation)
+        Series
+            Series of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
 
         """
 
@@ -263,7 +292,9 @@ class ListNameSpace:
 
         Returns
         -------
-        Series of dtype UInt32/UInt64 (depending on compilation)
+        Series
+            Series of data type :class:`UInt32` or :class:`UInt64`
+            (depending on compilation).
 
         """
 
@@ -307,7 +338,7 @@ class ListNameSpace:
 
         """
 
-    def shift(self, periods: int = 1) -> Series:
+    def shift(self, periods: int | IntoExprColumn = 1) -> Series:
         """
         Shift values by the given period.
 
@@ -404,7 +435,8 @@ class ListNameSpace:
 
         Returns
         -------
-        Exploded column with the datatype of the list elements.
+        Series
+            Series with the data type of the list elements.
 
         See Also
         --------
@@ -427,7 +459,7 @@ class ListNameSpace:
 
         """
 
-    def count_match(
+    def count_matches(
         self, element: float | str | bool | int | date | datetime | time | Expr
     ) -> Expr:
         """
@@ -440,7 +472,6 @@ class ListNameSpace:
 
         """
 
-    @deprecated_alias(name_generator="fields")
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
@@ -457,7 +488,6 @@ class ListNameSpace:
             * "first_non_null": set number of fields equal to the length of the
               first non zero-length sublist.
             * "max_width": set number of fields as max length of all sublists.
-
         fields
             If the name and number of the desired fields is known in advance
             a list of field names can be given, which will be assigned by index.
@@ -528,7 +558,7 @@ class ListNameSpace:
             Run all expression parallel. Don't activate this blindly.
             Parallelism is worth it if there is enough work to do per thread.
 
-            This likely should not be use in the groupby context, because we already
+            This likely should not be use in the group by context, because we already
             parallel execution per group
 
         Examples
@@ -541,7 +571,7 @@ class ListNameSpace:
         ┌─────┬─────┬────────────┐
         │ a   ┆ b   ┆ rank       │
         │ --- ┆ --- ┆ ---        │
-        │ i64 ┆ i64 ┆ list[f32]  │
+        │ i64 ┆ i64 ┆ list[f64]  │
         ╞═════╪═════╪════════════╡
         │ 1   ┆ 4   ┆ [1.0, 2.0] │
         │ 8   ┆ 5   ┆ [2.0, 1.0] │
@@ -550,7 +580,7 @@ class ListNameSpace:
 
         """
 
-    def union(self, other: Series) -> Series:
+    def set_union(self, other: Series) -> Series:
         """
         Compute the SET UNION between the elements in this list and the elements of ``other``.
 
@@ -563,7 +593,7 @@ class ListNameSpace:
         --------
         >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
         >>> b = pl.Series([[2, 3, 4], [3], [3, 4, None], [6, 8]])
-        >>> a.list.union(b)  # doctest: +IGNORE_RESULT
+        >>> a.list.set_union(b)  # doctest: +IGNORE_RESULT
         shape: (4,)
         Series: '' [list[i64]]
         [
@@ -573,9 +603,9 @@ class ListNameSpace:
                 [5, 6, 7, 8]
         ]
 
-        """  # noqa: W505.
+        """  # noqa: W505
 
-    def difference(self, other: Series) -> Series:
+    def set_difference(self, other: Series) -> Series:
         """
         Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
 
@@ -584,11 +614,15 @@ class ListNameSpace:
         other
             Right hand side of the set operation.
 
+        See Also
+        --------
+        polars.Series.list.diff: Calculates the n-th discrete difference of every sublist.
+
         Examples
         --------
         >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
         >>> b = pl.Series([[2, 3, 4], [3], [3, 4, None], [6, 8]])
-        >>> a.list.difference(b)
+        >>> a.list.set_difference(b)
         shape: (4,)
         Series: '' [list[i64]]
         [
@@ -598,13 +632,9 @@ class ListNameSpace:
                 [5, 7]
         ]
 
-        See Also
-        --------
-        polars.Series.list.diff: Calculates the n-th discrete difference of every sublist.
+        """  # noqa: W505
 
-        """  # noqa: W505.
-
-    def intersection(self, other: Series) -> Series:
+    def set_intersection(self, other: Series) -> Series:
         """
         Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
 
@@ -617,7 +647,7 @@ class ListNameSpace:
         --------
         >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
         >>> b = pl.Series([[2, 3, 4], [3], [3, 4, None], [6, 8]])
-        >>> a.list.intersection(b)
+        >>> a.list.set_intersection(b)
         shape: (4,)
         Series: '' [list[i64]]
         [
@@ -627,9 +657,9 @@ class ListNameSpace:
                 [6]
         ]
 
-        """  # noqa: W505.
+        """  # noqa: W505
 
-    def symmetric_difference(self, other: Series) -> Series:
+    def set_symmetric_difference(self, other: Series) -> Series:
         """
         Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
 
@@ -638,4 +668,65 @@ class ListNameSpace:
         other
             Right hand side of the set operation.
 
-        """  # noqa: W505.
+        """  # noqa: W505
+
+    @deprecate_renamed_function("set_union", version="0.18.10")
+    def union(self, other: Series) -> Series:
+        """
+        Compute the SET UNION between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Series.list.set_union``.
+
+        """  # noqa: W505
+        return self.set_union(other)
+
+    @deprecate_renamed_function("set_difference", version="0.18.10")
+    def difference(self, other: Series) -> Series:
+        """
+        Compute the SET DIFFERENCE between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Series.list.set_difference``.
+
+        """  # noqa: W505
+        return self.set_difference(other)
+
+    @deprecate_renamed_function("set_intersection", version="0.18.10")
+    def intersection(self, other: Series) -> Series:
+        """
+        Compute the SET INTERSECTION between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Series.list.set_intersection``.
+
+        """  # noqa: W505
+        return self.set_intersection(other)
+
+    @deprecate_renamed_function("set_symmetric_difference", version="0.18.10")
+    def symmetric_difference(self, other: Series) -> Series:
+        """
+        Compute the SET SYMMETRIC DIFFERENCE between the elements in this list and the elements of ``other``.
+
+        .. deprecated:: 0.18.10
+            This method has been renamed to ``Series.list.set_symmetric_difference``.
+
+        """  # noqa: W505
+        return self.set_symmetric_difference(other)
+
+    @deprecate_renamed_function("count_matches", version="0.19.3")
+    def count_match(
+        self, element: float | str | bool | int | date | datetime | time | Expr
+    ) -> Expr:
+        """
+        Count how often the value produced by ``element`` occurs.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`count_matches`.
+
+        Parameters
+        ----------
+        element
+            An expression that produces a single value
+
+        """

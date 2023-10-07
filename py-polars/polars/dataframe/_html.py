@@ -49,6 +49,7 @@ class HTMLFormatter:
     def __init__(
         self,
         df: DataFrame,
+        *,
         max_cols: int = 75,
         max_rows: int = 40,
         from_series: bool = False,
@@ -63,40 +64,44 @@ class HTMLFormatter:
 
         if max_rows < df.height:
             self.row_idx = [
-                *list(range(0, max_rows // 2)),
+                *list(range(max_rows // 2)),
                 -1,
                 *list(range(df.height - max_rows // 2, df.height)),
             ]
         else:
-            self.row_idx = range(0, df.height)
+            self.row_idx = range(df.height)
         if max_cols < df.width:
             self.col_idx = [
-                *list(range(0, max_cols // 2)),
+                *list(range(max_cols // 2)),
                 -1,
                 *list(range(df.width - max_cols // 2, df.width)),
             ]
         else:
-            self.col_idx = range(0, df.width)
+            self.col_idx = range(df.width)
 
     def write_header(self) -> None:
         """Write the header of an HTML table."""
         with Tag(self.elements, "thead"):
-            with Tag(self.elements, "tr"):
-                columns = self.df.columns
-                for c in self.col_idx:
-                    with Tag(self.elements, "th"):
-                        if c == -1:
-                            self.elements.append("&hellip;")
-                        else:
-                            self.elements.append(html.escape(columns[c]))
-            with Tag(self.elements, "tr"):
-                dtypes = self.df._df.dtype_strings()
-                for c in self.col_idx:
-                    with Tag(self.elements, "td"):
-                        if c == -1:
-                            self.elements.append("&hellip;")
-                        else:
-                            self.elements.append(dtypes[c])
+            if not bool(int(os.environ.get("POLARS_FMT_TABLE_HIDE_COLUMN_NAMES", "0"))):
+                with Tag(self.elements, "tr"):
+                    columns = self.df.columns
+                    for c in self.col_idx:
+                        with Tag(self.elements, "th"):
+                            if c == -1:
+                                self.elements.append("&hellip;")
+                            else:
+                                self.elements.append(html.escape(columns[c]))
+            if not bool(
+                int(os.environ.get("POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES", "0"))
+            ):
+                with Tag(self.elements, "tr"):
+                    dtypes = self.df._df.dtype_strings()
+                    for c in self.col_idx:
+                        with Tag(self.elements, "td"):
+                            if c == -1:
+                                self.elements.append("&hellip;")
+                            else:
+                                self.elements.append(dtypes[c])
 
     def write_body(self) -> None:
         """Write the body of an HTML table."""
@@ -120,11 +125,17 @@ class HTMLFormatter:
 
     def render(self) -> list[str]:
         """Return the lines needed to render a HTML table."""
-        # format frame/series shape with '_' thousand-separators
-        s = self.df.shape
-        shape = f"({s[0]:_},)" if self.series else f"({s[0]:_}, {s[1]:_})"
+        if not bool(
+            int(
+                os.environ.get("POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION", "0")
+            )
+        ):
+            # format frame/series shape with '_' thousand-separators
+            s = self.df.shape
+            shape = f"({s[0]:_},)" if self.series else f"({s[0]:_}, {s[1]:_})"
 
-        self.elements.append(f"<small>shape: {shape}</small>")
+            self.elements.append(f"<small>shape: {shape}</small>")
+
         with Tag(
             # be careful changing the CSS class ref here...
             # ref: https://github.com/pola-rs/polars/issues/7443
@@ -151,6 +162,7 @@ class NotebookFormatter(HTMLFormatter):
             .dataframe > thead > tr > th,
             .dataframe > tbody > tr > td {
               text-align: right;
+              white-space: pre-wrap;
             }
             </style>
         """

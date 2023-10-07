@@ -5,11 +5,6 @@ use crate::prelude::*;
 use crate::PyExpr;
 
 #[pyfunction]
-pub fn arange(start: PyExpr, end: PyExpr, step: i64) -> PyExpr {
-    dsl::arange(start.inner, end.inner, step).into()
-}
-
-#[pyfunction]
 pub fn int_range(start: PyExpr, end: PyExpr, step: i64, dtype: Wrap<DataType>) -> PyExpr {
     let dtype = dtype.0;
 
@@ -33,4 +28,90 @@ pub fn int_ranges(start: PyExpr, end: PyExpr, step: i64, dtype: Wrap<DataType>) 
     }
 
     result.into()
+}
+
+#[pyfunction]
+pub fn date_range(
+    start: PyExpr,
+    end: PyExpr,
+    every: &str,
+    closed: Wrap<ClosedWindow>,
+    time_unit: Option<Wrap<TimeUnit>>,
+    time_zone: Option<TimeZone>,
+) -> PyExpr {
+    let start = start.inner;
+    let end = end.inner;
+    let every = Duration::parse(every);
+    let closed = closed.0;
+    let time_unit = time_unit.map(|x| x.0);
+    dsl::date_range(start, end, every, closed, time_unit, time_zone).into()
+}
+
+#[pyfunction]
+pub fn date_ranges(
+    start: PyExpr,
+    end: PyExpr,
+    every: &str,
+    closed: Wrap<ClosedWindow>,
+    time_unit: Option<Wrap<TimeUnit>>,
+    time_zone: Option<TimeZone>,
+) -> PyExpr {
+    let start = start.inner;
+    let end = end.inner;
+    let every = Duration::parse(every);
+    let closed = closed.0;
+    let time_unit = time_unit.map(|x| x.0);
+    dsl::date_ranges(start, end, every, closed, time_unit, time_zone).into()
+}
+
+#[pyfunction]
+pub fn datetime_range(
+    start: PyExpr,
+    end: PyExpr,
+    every: &str,
+    closed: Wrap<ClosedWindow>,
+    time_unit: Option<Wrap<TimeUnit>>,
+    time_zone: Option<TimeZone>,
+) -> PyExpr {
+    let start = start.inner;
+    let end = end.inner;
+    let every = Duration::parse(every);
+    let closed = closed.0;
+    let time_unit = time_unit.map(|x| x.0);
+    dsl::datetime_range(start, end, every, closed, time_unit, time_zone).into()
+}
+
+#[pyfunction]
+pub fn datetime_ranges(
+    start: PyExpr,
+    end: PyExpr,
+    every: &str,
+    closed: Wrap<ClosedWindow>,
+    time_unit: Option<Wrap<TimeUnit>>,
+    time_zone: Option<TimeZone>,
+) -> PyExpr {
+    let start = start.inner;
+    let end = end.inner;
+    let every = Duration::parse(every);
+    let closed = closed.0;
+    let time_unit = time_unit.map(|x| x.0);
+    dsl::datetime_ranges(start, end, every, closed, time_unit, time_zone).into()
+}
+
+#[pyfunction]
+pub fn time_range(start: PyExpr, end: PyExpr, every: &str, closed: Wrap<ClosedWindow>) -> PyExpr {
+    let start = start.inner;
+    let end = end.inner;
+    let every = Duration::parse(every);
+    let closed = closed.0;
+    dsl::time_range(start, end, every, closed).into()
+}
+
+#[pyfunction]
+pub fn time_ranges(start: PyExpr, end: PyExpr, every: &str, closed: Wrap<ClosedWindow>) -> PyExpr {
+    let start = start.inner;
+    let end = end.inner;
+    let every = Duration::parse(every);
+    let closed = closed.0;
+    dsl::time_ranges(start, end, every, closed).into()
 }

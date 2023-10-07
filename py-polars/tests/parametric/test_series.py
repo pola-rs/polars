@@ -18,7 +18,7 @@ from polars.testing.parametric import series
 
 def alpha_guard(**decay_param: float) -> bool:
     """Protects against unnecessary noise in small number regime."""
-    if not list(decay_param.values())[0]:
+    if not next(iter(decay_param.values())):
         return True
     alpha = _prepare_alpha(**decay_param)
     return ((1 - alpha) if round(alpha) else alpha) > 1e-6

@@ -1,4 +1,7 @@
+import pytest
+
 import polars as pl
+from polars import PolarsDataType
 from polars.testing import assert_frame_equal
 
 
@@ -10,6 +13,11 @@ def test_simplify_expression_lit_true_4376() -> None:
     assert df.lazy().filter((pl.col("column_0") == 1) | pl.lit(True)).collect(
         simplify_expression=True
     ).rows() == [(1, 2, 3), (4, 5, 6), (7, 8, 9)]
+
+
+def test_filter_contains_nth_11205() -> None:
+    df = pl.DataFrame({"x": [False]})
+    assert df.filter(pl.first()).is_empty()
 
 
 def test_melt_values_predicate_pushdown() -> None:
@@ -29,25 +37,50 @@ def test_melt_values_predicate_pushdown() -> None:
     ).to_dict(False) == {"id": [1], "variable": ["asset_key_1"], "value": ["123"]}
 
 
+def test_group_by_filter_all_true() -> None:
+    df = pl.DataFrame(
+        {
+            "name": ["a", "a", "b", "b"],
+            "type": [None, 1, 1, None],
+            "order": [1, 2, 3, 4],
+        }
+    )
+    out = (
+        df.group_by("name")
+        .agg([pl.col("order").filter(pl.col("type") == 1).n_unique().alias("n_unique")])
+        .select("n_unique")
+    )
+    assert out.to_dict(False) == {"n_unique": [1, 1]}
+
+
 def test_filter_is_in_4572() -> None:
     df = pl.DataFrame({"id": [1, 2, 1, 2], "k": ["a"] * 2 + ["b"] * 2})
     expected = (
-        df.groupby("id")
+        df.group_by("id")
         .agg(pl.col("k").filter(pl.col("k") == "a").implode())
         .sort("id")
     )
     result = (
-        df.groupby("id")
+        df.group_by("id")
         .agg(pl.col("k").filter(pl.col("k").is_in(["a"])).implode())
         .sort("id")
     )
     assert_frame_equal(result, expected)
     result = (
         df.sort("id")
-        .groupby("id")
+        .group_by("id")
         .agg(pl.col("k").filter(pl.col("k").is_in(["a"])).implode())
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "dtype", [pl.Int32, pl.Boolean, pl.Utf8, pl.Binary, pl.List(pl.Int64), pl.Object]
+)
+def test_filter_on_empty(dtype: PolarsDataType) -> None:
+    df = pl.DataFrame({"a": []}, schema={"a": dtype})
+    out = df.filter(pl.col("a").is_null())
+    assert out.is_empty()
 
 
 def test_filter_aggregation_any() -> None:
@@ -61,7 +94,7 @@ def test_filter_aggregation_any() -> None:
     )
 
     result = (
-        df.groupby("group")
+        df.group_by("group")
         .agg(
             pl.any_horizontal("pred_a", "pred_b"),
             pl.col("id")
@@ -132,3 +165,32 @@ def test_categorical_string_comparison_6283() -> None:
         "funding": ["yes", "yes", "no"],
         "score": [78, 39, 76],
     }
+
+
+def test_clear_window_cache_after_filter_10499() -> None:
+    df = pl.from_dict(
+        {
+            "a": [None, None, 3, None, 5, 0, 0, 0, 9, 10],
+            "b": [1, 1, 2, 2, 3, 3, 4, 4, 5, 5],
+        }
+    )
+
+    assert df.lazy().filter((pl.col("a").null_count() < pl.count()).over("b")).filter(
+        ((pl.col("a") == 0).sum() < pl.count()).over("b")
+    ).collect().to_dict(False) == {"a": [3, None, 5, 0, 9, 10], "b": [2, 2, 3, 3, 5, 5]}
+
+
+def test_agg_function_of_filter_10565() -> None:
+    df_int = pl.DataFrame(data={"a": []}, schema={"a": pl.Int16})
+    assert df_int.filter(pl.col("a").n_unique().over("a") == 1).to_dict(False) == {
+        "a": []
+    }
+
+    df_str = pl.DataFrame(data={"a": []}, schema={"a": pl.Utf8})
+    assert df_str.filter(pl.col("a").n_unique().over("a") == 1).to_dict(False) == {
+        "a": []
+    }
+
+    assert df_str.lazy().filter(pl.col("a").n_unique().over("a") == 1).collect(
+        predicate_pushdown=False
+    ).to_dict(False) == {"a": []}

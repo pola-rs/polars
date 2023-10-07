@@ -1,29 +1,46 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
+import polars._reexport as pl
 from polars.utils._parse_expr_input import parse_as_expression
-from polars.utils._wrap import wrap_expr
+from polars.utils.deprecation import deprecate_renamed_parameter
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import when as _when
+    import polars.polars as plr
 
 if TYPE_CHECKING:
-    from polars import Expr
     from polars.type_aliases import IntoExpr
 
 
-def when(expr: IntoExpr) -> When:
+@deprecate_renamed_parameter("expr", "condition", version="0.18.9")
+def when(condition: IntoExpr) -> pl.When:
     """
-    Start a "when, then, otherwise" expression.
+    Start a `when-then-otherwise` expression.
 
     Expression similar to an `if-else` statement in Python. Always initiated by a
     `pl.when(<condition>).then(<value if condition>)`. Optionally followed by chaining
-    one or more `.when(<condition>).then(<value>)` statements. If none of the conditions
-    are `True`, an optional `.otherwise(<value if all statements are false>)` can be
-    appended at the end. If not appended, and none of the conditions are `True`, `None`
-    will be returned.
+    one or more `.when(<condition>).then(<value>)` statements.
+
+    Chained `when, thens` should be read as Python `if, elif, ... elif` blocks, not as
+    `if, if, ... if`, i.e. the first condition that evaluates to True will be picked.
+
+    If none of the conditions are `True`, an optional `.otherwise(<value if all
+    statements are false>)` can be appended at the end. If not appended, and none
+    of the conditions are `True`, `None` will be returned.
+
+    Parameters
+    ----------
+    condition
+        The condition for applying the subsequent statement.
+        Accepts a boolean expression. String input is parsed as a column name.
+
+    Warnings
+    --------
+    Polars computes all expressions passed to `when-then-otherwise` in parallel and
+    filters afterwards. This means each expression must be valid on its own, regardless
+    of the conditions in the `when-then-otherwise` chain.
 
     Examples
     --------
@@ -69,9 +86,7 @@ def when(expr: IntoExpr) -> When:
     │ 4   ┆ 0   ┆ 1   │
     └─────┴─────┴─────┘
 
-    Chained `when, thens` should be read as `if, elif, ... elif`, not
-    as `if, if, ... if`, i.e. the first condition that evaluates to True will
-    be picked. Note how in the example above for the second row in the dataframe,
+    Note how in the example above for the second row in the dataframe,
     where `foo=3` and `bar=4`, the first `when` evaluates to `True`, and therefore
     the second `when`, which is also `True`, is not evaluated.
 
@@ -90,96 +105,6 @@ def when(expr: IntoExpr) -> When:
     │ 4   ┆ 0   ┆ 1    │
     └─────┴─────┴──────┘
 
-
     """
-    expr = parse_as_expression(expr)
-    pywhen = _when(expr)
-    return When(pywhen)
-
-
-class When:
-    """Utility class. See the `when` function."""
-
-    def __init__(self, pywhen: Any):
-        self._pywhen = pywhen
-
-    def then(self, expr: IntoExpr) -> WhenThen:
-        """
-        Values to return in case of the predicate being `True`.
-
-        See Also
-        --------
-        pl.when : Documentation for `when, then, otherwise`
-
-        """
-        expr = parse_as_expression(expr, str_as_lit=True)
-        pywhenthen = self._pywhen.then(expr)
-        return WhenThen(pywhenthen)
-
-
-class WhenThen:
-    """Utility class. See the `when` function."""
-
-    def __init__(self, pywhenthen: Any):
-        self._pywhenthen = pywhenthen
-
-    def when(self, predicate: IntoExpr) -> WhenThenThen:
-        """Start another "when, then, otherwise" layer."""
-        predicate = parse_as_expression(predicate)
-        return WhenThenThen(self._pywhenthen.when(predicate))
-
-    def otherwise(self, expr: IntoExpr) -> Expr:
-        """
-        Values to return in case of the predicate being `False`.
-
-        See Also
-        --------
-        pl.when : Documentation for `when, then, otherwise`
-
-        """
-        expr = parse_as_expression(expr, str_as_lit=True)
-        return wrap_expr(self._pywhenthen.otherwise(expr))
-
-    def __getattr__(self, item: str) -> Any:
-        expr = self.otherwise(None)
-        return getattr(expr, item)
-
-
-class WhenThenThen:
-    """Utility class. See the `when` function."""
-
-    def __init__(self, pywhenthenthen: Any):
-        self.pywhenthenthen = pywhenthenthen
-
-    def when(self, predicate: IntoExpr) -> WhenThenThen:
-        """Start another "when, then, otherwise" layer."""
-        predicate = parse_as_expression(predicate)
-        return WhenThenThen(self.pywhenthenthen.when(predicate))
-
-    def then(self, expr: IntoExpr) -> WhenThenThen:
-        """
-        Values to return in case of the predicate being `True`.
-
-        See Also
-        --------
-        pl.when : Documentation for `when, then, otherwise`
-
-        """
-        expr = parse_as_expression(expr, str_as_lit=True)
-        return WhenThenThen(self.pywhenthenthen.then(expr))
-
-    def otherwise(self, expr: IntoExpr) -> Expr:
-        """
-        Values to return in case of the predicate being `False`.
-
-        See Also
-        --------
-        pl.when : Documentation for `when, then, otherwise`
-
-        """
-        expr = parse_as_expression(expr, str_as_lit=True)
-        return wrap_expr(self.pywhenthenthen.otherwise(expr))
-
-    def __getattr__(self, item: str) -> Any:
-        expr = self.otherwise(None)
-        return getattr(expr, item)
+    condition_pyexpr = parse_as_expression(condition)
+    return pl.When(plr.when(condition_pyexpr))
