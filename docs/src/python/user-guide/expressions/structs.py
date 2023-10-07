@@ -26,24 +26,24 @@ print(out)
 # --8<-- [end:struct_unnest]
 
 # --8<-- [start:series_struct]
-rating_Series = pl.Series(
+rating_series = pl.Series(
     "ratings",
     [
         {"Movie": "Cars", "Theatre": "NE", "Avg_Rating": 4.5},
         {"Movie": "Toy Story", "Theatre": "ME", "Avg_Rating": 4.9},
     ],
 )
-print(rating_Series)
+print(rating_series)
 # --8<-- [end:series_struct]
 
 # --8<-- [start:series_struct_extract]
-out = rating_Series.struct.field("Movie")
+out = rating_series.struct.field("Movie")
 print(out)
 # --8<-- [end:series_struct_extract]
 
 # --8<-- [start:series_struct_rename]
 out = (
-    rating_Series.to_frame()
+    rating_series.to_frame()
     .select(pl.col("ratings").struct.rename_fields(["Film", "State", "Value"]))
     .unnest("ratings")
 )
