@@ -191,7 +191,7 @@ impl Default for DurationArgs {
             milliseconds: lit(0),
             microseconds: lit(0),
             nanoseconds: lit(0),
-            time_unit: TimeUnit::Nanoseconds,
+            time_unit: TimeUnit::Microseconds,
         }
     }
 }

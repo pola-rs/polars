@@ -96,7 +96,7 @@ def test_time() -> None:
 
 def test_empty_duration() -> None:
     s = pl.DataFrame([], {"days": pl.Int32}).select(pl.duration(days="days"))
-    assert s.dtypes == [pl.Duration("ns")]
+    assert s.dtypes == [pl.Duration("us")]
     assert s.shape == (0, 1)
 
 
