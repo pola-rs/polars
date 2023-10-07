@@ -1329,6 +1329,19 @@ def test_csv_scan_categorical(tmp_path: Path) -> None:
     assert result["x"].dtype == pl.Categorical
 
 
+@pytest.mark.write_disk()
+def test_csv_scan_new_columns_less_than_original_columns(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"x": ["A"], "y": ["A"], "z": "A"})
+
+    file_path = tmp_path / "test_csv_scan_new_columns.csv"
+    df.write_csv(file_path)
+    result = pl.scan_csv(file_path, new_columns=["x_new", "y_new"]).collect()
+
+    assert result.columns == ["x_new", "y_new", "z"]
+
+
 def test_read_csv_chunked() -> None:
     """Check that row count is properly functioning."""
     N = 10_000
