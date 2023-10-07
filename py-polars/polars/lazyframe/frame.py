@@ -46,6 +46,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import dataframe_api_compat, subprocess
 from polars.io._utils import _is_local_file, _is_supported_cloud
+from polars.io.csv._utils import _check_arg_is_1byte
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
@@ -314,7 +315,7 @@ class LazyFrame:
         source: str,
         *,
         has_header: bool = True,
-        separator: str = ",",
+        delimiter_char: str = ",",
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
@@ -358,7 +359,7 @@ class LazyFrame:
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_csv(
             source,
-            separator,
+            delimiter_char,
             has_header,
             ignore_errors,
             skip_rows,
@@ -2031,9 +2032,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         path: str | Path,
         *,
         has_header: bool = True,
-        separator: str = ",",
+        delimiter_char: str = ",",
         line_terminator: str = "\n",
-        quote: str = '"',
+        quote_char: str = '"',
         batch_size: int = 1024,
         datetime_format: str | None = None,
         date_format: str | None = None,
@@ -2060,11 +2061,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             File path to which the file should be written.
         has_header
             Whether to include header in the CSV output.
-        separator
+        delimiter_char
             Separate CSV fields with this symbol.
         line_terminator
             String used to end each row.
-        quote
+        quote_char
             Byte to use as quoting character.
         batch_size
             Number of rows that will be processed per thread.
@@ -2097,7 +2098,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             This is the default.
             - always: This puts quotes around every field. Always.
             - never: This never puts quotes around fields, even if that results in
-            invalid CSV data (e.g.: by not quoting strings containing the separator).
+            invalid CSV data (e.g.: by not quoting strings containing the
+            delimiter_char).
             - non_numeric: This puts quotes around all fields that are non-numeric.
             Namely, when writing a field that does not parse as a valid float
             or integer, then quotes will be used even if they aren`t strictly
@@ -2128,10 +2130,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_csv("out.csv")  # doctest: +SKIP
 
         """
-        if len(separator) != 1:
-            raise ValueError("only single byte separator is allowed")
-        if len(quote) != 1:
-            raise ValueError("only single byte quote char is allowed")
+        _check_arg_is_1byte("delimiter_char", delimiter_char, can_be_empty=False)
+        _check_arg_is_1byte("quote_char", quote_char, can_be_empty=False)
         if not null_value:
             null_value = None
 
@@ -2147,9 +2147,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return lf.sink_csv(
             path=path,
             has_header=has_header,
-            separator=ord(separator),
+            delimiter_char=ord(delimiter_char),
             line_terminator=line_terminator,
-            quote=ord(quote),
+            quote_char=ord(quote_char),
             batch_size=batch_size,
             datetime_format=datetime_format,
             date_format=date_format,

@@ -584,7 +584,7 @@ def test_csv_quote_char() -> None:
 
     # non-standard quote char
     df = pl.DataFrame({"x": ["", "0*0", "xyz"]})
-    csv_data = df.write_csv(quote="*")
+    csv_data = df.write_csv(quote_char="*")
 
     assert csv_data == "x\n**\n*0**0*\nxyz\n"
     assert_frame_equal(df, pl.read_csv(io.StringIO(csv_data), quote_char="*"))
@@ -725,7 +725,7 @@ def test_empty_string_missing_round_trip() -> None:
 def test_write_csv_delimiter() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
     f = io.BytesIO()
-    df.write_csv(f, separator="\t")
+    df.write_csv(f, delimiter_char="\t")
     f.seek(0)
     assert f.read() == b"a\tb\n1\t1\n2\t2\n3\t3\n"
 
@@ -867,7 +867,7 @@ def test_glob_csv(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
 
 def test_csv_whitespace_delimiter_at_start_do_not_skip() -> None:
     csv = "\t\t\t\t0\t1"
-    assert pl.read_csv(csv.encode(), separator="\t", has_header=False).to_dict(
+    assert pl.read_csv(csv.encode(), delimiter_char="\t", has_header=False).to_dict(
         False
     ) == {
         "column_1": [None],
@@ -881,7 +881,7 @@ def test_csv_whitespace_delimiter_at_start_do_not_skip() -> None:
 
 def test_csv_whitespace_delimiter_at_end_do_not_skip() -> None:
     csv = "0\t1\t\t\t\t"
-    assert pl.read_csv(csv.encode(), separator="\t", has_header=False).to_dict(
+    assert pl.read_csv(csv.encode(), delimiter_char="\t", has_header=False).to_dict(
         False
     ) == {
         "column_1": [0],
@@ -1280,7 +1280,7 @@ def test_csv_quoted_missing() -> None:
         '"1"|"Free text without a linebreak"|""|"789"\n'
         '"0"|"Free text with \ntwo \nlinebreaks"|"101112"|"131415"'
     )
-    result = pl.read_csv(csv.encode(), separator="|", dtypes={"col3": pl.Int32})
+    result = pl.read_csv(csv.encode(), delimiter_char="|", dtypes={"col3": pl.Int32})
     expected = pl.DataFrame(
         {
             "col1": [0, 1, 0],
@@ -1502,7 +1502,9 @@ def test_csv_quote_styles() -> None:
         "2.0,a,bc,2,false,,2077-07-05T03:01:00,03:01:00\n"
         ',"hello,3,,2077-07-05,2077-07-05T03:01:00,\n'
     )
-    assert df.write_csv(quote_style="non_numeric", quote="8", **temporal_formats) == (
+    assert df.write_csv(
+        quote_style="non_numeric", quote_char="8", **temporal_formats
+    ) == (
         "8float8,8string8,8int8,8bool8,8date8,8datetime8,8time8\n"
         "1.0,8a8,1,8true8,82077-07-058,,803:01:008\n"
         "2.0,8a,bc8,2,8false8,,82077-07-05T03:01:008,803:01:008\n"

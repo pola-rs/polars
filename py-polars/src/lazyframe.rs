@@ -138,7 +138,7 @@ impl PyLazyFrame {
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
-    #[pyo3(signature = (path, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
+    #[pyo3(signature = (path, delimiter_char, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_char, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_count, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, schema
@@ -146,7 +146,7 @@ impl PyLazyFrame {
     )]
     fn new_from_csv(
         path: String,
-        separator: &str,
+        delimiter_char: &str,
         has_header: bool,
         ignore_errors: bool,
         skip_rows: usize,
@@ -173,7 +173,7 @@ impl PyLazyFrame {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
-        let delimiter = separator.as_bytes()[0];
+        let delimiter = delimiter_char.as_bytes()[0];
         let eol_char = eol_char.as_bytes()[0];
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
 
@@ -542,15 +542,15 @@ impl PyLazyFrame {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "csv"))]
-    #[pyo3(signature = (path, has_header, separator, line_terminator, quote, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style, maintain_order))]
+    #[pyo3(signature = (path, has_header, delimiter_char, line_terminator, quote_char, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style, maintain_order))]
     fn sink_csv(
         &self,
         py: Python,
         path: PathBuf,
         has_header: bool,
-        separator: u8,
+        delimiter_char: u8,
         line_terminator: String,
-        quote: u8,
+        quote_char: u8,
         batch_size: usize,
         datetime_format: Option<String>,
         date_format: Option<String>,
@@ -568,8 +568,8 @@ impl PyLazyFrame {
             time_format,
             datetime_format,
             float_precision,
-            delimiter: separator,
-            quote,
+            delimiter: delimiter_char,
+            quote: quote_char,
             null: null_value,
             line_terminator,
             quote_style,

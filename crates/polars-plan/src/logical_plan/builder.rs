@@ -265,7 +265,7 @@ impl LogicalPlanBuilder {
     #[cfg(feature = "csv")]
     pub fn scan_csv<P: Into<std::path::PathBuf>>(
         path: P,
-        delimiter: u8,
+        delimiter_char: u8,
         has_header: bool,
         ignore_errors: bool,
         mut skip_rows: usize,
@@ -276,7 +276,7 @@ impl LogicalPlanBuilder {
         low_memory: bool,
         comment_char: Option<u8>,
         quote_char: Option<u8>,
-        eol_char: u8,
+        line_terminator: u8,
         null_values: Option<NullValues>,
         infer_schema_length: Option<usize>,
         rechunk: bool,
@@ -314,7 +314,7 @@ impl LogicalPlanBuilder {
         // this needs a way to estimated bytes/rows.
         let (mut inferred_schema, rows_read, bytes_read) = infer_file_schema(
             &reader_bytes,
-            delimiter,
+            delimiter_char,
             infer_schema_length,
             has_header,
             schema_overwrite,
@@ -322,7 +322,7 @@ impl LogicalPlanBuilder {
             skip_rows_after_header,
             comment_char,
             quote_char,
-            eol_char,
+            line_terminator,
             null_values.as_ref(),
             try_parse_dates,
             raise_if_empty,
@@ -368,13 +368,13 @@ impl LogicalPlanBuilder {
             scan_type: FileScan::Csv {
                 options: CsvParserOptions {
                     has_header,
-                    delimiter,
+                    delimiter: delimiter_char,
                     ignore_errors,
                     skip_rows,
                     low_memory,
                     comment_char,
                     quote_char,
-                    eol_char,
+                    eol_char: line_terminator,
                     null_values,
                     encoding,
                     try_parse_dates,

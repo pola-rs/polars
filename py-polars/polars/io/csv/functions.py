@@ -23,7 +23,7 @@ def read_csv(
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: Sequence[str] | None = None,
-    separator: str = ",",
+    delimiter_char: str = ",",
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
@@ -50,7 +50,7 @@ def read_csv(
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
 ) -> DataFrame:
-    """
+    r"""
     Read a CSV file into a DataFrame.
 
     Parameters
@@ -72,7 +72,7 @@ def read_csv(
         Rename columns right after parsing the CSV file. If the given
         list is shorter than the width of the DataFrame the remaining
         columns will have their original name.
-    separator
+    delimiter_char
         Single byte character to use as delimiter in the file.
     comment_char
         Single byte character that indicates the start of a comment line,
@@ -159,7 +159,9 @@ def read_csv(
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
     eol_char
-        Single byte end of line character.
+        Single byte end of line character (default: `\n`). When encountering a file
+        with windows line endings (`\r\n`), one can go with the default `\n`. The extra
+        `\r` will be removed when processed.
     raise_if_empty
         When there is no data in the source,``NoDataError`` is raised. If this parameter
         is set to False, an empty DataFrame (with no columns) is returned instead.
@@ -182,7 +184,7 @@ def read_csv(
     an expensive operation.
 
     """
-    _check_arg_is_1byte("separator", separator, can_be_empty=False)
+    _check_arg_is_1byte("delimiter_char", delimiter_char, can_be_empty=False)
     _check_arg_is_1byte("comment_char", comment_char, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
     _check_arg_is_1byte("eol_char", eol_char, can_be_empty=False)
@@ -239,7 +241,7 @@ def read_csv(
                         encoding=encoding,
                     ),
                     pa.csv.ParseOptions(
-                        delimiter=separator,
+                        delimiter=delimiter_char,
                         quote_char=quote_char if quote_char else False,
                         double_quote=quote_char is not None and quote_char == '"',
                     ),
@@ -365,7 +367,7 @@ def read_csv(
             data,
             has_header=has_header,
             columns=columns if columns else projection,
-            separator=separator,
+            delimiter_char=delimiter_char,
             comment_char=comment_char,
             quote_char=quote_char,
             skip_rows=skip_rows,
@@ -402,7 +404,7 @@ def read_csv_batched(
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: Sequence[str] | None = None,
-    separator: str = ",",
+    delimiter_char: str = ",",
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
@@ -425,7 +427,7 @@ def read_csv_batched(
     eol_char: str = "\n",
     raise_if_empty: bool = True,
 ) -> BatchedCsvReader:
-    """
+    r"""
     Read a CSV file in batches.
 
     Upon creation of the ``BatchedCsvReader``, Polars will gather statistics and
@@ -451,7 +453,7 @@ def read_csv_batched(
         Rename columns right after parsing the CSV file. If the given
         list is shorter than the width of the DataFrame the remaining
         columns will have their original name.
-    separator
+    delimiter_char
         Single byte character to use as delimiter in the file.
     comment_char
         Single byte character that indicates the start of a comment line,
@@ -517,7 +519,9 @@ def read_csv_batched(
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
     eol_char
-        Single byte end of line character.
+        Single byte end of line character (default: `\n`). When encountering a file
+        with windows line endings (`\r\n`), one can go with the default `\n`. The extra
+        `\r` will be removed when processed.
     raise_if_empty
         When there is no data in the source,``NoDataError`` is raised. If this parameter
         is set to False, ``None`` will be returned from ``next_batches(n)`` instead.
@@ -533,7 +537,9 @@ def read_csv_batched(
     Examples
     --------
     >>> reader = pl.read_csv_batched(
-    ...     "./tpch/tables_scale_100/lineitem.tbl", separator="|", try_parse_dates=True
+    ...     "./tpch/tables_scale_100/lineitem.tbl",
+    ...     delimiter_char="|",
+    ...     try_parse_dates=True,
     ... )  # doctest: +SKIP
     >>> batches = reader.next_batches(5)  # doctest: +SKIP
     >>> for df in batches:  # doctest: +SKIP
@@ -662,7 +668,7 @@ def read_csv_batched(
         source,
         has_header=has_header,
         columns=columns if columns else projection,
-        separator=separator,
+        delimiter_char=delimiter_char,
         comment_char=comment_char,
         quote_char=quote_char,
         skip_rows=skip_rows,
@@ -692,7 +698,7 @@ def scan_csv(
     source: str | Path,
     *,
     has_header: bool = True,
-    separator: str = ",",
+    delimiter_char: str = ",",
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
@@ -717,7 +723,7 @@ def scan_csv(
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
 ) -> LazyFrame:
-    """
+    r"""
     Lazily read from a CSV file or multiple files via glob patterns.
 
     This allows the query optimizer to push down predicates and
@@ -733,7 +739,7 @@ def scan_csv(
         If set to False, column names will be autogenerated in the
         following format: ``column_x``, with ``x`` being an
         enumeration over every column in the dataset starting at 1.
-    separator
+    delimiter_char
         Single byte character to use as delimiter in the file.
     comment_char
         Single byte character that indicates the start of a comment line,
@@ -796,7 +802,9 @@ def scan_csv(
         can be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
     eol_char
-        Single byte end of line character
+        Single byte end of line character (default: `\n`). When encountering a file
+        with windows line endings (`\r\n`), one can go with the default `\n`. The extra
+        `\r` will be removed when processed.
     new_columns
         Provide an explicit list of string column names to use (for example, when
         scanning a headerless CSV file). If the given list is shorter than the width of
@@ -891,7 +899,7 @@ def scan_csv(
             else:
                 return new_columns  # type: ignore[return-value]
 
-    _check_arg_is_1byte("separator", separator, can_be_empty=False)
+    _check_arg_is_1byte("delimiter_char", delimiter_char, can_be_empty=False)
     _check_arg_is_1byte("comment_char", comment_char, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
 
@@ -901,7 +909,7 @@ def scan_csv(
     return pl.LazyFrame._scan_csv(
         source,
         has_header=has_header,
-        separator=separator,
+        delimiter_char=delimiter_char,
         comment_char=comment_char,
         quote_char=quote_char,
         skip_rows=skip_rows,

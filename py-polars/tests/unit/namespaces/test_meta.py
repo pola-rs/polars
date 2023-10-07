@@ -71,7 +71,7 @@ def test_meta_is_regex_projection() -> None:
 
 
 def test_meta_tree_format() -> None:
-    with Path("tests/unit/namespaces/test_tree_fmt.txt").open(
+    with Path(__file__).parent.joinpath("test_tree_fmt.txt").open(
         "r", encoding="utf-8"
     ) as f:
         test_sets = f.read().split("---")

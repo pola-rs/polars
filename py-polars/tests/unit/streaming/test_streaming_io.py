@@ -126,9 +126,9 @@ def test_sink_csv_with_options() -> None:
         df.sink_csv(
             "path",
             has_header=False,
-            separator=";",
+            delimiter_char=";",
             line_terminator="|",
-            quote="$",
+            quote_char="$",
             batch_size=42,
             datetime_format="%Y",
             date_format="%d",
@@ -142,9 +142,9 @@ def test_sink_csv_with_options() -> None:
         ldf.optimization_toggle().sink_csv.assert_called_with(
             path="path",
             has_header=False,
-            separator=ord(";"),
+            delimiter_char=ord(";"),
             line_terminator="|",
-            quote=ord("$"),
+            quote_char=ord("$"),
             batch_size=42,
             datetime_format="%Y",
             date_format="%d",
@@ -159,15 +159,15 @@ def test_sink_csv_with_options() -> None:
 @pytest.mark.parametrize(("value"), ["abc", ""])
 def test_sink_csv_exception_for_separator(value: str) -> None:
     df = pl.LazyFrame({"dummy": ["abc"]})
-    with pytest.raises(ValueError, match="only single byte separator is allowed"):
-        df.sink_csv("path", separator=value)
+    with pytest.raises(ValueError, match="should be a single byte character, but is"):
+        df.sink_csv("path", delimiter_char=value)
 
 
 @pytest.mark.parametrize(("value"), ["abc", ""])
 def test_sink_csv_exception_for_quote(value: str) -> None:
     df = pl.LazyFrame({"dummy": ["abc"]})
-    with pytest.raises(ValueError, match="only single byte quote char is allowed"):
-        df.sink_csv("path", quote=value)
+    with pytest.raises(ValueError, match="should be a single byte character, but is"):
+        df.sink_csv("path", quote_char=value)
 
 
 def test_scan_csv_only_header_10792(io_files_path: Path) -> None:

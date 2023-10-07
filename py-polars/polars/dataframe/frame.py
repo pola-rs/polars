@@ -55,6 +55,7 @@ from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
 from polars.functions import col, lit
 from polars.io._utils import _is_glob_pattern, _is_local_file
+from polars.io.csv._utils import _check_arg_is_1byte
 from polars.io.spreadsheet._write_utils import (
     _unpack_multi_column_dict,
     _xl_apply_conditional_formats,
@@ -655,7 +656,7 @@ class DataFrame:
         *,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
-        separator: str = ",",
+        delimiter_char: str = ",",
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
@@ -734,7 +735,7 @@ class DataFrame:
             scan = scan_csv(
                 source,
                 has_header=has_header,
-                separator=separator,
+                delimiter_char=delimiter_char,
                 comment_char=comment_char,
                 quote_char=quote_char,
                 skip_rows=skip_rows,
@@ -775,7 +776,7 @@ class DataFrame:
             n_rows,
             skip_rows,
             projection,
-            separator,
+            delimiter_char,
             rechunk,
             columns,
             encoding,
@@ -2441,9 +2442,9 @@ class DataFrame:
         file: None = None,
         *,
         has_header: bool = ...,
-        separator: str = ...,
+        delimiter_char: str = ...,
         line_terminator: str = ...,
-        quote: str = ...,
+        quote_char: str = ...,
         batch_size: int = ...,
         datetime_format: str | None = ...,
         date_format: str | None = ...,
@@ -2460,9 +2461,9 @@ class DataFrame:
         file: BytesIO | TextIOWrapper | str | Path,
         *,
         has_header: bool = ...,
-        separator: str = ...,
+        delimiter_char: str = ...,
         line_terminator: str = ...,
-        quote: str = ...,
+        quote_char: str = ...,
         batch_size: int = ...,
         datetime_format: str | None = ...,
         date_format: str | None = ...,
@@ -2478,9 +2479,9 @@ class DataFrame:
         file: BytesIO | TextIOWrapper | str | Path | None = None,
         *,
         has_header: bool = True,
-        separator: str = ",",
+        delimiter_char: str = ",",
         line_terminator: str = "\n",
-        quote: str = '"',
+        quote_char: str = '"',
         batch_size: int = 1024,
         datetime_format: str | None = None,
         date_format: str | None = None,
@@ -2499,11 +2500,11 @@ class DataFrame:
             (default), the output is returned as a string instead.
         has_header
             Whether to include header in the CSV output.
-        separator
+        delimiter_char
             Separate CSV fields with this symbol.
         line_terminator
             String used to end each row.
-        quote
+        quote_char
             Byte to use as quoting character.
         batch_size
             Number of rows that will be processed per thread.
@@ -2555,13 +2556,11 @@ class DataFrame:
         ...     }
         ... )
         >>> path: pathlib.Path = dirpath / "new_file.csv"
-        >>> df.write_csv(path, separator=",")
+        >>> df.write_csv(path, delimiter_char=",")
 
         """
-        if len(separator) != 1:
-            raise ValueError("only single byte separator is allowed")
-        if len(quote) != 1:
-            raise ValueError("only single byte quote char is allowed")
+        _check_arg_is_1byte("delimiter_char", delimiter_char, can_be_empty=False)
+        _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
         if not null_value:
             null_value = None
 
@@ -2577,9 +2576,9 @@ class DataFrame:
         self._df.write_csv(
             file,
             has_header,
-            ord(separator),
+            ord(delimiter_char),
             line_terminator,
-            ord(quote),
+            ord(quote_char),
             batch_size,
             datetime_format,
             date_format,

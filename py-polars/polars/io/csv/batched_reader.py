@@ -31,7 +31,7 @@ class BatchedCsvReader:
         *,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
-        separator: str = ",",
+        delimiter_char: str = ",",
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
@@ -83,7 +83,7 @@ class BatchedCsvReader:
             n_rows=n_rows,
             skip_rows=skip_rows,
             projection=projection,
-            separator=separator,
+            delimiter_char=delimiter_char,
             rechunk=rechunk,
             columns=columns,
             encoding=encoding,
@@ -123,7 +123,7 @@ class BatchedCsvReader:
         --------
         >>> reader = pl.read_csv_batched(
         ...     "./tpch/tables_scale_100/lineitem.tbl",
-        ...     separator="|",
+        ...     delimiter_char="|",
         ...     try_parse_dates=True,
         ... )  # doctest: +SKIP
         >>> reader.next_batches(5)  # doctest: +SKIP
