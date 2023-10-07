@@ -185,6 +185,7 @@ def duration(
     minutes: Expr | str | int | None = None,
     hours: Expr | str | int | None = None,
     weeks: Expr | str | int | None = None,
+    time_unit: TimeUnit = "ns",
 ) -> Expr:
     """
     Create polars `Duration` from distinct time components.
@@ -294,6 +295,7 @@ def duration(
             minutes,
             hours,
             weeks,
+            time_unit,
         )
     )
 
