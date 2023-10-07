@@ -43,21 +43,28 @@ pub fn replace_time_zone(
     };
     let out = match ambiguous.len() {
         1 => match unsafe { ambiguous.get_unchecked(0) } {
-            Some(ambiguous) => datetime.0.try_apply(|timestamp| {
-                let ndt = timestamp_to_datetime(timestamp);
-                Ok(datetime_to_timestamp(convert_to_naive_local(
-                    &from_tz, &to_tz, ndt, ambiguous,
-                )?))
-            }),
+            Some(ambiguous) => {
+                let iter = datetime.0.downcast_iter().map(|arr| {
+                    let element_iter = arr.iter().map(|timestamp_opt| match timestamp_opt {
+                        Some(timestamp) => {
+                            let ndt = timestamp_to_datetime(*timestamp);
+                            let res = convert_to_naive_local(&from_tz, &to_tz, ndt, ambiguous)?;
+                            Ok::<_, PolarsError>(res.map(datetime_to_timestamp))
+                        },
+                        None => Ok(None),
+                    });
+                    element_iter.try_collect_arr()
+                });
+                ChunkedArray::try_from_chunk_iter(datetime.0.name(), iter)
+            },
             _ => Ok(datetime.0.apply(|_| None)),
         },
         _ => try_binary_elementwise(datetime, ambiguous, |timestamp_opt, ambiguous_opt| {
             match (timestamp_opt, ambiguous_opt) {
                 (Some(timestamp), Some(ambiguous)) => {
                     let ndt = timestamp_to_datetime(timestamp);
-                    Ok(Some(datetime_to_timestamp(convert_to_naive_local(
-                        &from_tz, &to_tz, ndt, ambiguous,
-                    )?)))
+                    let res = convert_to_naive_local(&from_tz, &to_tz, ndt, ambiguous)?;
+                    Ok(res.map(datetime_to_timestamp))
                 },
                 _ => Ok(None),
             }

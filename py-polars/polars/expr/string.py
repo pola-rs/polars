@@ -137,6 +137,7 @@ class ExprStringNameSpace:
             - ``'raise'`` (default): raise
             - ``'earliest'``: use the earliest datetime
             - ``'latest'``: use the latest datetime
+            - ``'null'``: set to null
 
         Examples
         --------
@@ -252,6 +253,7 @@ class ExprStringNameSpace:
             - ``'raise'`` (default): raise
             - ``'earliest'``: use the earliest datetime
             - ``'latest'``: use the latest datetime
+            - ``'null'``: set to null
 
         Notes
         -----

@@ -2234,6 +2234,35 @@ def test_replace_time_zone_sortedness_expressions(
     assert result["ts"].flags["SORTED_ASC"] == expected_sortedness
 
 
+def test_replace_time_zone_ambiguous_null() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [datetime(2020, 10, 25, 1)] * 3,
+            "b": ["earliest", "latest", "null"],
+        }
+    )
+    # expression containing 'null'
+    result = df.select(
+        pl.col("a").dt.replace_time_zone("Europe/London", ambiguous=pl.col("b"))
+    )["a"]
+    expected = [
+        datetime(2020, 10, 25, 1, fold=0, tzinfo=ZoneInfo("Europe/London")),
+        datetime(2020, 10, 25, 1, fold=1, tzinfo=ZoneInfo("Europe/London")),
+        None,
+    ]
+    assert result[0] == expected[0]
+    assert result[1] == expected[1]
+    assert result[2] == expected[2]
+
+    # single 'null' value
+    result = df.select(
+        pl.col("a").dt.replace_time_zone("Europe/London", ambiguous="null")
+    )["a"]
+    assert result[0] is None
+    assert result[1] is None
+    assert result[2] is None
+
+
 def test_use_earliest_deprecation() -> None:
     # strptime
     with pytest.warns(

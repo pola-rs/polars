@@ -7,13 +7,14 @@ pub fn convert_to_naive_local(
     to_tz: &Tz,
     ndt: NaiveDateTime,
     ambiguous: &str,
-) -> Result<NaiveDateTime> {
+) -> Result<Option<NaiveDateTime>> {
     let ndt = from_tz.from_utc_datetime(&ndt).naive_local();
     match to_tz.from_local_datetime(&ndt) {
-        LocalResult::Single(dt) => Ok(dt.naive_utc()),
+        LocalResult::Single(dt) => Ok(Some(dt.naive_utc())),
         LocalResult::Ambiguous(dt_earliest, dt_latest) => match ambiguous {
-            "earliest" => Ok(dt_earliest.naive_utc()),
-            "latest" => Ok(dt_latest.naive_utc()),
+            "null" => Ok(None),
+            "earliest" => Ok(Some(dt_earliest.naive_utc())),
+            "latest" => Ok(Some(dt_latest.naive_utc())),
             "raise" => Err(ArrowError::InvalidArgumentError(
                 format!("datetime '{}' is ambiguous in time zone '{}'. Please use `ambiguous` to tell how it should be localized.", ndt, to_tz)
             )),
