@@ -4,7 +4,7 @@ use arrow::temporal_conversions::{
 use chrono::NaiveDateTime;
 use chrono_tz::{Tz, UTC};
 use polars_arrow::kernels::convert_to_naive_local;
-use polars_core::chunked_array::ops::arity::try_binary_elementwise_values;
+use polars_core::chunked_array::ops::arity::try_binary_elementwise;
 use polars_core::prelude::*;
 
 fn parse_time_zone(s: &str) -> PolarsResult<Tz> {
@@ -51,14 +51,17 @@ pub fn replace_time_zone(
             }),
             _ => Ok(datetime.0.apply(|_| None)),
         },
-        _ => {
-            try_binary_elementwise_values(datetime, ambiguous, |timestamp: i64, ambiguous: &str| {
-                let ndt = timestamp_to_datetime(timestamp);
-                Ok::<i64, PolarsError>(datetime_to_timestamp(convert_to_naive_local(
-                    &from_tz, &to_tz, ndt, ambiguous,
-                )?))
-            })
-        },
+        _ => try_binary_elementwise(datetime, ambiguous, |timestamp_opt, ambiguous_opt| {
+            match (timestamp_opt, ambiguous_opt) {
+                (Some(timestamp), Some(ambiguous)) => {
+                    let ndt = timestamp_to_datetime(timestamp);
+                    Ok(Some(datetime_to_timestamp(convert_to_naive_local(
+                        &from_tz, &to_tz, ndt, ambiguous,
+                    )?)))
+                },
+                _ => Ok(None),
+            }
+        }),
     };
     let mut out = out?.into_datetime(datetime.time_unit(), time_zone.map(|x| x.to_string()));
     if from_time_zone == "UTC" && ambiguous.len() == 1 && ambiguous.get(0).unwrap() == "raise" {
