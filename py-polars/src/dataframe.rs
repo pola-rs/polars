@@ -179,7 +179,7 @@ impl PyDataFrame {
         n_rows: Option<usize>,
         skip_rows: usize,
         projection: Option<Vec<usize>>,
-        delimiter_char: &str,
+        delimiter_char: u8,
         rechunk: bool,
         columns: Option<Vec<String>>,
         encoding: Wrap<CsvEncoding>,
@@ -188,24 +188,21 @@ impl PyDataFrame {
         overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
         overwrite_dtype_slice: Option<Vec<Wrap<DataType>>>,
         low_memory: bool,
-        comment_char: Option<&str>,
-        quote_char: Option<&str>,
+        comment_char: Option<u8>,
+        quote_char: Option<u8>,
         null_values: Option<Wrap<NullValues>>,
         missing_utf8_is_empty_string: bool,
         try_parse_dates: bool,
         skip_rows_after_header: usize,
         row_count: Option<(String, IdxSize)>,
         sample_size: usize,
-        eol_char: &str,
+        eol_char: u8,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
         schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
-        let comment_char = comment_char.map(|s| s.as_bytes()[0]);
-        let eol_char = eol_char.as_bytes()[0];
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
-        let quote_char = quote_char.and_then(|s| s.as_bytes().first().copied());
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             overwrite_dtype
@@ -229,7 +226,7 @@ impl PyDataFrame {
             .infer_schema(infer_schema_length)
             .has_header(has_header)
             .with_n_rows(n_rows)
-            .with_delimiter(delimiter_char.as_bytes()[0])
+            .with_delimiter(delimiter_char)
             .with_skip_rows(skip_rows)
             .with_ignore_errors(ignore_errors)
             .with_projection(projection)
