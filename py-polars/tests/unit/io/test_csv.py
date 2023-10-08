@@ -728,7 +728,7 @@ def test_write_csv_delimiter() -> None:
     df.write_csv(f, delimiter_char="\t")
     f.seek(0)
     assert f.read() == b"a\tb\n1\t1\n2\t2\n3\t3\n"
-    assert_frame_equal(df, pl.read_csv(f, separator="\t"))
+    assert_frame_equal(df, pl.read_csv(f, delimiter_char="\t"))
 
 
 def test_write_csv_line_terminator() -> None:

@@ -8,6 +8,7 @@ from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
+from polars.utils.deprecation import deprecate_renamed_parameter
 from polars.utils.various import handle_projection_columns, normalize_filepath
 
 if TYPE_CHECKING:
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
+@deprecate_renamed_parameter("separator", "delimiter_char", version="0.19.7")
 def read_csv(
     source: str | TextIO | BytesIO | Path | BinaryIO | bytes,
     *,
@@ -398,6 +400,7 @@ def read_csv(
     return df
 
 
+@deprecate_renamed_parameter("separator", "delimiter_char", version="0.19.7")
 def read_csv_batched(
     source: str | Path,
     *,
@@ -694,6 +697,7 @@ def read_csv_batched(
     )
 
 
+@deprecate_renamed_parameter("separator", "delimiter_char", version="0.19.7")
 def scan_csv(
     source: str | Path,
     *,

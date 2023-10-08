@@ -2027,6 +2027,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
         )
 
+    @deprecate_renamed_parameter("quote", "quote_char", version="0.19.7")
+    @deprecate_renamed_parameter("separator", "delimiter_char", version="0.19.7")
     def sink_csv(
         self,
         path: str | Path,
