@@ -146,7 +146,7 @@ impl PyLazyFrame {
     )]
     fn new_from_csv(
         path: String,
-        separator: u8,
+        separator: &str,
         has_header: bool,
         ignore_errors: bool,
         skip_rows: usize,
@@ -154,8 +154,8 @@ impl PyLazyFrame {
         cache: bool,
         overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
         low_memory: bool,
-        comment_char: Option<u8>,
-        quote_char: Option<u8>,
+        comment_char: Option<&str>,
+        quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
         missing_utf8_is_empty_string: bool,
         infer_schema_length: Option<usize>,
@@ -165,12 +165,16 @@ impl PyLazyFrame {
         encoding: Wrap<CsvEncoding>,
         row_count: Option<(String, IdxSize)>,
         try_parse_dates: bool,
-        eol_char: u8,
+        eol_char: &str,
         raise_if_empty: bool,
         truncate_ragged_lines: bool,
         schema: Option<Wrap<Schema>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
+        let comment_char = comment_char.map(|s| s.as_bytes()[0]);
+        let quote_char = quote_char.map(|s| s.as_bytes()[0]);
+        let separator = separator.as_bytes()[0];
+        let eol_char = eol_char.as_bytes()[0];
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {

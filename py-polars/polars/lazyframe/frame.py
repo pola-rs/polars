@@ -359,7 +359,7 @@ class LazyFrame:
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_csv(
             source,
-            ord(separator),
+            separator,
             has_header,
             ignore_errors,
             skip_rows,
@@ -367,8 +367,8 @@ class LazyFrame:
             cache,
             dtype_list,
             low_memory,
-            ord(comment_char) if comment_char else None,
-            ord(quote_char) if quote_char else None,
+            comment_char,
+            quote_char,
             processed_null_values,
             missing_utf8_is_empty_string,
             infer_schema_length,
@@ -378,7 +378,7 @@ class LazyFrame:
             encoding,
             _prepare_row_count_args(row_count_name, row_count_offset),
             try_parse_dates,
-            eol_char=ord(eol_char),
+            eol_char=eol_char,
             raise_if_empty=raise_if_empty,
             truncate_ragged_lines=truncate_ragged_lines,
             schema=schema,
