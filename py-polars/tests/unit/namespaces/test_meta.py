@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_meta_pop_and_cmp() -> None:
@@ -70,10 +73,8 @@ def test_meta_is_regex_projection() -> None:
     assert e.meta.has_multiple_outputs()
 
 
-def test_meta_tree_format() -> None:
-    with Path("tests/unit/namespaces/test_tree_fmt.txt").open(
-        "r", encoding="utf-8"
-    ) as f:
+def test_meta_tree_format(namespace_files_path: Path) -> None:
+    with (namespace_files_path / "test_tree_fmt.txt").open("r", encoding="utf-8") as f:
         test_sets = f.read().split("---")
     for test_set in test_sets:
         expression = test_set.strip().split("\n")[0]
