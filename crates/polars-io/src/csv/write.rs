@@ -71,7 +71,7 @@ where
 
     /// Set the CSV file's column delimiter as a byte character.
     pub fn with_delimiter(mut self, delimiter: u8) -> Self {
-        self.options.delimiter = delimiter;
+        self.options.separator = delimiter;
         self
     }
 
@@ -114,8 +114,8 @@ where
     }
 
     /// Set the single byte character used for quoting.
-    pub fn with_quoting_char(mut self, char: u8) -> Self {
-        self.options.quote = char;
+    pub fn with_quote_char(mut self, char: u8) -> Self {
+        self.options.quote_char = char;
         self
     }
 
