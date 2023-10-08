@@ -403,7 +403,7 @@ class DataFrame:
             )
         else:
             raise TypeError(
-                f"DataFrame constructor called with unsupported type {type(data).__name__!r}"
+                f"dataFrame constructor called with unsupported type {type(data).__name__!r}"
                 " for the `data` parameter"
             )
 
@@ -728,7 +728,7 @@ class DataFrame:
             if dtype_slice is not None:
                 raise ValueError(
                     "cannot use glob patterns and unnamed dtypes as `dtypes` argument"
-                    "\n\nUse `dtypes`: Mapping[str, Type[DataType]"
+                    "\n\nUse `dtypes`: Mapping[str, Type[DataType]]."
                 )
             from polars import scan_csv
 
@@ -762,7 +762,7 @@ class DataFrame:
             else:
                 raise ValueError(
                     "cannot use glob patterns and integer based projection as `columns` argument"
-                    "\n\nUse columns: List[str]"
+                    "\n\nUse columns: List[str]."
                 )
 
         projection, columns = handle_projection_columns(columns)
@@ -849,7 +849,7 @@ class DataFrame:
             else:
                 raise TypeError(
                     "cannot use glob patterns and integer based projection as `columns` argument"
-                    "\n\nUse columns: List[str]"
+                    "\n\nUse columns: List[str]."
                 )
 
         projection, columns = handle_projection_columns(columns)
@@ -963,7 +963,7 @@ class DataFrame:
             else:
                 raise TypeError(
                     "cannot use glob patterns and integer based projection as `columns` argument"
-                    "\n\nUse columns: List[str]"
+                    "\n\nUse columns: List[str]."
                 )
             return cls._from_pydf(df._df)
 
@@ -1611,8 +1611,8 @@ class DataFrame:
                 ):
                     if len(col_selection) != self.width:
                         raise ValueError(
-                            f"expected {self.width} values when selecting columns by"
-                            f" boolean mask, got {len(col_selection)}"
+                            f"expected {self.width!r} values when selecting columns by"
+                            f" boolean mask, got {len(col_selection)!r}"
                         )
                     series_list = []
                     for i, val in enumerate(col_selection):
@@ -1719,7 +1719,7 @@ class DataFrame:
         # df["foo"] = series
         if isinstance(key, str):
             raise TypeError(
-                "DataFrame object does not support `Series` assignment by index."
+                "DataFrame object does not support `Series` assignment by index"
                 "\n\nUse `DataFrame.with_columns`."
             )
 
@@ -2996,7 +2996,7 @@ class DataFrame:
         except ImportError:
             raise ImportError(
                 "Excel export requires xlsxwriter"
-                "\n\nPlease run `pip install XlsxWriter`"
+                "\n\nPlease run `pip install XlsxWriter`."
             ) from None
 
         # setup workbook/worksheet
@@ -3120,7 +3120,7 @@ class DataFrame:
             xlv = xlsxwriter.__version__
             if parse_version(xlv) < parse_version("3.0.8"):
                 raise ModuleNotFoundError(
-                    f"`autofit=True` requires xlsxwriter 3.0.8 or higher, found {xlv}"
+                    f"`autofit=True` requires xlsxwriter 3.0.8 or higher, found {xlv!r}"
                 )
             ws.autofit()
 
@@ -3427,7 +3427,7 @@ class DataFrame:
             else:
                 raise ValueError(
                     f"unexpected value for `if_exists`: {if_exists!r}"
-                    f"\n\nChoose one of: {'fail', 'replace', 'append'}"
+                    f"\n\nChoose one of: {{'fail', 'replace', 'append'}}."
                 )
             with _open_adbc_connection(connection) as conn, conn.cursor() as cursor:
                 cursor.adbc_ingest(table_name, self.to_arrow(), mode)
@@ -3436,14 +3436,15 @@ class DataFrame:
         elif engine == "sqlalchemy":
             if parse_version(pd.__version__) < parse_version("1.5"):
                 raise ModuleNotFoundError(
-                    f"writing with engine 'sqlalchemy' requires pandas 1.5.x or higher, found pandas {pd.__version__!r}"
+                    f"writing with engine `sqlalchemy` requires pandas 1.5.x or higher, found pandas {pd.__version__!r}"
                 )
 
             try:
                 from sqlalchemy import create_engine
             except ModuleNotFoundError as exc:
                 raise ModuleNotFoundError(
-                    "'sqlalchemy' not found. Install polars with 'pip install polars[sqlalchemy]'"
+                    "`sqlalchemy` not found."
+                    "\n\nInstall polars with 'pip install polars[sqlalchemy]'."
                 ) from exc
             from csv import reader as delimited_read
 
@@ -7987,7 +7988,7 @@ class DataFrame:
         else:
             raise ValueError(
                 f"unexpected input for `strategy`: {strategy!r}"
-                f"\n\nChoose one of {{'first', 'all'}}"
+                f"\n\nChoose one of {{'first', 'all'}}."
             )
 
     @overload

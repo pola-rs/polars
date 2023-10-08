@@ -115,7 +115,7 @@ class column:
             self.null_probability < 0 or self.null_probability > 1
         ):
             raise InvalidArgument(
-                "null_probability should be between 0.0 and 1.0, or None; found"
+                "`null_probability` should be between 0.0 and 1.0, or None; found"
                 f" {self.null_probability!r}"
             )
 
@@ -365,7 +365,7 @@ def series(
     ]
     if null_probability and not (0 <= null_probability <= 1):
         raise InvalidArgument(
-            "null_probability should be between 0.0 and 1.0; found"
+            "`null_probability` should be between 0.0 and 1.0; found"
             f" {null_probability}"
         )
     null_probability = float(null_probability or 0.0)

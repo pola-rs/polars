@@ -122,17 +122,17 @@ def handle_projection_columns(
             projection = list(columns)
         elif not is_str_sequence(columns):
             raise TypeError(
-                "'columns' arg should contain a list of all integers or all strings values"
+                "`columns` arg should contain a list of all integers or all strings values"
             )
         else:
             new_columns = columns
         if columns and len(set(columns)) != len(columns):
             raise ValueError(
-                f"`columns` arg should only have unique values. Got {columns!r}"
+                f"`columns` arg should only have unique values; got {columns!r}"
             )
         if projection and len(set(projection)) != len(projection):
             raise ValueError(
-                f"`columns` arg should only have unique values. Got {projection!r}"
+                f"`columns` arg should only have unique values; got {projection!r}"
             )
     return projection, new_columns
 
@@ -221,7 +221,7 @@ def scale_bytes(sz: int, unit: SizeUnit) -> int | float:
         return sz / 1024**4
     else:
         raise ValueError(
-            f"unit must be one of {{'b', 'kb', 'mb', 'gb', 'tb'}}, got {unit!r}"
+            f"`unit` must be one of {{'b', 'kb', 'mb', 'gb', 'tb'}}, got {unit!r}"
         )
 
 
@@ -485,7 +485,7 @@ def parse_percentiles(percentiles: Sequence[float] | float | None) -> Sequence[f
     elif percentiles is None:
         percentiles = []
     if not all((0 <= p <= 1) for p in percentiles):
-        raise ValueError("percentiles must all be in the range [0, 1]")
+        raise ValueError("`percentiles` must all be in the range [0, 1]")
 
     sub_50_percentiles = sorted(p for p in percentiles if p < 0.5)
     at_or_above_50_percentiles = sorted(p for p in percentiles if p >= 0.5)

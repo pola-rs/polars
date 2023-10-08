@@ -486,7 +486,7 @@ class Series:
             time_zone = self.dtype.time_zone  # type: ignore[union-attr]
             if str(other.tzinfo) != str(time_zone):
                 raise TypeError(
-                    f"Datetime time zone '{other.tzinfo}' does not match Series timezone '{time_zone}'"
+                    f"Datetime time zone '{other.tzinfo!r}' does not match Series timezone {time_zone!r}"
                 )
             ts = _datetime_to_pl_timestamp(other, self.dtype.time_unit)  # type: ignore[union-attr]
             f = get_ffi_func(op + "_<>", Int64, self._s)
@@ -736,7 +736,7 @@ class Series:
             f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
             raise TypeError(
-                f"cannot do arithmetic with series of dtype: {self.dtype} and argument"
+                f"cannot do arithmetic with series of dtype: {self.dtype!r} and argument"
                 f" of type: {type(other).__name__!r}"
             )
         return self._from_pyseries(f(other))
@@ -965,7 +965,7 @@ class Series:
             return self
 
         if self.dtype not in INTEGER_DTYPES:
-            raise NotImplementedError("unsupported idxs datatype.")
+            raise NotImplementedError("unsupported idxs datatype")
 
         if self.len() == 0:
             return Series(self.name, [], dtype=idx_type)
@@ -1120,7 +1120,7 @@ class Series:
         if method == "__call__":
             if not ufunc.nout == 1:
                 raise NotImplementedError(
-                    "only ufuncs that return one 1D array are supported"
+                    "only `ufunc` variants that return one 1D array are supported"
                 )
 
             args: list[int | float | np.ndarray[Any, Any]] = []
@@ -4264,7 +4264,7 @@ class Series:
             ):
                 raise ModuleNotFoundError(
                     f'pyarrow>=8.0.0 is required for `to_pandas("use_pyarrow_extension_array=True")`'
-                    f", found pyarrow {pa.__version__!r}"
+                    f", found pyarrow {pa.__version__}"
                     if _PYARROW_AVAILABLE
                     else ""
                 )

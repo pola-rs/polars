@@ -140,7 +140,7 @@ class Expr:
         raise TypeError(
             "the truth value of an Expr is ambiguous"
             "\n\nHint: use '&' or '|' to logically combine Expr, not 'and'/'or', and"
-            " use 'x.is_in([y,z])' instead of 'x in [y,z]' to check membership"
+            " use 'x.is_in([y,z])' instead of 'x in [y,z]' to check membership."
         )
 
     def __abs__(self) -> Self:
@@ -9164,7 +9164,7 @@ class Expr:
                     ) from exc
                 else:
                     raise ValueError(
-                        f"choose a more suitable output dtype for map_dict as remapping value could not be converted to {dtype!r}: {exc!s}"
+                        f"choose a more suitable output dtype for `map_dict` as remapping value could not be converted to {dtype!r}: {exc!s}"
                     ) from exc
 
             if is_keys:
@@ -9681,28 +9681,28 @@ def _prepare_alpha(
     """Normalise EWM decay specification in terms of smoothing factor 'alpha'."""
     if sum((param is not None) for param in (com, span, half_life, alpha)) > 1:
         raise ValueError(
-            "parameters 'com', 'span', 'half_life', and 'alpha' are mutually exclusive"
+            "parameters `com`, `span`, `half_life`, and `alpha` are mutually exclusive"
         )
     if com is not None:
         if com < 0.0:
-            raise ValueError(f"require 'com' >= 0 (found {com!r})")
+            raise ValueError(f"require `com` >= 0 (found {com!r})")
         alpha = 1.0 / (1.0 + com)
 
     elif span is not None:
         if span < 1.0:
-            raise ValueError(f"require 'span' >= 1 (found {span!r})")
+            raise ValueError(f"require `span` >= 1 (found {span!r})")
         alpha = 2.0 / (span + 1.0)
 
     elif half_life is not None:
         if half_life <= 0.0:
-            raise ValueError(f"require 'half_life' > 0 (found {half_life!r})")
+            raise ValueError(f"require `half_life` > 0 (found {half_life!r})")
         alpha = 1.0 - math.exp(-math.log(2.0) / half_life)
 
     elif alpha is None:
-        raise ValueError("one of 'com', 'span', 'half_life', or 'alpha' must be set")
+        raise ValueError("one of `com`, `span`, `half_life`, or `alpha` must be set")
 
     elif not (0 < alpha <= 1):
-        raise ValueError(f"require 0 < 'alpha' <= 1 (found {alpha!r})")
+        raise ValueError(f"require 0 < `alpha` <= 1 (found {alpha!r})")
 
     return alpha
 

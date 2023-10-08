@@ -2008,7 +2008,7 @@ def from_epoch(
         return column.cast(Datetime(time_unit))
     else:
         raise ValueError(
-            f"'time_unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
+            f"`time_unit` must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
         )
 
 

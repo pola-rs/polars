@@ -483,10 +483,10 @@ def sequence_to_pyseries(
                     dtype_tz is not None and dtype_tz != "UTC"
                 ):
                     raise ValueError(
-                        "time-zone-aware datetimes are converted to UTC. "
-                        "Please either drop the time zone from the dtype, "
+                        "time-zone-aware datetimes are converted to UTC "
+                        "\n\nPlease either drop the time zone from the dtype, "
                         "or set it to 'UTC'. To convert to a different time zone, "
-                        "please use `.dt.convert_time_zone`"
+                        "please use `.dt.convert_time_zone`."
                     )
                 if values_tz != "UTC" and dtype_tz is None:
                     warnings.warn(
@@ -1063,7 +1063,7 @@ def _sequence_of_sequence_to_pydf(
         return PyDataFrame(data_series)
 
     raise ValueError(
-        f"orient must be one of {{'col', 'row', None}}, got {orient!r} instead"
+        f"`orient` must be one of {{'col', 'row', None}}, got {orient!r} instead"
     )
 
 
@@ -1336,7 +1336,7 @@ def numpy_to_pydf(
             shape = data[nm].shape
             if len(data[nm].shape) > 2:
                 raise ValueError(
-                    f"cannot create DataFrame from structured array with elements > 2D; shape[{nm!r}] = {shape}"
+                    f"cannot create DataFrame from structured array with elements > 2D; shape[{nm!r}] = {shape!r}"
                 )
         if not schema:
             schema = record_names
@@ -1372,15 +1372,15 @@ def numpy_to_pydf(
                 n_columns = shape[0]
             else:
                 raise ValueError(
-                    f"orient must be one of {{'col', 'row', None}}; found {orient!r} instead"
+                    f"`orient` must be one of {{'col', 'row', None}}; found {orient!r} instead"
                 )
         else:
             raise ValueError(
-                f"cannot create DataFrame from array with more than two dimensions; shape = {shape}"
+                f"cannot create DataFrame from array with more than two dimensions; shape = {shape!r}"
             )
 
     if schema is not None and len(schema) != n_columns:
-        raise ValueError("dimensions of 'schema' arg must match data dimensions")
+        raise ValueError("dimensions of `schema` arg must match data dimensions")
 
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides, n_expected=n_columns
@@ -1715,7 +1715,7 @@ def numpy_to_idxs(idxs: np.ndarray[Any, Any], size: int) -> pl.Series:
 
     # Numpy array with signed or unsigned integers.
     if idxs.dtype.kind not in ("i", "u"):
-        raise NotImplementedError("unsupported idxs datatype.")
+        raise NotImplementedError("unsupported idxs datatype")
 
     if idx_type == UInt32:
         if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:

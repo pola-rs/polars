@@ -348,7 +348,7 @@ def test_assert_frame_equal_ignore_row_order() -> None:
     # note: not all column types support sorting
     with pytest.raises(
         InvalidAssert,
-        match="cannot set 'check_row_order=False'.*unsortable columns",
+        match="cannot set `check_row_order=False`.*unsortable columns",
     ):
         assert_frame_equal(
             left=pl.DataFrame({"a": [[1, 2], [3, 4]], "b": [3, 4]}),

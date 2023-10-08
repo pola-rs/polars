@@ -112,7 +112,7 @@ def _rename_keyword_argument(
     if old_name in kwargs:
         if new_name in kwargs:
             raise TypeError(
-                f"`{func_name!r}` received both `{old_name!r}` and `{new_name!r}` as arguments."
+                f"`{func_name!r}` received both `{old_name!r}` and `{new_name!r}` as arguments;"
                 f" `{old_name!r}` is deprecated, use `{new_name!r}` instead"
             )
         issue_deprecation_warning(
