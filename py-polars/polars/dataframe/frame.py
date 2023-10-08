@@ -7408,10 +7408,19 @@ class DataFrame:
         ]
 
         if as_dict:
-            if len(by) == 1:
-                return {df[by][0, 0]: df for df in partitions}
+            df = self._from_pydf(self._df)
+            if include_key:
+                if len(by) == 1:
+                    names = [p[by[0]][0] for p in partitions]
+                else:
+                    names = [p.select(by).row(0) for p in partitions]
             else:
-                return {df[by].row(0): df for df in partitions}
+                if len(by) == 1:
+                    names = df[by[0]].unique(maintain_order=True).to_list()
+                else:
+                    names = df.select(by).unique(maintain_order=True).rows()
+
+            return dict(zip(names, partitions))
 
         return partitions
 

@@ -728,6 +728,7 @@ def test_write_csv_delimiter() -> None:
     df.write_csv(f, delimiter_char="\t")
     f.seek(0)
     assert f.read() == b"a\tb\n1\t1\n2\t2\n3\t3\n"
+    assert_frame_equal(df, pl.read_csv(f, separator="\t"))
 
 
 def test_write_csv_line_terminator() -> None:
@@ -736,6 +737,7 @@ def test_write_csv_line_terminator() -> None:
     df.write_csv(f, line_terminator="\r\n")
     f.seek(0)
     assert f.read() == b"a,b\r\n1,1\r\n2,2\r\n3,3\r\n"
+    assert_frame_equal(df, pl.read_csv(f, eol_char="\n"))
 
 
 def test_escaped_null_values() -> None:

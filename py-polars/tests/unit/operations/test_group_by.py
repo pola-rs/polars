@@ -898,3 +898,19 @@ def test_groupby_dynamic_deprecated() -> None:
     expected = df.group_by_dynamic("date", every="2d").agg(pl.sum("value"))
     assert_frame_equal(result, expected, check_row_order=False)
     assert_frame_equal(result_lazy, expected, check_row_order=False)
+
+
+def test_group_by_multiple_keys_one_literal() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2], "b": [4, 5, 6]})
+
+    expected = {"a": [1, 2], "literal": [1, 1], "b": [5, 6]}
+    for streaming in [True, False]:
+        assert (
+            df.lazy()
+            .group_by("a", pl.lit(1))
+            .agg(pl.col("b").max())
+            .sort(["a", "b"])
+            .collect(streaming=streaming)
+            .to_dict(False)
+            == expected
+        )

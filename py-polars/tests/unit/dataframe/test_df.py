@@ -2610,6 +2610,19 @@ def test_partition_by() -> None:
         "b": [1, 3],
     }
 
+    # test with both as_dict and include_key=False
+    df = pl.DataFrame(
+        {
+            "a": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
+            "b": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
+            "c": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
+            "d": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
+        }
+    ).sample(n=100_000, with_replacement=True, shuffle=True)
+
+    partitions = df.partition_by(["a", "b"], as_dict=True, include_key=False)
+    assert all(key == value.row(0) for key, value in partitions.items())
+
 
 def test_list_of_list_of_struct() -> None:
     expected = [{"list_of_list_of_struct": [[{"a": 1}, {"a": 2}]]}]
