@@ -368,7 +368,7 @@ impl GroupsProxy {
     }
 
     /// # Safety
-    /// This will not do any bounds checkes. The caller must ensure
+    /// This will not do any bounds checks. The caller must ensure
     /// all groups have members.
     pub unsafe fn take_group_lasts(self) -> Vec<IdxSize> {
         match self {
