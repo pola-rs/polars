@@ -489,45 +489,39 @@ impl BatchedParquetReader {
                 .fetch_row_groups(row_group_start..row_group_end)
                 .await?;
             let dfs = match self.parallel {
-                ParallelStrategy::Columns => {
-                    let dfs = rg_to_dfs(
-                        &store,
-                        &mut self.rows_read,
-                        row_group_start,
-                        row_group_end,
-                        &mut self.limit,
-                        &self.metadata,
-                        &self.schema,
-                        None,
-                        self.row_count.clone(),
-                        ParallelStrategy::Columns,
-                        &self.projection,
-                        self.use_statistics,
-                        self.hive_partition_columns.as_deref(),
-                    )?;
-                    self.row_group_offset += n;
-                    dfs
-                },
-                ParallelStrategy::RowGroups => {
-                    let dfs = rg_to_dfs_par(
-                        &store,
-                        self.row_group_offset,
-                        std::cmp::min(self.row_group_offset + n, self.n_row_groups),
-                        &mut self.rows_read,
-                        &mut self.limit,
-                        &self.metadata,
-                        &self.schema,
-                        None,
-                        self.row_count.clone(),
-                        &self.projection,
-                        self.use_statistics,
-                        self.hive_partition_columns.as_deref(),
-                    )?;
-                    self.row_group_offset += n;
-                    dfs
-                },
+                ParallelStrategy::Columns => rg_to_dfs(
+                    &store,
+                    &mut self.rows_read,
+                    row_group_start,
+                    row_group_end,
+                    &mut self.limit,
+                    &self.metadata,
+                    &self.schema,
+                    None,
+                    self.row_count.clone(),
+                    ParallelStrategy::Columns,
+                    &self.projection,
+                    self.use_statistics,
+                    self.hive_partition_columns.as_deref(),
+                ),
+                ParallelStrategy::RowGroups => rg_to_dfs_par(
+                    &store,
+                    self.row_group_offset,
+                    std::cmp::min(self.row_group_offset + n, self.n_row_groups),
+                    &mut self.rows_read,
+                    &mut self.limit,
+                    &self.metadata,
+                    &self.schema,
+                    None,
+                    self.row_count.clone(),
+                    &self.projection,
+                    self.use_statistics,
+                    self.hive_partition_columns.as_deref(),
+                ),
                 _ => unimplemented!(),
-            };
+            }?;
+
+            self.row_group_offset += n;
             // case where there is no data in the file
             // the streaming engine needs at least a single chunk
             if self.rows_read == 0 && dfs.is_empty() {
