@@ -368,7 +368,7 @@ impl LogicalPlanBuilder {
             scan_type: FileScan::Csv {
                 options: CsvParserOptions {
                     has_header,
-                    separator: separator,
+                    separator,
                     ignore_errors,
                     skip_rows,
                     low_memory,
