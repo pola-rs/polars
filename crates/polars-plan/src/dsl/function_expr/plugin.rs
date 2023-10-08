@@ -31,6 +31,14 @@ fn get_lib(lib: &str) -> PolarsResult<&'static Library> {
     }
 }
 
+unsafe fn retrieve_error_msg(lib: &Library) -> CString {
+    let symbol: libloading::Symbol<
+        unsafe extern "C" fn() -> *mut std::os::raw::c_char,
+    > = lib.get(b"get_last_error_message\0").unwrap();
+    let msg_ptr = symbol();
+    CString::from_raw(msg_ptr)
+}
+
 pub(super) unsafe fn call_plugin(
     s: &[Series],
     lib: &str,
@@ -62,12 +70,7 @@ pub(super) unsafe fn call_plugin(
         let out = Box::from_raw(out);
         import_series(*out)
     } else {
-        let symbol: libloading::Symbol<
-            unsafe extern "C" fn() -> *mut std::os::raw::c_char,
-        > = lib.get(b"get_last_error_message\0").unwrap();
-
-        let msg_ptr = symbol();
-        let msg = CString::from_raw(msg_ptr);
+        let msg = retrieve_error_msg(lib);
         let msg = msg.to_string_lossy();
         polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
     }
@@ -81,7 +84,7 @@ pub(super) unsafe fn plugin_field(
 ) -> PolarsResult<Field> {
     let lib = get_lib(lib)?;
 
-    let symbol: libloading::Symbol<unsafe extern "C" fn(*const ArrowSchema, usize) -> ArrowSchema> =
+    let symbol: libloading::Symbol<unsafe extern "C" fn(*const ArrowSchema, usize, *mut ArrowSchema)> =
         lib.get(symbol.as_bytes()).unwrap();
 
     // we deallocate the fields buffer
@@ -92,8 +95,18 @@ pub(super) unsafe fn plugin_field(
         .into_boxed_slice();
     let n_args = fields.len();
     let slice_ptr = fields.as_ptr();
-    let out = symbol(slice_ptr, n_args);
 
-    let arrow_field = import_field_from_c(&out)?;
-    Ok(Field::from(&arrow_field))
+    let mut return_value = ArrowSchema::empty();
+    let return_value_ptr = &mut return_value as *mut ArrowSchema;
+    symbol(slice_ptr, n_args, return_value_ptr);
+
+    if return_value.is_null() {
+        let msg = retrieve_error_msg(lib);
+        let msg = msg.to_string_lossy();
+        polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
+    } else {
+        let arrow_field = import_field_from_c(&return_value)?;
+        let out = Field::from(&arrow_field);
+        Ok(out)
+    }
 }
