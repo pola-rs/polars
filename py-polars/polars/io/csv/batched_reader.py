@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Sequence
 from polars.datatypes import N_INFER_DEFAULT, py_type_to_dtype
 from polars.io.csv._utils import _update_columns
 from polars.utils._wrap import wrap_df
-from polars.utils.deprecation import deprecate_renamed_parameter
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,

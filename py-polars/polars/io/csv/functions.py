@@ -8,7 +8,6 @@ from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
-from polars.utils.deprecation import deprecate_renamed_parameter
 from polars.utils.various import handle_projection_columns, normalize_filepath
 
 if TYPE_CHECKING:
