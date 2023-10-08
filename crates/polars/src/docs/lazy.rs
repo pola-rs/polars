@@ -114,7 +114,7 @@
 //!
 //!  let df = LazyCsvReader::new("reddit.csv")
 //!     .has_header(true)
-//!     .with_delimiter(b',')
+//!     .with_separator(b',')
 //!     .finish()?
 //!     .group_by([col("comment_karma")])
 //!     .agg([col("name").n_unique().alias("unique_names"), col("link_karma").max()])

@@ -722,7 +722,7 @@ def test_empty_string_missing_round_trip() -> None:
         assert_frame_equal(df, df_read)
 
 
-def test_write_csv_delimiter() -> None:
+def test_write_csv_separator() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
     f = io.BytesIO()
     df.write_csv(f, separator="\t")
@@ -867,7 +867,7 @@ def test_glob_csv(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     assert pl.read_csv(path_glob).shape == (3, 11)
 
 
-def test_csv_whitespace_delimiter_at_start_do_not_skip() -> None:
+def test_csv_whitespace_separator_at_start_do_not_skip() -> None:
     csv = "\t\t\t\t0\t1"
     assert pl.read_csv(csv.encode(), separator="\t", has_header=False).to_dict(
         False
@@ -881,7 +881,7 @@ def test_csv_whitespace_delimiter_at_start_do_not_skip() -> None:
     }
 
 
-def test_csv_whitespace_delimiter_at_end_do_not_skip() -> None:
+def test_csv_whitespace_separator_at_end_do_not_skip() -> None:
     csv = "0\t1\t\t\t\t"
     assert pl.read_csv(csv.encode(), separator="\t", has_header=False).to_dict(
         False

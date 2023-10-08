@@ -226,7 +226,7 @@ impl PyDataFrame {
             .infer_schema(infer_schema_length)
             .has_header(has_header)
             .with_n_rows(n_rows)
-            .with_delimiter(separator)
+            .with_separator(separator)
             .with_skip_rows(skip_rows)
             .with_ignore_errors(ignore_errors)
             .with_projection(projection)
@@ -603,7 +603,7 @@ impl PyDataFrame {
                 // No need for a buffered writer, because the csv writer does internal buffering.
                 CsvWriter::new(f)
                     .has_header(has_header)
-                    .with_delimiter(separator)
+                    .with_separator(separator)
                     .with_line_terminator(line_terminator)
                     .with_quote_char(quote_char)
                     .with_batch_size(batch_size)
@@ -620,7 +620,7 @@ impl PyDataFrame {
             let mut buf = get_file_like(py_f, true)?;
             CsvWriter::new(&mut buf)
                 .has_header(has_header)
-                .with_delimiter(separator)
+                .with_separator(separator)
                 .with_line_terminator(line_terminator)
                 .with_quote_char(quote_char)
                 .with_batch_size(batch_size)

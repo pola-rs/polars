@@ -238,7 +238,7 @@ pub struct SerializeOptions {
     pub datetime_format: Option<String>,
     /// Used for [`DataType::Float64`] and [`DataType::Float32`].
     pub float_precision: Option<usize>,
-    /// Used as separator/delimiter.
+    /// Used as separator.
     pub separator: u8,
     /// Quoting character.
     pub quote_char: u8,
@@ -305,7 +305,7 @@ pub(crate) fn write<W: Write>(
         std::str::from_utf8(&[options.quote_char, options.quote_char]).is_ok(),
         ComputeError: "quote char results in invalid utf-8",
     );
-    let delimiter = char::from(options.separator);
+    let separator = char::from(options.separator);
 
     let (datetime_formats, time_zones): (Vec<&str>, Vec<Option<Tz>>) = df
         .get_columns()
@@ -439,7 +439,7 @@ pub(crate) fn write<W: Write>(
                     }
                     let current_ptr = col as *const SeriesIter;
                     if current_ptr != last_ptr {
-                        write!(&mut write_buffer, "{delimiter}").unwrap()
+                        write!(&mut write_buffer, "{separator}").unwrap()
                     }
                 }
                 if !finished {

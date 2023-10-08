@@ -181,7 +181,7 @@ impl PyLazyFrame {
         });
         let mut r = LazyCsvReader::new(path)
             .with_infer_schema_length(infer_schema_length)
-            .with_delimiter(separator)
+            .with_separator(separator)
             .has_header(has_header)
             .with_ignore_errors(ignore_errors)
             .with_skip_rows(skip_rows)

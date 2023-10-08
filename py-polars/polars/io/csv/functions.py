@@ -73,7 +73,7 @@ def read_csv(
         list is shorter than the width of the DataFrame the remaining
         columns will have their original name.
     separator
-        Single byte character to use as delimiter in the file.
+        Single byte character to use as separator in the file.
     comment_char
         Single byte character that indicates the start of a comment line,
         for instance ``#``.
@@ -454,7 +454,7 @@ def read_csv_batched(
         list is shorter than the width of the DataFrame the remaining
         columns will have their original name.
     separator
-        Single byte character to use as delimiter in the file.
+        Single byte character to use as separator in the file.
     comment_char
         Single byte character that indicates the start of a comment line,
         for instance ``#``.
@@ -740,7 +740,7 @@ def scan_csv(
         following format: ``column_x``, with ``x`` being an
         enumeration over every column in the dataset starting at 1.
     separator
-        Single byte character to use as delimiter in the file.
+        Single byte character to use as separator in the file.
     comment_char
         Single byte character that indicates the start of a comment line,
         for instance ``#``.
