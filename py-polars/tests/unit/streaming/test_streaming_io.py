@@ -126,7 +126,7 @@ def test_sink_csv_with_options() -> None:
         df.sink_csv(
             "path",
             has_header=False,
-            delimiter_char=";",
+            separator=";",
             line_terminator="|",
             quote_char="$",
             batch_size=42,
@@ -142,7 +142,7 @@ def test_sink_csv_with_options() -> None:
         ldf.optimization_toggle().sink_csv.assert_called_with(
             path="path",
             has_header=False,
-            delimiter_char=ord(";"),
+            separator=ord(";"),
             line_terminator="|",
             quote_char=ord("$"),
             batch_size=42,
@@ -160,7 +160,7 @@ def test_sink_csv_with_options() -> None:
 def test_sink_csv_exception_for_separator(value: str) -> None:
     df = pl.LazyFrame({"dummy": ["abc"]})
     with pytest.raises(ValueError, match="should be a single byte character, but is"):
-        df.sink_csv("path", delimiter_char=value)
+        df.sink_csv("path", separator=value)
 
 
 @pytest.mark.parametrize(("value"), ["abc", ""])

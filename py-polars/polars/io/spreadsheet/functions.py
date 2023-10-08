@@ -522,7 +522,7 @@ def _initialise_spreadsheet_parser(
 
 def _csv_buffer_to_frame(
     csv: StringIO,
-    delimiter_char: str,
+    separator: str,
     read_csv_options: dict[str, Any] | None,
     schema_overrides: SchemaDict | None,
     *,
@@ -553,7 +553,7 @@ def _csv_buffer_to_frame(
     csv.seek(0)
     df = read_csv(
         csv,
-        delimiter_char=delimiter_char,
+        separator=separator,
         **read_csv_options,
     )
     return _drop_unnamed_null_columns(df)
@@ -754,7 +754,7 @@ def _read_spreadsheet_xlsx2csv(
     )
     return _csv_buffer_to_frame(
         csv_buffer,
-        delimiter_char=",",
+        separator=",",
         read_csv_options=read_csv_options,
         schema_overrides=schema_overrides,
         raise_if_empty=raise_if_empty,

@@ -315,7 +315,7 @@ class LazyFrame:
         source: str,
         *,
         has_header: bool = True,
-        delimiter_char: str = ",",
+        separator: str = ",",
         comment_char: str | None = None,
         quote_char: str | None = '"',
         skip_rows: int = 0,
@@ -359,7 +359,7 @@ class LazyFrame:
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_csv(
             source,
-            ord(delimiter_char),
+            ord(separator),
             has_header,
             ignore_errors,
             skip_rows,
@@ -2028,13 +2028,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
     @deprecate_renamed_parameter("quote", "quote_char", version="0.19.7")
-    @deprecate_renamed_parameter("separator", "delimiter_char", version="0.19.7")
+    @deprecate_renamed_parameter("separator", "separator", version="0.19.7")
     def sink_csv(
         self,
         path: str | Path,
         *,
         has_header: bool = True,
-        delimiter_char: str = ",",
+        separator: str = ",",
         line_terminator: str = "\n",
         quote_char: str = '"',
         batch_size: int = 1024,
@@ -2063,7 +2063,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             File path to which the file should be written.
         has_header
             Whether to include header in the CSV output.
-        delimiter_char
+        separator
             Separate CSV fields with this symbol.
         line_terminator
             String used to end each row.
@@ -2101,7 +2101,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - always: This puts quotes around every field. Always.
             - never: This never puts quotes around fields, even if that results in
             invalid CSV data (e.g.: by not quoting strings containing the
-            delimiter_char).
+            separator).
             - non_numeric: This puts quotes around all fields that are non-numeric.
             Namely, when writing a field that does not parse as a valid float
             or integer, then quotes will be used even if they aren`t strictly
@@ -2132,7 +2132,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_csv("out.csv")  # doctest: +SKIP
 
         """
-        _check_arg_is_1byte("delimiter_char", delimiter_char, can_be_empty=False)
+        _check_arg_is_1byte("separator", separator, can_be_empty=False)
         _check_arg_is_1byte("quote_char", quote_char, can_be_empty=False)
         if not null_value:
             null_value = None
@@ -2149,7 +2149,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return lf.sink_csv(
             path=path,
             has_header=has_header,
-            delimiter_char=ord(delimiter_char),
+            separator=ord(separator),
             line_terminator=line_terminator,
             quote_char=ord(quote_char),
             batch_size=batch_size,

@@ -656,7 +656,7 @@ class DataFrame:
         *,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
-        delimiter_char: str = ",",
+        separator: str = ",",
         comment_char: str | None = None,
         quote_char: str | None = '"',
         skip_rows: int = 0,
@@ -735,7 +735,7 @@ class DataFrame:
             scan = scan_csv(
                 source,
                 has_header=has_header,
-                delimiter_char=delimiter_char,
+                separator=separator,
                 comment_char=comment_char,
                 quote_char=quote_char,
                 skip_rows=skip_rows,
@@ -776,7 +776,7 @@ class DataFrame:
             n_rows,
             skip_rows,
             projection,
-            ord(delimiter_char),
+            ord(separator),
             rechunk,
             columns,
             encoding,
@@ -2442,7 +2442,7 @@ class DataFrame:
         file: None = None,
         *,
         has_header: bool = ...,
-        delimiter_char: str = ...,
+        separator: str = ...,
         line_terminator: str = ...,
         quote_char: str = ...,
         batch_size: int = ...,
@@ -2461,7 +2461,7 @@ class DataFrame:
         file: BytesIO | TextIOWrapper | str | Path,
         *,
         has_header: bool = ...,
-        delimiter_char: str = ...,
+        separator: str = ...,
         line_terminator: str = ...,
         quote_char: str = ...,
         batch_size: int = ...,
@@ -2474,14 +2474,14 @@ class DataFrame:
     ) -> None:
         ...
 
-    @deprecate_renamed_parameter("separator", "delimiter_char", version="0.19.7")
+    @deprecate_renamed_parameter("separator", "separator", version="0.19.7")
     @deprecate_renamed_parameter("quote", "quote_char", version="0.19.7")
     def write_csv(
         self,
         file: BytesIO | TextIOWrapper | str | Path | None = None,
         *,
         has_header: bool = True,
-        delimiter_char: str = ",",
+        separator: str = ",",
         line_terminator: str = "\n",
         quote_char: str = '"',
         batch_size: int = 1024,
@@ -2502,7 +2502,7 @@ class DataFrame:
             (default), the output is returned as a string instead.
         has_header
             Whether to include header in the CSV output.
-        delimiter_char
+        separator
             Separate CSV fields with this symbol.
         line_terminator
             String used to end each row.
@@ -2558,10 +2558,10 @@ class DataFrame:
         ...     }
         ... )
         >>> path: pathlib.Path = dirpath / "new_file.csv"
-        >>> df.write_csv(path, delimiter_char=",")
+        >>> df.write_csv(path, separator=",")
 
         """
-        _check_arg_is_1byte("delimiter_char", delimiter_char, can_be_empty=False)
+        _check_arg_is_1byte("separator", separator, can_be_empty=False)
         _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
         if not null_value:
             null_value = None
@@ -2578,7 +2578,7 @@ class DataFrame:
         self._df.write_csv(
             file,
             has_header,
-            ord(delimiter_char),
+            ord(separator),
             line_terminator,
             ord(quote_char),
             batch_size,

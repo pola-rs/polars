@@ -138,7 +138,7 @@ impl PyLazyFrame {
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
-    #[pyo3(signature = (path, delimiter_char, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
+    #[pyo3(signature = (path, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_char, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_count, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, schema
@@ -146,7 +146,7 @@ impl PyLazyFrame {
     )]
     fn new_from_csv(
         path: String,
-        delimiter_char: u8,
+        separator: u8,
         has_header: bool,
         ignore_errors: bool,
         skip_rows: usize,
@@ -181,7 +181,7 @@ impl PyLazyFrame {
         });
         let mut r = LazyCsvReader::new(path)
             .with_infer_schema_length(infer_schema_length)
-            .with_delimiter(delimiter_char)
+            .with_delimiter(separator)
             .has_header(has_header)
             .with_ignore_errors(ignore_errors)
             .with_skip_rows(skip_rows)
@@ -538,13 +538,13 @@ impl PyLazyFrame {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "csv"))]
-    #[pyo3(signature = (path, has_header, delimiter_char, line_terminator, quote_char, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style, maintain_order))]
+    #[pyo3(signature = (path, has_header, separator, line_terminator, quote_char, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style, maintain_order))]
     fn sink_csv(
         &self,
         py: Python,
         path: PathBuf,
         has_header: bool,
-        delimiter_char: u8,
+        separator: u8,
         line_terminator: String,
         quote_char: u8,
         batch_size: usize,
@@ -564,7 +564,7 @@ impl PyLazyFrame {
             time_format,
             datetime_format,
             float_precision,
-            delimiter: delimiter_char,
+            delimiter: separator,
             quote: quote_char,
             null: null_value,
             line_terminator,

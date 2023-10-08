@@ -165,7 +165,7 @@ impl PyDataFrame {
     #[cfg(feature = "csv")]
     #[pyo3(signature = (
         py_f, infer_schema_length, chunk_size, has_header, ignore_errors, n_rows,
-        skip_rows, projection, delimiter_char, rechunk, columns, encoding, n_threads, path,
+        skip_rows, projection, separator, rechunk, columns, encoding, n_threads, path,
         overwrite_dtype, overwrite_dtype_slice, low_memory, comment_char, quote_char,
         null_values, missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header,
         row_count, sample_size, eol_char, raise_if_empty, truncate_ragged_lines, schema)
@@ -179,7 +179,7 @@ impl PyDataFrame {
         n_rows: Option<usize>,
         skip_rows: usize,
         projection: Option<Vec<usize>>,
-        delimiter_char: u8,
+        separator: u8,
         rechunk: bool,
         columns: Option<Vec<String>>,
         encoding: Wrap<CsvEncoding>,
@@ -226,7 +226,7 @@ impl PyDataFrame {
             .infer_schema(infer_schema_length)
             .has_header(has_header)
             .with_n_rows(n_rows)
-            .with_delimiter(delimiter_char)
+            .with_delimiter(separator)
             .with_skip_rows(skip_rows)
             .with_ignore_errors(ignore_errors)
             .with_projection(projection)
@@ -584,7 +584,7 @@ impl PyDataFrame {
         py: Python,
         py_f: PyObject,
         has_header: bool,
-        delimiter_char: u8,
+        separator: u8,
         line_terminator: String,
         quote_char: u8,
         batch_size: usize,
@@ -603,7 +603,7 @@ impl PyDataFrame {
                 // No need for a buffered writer, because the csv writer does internal buffering.
                 CsvWriter::new(f)
                     .has_header(has_header)
-                    .with_delimiter(delimiter_char)
+                    .with_delimiter(separator)
                     .with_line_terminator(line_terminator)
                     .with_quoting_char(quote_char)
                     .with_batch_size(batch_size)
@@ -620,7 +620,7 @@ impl PyDataFrame {
             let mut buf = get_file_like(py_f, true)?;
             CsvWriter::new(&mut buf)
                 .has_header(has_header)
-                .with_delimiter(delimiter_char)
+                .with_delimiter(separator)
                 .with_line_terminator(line_terminator)
                 .with_quoting_char(quote_char)
                 .with_batch_size(batch_size)

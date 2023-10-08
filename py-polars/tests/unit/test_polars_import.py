@@ -22,7 +22,7 @@ def _import_timings_as_frame(best_of: int) -> pl.DataFrame:
     import_timings = [
         pl.read_csv(
             source=_import_timings(),
-            delimiter_char="|",
+            separator="|",
             has_header=True,
             new_columns=["own_time", "cumulative_time", "import"],
         ).with_columns(
