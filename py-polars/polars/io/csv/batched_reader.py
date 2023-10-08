@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 class BatchedCsvReader:
     """Read a CSV file in batches."""
 
-    @deprecate_renamed_parameter("separator", "separator", version="0.19.7")
     def __init__(
         self,
         source: str | Path,

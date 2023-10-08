@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
-@deprecate_renamed_parameter("separator", "separator", version="0.19.7")
 def read_csv(
     source: str | TextIO | BytesIO | Path | BinaryIO | bytes,
     *,
@@ -400,7 +399,6 @@ def read_csv(
     return df
 
 
-@deprecate_renamed_parameter("separator", "separator", version="0.19.7")
 def read_csv_batched(
     source: str | Path,
     *,
@@ -697,7 +695,6 @@ def read_csv_batched(
     )
 
 
-@deprecate_renamed_parameter("separator", "separator", version="0.19.7")
 def scan_csv(
     source: str | Path,
     *,

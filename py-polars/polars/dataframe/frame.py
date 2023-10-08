@@ -2474,7 +2474,6 @@ class DataFrame:
     ) -> None:
         ...
 
-    @deprecate_renamed_parameter("separator", "separator", version="0.19.7")
     @deprecate_renamed_parameter("quote", "quote_char", version="0.19.7")
     def write_csv(
         self,
