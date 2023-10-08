@@ -971,6 +971,17 @@ impl Expr {
         self.apply_private(BooleanFunction::IsDuplicated.into())
     }
 
+    #[allow(clippy::wrong_self_convention)]
+    #[cfg(feature = "is_between")]
+    pub fn is_between<E: Into<Expr>>(self, lower: E, upper: E, closed: ClosedInterval) -> Self {
+        self.map_many_private(
+            BooleanFunction::IsBetween { closed }.into(),
+            &[lower.into(), upper.into()],
+            false,
+            true,
+        )
+    }
+
     /// Get a mask of unique values.
     #[allow(clippy::wrong_self_convention)]
     #[cfg(feature = "is_unique")]

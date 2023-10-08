@@ -5275,7 +5275,7 @@ class Expr:
         closed: ClosedInterval = "both",
     ) -> Self:
         """
-        Check if this expression is between the given start and end values.
+        Check if this expression is between the given lower and upper bounds.
 
         Parameters
         ----------
@@ -5351,23 +5351,12 @@ class Expr:
         │ e   ┆ false      │
         └─────┴────────────┘
         """
-        lower_bound = self._from_pyexpr(parse_as_expression(lower_bound))
-        upper_bound = self._from_pyexpr(parse_as_expression(upper_bound))
+        lower_bound = parse_as_expression(lower_bound)
+        upper_bound = parse_as_expression(upper_bound)
 
-        if closed == "none":
-            return (self > lower_bound) & (self < upper_bound)
-        elif closed == "both":
-            return (self >= lower_bound) & (self <= upper_bound)
-        elif closed == "right":
-            return (self > lower_bound) & (self <= upper_bound)
-        elif closed == "left":
-            return (self >= lower_bound) & (self < upper_bound)
-        else:
-            msg = (
-                "`closed` must be one of {'left', 'right', 'both', 'none'},"
-                f" got {closed!r}"
-            )
-            raise ValueError(msg)
+        return self._from_pyexpr(
+            self._pyexpr.is_between(lower_bound, upper_bound, closed)
+        )
 
     def hash(
         self,
