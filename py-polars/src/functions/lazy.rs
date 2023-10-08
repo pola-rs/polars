@@ -288,6 +288,7 @@ pub fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<PyExpr> {
 
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
+#[pyo3(signature = (days, seconds, nanoseconds, microseconds, milliseconds, minutes, hours, weeks, time_unit))]
 pub fn duration(
     days: Option<PyExpr>,
     seconds: Option<PyExpr>,
@@ -297,6 +298,7 @@ pub fn duration(
     minutes: Option<PyExpr>,
     hours: Option<PyExpr>,
     weeks: Option<PyExpr>,
+    time_unit: Wrap<TimeUnit>,
 ) -> PyExpr {
     set_unwrapped_or_0!(
         days,
@@ -317,6 +319,7 @@ pub fn duration(
         minutes,
         hours,
         weeks,
+        time_unit: time_unit.0,
     };
     dsl::duration(args).into()
 }
