@@ -404,7 +404,7 @@ class Config(contextlib.ContextDecorator):
 
         Examples
         --------
-        >>> df = pl.DataFrame({"v": range(10), "v2": range(10, 20)})
+        >>> df = pl.DataFrame({"v": [1,2,3], "v2": [4,5,6]})
         >>> with pl.Config(set_auto_structify=True):
         ...     out = df.select(pl.all())
         ...

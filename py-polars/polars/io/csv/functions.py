@@ -134,7 +134,7 @@ def read_csv(
         python. Defaults to ``utf8``.
     low_memory
         Reduce memory usage at expense of performance when rechunking into
-        a single array. To work with larger than-memory datasets use streaming mode.
+        a single array by doing rechunking in serial instead of parallel.
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
@@ -181,6 +181,8 @@ def read_csv(
     all data will be stored continuously in memory.
     Set `rechunk=False` if you are benchmarking the csv-reader. A `rechunk` is
     an expensive operation.
+    To work with larger than-memory CSV files use pl.scan_csv and evaluate the
+    query in streaming mode.
 
     """
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
