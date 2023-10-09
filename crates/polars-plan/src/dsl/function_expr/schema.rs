@@ -188,7 +188,10 @@ impl FunctionExpr {
                 dt => dt.clone(),
             }),
             #[cfg(feature = "interpolate")]
-            Interpolate(_) => mapper.with_same_dtype(),
+            Interpolate(method) => match method {
+                InterpolationMethod::Linear => mapper.map_numeric_to_float_dtype(),
+                InterpolationMethod::Nearest => mapper.with_same_dtype(),
+            },
             ShrinkType => {
                 // we return the smallest type this can return
                 // this might not be correct once the actual data
@@ -325,6 +328,20 @@ impl<'a> FieldsMapper<'a> {
         self.map_dtype(|dtype| match dtype {
             DataType::Float32 => DataType::Float32,
             _ => DataType::Float64,
+        })
+    }
+
+    /// Map to a float supertype if numeric, else preserve
+    pub fn map_numeric_to_float_dtype(&self) -> PolarsResult<Field> {
+        self.map_dtype(|dtype| {
+            if dtype.is_numeric() {
+                match dtype {
+                    DataType::Float32 => DataType::Float32,
+                    _ => DataType::Float64,
+                }
+            } else {
+                dtype.clone()
+            }
         })
     }
 

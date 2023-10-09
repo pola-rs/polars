@@ -197,23 +197,23 @@ fn interpolate_linear(s: &Series) -> Series {
 
             let s = s.to_physical_repr();
             let out = match s.dtype() {
-                #[cfg(feature = "dtype-i8")]
-                DataType::Int8 => linear_interp_signed(s.i8().unwrap()),
-                #[cfg(feature = "dtype-i16")]
-                DataType::Int16 => linear_interp_signed(s.i16().unwrap()),
-                DataType::Int32 => linear_interp_signed(s.i32().unwrap()),
-                DataType::Int64 => linear_interp_signed(s.i64().unwrap()),
-                #[cfg(feature = "dtype-u8")]
-                DataType::UInt8 => linear_interp_unsigned(s.u8().unwrap()),
-                #[cfg(feature = "dtype-u16")]
-                DataType::UInt16 => linear_interp_unsigned(s.u16().unwrap()),
-                DataType::UInt32 => linear_interp_unsigned(s.u32().unwrap()),
-                DataType::UInt64 => linear_interp_unsigned(s.u64().unwrap()),
-                DataType::Float32 => linear_interp_unsigned(s.f32().unwrap()),
-                DataType::Float64 => linear_interp_unsigned(s.f64().unwrap()),
+                DataType::Float32 => linear_interp_signed(s.f32().unwrap()),
+                DataType::Float64 => linear_interp_signed(s.f64().unwrap()),
+                DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+                    linear_interp_unsigned(s.cast(&DataType::Float64).unwrap().f64().unwrap())
+                },
+                DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                    linear_interp_signed(s.cast(&DataType::Float64).unwrap().f64().unwrap())
+                },
                 _ => s.as_ref().clone(),
             };
-            out.cast(logical).unwrap()
+            match logical {
+                DataType::Date
+                | DataType::Datetime(_, _)
+                | DataType::Duration(_)
+                | DataType::Time => out.cast(logical).unwrap(),
+                _ => out,
+            }
         },
     }
 }
