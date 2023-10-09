@@ -369,16 +369,16 @@ impl StringNameSpace {
             )))
     }
 
-    /// Return the length of each string as the number of characters.
-    pub fn n_chars(self) -> Expr {
+    /// Return the length of each string as the number of bytes.
+    pub fn len_bytes(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::NChars))
+            .map_private(FunctionExpr::StringExpr(StringFunction::LenBytes))
     }
 
-    /// Return the length of each string as the number of bytes.
-    pub fn len(self) -> Expr {
+    /// Return the length of each string as the number of characters.
+    pub fn len_chars(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::Length))
+            .map_private(FunctionExpr::StringExpr(StringFunction::LenChars))
     }
 
     /// Slice the string values.

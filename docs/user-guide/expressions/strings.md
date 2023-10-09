@@ -8,7 +8,7 @@ String processing functions are available in the `str` namespace.
 
 The `str` namespace can be accessed through the `.str` attribute of a column with `Utf8` data type. In the following example, we create a column named `animal` and compute the length of each element in the column in terms of the number of bytes and the number of characters. If you are working with ASCII text, then the results of these two computations will be the same, and using `lengths` is recommended since it is faster.
 
-{{code_block('user-guide/expressions/strings','df',['str.len','str.n_chars'])}}
+{{code_block('user-guide/expressions/strings','df',['str.len_bytes','str.len_chars'])}}
 
 ```python exec="on" result="text" session="user-guide/strings"
 --8<-- "python/user-guide/expressions/strings.py:setup"

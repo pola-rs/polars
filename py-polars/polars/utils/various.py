@@ -284,7 +284,7 @@ def _cast_repr_strings_with_schema(
                 tp_base = Datetime(tp.time_unit)  # type: ignore[union-attr]
                 d = F.col(c).str.replace(r"[A-Z ]+$", "")
                 cast_cols[c] = (
-                    F.when(d.str.len() == 19)
+                    F.when(d.str.len_bytes() == 19)
                     .then(d + ".000000000")
                     .otherwise(d + "000000000")
                     .str.slice(0, 29)
@@ -296,7 +296,7 @@ def _cast_repr_strings_with_schema(
                 cast_cols[c] = F.col(c).str.strptime(tp, "%Y-%m-%d")  # type: ignore[arg-type]
             elif tp == Time:
                 cast_cols[c] = (
-                    F.when(F.col(c).str.len() == 8)
+                    F.when(F.col(c).str.len_bytes() == 8)
                     .then(F.col(c) + ".000000000")
                     .otherwise(F.col(c) + "000000000")
                     .str.slice(0, 18)

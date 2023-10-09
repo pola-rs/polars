@@ -509,7 +509,7 @@ def test_nested_list_page_reads_to_end_11548() -> None:
     f.seek(0)
 
     assert pl.read_parquet(f).select(
-        pl.col("x").list.lengths()
+        pl.col("x").list.len()
     ).to_series().to_list() == [
         2048,
         2048,

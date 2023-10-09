@@ -318,7 +318,7 @@ class StringNameSpace:
 
         """
 
-    def len(self) -> Series:
+    def len_bytes(self) -> Series:
         """
         Return the length of each string as the number of bytes.
 
@@ -329,17 +329,17 @@ class StringNameSpace:
 
         See Also
         --------
-        n_chars
+        len_chars
 
         Notes
         -----
         When working with non-ASCII text, the length in bytes is not the same as the
-        length in characters. You may want to use :func:`n_chars` instead.
+        length in characters. You may want to use :func:`len_chars` instead.
 
         Examples
         --------
         >>> s = pl.Series(["Café", "345", "東京", None])
-        >>> s.str.len()
+        >>> s.str.len_bytes()
         shape: (4,)
         Series: '' [u32]
         [
@@ -351,7 +351,7 @@ class StringNameSpace:
 
         """
 
-    def n_chars(self) -> Series:
+    def len_chars(self) -> Series:
         """
         Return the length of each string as the number of characters.
 
@@ -362,17 +362,17 @@ class StringNameSpace:
 
         See Also
         --------
-        len
+        len_bytes
 
         Notes
         -----
-        When working with ASCII text, use :func:`len` instead to achieve equivalent
-        output with better performance.
+        When working with ASCII text, use :func:`len_bytes` instead to achieve
+        equivalent output with better performance.
 
         Examples
         --------
         >>> s = pl.Series(["Café", "345", "東京", None])
-        >>> s.str.n_chars()
+        >>> s.str.len_chars()
         shape: (4,)
         Series: '' [u32]
         [
@@ -1586,12 +1586,22 @@ class StringNameSpace:
 
         """
 
-    @deprecate_renamed_function("len", version="0.19.8")
+    @deprecate_renamed_function("len_bytes", version="0.19.8")
     def lengths(self) -> Series:
         """
         Return the number of bytes in each string.
 
         .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len`.
+            This method has been renamed to :func:`len_bytes`.
+
+        """
+
+    @deprecate_renamed_function("len_chars", version="0.19.8")
+    def n_chars(self) -> Series:
+        """
+        Return the length of each string as the number of characters.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len_chars`.
 
         """

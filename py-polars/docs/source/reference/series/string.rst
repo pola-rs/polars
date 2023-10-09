@@ -22,7 +22,8 @@ The following methods are available under the `Series.str` attribute.
     Series.str.extract_groups
     Series.str.json_extract
     Series.str.json_path_match
-    Series.str.len
+    Series.str.len_bytes
+    Series.str.len_chars
     Series.str.lengths
     Series.str.ljust
     Series.str.lstrip

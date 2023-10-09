@@ -12,8 +12,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .select([
-            col("animal").str().lengths().alias("byte_count"),
-            col("animal").str().n_chars().alias("letter_count"),
+            col("animal").str().len_bytes().alias("byte_count"),
+            col("animal").str().len_chars().alias("letter_count"),
         ])
         .collect()?;
 

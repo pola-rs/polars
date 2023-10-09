@@ -440,7 +440,7 @@ class Config(contextlib.ContextDecorator):
         ...         ]
         ...     }
         ... )
-        >>> df.with_columns(pl.col("txt").str.len().alias("len"))
+        >>> df.with_columns(pl.col("txt").str.len_bytes().alias("len"))
         shape: (2, 2)
         ┌───────────────────────────────────┬─────┐
         │ txt                               ┆ len │

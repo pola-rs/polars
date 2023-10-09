@@ -368,7 +368,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_to_decimal(inference_length))
 
-    def len(self) -> Expr:
+    def len_bytes(self) -> Expr:
         """
         Return the length of each string as the number of bytes.
 
@@ -379,7 +379,7 @@ class ExprStringNameSpace:
 
         See Also
         --------
-        n_chars
+        len_chars
 
         Notes
         -----
@@ -388,27 +388,27 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"s": ["Café", "345", "東京", None]})
+        >>> df = pl.DataFrame({"a": ["Café", "345", "東京", None]})
         >>> df.with_columns(
-        ...     pl.col("s").str.len().alias("len"),
-        ...     pl.col("s").str.n_chars().alias("n_chars"),
+        ...     pl.col("a").str.len_bytes().alias("bytes"),
+        ...     pl.col("a").str.len_chars().alias("chars"),
         ... )
         shape: (4, 3)
-        ┌──────┬──────┬─────────┐
-        │ s    ┆ len  ┆ n_chars │
-        │ ---  ┆ ---  ┆ ---     │
-        │ str  ┆ u32  ┆ u32     │
-        ╞══════╪══════╪═════════╡
-        │ Café ┆ 5    ┆ 4       │
-        │ 345  ┆ 3    ┆ 3       │
-        │ 東京 ┆ 6    ┆ 2       │
-        │ null ┆ null ┆ null    │
-        └──────┴──────┴─────────┘
+        ┌──────┬───────┬───────┐
+        │ a    ┆ bytes ┆ chars │
+        │ ---  ┆ ---   ┆ ---   │
+        │ str  ┆ u32   ┆ u32   │
+        ╞══════╪═══════╪═══════╡
+        │ Café ┆ 5     ┆ 4     │
+        │ 345  ┆ 3     ┆ 3     │
+        │ 東京 ┆ 6     ┆ 2     │
+        │ null ┆ null  ┆ null  │
+        └──────┴───────┴───────┘
 
         """
-        return wrap_expr(self._pyexpr.str_len())
+        return wrap_expr(self._pyexpr.str_len_bytes())
 
-    def n_chars(self) -> Expr:
+    def len_chars(self) -> Expr:
         """
         Return the length of each string as the number of characters.
 
@@ -428,25 +428,25 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"s": ["Café", "345", "東京", None]})
+        >>> df = pl.DataFrame({"a": ["Café", "345", "東京", None]})
         >>> df.with_columns(
-        ...     pl.col("s").str.n_chars().alias("n_chars"),
-        ...     pl.col("s").str.len().alias("len"),
+        ...     pl.col("a").str.len_chars().alias("chars"),
+        ...     pl.col("a").str.len_bytes().alias("bytes"),
         ... )
         shape: (4, 3)
-        ┌──────┬─────────┬──────┐
-        │ s    ┆ n_chars ┆ len  │
-        │ ---  ┆ ---     ┆ ---  │
-        │ str  ┆ u32     ┆ u32  │
-        ╞══════╪═════════╪══════╡
-        │ Café ┆ 4       ┆ 5    │
-        │ 345  ┆ 3       ┆ 3    │
-        │ 東京 ┆ 2       ┆ 6    │
-        │ null ┆ null    ┆ null │
-        └──────┴─────────┴──────┘
+        ┌──────┬───────┬───────┐
+        │ a    ┆ chars ┆ bytes │
+        │ ---  ┆ ---   ┆ ---   │
+        │ str  ┆ u32   ┆ u32   │
+        ╞══════╪═══════╪═══════╡
+        │ Café ┆ 4     ┆ 5     │
+        │ 345  ┆ 3     ┆ 3     │
+        │ 東京 ┆ 2     ┆ 6     │
+        │ null ┆ null  ┆ null  │
+        └──────┴───────┴───────┘
 
         """
-        return wrap_expr(self._pyexpr.str_n_chars())
+        return wrap_expr(self._pyexpr.str_len_chars())
 
     def concat(self, delimiter: str = "-") -> Expr:
         """
@@ -2062,16 +2062,27 @@ class ExprStringNameSpace:
         """
         return self.count_matches(pattern)
 
-    @deprecate_renamed_function("len", version="0.19.8")
+    @deprecate_renamed_function("len_bytes", version="0.19.8")
     def lengths(self) -> Expr:
         """
-        Return the number of bytes in each string.
+        Return the length of each string as the number of bytes.
 
         .. deprecated:: 0.19.8
-            This method has been renamed to :func:`len`.
+            This method has been renamed to :func:`len_bytes`.
 
         """
-        return self.len()
+        return self.len_bytes()
+
+    @deprecate_renamed_function("len_chars", version="0.19.8")
+    def n_chars(self) -> Expr:
+        """
+        Return the length of each string as the number of characters.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len_chars`.
+
+        """
+        return self.len_chars()
 
 
 def _validate_format_argument(format: str | None) -> None:

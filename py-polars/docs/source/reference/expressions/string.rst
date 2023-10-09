@@ -22,7 +22,8 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.extract_groups
     Expr.str.json_extract
     Expr.str.json_path_match
-    Expr.str.len
+    Expr.str.len_bytes
+    Expr.str.len_chars
     Expr.str.lengths
     Expr.str.ljust
     Expr.str.lstrip
