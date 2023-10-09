@@ -31,52 +31,7 @@ impl FunctionExpr {
                 }
             },
             #[cfg(feature = "temporal")]
-            TemporalExpr(fun) => {
-                use TemporalFunction::*;
-                let dtype = match fun {
-                    Year | IsoYear => DataType::Int32,
-                    Month | Quarter | Week | WeekDay | Day | OrdinalDay | Hour | Minute
-                    | Millisecond | Microsecond | Nanosecond | Second => DataType::UInt32,
-                    TimeStamp(_) => DataType::Int64,
-                    IsLeapYear => DataType::Boolean,
-                    Time => DataType::Time,
-                    Date => DataType::Date,
-                    Datetime => match mapper.with_same_dtype().unwrap().dtype {
-                        DataType::Datetime(tu, _) => DataType::Datetime(tu, None),
-                        dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
-                    },
-                    Truncate(_) => mapper.with_same_dtype().unwrap().dtype,
-                    #[cfg(feature = "date_offset")]
-                    MonthStart => mapper.with_same_dtype().unwrap().dtype,
-                    #[cfg(feature = "date_offset")]
-                    MonthEnd => mapper.with_same_dtype().unwrap().dtype,
-                    #[cfg(feature = "timezones")]
-                    BaseUtcOffset => DataType::Duration(TimeUnit::Milliseconds),
-                    #[cfg(feature = "timezones")]
-                    DSTOffset => DataType::Duration(TimeUnit::Milliseconds),
-                    Round(..) => mapper.with_same_dtype().unwrap().dtype,
-                    #[cfg(feature = "timezones")]
-                    ReplaceTimeZone(tz) => return mapper.map_datetime_dtype_timezone(tz.as_ref()),
-                    DatetimeFunction {
-                        time_unit,
-                        time_zone,
-                    } => {
-                        return Ok(Field::new(
-                            "datetime",
-                            DataType::Datetime(*time_unit, time_zone.clone()),
-                        ));
-                    },
-                    Combine(tu) => match mapper.with_same_dtype().unwrap().dtype {
-                        DataType::Datetime(_, tz) => DataType::Datetime(*tu, tz),
-                        DataType::Date => DataType::Datetime(*tu, None),
-                        dtype => {
-                            polars_bail!(ComputeError: "expected Date or Datetime, got {}", dtype)
-                        },
-                    },
-                };
-                mapper.with_dtype(dtype)
-            },
-
+            TemporalExpr(fun) => fun.get_field(mapper),
             #[cfg(feature = "range")]
             Range(func) => func.get_field(mapper),
             #[cfg(feature = "date_offset")]
@@ -321,7 +276,6 @@ impl<'a> FieldsMapper<'a> {
     }
 
     /// Map a single dtype with a potentially failing mapper function.
-    #[cfg(any(feature = "timezones", feature = "dtype-array"))]
     pub fn try_map_dtype(
         &self,
         func: impl Fn(&DataType) -> PolarsResult<DataType>,
