@@ -30,20 +30,20 @@ pub(crate) fn next_line_position_naive(input: &[u8], eol_char: u8) -> Option<usi
 pub(crate) fn next_line_position(
     mut input: &[u8],
     mut expected_fields: Option<usize>,
-    delimiter: u8,
+    separator: u8,
     quote_char: Option<u8>,
     eol_char: u8,
 ) -> Option<usize> {
     fn accept_line(
         line: &[u8],
         expected_fields: usize,
-        delimiter: u8,
+        separator: u8,
         eol_char: u8,
         quote_char: Option<u8>,
     ) -> bool {
         let mut count = 0usize;
-        for (field, _) in SplitFields::new(line, delimiter, quote_char, eol_char) {
-            if memchr2_iter(delimiter, eol_char, field).count() >= expected_fields {
+        for (field, _) in SplitFields::new(line, separator, quote_char, eol_char) {
+            if memchr2_iter(separator, eol_char, field).count() >= expected_fields {
                 return false;
             }
             count += 1;
@@ -95,10 +95,10 @@ pub(crate) fn next_line_position(
         match (line, expected_fields) {
             // count the fields, and determine if they are equal to what we expect from the schema
             (Some(line), Some(expected_fields)) => {
-                if accept_line(line, expected_fields, delimiter, eol_char, quote_char) {
+                if accept_line(line, expected_fields, separator, eol_char, quote_char) {
                     let mut valid = true;
                     for line in lines.take(2) {
-                        if !accept_line(line, expected_fields, delimiter, eol_char, quote_char) {
+                        if !accept_line(line, expected_fields, separator, eol_char, quote_char) {
                             valid = false;
                             break;
                         }
@@ -160,13 +160,13 @@ pub(crate) fn skip_whitespace(input: &[u8]) -> &[u8] {
 }
 
 #[inline]
-/// Can be used to skip whitespace, but exclude the delimiter
+/// Can be used to skip whitespace, but exclude the separator
 pub(crate) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> &[u8] {
     skip_condition(input, |b| b != exclude && (is_whitespace(b)))
 }
 
 #[inline]
-/// Can be used to skip whitespace, but exclude the delimiter
+/// Can be used to skip whitespace, but exclude the separator
 pub(crate) fn skip_whitespace_line_ending_exclude(
     input: &[u8],
     exclude: u8,
@@ -188,7 +188,7 @@ pub(crate) fn get_line_stats(
     n_lines: usize,
     eol_char: u8,
     expected_fields: usize,
-    delimiter: u8,
+    separator: u8,
     quote_char: Option<u8>,
 ) -> Option<(f32, f32)> {
     let mut lengths = Vec::with_capacity(n_lines);
@@ -204,7 +204,7 @@ pub(crate) fn get_line_stats(
         let pos = next_line_position(
             bytes_trunc,
             Some(expected_fields),
-            delimiter,
+            separator,
             quote_char,
             eol_char,
         )?;
@@ -350,7 +350,7 @@ fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
 pub(super) fn parse_lines<'a>(
     mut bytes: &'a [u8],
     offset: usize,
-    delimiter: u8,
+    separator: u8,
     comment_char: Option<u8>,
     quote_char: Option<u8>,
     eol_char: u8,
@@ -391,9 +391,9 @@ pub(super) fn parse_lines<'a>(
         // only when we have one column \n should not be skipped
         // other widths should have commas.
         bytes = if schema_len > 1 {
-            skip_whitespace_line_ending_exclude(bytes, delimiter, eol_char)
+            skip_whitespace_line_ending_exclude(bytes, separator, eol_char)
         } else {
-            skip_whitespace_exclude(bytes, delimiter)
+            skip_whitespace_exclude(bytes, separator)
         };
         if bytes.is_empty() {
             return Ok(original_bytes_len);
@@ -416,7 +416,7 @@ pub(super) fn parse_lines<'a>(
         let mut next_projected = unsafe { projection_iter.next().unwrap_unchecked() };
         let mut processed_fields = 0;
 
-        let mut iter = SplitFields::new(bytes, delimiter, quote_char, eol_char);
+        let mut iter = SplitFields::new(bytes, separator, quote_char, eol_char);
         let mut idx = 0u32;
         let mut read_sol = 0;
         loop {

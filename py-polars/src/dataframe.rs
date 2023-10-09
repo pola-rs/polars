@@ -229,7 +229,7 @@ impl PyDataFrame {
             .infer_schema(infer_schema_length)
             .has_header(has_header)
             .with_n_rows(n_rows)
-            .with_delimiter(separator.as_bytes()[0])
+            .with_separator(separator.as_bytes()[0])
             .with_skip_rows(skip_rows)
             .with_ignore_errors(ignore_errors)
             .with_projection(projection)
@@ -589,7 +589,7 @@ impl PyDataFrame {
         has_header: bool,
         separator: u8,
         line_terminator: String,
-        quote: u8,
+        quote_char: u8,
         batch_size: usize,
         datetime_format: Option<String>,
         date_format: Option<String>,
@@ -606,9 +606,9 @@ impl PyDataFrame {
                 // No need for a buffered writer, because the csv writer does internal buffering.
                 CsvWriter::new(f)
                     .has_header(has_header)
-                    .with_delimiter(separator)
+                    .with_separator(separator)
                     .with_line_terminator(line_terminator)
-                    .with_quoting_char(quote)
+                    .with_quote_char(quote_char)
                     .with_batch_size(batch_size)
                     .with_datetime_format(datetime_format)
                     .with_date_format(date_format)
@@ -623,9 +623,9 @@ impl PyDataFrame {
             let mut buf = get_file_like(py_f, true)?;
             CsvWriter::new(&mut buf)
                 .has_header(has_header)
-                .with_delimiter(separator)
+                .with_separator(separator)
                 .with_line_terminator(line_terminator)
-                .with_quoting_char(quote)
+                .with_quote_char(quote_char)
                 .with_batch_size(batch_size)
                 .with_datetime_format(datetime_format)
                 .with_date_format(date_format)

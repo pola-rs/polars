@@ -908,6 +908,71 @@ def test_sql_trim(foods_ipc_path: Path) -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("cols1", "cols2", "union_subtype", "expected"),
+    [
+        (
+            ["*"],
+            ["*"],
+            "",
+            [(1, "zz"), (2, "yy"), (3, "xx")],
+        ),
+        (
+            ["*"],
+            ["frame2.*"],
+            "ALL",
+            [(1, "zz"), (2, "yy"), (2, "yy"), (3, "xx")],
+        ),
+        (
+            ["frame1.*"],
+            ["c1", "c2"],
+            "DISTINCT",
+            [(1, "zz"), (2, "yy"), (3, "xx")],
+        ),
+        (
+            ["*"],
+            ["c2", "c1"],
+            "ALL BY NAME",
+            [(1, "zz"), (2, "yy"), (2, "yy"), (3, "xx")],
+        ),
+        (
+            ["c1", "c2"],
+            ["c2", "c1"],
+            "BY NAME",
+            [(1, "zz"), (2, "yy"), (3, "xx")],
+        ),
+        (
+            # note: waiting for "https://github.com/sqlparser-rs/sqlparser-rs/pull/997"
+            ["c1", "c2"],
+            ["c2", "c1"],
+            "DISTINCT BY NAME",
+            None,  # [(1, "zz"), (2, "yy"), (3, "xx")],
+        ),
+    ],
+)
+def test_sql_union(
+    cols1: list[str],
+    cols2: list[str],
+    union_subtype: str,
+    expected: dict[str, list[int] | list[str]] | None,
+) -> None:
+    with pl.SQLContext(
+        frame1=pl.DataFrame({"c1": [1, 2], "c2": ["zz", "yy"]}),
+        frame2=pl.DataFrame({"c1": [2, 3], "c2": ["yy", "xx"]}),
+        eager_execution=True,
+    ) as ctx:
+        query = f"""
+            SELECT {', '.join(cols1)} FROM frame1
+            UNION {union_subtype}
+            SELECT {', '.join(cols2)} FROM frame2
+        """
+        if expected is not None:
+            assert sorted(ctx.execute(query).rows()) == expected
+        else:
+            with pytest.raises(pl.ComputeError, match="sql parser error"):
+                ctx.execute(query)
+
+
 def test_sql_nullif_coalesce(foods_ipc_path: Path) -> None:
     nums = pl.LazyFrame(
         {
@@ -1123,3 +1188,23 @@ def test_sql_expr() -> None:
         pl.InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
     ):
         pl.sql_expr("xyz.*")
+
+
+@pytest.mark.parametrize("match_float", [False, True])
+def test_sql_unary_ops_8890(match_float: bool) -> None:
+    with pl.SQLContext(
+        df=pl.DataFrame({"a": [-2, -1, 1, 2], "b": ["w", "x", "y", "z"]}),
+    ) as ctx:
+        in_values = "(-3.0, -1.0, +2.0, +4.0)" if match_float else "(-3, -1, +2, +4)"
+        res = ctx.execute(
+            f"""
+            SELECT *, -(3) as c, (+4) as d
+            FROM df WHERE a IN {in_values}
+            """
+        )
+        assert res.collect().to_dict(False) == {
+            "a": [-1, 2],
+            "b": ["x", "z"],
+            "c": [-3, -3],
+            "d": [4, 4],
+        }

@@ -68,7 +68,7 @@ impl ParquetExec {
         } else if is_cloud_url(self.path.as_path()) {
             #[cfg(feature = "cloud")]
             {
-                polars_io::pl_async::get_runtime().block_on(async {
+                polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
                     let reader = ParquetAsyncReader::from_uri(
                         &self.path.to_string_lossy(),
                         self.cloud_options.as_ref(),

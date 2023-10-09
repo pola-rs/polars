@@ -584,7 +584,7 @@ def test_csv_quote_char() -> None:
 
     # non-standard quote char
     df = pl.DataFrame({"x": ["", "0*0", "xyz"]})
-    csv_data = df.write_csv(quote="*")
+    csv_data = df.write_csv(quote_char="*")
 
     assert csv_data == "x\n**\n*0**0*\nxyz\n"
     assert_frame_equal(df, pl.read_csv(io.StringIO(csv_data), quote_char="*"))
@@ -722,12 +722,13 @@ def test_empty_string_missing_round_trip() -> None:
         assert_frame_equal(df, df_read)
 
 
-def test_write_csv_delimiter() -> None:
+def test_write_csv_separator() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
     f = io.BytesIO()
     df.write_csv(f, separator="\t")
     f.seek(0)
     assert f.read() == b"a\tb\n1\t1\n2\t2\n3\t3\n"
+    assert_frame_equal(df, pl.read_csv(f, separator="\t"))
 
 
 def test_write_csv_line_terminator() -> None:
@@ -736,6 +737,7 @@ def test_write_csv_line_terminator() -> None:
     df.write_csv(f, line_terminator="\r\n")
     f.seek(0)
     assert f.read() == b"a,b\r\n1,1\r\n2,2\r\n3,3\r\n"
+    assert_frame_equal(df, pl.read_csv(f, eol_char="\n"))
 
 
 def test_escaped_null_values() -> None:
@@ -865,7 +867,7 @@ def test_glob_csv(df_no_lists: pl.DataFrame, tmp_path: Path) -> None:
     assert pl.read_csv(path_glob).shape == (3, 11)
 
 
-def test_csv_whitespace_delimiter_at_start_do_not_skip() -> None:
+def test_csv_whitespace_separator_at_start_do_not_skip() -> None:
     csv = "\t\t\t\t0\t1"
     assert pl.read_csv(csv.encode(), separator="\t", has_header=False).to_dict(
         False
@@ -879,7 +881,7 @@ def test_csv_whitespace_delimiter_at_start_do_not_skip() -> None:
     }
 
 
-def test_csv_whitespace_delimiter_at_end_do_not_skip() -> None:
+def test_csv_whitespace_separator_at_end_do_not_skip() -> None:
     csv = "0\t1\t\t\t\t"
     assert pl.read_csv(csv.encode(), separator="\t", has_header=False).to_dict(
         False
@@ -1329,6 +1331,19 @@ def test_csv_scan_categorical(tmp_path: Path) -> None:
     assert result["x"].dtype == pl.Categorical
 
 
+@pytest.mark.write_disk()
+def test_csv_scan_new_columns_less_than_original_columns(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"x": ["A"], "y": ["A"], "z": "A"})
+
+    file_path = tmp_path / "test_csv_scan_new_columns.csv"
+    df.write_csv(file_path)
+    result = pl.scan_csv(file_path, new_columns=["x_new", "y_new"]).collect()
+
+    assert result.columns == ["x_new", "y_new", "z"]
+
+
 def test_read_csv_chunked() -> None:
     """Check that row count is properly functioning."""
     N = 10_000
@@ -1489,7 +1504,9 @@ def test_csv_quote_styles() -> None:
         "2.0,a,bc,2,false,,2077-07-05T03:01:00,03:01:00\n"
         ',"hello,3,,2077-07-05,2077-07-05T03:01:00,\n'
     )
-    assert df.write_csv(quote_style="non_numeric", quote="8", **temporal_formats) == (
+    assert df.write_csv(
+        quote_style="non_numeric", quote_char="8", **temporal_formats
+    ) == (
         "8float8,8string8,8int8,8bool8,8date8,8datetime8,8time8\n"
         "1.0,8a8,1,8true8,82077-07-058,,803:01:008\n"
         "2.0,8a,bc8,2,8false8,,82077-07-05T03:01:008,803:01:008\n"

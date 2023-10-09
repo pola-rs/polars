@@ -19,8 +19,6 @@ use crate::parquet::async_impl::FetchRowGroupsFromObjectStore;
 use crate::parquet::mmap::mmap_columns;
 use crate::parquet::predicates::read_this_row_group;
 use crate::parquet::{mmap, ParallelStrategy};
-#[cfg(feature = "async")]
-use crate::pl_async::get_runtime;
 use crate::predicates::{apply_predicate, arrow_schema_to_empty_df, PhysicalIoExpr};
 use crate::utils::{apply_projection, get_reader_bytes};
 use crate::RowCount;
@@ -111,8 +109,58 @@ fn materialize_hive_partitions(
 }
 
 #[allow(clippy::too_many_arguments)]
-// might parallelize over columns
 fn rg_to_dfs(
+    store: &mmap::ColumnStore,
+    previous_row_count: &mut IdxSize,
+    row_group_start: usize,
+    row_group_end: usize,
+    remaining_rows: &mut usize,
+    file_metadata: &FileMetaData,
+    schema: &ArrowSchema,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    row_count: Option<RowCount>,
+    parallel: ParallelStrategy,
+    projection: &[usize],
+    use_statistics: bool,
+    hive_partition_columns: Option<&[Series]>,
+) -> PolarsResult<Vec<DataFrame>> {
+    if let ParallelStrategy::Columns | ParallelStrategy::None = parallel {
+        rg_to_dfs_optionally_par_over_columns(
+            store,
+            previous_row_count,
+            row_group_start,
+            row_group_end,
+            remaining_rows,
+            file_metadata,
+            schema,
+            predicate,
+            row_count,
+            parallel,
+            projection,
+            use_statistics,
+            hive_partition_columns,
+        )
+    } else {
+        rg_to_dfs_par_over_rg(
+            store,
+            row_group_start,
+            row_group_end,
+            previous_row_count,
+            remaining_rows,
+            file_metadata,
+            schema,
+            predicate,
+            row_count,
+            projection,
+            use_statistics,
+            hive_partition_columns,
+        )
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+// might parallelize over columns
+fn rg_to_dfs_optionally_par_over_columns(
     store: &mmap::ColumnStore,
     previous_row_count: &mut IdxSize,
     row_group_start: usize,
@@ -191,7 +239,7 @@ fn rg_to_dfs(
 
 #[allow(clippy::too_many_arguments)]
 // parallelizes over row groups
-fn rg_to_dfs_par(
+fn rg_to_dfs_par_over_rg(
     store: &mmap::ColumnStore,
     row_group_start: usize,
     row_group_end: usize,
@@ -314,39 +362,22 @@ pub fn read_parquet<R: MmapBytesReader>(
     let reader = ReaderBytes::from(&reader);
     let bytes = reader.deref();
     let store = mmap::ColumnStore::Local(bytes);
-    let dfs = match parallel {
-        ParallelStrategy::Columns | ParallelStrategy::None => rg_to_dfs(
-            &store,
-            &mut 0,
-            0,
-            n_row_groups,
-            &mut limit,
-            &file_metadata,
-            schema,
-            predicate,
-            row_count,
-            parallel,
-            &projection,
-            use_statistics,
-            hive_partition_columns,
-        )?,
-        ParallelStrategy::RowGroups => rg_to_dfs_par(
-            &store,
-            0,
-            file_metadata.row_groups.len(),
-            &mut 0,
-            &mut limit,
-            &file_metadata,
-            schema,
-            predicate,
-            row_count,
-            &projection,
-            use_statistics,
-            hive_partition_columns,
-        )?,
-        // auto should already be replaced by Columns or RowGroups
-        ParallelStrategy::Auto => unimplemented!(),
-    };
+
+    let dfs = rg_to_dfs(
+        &store,
+        &mut 0,
+        0,
+        n_row_groups,
+        &mut limit,
+        &file_metadata,
+        schema,
+        predicate,
+        row_count,
+        parallel,
+        &projection,
+        use_statistics,
+        hive_partition_columns,
+    )?;
 
     if dfs.is_empty() {
         let schema = if let Cow::Borrowed(_) = projection {
@@ -424,7 +455,7 @@ pub struct BatchedParquetReader {
     row_group_fetcher: RowGroupFetcher,
     limit: usize,
     projection: Vec<usize>,
-    schema: ArrowSchema,
+    schema: Arc<ArrowSchema>,
     metadata: Arc<FileMetaData>,
     row_count: Option<RowCount>,
     rows_read: IdxSize,
@@ -449,7 +480,7 @@ impl BatchedParquetReader {
         use_statistics: bool,
         hive_partition_columns: Option<Vec<Series>>,
     ) -> PolarsResult<Self> {
-        let schema = read::schema::infer_schema(&metadata)?;
+        let schema = Arc::new(read::schema::infer_schema(&metadata)?);
         let n_row_groups = metadata.row_groups.len();
         let projection =
             projection.unwrap_or_else(|| (0usize..schema.fields.len()).collect::<Vec<_>>());
@@ -488,46 +519,24 @@ impl BatchedParquetReader {
                 .row_group_fetcher
                 .fetch_row_groups(row_group_start..row_group_end)
                 .await?;
-            let dfs = match self.parallel {
-                ParallelStrategy::Columns => {
-                    let dfs = rg_to_dfs(
-                        &store,
-                        &mut self.rows_read,
-                        row_group_start,
-                        row_group_end,
-                        &mut self.limit,
-                        &self.metadata,
-                        &self.schema,
-                        None,
-                        self.row_count.clone(),
-                        ParallelStrategy::Columns,
-                        &self.projection,
-                        self.use_statistics,
-                        self.hive_partition_columns.as_deref(),
-                    )?;
-                    self.row_group_offset += n;
-                    dfs
-                },
-                ParallelStrategy::RowGroups => {
-                    let dfs = rg_to_dfs_par(
-                        &store,
-                        self.row_group_offset,
-                        std::cmp::min(self.row_group_offset + n, self.n_row_groups),
-                        &mut self.rows_read,
-                        &mut self.limit,
-                        &self.metadata,
-                        &self.schema,
-                        None,
-                        self.row_count.clone(),
-                        &self.projection,
-                        self.use_statistics,
-                        self.hive_partition_columns.as_deref(),
-                    )?;
-                    self.row_group_offset += n;
-                    dfs
-                },
-                _ => unimplemented!(),
-            };
+
+            let dfs = rg_to_dfs(
+                &store,
+                &mut self.rows_read,
+                row_group_start,
+                row_group_end,
+                &mut self.limit,
+                &self.metadata,
+                &self.schema,
+                None,
+                self.row_count.clone(),
+                self.parallel,
+                &self.projection,
+                self.use_statistics,
+                self.hive_partition_columns.as_deref(),
+            )?;
+
+            self.row_group_offset += n;
             // case where there is no data in the file
             // the streaming engine needs at least a single chunk
             if self.rows_read == 0 && dfs.is_empty() {
@@ -609,14 +618,5 @@ impl BatchedParquetIter {
                 },
             },
         }
-    }
-}
-
-#[cfg(feature = "async")]
-impl Iterator for BatchedParquetIter {
-    type Item = PolarsResult<DataFrame>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        get_runtime().block_on(self.next_())
     }
 }

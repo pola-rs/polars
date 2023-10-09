@@ -292,9 +292,9 @@ class Series:
             self._s = numpy_to_pyseries(
                 name, values, strict=strict, nan_to_null=nan_to_null
             )
-            if values.dtype.type == np.datetime64:
+            if values.dtype.type in [np.datetime64, np.timedelta64]:
                 # cast to appropriate dtype, handling NaT values
-                dtype = _resolve_datetime_dtype(dtype, values.dtype)
+                dtype = _resolve_temporal_dtype(dtype, values.dtype)
                 if dtype is not None:
                     self._s = (
                         self.cast(dtype)
@@ -6821,20 +6821,22 @@ class Series:
         return StructNameSpace(self)
 
 
-def _resolve_datetime_dtype(
-    dtype: PolarsDataType | None, ndtype: np.datetime64
+def _resolve_temporal_dtype(
+    dtype: PolarsDataType | None,
+    ndtype: np.dtype[np.datetime64] | np.dtype[np.timedelta64],
 ) -> PolarsDataType | None:
-    """Given polars/numpy datetime dtypes, resolve to an explicit unit."""
+    """Given polars/numpy temporal dtypes, resolve to an explicit unit."""
+    PolarsType = Duration if ndtype.type == np.timedelta64 else Datetime
     if dtype is None or (dtype == Datetime and not getattr(dtype, "time_unit", None)):
         time_unit = getattr(dtype, "time_unit", None) or np.datetime_data(ndtype)[0]
         # explicit formulation is verbose, but keeps mypy happy
         # (and avoids unsupported timeunits such as "s")
         if time_unit == "ns":
-            dtype = Datetime("ns")
+            dtype = PolarsType("ns")
         elif time_unit == "us":
-            dtype = Datetime("us")
+            dtype = PolarsType("us")
         elif time_unit == "ms":
-            dtype = Datetime("ms")
-        elif time_unit == "D":
+            dtype = PolarsType("ms")
+        elif time_unit == "D" and ndtype.type == np.datetime64:
             dtype = Date
     return dtype

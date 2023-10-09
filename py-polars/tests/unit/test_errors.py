@@ -276,25 +276,23 @@ def test_window_expression_different_group_length() -> None:
 
 
 def test_lazy_concat_err() -> None:
-    df1 = pl.DataFrame(
+    df = pl.DataFrame(
         {
             "foo": [1, 2],
             "bar": [6, 7],
             "ham": ["a", "b"],
         }
     )
-    df2 = pl.DataFrame(
-        {
-            "foo": [3, 4],
-            "ham": ["c", "d"],
-            "bar": [8, 9],
-        }
-    )
     with pytest.raises(
         ValueError,
-        match="'LazyFrame' only allows {'vertical','vertical_relaxed','diagonal','align'} concat strategies",
+        match="DataFrame `how` must be one of {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}, got 'sausage'",
     ):
-        pl.concat([df1.lazy(), df2.lazy()], how="horizontal").collect()
+        pl.concat([df, df], how="sausage")  # type: ignore[arg-type]
+    with pytest.raises(
+        ValueError,
+        match="LazyFrame `how` must be one of {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'align'}, got 'horizontal'",
+    ):
+        pl.concat([df.lazy(), df.lazy()], how="horizontal").collect()
 
 
 @pytest.mark.parametrize("how", ["horizontal", "diagonal"])
@@ -302,7 +300,7 @@ def test_series_concat_err(how: ConcatMethod) -> None:
     s = pl.Series([1, 2, 3])
     with pytest.raises(
         ValueError,
-        match="Series only allows {'vertical'} concat strategy",
+        match="Series only supports 'vertical' concat strategy",
     ):
         pl.concat([s, s], how=how)
 

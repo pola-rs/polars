@@ -146,7 +146,12 @@ ToStructStrategy: TypeAlias = Literal[
 # The following have no equivalent on the Rust side
 Ambiguous: TypeAlias = Literal["earliest", "latest", "raise"]
 ConcatMethod = Literal[
-    "vertical", "vertical_relaxed", "diagonal", "horizontal", "align"
+    "vertical",
+    "vertical_relaxed",
+    "diagonal",
+    "diagonal_relaxed",
+    "horizontal",
+    "align",
 ]
 EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
 Orientation: TypeAlias = Literal["col", "row"]

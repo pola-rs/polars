@@ -113,6 +113,10 @@ impl FunctionExpr {
                     Min => mapper.map_to_list_inner_dtype(),
                     Max => mapper.map_to_list_inner_dtype(),
                     Mean => mapper.with_dtype(DataType::Float64),
+                    ArgMin => mapper.with_dtype(IDX_DTYPE),
+                    ArgMax => mapper.with_dtype(IDX_DTYPE),
+                    #[cfg(feature = "diff")]
+                    Diff { .. } => mapper.with_same_dtype(),
                     Sort(_) => mapper.with_same_dtype(),
                     Reverse => mapper.with_same_dtype(),
                     Unique(_) => mapper.with_same_dtype(),
@@ -150,6 +154,15 @@ impl FunctionExpr {
             StructExpr(s) => s.get_field(mapper),
             #[cfg(feature = "top_k")]
             TopK(_) => mapper.with_same_dtype(),
+            #[cfg(feature = "dtype-struct")]
+            ValueCounts { .. } => mapper.map_dtype(|dt| {
+                DataType::Struct(vec![
+                    Field::new(fields[0].name().as_str(), dt.clone()),
+                    Field::new("counts", IDX_DTYPE),
+                ])
+            }),
+            #[cfg(feature = "unique_counts")]
+            UniqueCounts => mapper.with_dtype(IDX_DTYPE),
             Shift(..) | Reverse => mapper.with_same_dtype(),
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "dtype-categorical")]

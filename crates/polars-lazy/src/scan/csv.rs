@@ -13,7 +13,7 @@ use crate::prelude::*;
 #[cfg(feature = "csv")]
 pub struct LazyCsvReader<'a> {
     path: PathBuf,
-    delimiter: u8,
+    separator: u8,
     has_header: bool,
     ignore_errors: bool,
     skip_rows: usize,
@@ -42,7 +42,7 @@ impl<'a> LazyCsvReader<'a> {
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyCsvReader {
             path: path.as_ref().to_owned(),
-            delimiter: b',',
+            separator: b',',
             has_header: true,
             ignore_errors: false,
             skip_rows: 0,
@@ -134,10 +134,10 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
-    /// Set the CSV file's column delimiter as a byte character
+    /// Set the CSV file's column separator as a byte character
     #[must_use]
-    pub fn with_delimiter(mut self, delimiter: u8) -> Self {
-        self.delimiter = delimiter;
+    pub fn with_separator(mut self, separator: u8) -> Self {
+        self.separator = separator;
         self
     }
 
@@ -239,7 +239,7 @@ impl<'a> LazyCsvReader<'a> {
 
         let (schema, _, _) = infer_file_schema(
             &reader_bytes,
-            self.delimiter,
+            self.separator,
             self.infer_schema_length,
             self.has_header,
             // we set it to None and modify them after the schema is updated
@@ -270,7 +270,7 @@ impl LazyFileListReader for LazyCsvReader<'_> {
     fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
             self.path,
-            self.delimiter,
+            self.separator,
             self.has_header,
             self.ignore_errors,
             self.skip_rows,

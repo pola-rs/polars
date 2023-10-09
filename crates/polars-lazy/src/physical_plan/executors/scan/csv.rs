@@ -29,7 +29,7 @@ impl CsvExec {
             .unwrap()
             .has_header(self.options.has_header)
             .with_dtypes(Some(self.schema.clone()))
-            .with_delimiter(self.options.delimiter)
+            .with_separator(self.options.separator)
             .with_ignore_errors(self.options.ignore_errors)
             .with_skip_rows(self.options.skip_rows)
             .with_n_rows(n_rows)

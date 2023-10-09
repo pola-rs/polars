@@ -6,7 +6,7 @@ fn main() -> PolarsResult<()> {
         .unwrap();
     let file = Box::new(file) as Box<dyn MmapBytesReader>;
     let _df = CsvReader::new(file)
-        .with_delimiter(b'|')
+        .with_separator(b'|')
         .has_header(false)
         .with_chunk_size(10)
         .batched_mmap(None)

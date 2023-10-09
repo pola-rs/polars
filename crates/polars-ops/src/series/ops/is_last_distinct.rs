@@ -149,7 +149,8 @@ where
 #[cfg(feature = "dtype-struct")]
 fn is_last_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
     let groups = s.group_tuples(true, false)?;
-    let last = groups.take_group_lasts();
+    // SAFETY: all groups have at least a single member
+    let last = unsafe { groups.take_group_lasts() };
     let mut out = MutableBitmap::with_capacity(s.len());
     out.extend_constant(s.len(), false);
 
@@ -165,7 +166,8 @@ fn is_last_distinct_struct(s: &Series) -> PolarsResult<BooleanChunked> {
 #[cfg(feature = "group_by_list")]
 fn is_last_distinct_list(ca: &ListChunked) -> PolarsResult<BooleanChunked> {
     let groups = ca.group_tuples(true, false)?;
-    let last = groups.take_group_lasts();
+    // SAFETY: all groups have at least a single member
+    let last = unsafe { groups.take_group_lasts() };
     let mut out = MutableBitmap::with_capacity(ca.len());
     out.extend_constant(ca.len(), false);
 

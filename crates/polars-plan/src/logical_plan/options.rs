@@ -24,7 +24,7 @@ pub type FileCount = u32;
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {
-    pub delimiter: u8,
+    pub separator: u8,
     pub comment_char: Option<u8>,
     pub quote_char: Option<u8>,
     pub eol_char: u8,

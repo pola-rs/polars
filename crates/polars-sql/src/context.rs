@@ -199,18 +199,32 @@ impl SQLContext {
     ) -> PolarsResult<LazyFrame> {
         let left = self.process_set_expr(left, query)?;
         let right = self.process_set_expr(right, query)?;
-        let concatenated = polars_lazy::dsl::concat(
-            vec![left, right],
-            UnionArgs {
-                parallel: true,
-                ..Default::default()
-            },
-        );
+        let opts = UnionArgs {
+            parallel: true,
+            to_supertypes: true,
+            ..Default::default()
+        };
         match quantifier {
             // UNION ALL
-            SetQuantifier::All => concatenated,
-            // UNION DISTINCT | UNION
-            _ => concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any)),
+            SetQuantifier::All => polars_lazy::dsl::concat(vec![left, right], opts),
+            // UNION [DISTINCT]
+            SetQuantifier::Distinct | SetQuantifier::None => {
+                let concatenated = polars_lazy::dsl::concat(vec![left, right], opts);
+                concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
+            },
+            // UNION ALL BY NAME
+            // TODO: add recognition for SetQuantifier::DistinctByName
+            //  when "https://github.com/sqlparser-rs/sqlparser-rs/pull/997" is available
+            #[cfg(feature = "diagonal_concat")]
+            SetQuantifier::AllByName => concat_lf_diagonal(vec![left, right], opts),
+            // UNION [DISTINCT] BY NAME
+            #[cfg(feature = "diagonal_concat")]
+            SetQuantifier::ByName => {
+                let concatenated = concat_lf_diagonal(vec![left, right], opts);
+                concatenated.map(|lf| lf.unique(None, UniqueKeepStrategy::Any))
+            },
+            #[allow(unreachable_patterns)]
+            _ => polars_bail!(InvalidOperation: "UNION {} is not yet supported", quantifier),
         }
     }
 

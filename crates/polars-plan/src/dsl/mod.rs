@@ -1754,23 +1754,11 @@ impl Expr {
     /// Count all unique values and create a struct mapping value to count.
     /// (Note that it is better to turn parallel off in the aggregation context).
     pub fn value_counts(self, sort: bool, parallel: bool) -> Self {
-        self.apply(
-            move |s| {
-                s.value_counts(sort, parallel)
-                    .map(|df| Some(df.into_struct(s.name()).into_series()))
-            },
-            GetOutput::map_field(|fld| {
-                Field::new(
-                    fld.name(),
-                    DataType::Struct(vec![fld.clone(), Field::new("counts", IDX_DTYPE)]),
-                )
-            }),
-        )
-        .with_function_options(|mut opts| {
-            opts.pass_name_to_apply = true;
-            opts
-        })
-        .with_fmt("value_counts")
+        self.apply_private(FunctionExpr::ValueCounts { sort, parallel })
+            .with_function_options(|mut opts| {
+                opts.pass_name_to_apply = true;
+                opts
+            })
     }
 
     #[cfg(feature = "unique_counts")]
@@ -1778,11 +1766,7 @@ impl Expr {
     /// This method differs from [`Expr::value_counts]` in that it does not return the
     /// values, only the counts and might be faster.
     pub fn unique_counts(self) -> Self {
-        self.apply(
-            |s| Ok(Some(s.unique_counts().into_series())),
-            GetOutput::from_type(IDX_DTYPE),
-        )
-        .with_fmt("unique_counts")
+        self.apply_private(FunctionExpr::UniqueCounts)
     }
 
     #[cfg(feature = "log")]
