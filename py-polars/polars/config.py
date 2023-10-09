@@ -449,9 +449,9 @@ class Config(contextlib.ContextDecorator):
         shape: (3,)
         Series: '' [f64]
         [
-                1.230498
-                1e6,
-                1.0000e-8
+            1.230498
+            1e6
+            1.0000e-8
         ]
 
         >>> with pl.Config(set_fmt_float="full"):
@@ -460,9 +460,9 @@ class Config(contextlib.ContextDecorator):
         shape: (3,)
         Series: '' [f64]
         [
-                1.230498095872587,
-                1000000,
-                0.00000001
+            1.230498095872587
+            1000000
+            0.00000001
         ]
 
         """
