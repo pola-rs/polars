@@ -1457,18 +1457,16 @@ class StringNameSpace:
 
         """
 
-    def parse_int(self, radix: int = 2, *, strict: bool = True) -> Series:
-        r"""
+    def parse_int(self, radix: int | None = None, *, strict: bool = True) -> Series:
+        """
         Parse integers with base radix from strings.
 
-        By default base 2. ParseError/Overflows become Nulls.
+        ParseError/Overflows become Nulls.
 
         Parameters
         ----------
         radix
             Positive integer which is the base of the string we are parsing.
-            Default: 2
-
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
