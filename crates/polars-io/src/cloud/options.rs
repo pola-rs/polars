@@ -75,6 +75,7 @@ where
         .collect::<PolarsResult<Configs<T>>>()
 }
 
+#[derive(PartialEq)]
 pub enum CloudType {
     Aws,
     Azure,
