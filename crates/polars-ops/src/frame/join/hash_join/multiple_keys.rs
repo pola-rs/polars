@@ -122,7 +122,6 @@ fn create_build_table_outer(
 }
 
 /// Probe the build table and add tuples to the results (inner join)
-#[allow(clippy::too_many_arguments)]
 fn probe_inner<F>(
     probe_hashes: &UInt64Chunked,
     hash_tbls: &[HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher>],
@@ -466,7 +465,6 @@ pub fn _left_semi_multiple_keys(a: &mut DataFrame, b: &mut DataFrame) -> Vec<Idx
 }
 
 /// Probe the build table and add tuples to the results (inner join)
-#[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
 fn probe_outer<F, G, H>(
     probe_hashes: &[UInt64Chunked],

@@ -195,7 +195,6 @@ where
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn rolling_apply_weighted_quantile<T, Fo>(
     values: &[T],
     p: f64,

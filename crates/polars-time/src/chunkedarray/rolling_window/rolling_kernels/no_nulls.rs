@@ -46,7 +46,6 @@ where
     Ok(Box::new(out))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn rolling_min<T>(
     values: &[T],
     period: Duration,
@@ -67,7 +66,6 @@ where
     rolling_apply_agg_window::<no_nulls::MinWindow<_>, _, _>(values, offset_iter, None)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn rolling_max<T>(
     values: &[T],
     period: Duration,
@@ -88,7 +86,6 @@ where
     rolling_apply_agg_window::<no_nulls::MaxWindow<_>, _, _>(values, offset_iter, None)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn rolling_sum<T>(
     values: &[T],
     period: Duration,
@@ -109,7 +106,6 @@ where
     rolling_apply_agg_window::<no_nulls::SumWindow<_>, _, _>(values, offset_iter, None)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn rolling_mean<T>(
     values: &[T],
     period: Duration,
@@ -130,7 +126,6 @@ where
     rolling_apply_agg_window::<no_nulls::MeanWindow<_>, _, _>(values, offset_iter, None)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn rolling_var<T>(
     values: &[T],
     period: Duration,
@@ -151,7 +146,6 @@ where
     rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(values, offset_iter, params)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn rolling_quantile<T>(
     values: &[T],
     period: Duration,

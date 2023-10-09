@@ -63,7 +63,6 @@ pub struct GenericJoinProbe {
 }
 
 impl GenericJoinProbe {
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         mut df_a: DataFrame,
         materialized_join_cols: Arc<Vec<BinaryArray<i64>>>,

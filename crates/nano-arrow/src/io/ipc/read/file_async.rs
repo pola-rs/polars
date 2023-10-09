@@ -159,7 +159,6 @@ where
     deserialize_footer(&footer, u64::MAX)
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn read_batch<R>(
     mut reader: R,
     dictionaries: &mut Dictionaries,

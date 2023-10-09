@@ -23,7 +23,6 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache, ambiguous))]
-    #[allow(clippy::too_many_arguments)]
     fn str_to_datetime(
         &self,
         format: Option<String>,

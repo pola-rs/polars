@@ -7,7 +7,6 @@ use crate::array::BooleanArray;
 use crate::datatypes::DataType;
 use crate::error::{Error, Result};
 
-#[allow(clippy::too_many_arguments)]
 pub fn read_boolean<R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
     data_type: DataType,

@@ -104,7 +104,6 @@ impl Utf8GroupbySink {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn new_inner(
         key_column: Arc<dyn PhysicalPipedExpr>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,

@@ -31,7 +31,6 @@ pub struct GroupByExec {
 }
 
 impl GroupByExec {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         input: Box<dyn Executor>,
         keys: Vec<Arc<dyn PhysicalExpr>>,
@@ -53,7 +52,6 @@ impl GroupByExec {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn group_by_helper(
     mut df: DataFrame,
     keys: Vec<Series>,

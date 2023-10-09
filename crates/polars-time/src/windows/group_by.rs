@@ -64,7 +64,6 @@ impl StartBy {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn update_groups_and_bounds(
     bounds_iter: BoundsIter<'_>,
     mut start: usize,
@@ -134,7 +133,6 @@ fn update_groups_and_bounds(
 /// and end (upper) of the window of that group.
 ///
 /// If `include_boundaries` is `false` those `lower` and `upper` vectors will be empty.
-#[allow(clippy::too_many_arguments)]
 pub fn group_by_windows(
     window: Window,
     time: &[i64],
@@ -219,7 +217,6 @@ pub fn group_by_windows(
 // ------t---
 // [------]
 #[inline]
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn group_by_values_iter_lookbehind(
     period: Duration,
     offset: Duration,
@@ -386,7 +383,6 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 // window is completely ahead of t and t itself is not a member
 // --t-----------
 //        [---]

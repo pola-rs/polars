@@ -123,7 +123,6 @@ impl WindowExpr {
         unsafe { Ok(flattened.take_unchecked(&idx)) }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn map_by_arg_sort(
         &self,
         df: &DataFrame,

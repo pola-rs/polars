@@ -4,7 +4,6 @@ use melt::process_melt;
 
 use super::*;
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn process_functions(
     proj_pd: &mut ProjectionPushDown,
     input: Node,

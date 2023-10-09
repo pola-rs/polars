@@ -255,7 +255,6 @@ pub fn read_bitmap<R: Read + Seek>(
     Bitmap::try_new(buffer, length)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn read_validity<R: Read + Seek>(
     buffers: &mut VecDeque<IpcBuffer>,
     field_node: Node,

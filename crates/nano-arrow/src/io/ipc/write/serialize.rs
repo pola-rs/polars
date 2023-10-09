@@ -64,7 +64,6 @@ fn write_boolean(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 fn write_generic_binary<O: Offset>(
     validity: Option<&Bitmap>,
     offsets: &OffsetsBuffer<O>,
@@ -389,7 +388,6 @@ fn write_fixed_size_list(
 }
 
 // use `write_keys` to either write keys or values
-#[allow(clippy::too_many_arguments)]
 pub(super) fn write_dictionary<K: DictionaryKey>(
     array: &DictionaryArray<K>,
     buffers: &mut Vec<ipc::Buffer>,

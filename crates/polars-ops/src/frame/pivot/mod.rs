@@ -164,7 +164,6 @@ where
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn pivot_impl(
     pivot_df: &DataFrame,
     // these columns will be aggregated in the nested group_by

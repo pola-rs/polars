@@ -5,7 +5,6 @@ use std::path::Path;
 
 use crate::prelude::*;
 
-#[allow(clippy::too_many_arguments)]
 fn write_scan<P: Display>(
     f: &mut Formatter,
     name: &str,

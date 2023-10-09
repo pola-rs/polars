@@ -241,7 +241,6 @@ pub(super) unsafe fn join_asof_nearest_with_indirection<
 // we don't process a group at once but per `index_left` we find the `right_index` and keep track
 // of the offsets we have already processed in a separate hashmap. Then on a next iteration we can
 // continue from that offsets location.
-#[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
 fn process_group<K, T>(
     k: K,
@@ -690,7 +689,6 @@ where
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn dispatch_join<T: PolarsNumericType>(
     left_asof: &ChunkedArray<T>,
     right_asof: &ChunkedArray<T>,
@@ -756,7 +754,6 @@ fn dispatch_join<T: PolarsNumericType>(
 }
 
 pub trait AsofJoinBy: IntoDf {
-    #[allow(clippy::too_many_arguments)]
     #[doc(hidden)]
     fn _join_asof_by(
         &self,
@@ -853,7 +850,6 @@ pub trait AsofJoinBy: IntoDf {
     /// This is similar to a left-join except that we match on nearest key rather than equal keys.
     /// The keys must be sorted to perform an asof join. This is a special implementation of an asof join
     /// that searches for the nearest keys within a subgroup set by `by`.
-    #[allow(clippy::too_many_arguments)]
     fn join_asof_by<I, S>(
         &self,
         other: &DataFrame,

@@ -5,7 +5,6 @@ use crate::csv::CsvReader;
 use crate::mmap::MmapBytesReader;
 use crate::prelude::update_row_counts2;
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn get_file_chunks_iterator(
     offsets: &mut VecDeque<(usize, usize)>,
     last_pos: &mut usize,

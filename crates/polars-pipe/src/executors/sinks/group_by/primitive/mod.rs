@@ -107,7 +107,6 @@ where
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new_inner(
         key: Arc<dyn PhysicalPipedExpr>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,

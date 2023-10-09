@@ -128,7 +128,6 @@ where
 
 pub trait AsofJoin: IntoDf {
     #[doc(hidden)]
-    #[allow(clippy::too_many_arguments)]
     fn _join_asof(
         &self,
         other: &DataFrame,

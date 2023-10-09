@@ -74,7 +74,6 @@ impl<'a, A, I: Iterator<Item = A>> Iterator for ProjectionIter<'a, A, I> {
 /// Returns a [`Chunk`] from a reader.
 /// # Panic
 /// Panics iff the projection is not in increasing order (e.g. `[1, 0]` nor `[0, 1, 1]` are valid)
-#[allow(clippy::too_many_arguments)]
 pub fn read_record_batch<R: Read + Seek>(
     batch: arrow_format::ipc::RecordBatchRef,
     fields: &[Field],
@@ -227,7 +226,6 @@ pub(crate) fn first_dict_field<'a>(
 
 /// Reads a dictionary from the reader,
 /// updating `dictionaries` with the resulting dictionary
-#[allow(clippy::too_many_arguments)]
 pub fn read_dictionary<R: Read + Seek>(
     batch: arrow_format::ipc::DictionaryBatchRef,
     fields: &[Field],

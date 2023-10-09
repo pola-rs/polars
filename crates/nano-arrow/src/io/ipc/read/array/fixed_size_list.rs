@@ -9,7 +9,6 @@ use crate::array::FixedSizeListArray;
 use crate::datatypes::DataType;
 use crate::error::{Error, Result};
 
-#[allow(clippy::too_many_arguments)]
 pub fn read_fixed_size_list<R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
     data_type: DataType,

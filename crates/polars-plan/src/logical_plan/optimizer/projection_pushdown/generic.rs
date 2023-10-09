@@ -1,6 +1,5 @@
 use super::*;
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn process_generic(
     proj_pd: &mut ProjectionPushDown,
     lp: ALogicalPlan,

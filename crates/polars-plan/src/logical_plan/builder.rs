@@ -134,7 +134,6 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(any(feature = "parquet", feature = "parquet_async"))]
-    #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet<P: Into<std::path::PathBuf>>(
         path: P,
         n_rows: Option<usize>,
@@ -261,7 +260,6 @@ impl LogicalPlanBuilder {
         .into())
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
     pub fn scan_csv<P: Into<std::path::PathBuf>>(
         path: P,

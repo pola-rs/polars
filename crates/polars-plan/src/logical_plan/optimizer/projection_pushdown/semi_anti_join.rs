@@ -1,7 +1,6 @@
 use super::*;
 use crate::logical_plan::optimizer::projection_pushdown::joins::process_alias;
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn process_semi_anti_join(
     proj_pd: &mut ProjectionPushDown,
     input_left: Node,

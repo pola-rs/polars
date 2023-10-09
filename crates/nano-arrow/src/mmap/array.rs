@@ -257,7 +257,6 @@ fn mmap_primitive<P: NativeType, T: AsRef<[u8]>>(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn mmap_list<O: Offset, T: AsRef<[u8]>>(
     data: Arc<T>,
     node: &Node,
@@ -310,7 +309,6 @@ fn mmap_list<O: Offset, T: AsRef<[u8]>>(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn mmap_fixed_size_list<T: AsRef<[u8]>>(
     data: Arc<T>,
     node: &Node,
@@ -362,7 +360,6 @@ fn mmap_fixed_size_list<T: AsRef<[u8]>>(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn mmap_struct<T: AsRef<[u8]>>(
     data: Arc<T>,
     node: &Node,
@@ -419,7 +416,6 @@ fn mmap_struct<T: AsRef<[u8]>>(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn mmap_dict<K: DictionaryKey, T: AsRef<[u8]>>(
     data: Arc<T>,
     node: &Node,
