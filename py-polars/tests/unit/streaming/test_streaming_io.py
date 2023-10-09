@@ -59,6 +59,24 @@ def test_sink_parquet(io_files_path: Path, tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
+def test_sink_parquet_cloud(io_files_path: Path, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    source = io_files_path / "small.parquet"
+    sink_file = tmp_path / "sink.parquet"
+    target = f"file://{sink_file}"
+
+    df_scanned = pl.scan_parquet(source)
+    df_scanned.sink_parquet_cloud(target)
+
+    with pl.StringCache():
+        original = pl.read_parquet(source)
+        new = pl.read_parquet(sink_file)
+
+        assert_frame_equal(original, new)
+
+
+@pytest.mark.write_disk()
 def test_sink_parquet_10115(tmp_path: Path) -> None:
     in_path = tmp_path / "in.parquet"
     out_path = tmp_path / "out.parquet"
