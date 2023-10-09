@@ -34,8 +34,10 @@ impl ListNameSpace {
             .map_private(FunctionExpr::ListExpr(ListFunction::DropNulls))
     }
 
-    /// Get lengths of the arrays in the List type.
-    pub fn lengths(self) -> Expr {
+    /// Return the number of elements in each list.
+    ///
+    /// Null values are treated like regular elements in this context.
+    pub fn len(self) -> Expr {
         self.0
             .map_private(FunctionExpr::ListExpr(ListFunction::Length))
     }

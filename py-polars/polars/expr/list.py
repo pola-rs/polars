@@ -86,26 +86,33 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.list_any())
 
-    def lengths(self) -> Expr:
+    def len(self) -> Expr:
         """
-        Get the length of the arrays as UInt32.
+        Return the number of elements in each list.
+
+        Null values are treated like regular elements in this context.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [1, 2], "bar": [["a", "b"], ["c"]]})
-        >>> df.select(pl.col("bar").list.lengths())
+        >>> df = pl.DataFrame({"a": [[1, 2, None], [5]]})
+        >>> df.select(pl.col("a").list.len())
         shape: (2, 1)
         ┌─────┐
-        │ bar │
+        │ a   │
         │ --- │
         │ u32 │
         ╞═════╡
-        │ 2   │
+        │ 3   │
         │ 1   │
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.list_lengths())
+        return wrap_expr(self._pyexpr.list_len())
 
     def drop_nulls(self) -> Expr:
         """
@@ -217,7 +224,7 @@ class ExprListNameSpace:
 
     def sort(self, *, descending: bool = False) -> Expr:
         """
-        Sort the arrays in this column.
+        Sort the lists in this column.
 
         Parameters
         ----------
@@ -1128,3 +1135,14 @@ class ExprListNameSpace:
 
         """
         return self.count_matches(element)
+
+    @deprecate_renamed_function("len", version="0.19.8")
+    def lengths(self) -> Expr:
+        """
+        Return the number of elements in each list.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len`.
+
+        """
+        return self.len()

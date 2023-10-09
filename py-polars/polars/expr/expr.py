@@ -1241,15 +1241,15 @@ class Expr:
 
     def count(self) -> Self:
         """
-        Count the number of values in this expression.
+        Return the number of elements in the column.
 
         .. warning::
-            `null` is deemed a value in this context.
+            Null values are treated like regular elements in this context.
 
         Examples
         --------
         >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
-        >>> df.select(pl.all().count())  # counts nulls
+        >>> df.select(pl.all().count())
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1264,19 +1264,16 @@ class Expr:
 
     def len(self) -> Self:
         """
-        Count the number of values in this expression.
+        Return the number of elements in the column.
+
+        Null values are treated like regular elements in this context.
 
         Alias for :func:`count`.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [8, 9, 10],
-        ...         "b": [None, 4, 4],
-        ...     }
-        ... )
-        >>> df.select(pl.all().len())  # counts nulls
+        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df.select(pl.all().len())
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
