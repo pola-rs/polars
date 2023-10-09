@@ -762,7 +762,7 @@ class DataFrame:
             else:
                 raise ValueError(
                     "cannot use glob patterns and integer based projection as `columns` argument"
-                    "\n\nUse columns: List[str]."
+                    "\n\nUse columns: List[str]"
                 )
 
         projection, columns = handle_projection_columns(columns)
@@ -849,7 +849,7 @@ class DataFrame:
             else:
                 raise TypeError(
                     "cannot use glob patterns and integer based projection as `columns` argument"
-                    "\n\nUse columns: List[str]."
+                    "\n\nUse columns: List[str]"
                 )
 
         projection, columns = handle_projection_columns(columns)
@@ -963,7 +963,7 @@ class DataFrame:
             else:
                 raise TypeError(
                     "cannot use glob patterns and integer based projection as `columns` argument"
-                    "\n\nUse columns: List[str]."
+                    "\n\nUse columns: List[str]"
                 )
             return cls._from_pydf(df._df)
 
