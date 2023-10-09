@@ -15,7 +15,6 @@ For reading a Parquet file from a cloud storage provider, see [Cloud storage](cl
 
 {{code_block('user-guide/io/parquet','write',['write_parquet'])}}
 
-For writing a Parquet file to a cloud storage provider, see [Cloud storage](cloud-storage.md/#writing-to-cloud-storage).
 
 ## Scan
 

@@ -3,6 +3,7 @@
 Polars can read and write to AWS S3, Azure Blob Storage and Google Cloud Storage. The API is the same for all three storage providers.
 
 To read from cloud storage, additional dependencies may be needed depending on the use case and cloud storage provider:
+
 === ":fontawesome-brands-python: Python"
 
     ```shell

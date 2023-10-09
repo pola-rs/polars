@@ -13,6 +13,7 @@ python:
   read_json: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_json.html
   write_json: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_json.html
   read_ipc: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_ipc.html
+  read_parquet: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_parquet.html
   min: https://pola-rs.github.io/polars/py-polars/html/reference/series/api/polars.Series.min.html
   max: https://pola-rs.github.io/polars/py-polars/html/reference/series/api/polars.Series.max.html
   value_counts: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.value_counts.html

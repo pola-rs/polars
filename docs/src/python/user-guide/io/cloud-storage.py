@@ -1,3 +1,8 @@
+# --8<-- [start:setup]
+import polars as pl
+
+# --8<-- [end:setup]
+
 """
 # --8<-- [start:read_parquet]
 import polars as pl
