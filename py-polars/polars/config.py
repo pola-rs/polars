@@ -404,7 +404,7 @@ class Config(contextlib.ContextDecorator):
 
         Examples
         --------
-        >>> df = pl.DataFrame({"v": [1,2,3], "v2": [4,5,6]})
+        >>> df = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})
         >>> with pl.Config(set_auto_structify=True):
         ...     out = df.select(pl.all())
         ...
@@ -442,7 +442,7 @@ class Config(contextlib.ContextDecorator):
 
         Examples
         --------
-        >>> s = pl.Series([1.2304980958725870923,1e6,1e-8])
+        >>> s = pl.Series([1.2304980958725870923, 1e6, 1e-8])
         >>> with pl.Config(set_fmt_float="mixed"):
         ...     print(s)
         ...

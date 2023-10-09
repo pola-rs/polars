@@ -15,7 +15,6 @@ For reading a Parquet file from a cloud storage provider, see [Cloud storage](cl
 
 {{code_block('user-guide/io/parquet','write',['write_parquet'])}}
 
-
 ## Scan
 
 `Polars` allows you to _scan_ a `Parquet` input. Scanning delays the actual parsing of the file and instead returns a lazy computation holder called a `LazyFrame`.

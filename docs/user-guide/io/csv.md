@@ -8,6 +8,7 @@ Reading a CSV file should look familiar:
 ('user-guide/io/csv','read',['read_csv'])}}
 
 ## Write
+
 Writing a CSV file is similar with the `write_csv` function:
 
 {{code_block('user-guide/io/csv','write',['write_csv'])}}
