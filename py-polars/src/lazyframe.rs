@@ -19,13 +19,12 @@ use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::*;
 use polars_ops::prelude::AsOfOptions;
-use polars_rs::io::cloud::CloudOptions;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
 
 use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
-use crate::conversion::Wrap;
+use crate::conversion::{parse_cloud_options, Wrap};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::file::get_file_like;
@@ -252,19 +251,9 @@ impl PyLazyFrame {
         hive_partitioning: bool,
         retries: usize,
     ) -> PyResult<Self> {
-        let mut cloud_options = cloud_options
-            .map(|kv| parse_cloud_options(&path, kv))
-            .transpose()?;
-        if retries > 0 {
-            cloud_options =
-                cloud_options
-                    .or_else(|| Some(CloudOptions::default()))
-                    .map(|mut options| {
-                        options.max_retries = retries;
-                        options
-                    });
-        }
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
+        let cloud_options = parse_cloud_options(&path, cloud_options, retries)?;
+
         let args = ScanArgsParquet {
             n_rows,
             cache,
@@ -517,8 +506,8 @@ impl PyLazyFrame {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[cfg(all(feature = "streaming", feature = "cloud_write", feature = "parquet"))]
-    #[pyo3(signature = (cloud_url, compression, compression_level, statistics, row_group_size, data_pagesize_limit, maintain_order, cloud_options))]
+    #[cfg(all(feature = "streaming", feature = "parquet"))]
+    #[pyo3(signature = (cloud_url, compression, compression_level, statistics, row_group_size, data_pagesize_limit, maintain_order, cloud_options, retries))]
     fn sink_parquet_cloud(
         &self,
         py: Python,
@@ -529,13 +518,11 @@ impl PyLazyFrame {
         row_group_size: Option<usize>,
         data_pagesize_limit: Option<usize>,
         maintain_order: bool,
-        cloud_options: Vec<(String, String)>,
+        cloud_options: Option<Vec<(String, String)>>,
+        retries: usize,
     ) -> PyResult<()> {
         let compression = parse_parquet_compression(compression, compression_level)?;
-
-        let mut cloud_options = cloud_options
-            .map(|kv| parse_cloud_options(&path, kv))
-            .transpose()?;
+        let cloud_options = parse_cloud_options(&cloud_url, cloud_options, retries)?;
 
         let options = ParquetWriteOptions {
             compression,

@@ -1972,6 +1972,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         data_pagesize_limit: int | None = None,
         maintain_order: bool = True,
         storage_options: dict[str, str] | None = None,
+        retries: int = 0,
         type_coercion: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
@@ -2015,7 +2016,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Maintain the order in which data is processed.
             Setting this to `False` will  be slightly faster.
         storage_options
-            ...
+            Options that inform use how to connect to the cloud provider.
+            If the cloud provider is not supported by us, the storage options
+            are passed to ``fsspec.open()``.
+            Currently supported providers are: {'aws', 'gcp', 'azure' }.
+            See supported keys here:
+
+            * `aws <https://docs.rs/object_store/0.7.0/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+            * `gcp <https://docs.rs/object_store/0.7.0/object_store/gcp/enum.GoogleConfigKey.html>`_
+            * `azure <https://docs.rs/object_store/0.7.0/object_store/azure/enum.AzureConfigKey.html>`_
+
+            If ``storage_options`` are not provided we will try to infer them from the
+            environment variables.
+        retries
+            Number of retries if accessing a cloud instance fails.
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -2048,14 +2062,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
         return lf.sink_parquet_cloud(
-            path=cloud_url,
+            cloud_url=cloud_url,
             compression=compression,
             compression_level=compression_level,
             statistics=statistics,
             row_group_size=row_group_size,
             data_pagesize_limit=data_pagesize_limit,
             maintain_order=maintain_order,
-            storage_options=list((storage_options or {}).items()),
+            cloud_options=list((storage_options or {}).items()),
+            retries=retries,
         )
 
     def sink_ipc(

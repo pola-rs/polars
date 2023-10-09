@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import unittest
+import unittest.mock
 from typing import TYPE_CHECKING
 
 import pytest
