@@ -403,7 +403,7 @@ class DataFrame:
             )
         else:
             raise TypeError(
-                f"dataFrame constructor called with unsupported type {type(data).__name__!r}"
+                f"DataFrame constructor called with unsupported type {type(data).__name__!r}"
                 " for the `data` parameter"
             )
 
@@ -728,7 +728,7 @@ class DataFrame:
             if dtype_slice is not None:
                 raise ValueError(
                     "cannot use glob patterns and unnamed dtypes as `dtypes` argument"
-                    "\n\nUse `dtypes`: Mapping[str, Type[DataType]]."
+                    "\n\nUse `dtypes`: Mapping[str, Type[DataType]]"
                 )
             from polars import scan_csv
 
@@ -3120,7 +3120,7 @@ class DataFrame:
             xlv = xlsxwriter.__version__
             if parse_version(xlv) < parse_version("3.0.8"):
                 raise ModuleNotFoundError(
-                    f"`autofit=True` requires xlsxwriter 3.0.8 or higher, found {xlv!r}"
+                    f"`autofit=True` requires xlsxwriter 3.0.8 or higher, found {xlv}"
                 )
             ws.autofit()
 
@@ -3436,7 +3436,7 @@ class DataFrame:
         elif engine == "sqlalchemy":
             if parse_version(pd.__version__) < parse_version("1.5"):
                 raise ModuleNotFoundError(
-                    f"writing with engine `sqlalchemy` requires pandas 1.5.x or higher, found pandas {pd.__version__!r}"
+                    f"writing with engine 'sqlalchemy' requires pandas 1.5.x or higher, found pandas {pd.__version__!r}"
                 )
 
             try:

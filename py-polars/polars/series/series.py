@@ -1120,7 +1120,7 @@ class Series:
         if method == "__call__":
             if not ufunc.nout == 1:
                 raise NotImplementedError(
-                    "only `ufunc` variants that return one 1D array are supported"
+                    "only 'ufunc' variants that return one 1D array are supported"
                 )
 
             args: list[int | float | np.ndarray[Any, Any]] = []
