@@ -112,8 +112,8 @@ impl PyExpr {
         self.inner.clone().str().to_titlecase().into()
     }
 
-    fn str_lengths(&self) -> Self {
-        self.inner.clone().str().lengths().into()
+    fn str_len(&self) -> Self {
+        self.inner.clone().str().len().into()
     }
 
     fn str_n_chars(&self) -> Self {

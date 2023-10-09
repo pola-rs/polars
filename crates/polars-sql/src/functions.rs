@@ -641,7 +641,7 @@ impl SqlFunctionVisitor<'_> {
                     function.args.len()
                 ),
             },
-            OctetLength => self.visit_unary(|e| e.str().lengths()),
+            OctetLength => self.visit_unary(|e| e.str().len()),
             RegexpLike => match function.args.len() {
                 2 => self.visit_binary(|e, s| e.str().contains(s, true)),
                 3 => self.try_visit_ternary(|e, pat, flags| {

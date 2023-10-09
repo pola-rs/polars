@@ -368,9 +368,18 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_to_decimal(inference_length))
 
-    def lengths(self) -> Expr:
+    def len(self) -> Expr:
         """
-        Get length of the strings as UInt32 (as number of bytes).
+        Return the length of each string as the number of bytes.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`.
+
+        See Also
+        --------
+        n_chars
 
         Notes
         -----
@@ -379,57 +388,62 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"s": ["Café", None, "345", "東京"]}).with_columns(
-        ...     [
-        ...         pl.col("s").str.lengths().alias("length"),
-        ...         pl.col("s").str.n_chars().alias("nchars"),
-        ...     ]
+        >>> df = pl.DataFrame({"s": ["Café", "345", "東京", None]})
+        >>> df.with_columns(
+        ...     pl.col("s").str.len().alias("len"),
+        ...     pl.col("s").str.n_chars().alias("n_chars"),
         ... )
-        >>> df
         shape: (4, 3)
-        ┌──────┬────────┬────────┐
-        │ s    ┆ length ┆ nchars │
-        │ ---  ┆ ---    ┆ ---    │
-        │ str  ┆ u32    ┆ u32    │
-        ╞══════╪════════╪════════╡
-        │ Café ┆ 5      ┆ 4      │
-        │ null ┆ null   ┆ null   │
-        │ 345  ┆ 3      ┆ 3      │
-        │ 東京  ┆ 6      ┆ 2      │
-        └──────┴────────┴────────┘
+        ┌──────┬──────┬─────────┐
+        │ s    ┆ len  ┆ n_chars │
+        │ ---  ┆ ---  ┆ ---     │
+        │ str  ┆ u32  ┆ u32     │
+        ╞══════╪══════╪═════════╡
+        │ Café ┆ 5    ┆ 4       │
+        │ 345  ┆ 3    ┆ 3       │
+        │ 東京 ┆ 6    ┆ 2       │
+        │ null ┆ null ┆ null    │
+        └──────┴──────┴─────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_lengths())
+        return wrap_expr(self._pyexpr.str_len())
 
     def n_chars(self) -> Expr:
         """
-        Get length of the strings as UInt32 (as number of chars).
+        Return the length of each string as the number of characters.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`.
 
         Notes
         -----
-        If you know that you are working with ASCII text, ``lengths`` will be
+        If you know that you are working with ASCII text, ``len`` will be
         equivalent, and faster (returns length in terms of the number of bytes).
+
+        See Also
+        --------
+        len
 
         Examples
         --------
-        >>> df = pl.DataFrame({"s": ["Café", None, "345", "東京"]}).with_columns(
-        ...     [
-        ...         pl.col("s").str.n_chars().alias("nchars"),
-        ...         pl.col("s").str.lengths().alias("length"),
-        ...     ]
+        >>> df = pl.DataFrame({"s": ["Café", "345", "東京", None]})
+        >>> df.with_columns(
+        ...     pl.col("s").str.n_chars().alias("n_chars"),
+        ...     pl.col("s").str.len().alias("len"),
         ... )
-        >>> df
         shape: (4, 3)
-        ┌──────┬────────┬────────┐
-        │ s    ┆ nchars ┆ length │
-        │ ---  ┆ ---    ┆ ---    │
-        │ str  ┆ u32    ┆ u32    │
-        ╞══════╪════════╪════════╡
-        │ Café ┆ 4      ┆ 5      │
-        │ null ┆ null   ┆ null   │
-        │ 345  ┆ 3      ┆ 3      │
-        │ 東京  ┆ 2      ┆ 6      │
-        └──────┴────────┴────────┘
+        ┌──────┬─────────┬──────┐
+        │ s    ┆ n_chars ┆ len  │
+        │ ---  ┆ ---     ┆ ---  │
+        │ str  ┆ u32     ┆ u32  │
+        ╞══════╪═════════╪══════╡
+        │ Café ┆ 4       ┆ 5    │
+        │ 345  ┆ 3       ┆ 3    │
+        │ 東京 ┆ 2       ┆ 6    │
+        │ null ┆ null    ┆ null │
+        └──────┴─────────┴──────┘
 
         """
         return wrap_expr(self._pyexpr.str_n_chars())
@@ -2047,6 +2061,17 @@ class ExprStringNameSpace:
 
         """
         return self.count_matches(pattern)
+
+    @deprecate_renamed_function("len", version="0.19.8")
+    def lengths(self) -> Expr:
+        """
+        Return the number of bytes in each string.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len`.
+
+        """
+        return self.len()
 
 
 def _validate_format_argument(format: str | None) -> None:

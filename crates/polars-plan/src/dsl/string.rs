@@ -369,14 +369,14 @@ impl StringNameSpace {
             )))
     }
 
-    /// Return the number of characters in the string (not bytes).
+    /// Return the length of each string as the number of characters.
     pub fn n_chars(self) -> Expr {
         self.0
             .map_private(FunctionExpr::StringExpr(StringFunction::NChars))
     }
 
-    /// Return the number of bytes in the string (not characters).
-    pub fn lengths(self) -> Expr {
+    /// Return the length of each string as the number of bytes.
+    pub fn len(self) -> Expr {
         self.0
             .map_private(FunctionExpr::StringExpr(StringFunction::Length))
     }
