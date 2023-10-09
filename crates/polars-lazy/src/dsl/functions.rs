@@ -143,7 +143,7 @@ pub fn concat_lf_diagonal<L: AsRef<[LazyFrame]>>(
         });
     }
     let lfs_with_all_columns = lfs
-        .into_iter()
+        .iter()
         // Zip Frames with their Schemas
         .zip(schemas)
         .map(|(lf, lf_schema)| {
