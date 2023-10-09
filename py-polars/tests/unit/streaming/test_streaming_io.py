@@ -17,7 +17,6 @@ pytestmark = pytest.mark.xdist_group("streaming")
 
 @pytest.mark.write_disk()
 def test_streaming_parquet_glob_5900(df: pl.DataFrame, tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
     file_path = tmp_path / "small.parquet"
     df.write_parquet(file_path)
 
@@ -43,8 +42,6 @@ def test_scan_csv_overwrite_small_dtypes(
 
 @pytest.mark.write_disk()
 def test_sink_parquet(io_files_path: Path, tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
-
     file = io_files_path / "small.parquet"
 
     file_path = tmp_path / "sink.parquet"
@@ -60,8 +57,6 @@ def test_sink_parquet(io_files_path: Path, tmp_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_sink_parquet_cloud(io_files_path: Path, tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
-
     source = io_files_path / "small.parquet"
     sink_file = tmp_path / "sink.parquet"
     target = f"file://{sink_file}"
@@ -103,8 +98,6 @@ def test_sink_parquet_10115(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_sink_ipc(io_files_path: Path, tmp_path: Path) -> None:
-    tmp_path.mkdir(exist_ok=True)
-
     file = io_files_path / "small.parquet"
 
     file_path = tmp_path / "sink.ipc"
