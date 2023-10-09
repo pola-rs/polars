@@ -28,3 +28,4 @@ pub use adaptors::*;
 pub use glob::*;
 #[cfg(feature = "cloud")]
 pub use object_store_setup::*;
+pub use options::*;
