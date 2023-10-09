@@ -1,1 +1,2 @@
 disallowed-types = ["std::collections::HashMap", "std::collections::HashSet"]
+too-many-arguments-threshold = 99
