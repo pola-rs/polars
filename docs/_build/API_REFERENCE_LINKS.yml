@@ -143,7 +143,7 @@ python:
   str.to_datetime: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.to_datetime.html
   str.to_date: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.to_date.html
   str.n_chars: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.n_chars.html
-  str.lengths: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.lengths.html
+  str.len: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.len.html
 
   struct.field: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.struct.field.html
   struct.rename_fields: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.struct.rename_fields.html
@@ -357,9 +357,9 @@ rust:
   str.n_chars:
     name: str.n_chars
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.n_chars
-  str.lengths:
-    name: str.lengths
-    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.lengths
+  str.len:
+    name: str.len
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.len
 
   struct.rename_fields: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/struct.StructNameSpace.html#method.rename_fields
   struct.field:

@@ -35,7 +35,7 @@ print(out)
 out = weather.with_columns(pl.col("temperatures").str.split(" ")).with_columns(
     pl.col("temperatures").list.head(3).alias("top3"),
     pl.col("temperatures").list.slice(-3, 3).alias("bottom_3"),
-    pl.col("temperatures").list.lengths().alias("obs"),
+    pl.col("temperatures").list.len().alias("obs"),
 )
 print(out)
 # --8<-- [end:list_ops]

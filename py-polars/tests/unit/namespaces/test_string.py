@@ -40,7 +40,7 @@ def test_str_concat_datetime() -> None:
 def test_str_lengths() -> None:
     s = pl.Series(["Café", None, "345", "東京"])
     expected = pl.Series([5, None, 3, 6], dtype=pl.UInt32)
-    assert_series_equal(s.str.lengths(), expected)
+    assert_series_equal(s.str.len(), expected)
 
 
 def test_str_n_chars() -> None:
@@ -824,9 +824,9 @@ def test_ljust_and_rjust() -> None:
         df.select(
             [
                 pl.col("a").str.rjust(10).alias("rjust"),
-                pl.col("a").str.rjust(10).str.lengths().alias("rjust_len"),
+                pl.col("a").str.rjust(10).str.len().alias("rjust_len"),
                 pl.col("a").str.ljust(10).alias("ljust"),
-                pl.col("a").str.ljust(10).str.lengths().alias("ljust_len"),
+                pl.col("a").str.ljust(10).str.len().alias("ljust_len"),
             ]
         ).to_dict(False)
     ) == {
@@ -874,7 +874,7 @@ def test_json_path_match_type_4905() -> None:
 def test_length_vs_nchars() -> None:
     df = pl.DataFrame({"s": ["café", "東京"]}).with_columns(
         [
-            pl.col("s").str.lengths().alias("length"),
+            pl.col("s").str.len().alias("length"),
             pl.col("s").str.n_chars().alias("nchars"),
         ]
     )

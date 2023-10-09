@@ -1296,10 +1296,10 @@ def test_kurtosis() -> None:
 
 def test_arr_lengths() -> None:
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
-    assert_series_equal(s.list.lengths(), pl.Series("a", [2, 3], dtype=UInt32))
+    assert_series_equal(s.list.len(), pl.Series("a", [2, 3], dtype=UInt32))
     df = pl.DataFrame([s])
     assert_series_equal(
-        df.select(pl.col("a").list.lengths())["a"], pl.Series("a", [2, 3], dtype=UInt32)
+        df.select(pl.col("a").list.len())["a"], pl.Series("a", [2, 3], dtype=UInt32)
     )
 
 
