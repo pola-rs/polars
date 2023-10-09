@@ -46,6 +46,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import dataframe_api_compat, subprocess
 from polars.io._utils import _is_local_file, _is_supported_cloud
+from polars.io.csv._utils import _check_arg_is_1byte
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
@@ -316,7 +317,7 @@ class LazyFrame:
         has_header: bool = True,
         separator: str = ",",
         comment_char: str | None = None,
-        quote_char: str | None = r'"',
+        quote_char: str | None = '"',
         skip_rows: int = 0,
         dtypes: SchemaDict | None = None,
         schema: SchemaDict | None = None,
@@ -2026,6 +2027,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
         )
 
+    @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
     def sink_csv(
         self,
         path: str | Path,
@@ -2033,7 +2035,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         has_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
-        quote: str = '"',
+        quote_char: str = '"',
         batch_size: int = 1024,
         datetime_format: str | None = None,
         date_format: str | None = None,
@@ -2064,7 +2066,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Separate CSV fields with this symbol.
         line_terminator
             String used to end each row.
-        quote
+        quote_char
             Byte to use as quoting character.
         batch_size
             Number of rows that will be processed per thread.
@@ -2097,7 +2099,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             This is the default.
             - always: This puts quotes around every field. Always.
             - never: This never puts quotes around fields, even if that results in
-            invalid CSV data (e.g.: by not quoting strings containing the separator).
+            invalid CSV data (e.g.: by not quoting strings containing the
+            separator).
             - non_numeric: This puts quotes around all fields that are non-numeric.
             Namely, when writing a field that does not parse as a valid float
             or integer, then quotes will be used even if they aren`t strictly
@@ -2128,10 +2131,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_csv("out.csv")  # doctest: +SKIP
 
         """
-        if len(separator) != 1:
-            raise ValueError("only single byte separator is allowed")
-        if len(quote) != 1:
-            raise ValueError("only single byte quote char is allowed")
+        _check_arg_is_1byte("separator", separator, can_be_empty=False)
+        _check_arg_is_1byte("quote_char", quote_char, can_be_empty=False)
         if not null_value:
             null_value = None
 
@@ -2149,7 +2150,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             has_header=has_header,
             separator=ord(separator),
             line_terminator=line_terminator,
-            quote=ord(quote),
+            quote_char=ord(quote_char),
             batch_size=batch_size,
             datetime_format=datetime_format,
             date_format=date_format,

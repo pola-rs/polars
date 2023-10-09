@@ -173,7 +173,7 @@ impl PyLazyFrame {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
-        let delimiter = separator.as_bytes()[0];
+        let separator = separator.as_bytes()[0];
         let eol_char = eol_char.as_bytes()[0];
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
 
@@ -185,7 +185,7 @@ impl PyLazyFrame {
         });
         let mut r = LazyCsvReader::new(path)
             .with_infer_schema_length(infer_schema_length)
-            .with_delimiter(delimiter)
+            .with_separator(separator)
             .has_header(has_header)
             .with_ignore_errors(ignore_errors)
             .with_skip_rows(skip_rows)
@@ -542,7 +542,7 @@ impl PyLazyFrame {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "csv"))]
-    #[pyo3(signature = (path, has_header, separator, line_terminator, quote, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style, maintain_order))]
+    #[pyo3(signature = (path, has_header, separator, line_terminator, quote_char, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style, maintain_order))]
     fn sink_csv(
         &self,
         py: Python,
@@ -550,7 +550,7 @@ impl PyLazyFrame {
         has_header: bool,
         separator: u8,
         line_terminator: String,
-        quote: u8,
+        quote_char: u8,
         batch_size: usize,
         datetime_format: Option<String>,
         date_format: Option<String>,
@@ -568,8 +568,8 @@ impl PyLazyFrame {
             time_format,
             datetime_format,
             float_precision,
-            delimiter: separator,
-            quote,
+            separator,
+            quote_char,
             null: null_value,
             line_terminator,
             quote_style,

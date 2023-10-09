@@ -182,9 +182,9 @@ impl CsvSink {
         let file = std::fs::File::create(path)?;
         let writer = CsvWriter::new(file)
             .has_header(options.has_header)
-            .with_delimiter(options.serialize_options.delimiter)
+            .with_separator(options.serialize_options.separator)
             .with_line_terminator(options.serialize_options.line_terminator)
-            .with_quoting_char(options.serialize_options.quote)
+            .with_quote_char(options.serialize_options.quote_char)
             .with_batch_size(options.batch_size)
             .with_datetime_format(options.serialize_options.datetime_format)
             .with_date_format(options.serialize_options.date_format)

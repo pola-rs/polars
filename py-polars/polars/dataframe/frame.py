@@ -55,6 +55,7 @@ from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
 from polars.functions import col, lit
 from polars.io._utils import _is_glob_pattern, _is_local_file
+from polars.io.csv._utils import _check_arg_is_1byte
 from polars.io.spreadsheet._write_utils import (
     _unpack_multi_column_dict,
     _xl_apply_conditional_formats,
@@ -657,7 +658,7 @@ class DataFrame:
         columns: Sequence[int] | Sequence[str] | None = None,
         separator: str = ",",
         comment_char: str | None = None,
-        quote_char: str | None = r'"',
+        quote_char: str | None = '"',
         skip_rows: int = 0,
         dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
         schema: None | SchemaDict = None,
@@ -2443,7 +2444,7 @@ class DataFrame:
         has_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
-        quote: str = ...,
+        quote_char: str = ...,
         batch_size: int = ...,
         datetime_format: str | None = ...,
         date_format: str | None = ...,
@@ -2462,7 +2463,7 @@ class DataFrame:
         has_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
-        quote: str = ...,
+        quote_char: str = ...,
         batch_size: int = ...,
         datetime_format: str | None = ...,
         date_format: str | None = ...,
@@ -2473,6 +2474,7 @@ class DataFrame:
     ) -> None:
         ...
 
+    @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
     def write_csv(
         self,
         file: BytesIO | TextIOWrapper | str | Path | None = None,
@@ -2480,7 +2482,7 @@ class DataFrame:
         has_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
-        quote: str = '"',
+        quote_char: str = '"',
         batch_size: int = 1024,
         datetime_format: str | None = None,
         date_format: str | None = None,
@@ -2503,7 +2505,7 @@ class DataFrame:
             Separate CSV fields with this symbol.
         line_terminator
             String used to end each row.
-        quote
+        quote_char
             Byte to use as quoting character.
         batch_size
             Number of rows that will be processed per thread.
@@ -2530,7 +2532,7 @@ class DataFrame:
             Determines the quoting strategy used.
             - necessary (default): This puts quotes around fields only when necessary.
             They are necessary when fields contain a quote,
-            delimiter or record terminator.
+            separator or record terminator.
             Quotes are also necessary when writing an empty record
             (which is indistinguishable from a record with one empty field).
             This is the default.
@@ -2558,10 +2560,8 @@ class DataFrame:
         >>> df.write_csv(path, separator=",")
 
         """
-        if len(separator) != 1:
-            raise ValueError("only single byte separator is allowed")
-        if len(quote) != 1:
-            raise ValueError("only single byte quote char is allowed")
+        _check_arg_is_1byte("separator", separator, can_be_empty=False)
+        _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
         if not null_value:
             null_value = None
 
@@ -2579,7 +2579,7 @@ class DataFrame:
             has_header,
             ord(separator),
             line_terminator,
-            ord(quote),
+            ord(quote_char),
             batch_size,
             datetime_format,
             date_format,
