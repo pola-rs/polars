@@ -24,7 +24,9 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
 
 use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
-use crate::conversion::{parse_cloud_options, Wrap};
+#[cfg(feature = "cloud")]
+use crate::conversion::parse_cloud_options;
+use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::file::get_file_like;
