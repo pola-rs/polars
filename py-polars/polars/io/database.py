@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, Iterable, Sequence, TypedDict
 from polars.convert import from_arrow
 from polars.exceptions import UnsuitableSQLError
 from polars.utils.deprecation import (
-    deprecate_nonkeyword_arguments,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
@@ -16,6 +15,10 @@ from polars.utils.deprecation import (
 if TYPE_CHECKING:
     from types import TracebackType
 
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
@@ -24,6 +27,11 @@ if TYPE_CHECKING:
     from polars import DataFrame
     from polars.dependencies import pyarrow as pa
     from polars.type_aliases import ConnectionOrCursor, Cursor, DbReadEngine, SchemaDict
+
+    try:
+        from sqlalchemy.sql.expression import Selectable
+    except ImportError:
+        Selectable: TypeAlias = Any  # type: ignore[no-redef]
 
 
 class _DriverProperties_(TypedDict):
@@ -37,6 +45,11 @@ _ARROW_DRIVER_REGISTRY_: dict[str, _DriverProperties_] = {
         "fetch_all": "fetch_arrow_table",
         "fetch_batches": None,
         "exact_batch_size": None,
+    },
+    "arrow_odbc_proxy": {
+        "fetch_all": "fetchall",
+        "fetch_batches": "fetchmany",
+        "exact_batch_size": True,
     },
     "databricks": {
         "fetch_all": "fetchall_arrow",
@@ -75,6 +88,39 @@ _INVALID_QUERY_TYPES = {
 }
 
 
+class ODBCCursorProxy:
+    """Cursor proxy for ODBC connections (requires `arrow-odbc`)."""
+
+    def __init__(self, connection_string: str) -> None:
+        self.connection_string = connection_string
+        self.execute_options: dict[str, Any] = {}
+        self.query: str | None = None
+
+    def close(self) -> None:
+        """Close the cursor (n/a: nothing to close)."""
+
+    def execute(self, query: str, **execute_options: Any) -> None:
+        """Execute a query (n/a: just store query for the fetch* methods)."""
+        self.execute_options = execute_options
+        self.query = query
+
+    def fetchmany(
+        self, batch_size: int = 10_000
+    ) -> Iterable[pa.RecordBatch | pa.Table]:
+        """Fetch results in batches."""
+        from arrow_odbc import read_arrow_batches_from_odbc
+
+        yield from read_arrow_batches_from_odbc(
+            query=self.query,
+            batch_size=batch_size,
+            connection_string=self.connection_string,
+            **self.execute_options,
+        )
+
+    # internally arrow-odbc always reads batches
+    fetchall = fetchmany
+
+
 class ConnectionExecutor:
     """Abstraction for querying databases with user-supplied connection objects."""
 
@@ -84,7 +130,11 @@ class ConnectionExecutor:
     acquired_cursor: bool = False
 
     def __init__(self, connection: ConnectionOrCursor) -> None:
-        self.driver_name = type(connection).__module__.split(".", 1)[0].lower()
+        self.driver_name = (
+            "arrow_odbc_proxy"
+            if isinstance(connection, ODBCCursorProxy)
+            else type(connection).__module__.split(".", 1)[0].lower()
+        )
         self.cursor = self._normalise_cursor(connection)
         self.result: Any = None
 
@@ -174,11 +224,13 @@ class ConnectionExecutor:
                         schema_overrides=schema_overrides,
                     )
         except Exception as err:
-            if (
-                self.driver_name != "turbodbc"
-                # eg: turbodbc compiled without arrow support...
-                or "does not support Apache Arrow" not in str(err)
-            ):
+            # eg: valid turbodbc/snowflake connection, but no arrow support
+            # available in the underlying driver or this connection
+            arrow_not_supported = (
+                "does not support Apache Arrow",
+                "Apache Arrow format is not supported",
+            )
+            if not any(e in str(err) for e in arrow_not_supported):
                 raise
 
         return None
@@ -208,24 +260,27 @@ class ConnectionExecutor:
             )
         return None
 
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "query"], version="0.19.3")
     def execute(
-        self, query: str, select_queries_only: bool = True  # noqa: FBT001
+        self,
+        query: str | Selectable,
+        *,
+        options: dict[str, Any] | None = None,
+        select_queries_only: bool = True,
     ) -> Self:
         """Execute a query and reference the result set."""
-        if select_queries_only:
+        if select_queries_only and isinstance(query, str):
             q = re.search(r"\w{3,}", re.sub(r"/\*(.|[\r\n])*?\*/", "", query))
             if (query_type := "" if not q else q.group(0)) in _INVALID_QUERY_TYPES:
                 raise UnsuitableSQLError(
                     f"{query_type} statements are not valid 'read' queries"
                 )
 
-        if self.driver_name == "sqlalchemy":
+        if self.driver_name == "sqlalchemy" and isinstance(query, str):
             from sqlalchemy.sql import text
 
             query = text(query)  # type: ignore[assignment]
 
-        if (result := self.cursor.execute(query)) is None:
+        if (result := self.cursor.execute(query, **(options or {}))) is None:
             result = self.cursor  # some cursors execute in-place
 
         self.result = result
@@ -257,12 +312,13 @@ class ConnectionExecutor:
 
 
 @deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
-def read_database(  # noqa: D417
-    query: str,
-    connection: ConnectionOrCursor,
+def read_database(  # noqa D417
+    query: str | Selectable,
+    connection: ConnectionOrCursor | str,
     *,
     batch_size: int | None = None,
     schema_overrides: SchemaDict | None = None,
+    execute_options: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -271,12 +327,15 @@ def read_database(  # noqa: D417
     Parameters
     ----------
     query
-        String SQL query to execute.
+        SQL query to execute (if using a SQLAlchemy connection object this can
+        be a suitable "Selectable", otherwise it is expected to be a string).
     connection
         An instantiated connection (or cursor/client object) that the query can be
-        executed against.
+        executed against. Can also pass a valid ODBC connection string, starting with
+        "Driver=", in which case the ``arrow-odbc`` package will be used to establish
+        the connection and return Arrow-native data to Polars.
     batch_size
-        Enable batched data fetching instead of (internally) collecting all rows at
+        Enable batched data fetching (internally) instead of collecting all rows at
         once; this can be helpful for minimising the peak memory used for very large
         resultsets. Note that this parameter is *not* equivalent to a "limit"; you
         will always load all rows. If supported by the backend, this value is passed
@@ -290,6 +349,11 @@ def read_database(  # noqa: D417
         on driver/backend). This can be useful if the given types can be more precisely
         defined (for example, if you know that a given column can be declared as `u32`
         instead of `i64`).
+    execute_options
+        These options will be passed through into the underlying query execution method
+        as kwargs. In the case of connections made using an ODBC string (which use
+        `arrow-odbc`) these options are passed to the ``read_arrow_batches_from_odbc``
+        method.
 
     Notes
     -----
@@ -305,7 +369,7 @@ def read_database(  # noqa: D417
       more details about using this driver (notable databases implementing Flight SQL
       include Dremio and InfluxDB).
 
-    * The ``read_connection_uri`` function is likely to be noticeably faster than
+    * The ``read_database_uri`` function is likely to be noticeably faster than
       ``read_database`` if you are using a SQLAlchemy or DBAPI2 connection, as
       ``connectorx`` will optimise translation of the result set into Arrow format
       in Rust, whereas these libraries will return row-wise data to Python *before*
@@ -330,22 +394,66 @@ def read_database(  # noqa: D417
     ...     schema_overrides={"normalised_score": pl.UInt8},
     ... )  # doctest: +SKIP
 
-    """
+    Use a parameterised SQLAlchemy query, passing values via ``execute_options``:
+
+    >>> df = pl.read_database(
+    ...     query="SELECT * FROM test_data WHERE metric > :value",
+    ...     connection=alchemy_conn,
+    ...     execute_options={"parameters": {"value": 0}},
+    ... )  # doctest: +SKIP
+
+    Instantiate a DataFrame using an ODBC connection string (requires ``arrow-odbc``)
+    and set upper limits on the buffer size of variadic text/binary columns:
+
+    >>> df = pl.read_database(
+    ...     query="SELECT * FROM test_data",
+    ...     connection="Driver={PostgreSQL};Server=localhost;Port=5432;Database=test;Uid=usr;Pwd=",
+    ...     execute_options={"max_text_size": 512, "max_binary_size": 1024},
+    ... )  # doctest: +SKIP
+
+    """  # noqa: W505
     if isinstance(connection, str):
-        issue_deprecation_warning(
-            message="Use of a string URI with 'read_database' is deprecated; use 'read_database_uri' instead",
-            version="0.19.0",
-        )
-        return read_database_uri(
-            query, uri=connection, schema_overrides=schema_overrides, **kwargs
-        )
-    elif kwargs:
+        # check for odbc connection string
+        if re.sub(r"\s", "", connection[:20]).lower().startswith("driver="):
+            try:
+                import arrow_odbc  # noqa: F401
+            except ModuleNotFoundError:
+                raise ModuleNotFoundError(
+                    "use of an ODBC connection string requires the `arrow-odbc` package."
+                    "\n\nPlease run `pip install arrow-odbc`."
+                ) from None
+
+            connection = ODBCCursorProxy(connection)
+        else:
+            # otherwise looks like a call to read_database_uri
+            issue_deprecation_warning(
+                message="Use of a string URI with 'read_database' is deprecated; use 'read_database_uri' instead",
+                version="0.19.0",
+            )
+            if not isinstance(query, (list, str)):
+                raise TypeError(
+                    f"`read_database_uri` expects one or more string queries; found {type(query)}"
+                )
+            return read_database_uri(
+                query,
+                uri=connection,
+                schema_overrides=schema_overrides,
+                **kwargs,
+            )
+
+    # note: can remove this check (and **kwargs) once we drop the
+    # pass-through deprecation support for read_database_uri
+    if kwargs:
         raise ValueError(
-            f"`read_database` **kwargs only exist for deprecating string URIs: found {kwargs!r}"
+            f"`read_database` **kwargs only exist for passthrough to `read_database_uri`: found {kwargs!r}"
         )
 
+    # return frame from arbitrary connections using the executor abstraction
     with ConnectionExecutor(connection) as cx:
-        return cx.execute(query).to_frame(
+        return cx.execute(
+            query=query,
+            options=execute_options,
+        ).to_frame(
             batch_size=batch_size,
             schema_overrides=schema_overrides,
         )

@@ -114,31 +114,6 @@ def test_take_every() -> None:
     assert_frame_equal(expected_df, ldf.take_every(2).collect())
 
 
-def test_slice() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2, 3, 4], "b": ["a", "b", "c", "d"]})
-    expected = pl.LazyFrame({"a": [3, 4], "b": ["c", "d"]})
-    for slice_params in (
-        [2, 10],  # slice > len(df)
-        [2, 4],  # slice == len(df)
-        [2],  # optional len
-    ):
-        assert_frame_equal(ldf.slice(*slice_params), expected)
-
-    for py_slice in (
-        slice(1, 2),
-        slice(0, 3, 2),
-        slice(-3, None),
-        slice(None, 2, 2),
-        slice(3, None, -1),
-        slice(1, None, -2),
-    ):
-        # confirm frame slice matches python slice
-        assert ldf[py_slice].collect().rows() == ldf.collect().rows()[py_slice]
-
-    assert_frame_equal(ldf[::-1], ldf.reverse())
-    assert_frame_equal(ldf[::-2], ldf.reverse().take_every(2))
-
-
 def test_agg() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     ldf = df.lazy().min()

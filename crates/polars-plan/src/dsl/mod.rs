@@ -2,6 +2,8 @@
 //! Domain specific language for the Lazy API.
 #[cfg(feature = "rolling_window")]
 use polars_core::utils::ensure_sorted_arg;
+#[cfg(feature = "mode")]
+use polars_ops::chunked_array::mode::mode;
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
 #[cfg(feature = "dtype-categorical")]
@@ -54,7 +56,7 @@ use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
 use polars_core::utils::{try_get_supertype, NoNull};
 #[cfg(feature = "rolling_window")]
-use polars_time::series::SeriesOpsTime;
+use polars_time::prelude::SeriesOpsTime;
 pub(crate) use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
@@ -936,7 +938,7 @@ impl Expr {
     pub fn over_with_options<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
         partition_by: E,
-        options: WindowOptions,
+        options: WindowMapping,
     ) -> Self {
         let partition_by = partition_by
             .as_ref()
@@ -946,8 +948,16 @@ impl Expr {
         Expr::Window {
             function: Box::new(self),
             partition_by,
-            order_by: None,
-            options,
+            options: options.into(),
+        }
+    }
+
+    #[cfg(feature = "dynamic_group_by")]
+    pub fn rolling(self, options: RollingGroupOptions) -> Self {
+        Expr::Window {
+            function: Box::new(self),
+            partition_by: vec![],
+            options: WindowType::Rolling(options),
         }
     }
 
@@ -1091,7 +1101,7 @@ impl Expr {
             let by = &s[1];
             let s = &s[0];
             let by = by.cast(&IDX_DTYPE)?;
-            Ok(Some(s.repeat_by(by.idx()?)?.into_series()))
+            Ok(Some(repeat_by(s, by.idx()?)?.into_series()))
         };
 
         self.apply_many(
@@ -1135,11 +1145,8 @@ impl Expr {
     #[cfg(feature = "mode")]
     /// Compute the mode(s) of this column. This is the most occurring value.
     pub fn mode(self) -> Expr {
-        self.apply(
-            |s| s.mode().map(|ca| Some(ca.into_series())),
-            GetOutput::same_type(),
-        )
-        .with_fmt("mode")
+        self.apply(|s| mode(&s).map(Some), GetOutput::same_type())
+            .with_fmt("mode")
     }
 
     /// Keep the original root name
@@ -1251,7 +1258,11 @@ impl Expr {
                         DataType::Datetime(tu, tz) => {
                             (by.cast(&DataType::Datetime(*tu, None))?, tz)
                         },
-                        _ => (by.clone(), &None),
+                        DataType::Date => (
+                            by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
+                            &None,
+                        ),
+                        dt => polars_bail!(opq = expr_name, got = dt, expected = "date/datetime"),
                     };
                     ensure_sorted_arg(&by, expr_name)?;
                     let by = by.datetime().unwrap();
@@ -1461,6 +1472,16 @@ impl Expr {
             }),
         )
         .with_fmt("rolling_map_float")
+    }
+
+    #[cfg(feature = "peaks")]
+    pub fn peak_min(self) -> Expr {
+        self.apply_private(FunctionExpr::PeakMin)
+    }
+
+    #[cfg(feature = "peaks")]
+    pub fn peak_max(self) -> Expr {
+        self.apply_private(FunctionExpr::PeakMax)
     }
 
     #[cfg(feature = "rank")]

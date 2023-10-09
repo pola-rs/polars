@@ -481,3 +481,30 @@ def test_no_cse_in_with_context() -> None:
         ],
         "label": [0, 1, 1],
     }
+
+
+def test_cse_is_in_11489() -> None:
+    df = pl.DataFrame(
+        {"cond": [1, 2, 3, 2, 1], "x": [1.0, 0.20, 3.0, 4.0, 0.50]}
+    ).lazy()
+    any_cond = (
+        pl.when(pl.col("cond").is_in([2, 3]))
+        .then(True)
+        .when(pl.col("cond").is_in([1]))
+        .then(False)
+        .otherwise(None)
+        .alias("any_cond")
+    )
+    val = (
+        pl.when(any_cond)
+        .then(1.0)
+        .when(~any_cond)
+        .then(0.0)
+        .otherwise(None)
+        .alias("val")
+    )
+    assert df.select("cond", any_cond, val).collect().to_dict(False) == {
+        "cond": [1, 2, 3, 2, 1],
+        "any_cond": [False, True, True, True, False],
+        "val": [0.0, 1.0, 1.0, 1.0, 0.0],
+    }

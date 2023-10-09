@@ -246,14 +246,4 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
-
-    #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
-        RepeatBy::repeat_by(&self.0, by)
-    }
-
-    #[cfg(feature = "mode")]
-    fn mode(&self) -> PolarsResult<Series> {
-        Ok(self.0.mode()?.into_series())
-    }
 }

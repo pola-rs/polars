@@ -68,7 +68,6 @@ use std::ops::Deref;
 use arrow::array::StructArray;
 pub use arrow::error::Result as ArrowResult;
 use polars_arrow::conversion::chunk_to_struct;
-use polars_arrow::utils::CustomIterTools;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
@@ -231,7 +230,7 @@ where
                                     .map_err(PolarsError::from)
                                     .map(|dt| DataType::from(&dt))
                             })
-                            .fold_first_(|l, r| {
+                            .reduce(|l, r| {
                                 let l = l?;
                                 let r = r?;
                                 try_get_supertype(&l, &r)

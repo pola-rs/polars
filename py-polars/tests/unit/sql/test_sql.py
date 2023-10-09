@@ -13,7 +13,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 # TODO: Do not rely on I/O for these tests
 @pytest.fixture()
 def foods_ipc_path() -> Path:
-    return Path(__file__).parent / "io" / "files" / "foods1.ipc"
+    return Path(__file__).parent.parent / "io" / "files" / "foods1.ipc"
 
 
 def test_sql_cast() -> None:
@@ -70,6 +70,48 @@ def test_sql_cast() -> None:
     ]
 
 
+def test_sql_any_all() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [-1, 0, 1, 2, 3, 4],
+            "y": [1, 0, 0, 1, 2, 3],
+        }
+    )
+
+    sql = pl.SQLContext(df=df)
+
+    res = sql.execute(
+        """
+        SELECT
+        x >= ALL(df.y) as 'All Geq',
+        x > ALL(df.y) as 'All G',
+        x < ALL(df.y) as 'All L',
+        x <= ALL(df.y) as 'All Leq',
+        x >= ANY(df.y) as 'Any Geq',
+        x > ANY(df.y) as 'Any G',
+        x < ANY(df.y) as 'Any L',
+        x <= ANY(df.y) as 'Any Leq',
+        x == ANY(df.y) as 'Any eq',
+        x != ANY(df.y) as 'Any Neq',
+        FROM df
+        """,
+        eager=True,
+    )
+
+    assert res.to_dict(False) == {
+        "All Geq": [0, 0, 0, 0, 1, 1],
+        "All G": [0, 0, 0, 0, 0, 1],
+        "All L": [1, 0, 0, 0, 0, 0],
+        "All Leq": [1, 1, 0, 0, 0, 0],
+        "Any Geq": [0, 1, 1, 1, 1, 1],
+        "Any G": [0, 0, 1, 1, 1, 1],
+        "Any L": [1, 1, 1, 1, 0, 0],
+        "Any Leq": [1, 1, 1, 1, 1, 0],
+        "Any eq": [0, 1, 1, 1, 1, 0],
+        "Any Neq": [1, 0, 0, 0, 0, 1],
+    }
+
+
 def test_sql_distinct() -> None:
     df = pl.DataFrame(
         {
@@ -77,14 +119,14 @@ def test_sql_distinct() -> None:
             "b": [1, 2, 3, 4, 5, 6],
         }
     )
-    c = pl.SQLContext(register_globals=True, eager_execution=True)
-    res1 = c.execute("SELECT DISTINCT a FROM df ORDER BY a DESC")
+    ctx = pl.SQLContext(register_globals=True, eager_execution=True)
+    res1 = ctx.execute("SELECT DISTINCT a FROM df ORDER BY a DESC")
     assert_frame_equal(
         left=df.select("a").unique().sort(by="a", descending=True),
         right=res1,
     )
 
-    res2 = c.execute(
+    res2 = ctx.execute(
         """
         SELECT DISTINCT
           a*2 AS two_a,
@@ -99,9 +141,9 @@ def test_sql_distinct() -> None:
     }
 
     # test unregistration
-    c.unregister("df")
+    ctx.unregister("df")
     with pytest.raises(pl.ComputeError, match=".*'df'.*not found"):
-        c.execute("SELECT * FROM df")
+        ctx.execute("SELECT * FROM df")
 
 
 def test_sql_div() -> None:
@@ -200,8 +242,8 @@ def test_sql_trig() -> None:
         }
     )
 
-    c = pl.SQLContext(df=df)
-    res = c.execute(
+    ctx = pl.SQLContext(df=df)
+    res = ctx.execute(
         """
         SELECT
         asin(1.0)/a as "pi values",
@@ -415,10 +457,10 @@ def test_sql_trig() -> None:
 def test_sql_group_by(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
-    c = pl.SQLContext(eager_execution=True)
-    c.register("foods", lf)
+    ctx = pl.SQLContext(eager_execution=True)
+    ctx.register("foods", lf)
 
-    out = c.execute(
+    out = ctx.execute(
         """
         SELECT
             category,
@@ -444,12 +486,12 @@ def test_sql_group_by(foods_ipc_path: Path) -> None:
             "att": ["x", "y", "x", "y", "y"],
         }
     )
-    assert c.tables() == ["foods"]
+    assert ctx.tables() == ["foods"]
 
-    c.register("test", lf)
-    assert c.tables() == ["foods", "test"]
+    ctx.register("test", lf)
+    assert ctx.tables() == ["foods", "test"]
 
-    out = c.execute(
+    out = ctx.execute(
         """
         SELECT
             grp,
@@ -485,46 +527,99 @@ def test_sql_left() -> None:
 def test_sql_limit_offset() -> None:
     n_values = 11
     lf = pl.LazyFrame({"a": range(n_values), "b": reversed(range(n_values))})
-    c = pl.SQLContext(tbl=lf)
+    ctx = pl.SQLContext(tbl=lf)
 
-    assert c.execute("SELECT * FROM tbl LIMIT 3 OFFSET 4", eager=True).rows() == [
+    assert ctx.execute("SELECT * FROM tbl LIMIT 3 OFFSET 4", eager=True).rows() == [
         (4, 6),
         (5, 5),
         (6, 4),
     ]
     for offset, limit in [(0, 3), (1, n_values), (2, 3), (5, 3), (8, 5), (n_values, 1)]:
-        out = c.execute(f"SELECT * FROM tbl LIMIT {limit} OFFSET {offset}", eager=True)
+        out = ctx.execute(
+            f"SELECT * FROM tbl LIMIT {limit} OFFSET {offset}", eager=True
+        )
         assert_frame_equal(out, lf.slice(offset, limit).collect())
         assert len(out) == min(limit, n_values - offset)
 
 
-def test_sql_join_inner(foods_ipc_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("sql", "expected"),
+    [
+        (
+            "SELECT * FROM tbl_a LEFT SEMI JOIN tbl_b USING (a,c)",
+            pl.DataFrame({"a": [2], "b": [0], "c": ["y"]}),
+        ),
+        (
+            "SELECT * FROM tbl_a LEFT SEMI JOIN tbl_b USING (a)",
+            pl.DataFrame({"a": [1, 2, 3], "b": [4, 0, 6], "c": ["w", "y", "z"]}),
+        ),
+        (
+            "SELECT * FROM tbl_a LEFT ANTI JOIN tbl_b USING (a)",
+            pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.Utf8}),
+        ),
+        (
+            "SELECT * FROM tbl_a LEFT SEMI JOIN tbl_b USING (b) LEFT SEMI JOIN tbl_c USING (c)",
+            pl.DataFrame({"a": [1, 3], "b": [4, 6], "c": ["w", "z"]}),
+        ),
+        (
+            "SELECT * FROM tbl_a LEFT ANTI JOIN tbl_b USING (b) LEFT SEMI JOIN tbl_c USING (c)",
+            pl.DataFrame({"a": [2], "b": [0], "c": ["y"]}),
+        ),
+        (
+            "SELECT * FROM tbl_a RIGHT ANTI JOIN tbl_b USING (b) LEFT SEMI JOIN tbl_c USING (c)",
+            pl.DataFrame({"a": [2], "b": [5], "c": ["y"]}),
+        ),
+        (
+            "SELECT * FROM tbl_a RIGHT SEMI JOIN tbl_b USING (b) RIGHT SEMI JOIN tbl_c USING (c)",
+            pl.DataFrame({"c": ["z"], "d": [25.5]}),
+        ),
+        (
+            "SELECT * FROM tbl_a RIGHT SEMI JOIN tbl_b USING (b) RIGHT ANTI JOIN tbl_c USING (c)",
+            pl.DataFrame({"c": ["w", "y"], "d": [10.5, -50.0]}),
+        ),
+    ],
+)
+def test_sql_join_anti_semi(sql: str, expected: pl.DataFrame) -> None:
+    frames = {
+        "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, 0, 6], "c": ["w", "y", "z"]}),
+        "tbl_b": pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
+        "tbl_c": pl.DataFrame({"c": ["w", "y", "z"], "d": [10.5, -50.0, 25.5]}),
+    }
+    ctx = pl.SQLContext(frames, eager_execution=True)
+    assert_frame_equal(expected, ctx.execute(sql))
+
+
+@pytest.mark.parametrize(
+    "join_clause",
+    [
+        "ON foods1.category = foods2.category",
+        "ON foods2.category = foods1.category",
+        "USING (category)",
+    ],
+)
+def test_sql_join_inner(foods_ipc_path: Path, join_clause: str) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
-    c = pl.SQLContext()
-    c.register_many(foods1=lf, foods2=lf)
+    ctx = pl.SQLContext()
+    ctx.register_many(foods1=lf, foods2=lf)
 
-    for join_clause in (
-        "ON foods1.category = foods2.category",
-        "USING (category)",
-    ):
-        out = c.execute(
-            f"""
-            SELECT *
-            FROM foods1
-            INNER JOIN foods2 {join_clause}
-            LIMIT 2
-            """
-        )
-        assert out.collect().to_dict(False) == {
-            "category": ["vegetables", "vegetables"],
-            "calories": [45, 20],
-            "fats_g": [0.5, 0.0],
-            "sugars_g": [2, 2],
-            "calories_right": [45, 45],
-            "fats_g_right": [0.5, 0.5],
-            "sugars_g_right": [2, 2],
-        }
+    out = ctx.execute(
+        f"""
+        SELECT *
+        FROM foods1
+        INNER JOIN foods2 {join_clause}
+        LIMIT 2
+        """
+    )
+    assert out.collect().to_dict(False) == {
+        "category": ["vegetables", "vegetables"],
+        "calories": [45, 20],
+        "fats_g": [0.5, 0.0],
+        "sugars_g": [2, 2],
+        "calories_right": [45, 45],
+        "fats_g_right": [0.5, 0.5],
+        "sugars_g_right": [2, 2],
+    }
 
 
 def test_sql_join_left() -> None:
@@ -533,29 +628,47 @@ def test_sql_join_left() -> None:
         "tbl_b": pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
         "tbl_c": pl.DataFrame({"c": ["w", "y", "z"], "d": [10.5, -50.0, 25.5]}),
     }
-    c = pl.SQLContext(frames)
-    out = c.execute(
+    ctx = pl.SQLContext(frames)
+    out = ctx.execute(
         """
         SELECT a, b, c, d
         FROM tbl_a
         LEFT JOIN tbl_b USING (a,b)
         LEFT JOIN tbl_c USING (c)
-        ORDER BY c DESC
+        ORDER BY a DESC
         """
     )
     assert out.collect().rows() == [
-        (1, 4, "z", 25.5),
-        (2, None, "y", -50.0),
         (3, 6, "x", None),
+        (2, None, None, None),
+        (1, 4, "z", 25.5),
     ]
-    assert c.tables() == ["tbl_a", "tbl_b", "tbl_c"]
+    assert ctx.tables() == ["tbl_a", "tbl_b", "tbl_c"]
+
+
+@pytest.mark.parametrize(
+    "constraint", ["tbl.a != tbl.b", "tbl.a > tbl.b", "a >= b", "a < b", "b <= a"]
+)
+def test_sql_non_equi_joins(constraint: str) -> None:
+    # no support (yet) for non equi-joins in polars joins
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=r"SQL interface \(currently\) only supports basic equi-join constraints",
+    ), pl.SQLContext({"tbl": pl.DataFrame({"a": [1, 2, 3], "b": [4, 3, 2]})}) as ctx:
+        ctx.execute(
+            f"""
+            SELECT *
+            FROM tbl
+            LEFT JOIN tbl ON {constraint}  -- not an equi-join
+            """
+        )
 
 
 def test_sql_is_between(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
-    c = pl.SQLContext(foods1=lf, eager_execution=True)
-    out = c.execute(
+    ctx = pl.SQLContext(foods1=lf, eager_execution=True)
+    out = ctx.execute(
         """
         SELECT *
         FROM foods1
@@ -572,8 +685,7 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
         ("vegetables", 25, 0.0, 2),
         ("vegetables", 22, 0.0, 3),
     ]
-
-    out = c.execute(
+    out = ctx.execute(
         """
         SELECT *
         FROM foods1
@@ -708,6 +820,29 @@ def test_sql_round_ndigits_errors() -> None:
         ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
 
 
+def test_sql_string_case() -> None:
+    df = pl.DataFrame({"words": ["Test SOME words"]})
+
+    with pl.SQLContext(frame=df) as ctx:
+        res = ctx.execute(
+            """
+            SELECT
+              words,
+              INITCAP(words) as cap,
+              UPPER(words) as upper,
+              LOWER(words) as lower,
+            FROM frame
+            """
+        ).collect()
+
+        assert res.to_dict(False) == {
+            "words": ["Test SOME words"],
+            "cap": ["Test Some Words"],
+            "upper": ["TEST SOME WORDS"],
+            "lower": ["test some words"],
+        }
+
+
 def test_sql_string_lengths() -> None:
     df = pl.DataFrame({"words": ["Café", None, "東京"]})
 
@@ -771,6 +906,67 @@ def test_sql_trim(foods_ipc_path: Path) -> None:
     assert out.to_dict(False) == {
         "new_category": ["seafood", "ruit", "egetables", "eat"]
     }
+
+
+@pytest.mark.parametrize(
+    ("cols1", "cols2", "union_subtype", "expected"),
+    [
+        (
+            ["*"],
+            ["*"],
+            "",
+            [(1, "zz"), (2, "yy"), (3, "xx")],
+        ),
+        (
+            ["*"],
+            ["frame2.*"],
+            "ALL",
+            [(1, "zz"), (2, "yy"), (2, "yy"), (3, "xx")],
+        ),
+        (
+            ["frame1.*"],
+            ["c1", "c2"],
+            "DISTINCT",
+            [(1, "zz"), (2, "yy"), (3, "xx")],
+        ),
+        (
+            ["*"],
+            ["c2", "c1"],
+            "ALL BY NAME",
+            None,  # [(1, 'zz'), (2, 'yy'), (2, 'yy'), (3, 'xx')],
+        ),
+        (
+            ["c1", "c2"],
+            ["c2", "c1"],
+            "BY NAME",
+            None,  # [(1, 'zz'), (2, 'yy'), (3, 'xx')],
+        ),
+    ],
+)
+def test_sql_union(
+    cols1: list[str],
+    cols2: list[str],
+    union_subtype: str,
+    expected: dict[str, list[int] | list[str]] | None,
+) -> None:
+    with pl.SQLContext(
+        frame1=pl.DataFrame({"c1": [1, 2], "c2": ["zz", "yy"]}),
+        frame2=pl.DataFrame({"c1": [2, 3], "c2": ["yy", "xx"]}),
+        eager_execution=True,
+    ) as ctx:
+        query = f"""
+            SELECT {', '.join(cols1)} FROM frame1
+            UNION {union_subtype}
+            SELECT {', '.join(cols2)} FROM frame2
+        """
+        if expected is not None:
+            assert sorted(ctx.execute(query).rows()) == expected
+        else:
+            with pytest.raises(
+                pl.InvalidOperationError,
+                match=f"UNION {union_subtype} is not yet supported",
+            ):
+                ctx.execute(query)
 
 
 def test_sql_nullif_coalesce(foods_ipc_path: Path) -> None:
@@ -988,3 +1184,23 @@ def test_sql_expr() -> None:
         pl.InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
     ):
         pl.sql_expr("xyz.*")
+
+
+@pytest.mark.parametrize("match_float", [False, True])
+def test_sql_unary_ops_8890(match_float: bool) -> None:
+    with pl.SQLContext(
+        df=pl.DataFrame({"a": [-2, -1, 1, 2], "b": ["w", "x", "y", "z"]}),
+    ) as ctx:
+        in_values = "(-3.0, -1.0, +2.0, +4.0)" if match_float else "(-3, -1, +2, +4)"
+        res = ctx.execute(
+            f"""
+            SELECT *, -(3) as c, (+4) as d
+            FROM df WHERE a IN {in_values}
+            """
+        )
+        assert res.collect().to_dict(False) == {
+            "a": [-1, 2],
+            "b": ["x", "z"],
+            "c": [-3, -3],
+            "d": [4, 4],
+        }

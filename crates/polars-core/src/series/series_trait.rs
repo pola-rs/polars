@@ -478,29 +478,9 @@ pub trait SeriesTrait:
         invalid_operation_panic!(as_any_mut, self)
     }
 
-    /// Get a boolean mask of the local maximum peaks.
-    fn peak_max(&self) -> BooleanChunked {
-        invalid_operation_panic!(peak_max, self)
-    }
-
-    /// Get a boolean mask of the local minimum peaks.
-    fn peak_min(&self) -> BooleanChunked {
-        invalid_operation_panic!(peak_min, self)
-    }
-
-    #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, _by: &IdxCa) -> PolarsResult<ListChunked> {
-        polars_bail!(opq = repeat_by, self._dtype());
-    }
     #[cfg(feature = "checked_arithmetic")]
     fn checked_div(&self, _rhs: &Series) -> PolarsResult<Series> {
         polars_bail!(opq = checked_div, self._dtype());
-    }
-
-    #[cfg(feature = "mode")]
-    /// Compute the most occurring element in the array.
-    fn mode(&self) -> PolarsResult<Series> {
-        polars_bail!(opq = mode, self._dtype());
     }
 
     #[cfg(feature = "rolling_window")]
@@ -512,14 +492,6 @@ pub trait SeriesTrait:
         _options: RollingOptionsFixedWindow,
     ) -> PolarsResult<Series> {
         polars_bail!(opq = rolling_map, self._dtype());
-    }
-    #[cfg(feature = "concat_str")]
-    /// Concat the values into a string array.
-    /// # Arguments
-    ///
-    /// * `delimiter` - A string that will act as delimiter between values.
-    fn str_concat(&self, _delimiter: &str) -> Utf8Chunked {
-        invalid_operation_panic!(str_concat, self);
     }
 
     fn tile(&self, _n: usize) -> Series {

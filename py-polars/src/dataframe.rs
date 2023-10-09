@@ -1,4 +1,4 @@
-use std::io::BufWriter;
+use std::io::{BufWriter, Cursor};
 use std::ops::Deref;
 
 use either::Either;
@@ -20,7 +20,7 @@ use polars_core::utils::try_get_supertype;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyTuple};
+use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
 
 #[cfg(feature = "parquet")]
 use crate::conversion::parse_parquet_compression;
@@ -87,6 +87,35 @@ impl PyDataFrame {
 
         let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsErr::from)?;
         Ok(df.into())
+    }
+
+    #[cfg(feature = "ipc_streaming")]
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        // Used in pickle/pickling
+        let mut buf: Vec<u8> = vec![];
+        IpcStreamWriter::new(&mut buf)
+            .finish(&mut self.df.clone())
+            .expect("ipc writer");
+        Ok(PyBytes::new(py, &buf).to_object(py))
+    }
+
+    #[cfg(feature = "ipc_streaming")]
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        // Used in pickle/pickling
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                let c = Cursor::new(s.as_bytes());
+                let reader = IpcStreamReader::new(c);
+
+                reader
+                    .finish()
+                    .map(|df| {
+                        self.df = df;
+                    })
+                    .map_err(|e| PyPolarsErr::from(e).into())
+            },
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -200,7 +229,7 @@ impl PyDataFrame {
             .infer_schema(infer_schema_length)
             .has_header(has_header)
             .with_n_rows(n_rows)
-            .with_delimiter(separator.as_bytes()[0])
+            .with_separator(separator.as_bytes()[0])
             .with_skip_rows(skip_rows)
             .with_ignore_errors(ignore_errors)
             .with_projection(projection)
@@ -560,7 +589,7 @@ impl PyDataFrame {
         has_header: bool,
         separator: u8,
         line_terminator: String,
-        quote: u8,
+        quote_char: u8,
         batch_size: usize,
         datetime_format: Option<String>,
         date_format: Option<String>,
@@ -577,9 +606,9 @@ impl PyDataFrame {
                 // No need for a buffered writer, because the csv writer does internal buffering.
                 CsvWriter::new(f)
                     .has_header(has_header)
-                    .with_delimiter(separator)
+                    .with_separator(separator)
                     .with_line_terminator(line_terminator)
-                    .with_quoting_char(quote)
+                    .with_quote_char(quote_char)
                     .with_batch_size(batch_size)
                     .with_datetime_format(datetime_format)
                     .with_date_format(date_format)
@@ -594,9 +623,9 @@ impl PyDataFrame {
             let mut buf = get_file_like(py_f, true)?;
             CsvWriter::new(&mut buf)
                 .has_header(has_header)
-                .with_delimiter(separator)
+                .with_separator(separator)
                 .with_line_terminator(line_terminator)
-                .with_quoting_char(quote)
+                .with_quote_char(quote_char)
                 .with_batch_size(batch_size)
                 .with_datetime_format(datetime_format)
                 .with_date_format(date_format)

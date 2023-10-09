@@ -34,12 +34,14 @@ fn polars_glob(pattern: &str, cloud_options: Option<&CloudOptions>) -> PolarsRes
 /// Use [LazyFileListReader::finish] to get the final [LazyFrame].
 pub trait LazyFileListReader: Clone {
     /// Get the final [LazyFrame].
-    fn finish(self) -> PolarsResult<LazyFrame> {
+    fn finish(mut self) -> PolarsResult<LazyFrame> {
         if let Some(paths) = self.glob()? {
             let lfs = paths
-                .map(|r| {
+                .enumerate()
+                .map(|(i, r)| {
                     let path = r?;
-                    self.clone()
+                    let lf = self
+                        .clone()
                         .with_path(path.clone())
                         .with_rechunk(false)
                         .finish_no_glob()
@@ -47,7 +49,15 @@ pub trait LazyFileListReader: Clone {
                             polars_err!(
                                 ComputeError: "error while reading {}: {}", path.display(), e
                             )
-                        })
+                        });
+
+                    if i == 0 {
+                        let lf = lf?;
+                        self.set_known_schema(lf.schema()?);
+                        Ok(lf)
+                    } else {
+                        lf
+                    }
                 })
                 .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -111,6 +121,14 @@ pub trait LazyFileListReader: Clone {
     fn cloud_options(&self) -> Option<&CloudOptions> {
         None
     }
+
+    /// Set a schema on first glob pattern, so that others don't have to fetch metadata
+    /// from cloud
+    fn known_schema(&self) -> Option<SchemaRef> {
+        None
+    }
+
+    fn set_known_schema(&mut self, _known_schema: SchemaRef) {}
 
     /// Get list of files referenced by this reader.
     ///

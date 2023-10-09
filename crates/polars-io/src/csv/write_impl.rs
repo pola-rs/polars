@@ -22,33 +22,33 @@ use super::write::QuoteStyle;
 
 fn fmt_and_escape_str(f: &mut Vec<u8>, v: &str, options: &SerializeOptions) -> std::io::Result<()> {
     if options.quote_style == QuoteStyle::Never {
-        write!(f, "{v}")
-    } else if v.is_empty() {
-        write!(f, "\"\"")
-    } else {
-        let needs_escaping = memchr(options.quote, v.as_bytes()).is_some();
-        if needs_escaping {
-            let replaced = unsafe {
-                // Replace from single quote " to double quote "".
-                v.replace(
-                    std::str::from_utf8_unchecked(&[options.quote]),
-                    std::str::from_utf8_unchecked(&[options.quote, options.quote]),
-                )
-            };
-            return write!(f, "\"{replaced}\"");
-        }
-        let surround_with_quotes = match options.quote_style {
-            QuoteStyle::Always | QuoteStyle::NonNumeric => true,
-            QuoteStyle::Necessary => memchr2(options.delimiter, b'\n', v.as_bytes()).is_some(),
-            QuoteStyle::Never => false,
+        return write!(f, "{v}");
+    }
+    let quote = options.quote_char as char;
+    if v.is_empty() {
+        return write!(f, "{quote}{quote}");
+    }
+    let needs_escaping = memchr(options.quote_char, v.as_bytes()).is_some();
+    if needs_escaping {
+        let replaced = unsafe {
+            // Replace from single quote " to double quote "".
+            v.replace(
+                std::str::from_utf8_unchecked(&[options.quote_char]),
+                std::str::from_utf8_unchecked(&[options.quote_char, options.quote_char]),
+            )
         };
+        return write!(f, "{quote}{replaced}{quote}");
+    }
+    let surround_with_quotes = match options.quote_style {
+        QuoteStyle::Always | QuoteStyle::NonNumeric => true,
+        QuoteStyle::Necessary => memchr2(options.separator, b'\n', v.as_bytes()).is_some(),
+        QuoteStyle::Never => false,
+    };
 
-        let quote = options.quote as char;
-        if surround_with_quotes {
-            write!(f, "{quote}{v}{quote}")
-        } else {
-            write!(f, "{v}")
-        }
+    if surround_with_quotes {
+        write!(f, "{quote}{v}{quote}")
+    } else {
+        write!(f, "{v}")
     }
 }
 
@@ -86,7 +86,7 @@ unsafe fn write_anyvalue(
         },
         _ => {
             // Then we deal with the numeric types
-            let quote = options.quote as char;
+            let quote = options.quote_char as char;
 
             let mut end_with_quote = matches!(options.quote_style, QuoteStyle::Always);
             if end_with_quote {
@@ -238,10 +238,10 @@ pub struct SerializeOptions {
     pub datetime_format: Option<String>,
     /// Used for [`DataType::Float64`] and [`DataType::Float32`].
     pub float_precision: Option<usize>,
-    /// Used as separator/delimiter.
-    pub delimiter: u8,
+    /// Used as separator.
+    pub separator: u8,
     /// Quoting character.
-    pub quote: u8,
+    pub quote_char: u8,
     /// Null value representation.
     pub null: String,
     /// String appended after every row.
@@ -256,8 +256,8 @@ impl Default for SerializeOptions {
             time_format: None,
             datetime_format: None,
             float_precision: None,
-            delimiter: b',',
-            quote: b'"',
+            separator: b',',
+            quote_char: b'"',
             null: String::new(),
             line_terminator: "\n".into(),
             quote_style: Default::default(),
@@ -302,10 +302,10 @@ pub(crate) fn write<W: Write>(
 
     // Check that the double quote is valid UTF-8.
     polars_ensure!(
-        std::str::from_utf8(&[options.quote, options.quote]).is_ok(),
+        std::str::from_utf8(&[options.quote_char, options.quote_char]).is_ok(),
         ComputeError: "quote char results in invalid utf-8",
     );
-    let delimiter = char::from(options.delimiter);
+    let separator = char::from(options.separator);
 
     let (datetime_formats, time_zones): (Vec<&str>, Vec<Option<Tz>>) = df
         .get_columns()
@@ -439,7 +439,7 @@ pub(crate) fn write<W: Write>(
                     }
                     let current_ptr = col as *const SeriesIter;
                     if current_ptr != last_ptr {
-                        write!(&mut write_buffer, "{delimiter}").unwrap()
+                        write!(&mut write_buffer, "{separator}").unwrap()
                     }
                 }
                 if !finished {
@@ -488,7 +488,7 @@ pub(crate) fn write_header<W: Write>(
     }
     writer.write_all(
         escaped_names
-            .join(std::str::from_utf8(&[options.delimiter]).unwrap())
+            .join(std::str::from_utf8(&[options.separator]).unwrap())
             .as_bytes(),
     )?;
     writer.write_all(options.line_terminator.as_bytes())?;

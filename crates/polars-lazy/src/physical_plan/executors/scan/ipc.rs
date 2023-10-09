@@ -19,6 +19,7 @@ impl IpcExec {
             &mut self.schema,
             self.file_options.n_rows,
             self.file_options.row_count.is_some(),
+            None,
         );
         IpcReader::new(file.unwrap())
             .with_n_rows(n_rows)

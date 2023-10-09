@@ -29,7 +29,7 @@ pub struct WindowExpr {
     /// A function Expr. i.e. Mean, Median, Max, etc.
     pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
-    pub(crate) options: WindowOptions,
+    pub(crate) mapping: WindowMapping,
     pub(crate) expr: Expr,
 }
 
@@ -321,7 +321,7 @@ impl WindowExpr {
         sorted_keys: bool,
         gb: &GroupBy,
     ) -> PolarsResult<MapStrategy> {
-        match (self.options.mapping, agg_state) {
+        match (self.mapping, agg_state) {
             // Explode
             // `(col("x").sum() * col("y")).list().over("groups").flatten()`
             (WindowMapping::Explode, _) => Ok(MapStrategy::Explode),
@@ -423,7 +423,7 @@ impl PhysicalExpr for WindowExpr {
         let explicit_list_agg = self.is_explicit_list_agg();
 
         // if we flatten this column we need to make sure the groups are sorted.
-        let mut sort_groups = matches!(self.options.mapping, WindowMapping::Explode) ||
+        let mut sort_groups = matches!(self.mapping, WindowMapping::Explode) ||
             // if not
             //      `col().over()`
             // and not
@@ -454,7 +454,7 @@ impl PhysicalExpr for WindowExpr {
                 cache_key.push_str(s.name());
             }
 
-            let mut gt_map = state.group_tuples.lock().unwrap();
+            let mut gt_map = state.group_tuples.write().unwrap();
             // we run sequential and partitioned
             // and every partition run the cache should be empty so we expect a max of 1.
             debug_assert!(gt_map.len() <= 1);
@@ -650,7 +650,7 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Se
 fn cache_gb(gb: GroupBy, state: &ExecutionState, cache_key: &str) {
     if state.cache_window() {
         let groups = gb.take_groups();
-        let mut gt_map = state.group_tuples.lock().unwrap();
+        let mut gt_map = state.group_tuples.write().unwrap();
         gt_map.insert(cache_key.to_string(), groups);
     }
 }

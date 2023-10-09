@@ -76,7 +76,7 @@ impl<O: Offset> Offsets<O> {
         let (lower, _) = iterator.size_hint();
         let mut offsets = Self::with_capacity(lower);
         for item in iterator {
-            offsets.try_push_usize(item)?
+            offsets.try_push(item)?
         }
         Ok(offsets)
     }
@@ -106,31 +106,25 @@ impl<O: Offset> Offsets<O> {
     /// Pushes a new element with a given length.
     /// # Error
     /// This function errors iff the new last item is larger than what `O` supports.
-    /// # Panic
-    /// This function asserts that `length > 0`.
-    #[inline]
-    pub fn try_push(&mut self, length: O) -> Result<(), Error> {
-        let old_length = self.last();
-        assert!(length >= O::zero());
-        let new_length = old_length.checked_add(&length).ok_or(Error::Overflow)?;
-        self.0.push(new_length);
-        Ok(())
-    }
-
-    /// Pushes a new element with a given length.
-    /// # Error
-    /// This function errors iff the new last item is larger than what `O` supports.
     /// # Implementation
     /// This function:
     /// * checks that this length does not overflow
     #[inline]
-    pub fn try_push_usize(&mut self, length: usize) -> Result<(), Error> {
-        let length = O::from_usize(length).ok_or(Error::Overflow)?;
+    pub fn try_push(&mut self, length: usize) -> Result<(), Error> {
+        if O::IS_LARGE {
+            let length = O::from_as_usize(length);
+            let old_length = self.last();
+            let new_length = *old_length + length;
+            self.0.push(new_length);
+            Ok(())
+        } else {
+            let length = O::from_usize(length).ok_or(Error::Overflow)?;
 
-        let old_length = self.last();
-        let new_length = old_length.checked_add(&length).ok_or(Error::Overflow)?;
-        self.0.push(new_length);
-        Ok(())
+            let old_length = self.last();
+            let new_length = old_length.checked_add(&length).ok_or(Error::Overflow)?;
+            self.0.push(new_length);
+            Ok(())
+        }
     }
 
     /// Returns [`Offsets`] assuming that `offsets` fulfills its invariants

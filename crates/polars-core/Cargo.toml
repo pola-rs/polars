@@ -80,16 +80,13 @@ rows = []
 zip_with = []
 round_series = []
 checked_arithmetic = []
-repeat_by = []
 is_first_distinct = []
 is_last_distinct = []
 asof_join = []
 dot_product = []
-concat_str = []
 row_hash = []
 reinterpret = []
 take_opt_iter = []
-mode = []
 # allow group_by operation on list type
 group_by_list = []
 # cumsum, cummin, etc.
@@ -147,14 +144,11 @@ docs-selection = [
   "zip_with",
   "round_series",
   "checked_arithmetic",
-  "repeat_by",
   "is_first_distinct",
   "is_last_distinct",
   "asof_join",
   "dot_product",
-  "concat_str",
   "row_hash",
-  "mode",
   "cum_agg",
   "rolling_window",
   "diff",

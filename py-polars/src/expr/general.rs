@@ -293,9 +293,20 @@ impl PyExpr {
         self.inner.clone().bottom_k(k.inner).into()
     }
 
+    #[cfg(feature = "peaks")]
+    fn peak_min(&self) -> Self {
+        self.clone().inner.peak_min().into()
+    }
+
+    #[cfg(feature = "peaks")]
+    fn peak_max(&self) -> Self {
+        self.clone().inner.peak_max().into()
+    }
+
     fn arg_max(&self) -> Self {
         self.clone().inner.arg_max().into()
     }
+
     fn arg_min(&self) -> Self {
         self.clone().inner.arg_min().into()
     }
@@ -552,10 +563,29 @@ impl PyExpr {
             .into_iter()
             .map(|e| e.inner)
             .collect::<Vec<Expr>>();
-        self.clone()
-            .inner
-            .over_with_options(partition_by, WindowOptions { mapping: mapping.0 })
+        self.inner
+            .clone()
+            .over_with_options(partition_by, mapping.0)
             .into()
+    }
+
+    fn rolling(
+        &self,
+        index_column: &str,
+        period: &str,
+        offset: &str,
+        closed: Wrap<ClosedWindow>,
+        check_sorted: bool,
+    ) -> Self {
+        let options = RollingGroupOptions {
+            index_column: index_column.into(),
+            period: Duration::parse(period),
+            offset: Duration::parse(offset),
+            closed_window: closed.0,
+            check_sorted,
+        };
+
+        self.inner.clone().rolling(options).into()
     }
 
     fn _and(&self, expr: Self) -> Self {

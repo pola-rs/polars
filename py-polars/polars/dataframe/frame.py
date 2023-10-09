@@ -55,6 +55,7 @@ from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
 from polars.functions import col, lit
 from polars.io._utils import _is_glob_pattern, _is_local_file
+from polars.io.csv._utils import _check_arg_is_1byte
 from polars.io.spreadsheet._write_utils import (
     _unpack_multi_column_dict,
     _xl_apply_conditional_formats,
@@ -657,7 +658,7 @@ class DataFrame:
         columns: Sequence[int] | Sequence[str] | None = None,
         separator: str = ",",
         comment_char: str | None = None,
-        quote_char: str | None = r'"',
+        quote_char: str | None = '"',
         skip_rows: int = 0,
         dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
         schema: None | SchemaDict = None,
@@ -1327,7 +1328,7 @@ class DataFrame:
         Please report any issues to https://github.com/data-apis/dataframe-api-compat.
         """
         return dataframe_api_compat.polars_standard.convert_to_standard_compliant_dataframe(
-            self, api_version=api_version
+            self.lazy(), api_version=api_version
         )
 
     def _comp(self, other: Any, op: ComparisonOperator) -> DataFrame:
@@ -2443,7 +2444,7 @@ class DataFrame:
         has_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
-        quote: str = ...,
+        quote_char: str = ...,
         batch_size: int = ...,
         datetime_format: str | None = ...,
         date_format: str | None = ...,
@@ -2462,7 +2463,7 @@ class DataFrame:
         has_header: bool = ...,
         separator: str = ...,
         line_terminator: str = ...,
-        quote: str = ...,
+        quote_char: str = ...,
         batch_size: int = ...,
         datetime_format: str | None = ...,
         date_format: str | None = ...,
@@ -2473,6 +2474,7 @@ class DataFrame:
     ) -> None:
         ...
 
+    @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
     def write_csv(
         self,
         file: BytesIO | TextIOWrapper | str | Path | None = None,
@@ -2480,7 +2482,7 @@ class DataFrame:
         has_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
-        quote: str = '"',
+        quote_char: str = '"',
         batch_size: int = 1024,
         datetime_format: str | None = None,
         date_format: str | None = None,
@@ -2503,7 +2505,7 @@ class DataFrame:
             Separate CSV fields with this symbol.
         line_terminator
             String used to end each row.
-        quote
+        quote_char
             Byte to use as quoting character.
         batch_size
             Number of rows that will be processed per thread.
@@ -2530,7 +2532,7 @@ class DataFrame:
             Determines the quoting strategy used.
             - necessary (default): This puts quotes around fields only when necessary.
             They are necessary when fields contain a quote,
-            delimiter or record terminator.
+            separator or record terminator.
             Quotes are also necessary when writing an empty record
             (which is indistinguishable from a record with one empty field).
             This is the default.
@@ -2558,10 +2560,8 @@ class DataFrame:
         >>> df.write_csv(path, separator=",")
 
         """
-        if len(separator) != 1:
-            raise ValueError("only single byte separator is allowed")
-        if len(quote) != 1:
-            raise ValueError("only single byte quote char is allowed")
+        _check_arg_is_1byte("separator", separator, can_be_empty=False)
+        _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
         if not null_value:
             null_value = None
 
@@ -2579,7 +2579,7 @@ class DataFrame:
             has_header,
             ord(separator),
             line_terminator,
-            ord(quote),
+            ord(quote_char),
             batch_size,
             datetime_format,
             date_format,
@@ -3840,7 +3840,7 @@ class DataFrame:
         └───────┴─────┴─────┘
 
         """
-        return self.lazy().rename(mapping).collect(eager=True)
+        return self.lazy().rename(mapping).collect(_eager=True)
 
     def insert_at_idx(self, index: int, series: Series) -> Self:
         """
@@ -3963,7 +3963,7 @@ class DataFrame:
             predicate = pl.Series(predicate)
 
         return (
-            self.lazy().filter(predicate).collect(eager=True)  # type: ignore[arg-type]
+            self.lazy().filter(predicate).collect(_eager=True)  # type: ignore[arg-type]
         )
 
     @overload
@@ -4317,7 +4317,7 @@ class DataFrame:
         return (
             self.lazy()
             .sort(by, *more_by, descending=descending, nulls_last=nulls_last)
-            .collect(eager=True)
+            .collect(_eager=True)
         )
 
     def top_k(
@@ -4845,7 +4845,7 @@ class DataFrame:
         └──────┴──────┘
 
         """
-        return self.lazy().drop_nulls(subset).collect(eager=True)
+        return self.lazy().drop_nulls(subset).collect(_eager=True)
 
     def pipe(
         self,
@@ -5850,7 +5850,7 @@ class DataFrame:
                 allow_parallel=allow_parallel,
                 force_parallel=force_parallel,
             )
-            .collect(eager=True)
+            .collect(_eager=True)
         )
 
     def join(
@@ -6002,7 +6002,7 @@ class DataFrame:
                 suffix=suffix,
                 validate=validate,
             )
-            .collect(eager=True)
+            .collect(_eager=True)
         )
 
     def map_rows(
@@ -6358,7 +6358,7 @@ class DataFrame:
         └─────┘
 
         """
-        return self.lazy().drop(columns, *more_columns).collect(eager=True)
+        return self.lazy().drop(columns, *more_columns).collect(_eager=True)
 
     def drop_in_place(self, name: str) -> Series:
         """
@@ -6461,7 +6461,7 @@ class DataFrame:
         └─────┴─────┴────────────┘
 
         """
-        return self.lazy().cast(dtypes, strict=strict).collect(eager=True)
+        return self.lazy().cast(dtypes, strict=strict).collect(_eager=True)
 
     def clear(self, n: int = 0) -> Self:
         """
@@ -6738,7 +6738,7 @@ class DataFrame:
         return (
             self.lazy()
             .fill_null(value, strategy, limit, matches_supertype=matches_supertype)
-            .collect(eager=True)
+            .collect(_eager=True)
         )
 
     def fill_nan(self, value: Expr | int | float | None) -> DataFrame:
@@ -6786,7 +6786,7 @@ class DataFrame:
         └──────┴──────┘
 
         """
-        return self.lazy().fill_nan(value).collect(eager=True)
+        return self.lazy().fill_nan(value).collect(_eager=True)
 
     def explode(
         self,
@@ -6846,7 +6846,7 @@ class DataFrame:
         └─────────┴─────────┘
 
         """
-        return self.lazy().explode(columns, *more_columns).collect(eager=True)
+        return self.lazy().explode(columns, *more_columns).collect(_eager=True)
 
     def pivot(
         self,
@@ -7409,10 +7409,19 @@ class DataFrame:
         ]
 
         if as_dict:
-            if len(by) == 1:
-                return {df[by][0, 0]: df for df in partitions}
+            df = self._from_pydf(self._df)
+            if include_key:
+                if len(by) == 1:
+                    names = [p[by[0]][0] for p in partitions]
+                else:
+                    names = [p.select(by).row(0) for p in partitions]
             else:
-                return {df[by].row(0): df for df in partitions}
+                if len(by) == 1:
+                    names = df[by[0]].unique(maintain_order=True).to_list()
+                else:
+                    names = df.select(by).unique(maintain_order=True).rows()
+
+            return dict(zip(names, partitions))
 
         return partitions
 
@@ -7505,7 +7514,7 @@ class DataFrame:
         return (
             self.lazy()
             .shift_and_fill(fill_value=fill_value, periods=periods)
-            .collect(eager=True)
+            .collect(_eager=True)
         )
 
     def is_duplicated(self) -> Series:
@@ -7724,7 +7733,7 @@ class DataFrame:
         └───────────┘
 
         """
-        return self.lazy().select(*exprs, **named_exprs).collect(eager=True)
+        return self.lazy().select(*exprs, **named_exprs).collect(_eager=True)
 
     def select_seq(
         self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr
@@ -7750,7 +7759,7 @@ class DataFrame:
         select
 
         """
-        return self.lazy().select_seq(*exprs, **named_exprs).collect(eager=True)
+        return self.lazy().select_seq(*exprs, **named_exprs).collect(_eager=True)
 
     def with_columns(
         self,
@@ -7900,7 +7909,7 @@ class DataFrame:
         └─────┴──────┴─────────────┘
 
         """
-        return self.lazy().with_columns(*exprs, **named_exprs).collect(eager=True)
+        return self.lazy().with_columns(*exprs, **named_exprs).collect(_eager=True)
 
     def with_columns_seq(
         self,
@@ -7935,7 +7944,7 @@ class DataFrame:
         with_columns
 
         """
-        return self.lazy().with_columns_seq(*exprs, **named_exprs).collect(eager=True)
+        return self.lazy().with_columns_seq(*exprs, **named_exprs).collect(_eager=True)
 
     @overload
     def n_chunks(self, strategy: Literal["first"] = ...) -> int:
@@ -8555,7 +8564,7 @@ class DataFrame:
         return (
             self.lazy()
             .unique(subset=subset, keep=keep, maintain_order=maintain_order)
-            .collect(eager=True)
+            .collect(_eager=True)
         )
 
     def n_unique(self, subset: str | Expr | Sequence[str | Expr] | None = None) -> int:
@@ -8624,7 +8633,7 @@ class DataFrame:
             struct_fields = F.all() if (subset is None) else subset
             expr = F.struct(struct_fields)  # type: ignore[call-overload]
 
-        df = self.lazy().select(expr.n_unique()).collect(eager=True)
+        df = self.lazy().select(expr.n_unique()).collect(_eager=True)
         return 0 if df.is_empty() else df.row(0)[0]
 
     def approx_n_unique(self) -> DataFrame:
@@ -8652,7 +8661,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        return self.lazy().approx_n_unique().collect(eager=True)
+        return self.lazy().approx_n_unique().collect(_eager=True)
 
     @deprecate_renamed_function("approx_n_unique", version="0.18.12")
     def approx_unique(self) -> DataFrame:
@@ -9681,7 +9690,7 @@ class DataFrame:
         │ elise  ┆ 44  │
         └────────┴─────┘
         """
-        return self.lazy().merge_sorted(other.lazy(), key).collect(eager=True)
+        return self.lazy().merge_sorted(other.lazy(), key).collect(_eager=True)
 
     def set_sorted(
         self,
@@ -9704,13 +9713,15 @@ class DataFrame:
         return (
             self.lazy()
             .set_sorted(column, *more_columns, descending=descending)
-            .collect(eager=True)
+            .collect(_eager=True)
         )
 
     def update(
         self,
         other: DataFrame,
         on: str | Sequence[str] | None = None,
+        left_on: str | Sequence[str] | None = None,
+        right_on: str | Sequence[str] | None = None,
         how: Literal["left", "inner"] = "left",
     ) -> DataFrame:
         """
@@ -9732,8 +9743,13 @@ class DataFrame:
         on
             Column names that will be joined on.
             If none given the row count is used.
+        left_on
+           Join column(s) of the left DataFrame.
+        right_on
+           Join column(s) of the right DataFrame.
         how : {'left', 'inner'}
-            'left' will keep the left table rows as is.
+            'left' will keep all rows from the left table. Rows may be duplicated if
+            multiple rows in right frame match left row's `on` key.
             'inner' will remove rows that are not found in other
 
         Examples
@@ -9787,7 +9803,11 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        return self.lazy().update(other.lazy(), on, how).collect(eager=True)
+        return (
+            self.lazy()
+            .update(other.lazy(), on, left_on, right_on, how)
+            .collect(_eager=True)
+        )
 
     @deprecate_renamed_function("group_by", version="0.19.0")
     def groupby(

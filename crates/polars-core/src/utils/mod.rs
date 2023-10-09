@@ -4,6 +4,7 @@ mod supertype;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
+use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
 use flatten::*;
 use num_traits::{One, Zero};
@@ -145,7 +146,7 @@ pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
 
 pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
     let total_len = df.height();
-    let chunk_size = std::cmp::max(total_len / n, 3);
+    let chunk_size = std::cmp::max(total_len / n, 1);
 
     if df.n_chunks() == n
         && df.get_columns()[0]
@@ -331,6 +332,19 @@ macro_rules! with_match_physical_integer_type {(
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },
         UInt64 => __with_ty__! { u64 },
+        _ => unimplemented!()
+    }
+})}
+
+#[macro_export]
+macro_rules! with_match_physical_float_polars_type {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use $crate::datatypes::DataType::*;
+    match $key_type {
+        Float32 => __with_ty__! { Float32Type },
+        Float64 => __with_ty__! { Float64Type },
         _ => unimplemented!()
     }
 })}
@@ -815,10 +829,9 @@ where
     let mut offset = 0;
     for validity in iter {
         if let Some(validity) = validity {
-            for (idx, is_valid) in validity.iter().enumerate() {
-                if is_valid {
-                    return Some(offset + idx);
-                }
+            let mask = BitMask::from_bitmap(validity);
+            if let Some(n) = mask.nth_set_bit_idx(0, 0) {
+                return Some(offset + n);
             }
             offset += validity.len()
         } else {
@@ -836,17 +849,16 @@ where
         return None;
     }
     let mut offset = 0;
-    let len = len - 1;
     for validity in iter.rev() {
         if let Some(validity) = validity {
-            for (idx, is_valid) in validity.iter().rev().enumerate() {
-                if is_valid {
-                    return Some(len - (offset + idx));
-                }
+            let mask = BitMask::from_bitmap(validity);
+            if let Some(n) = mask.nth_set_bit_idx_rev(0, mask.len()) {
+                let mask_start = len - offset - mask.len();
+                return Some(mask_start + n);
             }
             offset += validity.len()
         } else {
-            return Some(len - offset);
+            return Some(len - 1 - offset);
         }
     }
     None

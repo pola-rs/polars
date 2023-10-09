@@ -723,7 +723,7 @@ def test_view() -> None:
         b.view()
 
     assert np.all(b[:2].view() == np.array([1, 2]))
-    assert b[:2].has_validity()
+    assert not b[:2].has_validity()
 
 
 def test_ufunc() -> None:
@@ -1186,29 +1186,6 @@ def test_describe() -> None:
 
     with pytest.raises(ValueError):
         assert empty_s.describe()
-
-
-def test_slice() -> None:
-    s = pl.Series(name="a", values=[0, 1, 2, 3, 4, 5], dtype=pl.UInt8)
-    for srs_slice, expected in (
-        [s.slice(2, 3), [2, 3, 4]],
-        [s.slice(4, 1), [4]],
-        [s.slice(4, None), [4, 5]],
-        [s.slice(3), [3, 4, 5]],
-        [s.slice(-2), [4, 5]],
-    ):
-        assert srs_slice.to_list() == expected  # type: ignore[attr-defined]
-
-    for py_slice in (
-        slice(1, 2),
-        slice(0, 2, 2),
-        slice(3, -3, -1),
-        slice(1, None, -2),
-        slice(-1, -3, -1),
-        slice(-3, None, -3),
-    ):
-        # confirm series slice matches python slice
-        assert s[py_slice].to_list() == s.to_list()[py_slice]
 
 
 def test_round() -> None:
@@ -1863,11 +1840,11 @@ def test_dot() -> None:
 def test_peak_max_peak_min() -> None:
     s = pl.Series("a", [4, 1, 3, 2, 5])
     result = s.peak_min()
-    expected = pl.Series([False, True, False, True, False])
+    expected = pl.Series("a", [False, True, False, True, False])
     assert_series_equal(result, expected)
 
     result = s.peak_max()
-    expected = pl.Series([True, False, True, False, True])
+    expected = pl.Series("a", [True, False, True, False, True])
     assert_series_equal(result, expected)
 
 

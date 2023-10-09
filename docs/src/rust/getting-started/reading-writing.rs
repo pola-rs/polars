@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::create("docs/data/output.csv").expect("could not create file");
     CsvWriter::new(&mut file)
         .has_header(true)
-        .with_delimiter(b',')
+        .with_separator(b',')
         .finish(&mut df);
     let df_csv = CsvReader::from_path("docs/data/output.csv")?
         .infer_schema(None)
@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut file = File::create("docs/data/output.csv").expect("could not create file");
     CsvWriter::new(&mut file)
         .has_header(true)
-        .with_delimiter(b',')
+        .with_separator(b',')
         .finish(&mut df);
     let df_csv = CsvReader::from_path("docs/data/output.csv")?
         .infer_schema(None)

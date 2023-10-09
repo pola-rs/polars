@@ -64,7 +64,6 @@ where
     T: NativeArithmetics + CheckedDiv<Output = T>,
 {
     let op = move |a: T, b: T| a.checked_div(&b);
-
     binary_checked(lhs, rhs, lhs.data_type().clone(), op)
 }
 

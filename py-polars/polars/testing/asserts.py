@@ -377,6 +377,8 @@ def _assert_series_inner(
             unequal = unequal & ~(
                 (left.is_nan() & right.is_nan()).fill_null(F.lit(False))
             )
+    if comparing_float_dtypes and not nans_compare_equal:
+        unequal = unequal | left.is_nan() | right.is_nan()
 
     # check nested dtypes in separate function
     if left.dtype.is_nested or right.dtype.is_nested:

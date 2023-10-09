@@ -9,7 +9,7 @@ pub enum QuoteStyle {
     /// This puts quotes around every field. Always.
     Always,
     /// This puts quotes around fields only when necessary.
-    // They are necessary when fields contain a quote, delimiter or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field).
+    // They are necessary when fields contain a quote, separator or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field).
     // This is the default.
     #[default]
     Necessary,
@@ -69,9 +69,9 @@ where
         self
     }
 
-    /// Set the CSV file's column delimiter as a byte character.
-    pub fn with_delimiter(mut self, delimiter: u8) -> Self {
-        self.options.delimiter = delimiter;
+    /// Set the CSV file's column separator as a byte character.
+    pub fn with_separator(mut self, separator: u8) -> Self {
+        self.options.separator = separator;
         self
     }
 
@@ -114,8 +114,8 @@ where
     }
 
     /// Set the single byte character used for quoting.
-    pub fn with_quoting_char(mut self, char: u8) -> Self {
-        self.options.quote = char;
+    pub fn with_quote_char(mut self, char: u8) -> Self {
+        self.options.quote_char = char;
         self
     }
 

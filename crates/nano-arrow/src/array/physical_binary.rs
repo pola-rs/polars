@@ -28,7 +28,7 @@ where
         if let Some(item) = item? {
             null.push_unchecked(true);
             let s = item.as_ref();
-            length += O::from_usize(s.len()).unwrap();
+            length += O::from_as_usize(s.len());
             values.extend_from_slice(s);
         } else {
             null.push_unchecked(false);
@@ -147,7 +147,7 @@ where
     for item in iterator {
         let bytes = item.as_ref();
         values.extend_from_slice(bytes);
-        offsets.try_push_usize(bytes.len()).unwrap();
+        offsets.try_push(bytes.len()).unwrap();
     }
     offsets.len_proxy() - start_index
 }
@@ -205,7 +205,7 @@ where
     for item in iterator {
         let s = item.as_ref();
         values.extend_from_slice(s);
-        offsets.try_push_usize(s.len()).unwrap();
+        offsets.try_push(s.len()).unwrap();
     }
     (offsets, values)
 }

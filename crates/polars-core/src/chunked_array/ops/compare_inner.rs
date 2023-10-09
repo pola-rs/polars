@@ -1,6 +1,6 @@
-//! Used to speed up PartialEq and PartialOrd of elements within an array
+//! Used to speed up TotalEq and TotalOrd of elements within an array.
 
-use std::cmp::{Ordering, PartialEq};
+use std::cmp::Ordering;
 
 use crate::chunked_array::ChunkedArrayLayout;
 use crate::prelude::*;
@@ -56,11 +56,11 @@ pub trait PartialOrdInner: Send + Sync {
 impl<T> PartialEqInner for T
 where
     T: GetInner + Send + Sync,
-    T::Item: PartialEq,
+    T::Item: TotalEq,
 {
     #[inline]
     unsafe fn eq_element_unchecked(&self, idx_a: usize, idx_b: usize) -> bool {
-        self.get_unchecked(idx_a) == self.get_unchecked(idx_b)
+        self.get_unchecked(idx_a).tot_eq(&self.get_unchecked(idx_b))
     }
 }
 
@@ -74,7 +74,7 @@ pub(crate) trait IntoPartialEqInner<'a> {
 impl<'a, T> IntoPartialEqInner<'a> for &'a ChunkedArray<T>
 where
     T: PolarsDataType,
-    T::Physical<'a>: PartialEq,
+    T::Physical<'a>: TotalEq,
 {
     fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner + 'a> {
         match self.layout() {
@@ -86,29 +86,16 @@ where
     }
 }
 
-// Partial ordering implementations.
-#[inline]
-fn fallback<T: PartialEq>(a: T) -> Ordering {
-    // This is a simple way to check if it is nan
-    // without convincing the compiler we deal with floats.
-    #[allow(clippy::eq_op)]
-    if a != a {
-        Ordering::Less
-    } else {
-        Ordering::Greater
-    }
-}
-
 impl<T> PartialOrdInner for T
 where
     T: GetInner + Send + Sync,
-    T::Item: PartialOrd,
+    T::Item: TotalOrd,
 {
     #[inline]
     unsafe fn cmp_element_unchecked(&self, idx_a: usize, idx_b: usize) -> Ordering {
         let a = self.get_unchecked(idx_a);
         let b = self.get_unchecked(idx_b);
-        a.partial_cmp(&b).unwrap_or_else(|| fallback(a))
+        a.tot_cmp(&b)
     }
 }
 
@@ -121,7 +108,7 @@ pub(crate) trait IntoPartialOrdInner<'a> {
 impl<'a, T> IntoPartialOrdInner<'a> for &'a ChunkedArray<T>
 where
     T: PolarsDataType,
-    T::Physical<'a>: PartialOrd,
+    T::Physical<'a>: TotalOrd,
 {
     fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner + 'a> {
         match self.layout() {

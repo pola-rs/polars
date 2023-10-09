@@ -1,5 +1,3 @@
-use std::cmp::Ordering;
-
 use super::*;
 
 impl<T> ChunkedArray<T>
@@ -17,54 +15,36 @@ where
     }
 }
 
-fn binary_search<T: PolarsNumericType, F>(
+/// Splits the ChunkedArray into a lower part, where is_lower returns true, and
+/// an upper part where it returns false, and returns a mask where the lower part
+/// has value lower_part, and the upper part !lower_part.
+/// The ChunkedArray is assumed to be sorted w.r.t. is_lower, that is, is_lower
+/// first always returns true, and then always returns false.
+fn partition_mask<T: PolarsNumericType, F>(
     ca: &ChunkedArray<T>,
-    // lhs part of mask will be set to boolean
-    // rhs part of mask will be set to !boolean
     lower_part: bool,
-    cmp_fn: F,
+    is_lower: F,
 ) -> BooleanChunked
 where
-    F: Fn(&T::Native) -> Ordering + Copy,
+    F: Fn(&T::Native) -> bool,
 {
     let chunks = ca.downcast_iter().map(|arr| {
         let values = arr.values();
-        let mask = match values.binary_search_by(cmp_fn) {
-            Err(mut idx) => {
-                if idx == 0 || idx == arr.len() {
-                    let mut mask = MutableBitmap::with_capacity(arr.len());
-                    let fill_value = if idx == 0 { !lower_part } else { lower_part };
-                    mask.extend_constant(arr.len(), fill_value);
-                    BooleanArray::from_data_default(mask.into(), None)
-                } else {
-                    let found_ordering = cmp_fn(&values[idx]);
-
-                    idx = idx.saturating_sub(1);
-                    loop {
-                        let current_value = unsafe { values.get_unchecked(idx) };
-                        let current_output = cmp_fn(current_value);
-
-                        if current_output != found_ordering || idx == 0 {
-                            break;
-                        }
-
-                        idx = idx.saturating_sub(1);
-                    }
-                    idx += 1;
-                    let mut mask = MutableBitmap::with_capacity(arr.len());
-                    mask.extend_constant(idx, lower_part);
-                    mask.extend_constant(arr.len() - idx, !lower_part);
-                    BooleanArray::from_data_default(mask.into(), None)
-                }
-            },
-            Ok(_) => {
-                unreachable!()
-            },
-        };
-        mask
+        let lower_len = values.partition_point(&is_lower);
+        let mut mask = MutableBitmap::with_capacity(arr.len());
+        mask.extend_constant(lower_len, lower_part);
+        mask.extend_constant(arr.len() - lower_len, !lower_part);
+        BooleanArray::from_data_default(mask.into(), None)
     });
 
-    BooleanChunked::from_chunk_iter(ca.name(), chunks)
+    let output_order = if lower_part {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    };
+    let mut ca = BooleanChunked::from_chunk_iter(ca.name(), chunks);
+    ca.set_sorted_flag(output_order);
+    ca
 }
 
 impl<T, Rhs> ChunkCompare<Rhs> for ChunkedArray<T>
@@ -91,16 +71,13 @@ where
 
     fn gt(&self, rhs: Rhs) -> BooleanChunked {
         match (self.is_sorted_flag(), self.null_count()) {
-            (IsSorted::Ascending, 0) if self.len() > 1 => {
+            (IsSorted::Ascending, 0) => {
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
-
-                let cmp_fn = |a: &T::Native| match compare_fn_nan_max(a, &rhs) {
-                    Ordering::Equal | Ordering::Less => Ordering::Less,
-                    _ => Ordering::Greater,
-                };
-                let mut ca = binary_search(self, false, cmp_fn);
-                ca.set_sorted_flag(IsSorted::Ascending);
-                ca
+                partition_mask(self, false, |x| x.tot_le(&rhs))
+            },
+            (IsSorted::Descending, 0) => {
+                let rhs: T::Native = NumCast::from(rhs).unwrap();
+                partition_mask(self, true, |x| x.tot_gt(&rhs))
             },
             _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::gt_scalar(l, rhs)),
         }
@@ -108,16 +85,13 @@ where
 
     fn gt_eq(&self, rhs: Rhs) -> BooleanChunked {
         match (self.is_sorted_flag(), self.null_count()) {
-            (IsSorted::Ascending, 0) if self.len() > 1 => {
+            (IsSorted::Ascending, 0) => {
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
-
-                let cmp_fn = |a: &T::Native| match compare_fn_nan_max(a, &rhs) {
-                    Ordering::Equal | Ordering::Greater => Ordering::Greater,
-                    Ordering::Less => Ordering::Less,
-                };
-                let mut ca = binary_search(self, false, cmp_fn);
-                ca.set_sorted_flag(IsSorted::Ascending);
-                ca
+                partition_mask(self, false, |x| x.tot_lt(&rhs))
+            },
+            (IsSorted::Descending, 0) => {
+                let rhs: T::Native = NumCast::from(rhs).unwrap();
+                partition_mask(self, true, |x| x.tot_ge(&rhs))
             },
             _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::gt_eq_scalar(l, rhs)),
         }
@@ -127,14 +101,11 @@ where
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
-
-                let cmp_fn = |a: &T::Native| match compare_fn_nan_max(a, &rhs) {
-                    Ordering::Equal | Ordering::Greater => Ordering::Greater,
-                    Ordering::Less => Ordering::Less,
-                };
-                let mut ca = binary_search(self, true, cmp_fn);
-                ca.set_sorted_flag(IsSorted::Ascending);
-                ca
+                partition_mask(self, true, |x| x.tot_lt(&rhs))
+            },
+            (IsSorted::Descending, 0) => {
+                let rhs: T::Native = NumCast::from(rhs).unwrap();
+                partition_mask(self, false, |x| x.tot_ge(&rhs))
             },
             _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::lt_scalar(l, rhs)),
         }
@@ -144,14 +115,11 @@ where
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
-
-                let cmp_fn = |a: &T::Native| match compare_fn_nan_max(a, &rhs) {
-                    Ordering::Greater => Ordering::Greater,
-                    Ordering::Equal | Ordering::Less => Ordering::Less,
-                };
-                let mut ca = binary_search(self, true, cmp_fn);
-                ca.set_sorted_flag(IsSorted::Ascending);
-                ca
+                partition_mask(self, true, |x| x.tot_le(&rhs))
+            },
+            (IsSorted::Descending, 0) => {
+                let rhs: T::Native = NumCast::from(rhs).unwrap();
+                partition_mask(self, false, |x| x.tot_gt(&rhs))
             },
             _ => self.primitive_compare_scalar(rhs, |l, rhs| comparison::lt_eq_scalar(l, rhs)),
         }

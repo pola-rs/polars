@@ -392,13 +392,19 @@ def test_take_every() -> None:
 def test_take_misc(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
 
-    # out of bounds error
+    # Out of bounds error.
     with pytest.raises(pl.ComputeError):
         (
             df.sort("fruits").select(
                 [pl.col("B").reverse().take([1, 2]).implode().over("fruits"), "fruits"]
             )
         )
+
+    # Null indices.
+    assert_frame_equal(
+        df.select(pl.col("fruits").take(pl.Series([0, None]))),
+        pl.DataFrame({"fruits": ["banana", None]}),
+    )
 
     for index in [[0, 1], pl.Series([0, 1]), np.array([0, 1])]:
         out = df.sort("fruits").select(
@@ -419,56 +425,6 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
     )
     assert out[0, "B"] == 3
     assert out[4, "B"] == 4
-
-
-def test_slice() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
-    expected = pl.DataFrame({"a": [2, 3], "b": ["b", "c"]})
-    for slice_params in (
-        [1, 10],  # slice > len(df)
-        [1, 2],  # slice == len(df)
-        [1],  # optional len
-    ):
-        assert_frame_equal(df.slice(*slice_params), expected)
-
-    for py_slice in (
-        slice(1, 2),
-        slice(0, 2, 2),
-        slice(3, -3, -1),
-        slice(1, None, -2),
-        slice(-1, -3, -1),
-        slice(-3, None, -3),
-    ):
-        # confirm frame slice matches python slice
-        assert df[py_slice].rows() == df.rows()[py_slice]
-
-
-def test_head_tail_limit() -> None:
-    df = pl.DataFrame({"a": range(10), "b": range(10)})
-
-    assert df.head(5).rows() == [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4)]
-    assert_frame_equal(df.limit(5), df.head(5))
-    assert df.tail(5).rows() == [(5, 5), (6, 6), (7, 7), (8, 8), (9, 9)]
-    assert_frame_not_equal(df.head(5), df.tail(5))
-
-    # check if it doesn't fail when out of bounds
-    assert df.head(100).height == 10
-    assert df.limit(100).height == 10
-    assert df.tail(100).height == 10
-
-    # limit is an alias of head
-    assert_frame_equal(df.head(5), df.limit(5))
-
-    # negative values
-    assert df.head(-7).rows() == [(0, 0), (1, 1), (2, 2)]
-    assert len(df.head(-2)) == 8
-    assert df.tail(-8).rows() == [(8, 8), (9, 9)]
-    assert len(df.tail(-6)) == 4
-
-    # negative values out of bounds
-    assert len(df.head(-12)) == 0
-    assert len(df.limit(-12)) == 0
-    assert len(df.tail(-12)) == 0
 
 
 def test_pipe() -> None:
@@ -1144,7 +1100,7 @@ def test_to_numpy(order: IndexOrder, f_contiguous: bool, c_contiguous: bool) -> 
         df.to_numpy(structured=True),
         np.array([("x",), ("y",), (None,)], dtype=[("s", "O")]),
     )
-    assert df["s"][:2].has_validity()
+    assert not df["s"][:2].has_validity()
     assert_array_equal(
         df[:2].to_numpy(structured=True),
         np.array([("x",), ("y",)], dtype=[("s", "<U1")]),
@@ -2653,6 +2609,19 @@ def test_partition_by() -> None:
         "a": ["one", "one"],
         "b": [1, 3],
     }
+
+    # test with both as_dict and include_key=False
+    df = pl.DataFrame(
+        {
+            "a": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
+            "b": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
+            "c": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
+            "d": pl.int_range(0, 100, dtype=pl.UInt8, eager=True),
+        }
+    ).sample(n=100_000, with_replacement=True, shuffle=True)
+
+    partitions = df.partition_by(["a", "b"], as_dict=True, include_key=False)
+    assert all(key == value.row(0) for key, value in partitions.items())
 
 
 def test_list_of_list_of_struct() -> None:

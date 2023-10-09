@@ -331,6 +331,7 @@ impl OptimizationRule for TypeCoercionRule {
                 op,
                 right: node_right,
             } => return process_binary(expr_arena, lp_arena, lp_node, node_left, op, node_right),
+
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 function: FunctionExpr::Boolean(BooleanFunction::IsIn),
@@ -349,42 +350,62 @@ impl OptimizationRule for TypeCoercionRule {
                 let casted_expr = match (&type_left, &type_other) {
                     // types are equal, do nothing
                     (a, b) if a == b => return Ok(None),
+                    // all-null can represent anything (and/or empty list), so cast to target dtype
+                    (_, DataType::Null) => AExpr::Cast {
+                        expr: other_node,
+                        data_type: type_left,
+                        strict: false,
+                    },
                     // cast both local and global string cache
                     // note that there might not yet be a rev
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_), DataType::Utf8) => {
-                        AExpr::Cast {
-                            expr: other_node,
-                            data_type: DataType::Categorical(None),
-                            // does not matter
-                            strict: false,
+                    (DataType::Categorical(_), DataType::Utf8) => AExpr::Cast {
+                        expr: other_node,
+                        data_type: DataType::Categorical(None),
+                        strict: false,
+                    },
+                    #[cfg(feature = "dtype-decimal")]
+                    (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
+                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
+                    },
+                    // can't check for more granular time_unit in less-granular time_unit data,
+                    // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
+                    (DataType::Datetime(lhs_unit, _), DataType::Datetime(rhs_unit, _)) => {
+                        if lhs_unit <= rhs_unit {
+                            return Ok(None);
+                        } else {
+                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Datetime data", &rhs_unit, &lhs_unit)
                         }
                     },
-                    (dt, DataType::Utf8) => {
-                        polars_bail!(ComputeError: "cannot compare {:?} to {:?} type in 'is_in' operation", dt, type_other)
+                    (DataType::Duration(lhs_unit), DataType::Duration(rhs_unit)) => {
+                        if lhs_unit <= rhs_unit {
+                            return Ok(None);
+                        } else {
+                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit)
+                        }
                     },
-                    (DataType::List(_), _) | (_, DataType::List(_)) => return Ok(None),
+                    (_, DataType::List(other_inner)) => {
+                        if other_inner.as_ref() == &type_left
+                            || (type_left == DataType::Null)
+                            || (other_inner.as_ref() == &DataType::Null)
+                            || (other_inner.as_ref().is_numeric() && type_left.is_numeric())
+                        {
+                            return Ok(None);
+                        }
+                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_left, &type_other)
+                    },
                     #[cfg(feature = "dtype-struct")]
                     (DataType::Struct(_), _) | (_, DataType::Struct(_)) => return Ok(None),
-                    // if right is another type, we cast it to left
-                    // we do not use super-type as an `is_in` operation should not
-                    // cast the whole column implicitly.
-                    (a, b)
-                        if a != b
-                        // For integer/ float comparison we let them use supertypes.
-                        && !(a.is_integer() && b.is_float()) =>
-                    {
-                        AExpr::Cast {
-                            expr: other_node,
-                            data_type: type_left,
-                            // does not matter
-                            strict: false,
-                        }
-                    },
-                    // do nothing
-                    _ => return Ok(None),
-                };
 
+                    // don't attempt to cast between obviously mismatched types, but
+                    // allow integer/float comparison (will use their supertypes).
+                    (a, b) => {
+                        if (a.is_numeric() && b.is_numeric()) || (a == &DataType::Null) {
+                            return Ok(None);
+                        }
+                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
+                    },
+                };
                 let mut input = input.clone();
                 let other_input = expr_arena.add(casted_expr);
                 input[1] = other_input;

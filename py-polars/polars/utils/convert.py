@@ -98,8 +98,10 @@ def _negate_duration(duration: str) -> str:
 
 
 def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
-    """Convert a python datetime to a timestamp in nanoseconds."""
-    dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo != timezone.utc else dt
+    """Convert a python datetime to a timestamp in given time unit."""
+    if dt.tzinfo is None:
+        # Make sure to use UTC rather than system time zone.
+        dt = dt.replace(tzinfo=timezone.utc)
     if time_unit == "ns":
         micros = dt.microsecond
         return 1_000 * (_timestamp_in_seconds(dt) * 1_000_000 + micros)

@@ -25,7 +25,7 @@ def read_csv(
     new_columns: Sequence[str] | None = None,
     separator: str = ",",
     comment_char: str | None = None,
-    quote_char: str | None = r'"',
+    quote_char: str | None = '"',
     skip_rows: int = 0,
     dtypes: Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None = None,
     schema: SchemaDict | None = None,
@@ -50,7 +50,7 @@ def read_csv(
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
 ) -> DataFrame:
-    """
+    r"""
     Read a CSV file into a DataFrame.
 
     Parameters
@@ -73,7 +73,7 @@ def read_csv(
         list is shorter than the width of the DataFrame the remaining
         columns will have their original name.
     separator
-        Single byte character to use as delimiter in the file.
+        Single byte character to use as separator in the file.
     comment_char
         Single byte character that indicates the start of a comment line,
         for instance ``#``.
@@ -159,7 +159,9 @@ def read_csv(
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
     eol_char
-        Single byte end of line character.
+        Single byte end of line character (default: `\n`). When encountering a file
+        with windows line endings (`\r\n`), one can go with the default `\n`. The extra
+        `\r` will be removed when processed.
     raise_if_empty
         When there is no data in the source,``NoDataError`` is raised. If this parameter
         is set to False, an empty DataFrame (with no columns) is returned instead.
@@ -404,7 +406,7 @@ def read_csv_batched(
     new_columns: Sequence[str] | None = None,
     separator: str = ",",
     comment_char: str | None = None,
-    quote_char: str | None = r'"',
+    quote_char: str | None = '"',
     skip_rows: int = 0,
     dtypes: Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
@@ -425,7 +427,7 @@ def read_csv_batched(
     eol_char: str = "\n",
     raise_if_empty: bool = True,
 ) -> BatchedCsvReader:
-    """
+    r"""
     Read a CSV file in batches.
 
     Upon creation of the ``BatchedCsvReader``, Polars will gather statistics and
@@ -452,7 +454,7 @@ def read_csv_batched(
         list is shorter than the width of the DataFrame the remaining
         columns will have their original name.
     separator
-        Single byte character to use as delimiter in the file.
+        Single byte character to use as separator in the file.
     comment_char
         Single byte character that indicates the start of a comment line,
         for instance ``#``.
@@ -517,7 +519,9 @@ def read_csv_batched(
         Set the sample size. This is used to sample statistics to estimate the
         allocation needed.
     eol_char
-        Single byte end of line character.
+        Single byte end of line character (default: `\n`). When encountering a file
+        with windows line endings (`\r\n`), one can go with the default `\n`. The extra
+        `\r` will be removed when processed.
     raise_if_empty
         When there is no data in the source,``NoDataError`` is raised. If this parameter
         is set to False, ``None`` will be returned from ``next_batches(n)`` instead.
@@ -533,7 +537,9 @@ def read_csv_batched(
     Examples
     --------
     >>> reader = pl.read_csv_batched(
-    ...     "./tpch/tables_scale_100/lineitem.tbl", separator="|", try_parse_dates=True
+    ...     "./tpch/tables_scale_100/lineitem.tbl",
+    ...     separator="|",
+    ...     try_parse_dates=True,
     ... )  # doctest: +SKIP
     >>> batches = reader.next_batches(5)  # doctest: +SKIP
     >>> for df in batches:  # doctest: +SKIP
@@ -694,7 +700,7 @@ def scan_csv(
     has_header: bool = True,
     separator: str = ",",
     comment_char: str | None = None,
-    quote_char: str | None = r'"',
+    quote_char: str | None = '"',
     skip_rows: int = 0,
     dtypes: SchemaDict | Sequence[PolarsDataType] | None = None,
     schema: SchemaDict | None = None,
@@ -717,7 +723,7 @@ def scan_csv(
     raise_if_empty: bool = True,
     truncate_ragged_lines: bool = False,
 ) -> LazyFrame:
-    """
+    r"""
     Lazily read from a CSV file or multiple files via glob patterns.
 
     This allows the query optimizer to push down predicates and
@@ -734,7 +740,7 @@ def scan_csv(
         following format: ``column_x``, with ``x`` being an
         enumeration over every column in the dataset starting at 1.
     separator
-        Single byte character to use as delimiter in the file.
+        Single byte character to use as separator in the file.
     comment_char
         Single byte character that indicates the start of a comment line,
         for instance ``#``.
@@ -796,11 +802,13 @@ def scan_csv(
         can be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
     eol_char
-        Single byte end of line character
+        Single byte end of line character (default: `\n`). When encountering a file
+        with windows line endings (`\r\n`), one can go with the default `\n`. The extra
+        `\r` will be removed when processed.
     new_columns
         Provide an explicit list of string column names to use (for example, when
-        scanning a headerless CSV file). Note that unlike ``read_csv`` it is considered
-        an error to provide fewer column names than there are columns in the file.
+        scanning a headerless CSV file). If the given list is shorter than the width of
+        the DataFrame the remaining columns will have their original name.
     raise_if_empty
         When there is no data in the source,``NoDataError`` is raised. If this parameter
         is set to False, an empty LazyFrame (with no columns) is returned instead.
@@ -885,8 +893,11 @@ def scan_csv(
             dtypes = dict(zip(new_columns, dtypes))
 
         # wrap new column names as a callable
-        def with_column_names(_cols: list[str]) -> list[str]:
-            return new_columns  # type: ignore[return-value]
+        def with_column_names(cols: list[str]) -> list[str]:
+            if len(cols) > len(new_columns):
+                return new_columns + cols[len(new_columns) :]  # type: ignore[operator]
+            else:
+                return new_columns  # type: ignore[return-value]
 
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("comment_char", comment_char, can_be_empty=False)

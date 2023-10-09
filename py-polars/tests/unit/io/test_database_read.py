@@ -6,13 +6,15 @@ import sys
 from contextlib import suppress
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import Integer, MetaData, Table, create_engine, func, select
+from sqlalchemy.sql.expression import cast as alchemy_cast
 
 import polars as pl
 from polars.exceptions import UnsuitableSQLError
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import DbReadEngine, SchemaDict
@@ -225,6 +227,47 @@ def test_read_database(
     assert df["date"].to_list() == expected_dates
 
 
+def test_read_database_alchemy_selectable(tmp_path: Path) -> None:
+    # setup underlying test data
+    tmp_path.mkdir(exist_ok=True)
+    create_temp_sqlite_db(test_db := str(tmp_path / "test.db"))
+    conn = create_engine(f"sqlite:///{test_db}")
+    t = Table("test_data", MetaData(), autoload_with=conn)
+
+    # establish sqlalchemy "selectable" and validate usage
+    selectable_query = select(
+        alchemy_cast(func.strftime("%Y", t.c.date), Integer).label("year"),
+        t.c.name,
+        t.c.value,
+    ).where(t.c.value < 0)
+
+    assert_frame_equal(
+        pl.read_database(selectable_query, connection=conn.connect()),
+        pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
+    )
+
+
+def test_read_database_parameterisd(tmp_path: Path) -> None:
+    # setup underlying test data
+    tmp_path.mkdir(exist_ok=True)
+    create_temp_sqlite_db(test_db := str(tmp_path / "test.db"))
+    conn = create_engine(f"sqlite:///{test_db}")
+
+    # establish a parameterised query and validate usage
+    parameterised_query = """
+        SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
+        FROM test_data WHERE value < :n
+    """
+    assert_frame_equal(
+        pl.read_database(
+            parameterised_query,
+            connection=conn.connect(),
+            execute_options={"parameters": {"n": 0}},
+        ),
+        pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
+    )
+
+
 def test_read_database_mocked() -> None:
     arr = pl.DataFrame({"x": [1, 2, 3], "y": ["aa", "bb", "cc"]}).to_arrow()
 
@@ -283,98 +326,162 @@ def test_read_database_mocked() -> None:
         assert df.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
 
 
+class ExceptionTestParams(NamedTuple):
+    """Clarify exception testing params."""
+
+    read_method: str
+    query: str | list[str]
+    protocol: Any
+    errclass: type[Exception]
+    errmsg: str
+    engine: str | None = None
+    execute_options: dict[str, Any] | None = None
+    kwargs: dict[str, Any] | None = None
+
+
 @pytest.mark.parametrize(
-    ("read_method", "engine", "query", "database", "errclass", "err"),
+    (
+        "read_method",
+        "query",
+        "protocol",
+        "errclass",
+        "errmsg",
+        "engine",
+        "execute_options",
+        "kwargs",
+    ),
     [
         pytest.param(
-            "read_database_uri",
-            "not_an_engine",
-            "SELECT * FROM test_data",
-            "sqlite",
-            ValueError,
-            "engine must be one of {'connectorx', 'adbc'}, got 'not_an_engine'",
+            *ExceptionTestParams(
+                read_method="read_database_uri",
+                query="SELECT * FROM test_data",
+                protocol="sqlite",
+                errclass=ValueError,
+                errmsg="engine must be one of {'connectorx', 'adbc'}, got 'not_an_engine'",
+                engine="not_an_engine",
+            ),
             id="Not an available sql engine",
         ),
         pytest.param(
-            "read_database_uri",
-            "adbc",
-            ["SELECT * FROM test_data", "SELECT * FROM test_data"],
-            "sqlite",
-            ValueError,
-            "only a single SQL query string is accepted for adbc",
+            *ExceptionTestParams(
+                read_method="read_database_uri",
+                query=["SELECT * FROM test_data", "SELECT * FROM test_data"],
+                protocol="sqlite",
+                errclass=ValueError,
+                errmsg="only a single SQL query string is accepted for adbc",
+                engine="adbc",
+            ),
             id="Unavailable list of queries for adbc",
         ),
         pytest.param(
-            "read_database_uri",
-            "adbc",
-            "SELECT * FROM test_data",
-            "mysql",
-            ImportError,
-            "ADBC mysql driver not detected",
+            *ExceptionTestParams(
+                read_method="read_database_uri",
+                query="SELECT * FROM test_data",
+                protocol="mysql",
+                errclass=ImportError,
+                errmsg="ADBC mysql driver not detected",
+                engine="adbc",
+            ),
             id="Unavailable adbc driver",
         ),
         pytest.param(
-            "read_database_uri",
-            "adbc",
-            "SELECT * FROM test_data",
-            sqlite3.connect(":memory:"),
-            TypeError,
-            "expected connection to be a URI string",
+            *ExceptionTestParams(
+                read_method="read_database_uri",
+                query="SELECT * FROM test_data",
+                protocol=sqlite3.connect(":memory:"),
+                errclass=TypeError,
+                errmsg="expected connection to be a URI string",
+                engine="adbc",
+            ),
             id="Invalid connection URI",
         ),
         pytest.param(
-            "read_database",
-            None,
-            "SELECT * FROM imaginary_table",
-            sqlite3.connect(":memory:"),
-            sqlite3.OperationalError,
-            "no such table: imaginary_table",
+            *ExceptionTestParams(
+                read_method="read_database",
+                query="SELECT * FROM imaginary_table",
+                protocol=sqlite3.connect(":memory:"),
+                errclass=sqlite3.OperationalError,
+                errmsg="no such table: imaginary_table",
+            ),
+            id="Invalid query (unrecognised table name)",
+        ),
+        pytest.param(
+            *ExceptionTestParams(
+                read_method="read_database",
+                query="SELECT * FROM imaginary_table",
+                protocol=sys.getsizeof,  # not a connection
+                errclass=TypeError,
+                errmsg="Unrecognised connection .* unable to find 'execute' method",
+            ),
             id="Invalid read DB kwargs",
         ),
         pytest.param(
-            "read_database",
-            None,
-            "SELECT * FROM imaginary_table",
-            sys.getsizeof,  # not a connection
-            TypeError,
-            "Unrecognised connection .* unable to find 'execute' method",
-            id="Invalid read DB kwargs",
-        ),
-        pytest.param(
-            "read_database",
-            None,
-            "/* tag: misc */ INSERT INTO xyz VALUES ('polars')",
-            sqlite3.connect(":memory:"),
-            UnsuitableSQLError,
-            "INSERT statements are not valid 'read' queries",
+            *ExceptionTestParams(
+                read_method="read_database",
+                query="/* tag: misc */ INSERT INTO xyz VALUES ('polars')",
+                protocol=sqlite3.connect(":memory:"),
+                errclass=UnsuitableSQLError,
+                errmsg="INSERT statements are not valid 'read' queries",
+            ),
             id="Invalid statement type",
         ),
         pytest.param(
-            "read_database",
-            None,
-            "DELETE FROM xyz WHERE id = 'polars'",
-            sqlite3.connect(":memory:"),
-            UnsuitableSQLError,
-            "DELETE statements are not valid 'read' queries",
+            *ExceptionTestParams(
+                read_method="read_database",
+                query="DELETE FROM xyz WHERE id = 'polars'",
+                protocol=sqlite3.connect(":memory:"),
+                errclass=UnsuitableSQLError,
+                errmsg="DELETE statements are not valid 'read' queries",
+            ),
             id="Invalid statement type",
+        ),
+        pytest.param(
+            *ExceptionTestParams(
+                read_method="read_database",
+                engine="adbc",
+                query="SELECT * FROM test_data",
+                protocol=sqlite3.connect(":memory:"),
+                errclass=TypeError,
+                errmsg="takes no keyword arguments",
+                execute_options={"parameters": {"n": 0}},
+            ),
+            id="Invalid execute_options",
+        ),
+        pytest.param(
+            *ExceptionTestParams(
+                read_method="read_database",
+                engine="adbc",
+                query="SELECT * FROM test_data",
+                protocol=sqlite3.connect(":memory:"),
+                errclass=ValueError,
+                errmsg=r"`read_database` \*\*kwargs only exist for passthrough to `read_database_uri`",
+                kwargs={"partition_on": "id"},
+            ),
+            id="Invalid kwargs",
         ),
     ],
 )
 def test_read_database_exceptions(
     read_method: str,
-    engine: DbReadEngine | None,
     query: str,
-    database: Any,
-    errclass: type,
-    err: str,
+    protocol: Any,
+    errclass: type[Exception],
+    errmsg: str,
+    engine: DbReadEngine | None,
+    execute_options: dict[str, Any] | None,
+    kwargs: dict[str, Any] | None,
     tmp_path: Path,
 ) -> None:
     if read_method == "read_database_uri":
-        conn = f"{database}://test" if isinstance(database, str) else database
+        conn = f"{protocol}://test" if isinstance(protocol, str) else protocol
         params = {"uri": conn, "query": query, "engine": engine}
     else:
-        params = {"connection": database, "query": query}
+        params = {"connection": protocol, "query": query}
+        if execute_options:
+            params["execute_options"] = execute_options
+        if kwargs is not None:
+            params.update(kwargs)
 
     read_database = getattr(pl, read_method)
-    with pytest.raises(errclass, match=err):
+    with pytest.raises(errclass, match=errmsg):
         read_database(**params)

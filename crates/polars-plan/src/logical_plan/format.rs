@@ -66,28 +66,6 @@ impl LogicalPlan {
                     options.n_rows,
                 )
             },
-            AnonymousScan {
-                file_info,
-                predicate,
-                options,
-                ..
-            } => {
-                let n_columns = options
-                    .with_columns
-                    .as_ref()
-                    .map(|columns| columns.len() as i64)
-                    .unwrap_or(-1);
-                write_scan(
-                    f,
-                    options.fmt_str,
-                    Path::new(""),
-                    sub_indent,
-                    n_columns,
-                    file_info.schema.len(),
-                    predicate,
-                    options.n_rows,
-                )
-            },
             Union { inputs, options } => {
                 let mut name = String::new();
                 let name = if let Some(slice) = options.slice {
@@ -292,6 +270,9 @@ impl Debug for Expr {
             },
             Take { expr, idx } => {
                 write!(f, "{expr:?}.take({idx:?})")
+            },
+            SubPlan(lf, _) => {
+                write!(f, ".subplan({lf:?})")
             },
             Agg(agg) => {
                 use AggExpr::*;

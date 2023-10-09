@@ -446,31 +446,4 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
-
-    fn peak_max(&self) -> BooleanChunked {
-        self.0.peak_max()
-    }
-
-    fn peak_min(&self) -> BooleanChunked {
-        self.0.peak_min()
-    }
-    #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
-        Ok(self
-            .0
-            .repeat_by(by)?
-            .cast(&DataType::List(Box::new(DataType::Duration(
-                self.0.time_unit(),
-            ))))
-            .unwrap()
-            .list()
-            .unwrap()
-            .clone())
-    }
-    #[cfg(feature = "mode")]
-    fn mode(&self) -> PolarsResult<Series> {
-        self.0
-            .mode()
-            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
-    }
 }

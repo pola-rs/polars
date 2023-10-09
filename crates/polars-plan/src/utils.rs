@@ -73,9 +73,7 @@ impl PushNode for [Option<Node>; 1] {
 pub(crate) fn is_scan(plan: &ALogicalPlan) -> bool {
     matches!(
         plan,
-        ALogicalPlan::Scan { .. }
-            | ALogicalPlan::DataFrameScan { .. }
-            | ALogicalPlan::AnonymousScan { .. }
+        ALogicalPlan::Scan { .. } | ALogicalPlan::DataFrameScan { .. }
     )
 }
 

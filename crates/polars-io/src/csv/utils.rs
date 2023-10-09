@@ -23,7 +23,7 @@ pub(crate) fn get_file_chunks(
     bytes: &[u8],
     n_chunks: usize,
     expected_fields: usize,
-    delimiter: u8,
+    separator: u8,
     quote_char: Option<u8>,
     eol_char: u8,
 ) -> Vec<(usize, usize)> {
@@ -41,7 +41,7 @@ pub(crate) fn get_file_chunks(
         let end_pos = match next_line_position(
             &bytes[search_pos..],
             Some(expected_fields),
-            delimiter,
+            separator,
             quote_char,
             eol_char,
         ) {
@@ -134,7 +134,7 @@ pub(crate) fn parse_bytes_with_encoding(
 #[allow(clippy::too_many_arguments)]
 pub fn infer_file_schema_inner(
     reader_bytes: &ReaderBytes,
-    delimiter: u8,
+    separator: u8,
     max_read_rows: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
@@ -199,7 +199,7 @@ pub fn infer_file_schema_inner(
             }
         }
 
-        let byterecord = SplitFields::new(header_line, delimiter, quote_char, eol_char);
+        let byterecord = SplitFields::new(header_line, separator, quote_char, eol_char);
         if has_header {
             let headers = byterecord
                 .map(|(slice, needs_escaping)| {
@@ -233,8 +233,8 @@ pub fn infer_file_schema_inner(
                 .map(|(i, _s)| format!("column_{}", i + 1))
                 .collect();
             // needed because SplitLines does not return the \n char, so SplitFields does not catch
-            // the latest value if ending with a delimiter.
-            if header_line.ends_with(&[delimiter]) {
+            // the latest value if ending with a separator.
+            if header_line.ends_with(&[separator]) {
                 column_names.push(format!("column_{}", column_names.len() + 1))
             }
             column_names
@@ -248,7 +248,7 @@ pub fn infer_file_schema_inner(
 
         return infer_file_schema_inner(
             &ReaderBytes::Owned(buf),
-            delimiter,
+            separator,
             max_read_rows,
             has_header,
             schema_overwrite,
@@ -322,7 +322,7 @@ pub fn infer_file_schema_inner(
             }
         }
 
-        let mut record = SplitFields::new(line, delimiter, quote_char, eol_char);
+        let mut record = SplitFields::new(line, separator, quote_char, eol_char);
 
         for i in 0..header_length {
             if let Some((slice, needs_escaping)) = record.next() {
@@ -434,7 +434,7 @@ pub fn infer_file_schema_inner(
         rb.push(eol_char);
         return infer_file_schema_inner(
             &ReaderBytes::Owned(rb),
-            delimiter,
+            separator,
             max_read_rows,
             has_header,
             schema_overwrite,
@@ -465,7 +465,7 @@ pub fn infer_file_schema_inner(
 #[allow(clippy::too_many_arguments)]
 pub fn infer_file_schema(
     reader_bytes: &ReaderBytes,
-    delimiter: u8,
+    separator: u8,
     max_read_rows: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
@@ -482,7 +482,7 @@ pub fn infer_file_schema(
 ) -> PolarsResult<(Schema, usize, usize)> {
     infer_file_schema_inner(
         reader_bytes,
-        delimiter,
+        separator,
         max_read_rows,
         has_header,
         schema_overwrite,
@@ -516,7 +516,7 @@ pub fn is_compressed(bytes: &[u8]) -> bool {
 fn decompress_impl<R: Read>(
     decoder: &mut R,
     n_rows: Option<usize>,
-    delimiter: u8,
+    separator: u8,
     quote_char: Option<u8>,
     eol_char: u8,
 ) -> Option<Vec<u8>> {
@@ -548,7 +548,7 @@ fn decompress_impl<R: Read>(
                     }
                     // now that we have enough, we compute the number of fields (also takes embedding into account)
                     expected_fields =
-                        SplitFields::new(&out, delimiter, quote_char, eol_char).count();
+                        SplitFields::new(&out, separator, quote_char, eol_char).count();
                     break;
                 }
             }
@@ -561,7 +561,7 @@ fn decompress_impl<R: Read>(
                 match next_line_position(
                     &out[buf_pos + 1..],
                     Some(expected_fields),
-                    delimiter,
+                    separator,
                     quote_char,
                     eol_char,
                 ) {
@@ -589,16 +589,16 @@ fn decompress_impl<R: Read>(
 pub(crate) fn decompress(
     bytes: &[u8],
     n_rows: Option<usize>,
-    delimiter: u8,
+    separator: u8,
     quote_char: Option<u8>,
     eol_char: u8,
 ) -> Option<Vec<u8>> {
     if bytes.starts_with(&GZIP) {
         let mut decoder = flate2::read::MultiGzDecoder::new(bytes);
-        decompress_impl(&mut decoder, n_rows, delimiter, quote_char, eol_char)
+        decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
     } else if bytes.starts_with(&ZLIB0) || bytes.starts_with(&ZLIB1) || bytes.starts_with(&ZLIB2) {
         let mut decoder = flate2::read::ZlibDecoder::new(bytes);
-        decompress_impl(&mut decoder, n_rows, delimiter, quote_char, eol_char)
+        decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
     } else {
         None
     }

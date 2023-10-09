@@ -1,10 +1,14 @@
+use std::ops::Deref;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
-use polars_core::schema::*;
+use polars_core::utils::arrow::io::parquet::read::FileMetaData;
 use polars_core::POOL;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::{BatchedParquetReader, ParquetReader};
+use polars_io::pl_async::get_runtime;
+use polars_io::prelude::materialize_projection;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::{is_cloud_url, SerReader};
@@ -24,6 +28,7 @@ pub struct ParquetSource {
     file_options: Option<FileScanOptions>,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
+    metadata: Option<Arc<FileMetaData>>,
     file_info: FileInfo,
     verbose: bool,
 }
@@ -37,12 +42,22 @@ impl ParquetSource {
         let options = self.options.take().unwrap();
         let file_options = self.file_options.take().unwrap();
         let schema = self.file_info.schema.clone();
-        let projection: Option<Vec<_>> = file_options.with_columns.map(|with_columns| {
-            with_columns
-                .iter()
-                .map(|name| schema.index_of(name).unwrap())
-                .collect()
-        });
+
+        let hive_partitions = self
+            .file_info
+            .hive_parts
+            .as_ref()
+            .map(|hive| hive.materialize_partition_columns());
+
+        let projection = materialize_projection(
+            file_options
+                .with_columns
+                .as_deref()
+                .map(|cols| cols.deref()),
+            &schema,
+            hive_partitions.as_deref(),
+            false,
+        );
 
         let n_cols = projection.as_ref().map(|v| v.len()).unwrap_or(schema.len());
         let chunk_size = determine_chunk_size(n_cols, self.n_threads)?;
@@ -61,7 +76,14 @@ impl ParquetSource {
             #[cfg(feature = "async")]
             {
                 let uri = path.to_string_lossy();
-                ParquetAsyncReader::from_uri(&uri, self.cloud_options.as_ref())?
+                polars_io::pl_async::get_runtime().block_on(async {
+                    ParquetAsyncReader::from_uri(
+                        &uri,
+                        self.cloud_options.as_ref(),
+                        Some(self.file_info.schema.clone()),
+                        self.metadata.clone(),
+                    )
+                    .await?
                     .with_n_rows(file_options.n_rows)
                     .with_row_count(file_options.row_count)
                     .with_projection(projection)
@@ -72,7 +94,9 @@ impl ParquetSource {
                             .as_ref()
                             .map(|hive| hive.materialize_partition_columns()),
                     )
-                    .batched(chunk_size)?
+                    .batched(chunk_size)
+                    .await
+                })?
             }
         } else {
             let file = std::fs::File::open(path).unwrap();
@@ -99,6 +123,7 @@ impl ParquetSource {
         path: PathBuf,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
+        metadata: Option<Arc<FileMetaData>>,
         file_options: FileScanOptions,
         file_info: FileInfo,
         verbose: bool,
@@ -113,6 +138,7 @@ impl ParquetSource {
             file_options: Some(file_options),
             path: Some(path),
             cloud_options,
+            metadata,
             file_info,
             verbose,
         })
@@ -124,11 +150,12 @@ impl Source for ParquetSource {
         if self.batched_reader.is_none() {
             self.init_reader()?;
         }
-        let batches = self
-            .batched_reader
-            .as_mut()
-            .unwrap()
-            .next_batches(self.n_threads)?;
+        let batches = get_runtime().block_on(
+            self.batched_reader
+                .as_mut()
+                .unwrap()
+                .next_batches(self.n_threads),
+        )?;
         Ok(match batches {
             None => SourceResult::Finished,
             Some(batches) => SourceResult::GotMoreData(

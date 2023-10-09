@@ -46,6 +46,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import dataframe_api_compat, subprocess
 from polars.io._utils import _is_local_file, _is_supported_cloud
+from polars.io.csv._utils import _check_arg_is_1byte
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
@@ -316,7 +317,7 @@ class LazyFrame:
         has_header: bool = True,
         separator: str = ",",
         comment_char: str | None = None,
-        quote_char: str | None = r'"',
+        quote_char: str | None = '"',
         skip_rows: int = 0,
         dtypes: SchemaDict | None = None,
         schema: SchemaDict | None = None,
@@ -1034,7 +1035,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 comm_subplan_elim,
                 comm_subexpr_elim,
                 streaming,
-                eager=False,
+                _eager=False,
             )
             return ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
@@ -1114,7 +1115,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
-            eager=False,
+            _eager=False,
         )
 
         dot = _ldf.to_dot(optimized)
@@ -1568,7 +1569,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
-            eager=False,
+            _eager=False,
         )
         df, timings = ldf.profile()
         (df, timings) = wrap_df(df), wrap_df(timings)
@@ -1631,7 +1632,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = False,
-        **kwargs: Any,
+        _eager: bool = False,
     ) -> DataFrame:
         """
         Collect into a DataFrame.
@@ -1659,8 +1660,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
-        **kwargs
-            For internal use.
 
         Returns
         -------
@@ -1688,8 +1687,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
 
         """
-        eager = kwargs.get("eager", False)
-        if no_optimization or eager:
+        if no_optimization or _eager:
             predicate_pushdown = False
             projection_pushdown = False
             slice_pushdown = False
@@ -1708,7 +1706,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
-            eager,
+            _eager,
         )
         return wrap_df(ldf.collect())
 
@@ -1863,7 +1861,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
-            eager=False,
+            _eager=False,
         )
 
         result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
@@ -2029,6 +2027,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
         )
 
+    @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
     def sink_csv(
         self,
         path: str | Path,
@@ -2036,7 +2035,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         has_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
-        quote: str = '"',
+        quote_char: str = '"',
         batch_size: int = 1024,
         datetime_format: str | None = None,
         date_format: str | None = None,
@@ -2067,7 +2066,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Separate CSV fields with this symbol.
         line_terminator
             String used to end each row.
-        quote
+        quote_char
             Byte to use as quoting character.
         batch_size
             Number of rows that will be processed per thread.
@@ -2100,7 +2099,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             This is the default.
             - always: This puts quotes around every field. Always.
             - never: This never puts quotes around fields, even if that results in
-            invalid CSV data (e.g.: by not quoting strings containing the separator).
+            invalid CSV data (e.g.: by not quoting strings containing the
+            separator).
             - non_numeric: This puts quotes around all fields that are non-numeric.
             Namely, when writing a field that does not parse as a valid float
             or integer, then quotes will be used even if they aren`t strictly
@@ -2131,10 +2131,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_csv("out.csv")  # doctest: +SKIP
 
         """
-        if len(separator) != 1:
-            raise ValueError("only single byte separator is allowed")
-        if len(quote) != 1:
-            raise ValueError("only single byte quote char is allowed")
+        _check_arg_is_1byte("separator", separator, can_be_empty=False)
+        _check_arg_is_1byte("quote_char", quote_char, can_be_empty=False)
         if not null_value:
             null_value = None
 
@@ -2152,7 +2150,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             has_header=has_header,
             separator=ord(separator),
             line_terminator=line_terminator,
-            quote=ord(quote),
+            quote_char=ord(quote_char),
             batch_size=batch_size,
             datetime_format=datetime_format,
             date_format=date_format,
@@ -2187,7 +2185,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim=False,
             comm_subexpr_elim=False,
             streaming=True,
-            eager=False,
+            _eager=False,
         )
 
     @deprecate_renamed_parameter(
@@ -2288,7 +2286,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
-            eager=False,
+            _eager=False,
         )
         return wrap_df(lf.fetch(n_rows))
 
@@ -5491,6 +5489,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         other: LazyFrame,
         on: str | Sequence[str] | None = None,
+        left_on: str | Sequence[str] | None = None,
+        right_on: str | Sequence[str] | None = None,
         how: Literal["left", "inner"] = "left",
     ) -> Self:
         """
@@ -5508,8 +5508,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         on
             Column names that will be joined on.
             If none given the row count is used.
+        left_on
+           Join column(s) of the left DataFrame.
+        right_on
+           Join column(s) of the right DataFrame.
         how : {'left', 'inner'}
-            'left' will keep the left table rows as is.
+            'left' will keep all rows from the left table. Rows may be duplicated if
+            multiple rows in right frame match left row's `on` key.
             'inner' will remove rows that are not found in other
 
         Notes
@@ -5568,42 +5573,67 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         row_count_used = False
+
         if on is None:
-            row_count_used = True
-            row_count_name = "__POLARS_ROW_COUNT"
-            self = self.with_row_count(row_count_name)
-            other = other.with_row_count(row_count_name)
-            on = row_count_name
+            if left_on is None and right_on is None:
+                # no keys provided--use row count
+                row_count_used = True
+                row_count_name = "__POLARS_ROW_COUNT"
+                self = self.with_row_count(row_count_name)
+                other = other.with_row_count(row_count_name)
+                left_on = right_on = [row_count_name]
+            else:
+                # one of left or right is missing, raise error
+                if left_on is None:
+                    raise ValueError("missing join columns for left frame")
+                if right_on is None:
+                    raise ValueError("missing join columns for right frame")
 
-        if isinstance(on, str):
-            on = [on]
+        else:
+            # move on into left/right_on to simplify logic
+            left_on = right_on = on
 
-        union_names = set(self.columns) & set(other.columns)
+        if isinstance(left_on, str):
+            left_on = [left_on]
+        if isinstance(right_on, str):
+            right_on = [right_on]
 
-        for name in on:
-            if name not in union_names:
-                raise ValueError(f"join column {name!r} not found")
-
-        right_added_names = union_names - set(on)
+        left_names = self.columns
+        for name in left_on:
+            if name not in left_names:
+                raise ValueError(f"left join column {name!r} not found")
+        right_names = other.columns
+        for name in right_on:
+            if name not in right_names:
+                raise ValueError(f"right join column {name!r} not found")
 
         # no need to join if only join columns are in other
-        if len(right_added_names) == 0:
+        if len(other.columns) == len(right_on):
             if row_count_used:
                 return self.drop(row_count_name)
             return self
 
+        # only use non-idx right columns present in left frame
+        right_other = set(other.columns).intersection(self.columns) - set(right_on)
+
         tmp_name = "__POLARS_RIGHT"
         result = (
-            self.join(other.select(list(union_names)), on=on, how=how, suffix=tmp_name)
+            self.join(
+                other.select(*right_on, *right_other),
+                left_on=left_on,
+                right_on=right_on,
+                how=how,
+                suffix=tmp_name,
+            )
             .with_columns(
                 [
-                    F.coalesce([column_name + tmp_name, F.col(column_name)]).alias(
+                    F.coalesce([f"{column_name}{tmp_name}", F.col(column_name)]).alias(
                         column_name
                     )
-                    for column_name in right_added_names
+                    for column_name in right_other
                 ]
             )
-            .drop([name + tmp_name for name in right_added_names])
+            .drop([f"{name}{tmp_name}" for name in right_other])
         )
         if row_count_used:
             result = result.drop(row_count_name)

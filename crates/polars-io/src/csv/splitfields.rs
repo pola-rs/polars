@@ -4,7 +4,7 @@ mod inner {
     /// This exists solely because we cannot split the lines naively as
     pub(crate) struct SplitFields<'a> {
         v: &'a [u8],
-        delimiter: u8,
+        separator: u8,
         finished: bool,
         quote_char: u8,
         quoting: bool,
@@ -14,13 +14,13 @@ mod inner {
     impl<'a> SplitFields<'a> {
         pub(crate) fn new(
             slice: &'a [u8],
-            delimiter: u8,
+            separator: u8,
             quote_char: Option<u8>,
             eol_char: u8,
         ) -> Self {
             Self {
                 v: slice,
-                delimiter,
+                separator,
                 finished: false,
                 quote_char: quote_char.unwrap_or(b'"'),
                 quoting: quote_char.is_some(),
@@ -44,7 +44,7 @@ mod inner {
         }
 
         fn eof_oel(&self, current_ch: u8) -> bool {
-            current_ch == self.delimiter || current_ch == self.eol_char
+            current_ch == self.separator || current_ch == self.eol_char
         }
     }
 
@@ -59,7 +59,7 @@ mod inner {
             }
 
             let mut needs_escaping = false;
-            // There can be strings with delimiters:
+            // There can be strings with separators:
             // "Street, City",
 
             // Safety:
@@ -157,33 +157,33 @@ mod inner {
     /// This exists solely because we cannot split the lines naively as
     pub(crate) struct SplitFields<'a> {
         pub v: &'a [u8],
-        delimiter: u8,
+        separator: u8,
         pub finished: bool,
         quote_char: u8,
         quoting: bool,
         eol_char: u8,
-        simd_delimiter: SimdVec,
+        simd_separator: SimdVec,
         simd_eol_char: SimdVec,
     }
 
     impl<'a> SplitFields<'a> {
         pub(crate) fn new(
             slice: &'a [u8],
-            delimiter: u8,
+            separator: u8,
             quote_char: Option<u8>,
             eol_char: u8,
         ) -> Self {
-            let simd_delimiter = SimdVec::splat(delimiter);
+            let simd_separator = SimdVec::splat(separator);
             let simd_eol_char = SimdVec::splat(eol_char);
 
             Self {
                 v: slice,
-                delimiter,
+                separator,
                 finished: false,
                 quote_char: quote_char.unwrap_or(b'"'),
                 quoting: quote_char.is_some(),
                 eol_char,
-                simd_delimiter,
+                simd_separator,
                 simd_eol_char,
             }
         }
@@ -204,7 +204,7 @@ mod inner {
         }
 
         fn eof_oel(&self, current_ch: u8) -> bool {
-            current_ch == self.delimiter || current_ch == self.eol_char
+            current_ch == self.separator || current_ch == self.eol_char
         }
     }
 
@@ -219,7 +219,7 @@ mod inner {
             }
 
             let mut needs_escaping = false;
-            // There can be strings with delimiters:
+            // There can be strings with separators:
             // "Street, City",
 
             // Safety:
@@ -279,8 +279,8 @@ mod inner {
                                 .unwrap_unchecked_release();
                             let simd_bytes = SimdVec::from(lane);
                             let has_eol_char = simd_bytes.simd_eq(self.simd_eol_char);
-                            let has_delimiter = simd_bytes.simd_eq(self.simd_delimiter);
-                            let has_any = has_delimiter.bitor(has_eol_char);
+                            let has_separator = simd_bytes.simd_eq(self.simd_separator);
+                            let has_any = has_separator.bitor(has_eol_char);
                             if has_any.any() {
                                 // soundness we can transmute because we have the same alignment
                                 let has_any = std::mem::transmute::<

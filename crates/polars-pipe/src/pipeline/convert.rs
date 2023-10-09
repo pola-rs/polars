@@ -100,11 +100,13 @@ where
                 FileScan::Parquet {
                     options: parquet_options,
                     cloud_options,
+                    metadata,
                 } => {
                     let src = sources::ParquetSource::new(
                         path,
                         parquet_options,
                         cloud_options,
+                        metadata,
                         file_options,
                         file_info,
                         verbose,

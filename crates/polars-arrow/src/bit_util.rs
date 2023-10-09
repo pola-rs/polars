@@ -165,16 +165,16 @@ pub fn find_first_true_false_null(
     for (truth_mask, null_mask) in (&mut bit_chunks).zip(&mut validity_chunks) {
         let mask = null_mask & truth_mask & true_not_found_mask;
         if mask > 0 {
-            true_index = Some(offset + mask.leading_zeros() as usize);
+            true_index = Some(offset + mask.trailing_zeros() as usize);
             true_not_found_mask = 0;
         }
         let mask = null_mask & !truth_mask & false_not_found_mask;
         if mask > 0 {
-            false_index = Some(offset + mask.leading_zeros() as usize);
+            false_index = Some(offset + mask.trailing_zeros() as usize);
             false_not_found_mask = 0;
         }
         if !null_mask & null_not_found_mask > 0 {
-            null_index = Some(offset + null_mask.leading_ones() as usize);
+            null_index = Some(offset + null_mask.trailing_ones() as usize);
             null_not_found_mask = 0;
         }
         if null_not_found_mask | true_not_found_mask | false_not_found_mask == 0 {
@@ -211,12 +211,12 @@ pub fn find_first_true_false_no_null(
     for truth_mask in &mut bit_chunks {
         let mask = truth_mask & true_not_found_mask;
         if mask > 0 {
-            true_index = Some(offset + mask.leading_zeros() as usize);
+            true_index = Some(offset + mask.trailing_zeros() as usize);
             true_not_found_mask = 0;
         }
         let mask = !truth_mask & false_not_found_mask;
         if mask > 0 {
-            false_index = Some(offset + mask.leading_zeros() as usize);
+            false_index = Some(offset + mask.trailing_zeros() as usize);
             false_not_found_mask = 0;
         }
         if true_not_found_mask | false_not_found_mask == 0 {
