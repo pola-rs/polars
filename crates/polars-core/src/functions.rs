@@ -58,7 +58,7 @@ where
 /// Concat [`DataFrame`]s horizontally.
 #[cfg(feature = "horizontal_concat")]
 /// Concat horizontally and extend with null values if lengths don't match
-pub fn hor_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
+pub fn concat_df_horizontal(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
     let max_len = dfs
         .iter()
         .map(|df| df.height())
@@ -98,7 +98,7 @@ pub fn hor_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
 /// Concat [`DataFrame`]s diagonally.
 #[cfg(feature = "diagonal_concat")]
 /// Concat diagonally thereby combining different schemas.
-pub fn diag_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
+pub fn concat_df_diagonal(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
     // TODO! replace with lazy only?
     let upper_bound_width = dfs.iter().map(|df| df.width()).sum();
     let mut column_names = AHashSet::with_capacity(upper_bound_width);
@@ -175,7 +175,7 @@ mod test {
             "d" => [1, 2]
         ]?;
 
-        let out = diag_concat_df(&[a, b, c])?;
+        let out = concat_df_diagonal(&[a, b, c])?;
 
         let expected = df![
             "a" => [Some(1), Some(2), None, None, Some(5), Some(7)],

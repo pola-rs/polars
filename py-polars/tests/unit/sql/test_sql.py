@@ -933,13 +933,20 @@ def test_sql_trim(foods_ipc_path: Path) -> None:
             ["*"],
             ["c2", "c1"],
             "ALL BY NAME",
-            None,  # [(1, 'zz'), (2, 'yy'), (2, 'yy'), (3, 'xx')],
+            [(1, "zz"), (2, "yy"), (2, "yy"), (3, "xx")],
         ),
         (
             ["c1", "c2"],
             ["c2", "c1"],
             "BY NAME",
-            None,  # [(1, 'zz'), (2, 'yy'), (3, 'xx')],
+            [(1, "zz"), (2, "yy"), (3, "xx")],
+        ),
+        (
+            # note: waiting for "https://github.com/sqlparser-rs/sqlparser-rs/pull/997"
+            ["c1", "c2"],
+            ["c2", "c1"],
+            "DISTINCT BY NAME",
+            None,  # [(1, "zz"), (2, "yy"), (3, "xx")],
         ),
     ],
 )
@@ -962,10 +969,7 @@ def test_sql_union(
         if expected is not None:
             assert sorted(ctx.execute(query).rows()) == expected
         else:
-            with pytest.raises(
-                pl.InvalidOperationError,
-                match=f"UNION {union_subtype} is not yet supported",
-            ):
+            with pytest.raises(pl.ComputeError, match="sql parser error"):
                 ctx.execute(query)
 
 
