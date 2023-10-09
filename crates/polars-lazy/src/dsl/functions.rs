@@ -122,7 +122,7 @@ pub fn concat_lf_diagonal<L: AsRef<[LazyFrame]>>(
     inputs: L,
     args: UnionArgs,
 ) -> PolarsResult<LazyFrame> {
-    let lfs = inputs.as_ref().to_vec();
+    let lfs = inputs.as_ref();
     let schemas = lfs
         .iter()
         .map(|lf| lf.schema())
@@ -146,7 +146,8 @@ pub fn concat_lf_diagonal<L: AsRef<[LazyFrame]>>(
         .into_iter()
         // Zip Frames with their Schemas
         .zip(schemas)
-        .map(|(mut lf, lf_schema)| {
+        .map(|(lf, lf_schema)| {
+            let mut lf = lf.clone();
             for (name, dtype) in total_schema.iter() {
                 // If a name from Total Schema is not present - append
                 if lf_schema.get_field(name).is_none() {
