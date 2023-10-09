@@ -154,6 +154,15 @@ impl FunctionExpr {
             StructExpr(s) => s.get_field(mapper),
             #[cfg(feature = "top_k")]
             TopK(_) => mapper.with_same_dtype(),
+            #[cfg(feature = "dtype-struct")]
+            ValueCounts { .. } => mapper.map_dtype(|dt| {
+                DataType::Struct(vec![
+                    Field::new(fields[0].name().as_str(), dt.clone()),
+                    Field::new("counts", IDX_DTYPE),
+                ])
+            }),
+            #[cfg(feature = "unique_counts")]
+            UniqueCounts => mapper.with_dtype(IDX_DTYPE),
             Shift(..) | Reverse => mapper.with_same_dtype(),
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "dtype-categorical")]
