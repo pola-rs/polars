@@ -390,20 +390,20 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"a": ["Café", "345", "東京", None]})
         >>> df.with_columns(
-        ...     pl.col("a").str.len_bytes().alias("bytes"),
-        ...     pl.col("a").str.len_chars().alias("chars"),
+        ...     pl.col("a").str.len_bytes().alias("n_bytes"),
+        ...     pl.col("a").str.len_chars().alias("n_chars"),
         ... )
         shape: (4, 3)
-        ┌──────┬───────┬───────┐
-        │ a    ┆ bytes ┆ chars │
-        │ ---  ┆ ---   ┆ ---   │
-        │ str  ┆ u32   ┆ u32   │
-        ╞══════╪═══════╪═══════╡
-        │ Café ┆ 5     ┆ 4     │
-        │ 345  ┆ 3     ┆ 3     │
-        │ 東京 ┆ 6     ┆ 2     │
-        │ null ┆ null  ┆ null  │
-        └──────┴───────┴───────┘
+        ┌──────┬─────────┬─────────┐
+        │ a    ┆ n_bytes ┆ n_chars │
+        │ ---  ┆ ---     ┆ ---     │
+        │ str  ┆ u32     ┆ u32     │
+        ╞══════╪═════════╪═════════╡
+        │ Café ┆ 5       ┆ 4       │
+        │ 345  ┆ 3       ┆ 3       │
+        │ 東京 ┆ 6       ┆ 2       │
+        │ null ┆ null    ┆ null    │
+        └──────┴─────────┴─────────┘
 
         """
         return wrap_expr(self._pyexpr.str_len_bytes())
@@ -430,20 +430,20 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"a": ["Café", "345", "東京", None]})
         >>> df.with_columns(
-        ...     pl.col("a").str.len_chars().alias("chars"),
-        ...     pl.col("a").str.len_bytes().alias("bytes"),
+        ...     pl.col("a").str.len_chars().alias("n_chars"),
+        ...     pl.col("a").str.len_bytes().alias("n_bytes"),
         ... )
         shape: (4, 3)
-        ┌──────┬───────┬───────┐
-        │ a    ┆ chars ┆ bytes │
-        │ ---  ┆ ---   ┆ ---   │
-        │ str  ┆ u32   ┆ u32   │
-        ╞══════╪═══════╪═══════╡
-        │ Café ┆ 4     ┆ 5     │
-        │ 345  ┆ 3     ┆ 3     │
-        │ 東京 ┆ 2     ┆ 6     │
-        │ null ┆ null  ┆ null  │
-        └──────┴───────┴───────┘
+        ┌──────┬─────────┬─────────┐
+        │ a    ┆ n_chars ┆ n_bytes │
+        │ ---  ┆ ---     ┆ ---     │
+        │ str  ┆ u32     ┆ u32     │
+        ╞══════╪═════════╪═════════╡
+        │ Café ┆ 4       ┆ 5       │
+        │ 345  ┆ 3       ┆ 3       │
+        │ 東京 ┆ 2       ┆ 6       │
+        │ null ┆ null    ┆ null    │
+        └──────┴─────────┴─────────┘
 
         """
         return wrap_expr(self._pyexpr.str_len_chars())
