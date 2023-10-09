@@ -131,6 +131,7 @@ pub(crate) fn parse_bytes_with_encoding(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn infer_file_schema_inner(
     reader_bytes: &ReaderBytes,
     separator: u8,
@@ -461,6 +462,7 @@ pub fn infer_file_schema_inner(
 ///     - inferred schema
 ///     - number of rows used for inference.
 ///     - bytes read
+#[allow(clippy::too_many_arguments)]
 pub fn infer_file_schema(
     reader_bytes: &ReaderBytes,
     separator: u8,

@@ -149,6 +149,7 @@ pub(crate) struct CoreJsonReader<'a> {
     ignore_errors: bool,
 }
 impl<'a> CoreJsonReader<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         reader_bytes: ReaderBytes<'a>,
         n_rows: Option<usize>,

@@ -256,6 +256,7 @@ pub(crate) fn get_record_batch(
 /// certain parts of the file.
 /// # Panics
 /// This function panics iff `index >= metadata.blocks.len()`
+#[allow(clippy::too_many_arguments)]
 pub fn read_batch<R: Read + Seek>(
     reader: &mut R,
     dictionaries: &Dictionaries,

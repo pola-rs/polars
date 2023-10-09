@@ -22,6 +22,7 @@ fn iter_and_update_nodes(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn process_rename(
     acc_projections: &mut [Node],
     projected_names: &mut PlHashSet<Arc<str>>,

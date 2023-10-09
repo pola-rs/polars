@@ -10,6 +10,7 @@ use crate::datatypes::{DataType, Field, PhysicalType};
 use crate::error::Result;
 use crate::io::ipc::IpcField;
 
+#[allow(clippy::too_many_arguments)]
 pub fn read<R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
     field: &Field,

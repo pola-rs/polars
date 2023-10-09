@@ -101,6 +101,7 @@ pub trait DataFrameJoinOps: IntoDf {
     }
 
     #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
     fn _join_impl(
         &self,
         other: &DataFrame,

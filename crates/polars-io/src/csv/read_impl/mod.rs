@@ -184,6 +184,7 @@ impl RunningSize {
 }
 
 impl<'a> CoreReader<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         reader_bytes: ReaderBytes<'a>,
         n_rows: Option<usize>,
@@ -790,6 +791,7 @@ fn update_string_stats(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn read_chunk(
     bytes: &[u8],
     separator: u8,

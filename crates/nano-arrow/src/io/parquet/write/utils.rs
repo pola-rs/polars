@@ -54,6 +54,7 @@ pub fn write_def_levels(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_plain_page(
     buffer: Vec<u8>,
     num_values: usize,

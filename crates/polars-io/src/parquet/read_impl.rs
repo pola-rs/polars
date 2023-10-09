@@ -108,6 +108,7 @@ fn materialize_hive_partitions(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rg_to_dfs(
     store: &mmap::ColumnStore,
     previous_row_count: &mut IdxSize,
@@ -157,6 +158,7 @@ fn rg_to_dfs(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 // might parallelize over columns
 fn rg_to_dfs_optionally_par_over_columns(
     store: &mmap::ColumnStore,
@@ -235,6 +237,7 @@ fn rg_to_dfs_optionally_par_over_columns(
     Ok(dfs)
 }
 
+#[allow(clippy::too_many_arguments)]
 // parallelizes over row groups
 fn rg_to_dfs_par_over_rg(
     store: &mmap::ColumnStore,
@@ -306,6 +309,7 @@ fn rg_to_dfs_par_over_rg(
     Ok(dfs.into_iter().flatten().collect())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn read_parquet<R: MmapBytesReader>(
     mut reader: R,
     mut limit: usize,
@@ -465,6 +469,7 @@ pub struct BatchedParquetReader {
 }
 
 impl BatchedParquetReader {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         row_group_fetcher: RowGroupFetcher,
         metadata: Arc<FileMetaData>,

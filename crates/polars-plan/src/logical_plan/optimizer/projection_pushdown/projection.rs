@@ -8,6 +8,7 @@ fn is_count(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn process_projection(
     proj_pd: &mut ProjectionPushDown,
     input: Node,

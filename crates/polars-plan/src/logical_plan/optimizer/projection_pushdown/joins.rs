@@ -190,6 +190,7 @@ pub(super) fn process_asof_join(
     Ok(proj_pd.finish_node(local_projection, builder))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn process_join(
     proj_pd: &mut ProjectionPushDown,
     input_left: Node,

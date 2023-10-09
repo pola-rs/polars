@@ -10,6 +10,7 @@ pub struct JoinExec {
 }
 
 impl JoinExec {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         input_left: Box<dyn Executor>,
         input_right: Box<dyn Executor>,

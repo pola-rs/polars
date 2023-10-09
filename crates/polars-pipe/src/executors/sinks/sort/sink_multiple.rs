@@ -50,6 +50,7 @@ fn sort_by_idx<V: Clone>(values: &[V], idx: &[usize]) -> Vec<V> {
     tmp.into_iter().map(|k| k.0).collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finalize_dataframe(
     df: &mut DataFrame,
     sort_idx: &[usize],

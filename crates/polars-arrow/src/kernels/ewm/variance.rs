@@ -7,6 +7,7 @@ use num_traits::Float;
 use crate::trusted_len::TrustedLen;
 use crate::utils::CustomIterTools;
 
+#[allow(clippy::too_many_arguments)]
 fn ewm_cov_internal<I, T>(
     xs: I,
     ys: I,

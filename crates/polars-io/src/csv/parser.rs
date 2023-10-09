@@ -346,6 +346,7 @@ fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
 /// * `projection` - Indices of the columns to project.
 /// * `buffers` - Parsed output will be written to these buffers. Except for UTF8 data. The offsets of the
 ///               fields are written to the buffers. The UTF8 data will be parsed later.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn parse_lines<'a>(
     mut bytes: &'a [u8],
     offset: usize,

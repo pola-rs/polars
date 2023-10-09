@@ -558,6 +558,7 @@ where
     Ok(op)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn create_pipeline<F>(
     sources: &[Node],
     operators: Vec<Box<dyn Operator>>,

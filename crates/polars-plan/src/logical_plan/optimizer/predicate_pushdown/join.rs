@@ -81,6 +81,7 @@ fn all_pred_cols_in_left_on(
     col_exprs_in_predicate.all(|expr| left_on_col_exprs.contains(&expr))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn process_join(
     opt: &PredicatePushDown,
     lp_arena: &mut Arena<ALogicalPlan>,

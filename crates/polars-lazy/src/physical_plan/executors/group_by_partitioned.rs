@@ -23,6 +23,7 @@ pub struct PartitionGroupByExec {
 }
 
 impl PartitionGroupByExec {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         input: Box<dyn Executor>,
         phys_keys: Vec<Arc<dyn PhysicalExpr>>,

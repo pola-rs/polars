@@ -12,6 +12,7 @@ use crate::datatypes::DataType;
 use crate::error::{Error, Result};
 use crate::offset::Offset;
 
+#[allow(clippy::too_many_arguments)]
 pub fn read_list<O: Offset, R: Read + Seek>(
     field_nodes: &mut VecDeque<Node>,
     data_type: DataType,

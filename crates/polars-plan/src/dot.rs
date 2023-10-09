@@ -403,6 +403,7 @@ impl LogicalPlan {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn write_scan<P: Display>(
         &self,
         acc_str: &mut String,
