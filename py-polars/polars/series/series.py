@@ -4264,7 +4264,7 @@ class Series:
             ):
                 raise ModuleNotFoundError(
                     f'pyarrow>=8.0.0 is required for `to_pandas("use_pyarrow_extension_array=True")`'
-                    f", found pyarrow {pa.__version__}"
+                    f", found pyarrow {pa.__version__!r}"
                     if _PYARROW_AVAILABLE
                     else ""
                 )
