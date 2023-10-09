@@ -215,14 +215,13 @@ where
                         let mut_schema = Arc::make_mut(&mut schema);
                         overwrite_schema(mut_schema, overwrite)?;
                     }
+
                     DataType::Struct(schema.iter_fields().collect()).to_arrow()
                 } else {
                     // infer
-                    if let BorrowedValue::Array(values) = &json_value {
-                        polars_ensure!(self.schema_overwrite.is_none() && self.schema.is_none(), ComputeError: "schema arguments not yet supported for Array json");
-
+                    let inner_dtype = if let BorrowedValue::Array(values) = &json_value {
                         // struct types may have missing fields so find supertype
-                        let dtype = values
+                        values
                             .iter()
                             .take(self.infer_schema_len.unwrap_or(usize::MAX))
                             .map(|value| {
@@ -235,30 +234,38 @@ where
                                 let r = r?;
                                 try_get_supertype(&l, &r)
                             })
-                            .unwrap()?;
-                        let dtype = DataType::List(Box::new(dtype));
-                        dtype.to_arrow()
-                    } else {
-                        let dtype = infer(&json_value)?;
-                        if let Some(overwrite) = self.schema_overwrite {
-                            let ArrowDataType::Struct(fields) = dtype else {
-                                polars_bail!(ComputeError: "can only deserialize json objects")
-                            };
-
-                            let mut schema = Schema::from_iter(fields.iter());
-                            overwrite_schema(&mut schema, overwrite)?;
-
-                            DataType::Struct(
-                                schema
-                                    .into_iter()
-                                    .map(|(name, dt)| Field::new(&name, dt))
-                                    .collect(),
-                            )
+                            .unwrap()?
                             .to_arrow()
-                        } else {
-                            dtype
-                        }
+                    } else {
+                        infer(&json_value)?
+                    };
+
+                    if let Some(overwrite) = self.schema_overwrite {
+                        let ArrowDataType::Struct(fields) = inner_dtype else {
+                            polars_bail!(ComputeError: "can only deserialize json objects")
+                        };
+
+                        let mut schema = Schema::from_iter(fields.iter());
+                        overwrite_schema(&mut schema, overwrite)?;
+
+                        DataType::Struct(
+                            schema
+                                .into_iter()
+                                .map(|(name, dt)| Field::new(&name, dt))
+                                .collect(),
+                        )
+                        .to_arrow()
+                    } else {
+                        inner_dtype
                     }
+                };
+
+                let dtype = if let BorrowedValue::Array(_) = &json_value {
+                    ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
+                        "item", dtype, true,
+                    )))
+                } else {
+                    dtype
                 };
 
                 let arr = polars_json::json::deserialize(&json_value, dtype)?;
