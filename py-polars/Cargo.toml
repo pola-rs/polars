@@ -142,7 +142,7 @@ cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
 ffi_plugin = ["polars-plan/ffi_plugin"]
-cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure"]
+cloud = ["polars/cloud", "polars/cloud_write", "polars/aws", "polars/gcp", "polars/azure"]
 peaks = ["polars/peaks"]
 
 dtypes = [
