@@ -1611,8 +1611,8 @@ class DataFrame:
                 ):
                     if len(col_selection) != self.width:
                         raise ValueError(
-                            f"expected {self.width!r} values when selecting columns by"
-                            f" boolean mask, got {len(col_selection)!r}"
+                            f"expected {self.width} values when selecting columns by"
+                            f" boolean mask, got {len(col_selection)}"
                         )
                     series_list = []
                     for i, val in enumerate(col_selection):
