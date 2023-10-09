@@ -1952,7 +1952,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
         return lf.sink_parquet(
-            path=path,
+            path=normalize_filepath(path),
             compression=compression,
             compression_level=compression_level,
             statistics=statistics,
