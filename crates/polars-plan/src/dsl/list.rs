@@ -138,32 +138,23 @@ impl ListNameSpace {
     /// Return the index of the minimal value of every sublist
     pub fn arg_min(self) -> Expr {
         self.0
-            .map(
-                |s| Ok(Some(s.list()?.lst_arg_min().into_series())),
-                GetOutput::from_type(IDX_DTYPE),
-            )
-            .with_fmt("list.arg_min")
+            .map_private(FunctionExpr::ListExpr(ListFunction::ArgMin))
     }
 
     /// Return the index of the maximum value of every sublist
     pub fn arg_max(self) -> Expr {
         self.0
-            .map(
-                |s| Ok(Some(s.list()?.lst_arg_max().into_series())),
-                GetOutput::from_type(IDX_DTYPE),
-            )
-            .with_fmt("list.arg_max")
+            .map_private(FunctionExpr::ListExpr(ListFunction::ArgMax))
     }
 
     /// Diff every sublist.
     #[cfg(feature = "diff")]
     pub fn diff(self, n: i64, null_behavior: NullBehavior) -> Expr {
         self.0
-            .map(
-                move |s| Ok(Some(s.list()?.lst_diff(n, null_behavior)?.into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("list.diff")
+            .map_private(FunctionExpr::ListExpr(ListFunction::Diff {
+                n,
+                null_behavior,
+            }))
     }
 
     /// Shift every sublist.
