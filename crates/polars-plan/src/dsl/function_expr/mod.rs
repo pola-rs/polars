@@ -166,6 +166,13 @@ pub enum FunctionExpr {
         reverse: bool,
     },
     Reverse,
+    #[cfg(feature = "dtype-struct")]
+    ValueCounts {
+        sort: bool,
+        parallel: bool,
+    },
+    #[cfg(feature = "unique_counts")]
+    UniqueCounts,
     Boolean(BooleanFunction),
     #[cfg(feature = "approx_unique")]
     ApproxNUnique,
@@ -349,6 +356,10 @@ impl Display for FunctionExpr {
             Cumprod { .. } => "cumprod",
             Cummin { .. } => "cummin",
             Cummax { .. } => "cummax",
+            #[cfg(feature = "dtype-struct")]
+            ValueCounts { .. } => "value_counts",
+            #[cfg(feature = "unique_counts")]
+            UniqueCounts => "unique_counts",
             Reverse => "reverse",
             Boolean(func) => return write!(f, "{func}"),
             #[cfg(feature = "approx_unique")]
@@ -624,6 +635,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Cumprod { reverse } => map!(cum::cumprod, reverse),
             Cummin { reverse } => map!(cum::cummin, reverse),
             Cummax { reverse } => map!(cum::cummax, reverse),
+            #[cfg(feature = "dtype-struct")]
+            ValueCounts { sort, parallel } => map!(dispatch::value_counts, sort, parallel),
+            #[cfg(feature = "unique_counts")]
+            UniqueCounts => map!(dispatch::unique_counts),
             Reverse => map!(dispatch::reverse),
             Boolean(func) => func.into(),
             #[cfg(feature = "approx_unique")]
