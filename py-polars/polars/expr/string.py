@@ -11,6 +11,7 @@ from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import (
     deprecate_renamed_function,
+    issue_deprecation_warning,
     rename_use_earliest_to_ambiguous,
 )
 from polars.utils.various import find_stacklevel
@@ -1917,18 +1918,16 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_explode())
 
-    def parse_int(self, radix: int = 2, *, strict: bool = True) -> Expr:
+    def parse_int(self, radix: int | None = None, *, strict: bool = True) -> Expr:
         """
         Parse integers with base radix from strings.
 
-        By default base 2. ParseError/Overflows become Nulls.
+        ParseError/Overflows become Nulls.
 
         Parameters
         ----------
         radix
             Positive integer which is the base of the string we are parsing.
-            Default: 2.
-
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
@@ -1969,6 +1968,14 @@ class ExprStringNameSpace:
         └───────┘
 
         """
+        if radix is None:
+            issue_deprecation_warning(
+                "The default value for the `radix` parameter of `parse_int` will be removed in a future version."
+                " Call `parse_int(radix=2)` to keep current behavior and silence this warning.",
+                version="0.19.8",
+            )
+            radix = 2
+
         return wrap_expr(self._pyexpr.str_parse_int(radix, strict))
 
     @deprecate_renamed_function("strip_chars", version="0.19.3")
