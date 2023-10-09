@@ -59,7 +59,7 @@ def test_sink_parquet(io_files_path: Path, tmp_path: Path) -> None:
 def test_sink_parquet_cloud(io_files_path: Path, tmp_path: Path) -> None:
     source = io_files_path / "small.parquet"
     sink_file = tmp_path / "sink.parquet"
-    target = f"file://{sink_file}"
+    target = f"file://{sink_file.absolute().as_posix()}"
 
     df_scanned = pl.scan_parquet(source)
     df_scanned.sink_parquet_cloud(target)
