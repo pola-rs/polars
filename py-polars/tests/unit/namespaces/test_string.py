@@ -39,14 +39,32 @@ def test_str_concat_datetime() -> None:
 
 def test_str_lengths() -> None:
     s = pl.Series(["Café", None, "345", "東京"])
+    result = s.str.len()
     expected = pl.Series([5, None, 3, 6], dtype=pl.UInt32)
-    assert_series_equal(s.str.len(), expected)
+    assert_series_equal(result, expected)
+
+
+def test_str_lengths_deprecated() -> None:
+    s = pl.Series(["Café", None, "345", "東京"])
+    with pytest.deprecated_call():
+        result = s.str.lengths()
+    expected = pl.Series([5, None, 3, 6], dtype=pl.UInt32)
+    assert_series_equal(result, expected)
 
 
 def test_str_n_chars() -> None:
     s = pl.Series(["Café", None, "345", "東京"])
+    result = s.str.n_chars()
     expected = pl.Series([4, None, 3, 2], dtype=pl.UInt32)
-    assert_series_equal(s.str.n_chars(), expected)
+    assert_series_equal(result, expected)
+
+
+def test_length_vs_nchars() -> None:
+    df = pl.DataFrame({"s": ["café", "東京"]}).with_columns(
+        pl.col("s").str.len().alias("length"),
+        pl.col("s").str.n_chars().alias("nchars"),
+    )
+    assert df.rows() == [("café", 5, 4), ("東京", 6, 2)]
 
 
 def test_str_contains() -> None:
@@ -869,16 +887,6 @@ def test_json_path_match_type_4905() -> None:
     assert df.filter(
         pl.col("json_val").str.json_path_match("$.a").is_in(["hello"])
     ).to_dict(False) == {"json_val": ['{"a":"hello"}']}
-
-
-def test_length_vs_nchars() -> None:
-    df = pl.DataFrame({"s": ["café", "東京"]}).with_columns(
-        [
-            pl.col("s").str.len().alias("length"),
-            pl.col("s").str.n_chars().alias("nchars"),
-        ]
-    )
-    assert df.rows() == [("café", 5, 4), ("東京", 6, 2)]
 
 
 def test_decode_strict() -> None:
