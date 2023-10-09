@@ -23,6 +23,13 @@ pub enum ListFunction {
     Max,
     Min,
     Mean,
+    ArgMin,
+    ArgMax,
+    #[cfg(feature = "diff")]
+    Diff {
+        n: i64,
+        null_behavior: NullBehavior,
+    },
     Sort(SortOptions),
     Reverse,
     Unique(bool),
@@ -56,6 +63,10 @@ impl Display for ListFunction {
             Min => "min",
             Max => "max",
             Mean => "mean",
+            ArgMin => "arg_min",
+            ArgMax => "arg_max",
+            #[cfg(feature = "diff")]
+            Diff { .. } => "diff",
             Length => "length",
             Sort(_) => "sort",
             Reverse => "reverse",
@@ -319,6 +330,19 @@ pub(super) fn min(s: &Series) -> PolarsResult<Series> {
 
 pub(super) fn mean(s: &Series) -> PolarsResult<Series> {
     Ok(s.list()?.lst_mean())
+}
+
+pub(super) fn arg_min(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_arg_min().into_series())
+}
+
+pub(super) fn arg_max(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_arg_max().into_series())
+}
+
+#[cfg(feature = "diff")]
+pub(super) fn diff(s: &Series, n: i64, null_behavior: NullBehavior) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_diff(n, null_behavior)?.into_series())
 }
 
 pub(super) fn sort(s: &Series, options: SortOptions) -> PolarsResult<Series> {

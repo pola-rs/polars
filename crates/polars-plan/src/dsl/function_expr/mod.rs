@@ -579,6 +579,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Max => map!(list::max),
                     Min => map!(list::min),
                     Mean => map!(list::mean),
+                    ArgMin => map!(list::arg_min),
+                    ArgMax => map!(list::arg_max),
+                    #[cfg(feature = "diff")]
+                    Diff { n, null_behavior } => map!(list::diff, n, null_behavior),
                     Sort(options) => map!(list::sort, options),
                     Reverse => map!(list::reverse),
                     Unique(is_stable) => map!(list::unique, is_stable),
