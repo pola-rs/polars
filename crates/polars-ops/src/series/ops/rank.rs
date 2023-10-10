@@ -43,14 +43,12 @@ fn get_random_seed() -> u64 {
     rng.next_u64()
 }
 
-unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(
-    idxs: &IdxCa,
-    neq: &BooleanArray,
-    mut flush_ties: F,
-) {
+unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(idxs: &IdxCa, neq: &BooleanArray, mut flush_ties: F) {
     let mut ties_indices = Vec::with_capacity(128);
     let mut idx_it = idxs.downcast_iter().flat_map(|arr| arr.values_iter());
-    let Some(first_idx) = idx_it.next() else { return };
+    let Some(first_idx) = idx_it.next() else {
+        return;
+    };
     ties_indices.push(*first_idx);
 
     let mut eq_idx = 0;
@@ -59,7 +57,7 @@ unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(
             flush_ties(&mut ties_indices);
             ties_indices.clear()
         }
-                
+
         ties_indices.push(*idx);
         eq_idx += 1;
     }
@@ -84,14 +82,14 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         },
         _ => {},
     }
-    
+
     if null_count == len {
         return match method {
             Average => Float64Chunked::full_null(s.name(), len).into_series(),
             _ => IdxCa::full_null(s.name(), len).into_series(),
         };
     }
-    
+
     let sort_idx_ca = s
         .arg_sort(SortOptions {
             descending,
@@ -122,7 +120,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
             .unwrap()
             .rechunk();
         let neq = not_consecutive_same.downcast_iter().next().unwrap();
-        
+
         let mut rank = 1;
         match method {
             #[cfg(feature = "random")]
@@ -149,7 +147,8 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
                         *out.get_unchecked_mut(*i as usize) = avg;
                     }
                 });
-                Float64Chunked::new_from_owned_with_null_bitmap(s.name(), out, validity).into_series()
+                Float64Chunked::new_from_owned_with_null_bitmap(s.name(), out, validity)
+                    .into_series()
             },
             Min => unsafe {
                 let mut out = vec![0 as IdxSize; s.len()];
@@ -170,7 +169,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
                     }
                 });
                 IdxCa::new_from_owned_with_null_bitmap(s.name(), out, validity).into_series()
-            }
+            },
             Dense => unsafe {
                 let mut out = vec![0 as IdxSize; s.len()];
                 rank_impl(&sort_idx_ca, neq, |ties| {
@@ -180,7 +179,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
                     rank += 1;
                 });
                 IdxCa::new_from_owned_with_null_bitmap(s.name(), out, validity).into_series()
-            }
+            },
             Ordinal => unreachable!(),
         }
     }
