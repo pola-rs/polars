@@ -383,8 +383,8 @@ class ExprStringNameSpace:
 
         Notes
         -----
-        The returned lengths are equal to the number of bytes in the UTF8 string. If you
-        need the length in terms of the number of characters, use ``n_chars`` instead.
+        When working with non-ASCII text, the length in bytes is not the same as the
+        length in characters. You may want to use :func:`len_chars` instead.
 
         Examples
         --------
@@ -417,14 +417,14 @@ class ExprStringNameSpace:
         Expr
             Expression of data type :class:`UInt32`.
 
-        Notes
-        -----
-        If you know that you are working with ASCII text, ``len`` will be
-        equivalent, and faster (returns length in terms of the number of bytes).
-
         See Also
         --------
-        len
+        len_bytes
+
+        Notes
+        -----
+        When working with ASCII text, use :func:`len_bytes` instead to achieve
+        equivalent output with much better performance.
 
         Examples
         --------

@@ -367,7 +367,7 @@ class StringNameSpace:
         Notes
         -----
         When working with ASCII text, use :func:`len_bytes` instead to achieve
-        equivalent output with better performance.
+        equivalent output with much better performance.
 
         Examples
         --------
