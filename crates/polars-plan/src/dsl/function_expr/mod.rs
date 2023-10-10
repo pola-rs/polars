@@ -250,6 +250,9 @@ pub enum FunctionExpr {
         lib: Arc<str>,
         symbol: Arc<str>,
     },
+    BackwardFill {
+        limit: FillNullLimit,
+    },
 }
 
 impl Hash for FunctionExpr {
@@ -419,6 +422,7 @@ impl Display for FunctionExpr {
             SetSortedFlag(_) => "set_sorted",
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
+            BackwardFill { .. } => "backward_fill",
         };
         write!(f, "{s}")
     }
@@ -736,6 +740,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             FfiPlugin { lib, symbol, .. } => unsafe {
                 map_as_slice!(plugin::call_plugin, lib.as_ref(), symbol.as_ref())
             },
+            BackwardFill { limit } => map!(dispatch::backward_fill, limit),
         }
     }
 }

@@ -793,11 +793,7 @@ impl Expr {
 
     /// Fill missing value with next non-null.
     pub fn backward_fill(self, limit: FillNullLimit) -> Self {
-        self.apply(
-            move |s: Series| s.fill_null(FillNullStrategy::Backward(limit)).map(Some),
-            GetOutput::same_type(),
-        )
-        .with_fmt("backward_fill")
+        self.apply_private(FunctionExpr::BackwardFill { limit })
     }
 
     /// Fill missing value with previous non-null.

@@ -279,6 +279,7 @@ impl FunctionExpr {
             FfiPlugin { lib, symbol } => unsafe {
                 plugin::plugin_field(fields, lib, &format!("__polars_field_{}", symbol.as_ref()))
             },
+            BackwardFill { .. } => mapper.with_same_dtype(),
         }
     }
 }
