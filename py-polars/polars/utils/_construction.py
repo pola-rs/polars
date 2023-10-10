@@ -708,7 +708,10 @@ def _unpack_schema(
         # coerce schema to list[str | tuple[str, PolarsDataType | PythonDataType | None]
         schema = list(schema.items())
     else:
-        column_names = [col if isinstance(col, str) else col[0] for col in schema]
+        column_names = [
+            (col or f"column_{i}") if isinstance(col, str) else col[0]
+            for i, col in enumerate(schema)
+        ]
 
     # determine column dtypes from schema and lookup_names
     lookup: dict[str, str] | None = (
@@ -1444,6 +1447,16 @@ def arrow_to_pydf(
     column_names, schema_overrides = _unpack_schema(
         (schema or data.column_names), schema_overrides=schema_overrides
     )
+
+    try:
+        empty_str_idx = (
+            schema.names if schema is not None else data.column_names
+        ).index("")
+        column_names[empty_str_idx] = ""
+
+    except ValueError:
+        empty_str_idx = None
+
     try:
         if column_names != data.column_names:
             data = data.rename_columns(column_names)
@@ -1477,9 +1490,14 @@ def arrow_to_pydf(
 
         # path for table without rows that keeps datatype
         if tbl.shape[0] == 0:
-            pydf = pl.DataFrame(
+            df = pl.DataFrame(
                 [pl.Series(name, c) for (name, c) in zip(tbl.column_names, tbl.columns)]
-            )._df
+            )
+
+            if empty_str_idx is not None:
+                df = df.rename({df.columns[empty_str_idx]: ""})
+
+            pydf = df._df
         else:
             pydf = PyDataFrame.from_arrow_record_batches(tbl.to_batches())
     else:

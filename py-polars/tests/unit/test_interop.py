@@ -476,6 +476,11 @@ def test_from_arrow() -> None:
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]  # type: ignore[union-attr]
     assert df.schema == {"a": pl.UInt32, "b": pl.UInt64}  # type: ignore[union-attr]
 
+    # empty string column name
+    df = pl.select(pl.Series("", [1], pl.Int8))
+    assert pl.DataFrame(df.to_arrow()).schema == df.schema
+    assert pl.DataFrame(df.head(0).to_arrow()).schema == df.schema
+
 
 def test_from_pandas_dataframe() -> None:
     pd_df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], columns=["a", "b", "c"])
@@ -1121,9 +1126,3 @@ def test_from_arrow_invalid_time_zone() -> None:
     )
     with pytest.raises(ComputeError, match=r"unable to parse time zone: '\+01:00'"):
         pl.from_arrow(arr)
-
-
-def test_empty_string_column_name_from_arrow() -> None:
-    df = pl.DataFrame(schema={"": pl.Int8, "a": pl.Int8})
-
-    assert pl.DataFrame(df.to_arrow()).schema == df.schema
