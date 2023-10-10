@@ -3,11 +3,11 @@ use polars_error::PolarsResult;
 
 use super::CastOptions;
 use crate::array::*;
-use crate::datatypes::DataType;
+use crate::datatypes::{DataType, TimeUnit};
 use crate::offset::Offset;
 use crate::temporal_conversions::{
-    utf8_to_naive_timestamp_ns as utf8_to_naive_timestamp_ns_,
-    utf8_to_timestamp_ns as utf8_to_timestamp_ns_, EPOCH_DAYS_FROM_CE,
+    utf8_to_naive_timestamp as utf8_to_naive_timestamp_, utf8_to_timestamp as utf8_to_timestamp_,
+    EPOCH_DAYS_FROM_CE,
 };
 use crate::types::NativeType;
 
@@ -110,34 +110,40 @@ pub fn utf8_to_dictionary<O: Offset, K: DictionaryKey>(
     Ok(array.into())
 }
 
-pub(super) fn utf8_to_naive_timestamp_ns_dyn<O: Offset>(
+pub(super) fn utf8_to_naive_timestamp_dyn<O: Offset>(
     from: &dyn Array,
+    tu: TimeUnit,
 ) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
-    Ok(Box::new(utf8_to_naive_timestamp_ns::<O>(from)))
+    Ok(Box::new(utf8_to_naive_timestamp::<O>(from, tu)))
 }
 
-/// [`crate::temporal_conversions::utf8_to_timestamp_ns`] applied for RFC3339 formatting
-pub fn utf8_to_naive_timestamp_ns<O: Offset>(from: &Utf8Array<O>) -> PrimitiveArray<i64> {
-    utf8_to_naive_timestamp_ns_(from, RFC3339)
+/// [`crate::temporal_conversions::utf8_to_timestamp`] applied for RFC3339 formatting
+pub fn utf8_to_naive_timestamp<O: Offset>(
+    from: &Utf8Array<O>,
+    tu: TimeUnit,
+) -> PrimitiveArray<i64> {
+    utf8_to_naive_timestamp_(from, RFC3339, tu)
 }
 
-pub(super) fn utf8_to_timestamp_ns_dyn<O: Offset>(
+pub(super) fn utf8_to_timestamp_dyn<O: Offset>(
     from: &dyn Array,
     timezone: String,
+    tu: TimeUnit,
 ) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
-    utf8_to_timestamp_ns::<O>(from, timezone)
+    utf8_to_timestamp::<O>(from, timezone, tu)
         .map(Box::new)
         .map(|x| x as Box<dyn Array>)
 }
 
-/// [`crate::temporal_conversions::utf8_to_timestamp_ns`] applied for RFC3339 formatting
-pub fn utf8_to_timestamp_ns<O: Offset>(
+/// [`crate::temporal_conversions::utf8_to_timestamp`] applied for RFC3339 formatting
+pub fn utf8_to_timestamp<O: Offset>(
     from: &Utf8Array<O>,
     timezone: String,
+    tu: TimeUnit,
 ) -> PolarsResult<PrimitiveArray<i64>> {
-    utf8_to_timestamp_ns_(from, RFC3339, timezone)
+    utf8_to_timestamp_(from, RFC3339, timezone, tu)
 }
 
 /// Conversion of utf8

@@ -203,24 +203,21 @@ impl ChunkCast for Utf8Chunked {
                 Ok(out)
             },
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_tu, tz) => {
+            DataType::Datetime(tu, tz) => {
                 let out = match tz {
                     #[cfg(feature = "timezones")]
                     Some(tz) => {
                         validate_time_zone(tz)?;
                         let result = cast_chunks(
                             &self.chunks,
-                            &Datetime(TimeUnit::Nanoseconds, Some(tz.clone())),
+                            &Datetime(tu.to_owned(), Some(tz.clone())),
                             true,
                         )?;
                         Series::try_from((self.name(), result))
                     },
                     _ => {
-                        let result = cast_chunks(
-                            &self.chunks,
-                            &Datetime(TimeUnit::Nanoseconds, None),
-                            true,
-                        )?;
+                        let result =
+                            cast_chunks(&self.chunks, &Datetime(tu.to_owned(), None), true)?;
                         Series::try_from((self.name(), result))
                     },
                 };
