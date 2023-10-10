@@ -1971,25 +1971,25 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown=slice_pushdown,
         )
 
-        arguments = dict(
-            compression=compression,
-            compression_level=compression_level,
-            statistics=statistics,
-            row_group_size=row_group_size,
-            data_pagesize_limit=data_pagesize_limit,
-            maintain_order=maintain_order,
-        )
+        arguments: dict[str, str | int | None | list[tuple[str, str]]] = {
+            "compression": compression,
+            "compression_level": compression_level,
+            "statistics": statistics,
+            "row_group_size": row_group_size,
+            "data_pagesize_limit": data_pagesize_limit,
+            "maintain_order": maintain_order,
+        }
 
         if isinstance(path, str) and _is_supported_cloud(path):
             method_to_call = lf.sink_parquet_cloud
             arguments["path"] = path
-            arguments["cloud_options"] = list((storage_options or {}).items())
+            arguments["cloud_options"] = list(storage_options.items()) if storage_options else None
             arguments["retries"] = retries
         else:
             method_to_call = lf.sink_parquet
             arguments["path"] = normalize_filepath(path)
 
-        return method_to_call(lf, **arguments)
+        return method_to_call(**arguments)
 
     def sink_ipc(
         self,
