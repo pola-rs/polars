@@ -1126,4 +1126,4 @@ def test_from_arrow_invalid_time_zone() -> None:
 def test_empty_string_column_name_from_arrow() -> None:
     df = pl.DataFrame(schema={"": pl.Int8, "a": pl.Int8})
 
-    assert pl.from_arrow(df.to_arrow()).schema == df.schema
+    assert pl.DataFrame(df.to_arrow()).schema == df.schema
