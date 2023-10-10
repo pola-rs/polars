@@ -399,7 +399,28 @@ class Config(contextlib.ContextDecorator):
 
     @classmethod
     def set_auto_structify(cls, active: bool | None = False) -> type[Config]:
-        """Allow multi-output expressions to be automatically turned into Structs."""
+        """
+        Allow multi-output expressions to be automatically turned into Structs.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})
+        >>> with pl.Config(set_auto_structify=True):
+        ...     out = df.select(pl.all())
+        ...
+        >>> out
+        shape: (3, 1)
+        ┌───────────┐
+        │ v         │
+        │ ---       │
+        │ struct[2] │
+        ╞═══════════╡
+        │ {1,4}     │
+        │ {2,5}     │
+        │ {3,6}     │
+        └───────────┘
+
+        """
         if active is None:
             os.environ.pop("POLARS_AUTO_STRUCTIFY", None)
         else:
@@ -409,12 +430,45 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     def set_fmt_float(cls, fmt: FloatFmt | None = "mixed") -> type[Config]:
         """
-        Control how floating  point values are displayed.
+        Control how floating point values are displayed.
 
         Parameters
         ----------
         fmt : {"mixed", "full"}
-            How to format floating point numbers.
+            How to format floating point numbers:
+
+            - "mixed": Limit the number of decimal places and use scientific
+                notation for large/small values.
+            - "full": Print the full precision of the floating point number.
+
+        Examples
+        --------
+        "mixed" float formatting:
+
+        >>> s = pl.Series([1.2304980958725870923, 1e6, 1e-8])
+        >>> with pl.Config(set_fmt_float="mixed"):
+        ...     print(s)
+        ...
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.230498
+            1e6
+            1.0000e-8
+        ]
+
+        "full" float formatting:
+
+        >>> with pl.Config(set_fmt_float="full"):
+        ...     print(s)
+        ...
+        shape: (3,)
+        Series: '' [f64]
+        [
+            1.230498095872587
+            1000000
+            0.00000001
+        ]
 
         """
         _set_float_fmt(fmt="mixed" if fmt is None else fmt)

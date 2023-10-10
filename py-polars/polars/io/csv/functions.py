@@ -133,7 +133,7 @@ def read_csv(
         ``utf8-lossy``, the input is first decoded in memory with
         python. Defaults to ``utf8``.
     low_memory
-        Reduce memory usage at expense of performance.
+        Reduce memory pressure at the expense of performance.
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
@@ -504,7 +504,7 @@ def read_csv_batched(
         ``utf8-lossy``, the input is first decoded in memory with
         python. Defaults to ``utf8``.
     low_memory
-        Reduce memory usage at expense of performance.
+        Reduce memory pressure at the expense of performance.
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
@@ -787,7 +787,7 @@ def scan_csv(
         Lossy means that invalid utf8 values are replaced with ``�``
         characters. Defaults to "utf8".
     low_memory
-        Reduce memory usage in expense of performance.
+        Reduce memory pressure at the expense of performance.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
     skip_rows_after_header
