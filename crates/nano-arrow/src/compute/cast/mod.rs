@@ -578,9 +578,23 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
             LargeUtf8 => Ok(Box::new(utf8_to_large_utf8(
                 array.as_any().downcast_ref().unwrap(),
             ))),
-            Timestamp(TimeUnit::Nanosecond, None) => utf8_to_naive_timestamp_ns_dyn::<i32>(array),
+            Timestamp(TimeUnit::Nanosecond, None) => {
+                utf8_to_naive_timestamp_dyn::<i32>(array, TimeUnit::Nanosecond)
+            },
+            Timestamp(TimeUnit::Millisecond, None) => {
+                utf8_to_naive_timestamp_dyn::<i32>(array, TimeUnit::Millisecond)
+            },
+            Timestamp(TimeUnit::Microsecond, None) => {
+                utf8_to_naive_timestamp_dyn::<i32>(array, TimeUnit::Microsecond)
+            },
             Timestamp(TimeUnit::Nanosecond, Some(tz)) => {
-                utf8_to_timestamp_ns_dyn::<i32>(array, tz.clone())
+                utf8_to_timestamp_dyn::<i32>(array, tz.clone(), TimeUnit::Nanosecond)
+            },
+            Timestamp(TimeUnit::Millisecond, Some(tz)) => {
+                utf8_to_timestamp_dyn::<i32>(array, tz.clone(), TimeUnit::Millisecond)
+            },
+            Timestamp(TimeUnit::Microsecond, Some(tz)) => {
+                utf8_to_timestamp_dyn::<i32>(array, tz.clone(), TimeUnit::Microsecond)
             },
             _ => Err(Error::NotYetImplemented(format!(
                 "Casting from {from_type:?} to {to_type:?} not supported",
@@ -605,9 +619,23 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Resu
                 to_type.clone(),
             )
             .boxed()),
-            Timestamp(TimeUnit::Nanosecond, None) => utf8_to_naive_timestamp_ns_dyn::<i64>(array),
+            Timestamp(TimeUnit::Nanosecond, None) => {
+                utf8_to_naive_timestamp_dyn::<i64>(array, TimeUnit::Nanosecond)
+            },
+            Timestamp(TimeUnit::Millisecond, None) => {
+                utf8_to_naive_timestamp_dyn::<i64>(array, TimeUnit::Millisecond)
+            },
+            Timestamp(TimeUnit::Microsecond, None) => {
+                utf8_to_naive_timestamp_dyn::<i64>(array, TimeUnit::Microsecond)
+            },
             Timestamp(TimeUnit::Nanosecond, Some(tz)) => {
-                utf8_to_timestamp_ns_dyn::<i64>(array, tz.clone())
+                utf8_to_timestamp_dyn::<i64>(array, tz.clone(), TimeUnit::Nanosecond)
+            },
+            Timestamp(TimeUnit::Millisecond, Some(tz)) => {
+                utf8_to_timestamp_dyn::<i64>(array, tz.clone(), TimeUnit::Millisecond)
+            },
+            Timestamp(TimeUnit::Microsecond, Some(tz)) => {
+                utf8_to_timestamp_dyn::<i64>(array, tz.clone(), TimeUnit::Microsecond)
             },
             _ => Err(Error::NotYetImplemented(format!(
                 "Casting from {from_type:?} to {to_type:?} not supported",
