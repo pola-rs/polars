@@ -78,6 +78,7 @@ impl ParquetExec {
                     .await?
                     .with_n_rows(n_rows)
                     .with_row_count(mem::take(&mut self.file_options.row_count))
+                    .with_projection(projection)
                     .use_statistics(self.options.use_statistics)
                     .with_hive_partition_columns(hive_partitions);
 
