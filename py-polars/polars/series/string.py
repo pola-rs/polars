@@ -335,6 +335,8 @@ class StringNameSpace:
         -----
         When working with non-ASCII text, the length in bytes is not the same as the
         length in characters. You may want to use :func:`len_chars` instead.
+        Note that :func:`len_bytes` is much more performant (_O(1)_) than
+        :func:`len_chars` (_O(n)_).
 
         Examples
         --------
@@ -367,7 +369,8 @@ class StringNameSpace:
         Notes
         -----
         When working with ASCII text, use :func:`len_bytes` instead to achieve
-        equivalent output with much better performance.
+        equivalent output with much better performance:
+        :func:`len_bytes` runs in _O(1)_, while :func:`len_chars` runs in (_O(n)_).
 
         Examples
         --------
