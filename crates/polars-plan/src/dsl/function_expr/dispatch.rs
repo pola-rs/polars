@@ -51,3 +51,11 @@ pub(super) fn value_counts(s: &Series, sort: bool, parallel: bool) -> PolarsResu
 pub(super) fn unique_counts(s: &Series) -> PolarsResult<Series> {
     Ok(s.unique_counts().into_series())
 }
+
+pub(super) fn backward_fill(s: &Series, limit: FillNullLimit) -> PolarsResult<Series> {
+    s.fill_null(FillNullStrategy::Backward(limit))
+}
+
+pub(super) fn forward_fill(s: &Series, limit: FillNullLimit) -> PolarsResult<Series> {
+    s.fill_null(FillNullStrategy::Forward(limit))
+}
