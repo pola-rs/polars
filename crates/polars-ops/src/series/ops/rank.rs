@@ -51,15 +51,13 @@ unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(idxs: &IdxCa, neq: &BooleanArray, 
     };
     ties_indices.push(*first_idx);
 
-    let mut eq_idx = 0;
-    for idx in idx_it {
+    for (eq_idx, idx) in idx_it.enumerate() {
         if neq.value_unchecked(eq_idx) {
             flush_ties(&mut ties_indices);
             ties_indices.clear()
         }
 
         ties_indices.push(*idx);
-        eq_idx += 1;
     }
     flush_ties(&mut ties_indices);
 }
