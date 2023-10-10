@@ -340,7 +340,7 @@ impl AExpr {
             Column(_) | Literal(_) | Wildcard | Count | Nth(_) => return self,
             Alias(input, _) => input,
             Cast { expr, .. } => expr,
-            Explode(input) | Slice { input, .. } => input,
+            Explode(input) => input,
             BinaryExpr { left, right, .. } => {
                 *right = inputs[0];
                 *left = inputs[1];
@@ -388,6 +388,16 @@ impl AExpr {
             AnonymousFunction { input, .. } | Function { input, .. } => {
                 input.clear();
                 input.extend(inputs.iter().rev().copied());
+                return self;
+            },
+            Slice {
+                input,
+                offset,
+                length,
+            } => {
+                *length = inputs[0];
+                *offset = inputs[1];
+                *input = inputs[2];
                 return self;
             },
             Window {
