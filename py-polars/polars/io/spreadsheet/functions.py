@@ -469,7 +469,7 @@ def _initialise_spreadsheet_parser(
             import xlsx2csv
         except ImportError:
             raise ModuleNotFoundError(
-                "required package not installed\n\nPlease run: `pip install xlsx2csv`."
+                "required package not installed" "\n\nPlease run: pip install xlsx2csv"
             ) from None
         parser = xlsx2csv.Xlsx2csv(source, **engine_options)
         sheets = parser.workbook.sheets
@@ -480,7 +480,7 @@ def _initialise_spreadsheet_parser(
             import openpyxl
         except ImportError:
             raise ImportError(
-                "required package not installed\n\nPlease run `pip install openpyxl`."
+                "required package not installed" "\n\nPlease run: pip install openpyxl"
             ) from None
         parser = openpyxl.load_workbook(source, data_only=True, **engine_options)
         sheets = [{"index": i + 1, "name": ws.title} for i, ws in enumerate(parser)]
@@ -491,7 +491,7 @@ def _initialise_spreadsheet_parser(
             import pyxlsb
         except ImportError:
             raise ImportError(
-                "required package not installed\n\nPlease run `pip install pyxlsb`."
+                "required package not installed" "\n\nPlease run: pip install pyxlsb"
             ) from None
         try:
             parser = pyxlsb.open_workbook(source, **engine_options)
@@ -509,7 +509,8 @@ def _initialise_spreadsheet_parser(
             import ezodf
         except ImportError:
             raise ImportError(
-                "required package not installed\n\nPlease run `pip install ezodf lxml`."
+                "required package not installed"
+                "\n\nPlease run: pip install ezodf lxml"
             ) from None
         parser = ezodf.opendoc(source, **engine_options)
         sheets = [
@@ -533,8 +534,8 @@ def _csv_buffer_to_frame(
     if csv.tell() == 0:
         if raise_if_empty:
             raise NoDataError(
-                "empty Excel sheet\n\nIf you want to read this as "
-                "an empty DataFrame, set `raise_if_empty=False`."
+                "empty Excel sheet"
+                "\n\nIf you want to read this as an empty DataFrame, set `raise_if_empty=False`."
             )
         return pl.DataFrame()
 
@@ -626,8 +627,8 @@ def _read_spreadsheet_ods(
 
     if raise_if_empty and len(df) == 0 and len(df.columns) == 0:
         raise NoDataError(
-            "empty Excel sheet\n\nIf you want to read this as "
-            "an empty DataFrame, set `raise_if_empty=False`."
+            "empty Excel sheet"
+            "\n\nIf you want to read this as an empty DataFrame, set `raise_if_empty=False`."
         )
 
     if strptime_cols:
@@ -685,8 +686,8 @@ def _read_spreadsheet_openpyxl(
     )
     if raise_if_empty and len(df) == 0 and len(df.columns) == 0:
         raise NoDataError(
-            "empty Excel sheet\n\nIf you want to read this as "
-            "an empty DataFrame, set `raise_if_empty=False`."
+            "empty Excel sheet"
+            "\n\nIf you want to read this as an empty DataFrame, set `raise_if_empty=False`."
         )
     return _drop_unnamed_null_columns(df)
 
@@ -732,8 +733,8 @@ def _read_spreadsheet_pyxlsb(
     )
     if raise_if_empty and len(df) == 0 and len(df.columns) == 0:
         raise NoDataError(
-            "empty Excel sheet\n\nIf you want to read this as "
-            "an empty DataFrame, set `raise_if_empty=False`."
+            "empty Excel sheet"
+            "\n\nIf you want to read this as an empty DataFrame, set `raise_if_empty=False`."
         )
     return _drop_unnamed_null_columns(df)
 

@@ -1221,7 +1221,7 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_base64_encode())
         else:
             raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding!r}"
+                f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
             )
 
     def extract(self, pattern: str, group_index: int = 1) -> Expr:

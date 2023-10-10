@@ -511,9 +511,10 @@ class InstructionTranslator:
             return "map_dict"
         else:
             raise AssertionError(
-                "unrecognized opname\n\nPlease report a bug to https://github.com/pola-rs/polars/issues"
-                " with the content of function you were passing to `apply` and the"
-                f" following instruction object:\n{inst!r}."
+                "unrecognized opname"
+                "\n\nPlease report a bug to https://github.com/pola-rs/polars/issues"
+                " with the content of function you were passing to `map` and the"
+                f" following instruction object:\n{inst!r}"
             )
 
     def _expr(self, value: StackEntry, col: str, param_name: str, depth: int) -> str:

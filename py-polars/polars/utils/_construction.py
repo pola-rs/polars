@@ -483,10 +483,9 @@ def sequence_to_pyseries(
                     dtype_tz is not None and dtype_tz != "UTC"
                 ):
                     raise ValueError(
-                        "time-zone-aware datetimes are converted to UTC "
-                        "\n\nPlease either drop the time zone from the dtype, "
-                        "or set it to 'UTC'. To convert to a different time zone, "
-                        "please use `.dt.convert_time_zone`."
+                        "time-zone-aware datetimes are converted to UTC"
+                        "\n\nPlease either drop the time zone from the dtype, or set it to 'UTC'."
+                        " To convert to a different time zone, please use `.dt.convert_time_zone`."
                     )
                 if values_tz != "UTC" and dtype_tz is None:
                     warnings.warn(
@@ -1063,7 +1062,7 @@ def _sequence_of_sequence_to_pydf(
         return PyDataFrame(data_series)
 
     raise ValueError(
-        f"`orient` must be one of {{'col', 'row', None}}, got {orient!r} instead"
+        f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}"
     )
 
 
@@ -1336,7 +1335,7 @@ def numpy_to_pydf(
             shape = data[nm].shape
             if len(data[nm].shape) > 2:
                 raise ValueError(
-                    f"cannot create DataFrame from structured array with elements > 2D; shape[{nm!r}] = {shape!r}"
+                    f"cannot create DataFrame from structured array with elements > 2D; shape[{nm!r}] = {shape}"
                 )
         if not schema:
             schema = record_names
@@ -1372,11 +1371,11 @@ def numpy_to_pydf(
                 n_columns = shape[0]
             else:
                 raise ValueError(
-                    f"`orient` must be one of {{'col', 'row', None}}; found {orient!r} instead"
+                    f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}"
                 )
         else:
             raise ValueError(
-                f"cannot create DataFrame from array with more than two dimensions; shape = {shape!r}"
+                f"cannot create DataFrame from array with more than two dimensions; shape = {shape}"
             )
 
     if schema is not None and len(schema) != n_columns:

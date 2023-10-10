@@ -486,7 +486,7 @@ class Series:
             time_zone = self.dtype.time_zone  # type: ignore[union-attr]
             if str(other.tzinfo) != str(time_zone):
                 raise TypeError(
-                    f"Datetime time zone '{other.tzinfo!r}' does not match Series timezone {time_zone!r}"
+                    f"Datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
                 )
             ts = _datetime_to_pl_timestamp(other, self.dtype.time_unit)  # type: ignore[union-attr]
             f = get_ffi_func(op + "_<>", Int64, self._s)
@@ -1120,7 +1120,7 @@ class Series:
         if method == "__call__":
             if not ufunc.nout == 1:
                 raise NotImplementedError(
-                    "only 'ufunc' variants that return one 1D array are supported"
+                    "only ufuncs that return one 1D array are supported"
                 )
 
             args: list[int | float | np.ndarray[Any, Any]] = []

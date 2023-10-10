@@ -85,8 +85,7 @@ def read_ipc(
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
                 raise ModuleNotFoundError(
-                    "'pyarrow' is required when using"
-                    " `read_ipc(..., use_pyarrow=True)`"
+                    "pyarrow is required when using `read_ipc(..., use_pyarrow=True)`"
                 )
 
             import pyarrow as pa
