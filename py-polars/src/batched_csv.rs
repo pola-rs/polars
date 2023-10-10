@@ -25,7 +25,6 @@ pub struct PyBatchedCsv {
 #[allow(clippy::wrong_self_convention, clippy::should_implement_trait)]
 impl PyBatchedCsv {
     #[staticmethod]
-    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         infer_schema_length, chunk_size, has_header, ignore_errors, n_rows, skip_rows,
         projection, separator, rechunk, columns, encoding, n_threads, path, overwrite_dtype,

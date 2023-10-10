@@ -110,7 +110,6 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[cfg(feature = "json")]
-    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (path, infer_schema_length, batch_size, n_rows, low_memory, rechunk, row_count))]
     fn new_from_ndjson(
         path: String,
@@ -136,7 +135,6 @@ impl PyLazyFrame {
     }
 
     #[staticmethod]
-    #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
     #[pyo3(signature = (path, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_char, quote_char, null_values, missing_utf8_is_empty_string,
@@ -235,7 +233,6 @@ impl PyLazyFrame {
 
     #[cfg(feature = "parquet")]
     #[staticmethod]
-    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (path, n_rows, cache, parallel, rechunk, row_count,
         low_memory, cloud_options, use_statistics, hive_partitioning, retries)
     )]
@@ -339,7 +336,6 @@ impl PyLazyFrame {
         Ok(result)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn optimization_toggle(
         &self,
         type_coercion: bool,
@@ -483,7 +479,6 @@ impl PyLazyFrame {
         });
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "parquet"))]
     #[pyo3(signature = (path, compression, compression_level, statistics, row_group_size, data_pagesize_limit, maintain_order))]
     fn sink_parquet(
@@ -516,7 +511,6 @@ impl PyLazyFrame {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "ipc"))]
     #[pyo3(signature = (path, compression, maintain_order))]
     fn sink_ipc(
@@ -540,7 +534,6 @@ impl PyLazyFrame {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "csv"))]
     #[pyo3(signature = (path, has_header, separator, line_terminator, quote_char, batch_size, datetime_format, date_format, time_format, float_precision, null_value, quote_style, maintain_order))]
     fn sink_csv(
@@ -656,7 +649,6 @@ impl PyLazyFrame {
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn group_by_dynamic(
         &mut self,
         index_column: PyExpr,
@@ -700,7 +692,6 @@ impl PyLazyFrame {
         self.ldf.clone().with_context(contexts).into()
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "asof_join")]
     #[pyo3(signature = (other, left_on, right_on, left_by, right_by, allow_parallel, force_parallel, suffix, strategy, tolerance, tolerance_str))]
     fn join_asof(
@@ -740,7 +731,6 @@ impl PyLazyFrame {
             .into())
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn join(
         &self,
         other: Self,
@@ -926,7 +916,6 @@ impl PyLazyFrame {
     }
 
     #[pyo3(signature = (lambda, predicate_pushdown, projection_pushdown, slice_pushdown, streamable, schema, validate_output))]
-    #[allow(clippy::too_many_arguments)]
     fn map_batches(
         &self,
         lambda: PyObject,
