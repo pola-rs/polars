@@ -253,6 +253,9 @@ pub enum FunctionExpr {
     BackwardFill {
         limit: FillNullLimit,
     },
+    ForwardFill {
+        limit: FillNullLimit,
+    },
 }
 
 impl Hash for FunctionExpr {
@@ -423,6 +426,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
             BackwardFill { .. } => "backward_fill",
+            ForwardFill { .. } => "forward_fill",
         };
         write!(f, "{s}")
     }
@@ -741,6 +745,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(plugin::call_plugin, lib.as_ref(), symbol.as_ref())
             },
             BackwardFill { limit } => map!(dispatch::backward_fill, limit),
+            ForwardFill { limit } => map!(dispatch::forward_fill, limit),
         }
     }
 }

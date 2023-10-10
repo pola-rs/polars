@@ -798,11 +798,7 @@ impl Expr {
 
     /// Fill missing value with previous non-null.
     pub fn forward_fill(self, limit: FillNullLimit) -> Self {
-        self.apply(
-            move |s: Series| s.fill_null(FillNullStrategy::Forward(limit)).map(Some),
-            GetOutput::same_type(),
-        )
-        .with_fmt("forward_fill")
+        self.apply_private(FunctionExpr::ForwardFill { limit })
     }
 
     /// Round underlying floating point array to given decimal numbers.
