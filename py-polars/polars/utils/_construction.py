@@ -1448,14 +1448,15 @@ def arrow_to_pydf(
         (schema or data.column_names), schema_overrides=schema_overrides
     )
 
-    try:
-        empty_str_idx = (
-            schema.names if schema is not None else data.column_names
-        ).index("")
-        column_names[empty_str_idx] = ""
+    empty_str_idx = None
 
-    except ValueError:
-        empty_str_idx = None
+    if schema is None:
+        try:
+            empty_str_idx = data.column_names.index("")
+            column_names[empty_str_idx] = ""
+
+        except ValueError:
+            pass
 
     try:
         if column_names != data.column_names:
