@@ -1,6 +1,7 @@
 #![feature(vec_into_raw_parts)]
-#![allow(clippy::nonstandard_macro_braces)] // needed because clippy does not understand proc macro of pyo3
+#![allow(clippy::nonstandard_macro_braces)] // Needed because clippy does not understand proc macro of PyO3
 #![allow(clippy::transmute_undefined_repr)]
+#![allow(clippy::too_many_arguments)] // Python functions can have many arguments due to default arguments
 extern crate polars as polars_rs;
 
 #[cfg(feature = "build_info")]
