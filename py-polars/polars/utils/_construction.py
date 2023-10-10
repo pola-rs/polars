@@ -708,10 +708,7 @@ def _unpack_schema(
         # coerce schema to list[str | tuple[str, PolarsDataType | PythonDataType | None]
         schema = list(schema.items())
     else:
-        column_names = [
-            (col or f"column_{i}") if isinstance(col, str) else col[0]
-            for i, col in enumerate(schema)
-        ]
+        column_names = [col if isinstance(col, str) else col[0] for col in schema]
 
     # determine column dtypes from schema and lookup_names
     lookup: dict[str, str] | None = (

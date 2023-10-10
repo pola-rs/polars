@@ -1121,3 +1121,9 @@ def test_from_arrow_invalid_time_zone() -> None:
     )
     with pytest.raises(ComputeError, match=r"unable to parse time zone: '\+01:00'"):
         pl.from_arrow(arr)
+
+
+def test_empty_string_column_name_from_arrow() -> None:
+    df = pl.DataFrame(schema={"": pl.Int8, "a": pl.Int8})
+
+    assert pl.from_arrow(df.to_arrow()).schema == df.schema
