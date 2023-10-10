@@ -1,5 +1,5 @@
 """
-# --8<-- [start:bucket]
+# --8<-- [start:read_parquet]
 use aws_sdk_s3::Region;
 
 use aws_config::meta::region::RegionProviderChain;
@@ -28,5 +28,18 @@ async fn main() {
 
     println!("{:?}", df);
 }
-# --8<-- [end:bucket]
+# --8<-- [end:read_parquet]
+
+# --8<-- [start:scan_parquet]
+# --8<-- [end:scan_parquet]
+
+# --8<-- [start:scan_parquet_query]
+# --8<-- [end:scan_parquet_query]
+
+# --8<-- [start:scan_pyarrow_dataset]
+# --8<-- [end:scan_pyarrow_dataset]
+
+# --8<-- [start:write_parquet]
+# --8<-- [end:write_parquet]
+
 """

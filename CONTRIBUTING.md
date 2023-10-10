@@ -151,8 +151,65 @@ The most important components of Polars documentation are the [user guide](https
 
 ### User guide
 
-The user guide is maintained in the `docs` folder.
-Further contributing information will be added shortly.
+The user guide is maintained in the `docs/user-guide` folder. Before creating a PR first raise an issue to discuss what you feel is missing or could be improved.
+
+#### Building and serving the user guide
+
+The user guide is built using [MkDocs](https://www.mkdocs.org/). You install the dependencies for building the user guide by running `make requirements` in the root of the repo.
+
+Run `mkdocs serve` to build and serve the user guide so you can view it locally and see updates as you make changes.
+
+#### Creating a new user guide page
+
+Each user guide page is based on a `.md` markdown file. This file must be listed in `mkdocs.yml`.
+
+#### Adding a shell code block
+
+To add a code block with code to be run in a shell with tabs for Python and Rust, use the following format:
+
+````
+=== ":fontawesome-brands-python: Python"
+
+    ```shell
+    $ pip install fsspec
+    ```
+
+=== ":fontawesome-brands-rust: Rust"
+
+    ```shell
+    $ cargo add aws_sdk_s3
+    ```
+````
+
+#### Adding a code block
+
+The snippets for Python and Rust code blocks are in the `docs/src/python/` and `docs/src/rust/` directories, respectively. To add a code snippet with Python or Rust code to a `.md` page, use the following format:
+
+```
+{{code_block('user-guide/io/cloud-storage','read_parquet',[read_parquet,read_csv])}}
+```
+
+- The first argument is a path to either or both files called `docs/src/python/user-guide/io/cloud-storage.py` and `docs/src/rust/user-guide/io/cloud-storage.rs`.
+- The second argument is the name given at the start and end of each snippet in the `.py` or `.rs` file
+- The third argument is a list of links to functions in the API docs. For each element of the list there must be a corresponding entry in `docs/_build/API_REFERENCE_LINKS.yml`
+
+If the corresponding `.py` and `.rs` snippet files both exist then each snippet named in the second argument to `code_block` above must exist or the build will fail. An empty snippet should be added to the `.py` or `.rs` file if the snippet is not needed.
+
+Each snippet is formatted as follows:
+
+```python
+# --8<-- [start:read_parquet]
+import polars as pl
+
+df = pl.read_parquet("file.parquet")
+# --8<-- [end:read_parquet]
+```
+
+The snippet is delimited by `--8<-- [start:<snippet_name>]` and `--8<-- [end:<snippet_name>]`. The snippet name must match the name given in the second argument to `code_block` above.
+
+#### Linting
+
+Before committing, install `dprint` (see above) and run `dprint fmt` from the `docs` directory to lint the markdown files.
 
 ### API reference
 
