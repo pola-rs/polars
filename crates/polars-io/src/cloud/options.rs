@@ -1,6 +1,4 @@
 use std::str::FromStr;
-#[cfg(feature = "aws")]
-use std::sync::Arc;
 
 #[cfg(feature = "aws")]
 use object_store::aws::AmazonS3Builder;
@@ -32,8 +30,8 @@ use smartstring::alias::String as SmartString;
 use url::Url;
 
 #[cfg(feature = "aws")]
-static BUCKET_REGION: Lazy<Arc<tokio::sync::Mutex<FastFixedCache<SmartString, SmartString>>>> =
-    Lazy::new(|| Arc::new(tokio::sync::Mutex::new(FastFixedCache::default())));
+static BUCKET_REGION: Lazy<tokio::sync::Mutex<FastFixedCache<SmartString, SmartString>>> =
+    Lazy::new(|| tokio::sync::Mutex::new(FastFixedCache::default()));
 
 /// The type of the config keys must satisfy the following requirements:
 /// 1. must be easily collected into a HashMap, the type required by the object_crate API.
@@ -148,7 +146,7 @@ impl CloudOptions {
                 .get_config_value(&AmazonS3ConfigKey::Region)
                 .is_none()
         {
-            let mut bucket_region = BUCKET_REGION.lock().await;
+            let bucket_region = BUCKET_REGION.lock().await;
             let bucket = crate::cloud::CloudLocation::new(url)?.bucket;
 
             match bucket_region.get(bucket.as_str()) {
@@ -156,6 +154,7 @@ impl CloudOptions {
                     builder = builder.with_config(AmazonS3ConfigKey::Region, region.as_str())
                 },
                 None => {
+                    drop(bucket_region);
                     polars_warn!("'(default_)region' not set; polars will try to get it from bucket\n\nSet the region manually to silence this warning.");
                     let result = reqwest::Client::builder()
                         .build()
@@ -164,6 +163,7 @@ impl CloudOptions {
                         .send()
                         .await
                         .map_err(to_compute_err)?;
+                    let mut bucket_region = BUCKET_REGION.lock().await;
                     if let Some(region) = result.headers().get("x-amz-bucket-region") {
                         let region =
                             std::str::from_utf8(region.as_bytes()).map_err(to_compute_err)?;
