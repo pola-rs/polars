@@ -307,14 +307,14 @@ mod test {
         let s = UInt32Chunked::new("", &[None, None, None]).into_series();
         let out = rank(&s, RankMethod::Average, false, None)
             .f64()?
-            .into_no_null_iter()
+            .into_iter()
             .collect::<Vec<_>>();
-        assert_eq!(out, &[2.0f64, 2.0, 2.0]);
+        assert_eq!(out, &[None, None, None]);
         let out = rank(&s, RankMethod::Dense, false, None)
             .idx()?
-            .into_no_null_iter()
+            .into_iter()
             .collect::<Vec<_>>();
-        assert_eq!(out, &[1, 1, 1]);
+        assert_eq!(out, &[None, None, None]);
         Ok(())
     }
 
