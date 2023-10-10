@@ -18,6 +18,7 @@ mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;
 mod dispatch;
+mod ewm;
 mod fill_null;
 #[cfg(feature = "fused")]
 mod fused;
@@ -256,6 +257,18 @@ pub enum FunctionExpr {
     ForwardFill {
         limit: FillNullLimit,
     },
+    #[cfg(feature = "ewma")]
+    EwmMean {
+        options: EWMOptions,
+    },
+    #[cfg(feature = "ewma")]
+    EwmStd {
+        options: EWMOptions,
+    },
+    #[cfg(feature = "ewma")]
+    EwmVar {
+        options: EWMOptions,
+    },
     SumHorizontal,
     MaxHorizontal,
     MinHorizontal,
@@ -433,6 +446,9 @@ impl Display for FunctionExpr {
             SumHorizontal => "sum_horizontal",
             MaxHorizontal => "max_horizontal",
             MinHorizontal => "min_horizontal",
+            EwmMean { .. } => "ewm_mean",
+            EwmStd { .. } => "ewm_std",
+            EwmVar { .. } => "ewm_var",
         };
         write!(f, "{s}")
     }
@@ -752,6 +768,12 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             BackwardFill { limit } => map!(dispatch::backward_fill, limit),
             ForwardFill { limit } => map!(dispatch::forward_fill, limit),
+            #[cfg(feature = "ewma")]
+            EwmMean { options } => map!(ewm::ewm_mean, options),
+            #[cfg(feature = "ewma")]
+            EwmStd { options } => map!(ewm::ewm_std, options),
+            #[cfg(feature = "ewma")]
+            EwmVar { options } => map!(ewm::ewm_var, options),
             SumHorizontal => map_as_slice!(dispatch::sum_horizontal),
             MaxHorizontal => wrap!(dispatch::max_horizontal),
             MinHorizontal => wrap!(dispatch::min_horizontal),

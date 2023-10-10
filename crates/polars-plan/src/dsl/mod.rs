@@ -1666,43 +1666,19 @@ impl Expr {
     #[cfg(feature = "ewma")]
     /// Calculate the exponentially-weighted moving average.
     pub fn ewm_mean(self, options: EWMOptions) -> Self {
-        use DataType::*;
-        self.apply(
-            move |s| s.ewm_mean(options).map(Some),
-            GetOutput::map_dtype(|dt| match dt {
-                Float64 | Float32 => dt.clone(),
-                _ => Float64,
-            }),
-        )
-        .with_fmt("ewm_mean")
+        self.apply_private(FunctionExpr::EwmMean { options })
     }
 
     #[cfg(feature = "ewma")]
     /// Calculate the exponentially-weighted moving standard deviation.
     pub fn ewm_std(self, options: EWMOptions) -> Self {
-        use DataType::*;
-        self.apply(
-            move |s| s.ewm_std(options).map(Some),
-            GetOutput::map_dtype(|dt| match dt {
-                Float64 | Float32 => dt.clone(),
-                _ => Float64,
-            }),
-        )
-        .with_fmt("ewm_std")
+        self.apply_private(FunctionExpr::EwmStd { options })
     }
 
     #[cfg(feature = "ewma")]
     /// Calculate the exponentially-weighted moving variance.
     pub fn ewm_var(self, options: EWMOptions) -> Self {
-        use DataType::*;
-        self.apply(
-            move |s| s.ewm_var(options).map(Some),
-            GetOutput::map_dtype(|dt| match dt {
-                Float64 | Float32 => dt.clone(),
-                _ => Float64,
-            }),
-        )
-        .with_fmt("ewm_var")
+        self.apply_private(FunctionExpr::EwmVar { options })
     }
 
     /// Returns whether any of the values in the column are `true`.
