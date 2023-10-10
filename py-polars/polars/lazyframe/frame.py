@@ -1983,7 +1983,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if isinstance(path, str) and _is_supported_cloud(path):
             method_to_call = lf.sink_parquet_cloud
             arguments["path"] = path
-            arguments["cloud_options"] = list(storage_options.items()) if storage_options else None
+            arguments["cloud_options"] = (
+                list(storage_options.items()) if storage_options else None
+            )
             arguments["retries"] = retries
         else:
             method_to_call = lf.sink_parquet
