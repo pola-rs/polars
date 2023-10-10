@@ -140,10 +140,10 @@ def test_list_zip_with_logical_type() -> None:
     )
 
     df = df.with_columns(
-        pl.date_ranges(
+        pl.datetime_ranges(
             pl.col("start"), pl.col("stop"), interval="1h", eager=False, closed="left"
         ).alias("interval_1"),
-        pl.date_ranges(
+        pl.datetime_ranges(
             pl.col("start"), pl.col("stop"), interval="1h", eager=False, closed="left"
         ).alias("interval_2"),
     )
@@ -187,7 +187,7 @@ def test_when_then_edge_cases_3994() -> None:
     # this tests if lazy correctly assigns the list schema to the column aggregation
     assert (
         df.lazy()
-        .groupby(["id"])
+        .group_by(["id"])
         .agg(pl.col("type"))
         .with_columns(
             pl.when(pl.col("type").list.lengths() == 0)
@@ -201,7 +201,7 @@ def test_when_then_edge_cases_3994() -> None:
     # this tests ternary with an empty argument
     assert (
         df.filter(pl.col("id") == 42)
-        .groupby(["id"])
+        .group_by(["id"])
         .agg(pl.col("type"))
         .with_columns(
             pl.when(pl.col("type").list.lengths() == 0)

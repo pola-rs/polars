@@ -30,20 +30,22 @@ pub(crate) fn roll_backward(
         ts.second(),
         ts.timestamp_subsec_nanos(),
     )
-    .ok_or(polars_err!(
-        ComputeError:
-            format!(
-                "Could not construct time {}:{}:{}.{}",
-                ts.hour(),
-                ts.minute(),
-                ts.second(),
-                ts.timestamp_subsec_nanos()
-            )
-    ))?;
+    .ok_or_else(|| {
+        polars_err!(
+            ComputeError:
+                format!(
+                    "Could not construct time {}:{}:{}.{}",
+                    ts.hour(),
+                    ts.minute(),
+                    ts.second(),
+                    ts.timestamp_subsec_nanos()
+                )
+        )
+    })?;
     let ndt = NaiveDateTime::new(date, time);
     let t = match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => datetime_to_timestamp(localize_datetime(ndt, tz, None)?),
+        Some(tz) => datetime_to_timestamp(localize_datetime(ndt, tz, "raise")?),
         _ => datetime_to_timestamp(ndt),
     };
     Ok(t)

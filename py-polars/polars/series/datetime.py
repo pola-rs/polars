@@ -6,14 +6,13 @@ from polars.datatypes import Date
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_date, _to_python_datetime
-from polars.utils.deprecation import deprecate_renamed_parameter
 
 if TYPE_CHECKING:
     import datetime as dt
 
     from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.type_aliases import EpochTimeUnit, TimeUnit
+    from polars.type_aliases import Ambiguous, EpochTimeUnit, TimeUnit
 
 
 @expr_dispatch
@@ -25,54 +24,34 @@ class DateTimeNameSpace:
     def __init__(self, series: Series):
         self._s: PySeries = series._s
 
-    def __getitem__(self, item: int) -> dt.date | dt.datetime:
+    def __getitem__(self, item: int) -> dt.date | dt.datetime | dt.timedelta:
         s = wrap_s(self._s)
         return s[item]
 
     def min(self) -> dt.date | dt.datetime | dt.timedelta | None:
         """
-        Return minimum as python DateTime.
+        Return minimum as Python datetime.
 
         Examples
         --------
-        >>> from datetime import datetime
-        >>> date = pl.date_range(
-        ...     datetime(2001, 1, 1), datetime(2001, 1, 3), "1d", eager=True
-        ... )
-        >>> date
-        shape: (3,)
-        Series: 'date' [datetime[μs]]
-        [
-                2001-01-01 00:00:00
-                2001-01-02 00:00:00
-                2001-01-03 00:00:00
-        ]
-        >>> date.dt.min()
-        datetime.datetime(2001, 1, 1, 0, 0)
+        >>> from datetime import date
+        >>> s = pl.Series([date(2001, 1, 1), date(2001, 1, 2), date(2001, 1, 3)])
+        >>> s.dt.min()
+        datetime.date(2001, 1, 1)
 
         """
         return wrap_s(self._s).min()  # type: ignore[return-value]
 
     def max(self) -> dt.date | dt.datetime | dt.timedelta | None:
         """
-        Return maximum as python DateTime.
+        Return maximum as Python datetime.
 
         Examples
         --------
-        >>> from datetime import datetime
-        >>> date = pl.date_range(
-        ...     datetime(2001, 1, 1), datetime(2001, 1, 3), "1d", eager=True
-        ... )
-        >>> date
-        shape: (3,)
-        Series: 'date' [datetime[μs]]
-        [
-                2001-01-01 00:00:00
-                2001-01-02 00:00:00
-                2001-01-03 00:00:00
-        ]
-        >>> date.dt.max()
-        datetime.datetime(2001, 1, 3, 0, 0)
+        >>> from datetime import date
+        >>> s = pl.Series([date(2001, 1, 1), date(2001, 1, 2), date(2001, 1, 3)])
+        >>> s.dt.max()
+        datetime.date(2001, 1, 3)
 
         """
         return wrap_s(self._s).max()  # type: ignore[return-value]
@@ -84,12 +63,12 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> date = pl.date_range(
+        >>> date = pl.datetime_range(
         ...     datetime(2001, 1, 1), datetime(2001, 1, 3), "1d", eager=True
         ... )
         >>> date
         shape: (3,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2001-01-01 00:00:00
                 2001-01-02 00:00:00
@@ -105,7 +84,7 @@ class DateTimeNameSpace:
             if s.dtype == Date:
                 return _to_python_date(int(out))
             else:
-                return _to_python_datetime(int(out), s._s.time_unit())
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
         return None
 
     def mean(self) -> dt.date | dt.datetime | None:
@@ -115,18 +94,10 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> date = pl.date_range(
-        ...     datetime(2001, 1, 1), datetime(2001, 1, 3), "1d", eager=True
+        >>> s = pl.Series(
+        ...     [datetime(2001, 1, 1), datetime(2001, 1, 2), datetime(2001, 1, 3)]
         ... )
-        >>> date
-        shape: (3,)
-        Series: 'date' [datetime[μs]]
-        [
-                2001-01-01 00:00:00
-                2001-01-02 00:00:00
-                2001-01-03 00:00:00
-        ]
-        >>> date.dt.mean()
+        >>> s.dt.mean()
         datetime.datetime(2001, 1, 2, 0, 0)
 
         """
@@ -136,7 +107,7 @@ class DateTimeNameSpace:
             if s.dtype == Date:
                 return _to_python_date(int(out))
             else:
-                return _to_python_datetime(int(out), s._s.time_unit())
+                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
         return None
 
     def to_string(self, format: str) -> Series:
@@ -164,14 +135,13 @@ class DateTimeNameSpace:
         shape: (3,)
         Series: 'datetime' [str]
         [
-                "2020/03/01"
-                "2020/04/01"
-                "2020/05/01"
+            "2020/03/01"
+            "2020/04/01"
+            "2020/05/01"
         ]
 
         """
 
-    @deprecate_renamed_parameter("fmt", "format", version="0.17.12")
     def strftime(self, format: str) -> Series:
         """
         Convert a Date/Time/Datetime column into a Utf8 column with the given format.
@@ -188,6 +158,10 @@ class DateTimeNameSpace:
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
 
+        See Also
+        --------
+        to_string : The identical Series method for which ``strftime`` is an alias.
+
         Examples
         --------
         >>> from datetime import datetime
@@ -199,14 +173,10 @@ class DateTimeNameSpace:
         shape: (3,)
         Series: 'datetime' [str]
         [
-                "2020/03/01"
-                "2020/04/01"
-                "2020/05/01"
+            "2020/03/01"
+            "2020/04/01"
+            "2020/05/01"
         ]
-
-        See Also
-        --------
-        to_string : The identical Series method for which ``strftime`` is an alias.
 
         """
         return self.to_string(format)
@@ -226,18 +196,9 @@ class DateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2002, 1, 1)
-        >>> date = pl.date_range(start, stop, interval="1y", eager=True)
-        >>> date
-        shape: (2,)
-        Series: 'date' [datetime[μs]]
-        [
-                2001-01-01 00:00:00
-                2002-01-01 00:00:00
-        ]
-        >>> date.dt.year()
+        >>> from datetime import date
+        >>> s = pl.Series("date", [date(2001, 1, 1), date(2002, 1, 1)])
+        >>> s.dt.year()
         shape: (2,)
         Series: 'date' [i32]
         [
@@ -260,19 +221,11 @@ class DateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import datetime
-        >>> start = datetime(2000, 1, 1)
-        >>> stop = datetime(2002, 1, 1)
-        >>> date = pl.date_range(start, stop, interval="1y", eager=True)
-        >>> date
-        shape: (3,)
-        Series: 'date' [datetime[μs]]
-        [
-                2000-01-01 00:00:00
-                2001-01-01 00:00:00
-                2002-01-01 00:00:00
-        ]
-        >>> date.dt.is_leap_year()
+        >>> from datetime import date
+        >>> s = pl.Series(
+        ...     "date", [date(2000, 1, 1), date(2001, 1, 1), date(2002, 1, 1)]
+        ... )
+        >>> s.dt.is_leap_year()
         shape: (3,)
         Series: 'date' [bool]
         [
@@ -325,19 +278,10 @@ class DateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 4, 1)
-        >>> date = pl.date_range(start, stop, interval="1mo", eager=True)
-        >>> date
-        shape: (4,)
-        Series: 'date' [datetime[μs]]
-        [
-                2001-01-01 00:00:00
-                2001-02-01 00:00:00
-                2001-03-01 00:00:00
-                2001-04-01 00:00:00
-        ]
+        >>> from datetime import date
+        >>> date = pl.date_range(
+        ...     date(2001, 1, 1), date(2001, 4, 1), interval="1mo", eager=True
+        ... )
         >>> date.dt.quarter()
         shape: (4,)
         Series: 'date' [u32]
@@ -366,19 +310,10 @@ class DateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 4, 1)
-        >>> date = pl.date_range(start, stop, interval="1mo", eager=True)
-        >>> date
-        shape: (4,)
-        Series: 'date' [datetime[μs]]
-        [
-                2001-01-01 00:00:00
-                2001-02-01 00:00:00
-                2001-03-01 00:00:00
-                2001-04-01 00:00:00
-        ]
+        >>> from datetime import date
+        >>> date = pl.date_range(
+        ...     date(2001, 1, 1), date(2001, 4, 1), interval="1mo", eager=True
+        ... )
         >>> date.dt.month()
         shape: (4,)
         Series: 'date' [u32]
@@ -407,19 +342,10 @@ class DateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 4, 1)
-        >>> date = pl.date_range(start, stop, interval="1mo", eager=True)
-        >>> date
-        shape: (4,)
-        Series: 'date' [datetime[μs]]
-        [
-                2001-01-01 00:00:00
-                2001-02-01 00:00:00
-                2001-03-01 00:00:00
-                2001-04-01 00:00:00
-        ]
+        >>> from datetime import date
+        >>> date = pl.date_range(
+        ...     date(2001, 1, 1), date(2001, 4, 1), interval="1mo", eager=True
+        ... )
         >>> date.dt.week()
         shape: (4,)
         Series: 'date' [u32]
@@ -447,23 +373,9 @@ class DateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 7)
-        >>> date = pl.date_range(start, stop, interval="1d", eager=True)
-        >>> date
-        shape: (7,)
-        Series: 'date' [datetime[μs]]
-        [
-                2001-01-01 00:00:00
-                2001-01-02 00:00:00
-                2001-01-03 00:00:00
-                2001-01-04 00:00:00
-                2001-01-05 00:00:00
-                2001-01-06 00:00:00
-                2001-01-07 00:00:00
-        ]
-        >>> date.dt.weekday()
+        >>> from datetime import date
+        >>> s = pl.date_range(date(2001, 1, 1), date(2001, 1, 7), eager=True)
+        >>> s.dt.weekday()
         shape: (7,)
         Series: 'date' [u32]
         [
@@ -494,21 +406,11 @@ class DateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 9)
-        >>> date = pl.date_range(start, stop, interval="2d", eager=True)
-        >>> date
-        shape: (5,)
-        Series: 'date' [datetime[μs]]
-        [
-                2001-01-01 00:00:00
-                2001-01-03 00:00:00
-                2001-01-05 00:00:00
-                2001-01-07 00:00:00
-                2001-01-09 00:00:00
-        ]
-        >>> date.dt.day()
+        >>> from datetime import date
+        >>> s = pl.date_range(
+        ...     date(2001, 1, 1), date(2001, 1, 9), interval="2d", eager=True
+        ... )
+        >>> s.dt.day()
         shape: (5,)
         Series: 'date' [u32]
         [
@@ -537,19 +439,11 @@ class DateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 3, 1)
-        >>> date = pl.date_range(start, stop, interval="1mo", eager=True)
-        >>> date
-        shape: (3,)
-        Series: 'date' [datetime[μs]]
-        [
-                2001-01-01 00:00:00
-                2001-02-01 00:00:00
-                2001-03-01 00:00:00
-        ]
-        >>> date.dt.ordinal_day()
+        >>> from datetime import date
+        >>> s = pl.date_range(
+        ...     date(2001, 1, 1), date(2001, 3, 1), interval="1mo", eager=True
+        ... )
+        >>> s.dt.ordinal_day()
         shape: (3,)
         Series: 'date' [u32]
         [
@@ -671,10 +565,10 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 3)
-        >>> date = pl.date_range(start, stop, interval="1h", eager=True)
+        >>> date = pl.datetime_range(start, stop, interval="1h", eager=True)
         >>> date
         shape: (4,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2001-01-01 00:00:00
                 2001-01-01 01:00:00
@@ -683,7 +577,7 @@ class DateTimeNameSpace:
         ]
         >>> date.dt.hour()
         shape: (4,)
-        Series: 'date' [u32]
+        Series: 'datetime' [u32]
         [
                 0
                 1
@@ -711,10 +605,10 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 0, 4, 0)
-        >>> date = pl.date_range(start, stop, interval="2m", eager=True)
+        >>> date = pl.datetime_range(start, stop, interval="2m", eager=True)
         >>> date
         shape: (3,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2001-01-01 00:00:00
                 2001-01-01 00:02:00
@@ -722,7 +616,7 @@ class DateTimeNameSpace:
         ]
         >>> date.dt.minute()
         shape: (3,)
-        Series: 'date' [u32]
+        Series: 'datetime' [u32]
         [
                 0
                 2
@@ -754,50 +648,29 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 1, 0, 0, 4)
-        >>> date = pl.date_range(start, stop, interval="500ms", eager=True)
-        >>> date
-        shape: (9,)
-        Series: 'date' [datetime[μs]]
-        [
-                2001-01-01 00:00:00
-                2001-01-01 00:00:00.500
-                2001-01-01 00:00:01
-                2001-01-01 00:00:01.500
-                2001-01-01 00:00:02
-                2001-01-01 00:00:02.500
-                2001-01-01 00:00:03
-                2001-01-01 00:00:03.500
-                2001-01-01 00:00:04
-        ]
-        >>> date.dt.second()
-        shape: (9,)
-        Series: 'date' [u32]
+        >>> s = pl.Series(
+        ...     "datetime",
+        ...     [
+        ...         datetime(2000, 1, 1, 0, 0, 0, 456789),
+        ...         datetime(2000, 1, 1, 0, 0, 3, 111110),
+        ...         datetime(2000, 1, 1, 0, 0, 5, 765431),
+        ...     ],
+        ... )
+        >>> s.dt.second()
+        shape: (3,)
+        Series: 'datetime' [u32]
         [
                 0
-                0
-                1
-                1
-                2
-                2
                 3
-                3
-                4
+                5
         ]
-        >>> date.dt.second(fractional=True)
-        shape: (9,)
-        Series: 'date' [f64]
+        >>> s.dt.second(fractional=True)
+        shape: (3,)
+        Series: 'datetime' [f64]
         [
-                0.0
-                0.5
-                1.0
-                1.5
-                2.0
-                2.5
-                3.0
-                3.5
-                4.0
+                0.456789
+                3.11111
+                5.765431
         ]
 
         """
@@ -818,24 +691,10 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 0, 0, 4)
-        >>> date = pl.date_range(start, stop, interval="500ms", eager=True)
-        >>> date
+        >>> s = pl.datetime_range(start, stop, interval="500ms", eager=True)
+        >>> s.dt.millisecond()
         shape: (9,)
-        Series: 'date' [datetime[μs]]
-        [
-                2001-01-01 00:00:00
-                2001-01-01 00:00:00.500
-                2001-01-01 00:00:01
-                2001-01-01 00:00:01.500
-                2001-01-01 00:00:02
-                2001-01-01 00:00:02.500
-                2001-01-01 00:00:03
-                2001-01-01 00:00:03.500
-                2001-01-01 00:00:04
-        ]
-        >>> date.dt.millisecond()
-        shape: (9,)
-        Series: 'date' [u32]
+        Series: 'datetime' [u32]
         [
                 0
                 500
@@ -866,10 +725,10 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 0, 0, 4)
-        >>> date = pl.date_range(start, stop, interval="500ms", eager=True)
+        >>> date = pl.datetime_range(start, stop, interval="500ms", eager=True)
         >>> date
         shape: (9,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2001-01-01 00:00:00
                 2001-01-01 00:00:00.500
@@ -883,7 +742,7 @@ class DateTimeNameSpace:
         ]
         >>> date.dt.microsecond()
         shape: (9,)
-        Series: 'date' [u32]
+        Series: 'datetime' [u32]
         [
                 0
                 500000
@@ -914,10 +773,10 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 0, 0, 4)
-        >>> date = pl.date_range(start, stop, interval="500ms", eager=True)
+        >>> date = pl.datetime_range(start, stop, interval="500ms", eager=True)
         >>> date
         shape: (9,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2001-01-01 00:00:00
                 2001-01-01 00:00:00.500
@@ -931,7 +790,7 @@ class DateTimeNameSpace:
         ]
         >>> date.dt.nanosecond()
         shape: (9,)
-        Series: 'date' [u32]
+        Series: 'datetime' [u32]
         [
                 0
                 500000000
@@ -960,10 +819,10 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 3)
-        >>> date = pl.date_range(start, stop, interval="1d", eager=True)
+        >>> date = pl.datetime_range(start, stop, interval="1d", eager=True)
         >>> date
         shape: (3,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2001-01-01 00:00:00
                 2001-01-02 00:00:00
@@ -1002,10 +861,10 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 3)
-        >>> date = pl.date_range(start, stop, interval="1d", eager=True)
+        >>> date = pl.datetime_range(start, stop, interval="1d", eager=True)
         >>> date
         shape: (3,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2001-01-01 00:00:00
                 2001-01-02 00:00:00
@@ -1045,20 +904,14 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 3)
-        >>> date = pl.date_range(start, stop, "1d", time_unit="ns", eager=True)
-        >>> date
+        >>> s = pl.Series(
+        ...     "datetime",
+        ...     [datetime(2001, 1, 1), datetime(2001, 1, 2), datetime(2001, 1, 3)],
+        ...     dtype=pl.Datetime(time_unit="ns"),
+        ... )
+        >>> s.dt.with_time_unit("us")
         shape: (3,)
-        Series: 'date' [datetime[ns]]
-        [
-                2001-01-01 00:00:00
-                2001-01-02 00:00:00
-                2001-01-03 00:00:00
-        ]
-        >>> date.dt.with_time_unit("us").alias("time_unit_us")
-        shape: (3,)
-        Series: 'time_unit_us' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 +32971-04-28 00:00:00
                 +32974-01-22 00:00:00
@@ -1081,10 +934,10 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 3)
-        >>> date = pl.date_range(start, stop, "1d", eager=True)
+        >>> date = pl.datetime_range(start, stop, "1d", eager=True)
         >>> date
         shape: (3,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2001-01-01 00:00:00
                 2001-01-02 00:00:00
@@ -1123,10 +976,10 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2020, 3, 1)
         >>> stop = datetime(2020, 5, 1)
-        >>> date = pl.date_range(start, stop, "1mo", time_zone="UTC", eager=True)
+        >>> date = pl.datetime_range(start, stop, "1mo", time_zone="UTC", eager=True)
         >>> date
         shape: (3,)
-        Series: 'date' [datetime[μs, UTC]]
+        Series: 'datetime' [datetime[μs, UTC]]
         [
                 2020-03-01 00:00:00 UTC
                 2020-04-01 00:00:00 UTC
@@ -1144,7 +997,11 @@ class DateTimeNameSpace:
         """
 
     def replace_time_zone(
-        self, time_zone: str | None, *, use_earliest: bool | None = None
+        self,
+        time_zone: str | None,
+        *,
+        use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Replace time zone for a Series of type Datetime.
@@ -1163,12 +1020,21 @@ class DateTimeNameSpace:
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
 
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
+
         Examples
         --------
         >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
-        ...         "london_timezone": pl.date_range(
+        ...         "london_timezone": pl.datetime_range(
         ...             datetime(2020, 3, 1),
         ...             datetime(2020, 7, 1),
         ...             "1mo",
@@ -1205,39 +1071,29 @@ class DateTimeNameSpace:
         ...     "2018-10-28 02:00",
         ...     "2018-10-28 02:30",
         ...     "2018-10-28 02:00",
-        ...     "2018-10-28 02:30",
         ... ]
         >>> df = pl.DataFrame(
         ...     {
         ...         "ts": pl.Series(dates).str.strptime(pl.Datetime),
-        ...         "DST": [True, True, True, False, False],
+        ...         "ambiguous": ["earliest", "earliest", "earliest", "latest"],
         ...     }
         ... )
         >>> df.with_columns(
-        ...     ts_localized=pl.when(pl.col("DST"))
-        ...     .then(
-        ...         pl.col("ts").dt.replace_time_zone(
-        ...             "Europe/Brussels", use_earliest=True
-        ...         )
-        ...     )
-        ...     .otherwise(
-        ...         pl.col("ts").dt.replace_time_zone(
-        ...             "Europe/Brussels", use_earliest=False
-        ...         )
+        ...     ts_localized=pl.col("ts").dt.replace_time_zone(
+        ...         "Europe/Brussels", ambiguous=pl.col("ambiguous")
         ...     )
         ... )
-        shape: (5, 3)
-        ┌─────────────────────┬───────┬───────────────────────────────┐
-        │ ts                  ┆ DST   ┆ ts_localized                  │
-        │ ---                 ┆ ---   ┆ ---                           │
-        │ datetime[μs]        ┆ bool  ┆ datetime[μs, Europe/Brussels] │
-        ╞═════════════════════╪═══════╪═══════════════════════════════╡
-        │ 2018-10-28 01:30:00 ┆ true  ┆ 2018-10-28 01:30:00 CEST      │
-        │ 2018-10-28 02:00:00 ┆ true  ┆ 2018-10-28 02:00:00 CEST      │
-        │ 2018-10-28 02:30:00 ┆ true  ┆ 2018-10-28 02:30:00 CEST      │
-        │ 2018-10-28 02:00:00 ┆ false ┆ 2018-10-28 02:00:00 CET       │
-        │ 2018-10-28 02:30:00 ┆ false ┆ 2018-10-28 02:30:00 CET       │
-        └─────────────────────┴───────┴───────────────────────────────┘
+        shape: (4, 3)
+        ┌─────────────────────┬───────────┬───────────────────────────────┐
+        │ ts                  ┆ ambiguous ┆ ts_localized                  │
+        │ ---                 ┆ ---       ┆ ---                           │
+        │ datetime[μs]        ┆ str       ┆ datetime[μs, Europe/Brussels] │
+        ╞═════════════════════╪═══════════╪═══════════════════════════════╡
+        │ 2018-10-28 01:30:00 ┆ earliest  ┆ 2018-10-28 01:30:00 CEST      │
+        │ 2018-10-28 02:00:00 ┆ earliest  ┆ 2018-10-28 02:00:00 CEST      │
+        │ 2018-10-28 02:30:00 ┆ earliest  ┆ 2018-10-28 02:30:00 CEST      │
+        │ 2018-10-28 02:00:00 ┆ latest    ┆ 2018-10-28 02:00:00 CET       │
+        └─────────────────────┴───────────┴───────────────────────────────┘
 
         """
 
@@ -1253,12 +1109,12 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> date = pl.date_range(
+        >>> date = pl.datetime_range(
         ...     datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo", eager=True
         ... )
         >>> date
         shape: (3,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2020-03-01 00:00:00
                 2020-04-01 00:00:00
@@ -1266,7 +1122,7 @@ class DateTimeNameSpace:
         ]
         >>> date.diff().dt.days()
         shape: (3,)
-        Series: 'date' [i64]
+        Series: 'datetime' [i64]
         [
                 null
                 31
@@ -1287,12 +1143,12 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> date = pl.date_range(
+        >>> date = pl.datetime_range(
         ...     datetime(2020, 1, 1), datetime(2020, 1, 4), "1d", eager=True
         ... )
         >>> date
         shape: (4,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2020-01-01 00:00:00
                 2020-01-02 00:00:00
@@ -1301,7 +1157,7 @@ class DateTimeNameSpace:
         ]
         >>> date.diff().dt.hours()
         shape: (4,)
-        Series: 'date' [i64]
+        Series: 'datetime' [i64]
         [
                 null
                 24
@@ -1323,12 +1179,12 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> date = pl.date_range(
+        >>> date = pl.datetime_range(
         ...     datetime(2020, 1, 1), datetime(2020, 1, 4), "1d", eager=True
         ... )
         >>> date
         shape: (4,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2020-01-01 00:00:00
                 2020-01-02 00:00:00
@@ -1337,7 +1193,7 @@ class DateTimeNameSpace:
         ]
         >>> date.diff().dt.minutes()
         shape: (4,)
-        Series: 'date' [i64]
+        Series: 'datetime' [i64]
         [
                 null
                 1440
@@ -1359,12 +1215,12 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> date = pl.date_range(
+        >>> date = pl.datetime_range(
         ...     datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 4, 0), "1m", eager=True
         ... )
         >>> date
         shape: (5,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2020-01-01 00:00:00
                 2020-01-01 00:01:00
@@ -1374,7 +1230,7 @@ class DateTimeNameSpace:
         ]
         >>> date.diff().dt.seconds()
         shape: (5,)
-        Series: 'date' [i64]
+        Series: 'datetime' [i64]
         [
                 null
                 60
@@ -1397,7 +1253,7 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> date = pl.date_range(
+        >>> date = pl.datetime_range(
         ...     datetime(2020, 1, 1),
         ...     datetime(2020, 1, 1, 0, 0, 1, 0),
         ...     "1ms",
@@ -1405,7 +1261,7 @@ class DateTimeNameSpace:
         ... )[:3]
         >>> date
         shape: (3,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2020-01-01 00:00:00
                 2020-01-01 00:00:00.001
@@ -1413,7 +1269,7 @@ class DateTimeNameSpace:
         ]
         >>> date.diff().dt.milliseconds()
         shape: (3,)
-        Series: 'date' [i64]
+        Series: 'datetime' [i64]
         [
                 null
                 1
@@ -1434,7 +1290,7 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> date = pl.date_range(
+        >>> date = pl.datetime_range(
         ...     datetime(2020, 1, 1),
         ...     datetime(2020, 1, 1, 0, 0, 1, 0),
         ...     "1ms",
@@ -1442,7 +1298,7 @@ class DateTimeNameSpace:
         ... )[:3]
         >>> date
         shape: (3,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2020-01-01 00:00:00
                 2020-01-01 00:00:00.001
@@ -1450,7 +1306,7 @@ class DateTimeNameSpace:
         ]
         >>> date.diff().dt.microseconds()
         shape: (3,)
-        Series: 'date' [i64]
+        Series: 'datetime' [i64]
         [
                 null
                 1000
@@ -1471,7 +1327,7 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> date = pl.date_range(
+        >>> date = pl.datetime_range(
         ...     datetime(2020, 1, 1),
         ...     datetime(2020, 1, 1, 0, 0, 1, 0),
         ...     "1ms",
@@ -1479,7 +1335,7 @@ class DateTimeNameSpace:
         ... )[:3]
         >>> date
         shape: (3,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2020-01-01 00:00:00
                 2020-01-01 00:00:00.001
@@ -1487,7 +1343,7 @@ class DateTimeNameSpace:
         ]
         >>> date.diff().dt.nanoseconds()
         shape: (3,)
-        Series: 'date' [i64]
+        Series: 'datetime' [i64]
         [
                 null
                 1000000
@@ -1496,7 +1352,7 @@ class DateTimeNameSpace:
 
         """
 
-    def offset_by(self, by: str) -> Series:
+    def offset_by(self, by: str | Expr) -> Series:
         """
         Offset this date by a relative time offset.
 
@@ -1539,12 +1395,12 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> dates = pl.date_range(
+        >>> dates = pl.datetime_range(
         ...     datetime(2000, 1, 1), datetime(2005, 1, 1), "1y", eager=True
         ... )
         >>> dates
         shape: (6,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2000-01-01 00:00:00
                 2001-01-01 00:00:00
@@ -1575,28 +1431,15 @@ class DateTimeNameSpace:
                 2002-11-01 00:00:00
                 2003-11-01 00:00:00
         ]
-
-        To get to the end of each month, combine with `truncate`:
-
-        >>> dates.dt.truncate("1mo").dt.offset_by("1mo").dt.offset_by("-1d")
-        shape: (6,)
-        Series: 'date' [datetime[μs]]
-        [
-                2000-01-31 00:00:00
-                2001-01-31 00:00:00
-                2002-01-31 00:00:00
-                2003-01-31 00:00:00
-                2004-01-31 00:00:00
-                2005-01-31 00:00:00
-        ]
         """
 
     def truncate(
         self,
-        every: str | dt.timedelta,
+        every: str | dt.timedelta | Expr,
         offset: str | dt.timedelta | None = None,
         *,
         use_earliest: bool | None = None,
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Divide the date/ datetime range into buckets.
@@ -1617,22 +1460,31 @@ class DateTimeNameSpace:
             - ``True``: use the earliest datetime
             - ``False``: use the latest datetime
 
+            .. deprecated:: 0.19.0
+                Use `ambiguous` instead
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
+
         Notes
         -----
         The ``every`` and ``offset`` argument are created with the
         the following string language:
 
-        - 1ns # 1 nanosecond
-        - 1us # 1 microsecond
-        - 1ms # 1 millisecond
-        - 1s  # 1 second
-        - 1m  # 1 minute
-        - 1h  # 1 hour
-        - 1d  # 1 calendar day
-        - 1w  # 1 calendar week
-        - 1mo # 1 calendar month
-        - 1q  # 1 calendar quarter
-        - 1y  # 1 calendar year
+        - 1ns   (1 nanosecond)
+        - 1us   (1 microsecond)
+        - 1ms   (1 millisecond)
+        - 1s    (1 second)
+        - 1m    (1 minute)
+        - 1h    (1 hour)
+        - 1d    (1 calendar day)
+        - 1w    (1 calendar week)
+        - 1mo   (1 calendar month)
+        - 1q    (1 calendar quarter)
+        - 1y    (1 calendar year)
 
         These strings can be combined:
 
@@ -1654,12 +1506,15 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import timedelta, datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 2)
-        >>> s = pl.date_range(start, stop, timedelta(minutes=165), eager=True)
+        >>> s = pl.datetime_range(
+        ...     datetime(2001, 1, 1),
+        ...     datetime(2001, 1, 2),
+        ...     timedelta(minutes=165),
+        ...     eager=True,
+        ... )
         >>> s
         shape: (9,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
             2001-01-01 00:00:00
             2001-01-01 02:45:00
@@ -1673,7 +1528,7 @@ class DateTimeNameSpace:
         ]
         >>> s.dt.truncate("1h")
         shape: (9,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
             2001-01-01 00:00:00
             2001-01-01 02:00:00
@@ -1685,15 +1540,13 @@ class DateTimeNameSpace:
             2001-01-01 19:00:00
             2001-01-01 22:00:00
         ]
-        >>> s.dt.truncate("1h").series_equal(s.dt.truncate(timedelta(hours=1)))
-        True
 
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 1, 1)
-        >>> s = pl.date_range(start, stop, "10m", eager=True)
+        >>> s = pl.datetime_range(
+        ...     datetime(2001, 1, 1), datetime(2001, 1, 1, 1), "10m", eager=True
+        ... )
         >>> s
         shape: (7,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2001-01-01 00:00:00
                 2001-01-01 00:10:00
@@ -1705,7 +1558,7 @@ class DateTimeNameSpace:
         ]
         >>> s.dt.truncate("30m")
         shape: (7,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2001-01-01 00:00:00
                 2001-01-01 00:00:00
@@ -1720,16 +1573,16 @@ class DateTimeNameSpace:
         `use_earliest` and combine with :func:`~polars.Series.dt.dst_offset`
         and :func:`~polars.when`:
 
-        >>> ser = pl.date_range(
+        >>> s = pl.datetime_range(
         ...     datetime(2020, 10, 25, 0),
         ...     datetime(2020, 10, 25, 2),
         ...     "30m",
         ...     eager=True,
         ...     time_zone="Europe/London",
         ... ).dt.offset_by("15m")
-        >>> ser
+        >>> s
         shape: (7,)
-        Series: 'date' [datetime[μs, Europe/London]]
+        Series: 'datetime' [datetime[μs, Europe/London]]
         [
                 2020-10-25 00:15:00 BST
                 2020-10-25 00:45:00 BST
@@ -1739,14 +1592,16 @@ class DateTimeNameSpace:
                 2020-10-25 01:45:00 GMT
                 2020-10-25 02:15:00 GMT
         ]
-
-        >>> pl.select(
-        ...     pl.when(ser.dt.dst_offset() == pl.duration(hours=1))
-        ...     .then(ser.dt.truncate("30m", use_earliest=True))
-        ...     .otherwise(ser.dt.truncate("30m", use_earliest=False))
-        ... )["date"]
+        >>> (
+        ...     s.dt.truncate(
+        ...         "30m",
+        ...         ambiguous=(s.dt.dst_offset() == pl.duration(hours=1)).map_dict(
+        ...             {True: "earliest", False: "latest"}
+        ...         ),
+        ...     )
+        ... )
         shape: (7,)
-        Series: 'date' [datetime[μs, Europe/London]]
+        Series: 'datetime' [datetime[μs, Europe/London]]
         [
                 2020-10-25 00:00:00 BST
                 2020-10-25 00:30:00 BST
@@ -1762,6 +1617,8 @@ class DateTimeNameSpace:
         self,
         every: str | dt.timedelta,
         offset: str | dt.timedelta | None = None,
+        *,
+        ambiguous: Ambiguous | Series = "raise",
     ) -> Series:
         """
         Divide the date/ datetime range into buckets.
@@ -1774,17 +1631,17 @@ class DateTimeNameSpace:
         The `every` and `offset` argument are created with the
         the following string language:
 
-        - 1ns # 1 nanosecond
-        - 1us # 1 microsecond
-        - 1ms # 1 millisecond
-        - 1s  # 1 second
-        - 1m  # 1 minute
-        - 1h  # 1 hour
-        - 1d  # 1 calendar day
-        - 1w  # 1 calendar week
-        - 1mo # 1 calendar month
-        - 1q  # 1 calendar quarter
-        - 1y  # 1 calendar year
+        - 1ns   (1 nanosecond)
+        - 1us   (1 microsecond)
+        - 1ms   (1 millisecond)
+        - 1s    (1 second)
+        - 1m    (1 minute)
+        - 1h    (1 hour)
+        - 1d    (1 calendar day)
+        - 1w    (1 calendar week)
+        - 1mo   (1 calendar month)
+        - 1q    (1 calendar quarter)
+        - 1y    (1 calendar year)
 
         These strings can be combined:
 
@@ -1804,6 +1661,12 @@ class DateTimeNameSpace:
             Every interval start and period length
         offset
             Offset the window
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - ``'raise'`` (default): raise
+            - ``'earliest'``: use the earliest datetime
+            - ``'latest'``: use the latest datetime
 
         Returns
         -------
@@ -1820,10 +1683,10 @@ class DateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
-        >>> s = pl.date_range(start, stop, timedelta(minutes=165), eager=True)
+        >>> s = pl.datetime_range(start, stop, timedelta(minutes=165), eager=True)
         >>> s
         shape: (9,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
             2001-01-01 00:00:00
             2001-01-01 02:45:00
@@ -1837,7 +1700,7 @@ class DateTimeNameSpace:
         ]
         >>> s.dt.round("1h")
         shape: (9,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
             2001-01-01 00:00:00
             2001-01-01 03:00:00
@@ -1854,10 +1717,10 @@ class DateTimeNameSpace:
 
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 1)
-        >>> s = pl.date_range(start, stop, "10m", eager=True)
+        >>> s = pl.datetime_range(start, stop, "10m", eager=True)
         >>> s.dt.round("30m")
         shape: (7,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2001-01-01 00:00:00
                 2001-01-01 00:00:00
@@ -1918,12 +1781,12 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> s = pl.date_range(
+        >>> s = pl.datetime_range(
         ...     datetime(2000, 1, 2, 2), datetime(2000, 4, 2, 2), "1mo", eager=True
         ... )
         >>> s.dt.month_start()
         shape: (4,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2000-01-01 02:00:00
                 2000-02-01 02:00:00
@@ -1949,12 +1812,12 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> s = pl.date_range(
+        >>> s = pl.datetime_range(
         ...     datetime(2000, 1, 2, 2), datetime(2000, 4, 2, 2), "1mo", eager=True
         ... )
         >>> s.dt.month_end()
         shape: (4,)
-        Series: 'date' [datetime[μs]]
+        Series: 'datetime' [datetime[μs]]
         [
                 2000-01-31 02:00:00
                 2000-02-29 02:00:00
@@ -1983,23 +1846,23 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> ser = pl.date_range(
+        >>> s = pl.datetime_range(
         ...     datetime(2011, 12, 29),
         ...     datetime(2012, 1, 1),
         ...     "2d",
         ...     time_zone="Pacific/Apia",
         ...     eager=True,
         ... )
-        >>> ser
+        >>> s
         shape: (2,)
-        Series: 'date' [datetime[μs, Pacific/Apia]]
+        Series: 'datetime' [datetime[μs, Pacific/Apia]]
         [
                 2011-12-29 00:00:00 -10
                 2011-12-31 00:00:00 +14
         ]
-        >>> ser.dt.base_utc_offset().rename("base_utc_offset")
+        >>> s.dt.base_utc_offset()
         shape: (2,)
-        Series: 'base_utc_offset' [duration[ms]]
+        Series: 'datetime' [duration[ms]]
         [
                 -11h
                 13h
@@ -2022,24 +1885,25 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> ser = pl.date_range(
+        >>> s = pl.datetime_range(
         ...     datetime(2020, 10, 25),
         ...     datetime(2020, 10, 26),
         ...     time_zone="Europe/London",
         ...     eager=True,
         ... )
-        >>> ser
+        >>> s
         shape: (2,)
-        Series: 'date' [datetime[μs, Europe/London]]
+        Series: 'datetime' [datetime[μs, Europe/London]]
         [
                 2020-10-25 00:00:00 BST
                 2020-10-26 00:00:00 GMT
         ]
-        >>> ser.dt.dst_offset().rename("dst_offset")
+        >>> s.dt.dst_offset()
         shape: (2,)
-        Series: 'dst_offset' [duration[ms]]
+        Series: 'datetime' [duration[ms]]
         [
                 1h
                 0ms
         ]
+
         """

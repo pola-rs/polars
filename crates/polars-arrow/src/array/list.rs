@@ -32,7 +32,7 @@ impl<'a> AnonymousBuilder<'a> {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.arrays.is_empty()
+        self.offsets.len() == 1
     }
 
     pub fn offsets(&self) -> &[i64] {

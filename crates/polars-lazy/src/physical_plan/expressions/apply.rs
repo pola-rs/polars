@@ -1,13 +1,11 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use polars_core::frame::groupby::GroupsProxy;
+use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 #[cfg(feature = "parquet")]
-use polars_io::parquet::predicates::BatchStats;
-#[cfg(feature = "parquet")]
-use polars_io::predicates::StatsEvaluator;
+use polars_io::predicates::{BatchStats, StatsEvaluator};
 #[cfg(feature = "parquet")]
 use polars_plan::dsl::FunctionExpr;
 use rayon::prelude::*;
@@ -89,14 +87,14 @@ impl ApplyExpr {
         }
     }
 
-    /// evaluates and flattens `Option<Series>` to `Series`.
+    /// Evaluates and flattens `Option<Series>` to `Series`.
     fn eval_and_flatten(&self, inputs: &mut [Series]) -> PolarsResult<Series> {
-        self.function.call_udf(inputs).map(|opt_out| {
-            opt_out.unwrap_or_else(|| {
-                let field = self.to_field(self.input_schema.as_ref().unwrap()).unwrap();
-                Series::full_null(field.name(), 1, field.data_type())
-            })
-        })
+        if let Some(out) = self.function.call_udf(inputs)? {
+            Ok(out)
+        } else {
+            let field = self.to_field(self.input_schema.as_ref().unwrap()).unwrap();
+            Ok(Series::full_null(field.name(), 1, field.data_type()))
+        }
     }
     fn apply_single_group_aware<'a>(
         &self,
@@ -112,14 +110,11 @@ impl ApplyExpr {
 
         let name = s.name().to_string();
         let agg = ac.aggregated();
-        // collection of empty list leads to a null dtype
-        // see: #3687
+        // Collection of empty list leads to a null dtype. See: #3687.
         if agg.len() == 0 {
-            // create input for the function to determine the output dtype
-            // see #3946
+            // Create input for the function to determine the output dtype, see #3946.
             let agg = agg.list().unwrap();
             let input_dtype = agg.inner_dtype();
-
             let input = Series::full_null("", 0, &input_dtype);
 
             let output = self.eval_and_flatten(&mut [input])?;
@@ -133,12 +128,11 @@ impl ApplyExpr {
                 if self.pass_name_to_apply {
                     s.rename(&name);
                 }
-                let mut container = [s];
-                self.function.call_udf(&mut container)
+                self.function.call_udf(&mut [s])
             },
         };
 
-        let mut ca: ListChunked = if self.allow_threading {
+        let ca: ListChunked = if self.allow_threading {
             POOL.install(|| {
                 agg.list()
                     .unwrap()
@@ -154,11 +148,10 @@ impl ApplyExpr {
                 .collect::<PolarsResult<_>>()?
         };
 
-        ca.rename(&name);
-        self.finish_apply_groups(ac, ca)
+        self.finish_apply_groups(ac, ca.with_name(&name))
     }
 
-    /// Apply elementwise e.g. ignore the group/list indices
+    /// Apply elementwise e.g. ignore the group/list indices.
     fn apply_single_elementwise<'a>(
         &self,
         mut ac: AggregationContext<'a>,
@@ -189,27 +182,29 @@ impl ApplyExpr {
         let schema = self.get_input_schema(df);
         let field = self.to_field(&schema)?;
 
-        // aggregate representation of the aggregation contexts
+        // Aggregate representation of the aggregation contexts,
         // then unpack the lists and finally create iterators from this list chunked arrays.
         let mut iters = acs
             .iter_mut()
-            .map(|ac| ac.iter_groups(self.pass_name_to_apply))
+            .map(|ac|
+                // SAFETY: unstable series never lives longer than the iterator.
+                unsafe { ac.iter_groups(self.pass_name_to_apply) })
             .collect::<Vec<_>>();
 
-        // length of the items to iterate over
+        // Length of the items to iterate over.
         let len = iters[0].size_hint().0;
 
         if len == 0 {
             let out = Series::full_null(field.name(), 0, &field.dtype);
-
             drop(iters);
-            // take the first aggregation context that as that is the input series
+
+            // Take the first aggregation context that as that is the input series.
             let mut ac = acs.swap_remove(0);
             ac.with_series(out, true, Some(&self.expr))?;
             return Ok(ac);
         }
 
-        let mut ca: ListChunked = (0..len)
+        let ca = (0..len)
             .map(|_| {
                 container.clear();
                 for iter in &mut iters {
@@ -220,12 +215,12 @@ impl ApplyExpr {
                 }
                 self.function.call_udf(&mut container)
             })
-            .collect::<PolarsResult<_>>()?;
+            .collect::<PolarsResult<ListChunked>>()?
+            .with_name(&field.name);
 
-        ca.rename(&field.name);
         drop(iters);
 
-        // take the first aggregation context that as that is the input series
+        // Take the first aggregation context that as that is the input series.
         let ac = acs.swap_remove(0);
         self.finish_apply_groups(ac, ca)
     }
@@ -266,15 +261,13 @@ impl PhysicalExpr for ApplyExpr {
         }?;
 
         if self.allow_rename {
-            return self.eval_and_flatten(&mut inputs);
+            self.eval_and_flatten(&mut inputs)
+        } else {
+            let in_name = inputs[0].name().to_string();
+            Ok(self.eval_and_flatten(&mut inputs)?.with_name(&in_name))
         }
-        let in_name = inputs[0].name().to_string();
-        let mut out = self.eval_and_flatten(&mut inputs)?;
-        if in_name != out.name() {
-            out.rename(&in_name);
-        }
-        Ok(out)
     }
+
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
@@ -285,7 +278,7 @@ impl PhysicalExpr for ApplyExpr {
         polars_ensure!(
             self.allow_group_aware,
             expr = self.expr,
-            ComputeError: "this expression cannot run in the groupby context",
+            ComputeError: "this expression cannot run in the group_by context",
         );
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
@@ -367,8 +360,8 @@ fn apply_multiple_elementwise<'a>(
     check_lengths: bool,
 ) -> PolarsResult<AggregationContext<'a>> {
     match acs.first().unwrap().agg_state() {
-        // a fast path that doesn't drop groups of the first arg
-        // this doesn't require group re-computation
+        // A fast path that doesn't drop groups of the first arg.
+        // This doesn't require group re-computation.
         AggState::AggregatedList(s) => {
             let ca = s.list().unwrap();
 
@@ -378,10 +371,10 @@ fn apply_multiple_elementwise<'a>(
                 .collect::<Vec<_>>();
 
             let out = ca.apply_to_inner(&|s| {
-                let mut args = vec![s];
+                let mut args = Vec::with_capacity(other.len() + 1);
+                args.push(s);
                 args.extend_from_slice(&other);
-                let out = function.call_udf(&mut args)?.unwrap();
-                Ok(out)
+                Ok(function.call_udf(&mut args)?.unwrap())
             })?;
             let mut ac = acs.swap_remove(0);
             ac.with_series(out.into_series(), true, None)?;
@@ -392,9 +385,8 @@ fn apply_multiple_elementwise<'a>(
                 .iter_mut()
                 .enumerate()
                 .map(|(i, ac)| {
-                    // make sure the groups are updated because we are about to throw away
-                    // the series length information
-                    // only on first iteration
+                    // Make sure the groups are updated because we are about to throw away
+                    // the series length information, only on the first iteration.
                     if let (0, UpdateGroups::WithSeriesLen) = (i, &ac.update_groups) {
                         ac.groups();
                     }
@@ -409,7 +401,7 @@ fn apply_multiple_elementwise<'a>(
                 check_map_output_len(input_len, s.len(), expr)?;
             }
 
-            // take the first aggregation context that as that is the input series
+            // Take the first aggregation context that as that is the input series.
             let mut ac = acs.swap_remove(0);
             ac.with_series_and_args(s, false, None, true)?;
             Ok(ac)
@@ -421,14 +413,13 @@ fn apply_multiple_elementwise<'a>(
 impl StatsEvaluator for ApplyExpr {
     fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool> {
         let read = self.should_read_impl(stats)?;
-
-        let state = ExecutionState::new();
-
-        if state.verbose() && read {
-            eprintln!("parquet file must be read, statistics not sufficient for predicate.")
-        } else if state.verbose() && !read {
-            eprintln!("parquet file can be skipped, the statistics were sufficient to apply the predicate.")
-        };
+        if ExecutionState::new().verbose() {
+            if read {
+                eprintln!("parquet file must be read, statistics not sufficient for predicate.")
+            } else {
+                eprintln!("parquet file can be skipped, the statistics were sufficient to apply the predicate.")
+            }
+        }
 
         Ok(read)
     }
@@ -443,8 +434,8 @@ impl ApplyExpr {
             } => (function, input),
             _ => return Ok(true),
         };
-        // ensure the input of the function is only a `col(..)`
-        // if it does any arithmetic the code below is flawed
+        // Ensure the input of the function is only a `col(..)`.
+        // If it does any arithmetic the code below is flawed.
         if !matches!(input[0], Expr::Column(_)) {
             return Ok(true);
         }
@@ -463,52 +454,23 @@ impl ApplyExpr {
             },
             #[cfg(feature = "is_in")]
             FunctionExpr::Boolean(BooleanFunction::IsIn) => {
-                let root = match expr_to_leaf_column_name(&input[0]) {
-                    Ok(root) => root,
-                    Err(_) => return Ok(true),
+                let should_read = || -> Option<bool> {
+                    let root = expr_to_leaf_column_name(&input[0]).ok()?;
+                    let Expr::Literal(LiteralValue::Series(input)) = &input[1] else {
+                        return None;
+                    };
+                    #[allow(clippy::explicit_auto_deref)]
+                    let input: &Series = &**input;
+                    let st = stats.get_stats(&root).ok()?;
+                    let min = st.to_min()?;
+                    let max = st.to_max()?;
+
+                    let all_smaller = || Some(ChunkCompare::lt(input, min).ok()?.all());
+                    let all_bigger = || Some(ChunkCompare::gt(input, max).ok()?.all());
+                    Some(!all_smaller()? && !all_bigger()?)
                 };
 
-                let input: &Series = match &input[1] {
-                    Expr::Literal(LiteralValue::Series(s)) => s,
-                    _ => return Ok(true),
-                };
-
-                match stats.get_stats(&root).ok() {
-                    Some(st) => {
-                        let min = match st.to_min() {
-                            Some(min) => min,
-                            None => return Ok(true),
-                        };
-
-                        let max = match st.to_max() {
-                            Some(max) => max,
-                            None => return Ok(true),
-                        };
-
-                        // all wanted values are smaller than minimum
-                        // don't need to read
-                        if ChunkCompare::<&Series>::lt(input, &min)
-                            .ok()
-                            .map(|ca| ca.all())
-                            == Some(true)
-                        {
-                            return Ok(false);
-                        }
-
-                        // all wanted values are bigger than maximum
-                        // don't need to read
-                        if ChunkCompare::<&Series>::gt(input, &max)
-                            .ok()
-                            .map(|ca| ca.all())
-                            == Some(true)
-                        {
-                            return Ok(false);
-                        }
-
-                        Ok(true)
-                    },
-                    None => Ok(true),
-                }
+                Ok(should_read().unwrap_or(true))
             },
             _ => Ok(true),
         }
@@ -526,14 +488,11 @@ impl PartitionedAggregation for ApplyExpr {
         let s = a.evaluate_partitioned(df, groups, state)?;
 
         if self.allow_rename {
-            return self.eval_and_flatten(&mut [s]);
+            self.eval_and_flatten(&mut [s])
+        } else {
+            let in_name = s.name().to_string();
+            Ok(self.eval_and_flatten(&mut [s])?.with_name(&in_name))
         }
-        let in_name = s.name().to_string();
-        let mut out = self.eval_and_flatten(&mut [s])?;
-        if in_name != out.name() {
-            out.rename(&in_name);
-        }
-        Ok(out)
     }
 
     fn finalize(

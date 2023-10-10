@@ -15,19 +15,22 @@ use polars_core::prelude::{polars_bail, PolarsResult, TimeUnit};
 pub(crate) fn localize_datetime(
     ndt: NaiveDateTime,
     tz: &Tz,
-    use_earliest: Option<bool>,
+    ambiguous: &str,
 ) -> PolarsResult<NaiveDateTime> {
     // e.g. '2021-01-01 03:00' -> '2021-01-01 03:00CDT'
     match tz.from_local_datetime(&ndt) {
         LocalResult::Single(tz) => Ok(tz.naive_utc()),
-        LocalResult::Ambiguous(dt_earliest, dt_latest) => match use_earliest {
-            Some(true) => Ok(dt_earliest.naive_utc()),
-            Some(false) => Ok(dt_latest.naive_utc()),
-            None => polars_bail!(ComputeError:
+        LocalResult::Ambiguous(dt_earliest, dt_latest) => match ambiguous {
+            "earliest" => Ok(dt_earliest.naive_utc()),
+            "latest" => Ok(dt_latest.naive_utc()),
+            "raise" => polars_bail!(ComputeError:
                 format!("datetime '{}' is ambiguous in time zone '{}'. \
-                    Please use `use_earliest` to tell how it should be localized. \
-                    If you got here from a function which doesn't have a `use_earliest` argument, \
+                    Please use `ambiguous` to tell how it should be localized. \
+                    If you got here from a function which doesn't have a `ambiguous` argument, \
                     please open an issue at https://github.com/pola-rs/polars/issues.", ndt, tz)
+            ),
+            ambiguous => polars_bail!(ComputeError:
+                format!("Invalid argument {}, expected one of: \"earliest\", \"latest\", \"raise\"", ambiguous)
             ),
         },
         LocalResult::None => {
@@ -49,19 +52,20 @@ pub(crate) fn localize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> Polars
     match tu {
         TimeUnit::Nanoseconds => {
             Ok(
-                localize_datetime(timestamp_ns_to_datetime(timestamp), &tz, None)?
-                    .timestamp_nanos(),
+                localize_datetime(timestamp_ns_to_datetime(timestamp), &tz, "raise")?
+                    .timestamp_nanos_opt()
+                    .unwrap(),
             )
         },
         TimeUnit::Microseconds => {
             Ok(
-                localize_datetime(timestamp_us_to_datetime(timestamp), &tz, None)?
+                localize_datetime(timestamp_us_to_datetime(timestamp), &tz, "raise")?
                     .timestamp_micros(),
             )
         },
         TimeUnit::Milliseconds => {
             Ok(
-                localize_datetime(timestamp_ms_to_datetime(timestamp), &tz, None)?
+                localize_datetime(timestamp_ms_to_datetime(timestamp), &tz, "raise")?
                     .timestamp_millis(),
             )
         },
@@ -71,9 +75,9 @@ pub(crate) fn localize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> Polars
 #[cfg(feature = "timezones")]
 pub(crate) fn unlocalize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> i64 {
     match tu {
-        TimeUnit::Nanoseconds => {
-            unlocalize_datetime(timestamp_ns_to_datetime(timestamp), &tz).timestamp_nanos()
-        },
+        TimeUnit::Nanoseconds => unlocalize_datetime(timestamp_ns_to_datetime(timestamp), &tz)
+            .timestamp_nanos_opt()
+            .unwrap(),
         TimeUnit::Microseconds => {
             unlocalize_datetime(timestamp_us_to_datetime(timestamp), &tz).timestamp_micros()
         },

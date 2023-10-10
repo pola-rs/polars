@@ -278,8 +278,8 @@ where
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
 {
-    // nothing to fill
-    if !ca.has_validity() {
+    // Nothing to fill.
+    if ca.null_count() == 0 {
         return Ok(ca.clone());
     }
     let mut out = match strategy {
@@ -287,8 +287,12 @@ where
         FillNullStrategy::Forward(Some(limit)) => fill_forward_limit(ca, limit),
         FillNullStrategy::Backward(None) => fill_backward(ca),
         FillNullStrategy::Backward(Some(limit)) => fill_backward_limit(ca, limit),
-        FillNullStrategy::Min => ca.fill_null_with_values(ca.min().ok_or_else(err_fill_null)?)?,
-        FillNullStrategy::Max => ca.fill_null_with_values(ca.max().ok_or_else(err_fill_null)?)?,
+        FillNullStrategy::Min => {
+            ca.fill_null_with_values(ChunkAgg::min(ca).ok_or_else(err_fill_null)?)?
+        },
+        FillNullStrategy::Max => {
+            ca.fill_null_with_values(ChunkAgg::max(ca).ok_or_else(err_fill_null)?)?
+        },
         FillNullStrategy::Mean => ca.fill_null_with_values(
             ca.mean()
                 .map(|v| NumCast::from(v).unwrap())
@@ -304,8 +308,8 @@ where
 }
 
 fn fill_null_bool(ca: &BooleanChunked, strategy: FillNullStrategy) -> PolarsResult<Series> {
-    // nothing to fill
-    if !ca.has_validity() {
+    // Nothing to fill.
+    if ca.null_count() == 0 {
         return Ok(ca.clone().into_series());
     }
     match strategy {
@@ -342,8 +346,8 @@ fn fill_null_bool(ca: &BooleanChunked, strategy: FillNullStrategy) -> PolarsResu
 }
 
 fn fill_null_binary(ca: &BinaryChunked, strategy: FillNullStrategy) -> PolarsResult<BinaryChunked> {
-    // nothing to fill
-    if !ca.has_validity() {
+    // Nothing to fill.
+    if ca.null_count() == 0 {
         return Ok(ca.clone());
     }
     match strategy {
@@ -363,13 +367,19 @@ fn fill_null_binary(ca: &BinaryChunked, strategy: FillNullStrategy) -> PolarsRes
             out.rename(ca.name());
             Ok(out)
         },
+        FillNullStrategy::Min => {
+            ca.fill_null_with_values(ca.min_binary().ok_or_else(err_fill_null)?)
+        },
+        FillNullStrategy::Max => {
+            ca.fill_null_with_values(ca.max_binary().ok_or_else(err_fill_null)?)
+        },
         strat => polars_bail!(InvalidOperation: "fill-null strategy {:?} is not supported", strat),
     }
 }
 
 fn fill_null_list(ca: &ListChunked, strategy: FillNullStrategy) -> PolarsResult<ListChunked> {
-    // nothing to fill
-    if !ca.has_validity() {
+    // Nothing to fill.
+    if ca.null_count() == 0 {
         return Ok(ca.clone());
     }
     match strategy {

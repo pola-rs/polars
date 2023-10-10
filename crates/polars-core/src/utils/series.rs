@@ -19,7 +19,7 @@ pub fn _to_physical_and_bit_repr(s: &[Series]) -> Vec<Series> {
         .collect()
 }
 
-/// A utility that allocates an `UnstableSeries`. The applied function can then use that
+/// A utility that allocates an [`UnstableSeries`]. The applied function can then use that
 /// series container to save heap allocations and swap arrow arrays.
 pub fn with_unstable_series<F, T>(dtype: &DataType, f: F) -> T
 where
@@ -38,4 +38,9 @@ pub fn ensure_sorted_arg(s: &Series, operation: &str) -> PolarsResult<()> {
 - If your data is NOT sorted, sort the 'expr/series/column' first.
     ", operation);
     Ok(())
+}
+
+pub fn get_casting_failures(input: &Series, output: &Series) -> PolarsResult<Series> {
+    let failure_mask = !input.is_null() & output.is_null();
+    input.filter_threaded(&failure_mask, false)?.unique()
 }

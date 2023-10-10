@@ -1,3 +1,5 @@
+use num_traits::{FromPrimitive, One};
+
 use crate::IdxSize;
 
 /// An iterator that yields the current count and the element during iteration.
@@ -9,16 +11,17 @@ use crate::IdxSize;
 /// [`Iterator`]: trait.Iterator.html
 #[derive(Clone, Debug)]
 #[must_use = "iterators are lazy and do nothing unless consumed"]
-pub struct EnumerateIdx<I> {
+pub struct EnumerateIdx<I, IdxType> {
     iter: I,
-    count: IdxSize,
+    count: IdxType,
 }
 
-impl<I> Iterator for EnumerateIdx<I>
+impl<I, IdxType> Iterator for EnumerateIdx<I, IdxType>
 where
     I: Iterator,
+    IdxType: std::ops::Add<Output = IdxType> + FromPrimitive + std::ops::AddAssign + One + Copy,
 {
-    type Item = (IdxSize, <I as Iterator>::Item);
+    type Item = (IdxType, <I as Iterator>::Item);
 
     /// # Overflow Behavior
     ///
@@ -30,10 +33,10 @@ where
     ///
     /// Might panic if the index of the element overflows a `idx`.
     #[inline]
-    fn next(&mut self) -> Option<(IdxSize, <I as Iterator>::Item)> {
+    fn next(&mut self) -> Option<Self::Item> {
         let a = self.iter.next()?;
         let i = self.count;
-        self.count += 1;
+        self.count += IdxType::one();
         Some((i, a))
     }
 
@@ -43,10 +46,10 @@ where
     }
 
     #[inline]
-    fn nth(&mut self, n: usize) -> Option<(IdxSize, I::Item)> {
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
         let a = self.iter.nth(n)?;
-        let i = self.count + (n as IdxSize);
-        self.count = i + 1;
+        let i = self.count + IdxType::from_usize(n).unwrap();
+        self.count = i + IdxType::one();
         Some((i, a))
     }
 
@@ -56,32 +59,34 @@ where
     }
 }
 
-impl<I> DoubleEndedIterator for EnumerateIdx<I>
+impl<I, IdxType> DoubleEndedIterator for EnumerateIdx<I, IdxType>
 where
     I: ExactSizeIterator + DoubleEndedIterator,
+    IdxType: std::ops::Add<Output = IdxType> + FromPrimitive + std::ops::AddAssign + One + Copy,
 {
     #[inline]
-    fn next_back(&mut self) -> Option<(IdxSize, <I as Iterator>::Item)> {
+    fn next_back(&mut self) -> Option<(IdxType, <I as Iterator>::Item)> {
         let a = self.iter.next_back()?;
-        let len = self.iter.len();
+        let len = IdxType::from_usize(self.iter.len()).unwrap();
         // Can safely add, `ExactSizeIterator` promises that the number of
         // elements fits into a `usize`.
-        Some((self.count + len as IdxSize, a))
+        Some((self.count + len, a))
     }
 
     #[inline]
-    fn nth_back(&mut self, n: usize) -> Option<(IdxSize, <I as Iterator>::Item)> {
+    fn nth_back(&mut self, n: usize) -> Option<(IdxType, <I as Iterator>::Item)> {
         let a = self.iter.nth_back(n)?;
-        let len = self.iter.len();
+        let len = IdxType::from_usize(self.iter.len()).unwrap();
         // Can safely add, `ExactSizeIterator` promises that the number of
         // elements fits into a `usize`.
-        Some((self.count + len as IdxSize, a))
+        Some((self.count + len, a))
     }
 }
 
-impl<I> ExactSizeIterator for EnumerateIdx<I>
+impl<I, IdxType> ExactSizeIterator for EnumerateIdx<I, IdxType>
 where
     I: ExactSizeIterator,
+    IdxType: std::ops::Add<Output = IdxType> + FromPrimitive + std::ops::AddAssign + One + Copy,
 {
     fn len(&self) -> usize {
         self.iter.len()
@@ -89,7 +94,17 @@ where
 }
 
 pub trait EnumerateIdxTrait: Iterator {
-    fn enumerate_idx(self) -> EnumerateIdx<Self>
+    fn enumerate_idx(self) -> EnumerateIdx<Self, IdxSize>
+    where
+        Self: Sized,
+    {
+        EnumerateIdx {
+            iter: self,
+            count: 0,
+        }
+    }
+
+    fn enumerate_u32(self) -> EnumerateIdx<Self, u32>
     where
         Self: Sized,
     {

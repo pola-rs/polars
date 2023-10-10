@@ -1,4 +1,6 @@
-from typing import Any, Iterator, List
+from __future__ import annotations
+
+from typing import Any, Iterator
 
 import pytest
 
@@ -83,7 +85,7 @@ Series: 'foo' [i64]
     ],
 )
 def test_fmt_series(
-    capfd: pytest.CaptureFixture[str], expected: str, values: List[Any]
+    capfd: pytest.CaptureFixture[str], expected: str, values: list[Any]
 ) -> None:
     s = pl.Series(name="foo", values=values)
     print(s)
@@ -146,7 +148,7 @@ def test_date_list_fmt() -> None:
 
     df = df.with_columns(pl.col("mydate").str.strptime(pl.Date, "%Y-%m-%d"))
     assert (
-        str(df.groupby("index", maintain_order=True).agg(pl.col("mydate"))["mydate"])
+        str(df.group_by("index", maintain_order=True).agg(pl.col("mydate"))["mydate"])
         == """shape: (3,)
 Series: 'mydate' [list[date]]
 [

@@ -5,9 +5,13 @@ from dataclasses import dataclass
 from decimal import Decimal as D
 from typing import Any, NamedTuple
 
+import pytest
+
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
+@pytest.fixture(scope="module")
 def permutations_int_dec_none() -> list[tuple[D | int | None, ...]]:
     return list(
         itertools.permutations(
@@ -22,9 +26,12 @@ def permutations_int_dec_none() -> list[tuple[D | int | None, ...]]:
     )
 
 
-def test_series_from_pydecimal_and_ints() -> None:
+@pytest.mark.slow()
+def test_series_from_pydecimal_and_ints(
+    permutations_int_dec_none: list[tuple[D | int | None, ...]]
+) -> None:
     # TODO: check what happens if there are strings, floats arrow scalars in the list
-    for data in permutations_int_dec_none():
+    for data in permutations_int_dec_none:
         s = pl.Series("name", data)
         assert s.dtype == pl.Decimal(7)  # inferred scale = 7, precision = None
         assert s.name == "name"
@@ -34,7 +41,10 @@ def test_series_from_pydecimal_and_ints() -> None:
         assert s.to_list() == [D(x) if x is not None else None for x in data]
 
 
-def test_frame_from_pydecimal_and_ints(monkeypatch: Any) -> None:
+@pytest.mark.slow()
+def test_frame_from_pydecimal_and_ints(
+    permutations_int_dec_none: list[tuple[D | int | None, ...]], monkeypatch: Any
+) -> None:
     monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
 
     class X(NamedTuple):
@@ -44,7 +54,7 @@ def test_frame_from_pydecimal_and_ints(monkeypatch: Any) -> None:
     class Y:
         a: int | D | None
 
-    for data in permutations_int_dec_none():
+    for data in permutations_int_dec_none:
         row_data = [(d,) for d in data]
         for cls in (X, Y):
             for ctor in (pl.DataFrame, pl.from_records):
@@ -82,6 +92,28 @@ def test_init_decimal_dtype() -> None:
         {"a": [D("-0.01"), D("1.2345678"), D("500")]}, schema={"a": pl.Decimal}
     )
     assert df["a"].is_numeric()
+
+
+def test_decimal_convert_to_float_by_schema() -> None:
+    # Column Based
+    df = pl.DataFrame(
+        {"a": [D("1"), D("2.55"), D("45.000"), D("10.0")]}, schema={"a": pl.Float64}
+    )
+    expected = pl.DataFrame({"a": [1.0, 2.55, 45.0, 10.0]})
+    assert_frame_equal(df, expected)
+
+    # Row Based
+    df = pl.DataFrame(
+        [[D("1"), D("2.55"), D("45.000"), D("10.0")]], schema={"a": pl.Float64}
+    )
+    expected = pl.DataFrame({"a": [1.0, 2.55, 45.0, 10.0]})
+    assert_frame_equal(df, expected)
+
+
+def test_df_constructor_convert_decimal_to_float_9873() -> None:
+    result = pl.DataFrame([[D("45.0000")], [D("45.0000")]], schema={"a": pl.Float64})
+    expected = pl.DataFrame({"a": [45.0, 45.0]})
+    assert_frame_equal(result, expected)
 
 
 def test_decimal_cast() -> None:
@@ -180,7 +212,7 @@ def test_decimal_aggregations() -> None:
         }
     )
 
-    assert df.groupby("g", maintain_order=True).agg(
+    assert df.group_by("g", maintain_order=True).agg(
         sum=pl.sum("a"),
         min=pl.min("a"),
         max=pl.max("a"),

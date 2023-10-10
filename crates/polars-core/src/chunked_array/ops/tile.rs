@@ -8,6 +8,6 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
         let ca = self.rechunk();
         let arr = ca.downcast_iter().next().unwrap();
         let arr = tile::tile_primitive(arr, n);
-        ChunkedArray::from_chunk_iter(self.name(), [arr])
+        ChunkedArray::with_chunk(self.name(), arr)
     }
 }

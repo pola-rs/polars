@@ -6,7 +6,7 @@ use polars_arrow::export::arrow::compute::concatenate::concatenate;
 use polars_arrow::export::arrow::offset::Offsets;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::utils::CustomIterTools;
-use polars_core::frame::groupby::{GroupByMethod, GroupsProxy};
+use polars_core::frame::group_by::{GroupByMethod, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 #[cfg(feature = "dtype-struct")]
@@ -61,7 +61,7 @@ impl PhysicalExpr for AggregationExpr {
                             let out = rename_series(agg_s, &keep_name);
                             return Ok(AggregationContext::new(out, Cow::Borrowed(groups), true))
                         } else {
-                            polars_bail!(ComputeError: "cannot aggregate as {}, the column is already aggregated");
+                            polars_bail!(ComputeError: "cannot aggregate as {}, the column is already aggregated", self.agg_type);
                         }
                     },
                     _ => ()
@@ -426,8 +426,8 @@ impl PartitionedAggregation for AggregationExpr {
                         for (_, idx) in groups {
                             let ca = unsafe {
                                 // Safety
-                                // The indexes of the groupby operation are never out of bounds
-                                ca.take_unchecked(idx.into())
+                                // The indexes of the group_by operation are never out of bounds
+                                ca.take_unchecked(idx)
                             };
                             process_group(ca)?;
                         }
@@ -452,7 +452,7 @@ impl PartitionedAggregation for AggregationExpr {
                     values,
                     None,
                 );
-                let mut ca = ListChunked::from_chunk_iter(&new_name, [arr]);
+                let mut ca = ListChunked::with_chunk(&new_name, arr);
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }

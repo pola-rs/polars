@@ -10,22 +10,22 @@ fmt:  ## Run rustfmt and dprint
 
 .PHONY: check
 check:  ## Run cargo check with all features
-	cargo check --workspace --all-targets --all-features
+	cargo check --workspace --all-targets --exclude nano-arrow --all-features
 
 .PHONY: clippy
 clippy:  ## Run clippy with all features
-	cargo clippy --workspace --all-targets --all-features
+	cargo clippy -p polars --all-features
 
 .PHONY: clippy-default
 clippy-default:  ## Run clippy with default features
-	cargo clippy --workspace --all-targets
+	cargo clippy -p polars
 
 .PHONY: pre-commit
 pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
 
 .PHONY: check-features
 check-features:  ## Run cargo check for feature flag combinations (warning: slow)
-	cargo hack check --each-feature --no-dev-deps
+	cargo hack check -p polars --each-feature --no-dev-deps
 
 .PHONY: miri
 miri:  ## Run miri
@@ -35,7 +35,6 @@ miri:  ## Run miri
 	MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows" \
 	POLARS_ALLOW_EXTENSION=1 \
 	cargo miri test \
-	    --no-default-features \
 	    --features object \
 	    -p polars-core \
 	    -p polars-arrow
@@ -51,9 +50,24 @@ test:  ## Run tests
 		-p polars-utils \
 		-p polars-row \
 		-p polars-sql \
+		-p polars-ops \
 		-p polars-plan \
 		-- \
 		--test-threads=2
+
+.PHONY: nextest
+nextest:  ## Run tests with nextest
+	cargo nextest run --all-features \
+		-p polars-lazy \
+		-p polars-io \
+		-p polars-core \
+		-p polars-arrow \
+		-p polars-time \
+		-p polars-utils \
+		-p polars-row \
+		-p polars-sql \
+		-p polars-ops \
+		-p polars-plan \
 
 .PHONY: integration-tests
 integration-tests:  ## Run integration tests
@@ -96,6 +110,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-arrow
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
+	cargo publish --allow-dirty -p polars-ffi
 	cargo publish --allow-dirty -p polars-ops
 	cargo publish --allow-dirty -p polars-time
 	cargo publish --allow-dirty -p polars-io
@@ -110,3 +125,28 @@ publish:  ## Publish Polars crates
 help:  ## Display this help screen
 	@echo -e "\033[1mAvailable commands:\033[0m"
 	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' | sort
+
+.PHONY: check-wasm
+check-wasm:  ## Check wasm build without supported features
+	cargo hack check --target wasm32-unknown-unknown -p polars --no-dev-deps  \
+		--each-feature                        \
+		--exclude-features async              \
+		--exclude-features aws                \
+		--exclude-features azure              \
+		--exclude-features cloud              \
+		--exclude-features cloud_write        \
+		--exclude-features decompress         \
+		--exclude-features decompress-fast    \
+		--exclude-features default            \
+		--exclude-features docs-selection     \
+		--exclude-features extract_jsonpath   \
+		--exclude-features fmt                \
+		--exclude-features gcp                \
+		--exclude-features ipc                \
+		--exclude-features ipc_streaming      \
+		--exclude-features json               \
+		--exclude-features nightly            \
+		--exclude-features parquet            \
+		--exclude-features performant         \
+		--exclude-features streaming          \
+		--exclude-features test

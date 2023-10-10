@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -62,7 +62,7 @@ def test_datetime_ambiguous_time_zone() -> None:
 
 def test_datetime_ambiguous_time_zone_use_earliest() -> None:
     expr = pl.datetime(
-        2018, 10, 28, 2, 30, time_zone="Europe/Brussels", use_earliest=True
+        2018, 10, 28, 2, 30, time_zone="Europe/Brussels", ambiguous="earliest"
     )
 
     result = pl.select(expr).item()
@@ -96,8 +96,34 @@ def test_time() -> None:
 
 def test_empty_duration() -> None:
     s = pl.DataFrame([], {"days": pl.Int32}).select(pl.duration(days="days"))
-    assert s.dtypes == [pl.Duration("ns")]
+    assert s.dtypes == [pl.Duration("us")]
     assert s.shape == (0, 1)
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "expected"),
+    [
+        ("ms", timedelta(days=1, minutes=2, seconds=3, milliseconds=4)),
+        ("us", timedelta(days=1, minutes=2, seconds=3, milliseconds=4, microseconds=5)),
+        ("ns", timedelta(days=1, minutes=2, seconds=3, milliseconds=4, microseconds=5)),
+    ],
+)
+def test_duration_time_units(time_unit: TimeUnit, expected: timedelta) -> None:
+    result = pl.LazyFrame().select(
+        pl.duration(
+            days=1,
+            minutes=2,
+            seconds=3,
+            milliseconds=4,
+            microseconds=5,
+            nanoseconds=6,
+            time_unit=time_unit,
+        )
+    )
+    assert result.schema["duration"] == pl.Duration(time_unit)
+    assert result.collect()["duration"].item() == expected
+    if time_unit == "ns":
+        assert result.collect()["duration"].dt.nanoseconds().item() == 86523004005006
 
 
 def test_list_concat() -> None:
@@ -156,7 +182,7 @@ def test_concat_list_in_agg_6397() -> None:
     df = pl.DataFrame({"group": [1, 2, 2, 3], "value": ["a", "b", "c", "d"]})
 
     # single list
-    assert df.groupby("group").agg(
+    assert df.group_by("group").agg(
         [
             # this casts every element to a list
             pl.concat_list(pl.col("value")),
@@ -167,7 +193,7 @@ def test_concat_list_in_agg_6397() -> None:
     }
 
     # nested list
-    assert df.groupby("group").agg(
+    assert df.group_by("group").agg(
         [
             pl.concat_list(pl.col("value").implode()).alias("result"),
         ]
@@ -457,21 +483,31 @@ def test_struct_lit_cast() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
 
-    for lit in [pl.lit(None), pl.lit(pl.Series([[]]))]:
-        out = df.select(pl.struct([pl.col("a"), lit.alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
+    out = df.select(pl.struct([pl.col("a"), pl.lit(None).alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
 
-        expected = pl.Series(
-            "a",
-            [
-                {"a": 1, "b": None},
-                {"a": 2, "b": None},
-                {"a": 3, "b": None},
-            ],
-            dtype=pl.Struct(
-                [pl.Field("a", pl.Int64), pl.Field("b", pl.List(pl.Int64))]
-            ),
-        )
-        assert_series_equal(out, expected)
+    expected = pl.Series(
+        "a",
+        [
+            {"a": 1, "b": None},
+            {"a": 2, "b": None},
+            {"a": 3, "b": None},
+        ],
+        dtype=pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.List(pl.Int64))]),
+    )
+    assert_series_equal(out, expected)
+
+    out = df.select(pl.struct([pl.col("a"), pl.lit(pl.Series([[]])).alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
+
+    expected = pl.Series(
+        "a",
+        [
+            {"a": 1, "b": []},
+            {"a": 2, "b": []},
+            {"a": 3, "b": []},
+        ],
+        dtype=pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.List(pl.Int64))]),
+    )
+    assert_series_equal(out, expected)
 
 
 def test_suffix_in_struct_creation() -> None:
@@ -504,19 +540,18 @@ def test_concat_str_wildcard_expansion() -> None:
     ).to_series().to_list() == ["xs", "yo", "zs"]
 
 
+def test_concat_str_with_non_utf8_col() -> None:
+    out = (
+        pl.LazyFrame({"a": [0], "b": ["x"]})
+        .select(pl.concat_str(["a", "b"], separator="-").fill_null(pl.col("a")))
+        .collect()
+    )
+    expected = pl.Series("a", ["0-x"], dtype=pl.Utf8)
+    assert_series_equal(out.to_series(), expected)
+
+
 def test_format() -> None:
     df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
 
     out = df.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])
     assert out["fmt"].to_list() == ["foo_a_bar_1", "foo_b_bar_2", "foo_c_bar_3"]
-
-
-def test_struct_deprecation_exprs_keyword() -> None:
-    with pytest.deprecated_call():
-        result = pl.select(pl.struct(exprs=1.0))
-
-    expected = pl.DataFrame(
-        {"literal": [{"literal": 1.0}]},
-        schema={"literal": pl.Struct({"literal": pl.Float64})},
-    )
-    assert_frame_equal(result, expected)

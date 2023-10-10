@@ -1,8 +1,3 @@
-use polars_arrow::time_zone::Tz;
-use polars_core::prelude::*;
-
-use crate::prelude::*;
-
 const LAST_DAYS_MONTH: [u32; 12] = [
     31, // January:   31,
     28, // February:  28,
@@ -34,64 +29,3 @@ pub const NS_MINUTE: i64 = 60 * NS_SECOND;
 pub const NS_HOUR: i64 = 60 * NS_MINUTE;
 pub const NS_DAY: i64 = 24 * NS_HOUR;
 pub const NS_WEEK: i64 = 7 * NS_DAY;
-
-/// vector of i64 representing temporal values
-pub fn temporal_range(
-    start: i64,
-    stop: i64,
-    every: Duration,
-    closed: ClosedWindow,
-    tu: TimeUnit,
-    tz: Option<&Tz>,
-) -> PolarsResult<Vec<i64>> {
-    let size: usize;
-    let offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>;
-
-    match tu {
-        TimeUnit::Nanoseconds => {
-            size = ((stop - start) / every.duration_ns() + 1) as usize;
-            offset_fn = Duration::add_ns;
-        },
-        TimeUnit::Microseconds => {
-            size = ((stop - start) / every.duration_us() + 1) as usize;
-            offset_fn = Duration::add_us;
-        },
-        TimeUnit::Milliseconds => {
-            size = ((stop - start) / every.duration_ms() + 1) as usize;
-            offset_fn = Duration::add_ms;
-        },
-    }
-    let mut ts = Vec::with_capacity(size);
-
-    let mut t = start;
-    match closed {
-        ClosedWindow::Both => {
-            while t <= stop {
-                ts.push(t);
-                t = offset_fn(&every, t, tz)?
-            }
-        },
-        ClosedWindow::Left => {
-            while t < stop {
-                ts.push(t);
-                t = offset_fn(&every, t, tz)?
-            }
-        },
-        ClosedWindow::Right => {
-            t = offset_fn(&every, t, tz)?;
-            while t <= stop {
-                ts.push(t);
-                t = offset_fn(&every, t, tz)?
-            }
-        },
-        ClosedWindow::None => {
-            t = offset_fn(&every, t, tz)?;
-            while t < stop {
-                ts.push(t);
-                t = offset_fn(&every, t, tz)?
-            }
-        },
-    }
-    debug_assert!(size >= ts.len());
-    Ok(ts)
-}

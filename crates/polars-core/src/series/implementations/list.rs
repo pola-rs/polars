@@ -1,11 +1,16 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use super::{private, IntoSeries, SeriesTrait};
+#[cfg(feature = "group_by_list")]
+use ahash::RandomState;
+
+use super::*;
 use crate::chunked_array::comparison::*;
+use crate::chunked_array::ops::compare_inner::{IntoPartialEqInner, PartialEqInner};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::{AsSinglePtr, Settings};
-use crate::frame::groupby::*;
+#[cfg(feature = "algorithm_group_by")]
+use crate::frame::group_by::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 #[cfg(feature = "chunked_ids")]
@@ -41,12 +46,34 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+    }
+
+    #[cfg(feature = "group_by_list")]
+    fn vec_hash(&self, _build_hasher: RandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
+        self.0.vec_hash(_build_hasher, _buf)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "group_by_list")]
+    fn vec_hash_combine(
+        &self,
+        _build_hasher: RandomState,
+        _hashes: &mut [u64],
+    ) -> PolarsResult<()> {
+        self.0.vec_hash_combine(_build_hasher, _hashes)?;
+        Ok(())
+    }
+
+    fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
+        (&self.0).into_partial_eq_inner()
     }
 }
 
@@ -64,6 +91,9 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     fn chunks(&self) -> &Vec<ArrayRef> {
         self.0.chunks()
+    }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.chunks_mut()
     }
     fn shrink_to_fit(&mut self) {
         self.0.shrink_to_fit()
@@ -98,38 +128,19 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        let indices = if indices.chunks.len() > 1 {
-            Cow::Owned(indices.rechunk())
-        } else {
-            Cow::Borrowed(indices)
-        };
-        Ok(ChunkTake::take(&self.0, (&*indices).into())?.into_series())
+        Ok(self.0.take(indices)?.into_series())
     }
 
-    fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
+    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+        self.0.take_unchecked(indices).into_series()
     }
 
-    unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
+    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+        Ok(self.0.take(indices)?.into_series())
     }
 
-    unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-        let idx = if idx.chunks.len() > 1 {
-            Cow::Owned(idx.rechunk())
-        } else {
-            Cow::Borrowed(idx)
-        };
-        Ok(ChunkTake::take_unchecked(&self.0, (&*idx).into()).into_series())
-    }
-
-    unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
-    }
-
-    #[cfg(feature = "take_opt_iter")]
-    fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-        Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
+    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+        self.0.take_unchecked(indices).into_series()
     }
 
     fn len(&self) -> usize {
@@ -163,6 +174,58 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     fn has_validity(&self) -> bool {
         self.0.has_validity()
+    }
+
+    #[cfg(feature = "group_by_list")]
+    #[cfg(feature = "algorithm_group_by")]
+    fn unique(&self) -> PolarsResult<Series> {
+        if !self.inner_dtype().is_numeric() {
+            polars_bail!(opq = unique, self.dtype());
+        }
+        // this can be called in aggregation, so this fast path can be worth a lot
+        if self.len() < 2 {
+            return Ok(self.0.clone().into_series());
+        }
+        let main_thread = POOL.current_thread_index().is_none();
+        let groups = self.group_tuples(main_thread, false);
+        // safety:
+        // groups are in bounds
+        Ok(unsafe { self.0.clone().into_series().agg_first(&groups?) })
+    }
+
+    #[cfg(feature = "group_by_list")]
+    #[cfg(feature = "algorithm_group_by")]
+    fn n_unique(&self) -> PolarsResult<usize> {
+        if !self.inner_dtype().is_numeric() {
+            polars_bail!(opq = n_unique, self.dtype());
+        }
+        // this can be called in aggregation, so this fast path can be worth a lot
+        match self.len() {
+            0 => Ok(0),
+            1 => Ok(1),
+            _ => {
+                let main_thread = POOL.current_thread_index().is_none();
+                let groups = self.group_tuples(main_thread, false)?;
+                Ok(groups.len())
+            },
+        }
+    }
+
+    #[cfg(feature = "group_by_list")]
+    #[cfg(feature = "algorithm_group_by")]
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        if !self.inner_dtype().is_numeric() {
+            polars_bail!(opq = arg_unique, self.dtype());
+        }
+        // this can be called in aggregation, so this fast path can be worth a lot
+        if self.len() == 1 {
+            return Ok(IdxCa::new_vec(self.name(), vec![0 as IdxSize]));
+        }
+        let main_thread = POOL.current_thread_index().is_none();
+        // arg_unique requires a stable order
+        let groups = self.group_tuples(main_thread, true)?;
+        let first = groups.take_group_firsts();
+        Ok(IdxCa::from_vec(self.name(), first))
     }
 
     fn is_null(&self) -> BooleanChunked {

@@ -1,11 +1,13 @@
 import re
-from datetime import date
+from datetime import date, datetime
 from tempfile import NamedTemporaryFile
 from typing import Any
 
+import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_cse_rename_cross_join_5405() -> None:
@@ -38,6 +40,25 @@ def test_union_duplicates() -> None:
     )
 
 
+def test_cse_with_struct_expr_11116() -> None:
+    df = pl.DataFrame([{"s": {"a": 1, "b": 4}, "c": 3}]).lazy()
+    out = df.with_columns(
+        pl.col("s").struct.field("a").alias("s_a"),
+        pl.col("s").struct.field("b").alias("s_b"),
+        (
+            (pl.col("s").struct.field("a") <= pl.col("c"))
+            & (pl.col("s").struct.field("b") > pl.col("c"))
+        ).alias("c_between_a_and_b"),
+    ).collect(comm_subexpr_elim=True)
+    assert out.to_dict(False) == {
+        "s": [{"a": 1, "b": 4}],
+        "c": [3],
+        "s_a": [1],
+        "s_b": [4],
+        "c_between_a_and_b": [True],
+    }
+
+
 def test_cse_schema_6081() -> None:
     df = pl.DataFrame(
         data=[
@@ -49,7 +70,7 @@ def test_cse_schema_6081() -> None:
         orient="row",
     ).lazy()
 
-    min_value_by_group = df.groupby(["date", "id"]).agg(
+    min_value_by_group = df.group_by(["date", "id"]).agg(
         pl.col("value").min().alias("min_value")
     )
 
@@ -88,7 +109,7 @@ def test_cse_9630() -> None:
                 joined_df2.select("key", pl.col("y").alias("value")),
             ]
         )
-        .groupby("key")
+        .group_by("key")
         .agg(
             [
                 pl.col("value"),
@@ -123,7 +144,7 @@ def test_schema_row_count_cse() -> None:
     csv_a.seek(0)
 
     df_a = pl.scan_csv(csv_a.name).with_row_count("Idx")
-    assert df_a.join(df_a, on="B").groupby(
+    assert df_a.join(df_a, on="B").group_by(
         "A", maintain_order=True
     ).all().collect().to_dict(False) == {
         "A": ["Gr1"],
@@ -198,8 +219,7 @@ def test_windows_cse_excluded() -> None:
     }
 
 
-@pytest.mark.skip()
-def test_cse_groupby_10215() -> None:
+def test_cse_group_by_10215() -> None:
     q = (
         pl.DataFrame(
             {
@@ -208,7 +228,7 @@ def test_cse_groupby_10215() -> None:
             }
         )
         .lazy()
-        .groupby(
+        .group_by(
             "b",
         )
         .agg(
@@ -295,7 +315,7 @@ def test_cse_10452() -> None:
     assert q.collect(comm_subexpr_elim=True).to_dict(False) == {"b": [13, 14, 15]}
 
 
-def test_cse_groupby_ternary_10490() -> None:
+def test_cse_group_by_ternary_10490() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 1, 2, 2],
@@ -306,7 +326,7 @@ def test_cse_groupby_ternary_10490() -> None:
 
     assert (
         df.lazy()
-        .groupby("a")
+        .group_by("a")
         .agg(
             [
                 pl.when(pl.col(col).is_null().all()).then(None).otherwise(1).alias(col)
@@ -332,4 +352,159 @@ def test_cse_groupby_ternary_10490() -> None:
         "x2": [4, 16],
         "x3": [12, 32],
         "x4": [18, 56],
+    }
+
+
+def test_cse_quantile_10815() -> None:
+    np.random.seed(1)
+    a = np.random.random(10)
+    b = np.random.random(10)
+    df = pl.DataFrame({"a": a, "b": b})
+    cols = ["a", "b"]
+    q = df.lazy().select(
+        *(
+            pl.col(c).quantile(0.75, interpolation="midpoint").suffix("_3")
+            for c in cols
+        ),
+        *(
+            pl.col(c).quantile(0.25, interpolation="midpoint").suffix("_1")
+            for c in cols
+        ),
+    )
+    assert "__POLARS_CSE" not in q.explain()
+    assert q.collect().to_dict(False) == {
+        "a_3": [0.40689473946662197],
+        "b_3": [0.6145786693120769],
+        "a_1": [0.16650805109739197],
+        "b_1": [0.2012768694081981],
+    }
+
+
+def test_cse_nan_10824() -> None:
+    v = pl.col("a") / pl.col("b")
+    magic = pl.when(v > 0).then(pl.lit(float("nan"))).otherwise(v)
+    assert (
+        str(
+            (
+                pl.DataFrame(
+                    {
+                        "a": [1.0],
+                        "b": [1.0],
+                    }
+                )
+                .lazy()
+                .select(magic)
+                .collect(comm_subexpr_elim=True)
+            ).to_dict(False)
+        )
+        == "{'literal': [nan]}"
+    )
+
+
+def test_cse_10901() -> None:
+    df = pl.DataFrame(data=range(6), schema={"a": pl.Int64})
+    a = pl.col("a").rolling_sum(window_size=2)
+    b = pl.col("a").rolling_sum(window_size=3)
+    exprs = {
+        "ax1": a,
+        "ax2": a * 2,
+        "bx1": b,
+        "bx2": b * 2,
+    }
+
+    expected = pl.DataFrame(
+        {
+            "a": [0, 1, 2, 3, 4, 5],
+            "ax1": [None, 1, 3, 5, 7, 9],
+            "ax2": [None, 2, 6, 10, 14, 18],
+            "bx1": [None, None, 3, 6, 9, 12],
+            "bx2": [None, None, 6, 12, 18, 24],
+        }
+    )
+
+    assert_frame_equal(df.lazy().with_columns(**exprs).collect(), expected)
+
+
+def test_cse_count_in_group_by() -> None:
+    q = (
+        pl.LazyFrame({"a": [1, 1, 2], "b": [1, 2, 3], "c": [40, 51, 12]})
+        .group_by("a")
+        .agg(pl.all().slice(0, pl.count() - 1))
+    )
+
+    assert "POLARS_CSER" not in q.explain()
+    assert q.collect().sort("a").to_dict(False) == {
+        "a": [1, 2],
+        "b": [[1], []],
+        "c": [[40], []],
+    }
+
+
+def test_no_cse_in_with_context() -> None:
+    df1 = pl.DataFrame(
+        {
+            "timestamp": [
+                datetime(2023, 1, 1, 0, 0),
+                datetime(2023, 5, 1, 0, 0),
+                datetime(2023, 10, 1, 0, 0),
+            ],
+            "value": [2, 5, 9],
+        }
+    )
+    df2 = pl.DataFrame(
+        {
+            "date_start": [
+                datetime(2022, 12, 31, 0, 0),
+                datetime(2023, 1, 2, 0, 0),
+            ],
+            "date_end": [
+                datetime(2023, 4, 30, 0, 0),
+                datetime(2023, 5, 5, 0, 0),
+            ],
+            "label": [0, 1],
+        }
+    )
+
+    assert (
+        df1.lazy()
+        .with_context(df2.lazy())
+        .select(
+            pl.col("date_start", "label").take(
+                pl.col("date_start").search_sorted("timestamp") - 1
+            ),
+        )
+    ).collect().to_dict(False) == {
+        "date_start": [
+            datetime(2022, 12, 31, 0, 0),
+            datetime(2023, 1, 2, 0, 0),
+            datetime(2023, 1, 2, 0, 0),
+        ],
+        "label": [0, 1, 1],
+    }
+
+
+def test_cse_is_in_11489() -> None:
+    df = pl.DataFrame(
+        {"cond": [1, 2, 3, 2, 1], "x": [1.0, 0.20, 3.0, 4.0, 0.50]}
+    ).lazy()
+    any_cond = (
+        pl.when(pl.col("cond").is_in([2, 3]))
+        .then(True)
+        .when(pl.col("cond").is_in([1]))
+        .then(False)
+        .otherwise(None)
+        .alias("any_cond")
+    )
+    val = (
+        pl.when(any_cond)
+        .then(1.0)
+        .when(~any_cond)
+        .then(0.0)
+        .otherwise(None)
+        .alias("val")
+    )
+    assert df.select("cond", any_cond, val).collect().to_dict(False) == {
+        "cond": [1, 2, 3, 2, 1],
+        "any_cond": [False, True, True, True, False],
+        "val": [0.0, 1.0, 1.0, 1.0, 0.0],
     }

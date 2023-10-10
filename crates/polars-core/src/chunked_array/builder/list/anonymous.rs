@@ -60,7 +60,7 @@ impl<'a> AnonymousListBuilder<'a> {
 
     pub fn append_series(&mut self, s: &'a Series) -> PolarsResult<()> {
         match s.dtype() {
-            // empty arrays tend to be null type and thus differ
+            // Empty arrays tend to be null type and thus differ
             // if we would push it the concat would fail.
             DataType::Null if s.is_empty() => self.append_empty(),
             #[cfg(feature = "dtype-struct")]
@@ -76,7 +76,7 @@ impl<'a> AnonymousListBuilder<'a> {
     }
 
     pub fn finish(&mut self) -> ListChunked {
-        // don't use self from here on one
+        // Don't use self from here on out.
         let slf = std::mem::take(self);
         if slf.builder.is_empty() {
             ListChunked::full_null_with_dtype(
@@ -94,12 +94,11 @@ impl<'a> AnonymousListBuilder<'a> {
                 None => DataType::from(arr.data_type()),
                 Some(dt) => DataType::List(Box::new(dt)),
             };
-            let mut ca = unsafe { ListChunked::from_chunks("", vec![Box::new(arr)]) };
 
+            let mut ca = ListChunked::with_chunk("", arr);
             if slf.fast_explode {
                 ca.set_fast_explode();
             }
-
             ca.field = Arc::new(Field::new(&slf.name, list_dtype_logical));
             ca
         }
@@ -138,7 +137,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
                     },
                 }
             }
-            // this make sure that the underlying ArrayRef's are not dropped
+            // This make sure that the underlying ArrayRef's are not dropped.
             self.owned.push(s.clone());
         }
         Ok(())
@@ -152,7 +151,7 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
 
     fn finish(&mut self) -> ListChunked {
         let inner_dtype = std::mem::take(&mut self.inner_dtype).materialize();
-        // don't use self from here on one
+        // Don't use self from here on out.
         let slf = std::mem::take(self);
         let inner_dtype_physical = inner_dtype.as_ref().map(|dt| dt.to_physical().to_arrow());
         let arr = slf.builder.finish(inner_dtype_physical.as_ref()).unwrap();
@@ -161,13 +160,11 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
             None => DataType::from(arr.data_type()),
             Some(dt) => DataType::List(Box::new(dt)),
         };
-        // safety: same type
-        let mut ca = unsafe { ListChunked::from_chunks("", vec![Box::new(arr)]) };
 
+        let mut ca = ListChunked::with_chunk("", arr);
         if slf.fast_explode {
             ca.set_fast_explode();
         }
-
         ca.field = Arc::new(Field::new(&slf.name, list_dtype_logical));
         ca
     }

@@ -118,12 +118,11 @@ pub(crate) fn concat_impl<L: AsRef<[LazyFrame]>>(
 #[cfg(feature = "diagonal_concat")]
 /// Concat [LazyFrame]s diagonally.
 /// Calls [`concat`][concat()] internally.
-pub fn diag_concat_lf<L: AsRef<[LazyFrame]>>(
-    lfs: L,
-    rechunk: bool,
-    parallel: bool,
+pub fn concat_lf_diagonal<L: AsRef<[LazyFrame]>>(
+    inputs: L,
+    args: UnionArgs,
 ) -> PolarsResult<LazyFrame> {
-    let lfs = lfs.as_ref().to_vec();
+    let lfs = inputs.as_ref();
     let schemas = lfs
         .iter()
         .map(|lf| lf.schema())
@@ -143,12 +142,12 @@ pub fn diag_concat_lf<L: AsRef<[LazyFrame]>>(
             }
         });
     }
-
     let lfs_with_all_columns = lfs
-        .into_iter()
+        .iter()
         // Zip Frames with their Schemas
         .zip(schemas)
-        .map(|(mut lf, lf_schema)| {
+        .map(|(lf, lf_schema)| {
+            let mut lf = lf.clone();
             for (name, dtype) in total_schema.iter() {
                 // If a name from Total Schema is not present - append
                 if lf_schema.get_field(name).is_none() {
@@ -163,19 +162,11 @@ pub fn diag_concat_lf<L: AsRef<[LazyFrame]>>(
                     .map(|col_name| col(col_name))
                     .collect::<Vec<Expr>>(),
             );
-
             Ok(reordered_lf)
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    concat(
-        lfs_with_all_columns,
-        UnionArgs {
-            rechunk,
-            parallel,
-            to_supertypes: false,
-        },
-    )
+    concat(lfs_with_all_columns, args)
 }
 
 #[derive(Clone, Copy)]
@@ -195,7 +186,7 @@ impl Default for UnionArgs {
     }
 }
 
-/// Concat multiple
+/// Concat multiple [`LazyFrame`]s vertically.
 pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, args: UnionArgs) -> PolarsResult<LazyFrame> {
     concat_impl(
         inputs,
@@ -206,7 +197,7 @@ pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, args: UnionArgs) -> PolarsResult
     )
 }
 
-/// Collect all `LazyFrame` computations.
+/// Collect all [`LazyFrame`] computations.
 pub fn collect_all<I>(lfs: I) -> PolarsResult<Vec<DataFrame>>
 where
     I: IntoParallelIterator<Item = LazyFrame>,
@@ -241,7 +232,15 @@ mod test {
             "d" => [1, 2]
         ]?;
 
-        let out = diag_concat_lf(&[a.lazy(), b.lazy(), c.lazy()], false, false)?.collect()?;
+        let out = concat_lf_diagonal(
+            &[a.lazy(), b.lazy(), c.lazy()],
+            UnionArgs {
+                rechunk: false,
+                parallel: false,
+                ..Default::default()
+            },
+        )?
+        .collect()?;
 
         let expected = df![
             "a" => [Some(1), Some(2), None, None, Some(5), Some(7)],

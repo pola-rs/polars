@@ -1,9 +1,11 @@
 use std::ops::{BitAnd, BitOr};
 
 use arrow::array::PrimitiveArray;
-use arrow::bitmap::Bitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::datatypes::DataType;
 use arrow::types::NativeType;
 
+use crate::bit_util::unset_bit_raw;
 use crate::trusted_len::{FromIteratorReversed, TrustedLen, TrustedLenPush};
 
 #[derive(Clone)]
@@ -67,15 +69,6 @@ pub fn combine_validities_or(opt_l: Option<&Bitmap>, opt_r: Option<&Bitmap>) -> 
 unsafe impl<I, J> arrow::trusted_len::TrustedLen for TrustMyLength<I, J> where I: Iterator<Item = J> {}
 
 pub trait CustomIterTools: Iterator {
-    fn fold_first_<F>(mut self, f: F) -> Option<Self::Item>
-    where
-        Self: Sized,
-        F: FnMut(Self::Item, Self::Item) -> Self::Item,
-    {
-        let first = self.next()?;
-        Some(self.fold(first, f))
-    }
-
     /// Turn any iterator in a trusted length iterator
     ///
     /// # Safety
@@ -167,6 +160,61 @@ impl<T: NativeType> FromTrustedLenIterator<T> for PrimitiveArray<T> {
     {
         let iter = iter.into_iter();
         unsafe { PrimitiveArray::from_trusted_len_values_iter_unchecked(iter) }
+    }
+}
+
+impl<T: NativeType> FromIteratorReversed<T> for PrimitiveArray<T> {
+    fn from_trusted_len_iter_rev<I: TrustedLen<Item = T>>(iter: I) -> Self {
+        let size = iter.size_hint().1.unwrap();
+
+        let mut vals: Vec<T> = Vec::with_capacity(size);
+        unsafe {
+            // Set to end of buffer.
+            let mut ptr = vals.as_mut_ptr().add(size);
+
+            iter.for_each(|item| {
+                ptr = ptr.sub(1);
+                std::ptr::write(ptr, item);
+            });
+            vals.set_len(size)
+        }
+        PrimitiveArray::new(DataType::from(T::PRIMITIVE), vals.into(), None)
+    }
+}
+
+impl<T: NativeType> FromIteratorReversed<Option<T>> for PrimitiveArray<T> {
+    fn from_trusted_len_iter_rev<I: TrustedLen<Item = Option<T>>>(iter: I) -> Self {
+        let size = iter.size_hint().1.unwrap();
+
+        let mut vals: Vec<T> = Vec::with_capacity(size);
+        let mut validity = MutableBitmap::with_capacity(size);
+        validity.extend_constant(size, true);
+        let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
+        unsafe {
+            // Set to end of buffer.
+            let mut ptr = vals.as_mut_ptr().add(size);
+            let mut offset = size;
+
+            iter.for_each(|opt_item| {
+                offset -= 1;
+                ptr = ptr.sub(1);
+                match opt_item {
+                    Some(item) => {
+                        std::ptr::write(ptr, item);
+                    },
+                    None => {
+                        std::ptr::write(ptr, T::default());
+                        unset_bit_raw(validity_ptr, offset)
+                    },
+                }
+            });
+            vals.set_len(size)
+        }
+        PrimitiveArray::new(
+            DataType::from(T::PRIMITIVE),
+            vals.into(),
+            Some(validity.into()),
+        )
     }
 }
 

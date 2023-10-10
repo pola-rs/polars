@@ -34,11 +34,20 @@ pub(super) fn set_sorted_flag(s: &Series, sorted: IsSorted) -> PolarsResult<Seri
 }
 
 #[cfg(feature = "timezones")]
-pub(super) fn replace_time_zone(
-    s: &Series,
-    time_zone: Option<&str>,
-    use_earliest: Option<bool>,
-) -> PolarsResult<Series> {
-    let ca = s.datetime().unwrap();
-    Ok(polars_ops::prelude::replace_time_zone(ca, time_zone, use_earliest)?.into_series())
+pub(super) fn replace_time_zone(s: &[Series], time_zone: Option<&str>) -> PolarsResult<Series> {
+    let s1 = &s[0];
+    let ca = s1.datetime().unwrap();
+    let s2 = &s[1].utf8().unwrap();
+    Ok(polars_ops::prelude::replace_time_zone(ca, time_zone, s2)?.into_series())
+}
+
+#[cfg(feature = "dtype-struct")]
+pub(super) fn value_counts(s: &Series, sort: bool, parallel: bool) -> PolarsResult<Series> {
+    s.value_counts(sort, parallel)
+        .map(|df| df.into_struct(s.name()).into_series())
+}
+
+#[cfg(feature = "unique_counts")]
+pub(super) fn unique_counts(s: &Series) -> PolarsResult<Series> {
+    Ok(s.unique_counts().into_series())
 }

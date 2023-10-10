@@ -9,7 +9,6 @@ from polars.utils.deprecation import (
     deprecate_function,
     deprecate_nonkeyword_arguments,
     deprecate_renamed_function,
-    deprecate_renamed_methods,
     deprecate_renamed_parameter,
     issue_deprecation_warning,
     warn_closed_future_change,
@@ -50,30 +49,6 @@ def test_deprecate_renamed_parameter(recwarn: Any) -> None:
     assert len(recwarn) == 2
     assert "oof" in str(recwarn[0].message)
     assert "rab" in str(recwarn[1].message)
-
-
-def test_deprecate_renamed_methods() -> None:
-    # one-to-one redirection
-    @deprecate_renamed_methods({"foo": "bar"}, versions={"foo": "1.0.0"})
-    class DemoClass1:
-        def bar(self, upper: bool = False) -> str:
-            return "BAZ" if upper else "baz"
-
-    with pytest.deprecated_call():
-        result = DemoClass1().foo()  # type: ignore[attr-defined]
-    assert result == "baz"
-
-    # redirection with **kwargs
-    @deprecate_renamed_methods(
-        {"foo": ("bar", {"upper": True})}, versions={"foo": "1.0.0"}
-    )
-    class DemoClass2:
-        def bar(self, upper: bool = False) -> str:
-            return "BAZ" if upper else "baz"
-
-    with pytest.deprecated_call():
-        result = DemoClass2().foo()  # type: ignore[attr-defined]
-    assert result == "BAZ"
 
 
 class Foo:  # noqa: D101

@@ -12,13 +12,11 @@ use crate::utils::CustomIterTools;
 pub mod default_arrays;
 #[cfg(feature = "dtype-array")]
 pub mod fixed_size_list;
-mod get;
 pub mod list;
 pub mod null;
 pub mod slice;
 pub mod utf8;
 
-pub use get::ArrowGetItem;
 pub use slice::*;
 
 pub trait ValueSize {
@@ -102,7 +100,7 @@ macro_rules! iter_to_values {
 
 pub trait ListFromIter {
     /// Create a list-array from an iterator.
-    /// Used in groupby agg-list
+    /// Used in group_by agg-list
     ///
     /// # Safety
     /// Will produce incorrect arrays if size hint is incorrect.
@@ -136,7 +134,7 @@ pub trait ListFromIter {
     }
 
     /// Create a list-array from an iterator.
-    /// Used in groupby agg-list
+    /// Used in group_by agg-list
     ///
     /// # Safety
     /// Will produce incorrect arrays if size hint is incorrect.
@@ -166,7 +164,7 @@ pub trait ListFromIter {
     }
 
     /// Create a list-array from an iterator.
-    /// Used in groupby agg-list
+    /// Used in group_by agg-list
     ///
     /// # Safety
     /// Will produce incorrect arrays if size hint is incorrect.
@@ -212,7 +210,7 @@ pub trait ListFromIter {
     }
 
     /// Create a list-array from an iterator.
-    /// Used in groupby agg-list
+    /// Used in group_by agg-list
     ///
     /// # Safety
     /// Will produce incorrect arrays if size hint is incorrect.

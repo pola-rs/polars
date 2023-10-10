@@ -12,6 +12,8 @@ pub struct OptState {
     #[cfg(feature = "cse")]
     pub comm_subexpr_elim: bool,
     pub streaming: bool,
+    pub eager: bool,
+    pub fast_projection: bool,
 }
 
 impl Default for OptState {
@@ -27,8 +29,10 @@ impl Default for OptState {
             #[cfg(feature = "cse")]
             comm_subplan_elim: true,
             #[cfg(feature = "cse")]
-            comm_subexpr_elim: false,
+            comm_subexpr_elim: true,
             streaming: false,
+            fast_projection: true,
+            eager: false,
         }
     }
 }

@@ -7,6 +7,7 @@ extend-ignore-identifiers-re = [
 ba = "ba"
 Fo = "Fo"
 nd = "nd"
+ND = "ND"
 opt_nd = "opt_nd"
 ser = "ser"
 strat = "strat"

@@ -157,3 +157,32 @@ fn test_duration() -> PolarsResult<()> {
     );
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "dtype-duration")]
+fn test_duration_date_arithmetic() {
+    let date1 = Int32Chunked::new("", &[1, 1, 1]).into_date().into_series();
+    let date2 = Int32Chunked::new("", &[2, 3, 4]).into_date().into_series();
+
+    let diff_ms = &date2 - &date1;
+    let diff_us = diff_ms
+        .cast(&DataType::Duration(TimeUnit::Microseconds))
+        .unwrap();
+    let diff_ns = diff_ms
+        .cast(&DataType::Duration(TimeUnit::Nanoseconds))
+        .unwrap();
+
+    // `+` is commutative for date and duration
+    assert_series_eq(&(&diff_ms + &date1), &(&date1 + &diff_ms));
+    assert_series_eq(&(&diff_us + &date1), &(&date1 + &diff_us));
+    assert_series_eq(&(&diff_ns + &date1), &(&date1 + &diff_ns));
+
+    // `+` is correct date and duration
+    assert_series_eq(&(&diff_ms + &date1), &date2);
+    assert_series_eq(&(&diff_us + &date1), &date2);
+    assert_series_eq(&(&diff_ns + &date1), &date2);
+}
+
+fn assert_series_eq(s1: &Series, s2: &Series) {
+    assert!(s1.series_equal(s2))
+}

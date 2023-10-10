@@ -14,7 +14,7 @@ pub(crate) fn get_offsets(
     chunk_size: usize,
     bytes: &[u8],
     expected_fields: usize,
-    delimiter: u8,
+    separator: u8,
     quote_char: Option<u8>,
     eol_char: u8,
 ) {
@@ -29,7 +29,7 @@ pub(crate) fn get_offsets(
         let end_pos = match next_line_position(
             &bytes[search_pos..],
             Some(expected_fields),
-            delimiter,
+            separator,
             quote_char,
             eol_char,
         ) {
@@ -57,7 +57,7 @@ struct ChunkReader<'a> {
     // not a promise, but something we want
     rows_per_batch: usize,
     expected_fields: usize,
-    delimiter: u8,
+    separator: u8,
     quote_char: Option<u8>,
     eol_char: u8,
 }
@@ -67,7 +67,7 @@ impl<'a> ChunkReader<'a> {
         file: &'a File,
         rows_per_batch: usize,
         expected_fields: usize,
-        delimiter: u8,
+        separator: u8,
         quote_char: Option<u8>,
         eol_char: u8,
         page_size: u64,
@@ -85,7 +85,7 @@ impl<'a> ChunkReader<'a> {
             n_chunks: 16,
             rows_per_batch,
             expected_fields,
-            delimiter,
+            separator,
             quote_char,
             eol_char,
         }
@@ -132,7 +132,7 @@ impl<'a> ChunkReader<'a> {
                 bytes_first_row = next_line_position(
                     &self.buf[2..],
                     Some(self.expected_fields),
-                    self.delimiter,
+                    self.separator,
                     self.quote_char,
                     self.eol_char,
                 );
@@ -179,7 +179,7 @@ impl<'a> ChunkReader<'a> {
             self.rows_per_batch * bytes_first_row,
             &self.buf,
             self.expected_fields,
-            self.delimiter,
+            self.separator,
             self.quote_char,
             self.eol_char,
         );
@@ -206,7 +206,7 @@ impl<'a> CoreReader<'a> {
             file,
             self.chunk_size,
             self.schema.len(),
-            self.delimiter,
+            self.separator,
             self.quote_char,
             self.eol_char,
             4096,
@@ -219,7 +219,7 @@ impl<'a> CoreReader<'a> {
         // RAII structure that will ensure we maintain a global stringcache
         #[cfg(feature = "dtype-categorical")]
         let _cat_lock = if _has_cat {
-            Some(polars_core::IUseStringCache::hold())
+            Some(polars_core::StringCacheHolder::hold())
         } else {
             None
         };
@@ -244,9 +244,10 @@ impl<'a> CoreReader<'a> {
             missing_is_null: self.missing_is_null,
             to_cast: self.to_cast,
             ignore_errors: self.ignore_errors,
+            truncate_ragged_lines: self.truncate_ragged_lines,
             n_rows: self.n_rows,
             encoding: self.encoding,
-            delimiter: self.delimiter,
+            separator: self.separator,
             schema: self.schema,
             rows_read: 0,
             _cat_lock,
@@ -271,13 +272,14 @@ pub struct BatchedCsvReaderRead<'a> {
     missing_is_null: bool,
     to_cast: Vec<Field>,
     ignore_errors: bool,
+    truncate_ragged_lines: bool,
     n_rows: Option<usize>,
     encoding: CsvEncoding,
-    delimiter: u8,
+    separator: u8,
     schema: SchemaRef,
     rows_read: IdxSize,
     #[cfg(feature = "dtype-categorical")]
-    _cat_lock: Option<polars_core::IUseStringCache>,
+    _cat_lock: Option<polars_core::StringCacheHolder>,
     #[cfg(not(feature = "dtype-categorical"))]
     _cat_lock: Option<u8>,
 }
@@ -328,7 +330,7 @@ impl<'a> BatchedCsvReaderRead<'a> {
                     let stop_at_n_bytes = chunk.len();
                     let mut df = read_chunk(
                         chunk,
-                        self.delimiter,
+                        self.separator,
                         self.schema.as_ref(),
                         self.ignore_errors,
                         &self.projection,
@@ -341,12 +343,13 @@ impl<'a> BatchedCsvReaderRead<'a> {
                         self.encoding,
                         self.null_values.as_ref(),
                         self.missing_is_null,
+                        self.truncate_ragged_lines,
                         self.chunk_size,
                         stop_at_n_bytes,
                         self.starting_point_offset,
                     )?;
 
-                    cast_columns(&mut df, &self.to_cast, false)?;
+                    cast_columns(&mut df, &self.to_cast, false, self.ignore_errors)?;
 
                     update_string_stats(&self.str_capacities, &self.str_columns, &df)?;
                     if let Some(rc) = &self.row_count {
@@ -402,7 +405,7 @@ pub fn to_batched_owned_read(
 ) -> OwnedBatchedCsvReader {
     // make sure that the schema is bound to the schema we have
     // we will keep ownership of the schema so that the lifetime remains bound to ourselves
-    let reader = reader.with_schema(schema.clone());
+    let reader = reader.with_schema(Some(schema.clone()));
     // extend the lifetime
     // the lifetime was bound to schema, which we own and will store on the heap
     let reader = unsafe {

@@ -26,7 +26,7 @@ def _import_timings_as_frame(best_of: int) -> pl.DataFrame:
             has_header=True,
             new_columns=["own_time", "cumulative_time", "import"],
         ).with_columns(
-            pl.col(["own_time", "cumulative_time"]).str.strip().cast(pl.Int32)
+            pl.col(["own_time", "cumulative_time"]).str.strip_chars().cast(pl.Int32)
         )
         for _ in range(best_of)
     ]
@@ -62,7 +62,7 @@ def test_polars_import() -> None:
             assert not_imported, f"{if_err}\n{df_import}"
 
         # ensure that we do not have an import speed regression.
-        polars_import = df_import.filter(pl.col("import").str.strip() == "polars")
+        polars_import = df_import.filter(pl.col("import").str.strip_chars() == "polars")
         polars_import_time = polars_import["cumulative_time"].item()
         assert isinstance(polars_import_time, int)
 

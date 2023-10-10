@@ -100,8 +100,6 @@ where
 {
     /// File or Stream object
     reader: R,
-    /// Aggregates chunk afterwards to a single chunk.
-    rechunk: bool,
     /// Stop reading from the csv after this number of rows is reached
     n_rows: Option<usize>,
     // used by error ignore logic
@@ -111,9 +109,7 @@ where
     projection: Option<Vec<usize>>,
     /// Optional column names to project/ select.
     columns: Option<Vec<String>>,
-    delimiter: Option<u8>,
-    has_header: bool,
-    ignore_errors: bool,
+    separator: Option<u8>,
     pub(crate) schema: Option<SchemaRef>,
     encoding: CsvEncoding,
     n_threads: Option<usize>,
@@ -122,17 +118,22 @@ where
     dtype_overwrite: Option<&'a [DataType]>,
     sample_size: usize,
     chunk_size: usize,
-    low_memory: bool,
     comment_char: Option<u8>,
-    eol_char: u8,
     null_values: Option<NullValues>,
-    missing_is_null: bool,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     quote_char: Option<u8>,
     skip_rows_after_header: usize,
     try_parse_dates: bool,
     row_count: Option<RowCount>,
+    /// Aggregates chunk afterwards to a single chunk.
+    rechunk: bool,
     raise_if_empty: bool,
+    truncate_ragged_lines: bool,
+    missing_is_null: bool,
+    low_memory: bool,
+    has_header: bool,
+    ignore_errors: bool,
+    eol_char: u8,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -180,8 +181,8 @@ where
     /// in the csv parser and expects a complete Schema.
     ///
     /// It is recommended to use [with_dtypes](Self::with_dtypes) instead.
-    pub fn with_schema(mut self, schema: SchemaRef) -> Self {
-        self.schema = Some(schema);
+    pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
+        self.schema = schema;
         self
     }
 
@@ -203,9 +204,9 @@ where
         self
     }
 
-    /// Set the CSV file's column delimiter as a byte character
-    pub fn with_delimiter(mut self, delimiter: u8) -> Self {
-        self.delimiter = Some(delimiter);
+    /// Set the CSV file's column separator as a byte character
+    pub fn with_separator(mut self, separator: u8) -> Self {
+        self.separator = Some(separator);
         self
     }
 
@@ -309,8 +310,8 @@ where
     }
 
     /// Set the `char` used as quote char. The default is `b'"'`. If set to `[None]` quoting is disabled.
-    pub fn with_quote_char(mut self, quote: Option<u8>) -> Self {
-        self.quote_char = quote;
+    pub fn with_quote_char(mut self, quote_char: Option<u8>) -> Self {
+        self.quote_char = quote_char;
         self
     }
 
@@ -322,6 +323,12 @@ where
 
     pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
         self.predicate = predicate;
+        self
+    }
+
+    /// Truncate lines that are longer than the schema.
+    pub fn truncate_ragged_lines(mut self, toggle: bool) -> Self {
+        self.truncate_ragged_lines = toggle;
         self
     }
 }
@@ -351,7 +358,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             self.skip_rows_before_header,
             std::mem::take(&mut self.projection),
             self.max_records,
-            self.delimiter,
+            self.separator,
             self.has_header,
             self.ignore_errors,
             self.schema.clone(),
@@ -374,6 +381,7 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
             std::mem::take(&mut self.row_count),
             self.try_parse_dates,
             self.raise_if_empty,
+            self.truncate_ragged_lines,
         )
     }
 
@@ -473,7 +481,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
 
                 let (inferred_schema, _, _) = infer_file_schema(
                     &reader_bytes,
-                    self.delimiter.unwrap_or(b','),
+                    self.separator.unwrap_or(b','),
                     self.max_records,
                     self.has_header,
                     None,
@@ -502,7 +510,7 @@ impl<'a> CsvReader<'a, Box<dyn MmapBytesReader>> {
 
                 let (inferred_schema, _, _) = infer_file_schema(
                     &reader_bytes,
-                    self.delimiter.unwrap_or(b','),
+                    self.separator.unwrap_or(b','),
                     self.max_records,
                     self.has_header,
                     None,
@@ -535,7 +543,7 @@ where
             max_records: Some(128),
             skip_rows_before_header: 0,
             projection: None,
-            delimiter: None,
+            separator: None,
             has_header: true,
             ignore_errors: false,
             schema: None,
@@ -558,6 +566,7 @@ where
             try_parse_dates: false,
             row_count: None,
             raise_if_empty: true,
+            truncate_ragged_lines: false,
         }
     }
 
@@ -575,7 +584,7 @@ where
 
             #[cfg(feature = "dtype-categorical")]
             if _has_cat {
-                _cat_lock = Some(polars_core::IUseStringCache::hold())
+                _cat_lock = Some(polars_core::StringCacheHolder::hold())
             }
 
             let mut csv_reader = self.core_reader(Some(Arc::new(schema)), to_cast)?;
@@ -593,7 +602,7 @@ where
                     })
                     .unwrap_or(false);
                 if has_cat {
-                    _cat_lock = Some(polars_core::IUseStringCache::hold())
+                    _cat_lock = Some(polars_core::StringCacheHolder::hold())
                 }
             }
             let mut csv_reader = self.core_reader(self.schema.clone(), vec![])?;

@@ -1,16 +1,22 @@
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use super::*;
 
 #[derive(Copy, Clone, Default, Eq, Hash, PartialEq, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum QuoteStyle {
     /// This puts quotes around every field. Always.
     Always,
     /// This puts quotes around fields only when necessary.
-    // They are necessary when fields contain a quote, delimiter or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field).
+    // They are necessary when fields contain a quote, separator or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field).
     // This is the default.
     #[default]
     Necessary,
     /// This puts quotes around all fields that are non-numeric. Namely, when writing a field that does not parse as a valid float or integer, then quotes will be used even if they aren’t strictly necessary.
     NonNumeric,
+    /// Never quote any fields, even if it would produce invalid CSV data.
+    Never,
 }
 
 /// Write a DataFrame to csv.
@@ -63,9 +69,9 @@ where
         self
     }
 
-    /// Set the CSV file's column delimiter as a byte character.
-    pub fn with_delimiter(mut self, delimiter: u8) -> Self {
-        self.options.delimiter = delimiter;
+    /// Set the CSV file's column separator as a byte character.
+    pub fn with_separator(mut self, separator: u8) -> Self {
+        self.options.separator = separator;
         self
     }
 
@@ -108,8 +114,8 @@ where
     }
 
     /// Set the single byte character used for quoting.
-    pub fn with_quoting_char(mut self, char: u8) -> Self {
-        self.options.quote = char;
+    pub fn with_quote_char(mut self, char: u8) -> Self {
+        self.options.quote_char = char;
         self
     }
 
@@ -130,5 +136,40 @@ where
     pub fn with_quote_style(mut self, quote_style: QuoteStyle) -> Self {
         self.options.quote_style = quote_style;
         self
+    }
+
+    pub fn batched(self, _schema: &Schema) -> PolarsResult<BatchedWriter<W>> {
+        let expects_header = self.header;
+        Ok(BatchedWriter {
+            writer: self,
+            has_written_header: !expects_header,
+        })
+    }
+}
+
+pub struct BatchedWriter<W: Write> {
+    writer: CsvWriter<W>,
+    has_written_header: bool,
+}
+
+impl<W: Write> BatchedWriter<W> {
+    /// Write a batch to the csv writer.
+    ///
+    /// # Panics
+    /// The caller must ensure the chunks in the given [`DataFrame`] are aligned.
+    pub fn write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        if !self.has_written_header {
+            self.has_written_header = true;
+            let names = df.get_column_names();
+            write_impl::write_header(&mut self.writer.buffer, &names, &self.writer.options)?;
+        }
+
+        write_impl::write(
+            &mut self.writer.buffer,
+            df,
+            self.writer.batch_size,
+            &self.writer.options,
+        )?;
+        Ok(())
     }
 }

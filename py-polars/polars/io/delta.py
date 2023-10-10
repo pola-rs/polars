@@ -271,7 +271,7 @@ def scan_delta(
     return scan_pyarrow_dataset(pa_ds)
 
 
-def _resolve_delta_lake_uri(table_uri: str, strict: bool = True) -> str:
+def _resolve_delta_lake_uri(table_uri: str, *, strict: bool = True) -> str:
     parsed_result = urlparse(table_uri)
 
     resolved_uri = str(
@@ -315,8 +315,9 @@ def _get_delta_lake_table(
 
 def _check_if_delta_available() -> None:
     if not _DELTALAKE_AVAILABLE:
-        raise ImportError(
-            "deltalake is not installed. Please run `pip install deltalake>=0.9.0`."
+        raise ModuleNotFoundError(
+            "deltalake is not installed"
+            "\n\nPlease run: `pip install deltalake>=0.9.0`"
         )
 
 
@@ -326,7 +327,7 @@ def _check_for_unsupported_types(dtypes: list[PolarsDataType]) -> None:
     overlap = schema_dtypes & unsupported_types
 
     if overlap:
-        raise TypeError(f"dataframe contains unsupported data types: {overlap}")
+        raise TypeError(f"dataframe contains unsupported data types: {overlap!r}")
 
 
 def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:
@@ -337,8 +338,6 @@ def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:
         pa.uint16(): pa.int16(),
         pa.uint32(): pa.int32(),
         pa.uint64(): pa.int64(),
-        pa.timestamp("ns"): pa.timestamp("us"),
-        pa.timestamp("ms"): pa.timestamp("us"),
         pa.large_string(): pa.string(),
         pa.large_binary(): pa.binary(),
     }
@@ -349,7 +348,10 @@ def _convert_pa_schema_to_delta(schema: pa.schema) -> pa.schema:
             return list_to_delta_dtype(dtype)
         elif isinstance(dtype, pa.StructType):
             return struct_to_delta_dtype(dtype)
-
+        elif isinstance(dtype, pa.TimestampType):
+            # TODO: Support time zones when implemented by delta-rs. See:
+            # https://github.com/delta-io/delta-rs/issues/1598
+            return pa.timestamp("us")
         try:
             return dtype_map[dtype]
         except KeyError:

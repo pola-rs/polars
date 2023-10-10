@@ -32,6 +32,55 @@ def test_to_from_file(df: pl.DataFrame, tmp_path: Path) -> None:
     assert_frame_equal(df, out, categorical_as_str=True)
 
 
+def test_to_from_buffer_arraywise_schema() -> None:
+    buf = io.StringIO(
+        """
+    [
+        {"a": 5, "b": "foo", "c": null},
+        {"a": 11.4, "b": null, "c": true, "d": 8},
+        {"a": -25.8, "b": "bar", "c": false}
+    ]"""
+    )
+
+    read_df = pl.read_json(buf, schema={"b": pl.Utf8, "e": pl.Int16})
+
+    assert_frame_equal(
+        read_df,
+        pl.DataFrame(
+            {
+                "b": pl.Series(["foo", None, "bar"], dtype=pl.Utf8),
+                "e": pl.Series([None, None, None], dtype=pl.Int16),
+            }
+        ),
+    )
+
+
+def test_to_from_buffer_arraywise_schema_override() -> None:
+    buf = io.StringIO(
+        """
+    [
+        {"a": 5, "b": "foo", "c": null},
+        {"a": 11.4, "b": null, "c": true, "d": 8},
+        {"a": -25.8, "b": "bar", "c": false}
+    ]"""
+    )
+
+    read_df = pl.read_json(buf, schema_overrides={"c": pl.Int64, "d": pl.Float64})
+
+    assert_frame_equal(
+        read_df,
+        pl.DataFrame(
+            {
+                "a": pl.Series([5, 11.4, -25.8], dtype=pl.Float64),
+                "b": pl.Series(["foo", None, "bar"], dtype=pl.Utf8),
+                "c": pl.Series([None, 1, 0], dtype=pl.Int64),
+                "d": pl.Series([None, 8, None], dtype=pl.Float64),
+            }
+        ),
+        check_column_order=False,
+    )
+
+
 def test_write_json_to_string() -> None:
     # Tests if it runs if no arg given
     df = pl.DataFrame({"a": [1, 2, 3]})
@@ -97,10 +146,13 @@ def test_read_ndjson_empty_array() -> None:
 
 
 def test_ndjson_nested_null() -> None:
-    payload = """{"foo":{"bar":[{}]}}"""
-    assert pl.read_ndjson(io.StringIO(payload)).to_dict(False) == {
-        "foo": [{"bar": [{"": None}]}]
-    }
+    json_payload = """{"foo":{"bar":[{}]}}"""
+    df = pl.read_ndjson(io.StringIO(json_payload))
+
+    # 'bar' represents an empty list of structs; check the schema is correct (eg: picks
+    # up that it IS a list of structs), but confirm that list is empty (ref: #11301)
+    assert df.schema == {"foo": pl.Struct([pl.Field("bar", pl.List(pl.Struct([])))])}
+    assert df.to_dict(False) == {"foo": [{"bar": []}]}
 
 
 def test_ndjson_nested_utf8_int() -> None:
@@ -138,6 +190,13 @@ def test_json_sliced_list_serialization() -> None:
     sliced_df = df[1, :]
     sliced_df.write_ndjson(f)
     assert f.getvalue() == b'{"col1":2,"col2":[6,7,8]}\n'
+
+
+def test_json_deserialize_empty_list_10458() -> None:
+    schema = {"LIST_OF_STRINGS": pl.List(pl.Utf8)}
+    serialized_schema = pl.DataFrame(schema=schema).write_json()
+    df = pl.read_json(io.StringIO(serialized_schema))
+    assert df.schema == schema
 
 
 def test_json_deserialize_9687() -> None:

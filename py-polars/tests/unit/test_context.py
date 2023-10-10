@@ -9,7 +9,7 @@ def test_context_ignore_5867() -> None:
         .with_context(outer)
     )
     assert (
-        df.groupby("Category", maintain_order=True)
+        df.group_by("Category", maintain_order=True)
         .agg([(pl.col("Counts")).sum()])
         .collect()
         .to_dict(False)

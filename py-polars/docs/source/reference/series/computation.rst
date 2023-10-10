@@ -42,6 +42,7 @@ Computation
     Series.peak_min
     Series.rank
     Series.rolling_apply
+    Series.rolling_map
     Series.rolling_max
     Series.rolling_mean
     Series.rolling_median

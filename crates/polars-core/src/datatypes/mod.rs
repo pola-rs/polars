@@ -12,6 +12,8 @@ mod aliases;
 mod any_value;
 mod dtype;
 mod field;
+mod static_array;
+mod static_array_collect;
 mod time_unit;
 
 use std::cmp::Ordering;
@@ -28,9 +30,10 @@ use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
+use bytemuck::Zeroable;
 pub use dtype::*;
 pub use field::*;
-use num_traits::{Bounded, FromPrimitive, Num, NumCast, Zero};
+use num_traits::{Bounded, FromPrimitive, Num, NumCast, One, Zero};
 use polars_arrow::data_types::IsFloat;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
@@ -38,37 +41,90 @@ use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
 use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserializer, Serializer};
+pub use static_array::StaticArray;
+pub use static_array_collect::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype};
 pub use time_unit::*;
 
 use crate::chunked_array::arithmetic::ArrayArithmetics;
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
+use crate::chunked_array::object::ObjectArray;
+#[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
 use crate::utils::Wrap;
 
-pub struct Utf8Type {}
+pub struct Nested;
+pub struct Flat;
 
-pub struct BinaryType {}
+/// # Safety
+///
+/// The StaticArray and dtype return must be correct.
+pub unsafe trait PolarsDataType: Send + Sync + Sized {
+    type Physical<'a>;
+    type ZeroablePhysical<'a>: Zeroable + From<Self::Physical<'a>>;
+    type Array: for<'a> StaticArray<
+        ValueT<'a> = Self::Physical<'a>,
+        ZeroableValueT<'a> = Self::ZeroablePhysical<'a>,
+    >;
+    type Structure;
 
-#[cfg(feature = "dtype-array")]
-pub struct FixedSizeListType {}
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct ListType {}
-
-pub trait PolarsDataType: Send + Sync {
     fn get_dtype() -> DataType
     where
         Self: Sized;
 }
 
-macro_rules! impl_polars_datatype {
-    ($ca:ident, $variant:ident, $physical:ty) => {
+pub trait PolarsNumericType: 'static
+where
+    Self: for<'a> PolarsDataType<
+        Physical<'a> = Self::Native,
+        ZeroablePhysical<'a> = Self::Native,
+        Array = PrimitiveArray<Self::Native>,
+        Structure = Flat,
+    >,
+{
+    type Native: NumericNative;
+}
+
+pub trait PolarsIntegerType: PolarsNumericType {}
+pub trait PolarsFloatType: PolarsNumericType {}
+
+macro_rules! impl_polars_num_datatype {
+    ($trait: ident, $ca:ident, $variant:ident, $physical:ty) => {
         #[derive(Clone, Copy)]
         pub struct $ca {}
 
-        impl PolarsDataType for $ca {
+        unsafe impl PolarsDataType for $ca {
+            type Physical<'a> = $physical;
+            type ZeroablePhysical<'a> = $physical;
+            type Array = PrimitiveArray<$physical>;
+            type Structure = Flat;
+
+            #[inline]
+            fn get_dtype() -> DataType {
+                DataType::$variant
+            }
+        }
+
+        impl PolarsNumericType for $ca {
+            type Native = $physical;
+        }
+
+        impl $trait for $ca {}
+    };
+}
+
+macro_rules! impl_polars_datatype {
+    ($ca:ident, $variant:ident, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty) => {
+        #[derive(Clone, Copy)]
+        pub struct $ca {}
+
+        unsafe impl PolarsDataType for $ca {
+            type Physical<$lt> = $phys;
+            type ZeroablePhysical<$lt> = $zerophys;
+            type Array = $arr;
+            type Structure = Flat;
+
             #[inline]
             fn get_dtype() -> DataType {
                 DataType::$variant
@@ -77,89 +133,88 @@ macro_rules! impl_polars_datatype {
     };
 }
 
-impl_polars_datatype!(UInt8Type, UInt8, u8);
-impl_polars_datatype!(UInt16Type, UInt16, u16);
-impl_polars_datatype!(UInt32Type, UInt32, u32);
-impl_polars_datatype!(UInt64Type, UInt64, u64);
-impl_polars_datatype!(Int8Type, Int8, i8);
-impl_polars_datatype!(Int16Type, Int16, i16);
-impl_polars_datatype!(Int32Type, Int32, i32);
-impl_polars_datatype!(Int64Type, Int64, i64);
-impl_polars_datatype!(Float32Type, Float32, f32);
-impl_polars_datatype!(Float64Type, Float64, f64);
-impl_polars_datatype!(DateType, Date, i32);
+impl_polars_num_datatype!(PolarsIntegerType, UInt8Type, UInt8, u8);
+impl_polars_num_datatype!(PolarsIntegerType, UInt16Type, UInt16, u16);
+impl_polars_num_datatype!(PolarsIntegerType, UInt32Type, UInt32, u32);
+impl_polars_num_datatype!(PolarsIntegerType, UInt64Type, UInt64, u64);
+impl_polars_num_datatype!(PolarsIntegerType, Int8Type, Int8, i8);
+impl_polars_num_datatype!(PolarsIntegerType, Int16Type, Int16, i16);
+impl_polars_num_datatype!(PolarsIntegerType, Int32Type, Int32, i32);
+impl_polars_num_datatype!(PolarsIntegerType, Int64Type, Int64, i64);
+impl_polars_num_datatype!(PolarsFloatType, Float32Type, Float32, f32);
+impl_polars_num_datatype!(PolarsFloatType, Float64Type, Float64, f64);
+impl_polars_datatype!(DateType, Date, PrimitiveArray<i32>, 'a, i32, i32);
 #[cfg(feature = "dtype-decimal")]
-impl_polars_datatype!(DecimalType, Unknown, i128);
-impl_polars_datatype!(DatetimeType, Unknown, i64);
-impl_polars_datatype!(DurationType, Unknown, i64);
-impl_polars_datatype!(CategoricalType, Unknown, u32);
-impl_polars_datatype!(TimeType, Time, i64);
+impl_polars_datatype!(DecimalType, Unknown, PrimitiveArray<i128>, 'a, i128, i128);
+impl_polars_datatype!(DatetimeType, Unknown, PrimitiveArray<i64>, 'a, i64, i64);
+impl_polars_datatype!(DurationType, Unknown, PrimitiveArray<i64>, 'a, i64, i64);
+impl_polars_datatype!(CategoricalType, Unknown, PrimitiveArray<u32>, 'a, u32, u32);
+impl_polars_datatype!(TimeType, Time, PrimitiveArray<i64>, 'a, i64, i64);
+impl_polars_datatype!(Utf8Type, Utf8, Utf8Array<i64>, 'a, &'a str, Option<&'a str>);
+impl_polars_datatype!(BinaryType, Binary, BinaryArray<i64>, 'a, &'a [u8], Option<&'a [u8]>);
+impl_polars_datatype!(BooleanType, Boolean, BooleanArray, 'a, bool, bool);
 
-impl PolarsDataType for Utf8Type {
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ListType {}
+unsafe impl PolarsDataType for ListType {
+    type Physical<'a> = Box<dyn Array>;
+    type ZeroablePhysical<'a> = Option<Box<dyn Array>>;
+    type Array = ListArray<i64>;
+    type Structure = Nested;
+
     fn get_dtype() -> DataType {
-        DataType::Utf8
-    }
-}
-
-impl PolarsDataType for BinaryType {
-    fn get_dtype() -> DataType {
-        DataType::Binary
-    }
-}
-
-pub struct BooleanType {}
-
-impl PolarsDataType for BooleanType {
-    fn get_dtype() -> DataType {
-        DataType::Boolean
-    }
-}
-
-impl PolarsDataType for ListType {
-    fn get_dtype() -> DataType {
-        // null as we cannot know anything without self.
+        // Null as we cannot know anything without self.
         DataType::List(Box::new(DataType::Null))
     }
 }
 
 #[cfg(feature = "dtype-array")]
-impl PolarsDataType for FixedSizeListType {
+pub struct FixedSizeListType {}
+#[cfg(feature = "dtype-array")]
+unsafe impl PolarsDataType for FixedSizeListType {
+    type Physical<'a> = Box<dyn Array>;
+    type ZeroablePhysical<'a> = Option<Box<dyn Array>>;
+    type Array = FixedSizeListArray;
+    type Structure = Nested;
+
     fn get_dtype() -> DataType {
-        // null as we cannot know anything without self.
+        // Null as we cannot know anything without self.
         DataType::Array(Box::new(DataType::Null), 0)
     }
 }
-
 #[cfg(feature = "dtype-decimal")]
 pub struct Int128Type {}
-
 #[cfg(feature = "dtype-decimal")]
-impl PolarsDataType for Int128Type {
+unsafe impl PolarsDataType for Int128Type {
+    type Physical<'a> = i128;
+    type ZeroablePhysical<'a> = i128;
+    type Array = PrimitiveArray<i128>;
+    type Structure = Flat;
+
     fn get_dtype() -> DataType {
-        DataType::Decimal(None, Some(0)) // scale is not None to allow for get_any_value() to work
+        // Scale is not None to allow for get_any_value() to work.
+        DataType::Decimal(None, Some(0))
     }
 }
-
+#[cfg(feature = "dtype-decimal")]
+impl PolarsNumericType for Int128Type {
+    type Native = i128;
+}
+#[cfg(feature = "dtype-decimal")]
+impl PolarsIntegerType for Int128Type {}
 #[cfg(feature = "object")]
 pub struct ObjectType<T>(T);
 #[cfg(feature = "object")]
-pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
+unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
+    type Physical<'a> = &'a T;
+    type ZeroablePhysical<'a> = Option<&'a T>;
+    type Array = ObjectArray<T>;
+    type Structure = Nested;
 
-#[cfg(feature = "object")]
-impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     fn get_dtype() -> DataType {
         DataType::Object(T::type_name())
     }
 }
-
-/// Any type that is not nested
-pub trait PolarsSingleType: PolarsDataType {}
-
-impl<T> PolarsSingleType for T where T: NativeType + PolarsDataType {}
-
-impl PolarsSingleType for Utf8Type {}
-
-impl PolarsSingleType for BinaryType {}
 
 #[cfg(feature = "dtype-array")]
 pub type ArrayChunked = ChunkedArray<FixedSizeListType>;
@@ -179,13 +234,17 @@ pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type Utf8Chunked = ChunkedArray<Utf8Type>;
 pub type BinaryChunked = ChunkedArray<BinaryType>;
+#[cfg(feature = "object")]
+pub type ObjectChunked<T> = ChunkedArray<ObjectType<T>>;
 
 pub trait NumericNative:
-    PartialOrd
+    TotalOrd
+    + PartialOrd
     + NativeType
     + Num
     + NumCast
     + Zero
+    + One
     + Simd
     + Simd8
     + std::iter::Sum<Self>
@@ -201,112 +260,40 @@ pub trait NumericNative:
     + IsFloat
     + ArrayArithmetics
 {
-    type POLARSTYPE: PolarsNumericType;
+    type PolarsType: PolarsNumericType;
 }
 
 impl NumericNative for i8 {
-    type POLARSTYPE = Int8Type;
+    type PolarsType = Int8Type;
 }
 impl NumericNative for i16 {
-    type POLARSTYPE = Int16Type;
+    type PolarsType = Int16Type;
 }
 impl NumericNative for i32 {
-    type POLARSTYPE = Int32Type;
+    type PolarsType = Int32Type;
 }
 impl NumericNative for i64 {
-    type POLARSTYPE = Int64Type;
+    type PolarsType = Int64Type;
 }
 impl NumericNative for u8 {
-    type POLARSTYPE = UInt8Type;
+    type PolarsType = UInt8Type;
 }
 impl NumericNative for u16 {
-    type POLARSTYPE = UInt16Type;
+    type PolarsType = UInt16Type;
 }
 impl NumericNative for u32 {
-    type POLARSTYPE = UInt32Type;
+    type PolarsType = UInt32Type;
 }
 impl NumericNative for u64 {
-    type POLARSTYPE = UInt64Type;
+    type PolarsType = UInt64Type;
 }
 #[cfg(feature = "dtype-decimal")]
 impl NumericNative for i128 {
-    type POLARSTYPE = Int128Type;
+    type PolarsType = Int128Type;
 }
 impl NumericNative for f32 {
-    type POLARSTYPE = Float32Type;
+    type PolarsType = Float32Type;
 }
 impl NumericNative for f64 {
-    type POLARSTYPE = Float64Type;
+    type PolarsType = Float64Type;
 }
-
-pub trait PolarsNumericType: Send + Sync + PolarsDataType + 'static {
-    type Native: NumericNative;
-}
-impl PolarsNumericType for UInt8Type {
-    type Native = u8;
-}
-impl PolarsNumericType for UInt16Type {
-    type Native = u16;
-}
-impl PolarsNumericType for UInt32Type {
-    type Native = u32;
-}
-impl PolarsNumericType for UInt64Type {
-    type Native = u64;
-}
-impl PolarsNumericType for Int8Type {
-    type Native = i8;
-}
-impl PolarsNumericType for Int16Type {
-    type Native = i16;
-}
-impl PolarsNumericType for Int32Type {
-    type Native = i32;
-}
-impl PolarsNumericType for Int64Type {
-    type Native = i64;
-}
-#[cfg(feature = "dtype-decimal")]
-impl PolarsNumericType for Int128Type {
-    type Native = i128;
-}
-impl PolarsNumericType for Float32Type {
-    type Native = f32;
-}
-impl PolarsNumericType for Float64Type {
-    type Native = f64;
-}
-
-pub trait PolarsIntegerType: PolarsNumericType {}
-impl PolarsIntegerType for UInt8Type {}
-impl PolarsIntegerType for UInt16Type {}
-impl PolarsIntegerType for UInt32Type {}
-impl PolarsIntegerType for UInt64Type {}
-impl PolarsIntegerType for Int8Type {}
-impl PolarsIntegerType for Int16Type {}
-impl PolarsIntegerType for Int32Type {}
-impl PolarsIntegerType for Int64Type {}
-
-pub trait PolarsFloatType: PolarsNumericType {}
-impl PolarsFloatType for Float32Type {}
-impl PolarsFloatType for Float64Type {}
-
-// Provide options to cloud providers (credentials, region).
-pub type CloudOptions = PlHashMap<String, String>;
-
-/// Used to safely match the underlying type of Polars data structures.
-///
-/// # Safety
-///
-/// The underlying physical type of the data structure on which this
-/// is implemented must always match the given PolarsDataType.
-pub unsafe trait StaticallyMatchesPolarsType<T: PolarsDataType> {}
-
-unsafe impl<T: PolarsNumericType> StaticallyMatchesPolarsType<T> for PrimitiveArray<T::Native> {}
-unsafe impl StaticallyMatchesPolarsType<CategoricalType> for PrimitiveArray<u32> {}
-unsafe impl StaticallyMatchesPolarsType<Utf8Type> for Utf8Array<i64> {}
-unsafe impl StaticallyMatchesPolarsType<BinaryType> for BinaryArray<i64> {}
-unsafe impl StaticallyMatchesPolarsType<BooleanType> for BooleanArray {}
-unsafe impl StaticallyMatchesPolarsType<ListType> for ListArray<i64> {}
-#[cfg(feature = "dtype-array")]
-unsafe impl StaticallyMatchesPolarsType<FixedSizeListType> for FixedSizeListArray {}

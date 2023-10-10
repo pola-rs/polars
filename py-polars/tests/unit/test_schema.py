@@ -14,7 +14,7 @@ def test_schema_on_agg() -> None:
 
     assert (
         df.lazy()
-        .groupby("a")
+        .group_by("a")
         .agg(
             [
                 pl.col("b").min().alias("min"),
@@ -97,7 +97,7 @@ def test_from_dicts_nested_nulls() -> None:
 def test_group_schema_err() -> None:
     df = pl.DataFrame({"foo": [None, 1, 2], "bar": [1, 2, 3]}).lazy()
     with pytest.raises(pl.ColumnNotFoundError):
-        df.groupby("not-existent").agg(pl.col("bar").max().alias("max_bar")).schema
+        df.group_by("not-existent").agg(pl.col("bar").max().alias("max_bar")).schema
 
 
 def test_schema_inference_from_rows() -> None:
@@ -116,7 +116,7 @@ def test_lazy_map_schema() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
 
     # identity
-    assert_frame_equal(df.lazy().map(lambda x: x).collect(), df)
+    assert_frame_equal(df.lazy().map_batches(lambda x: x).collect(), df)
 
     def custom(df: pl.DataFrame) -> pl.Series:
         return df["a"]
@@ -125,7 +125,7 @@ def test_lazy_map_schema() -> None:
         pl.ComputeError,
         match="Expected 'LazyFrame.map' to return a 'DataFrame', got a",
     ):
-        df.lazy().map(custom).collect()  # type: ignore[arg-type]
+        df.lazy().map_batches(custom).collect()  # type: ignore[arg-type]
 
     def custom2(
         df: pl.DataFrame,
@@ -137,11 +137,11 @@ def test_lazy_map_schema() -> None:
         pl.ComputeError,
         match="The output schema of 'LazyFrame.map' is incorrect. Expected",
     ):
-        df.lazy().map(custom2).collect()
+        df.lazy().map_batches(custom2).collect()
 
-    assert df.lazy().map(custom2, validate_output_schema=False).collect().to_dict(
-        False
-    ) == {"a": ["1", "2", "3"], "b": ["a", "b", "c"]}
+    assert df.lazy().map_batches(
+        custom2, validate_output_schema=False
+    ).collect().to_dict(False) == {"a": ["1", "2", "3"], "b": ["a", "b", "c"]}
 
 
 def test_join_as_of_by_schema() -> None:
@@ -151,7 +151,7 @@ def test_join_as_of_by_schema() -> None:
     assert q.collect().columns == q.columns
 
 
-def test_unknown_apply() -> None:
+def test_unknown_map_elements() -> None:
     df = pl.DataFrame(
         {"Amount": [10, 1, 1, 5], "Flour": ["1000g", "100g", "50g", "75g"]}
     )
@@ -159,7 +159,7 @@ def test_unknown_apply() -> None:
     q = df.lazy().select(
         [
             pl.col("Amount"),
-            pl.col("Flour").apply(lambda x: 100.0) / pl.col("Amount"),
+            pl.col("Flour").map_elements(lambda x: 100.0) / pl.col("Amount"),
         ]
     )
 
@@ -270,7 +270,8 @@ def test_schema_owned_arithmetic_5669() -> None:
         .with_columns(-pl.col("A").alias("B"))
         .collect()
     )
-    assert df.columns == ["A", "literal"], df.columns
+    assert df.columns == ["A", "B"]
+    assert df.rows() == [(3, -3)]
 
 
 def test_fill_null_f32_with_lit() -> None:
@@ -338,7 +339,7 @@ def test_from_dicts_all_cols_6716() -> None:
 
 
 def test_from_dicts_empty() -> None:
-    with pytest.raises(pl.NoDataError, match="No rows. Cannot infer schema."):
+    with pytest.raises(pl.NoDataError, match="no data, cannot infer schema"):
         pl.from_dicts([])
 
 
@@ -391,7 +392,7 @@ def test_absence_off_null_prop_8224() -> None:
 
     q = (
         df.lazy()
-        .groupby("group")
+        .group_by("group")
         .agg(
             [
                 sub_col_min("vals_num", "vals_num").alias("sub_num"),
@@ -439,8 +440,8 @@ def test_schemas(
     for key, dtype in expected_select.items():
         assert schema[key] == dtype
 
-    # test groupby schema
-    schema = df.groupby(pl.lit(1)).agg(expr).schema
+    # test group_by schema
+    schema = df.group_by(pl.lit(1)).agg(expr).schema
     for key, dtype in expected_gb.items():
         assert schema[key] == dtype
 
@@ -511,7 +512,7 @@ def test_lit_iter_schema() -> None:
         }
     )
 
-    assert df.groupby("key").agg(pl.col("dates").unique() + timedelta(days=1)).to_dict(
+    assert df.group_by("key").agg(pl.col("dates").unique() + timedelta(days=1)).to_dict(
         False
     ) == {
         "key": ["A"],

@@ -1,6 +1,5 @@
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
-use polars_core::frame::hash_join::JoinArgs;
 use polars_core::prelude::*;
 use polars_core::utils::ensure_sorted_arg;
 use polars_ops::prelude::*;
@@ -10,7 +9,7 @@ use crate::prelude::*;
 use crate::utils::unlocalize_timestamp;
 
 pub trait PolarsUpsample {
-    /// Upsample a DataFrame at a regular frequency.
+    /// Upsample a [`DataFrame`] at a regular frequency.
     ///
     /// # Arguments
     /// * `by` - First group by these columns and then upsample for every group
@@ -19,7 +18,7 @@ pub trait PolarsUpsample {
     /// * `every` - interval will start 'every' duration
     /// * `offset` - change the start of the date_range by this offset.
     ///
-    /// The `period` and `offset` arguments are created with
+    /// The `every` and `offset` arguments are created with
     /// the following string language:
     /// - 1ns   (1 nanosecond)
     /// - 1us   (1 microsecond)
@@ -33,11 +32,14 @@ pub trait PolarsUpsample {
     /// - 1q    (1 calendar quarter)
     /// - 1y    (1 calendar year)
     /// - 1i    (1 index count)
+    ///
     /// Or combine them:
     /// "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+    ///
     /// Suffix with `"_saturating"` to saturate dates with days too
     /// large for their month to the last day of the month (e.g.
     /// 2022-02-29 to 2022-02-28).
+    ///
     /// By "calendar day", we mean the corresponding time on the next
     /// day (which may not be 24 hours, depending on daylight savings).
     /// Similarly for "calendar week", "calendar month", "calendar quarter",
@@ -59,7 +61,7 @@ pub trait PolarsUpsample {
     /// * `every` - interval will start 'every' duration
     /// * `offset` - change the start of the date_range by this offset.
     ///
-    /// The `period` and `offset` arguments are created with
+    /// The `every` and `offset` arguments are created with
     /// the following string language:
     /// - 1ns   (1 nanosecond)
     /// - 1us   (1 microsecond)
@@ -73,11 +75,14 @@ pub trait PolarsUpsample {
     /// - 1q    (1 calendar quarter)
     /// - 1y    (1 calendar year)
     /// - 1i    (1 index count)
+    ///
     /// Or combine them:
     /// "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+    ///
     /// Suffix with `"_saturating"` to saturate dates with days too
     /// large for their month to the last day of the month (e.g.
     /// 2022-02-29 to 2022-02-28).
+    ///
     /// By "calendar day", we mean the corresponding time on the next
     /// day (which may not be 24 hours, depending on daylight savings).
     /// Similarly for "calendar week", "calendar month", "calendar quarter",
@@ -140,9 +145,9 @@ fn upsample_impl(
         upsample_single_impl(source, index_column, every, offset)
     } else {
         let gb = if stable {
-            source.groupby_stable(by)
+            source.group_by_stable(by)
         } else {
-            source.groupby(by)
+            source.group_by(by)
         };
         // don't parallelize this, this may SO on large data.
         gb?.apply(|df| {
@@ -182,7 +187,7 @@ fn upsample_single_impl(
                         TimeUnit::Microseconds => offset.add_us(first, None)?,
                         TimeUnit::Milliseconds => offset.add_ms(first, None)?,
                     };
-                    let range = date_range_impl(
+                    let range = datetime_range_impl(
                         index_col_name,
                         first,
                         last,

@@ -2,12 +2,11 @@ mod builder;
 mod from;
 mod merge;
 mod ops;
-pub mod stringcache;
+pub mod string_cache;
 
 use bitflags::bitflags;
 pub use builder::*;
 pub(crate) use merge::*;
-pub(crate) use ops::{CategoricalTakeRandomGlobal, CategoricalTakeRandomLocal};
 use polars_utils::sync::SyncPtr;
 
 use super::*;
@@ -74,7 +73,7 @@ impl CategoricalChunked {
         // we can skip the apply and only update the rev_map
         let local_ca = self
             .logical()
-            .apply_on_opt(|opt_v| opt_v.map(|v| *physical_map.get(&v).unwrap()));
+            .apply(|opt_v| opt_v.map(|v| *physical_map.get(&v).unwrap()));
 
         let mut out =
             unsafe { Self::from_cats_and_rev_map_unchecked(local_ca, local_rev_map.into()) };
@@ -96,10 +95,10 @@ impl CategoricalChunked {
     /// Build a categorical from an original RevMap. That means that the number of categories in the `RevMapping == self.unique().len()`.
     pub(crate) fn from_chunks_original(
         name: &str,
-        chunks: Vec<ArrayRef>,
+        chunk: PrimitiveArray<u32>,
         rev_map: RevMapping,
     ) -> Self {
-        let ca = unsafe { UInt32Chunked::from_chunks(name, chunks) };
+        let ca = ChunkedArray::with_chunk(name, chunk);
         let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(ca);
         logical.2 = Some(DataType::Categorical(Some(Arc::new(rev_map))));
 
@@ -266,12 +265,12 @@ mod test {
     use std::convert::TryFrom;
 
     use super::*;
-    use crate::{enable_string_cache, reset_string_cache, SINGLE_LOCK};
+    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
 
     #[test]
     fn test_categorical_round_trip() -> PolarsResult<()> {
         let _lock = SINGLE_LOCK.lock();
-        reset_string_cache();
+        disable_string_cache();
         let slice = &[
             Some("foo"),
             None,
@@ -296,8 +295,8 @@ mod test {
     #[test]
     fn test_append_categorical() {
         let _lock = SINGLE_LOCK.lock();
-        reset_string_cache();
-        enable_string_cache(true);
+        disable_string_cache();
+        enable_string_cache();
 
         let mut s1 = Series::new("1", vec!["a", "b", "c"])
             .cast(&DataType::Categorical(None))
@@ -320,8 +319,8 @@ mod test {
             .unwrap();
 
         assert_eq!(s.n_unique().unwrap(), 3);
-        // make sure that it does not take the fast path after take/ slice
-        let out = s.take(&([1, 2].as_ref()).into()).unwrap();
+        // Make sure that it does not take the fast path after take/slice.
+        let out = s.take(&IdxCa::new("", [1, 2])).unwrap();
         assert_eq!(out.n_unique().unwrap(), 2);
         let out = s.slice(1, 2);
         assert_eq!(out.n_unique().unwrap(), 2);
@@ -330,8 +329,7 @@ mod test {
     #[test]
     fn test_categorical_flow() -> PolarsResult<()> {
         let _lock = SINGLE_LOCK.lock();
-        reset_string_cache();
-        enable_string_cache(false);
+        disable_string_cache();
 
         // tests several things that may lose the dtype information
         let s = Series::new("a", vec!["a", "b", "c"]).cast(&DataType::Categorical(None))?;

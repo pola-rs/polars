@@ -37,13 +37,10 @@ fn process_non_streamable_node(
 fn insert_file_sink(mut root: Node, lp_arena: &mut Arena<ALogicalPlan>) -> Node {
     // The pipelines need a final sink, we insert that here.
     // this allows us to split at joins/unions and share a sink
-    if !matches!(lp_arena.get(root), ALogicalPlan::FileSink { .. }) {
-        root = lp_arena.add(ALogicalPlan::FileSink {
+    if !matches!(lp_arena.get(root), ALogicalPlan::Sink { .. }) {
+        root = lp_arena.add(ALogicalPlan::Sink {
             input: root,
-            payload: FileSinkOptions {
-                path: Default::default(),
-                file_type: FileType::Memory,
-            },
+            payload: SinkType::Memory,
         })
     }
     root
@@ -74,9 +71,11 @@ pub(crate) fn insert_streaming_nodes(
     // to streaming
     allow_partial: bool,
 ) -> PolarsResult<bool> {
+    scratch.clear();
+
     // this is needed to determine which side of the joins should be
     // traversed first
-    set_estimated_row_counts(root, lp_arena, expr_arena, 0);
+    set_estimated_row_counts(root, lp_arena, expr_arena, 0, scratch);
 
     scratch.clear();
 
@@ -154,7 +153,7 @@ pub(crate) fn insert_streaming_nodes(
                 state.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push((*input, state, current_idx))
             },
-            FileSink { input, .. } => {
+            Sink { input, .. } => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push((*input, state, current_idx))
@@ -365,7 +364,7 @@ pub(crate) fn insert_streaming_nodes(
                 #[allow(unused_mut)]
                 let mut can_stream = true;
 
-                #[cfg(feature = "dynamic_groupby")]
+                #[cfg(feature = "dynamic_group_by")]
                 {
                     if options.rolling.is_some() || options.dynamic.is_some() {
                         can_stream = false
@@ -387,7 +386,7 @@ pub(crate) fn insert_streaming_nodes(
                         expr_arena
                             .get(*node)
                             .get_type(schema, Context::Default, expr_arena)
-                            // ensure we don't groupby list
+                            // ensure we don't group_by list
                             .map(|dt| !matches!(dt, DataType::List(_)))
                             .unwrap_or(false)
                     })

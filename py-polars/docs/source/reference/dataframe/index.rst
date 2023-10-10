@@ -13,7 +13,7 @@ This page gives an overview of all public DataFrame methods.
    computation
    descriptive
    export
-   groupby
+   group_by
    modify_select
    miscellaneous
 

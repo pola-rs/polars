@@ -66,28 +66,6 @@ impl LogicalPlan {
                     options.n_rows,
                 )
             },
-            AnonymousScan {
-                file_info,
-                predicate,
-                options,
-                ..
-            } => {
-                let n_columns = options
-                    .with_columns
-                    .as_ref()
-                    .map(|columns| columns.len() as i64)
-                    .unwrap_or(-1);
-                write_scan(
-                    f,
-                    options.fmt_str,
-                    Path::new(""),
-                    sub_indent,
-                    n_columns,
-                    file_info.schema.len(),
-                    predicate,
-                    options.n_rows,
-                )
-            },
             Union { inputs, options } => {
                 let mut name = String::new();
                 let name = if let Some(slice) = options.slice {
@@ -170,10 +148,6 @@ impl LogicalPlan {
                 write!(f, "{:indent$} SELECT {expr:?} FROM", "")?;
                 input._format(f, sub_indent)
             },
-            LocalProjection { expr, input, .. } => {
-                write!(f, "{:indent$} LOCAL SELECT {expr:?} FROM", "")?;
-                input._format(f, sub_indent)
-            },
             Sort {
                 input, by_column, ..
             } => {
@@ -228,8 +202,14 @@ impl LogicalPlan {
                 write!(f, "{:indent$}EXTERNAL_CONTEXT", "")?;
                 input._format(f, sub_indent)
             },
-            FileSink { input, .. } => {
-                write!(f, "{:indent$}FILE_SINK", "")?;
+            Sink { input, payload, .. } => {
+                let name = match payload {
+                    SinkType::Memory => "SINK (memory)",
+                    SinkType::File { .. } => "SINK (file)",
+                    #[cfg(feature = "cloud")]
+                    SinkType::Cloud { .. } => "SINK (cloud)",
+                };
+                write!(f, "{:indent$}{}", "", name)?;
                 input._format(f, sub_indent)
             },
         }
@@ -291,6 +271,9 @@ impl Debug for Expr {
             Take { expr, idx } => {
                 write!(f, "{expr:?}.take({idx:?})")
             },
+            SubPlan(lf, _) => {
+                write!(f, ".subplan({lf:?})")
+            },
             Agg(agg) => {
                 use AggExpr::*;
                 match agg {
@@ -324,7 +307,7 @@ impl Debug for Expr {
                     AggGroups(expr) => write!(f, "{expr:?}.groups()"),
                     Count(expr) => write!(f, "{expr:?}.count()"),
                     Var(expr, _) => write!(f, "{expr:?}.var()"),
-                    Std(expr, _) => write!(f, "{expr:?}.var()"),
+                    Std(expr, _) => write!(f, "{expr:?}.std()"),
                     Quantile { expr, .. } => write!(f, "{expr:?}.quantile()"),
                 }
             },

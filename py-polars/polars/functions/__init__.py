@@ -22,6 +22,7 @@ from polars.functions.as_datatype import (
 from polars.functions.as_datatype import date_ as date
 from polars.functions.as_datatype import datetime_ as datetime
 from polars.functions.as_datatype import time_ as time
+from polars.functions.col import col
 from polars.functions.eager import align_frames, concat
 from polars.functions.lazy import (
     apply,
@@ -32,8 +33,8 @@ from polars.functions.lazy import (
     arg_where,
     avg,
     coalesce,
-    col,
     collect_all,
+    collect_all_async,
     corr,
     count,
     cov,
@@ -49,6 +50,8 @@ from polars.functions.lazy import (
     implode,
     last,
     map,
+    map_batches,
+    map_groups,
     mean,
     median,
     n_unique,
@@ -63,10 +66,13 @@ from polars.functions.lazy import (
     var,
 )
 from polars.functions.lit import lit
+from polars.functions.random import set_random_seed
 from polars.functions.range import (
     arange,
     date_range,
     date_ranges,
+    datetime_range,
+    datetime_ranges,
     int_range,
     int_ranges,
     time_range,
@@ -96,6 +102,8 @@ __all__ = [
     "concat",
     "date_range",
     "date_ranges",
+    "datetime_range",
+    "datetime_ranges",
     "element",
     "ones",
     "repeat",
@@ -112,6 +120,7 @@ __all__ = [
     "coalesce",
     "col",
     "collect_all",
+    "collect_all_async",
     "concat_list",
     "concat_str",
     "corr",
@@ -135,6 +144,8 @@ __all__ = [
     "last",
     "lit",
     "map",
+    "map_batches",
+    "map_groups",
     "mean",
     "median",
     "n_unique",
@@ -143,6 +154,7 @@ __all__ = [
     "rolling_corr",
     "rolling_cov",
     "select",
+    "set_random_seed",
     "std",
     "struct",
     "tail",

@@ -251,7 +251,7 @@ where
                     values.into(),
                     validity,
                 );
-                ChunkedArray::from_chunk_iter(name, [arr]).into_series()
+                ChunkedArray::with_chunk(name.as_str(), arr).into_series()
             })
     }));
 }

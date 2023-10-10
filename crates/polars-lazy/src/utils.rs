@@ -11,16 +11,8 @@ pub(crate) fn agg_source_paths(
 ) {
     lp_arena.iter(root_lp).for_each(|(_, lp)| {
         use ALogicalPlan::*;
-        match lp {
-            Scan { path, .. } => {
-                paths.insert(path.clone());
-            },
-            // always block parallel on anonymous sources
-            // as we cannot know if they will lock or not.
-            AnonymousScan { .. } => {
-                paths.insert("anonymous".into());
-            },
-            _ => {},
+        if let Scan { path, .. } = lp {
+            paths.insert(path.clone());
         }
     })
 }

@@ -1,6 +1,6 @@
-=================
+=========
 Functions
-=================
+=========
 .. currentmodule:: polars
 
 Conversion
@@ -31,6 +31,14 @@ Parallelization
    :toctree: api/
 
    collect_all
+   collect_all_async
+
+Random
+~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   set_random_seed
 
 StringCache
 ~~~~~~~~~~~
@@ -43,4 +51,5 @@ and a decorator, in order to explicitly scope cache lifetime.
 
     StringCache
     enable_string_cache
+    disable_string_cache
     using_string_cache

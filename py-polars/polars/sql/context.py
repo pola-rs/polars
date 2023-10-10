@@ -1,22 +1,12 @@
 from __future__ import annotations
 
 import contextlib
-from typing import (
-    TYPE_CHECKING,
-    Collection,
-    Generic,
-    Mapping,
-    overload,
-)
+from typing import TYPE_CHECKING, Collection, Generic, Mapping, overload
 
 from polars.dataframe import DataFrame
 from polars.lazyframe import LazyFrame
 from polars.type_aliases import FrameType
 from polars.utils._wrap import wrap_ldf
-from polars.utils.deprecation import (
-    deprecate_renamed_methods,
-    deprecate_renamed_parameter,
-)
 from polars.utils.various import _get_stack_locals
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -33,9 +23,6 @@ if TYPE_CHECKING:
         from typing_extensions import Self
 
 
-@deprecate_renamed_methods(
-    {"query": ("execute", {"eager": True})}, versions={"query": "0.17.13"}
-)
 class SQLContext(Generic[FrameType]):
     """
     Run SQL queries against DataFrame/LazyFrame data.
@@ -287,7 +274,6 @@ class SQLContext(Generic[FrameType]):
         res = wrap_ldf(self._ctxt.execute(query))
         return res.collect() if (eager or self._eager_execution) else res
 
-    @deprecate_renamed_parameter("lf", "frame", version="0.17.13")
     def register(self, name: str, frame: DataFrame | LazyFrame) -> Self:
         """
         Register a single frame as a table, using the given name.
@@ -298,6 +284,12 @@ class SQLContext(Generic[FrameType]):
             Name of the table.
         frame
             eager/lazy frame to associate with this table name.
+
+        See Also
+        --------
+        register_globals
+        register_many
+        unregister
 
         Examples
         --------
@@ -313,12 +305,6 @@ class SQLContext(Generic[FrameType]):
         │ world │
         └───────┘
 
-        See Also
-        --------
-        register_globals
-        register_many
-        unregister
-
         """
         if isinstance(frame, DataFrame):
             frame = frame.lazy()
@@ -330,6 +316,12 @@ class SQLContext(Generic[FrameType]):
         Register all frames (lazy or eager) found in the current globals scope.
 
         Automatically maps variable names to table names.
+
+        See Also
+        --------
+        register
+        register_many
+        unregister
 
         Parameters
         ----------
@@ -363,12 +355,6 @@ class SQLContext(Generic[FrameType]):
         │ 1   ┆ x    ┆ null │
         └─────┴──────┴──────┘
 
-        See Also
-        --------
-        register
-        register_many
-        unregister
-
         """
         return self.register_many(
             frames=_get_stack_locals(of_type=(DataFrame, LazyFrame), n_objects=n)
@@ -389,6 +375,12 @@ class SQLContext(Generic[FrameType]):
         **named_frames
             Named eager/lazy frames, provided as kwargs.
 
+        See Also
+        --------
+        register
+        register_globals
+        unregister
+
         Examples
         --------
         >>> lf1 = pl.LazyFrame({"a": [1, 2, 3], "b": ["m", "n", "o"]})
@@ -406,12 +398,6 @@ class SQLContext(Generic[FrameType]):
 
         >>> ctx.register_many(tbl3=lf3, tbl4=lf4).tables()
         ['tbl1', 'tbl2', 'tbl3', 'tbl4']
-
-        See Also
-        --------
-        register
-        register_globals
-        unregister
 
         """
         frames = dict(frames or {})
@@ -452,6 +438,12 @@ class SQLContext(Generic[FrameType]):
         >>> ctx.tables()
         ['tbl0']
 
+        See Also
+        --------
+        register
+        register_globals
+        register_many
+
         Examples
         --------
         >>> df0 = pl.DataFrame({"ints": [9, 8, 7, 6, 5]})
@@ -470,12 +462,6 @@ class SQLContext(Generic[FrameType]):
         ['test2']
         >>> ctx.unregister("test2").tables()
         []
-
-        See Also
-        --------
-        register
-        register_globals
-        register_many
 
         """
         if isinstance(names, str):

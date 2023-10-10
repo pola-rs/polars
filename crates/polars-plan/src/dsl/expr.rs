@@ -120,8 +120,7 @@ pub enum Expr {
         /// Also has the input. i.e. avg("foo")
         function: Box<Expr>,
         partition_by: Vec<Expr>,
-        order_by: Option<Box<Expr>>,
-        options: WindowOptions,
+        options: WindowType,
     },
     Wildcard,
     Slice {
@@ -154,6 +153,7 @@ pub enum Expr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
+    SubPlan(SpecialEq<Arc<LogicalPlan>>, Vec<String>),
     /// Expressions in this node should only be expanding
     /// e.g.
     /// `Expr::Columns`
@@ -274,7 +274,7 @@ impl Expr {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Operator {
     Eq,

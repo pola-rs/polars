@@ -7,18 +7,20 @@ mod export;
 mod numpy_ufunc;
 mod set_at_idx;
 
+use std::io::Cursor;
+
 use polars_algo::hist;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
 use polars_core::with_match_physical_numeric_polars_type;
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::Python;
 
-use crate::apply::series::{call_lambda_and_extract, ApplyLambda};
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
+use crate::map::series::{call_lambda_and_extract, ApplyLambda};
 use crate::prelude::*;
 use crate::py_modules::POLARS;
 use crate::{apply_method_all_arrow_series2, raise_err};
@@ -154,8 +156,15 @@ impl PySeries {
         }
     }
 
-    fn get_idx(&self, py: Python, idx: usize) -> PyResult<PyObject> {
-        let av = self.series.get(idx).map_err(PyPolarsErr::from)?;
+    fn get_index(&self, py: Python, index: usize) -> PyResult<PyObject> {
+        let av = match self.series.get(index) {
+            Ok(v) => v,
+            Err(PolarsError::OutOfBounds(err)) => {
+                return Err(PyIndexError::new_err(err.to_string()))
+            },
+            Err(e) => return Err(PyPolarsErr::from(e).into()),
+        };
+
         if let AnyValue::List(s) = av {
             let pyseries = PySeries::new(s);
             let out = POLARS
@@ -163,11 +172,27 @@ impl PySeries {
                 .unwrap()
                 .call1(py, (pyseries,))
                 .unwrap();
-
-            Ok(out.into_py(py))
-        } else {
-            Ok(Wrap(self.series.get(idx).map_err(PyPolarsErr::from)?).into_py(py))
+            return Ok(out.into_py(py));
         }
+
+        Ok(Wrap(av).into_py(py))
+    }
+
+    /// Get index but allow negative indices
+    fn get_index_signed(&self, py: Python, index: i64) -> PyResult<PyObject> {
+        let index = if index < 0 {
+            match self.len().checked_sub(index.unsigned_abs() as usize) {
+                Some(v) => v,
+                None => {
+                    return Err(PyIndexError::new_err(
+                        polars_err!(oob = index, self.len()).to_string(),
+                    ));
+                },
+            }
+        } else {
+            index as usize
+        };
+        self.get_index(py, index)
     }
 
     fn bitand(&self, other: &PySeries) -> PyResult<Self> {
@@ -266,14 +291,6 @@ impl PySeries {
         self.series.sort(descending).into()
     }
 
-    fn value_counts(&self, sorted: bool) -> PyResult<PyDataFrame> {
-        let df = self
-            .series
-            .value_counts(true, sorted)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
-    }
-
     fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.idx().map_err(PyPolarsErr::from)?;
         let take = self.series.take(idx).map_err(PyPolarsErr::from)?;
@@ -289,18 +306,14 @@ impl PySeries {
     }
 
     fn series_equal(&self, other: &PySeries, null_equal: bool, strict: bool) -> bool {
-        if strict {
-            self.series.eq(&other.series)
-        } else if null_equal {
+        if strict && (self.series.dtype() != other.series.dtype()) {
+            return false;
+        }
+        if null_equal {
             self.series.series_equal_missing(&other.series)
         } else {
             self.series.series_equal(&other.series)
         }
-    }
-
-    fn _not(&self) -> PyResult<Self> {
-        let bool = self.series.bool().map_err(PyPolarsErr::from)?;
-        Ok((!bool).into_series().into())
     }
 
     fn as_str(&self) -> PyResult<String> {
@@ -564,20 +577,8 @@ impl PySeries {
     }
 
     fn get_list(&self, index: usize) -> Option<Self> {
-        if let Ok(ca) = &self.series.list() {
-            let s = ca.get(index);
-            s.map(|s| s.into())
-        } else {
-            None
-        }
-    }
-
-    fn peak_max(&self) -> Self {
-        self.series.peak_max().into_series().into()
-    }
-
-    fn peak_min(&self) -> Self {
-        self.series.peak_min().into_series().into()
+        let ca = self.series.list().ok()?;
+        Some(ca.get_as_series(index)?.into())
     }
 
     fn n_unique(&self) -> PyResult<usize> {
@@ -598,22 +599,37 @@ impl PySeries {
         self.series.dot(&other.series)
     }
 
+    #[cfg(feature = "ipc_streaming")]
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
-        let mut writer: Vec<u8> = vec![];
-        ciborium::ser::into_writer(&self.series, &mut writer)
-            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
-
-        Ok(PyBytes::new(py, &writer).to_object(py))
+        let mut buf: Vec<u8> = vec![];
+        // IPC only support DataFrames so we need to convert it
+        let mut df = self.series.clone().into_frame();
+        IpcStreamWriter::new(&mut buf)
+            .finish(&mut df)
+            .expect("ipc writer");
+        Ok(PyBytes::new(py, &buf).to_object(py))
     }
 
+    #[cfg(feature = "ipc_streaming")]
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
-                self.series = ciborium::de::from_reader(s.as_bytes())
-                    .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
-                Ok(())
+                let c = Cursor::new(s.as_bytes());
+                let reader = IpcStreamReader::new(c);
+                let mut df = reader.finish().map_err(PyPolarsErr::from)?;
+
+                df.pop()
+                    .map(|s| {
+                        self.series = s;
+                    })
+                    .ok_or_else(|| {
+                        PyPolarsErr::from(PolarsError::NoData(
+                            "No columns found in IPC byte stream".into(),
+                        ))
+                        .into()
+                    })
             },
             Err(e) => Err(e),
         }
@@ -641,20 +657,6 @@ impl PySeries {
         };
         let out = out.map_err(PyPolarsErr::from)?;
         Ok(out.into())
-    }
-
-    fn time_unit(&self) -> Option<&str> {
-        if let DataType::Datetime(time_unit, _) | DataType::Duration(time_unit) =
-            self.series.dtype()
-        {
-            Some(match time_unit {
-                TimeUnit::Nanoseconds => "ns",
-                TimeUnit::Microseconds => "us",
-                TimeUnit::Milliseconds => "ms",
-            })
-        } else {
-            None
-        }
     }
 
     fn get_chunks(&self) -> PyResult<Vec<PyObject>> {

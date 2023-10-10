@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.18.15"
+version = "0.19.7"
 edition = "2021"
 
 [lib]
@@ -12,6 +12,8 @@ polars-algo = { path = "../crates/polars-algo", default-features = false }
 polars-core = { path = "../crates/polars-core", default-features = false, features = ["python"] }
 polars-error = { path = "../crates/polars-error" }
 polars-lazy = { path = "../crates/polars-lazy", default-features = false, features = ["python"] }
+polars-ops = { path = "../crates/polars-ops", default-features = false, features = ["convert_index"] }
+polars-plan = { path = "../crates/polars-plan", default-features = false }
 
 ahash = "0.8"
 ciborium = "0.2"
@@ -45,12 +47,13 @@ features = [
   "dot_product",
   "dtype-categorical",
   "dtype-full",
-  "dynamic_groupby",
+  "dynamic_group_by",
   "ewma",
   "fmt",
   "horizontal_concat",
   "interpolate",
-  "is_first",
+  "is_first_distinct",
+  "is_last_distinct",
   "is_unique",
   "lazy",
   "list_eval",
@@ -101,6 +104,7 @@ dtype-u16 = []
 avro = ["polars/avro"]
 parquet = ["polars/parquet"]
 ipc = ["polars/ipc"]
+ipc_streaming = ["polars/ipc_streaming"]
 is_in = ["polars/is_in"]
 json = ["polars/serde", "serde_json", "polars/json"]
 trigonometry = ["polars/trigonometry"]
@@ -114,7 +118,7 @@ nightly = ["polars/nightly"]
 streaming = ["polars/streaming"]
 meta = ["polars/meta"]
 search_sorted = ["polars/search_sorted"]
-decompress = ["polars/decompress"]
+decompress = ["polars/decompress-fast"]
 lazy_regex = ["polars/lazy_regex"]
 csv = ["polars/csv"]
 object = ["polars/object"]
@@ -133,53 +137,78 @@ list_count = ["polars/list_count"]
 binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
 list_any_all = ["polars/list_any_all"]
+list_drop_nulls = ["polars/list_drop_nulls"]
 cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
+ffi_plugin = ["polars-plan/ffi_plugin"]
+cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure"]
+peaks = ["polars/peaks"]
 
-all = [
+dtypes = [
   "dtype-i8",
   "dtype-i16",
   "dtype-u8",
   "dtype-u16",
-  "json",
-  "parquet",
-  "ipc",
-  "avro",
+  "polars/group_by_list",
+  "object",
+]
+
+operations = [
   "is_in",
   "repeat_by",
   "trigonometry",
   "sign",
-  "asof_join",
-  "cross_join",
-  "pct_change",
-  "search_sorted",
-  "merge_sorted",
-  "meta",
-  "decompress",
-  "lazy_regex",
-  "csv",
-  "extract_jsonpath",
-  "timezones",
-  "object",
-  "pivot",
-  "top_k",
-  "build_info",
-  "cse",
-  "propagate_nans",
-  "polars/groupby_list",
-  "polars/fused",
-  "sql",
-  "binary_encoding",
-  "streaming",
   "performant",
   "list_take",
   "list_count",
   "list_sets",
   "list_any_all",
+  "list_drop_nulls",
   "cutqcut",
   "rle",
   "extract_groups",
+  "pivot",
+  "extract_jsonpath",
+  "asof_join",
+  "cross_join",
+  "pct_change",
+  "search_sorted",
+  "merge_sorted",
+  "top_k",
+  "propagate_nans",
+  "timezones",
+  "peaks",
+]
+
+io = [
+  "json",
+  "parquet",
+  "ipc",
+  "ipc_streaming",
+  "avro",
+  "csv",
+  "cloud",
+]
+
+optimizations = [
+  "cse",
+  "polars/fused",
+  "streaming",
+]
+
+all = [
+  "optimizations",
+  "io",
+  "operations",
+  "dtypes",
+  "meta",
+  "decompress",
+  "lazy_regex",
+  "build_info",
+  "sql",
+  "binary_encoding",
+  "ffi_plugin",
 ]
 
 # we cannot conditionally activate simd
@@ -209,9 +238,6 @@ lto = "fat"
 # This is ignored here; would be set in .cargo/config.toml.
 # Should not be used when packaging
 # target-cpu = "native"
-
-[patch.crates-io]
-simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "initialize" }
 
 # Prevent package from thinking it's in the workspace
 [workspace]

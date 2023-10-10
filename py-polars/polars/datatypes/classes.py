@@ -348,7 +348,7 @@ class Datetime(TemporalType):
 
         if self.time_unit not in ("ms", "us", "ns"):
             raise ValueError(
-                f"Invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.time_unit!r}"
+                f"invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.time_unit!r}"
             )
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
@@ -390,7 +390,7 @@ class Duration(TemporalType):
         self.time_unit = time_unit
         if self.time_unit not in ("ms", "us", "ns"):
             raise ValueError(
-                f"Invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.time_unit!r}"
+                f"invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.time_unit!r}"
             )
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
@@ -628,6 +628,10 @@ class Struct(NestedType):
 
     def __iter__(self) -> Iterator[tuple[str, PolarsDataType]]:
         for fld in self.fields or []:
+            yield fld.name, fld.dtype
+
+    def __reversed__(self) -> Iterator[tuple[str, PolarsDataType]]:
+        for fld in reversed(self.fields or []):
             yield fld.name, fld.dtype
 
     def __repr__(self) -> str:

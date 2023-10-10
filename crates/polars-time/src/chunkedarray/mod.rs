@@ -6,6 +6,7 @@ mod datetime;
 #[cfg(feature = "dtype-duration")]
 mod duration;
 mod kernels;
+#[cfg(feature = "rolling_window")]
 mod rolling_window;
 #[cfg(feature = "dtype-time")]
 mod time;
@@ -21,6 +22,7 @@ pub use duration::DurationMethods;
 use kernels::*;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
+#[cfg(feature = "rolling_window")]
 pub use rolling_window::*;
 #[cfg(feature = "dtype-time")]
 pub use time::TimeMethods;

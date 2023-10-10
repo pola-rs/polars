@@ -1,12 +1,15 @@
 # Configuration file for the Sphinx documentation builder.
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+from __future__ import annotations
+
 import inspect
 import os
 import re
 import sys
 import warnings
 from pathlib import Path
+from typing import Any
 
 import sphinx_autosummary_accessors
 
@@ -30,6 +33,7 @@ extensions = [
     # Sphinx extensions
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
+    "sphinx.ext.githubpages",
     "sphinx.ext.intersphinx",
     "sphinx.ext.linkcode",
     "sphinx.ext.mathjax",
@@ -94,15 +98,15 @@ github_root = "https://github.com/pola-rs/polars"
 web_root = "https://pola-rs.github.io"
 
 # Specify version for version switcher dropdown menu
-switcher_version_env = os.environ.get("POLARS_VERSION", "main")
-version_match = re.fullmatch(r"py-(\d+\.\d+)\.\d+.*", switcher_version_env)
+git_ref = os.environ.get("POLARS_VERSION", "main")
+version_match = re.fullmatch(r"py-(\d+\.\d+)\.\d+.*", git_ref)
 switcher_version = version_match.group(1) if version_match is not None else "dev"
 
 html_theme_options = {
     "external_links": [
         {
             "name": "User Guide",
-            "url": f"{web_root}/polars-book/user-guide/index.html",
+            "url": f"{web_root}/polars/user-guide/index.html",
         },
         {
             "name": "Powered by Xomnia",
@@ -134,6 +138,7 @@ html_theme_options = {
         "json_url": f"{web_root}/polars/docs/python/dev/_static/version_switcher.json",
         "version_match": switcher_version,
     },
+    "show_version_warning_banner": False,
     "navbar_end": ["version-switcher", "navbar-icon-links"],
     "check_switcher": False,
 }
@@ -156,7 +161,7 @@ favicons = [
 
 # sphinx-ext-linkcode - Add external links to source code
 # https://www.sphinx-doc.org/en/master/usage/extensions/linkcode.html
-def linkcode_resolve(domain, info):
+def linkcode_resolve(domain: str, info: dict[str, Any]) -> str | None:
     """
     Determine the URL corresponding to Python object.
 
@@ -209,7 +214,7 @@ def linkcode_resolve(domain, info):
     polars_root = (conf_dir_path.parent.parent / "polars").absolute()
 
     fn = os.path.relpath(fn, start=polars_root)
-    return f"{github_root}/blob/main/py-polars/polars/{fn}{linespec}"
+    return f"{github_root}/blob/{git_ref}/py-polars/polars/{fn}{linespec}"
 
 
 def _minify_classpaths(s: str) -> str:

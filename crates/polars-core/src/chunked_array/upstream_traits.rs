@@ -35,37 +35,13 @@ impl<T: PolarsDataType> Default for ChunkedArray<T> {
 }
 
 /// FromIterator trait
-
 impl<T> FromIterator<Option<T::Native>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
     fn from_iter<I: IntoIterator<Item = Option<T::Native>>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-
-        let arr: PrimitiveArray<T::Native> = match iter.size_hint() {
-            (a, Some(b)) if a == b => {
-                // 2021-02-07: ~40% faster than builder.
-                // It is unsafe because we cannot be certain that the iterators length can be trusted.
-                // For most iterators that report the same upper bound as lower bound it is, but still
-                // somebody can create an iterator that incorrectly gives those bounds.
-                // This will not lead to UB, but will panic.
-                #[cfg(feature = "performant")]
-                unsafe {
-                    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter)
-                        .to(T::get_dtype().to_arrow());
-                    assert_eq!(arr.len(), a);
-                    arr
-                }
-                #[cfg(not(feature = "performant"))]
-                iter.collect::<PrimitiveArray<T::Native>>()
-                    .to(T::get_dtype().to_arrow())
-            },
-            _ => iter
-                .collect::<PrimitiveArray<T::Native>>()
-                .to(T::get_dtype().to_arrow()),
-        };
-        unsafe { ChunkedArray::from_chunks("", vec![Box::new(arr)]) }
+        // TODO: eliminate this FromIterator implementation entirely.
+        iter.into_iter().collect_ca("")
     }
 }
 
@@ -85,16 +61,14 @@ where
 
 impl FromIterator<Option<bool>> for ChunkedArray<BooleanType> {
     fn from_iter<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self {
-        let arr = BooleanArray::from_iter(iter);
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        BooleanArray::from_iter(iter).into()
     }
 }
 
 impl FromIterator<bool> for BooleanChunked {
     fn from_iter<I: IntoIterator<Item = bool>>(iter: I) -> Self {
         // 2021-02-07: this was ~70% faster than with the builder, even with the extra Option<T> added.
-        let arr = BooleanArray::from_iter(iter.into_iter().map(Some));
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        BooleanArray::from_iter(iter.into_iter().map(Some)).into()
     }
 }
 
@@ -112,8 +86,7 @@ where
     Ptr: AsRef<str>,
 {
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        let arr = Utf8Array::<i64>::from_iter(iter);
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        Utf8Array::<i64>::from_iter(iter).into()
     }
 }
 
@@ -131,8 +104,7 @@ where
     Ptr: PolarsAsRef<str>,
 {
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        let arr = Utf8Array::<i64>::from_iter_values(iter.into_iter());
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        Utf8Array::<i64>::from_iter_values(iter.into_iter()).into()
     }
 }
 
@@ -142,8 +114,7 @@ where
     Ptr: AsRef<[u8]>,
 {
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
-        let arr = BinaryArray::<i64>::from_iter(iter);
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        BinaryArray::<i64>::from_iter(iter).into()
     }
 }
 
@@ -161,8 +132,7 @@ where
     Ptr: PolarsAsRef<[u8]>,
 {
     fn from_iter<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        let arr = BinaryArray::<i64>::from_iter_values(iter.into_iter());
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        BinaryArray::<i64>::from_iter_values(iter.into_iter()).into()
     }
 }
 
@@ -502,7 +472,7 @@ where
         let validity = finish_validities(validities, capacity);
 
         let arr = PrimitiveArray::from_data_default(values_buf.into(), validity);
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        arr.into()
     }
 }
 
@@ -517,26 +487,20 @@ impl FromParallelIterator<bool> for BooleanChunked {
                 vectors.into_iter().flatten().trust_my_length(capacity),
             )
         };
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        arr.into()
     }
 }
 
 impl FromParallelIterator<Option<bool>> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<bool>>>(iter: I) -> Self {
-        // Get linkedlist filled with different vec result from different threads
+        // Get linkedlist filled with different vec result from different threads.
         let vectors = collect_into_linked_list(iter);
         let vectors = vectors.into_iter().collect::<Vec<_>>();
-
-        let chunks = vectors
+        let chunks: Vec<BooleanArray> = vectors
             .into_par_iter()
-            .map(|vector| {
-                Box::new(unsafe {
-                    BooleanArray::from_trusted_len_iter_unchecked(vector.into_iter())
-                }) as ArrayRef
-            })
-            .collect::<Vec<_>>();
-
-        unsafe { BooleanChunked::from_chunks("", chunks).rechunk() }
+            .map(|vector| vector.into())
+            .collect();
+        Self::from_chunk_iter("", chunks).rechunk()
     }
 }
 
@@ -554,7 +518,7 @@ where
             }
         }
         let arr: LargeStringArray = builder.into();
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        arr.into()
     }
 }
 
@@ -602,9 +566,9 @@ where
             len,
         );
 
-        // concat the offsets
-        // this is single threaded as the values depend on previous ones
-        // if this proves to slow we could try parallel reduce
+        // Concat the offsets.
+        // This is single threaded as the values depend on previous ones
+        // if this proves to slow we could try parallel reduce.
         let mut offsets = Vec::with_capacity(len + 1);
         let mut offsets_so_far = 0;
         let mut first = true;
@@ -614,29 +578,17 @@ where
                 offsets.extend_from_slice(local_offsets);
                 first = false;
             } else {
-                // offset lengths must be updated
-                unsafe {
-                    // safety: there is always a single offset
-                    offsets.extend(
-                        local_offsets
-                            .get_unchecked(1..)
-                            .iter()
-                            .map(|v| *v + offsets_so_far),
-                    )
-                }
+                // SAFETY: there is always a single offset.
+                let skip_first = unsafe { local_offsets.get_unchecked(1..) };
+                offsets.extend(skip_first.iter().map(|v| *v + offsets_so_far));
             }
             offsets_so_far = unsafe { *offsets.last().unwrap_unchecked() };
         }
 
-        unsafe {
-            offsets.set_len(len + 1);
-            let arr = Utf8Array::<i64>::from_data_unchecked_default(
-                offsets.into(),
-                values.into(),
-                validity,
-            );
-            Self::from_chunks("", vec![Box::new(arr)])
-        }
+        let arr = unsafe {
+            Utf8Array::<i64>::from_data_unchecked_default(offsets.into(), values.into(), validity)
+        };
+        arr.into()
     }
 }
 

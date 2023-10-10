@@ -1,6 +1,6 @@
-#[cfg(any(feature = "parquet", feature = "ipc"))]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 mod file_sink;
-pub(crate) mod groupby;
+pub(crate) mod group_by;
 mod io;
 mod joins;
 mod memory;
@@ -10,7 +10,7 @@ mod slice;
 mod sort;
 mod utils;
 
-#[cfg(any(feature = "parquet", feature = "ipc"))]
+#[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 pub(crate) use file_sink::*;
 pub(crate) use joins::*;
 pub(crate) use ordered::*;

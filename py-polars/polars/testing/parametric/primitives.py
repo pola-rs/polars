@@ -8,12 +8,7 @@ from textwrap import dedent
 from typing import TYPE_CHECKING, Any, Collection, Sequence, overload
 
 from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
-from hypothesis.strategies import (
-    booleans,
-    composite,
-    lists,
-    sampled_from,
-)
+from hypothesis.strategies import booleans, composite, lists, sampled_from
 from hypothesis.strategies._internal.utils import defines_strategy
 
 from polars.dataframe import DataFrame
@@ -52,10 +47,14 @@ if TYPE_CHECKING:
 _time_units = list(DTYPE_TEMPORAL_UNITS)
 
 
-def empty_list(value: Any, nested: bool) -> bool:
+def empty_list(value: Any, *, nested: bool) -> bool:
     """Check if value is an empty list, or a list that contains only empty lists."""
     if isinstance(value, list):
-        return True if value and not nested else all(empty_list(v, True) for v in value)
+        return (
+            True
+            if value and not nested
+            else all(empty_list(v, nested=True) for v in value)
+        )
     return False
 
 
@@ -117,7 +116,7 @@ class column:
         ):
             raise InvalidArgument(
                 "null_probability should be between 0.0 and 1.0, or None; found"
-                f" {self.null_probability}"
+                f" {self.null_probability!r}"
             )
 
         if self.dtype is None:
@@ -141,7 +140,7 @@ class column:
         elif self.dtype not in scalar_strategies:
             if self.dtype is not None:
                 raise InvalidArgument(
-                    f"No strategy (currently) available for {self.dtype} type"
+                    f"no strategy (currently) available for {self.dtype!r} type"
                 )
             else:
                 # given a custom strategy, but no explicit dtype. infer one
@@ -165,7 +164,7 @@ class column:
                         )
                     except StopIteration:
                         raise InvalidArgument(
-                            "Unable to determine dtype for strategy"
+                            "unable to determine dtype for strategy"
                         ) from None
 
                 if sample_value_type is not None:
@@ -247,14 +246,14 @@ def columns(
 
     if isinstance(dtype, Sequence):
         if len(dtype) != len(names):
-            raise InvalidArgument(f"Given {len(dtype)} dtypes for {len(names)} names")
+            raise InvalidArgument(f"given {len(dtype)} dtypes for {len(names)} names")
         dtypes = list(dtype)
     elif dtype is None:
         dtypes = [random.choice(strategy_dtypes) for _ in range(len(names))]
     elif is_polars_dtype(dtype):
         dtypes = [dtype] * len(names)
     else:
-        raise InvalidArgument(f"{dtype} is not a valid polars datatype")
+        raise InvalidArgument(f"{dtype!r} is not a valid polars datatype")
 
     # init list of named/typed columns
     return [column(name=nm, dtype=tp, unique=unique) for nm, tp in zip(names, dtypes)]

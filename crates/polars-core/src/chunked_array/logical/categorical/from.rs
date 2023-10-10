@@ -98,7 +98,7 @@ impl CategoricalChunked {
         } else {
             CategoricalChunked::from_chunks_original(
                 name,
-                vec![Box::new(keys.clone())],
+                keys.clone(),
                 RevMapping::Local(values.clone()),
             )
         }

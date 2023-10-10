@@ -215,11 +215,13 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TimeStamp(tu)))
     }
 
-    pub fn truncate(self, options: TruncateOptions) -> Expr {
-        self.0
-            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Truncate(
-                options,
-            )))
+    pub fn truncate(self, every: Expr, offset: String, ambiguous: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::Truncate(offset)),
+            &[every, ambiguous],
+            true,
+            false,
+        )
     }
 
     // roll backward to the first day of the month
@@ -250,37 +252,40 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::DSTOffset))
     }
 
-    pub fn round<S: AsRef<str>>(self, every: S, offset: S) -> Expr {
+    pub fn round<S: AsRef<str>>(self, every: S, offset: S, ambiguous: Expr) -> Expr {
         let every = every.as_ref().into();
         let offset = offset.as_ref().into();
-        self.0
-            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Round(
-                every, offset,
-            )))
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::Round(every, offset)),
+            &[ambiguous],
+            false,
+            false,
+        )
     }
 
     /// Offset this `Date/Datetime` by a given offset [`Duration`].
     /// This will take leap years/ months into account.
     #[cfg(feature = "date_offset")]
-    pub fn offset_by(self, by: Duration) -> Expr {
-        self.0.map_private(FunctionExpr::DateOffset(by))
+    pub fn offset_by(self, by: Expr) -> Expr {
+        self.0
+            .map_many_private(FunctionExpr::DateOffset, &[by], false, false)
     }
 
     #[cfg(feature = "timezones")]
-    pub fn replace_time_zone(
-        self,
-        time_zone: Option<TimeZone>,
-        use_earliest: Option<bool>,
-    ) -> Expr {
-        self.0.map_private(FunctionExpr::TemporalExpr(
-            TemporalFunction::ReplaceTimeZone(time_zone, use_earliest),
-        ))
+    pub fn replace_time_zone(self, time_zone: Option<TimeZone>, ambiguous: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::ReplaceTimeZone(time_zone)),
+            &[ambiguous],
+            false,
+            false,
+        )
     }
 
     pub fn combine(self, time: Expr, tu: TimeUnit) -> Expr {
         self.0.map_many_private(
             FunctionExpr::TemporalExpr(TemporalFunction::Combine(tu)),
             &[time],
+            false,
             false,
         )
     }

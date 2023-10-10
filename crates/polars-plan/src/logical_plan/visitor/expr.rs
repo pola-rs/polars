@@ -28,7 +28,7 @@ impl TreeWalker for Expr {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct AexprNode {
     node: Node,
     arena: *mut Arena<AExpr>,
@@ -169,12 +169,7 @@ impl AexprNode {
                         ..
                     },
                 ) => fl == fr && ol == or,
-                (AnonymousFunction { function: l, .. }, AnonymousFunction { function: r, .. }) => {
-                    // check only data pointer as location
-                    let l = l.as_ref() as *const _ as *const () as usize;
-                    let r = r.as_ref() as *const _ as *const () as usize;
-                    l == r
-                },
+                (AnonymousFunction { .. }, AnonymousFunction { .. }) => false,
                 (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
                 _ => false,
             };

@@ -3,21 +3,33 @@ mod keys;
 mod rename;
 mod utils;
 
+use polars_core::config::verbose;
 use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 use utils::*;
 
 use super::*;
 use crate::dsl::function_expr::FunctionExpr;
-use crate::logical_plan::{optimizer, Context};
+use crate::logical_plan::optimizer;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::prelude::optimizer::predicate_pushdown::rename::process_rename;
-use crate::utils::{aexprs_to_schema, check_input_node, has_aexpr};
+use crate::utils::{check_input_node, has_aexpr};
 
-#[derive(Default)]
-pub struct PredicatePushDown {}
+pub type HiveEval<'a> = Option<&'a dyn Fn(Node, &Arena<AExpr>) -> Option<Arc<dyn PhysicalIoExpr>>>;
 
-impl PredicatePushDown {
+pub struct PredicatePushDown<'a> {
+    hive_partition_eval: HiveEval<'a>,
+    verbose: bool,
+}
+
+impl<'a> PredicatePushDown<'a> {
+    pub fn new(hive_partition_eval: HiveEval<'a>) -> Self {
+        Self {
+            hive_partition_eval,
+            verbose: verbose(),
+        }
+    }
+
     fn optional_apply_predicate(
         &self,
         lp: ALogicalPlan,
@@ -210,24 +222,6 @@ impl PredicatePushDown {
                 };
                 Ok(lp)
             }
-
-            LocalProjection { expr, input, .. } => {
-                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-
-                let schema = lp_arena.get(input).schema(lp_arena);
-                // projection from a wildcard may be dropped if the schema changes due to the optimization
-                let expr: Vec<_> = expr
-                    .into_iter()
-                    .filter(|e| check_input_node(*e, &schema, expr_arena))
-                    .collect();
-
-                let schema = aexprs_to_schema(&expr, &schema, Context::Default, expr_arena);
-                Ok(ALogicalPlan::LocalProjection {
-                    expr,
-                    input,
-                    schema: Arc::new(schema),
-                })
-            }
             Scan {
                 path,
                 file_info,
@@ -239,68 +233,68 @@ impl PredicatePushDown {
                 let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
                 let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
-                let lp = match (predicate, &scan_type) {
+                if let (Some(hive_part_stats), Some(predicate)) = (file_info.hive_parts.as_deref(), predicate) {
+                    if let Some(io_expr) = self.hive_partition_eval.unwrap()(predicate, expr_arena) {
+                        if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
+                            if !stats_evaluator.should_read(hive_part_stats.get_statistics())? {
+                                if self.verbose {
+                                    eprintln!("hive partitioning: skipped: {}", path.display())
+                                }
+                                let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
+                                let df = DataFrame::from(schema.as_ref());
+
+                                return Ok(DataFrameScan {
+                                    df: Arc::new(df),
+                                    schema: schema.clone(),
+                                    output_schema: None,
+                                    projection: None,
+                                    selection: None
+                                })
+                            }
+                        }
+                    }
+                }
+
+                let mut do_optimization = match &scan_type {
                     #[cfg(feature = "csv")]
-                    (Some(predicate), FileScan::Csv {..}) => {
-                        let lp = Scan {
-                            path,
-                            file_info,
-                            predicate: None,
-                            file_options: options,
-                            output_schema,
-                            scan_type
-                        };
+                    FileScan::Csv {..} => options.n_rows.is_none(),
+                    FileScan::Anonymous {function, ..} => function.allows_predicate_pushdown(),
+                    _ => true
+                };
+                do_optimization &= predicate.is_some();
+
+                let lp = if do_optimization {
+                    Scan {
+                        path,
+                        file_info,
+                        predicate,
+                        file_options: options,
+                        output_schema,
+                        scan_type
+                    }
+                } else {
+                    let lp = Scan {
+                        path,
+                        file_info,
+                        predicate: None,
+                        file_options: options,
+                        output_schema,
+                        scan_type
+                    };
+                    if let Some(predicate) = predicate {
                         let input = lp_arena.add(lp);
                         Selection {
                             input,
                             predicate
                         }
-                    },
-                    _ => {
-                        Scan {
-                            path,
-                            file_info,
-                            predicate,
-                            file_options: options,
-                            output_schema,
-                            scan_type
-                        }
+                    } else {
+                        lp
                     }
                 };
 
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
 
             }
-            AnonymousScan {
-                function,
-                file_info,
-                output_schema,
-                options,
-                predicate,
-            } => {
-                if function.allows_predicate_pushdown() {
-                    let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
-                    let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
-                    let lp = AnonymousScan {
-                        function,
-                        file_info,
-                        output_schema,
-                        options,
-                        predicate,
-                    };
-                    Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
-                } else {
-                    let lp = AnonymousScan {
-                        function,
-                        file_info,
-                        output_schema,
-                        options,
-                        predicate,
-                    };
-                    self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
-                }
-            }
-
             Distinct {
                 input,
                 options
@@ -457,7 +451,7 @@ impl PredicatePushDown {
 
             }
             // Pushed down passed these nodes
-            lp@ FileSink {..} => {
+            lp@ Sink {..} => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             }
             lp @ HStack {..} | lp @ Projection {..} | lp @ ExtContext {..} => {

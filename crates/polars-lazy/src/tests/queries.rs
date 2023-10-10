@@ -121,7 +121,7 @@ fn test_lazy_is_null() {
 
     let new = df
         .lazy()
-        .groupby([col("variety")])
+        .group_by([col("variety")])
         .agg([col("sepal.width").min()])
         .collect()
         .unwrap();
@@ -135,7 +135,7 @@ fn test_lazy_pushdown_through_agg() {
     let df = get_df();
     let new = df
         .lazy()
-        .groupby([col("variety")])
+        .group_by([col("variety")])
         .agg([
             col("sepal.length").min(),
             col("petal.length").min().alias("foo"),
@@ -231,10 +231,11 @@ fn test_lazy_query_2() {
 }
 
 #[test]
+#[cfg(feature = "csv")]
 fn test_lazy_query_3() {
     // query checks if schema of scanning is not changed by aggregation
     let _ = scan_foods_csv()
-        .groupby([col("calories")])
+        .group_by([col("calories")])
         .agg([col("fats_g").max()])
         .collect()
         .unwrap();
@@ -253,7 +254,7 @@ fn test_lazy_query_4() {
 
     let out = base_df
         .clone()
-        .groupby([col("uid")])
+        .group_by([col("uid")])
         .agg([
             col("day").alias("day"),
             col("cumcases")
@@ -290,7 +291,7 @@ fn test_lazy_query_5() {
 
     let out = df
         .lazy()
-        .groupby([col("uid")])
+        .group_by([col("uid")])
         .agg([col("day").head(Some(2))])
         .collect()
         .unwrap();
@@ -299,7 +300,7 @@ fn test_lazy_query_5() {
         .unwrap()
         .list()
         .unwrap()
-        .get(0)
+        .get_as_series(0)
         .unwrap();
     assert_eq!(s.len(), 2);
     let s = out
@@ -307,7 +308,7 @@ fn test_lazy_query_5() {
         .unwrap()
         .list()
         .unwrap()
-        .get(0)
+        .get_as_series(0)
         .unwrap();
     assert_eq!(s.len(), 2);
 }
@@ -370,7 +371,7 @@ fn test_lazy_query_9() -> PolarsResult<()> {
             [col("Cities.City")],
             JoinType::Inner.into(),
         )
-        .groupby([col("Cities.Country")])
+        .group_by([col("Cities.Country")])
         .agg([col("Sales.Amount").sum().alias("sum")])
         .sort("sum", Default::default())
         .collect()?;
@@ -561,7 +562,7 @@ fn test_lazy_wildcard() {
 
     let new = df
         .lazy()
-        .groupby([col("b")])
+        .group_by([col("b")])
         .agg([col("*").sum().suffix(""), col("*").first().suffix("_first")])
         .collect()
         .unwrap();
@@ -643,6 +644,7 @@ fn test_type_coercion() {
 }
 
 #[test]
+#[cfg(feature = "csv")]
 fn test_lazy_partition_agg() {
     let df = df! {
         "foo" => &[1, 1, 2, 2, 3],
@@ -652,7 +654,7 @@ fn test_lazy_partition_agg() {
 
     let out = df
         .lazy()
-        .groupby([col("foo")])
+        .group_by([col("foo")])
         .agg([col("bar").mean()])
         .sort("foo", Default::default())
         .collect()
@@ -664,13 +666,13 @@ fn test_lazy_partition_agg() {
     );
 
     let out = scan_foods_csv()
-        .groupby([col("category")])
+        .group_by([col("category")])
         .agg([col("calories")])
         .sort("category", Default::default())
         .collect()
         .unwrap();
     let cat_agg_list = out.select_at_idx(1).unwrap();
-    let fruit_series = cat_agg_list.list().unwrap().get(0).unwrap();
+    let fruit_series = cat_agg_list.list().unwrap().get_as_series(0).unwrap();
     let fruit_list = fruit_series.i64().unwrap();
     assert_eq!(
         Vec::from(fruit_list),
@@ -687,11 +689,11 @@ fn test_lazy_partition_agg() {
 }
 
 #[test]
-fn test_lazy_groupby_apply() {
+fn test_lazy_group_by_apply() {
     let df = fruits_cars();
 
     df.lazy()
-        .groupby([col("fruits")])
+        .group_by([col("fruits")])
         .agg([col("cars").apply(
             |s: Series| Ok(Some(Series::new("", &[s.len() as u32]))),
             GetOutput::same_type(),
@@ -733,7 +735,7 @@ fn test_lazy_shift_and_fill() {
 }
 
 #[test]
-fn test_lazy_groupby() {
+fn test_lazy_group_by() {
     let df = df! {
         "a" => &[Some(1.0), None, Some(3.0), Some(4.0), Some(5.0)],
         "groups" => &["a", "a", "b", "c", "c"]
@@ -742,7 +744,7 @@ fn test_lazy_groupby() {
 
     let out = df
         .lazy()
-        .groupby([col("groups")])
+        .group_by([col("groups")])
         .agg([col("a").mean()])
         .sort("a", Default::default())
         .collect()
@@ -763,7 +765,7 @@ fn test_lazy_tail() {
 }
 
 #[test]
-fn test_lazy_groupby_sort() {
+fn test_lazy_group_by_sort() {
     let df = df! {
         "a" => ["a", "b", "a", "b", "b", "c"],
         "b" => [1, 2, 3, 4, 5, 6]
@@ -773,7 +775,7 @@ fn test_lazy_groupby_sort() {
     let out = df
         .clone()
         .lazy()
-        .groupby([col("a")])
+        .group_by([col("a")])
         .agg([col("b").sort(false).first()])
         .collect()
         .unwrap()
@@ -787,7 +789,7 @@ fn test_lazy_groupby_sort() {
 
     let out = df
         .lazy()
-        .groupby([col("a")])
+        .group_by([col("a")])
         .agg([col("b").sort(false).last()])
         .collect()
         .unwrap()
@@ -801,7 +803,7 @@ fn test_lazy_groupby_sort() {
 }
 
 #[test]
-fn test_lazy_groupby_sort_by() {
+fn test_lazy_group_by_sort_by() {
     let df = df! {
         "a" => ["a", "a", "a", "b", "b", "c"],
         "b" => [1, 2, 3, 4, 5, 6],
@@ -811,7 +813,7 @@ fn test_lazy_groupby_sort_by() {
 
     let out = df
         .lazy()
-        .groupby([col("a")])
+        .group_by([col("a")])
         .agg([col("b").sort_by([col("c")], [true]).first()])
         .collect()
         .unwrap()
@@ -826,17 +828,17 @@ fn test_lazy_groupby_sort_by() {
 
 #[test]
 #[cfg(feature = "dtype-datetime")]
-fn test_lazy_groupby_cast() {
+fn test_lazy_group_by_cast() {
     let df = df! {
         "a" => ["a", "a", "a", "b", "b", "c"],
         "b" => [1, 2, 3, 4, 5, 6]
     }
     .unwrap();
 
-    // test if it runs in groupby context
+    // test if it runs in group_by context
     let _out = df
         .lazy()
-        .groupby([col("a")])
+        .group_by([col("a")])
         .agg([col("b")
             .mean()
             .cast(DataType::Datetime(TimeUnit::Nanoseconds, None))])
@@ -845,17 +847,17 @@ fn test_lazy_groupby_cast() {
 }
 
 #[test]
-fn test_lazy_groupby_binary_expr() {
+fn test_lazy_group_by_binary_expr() {
     let df = df! {
         "a" => ["a", "a", "a", "b", "b", "c"],
         "b" => [1, 2, 3, 4, 5, 6]
     }
     .unwrap();
 
-    // test if it runs in groupby context
+    // test if it runs in group_by context
     let out = df
         .lazy()
-        .groupby([col("a")])
+        .group_by([col("a")])
         .agg([col("b").mean() * lit(2)])
         .sort("a", Default::default())
         .collect()
@@ -867,18 +869,18 @@ fn test_lazy_groupby_binary_expr() {
 }
 
 #[test]
-fn test_lazy_groupby_filter() -> PolarsResult<()> {
+fn test_lazy_group_by_filter() -> PolarsResult<()> {
     let df = df! {
         "a" => ["a", "a", "a", "b", "b", "c"],
         "b" => [1, 2, 3, 4, 5, 6]
     }?;
 
-    // We test if the filters work in the groupby context
+    // We test if the filters work in the group_by context
     // and that the aggregations can deal with empty sets
 
     let out = df
         .lazy()
-        .groupby([col("a")])
+        .group_by([col("a")])
         .agg([
             col("b").filter(col("a").eq(lit("a"))).sum().alias("b_sum"),
             col("b")
@@ -926,7 +928,7 @@ fn test_lazy_groupby_filter() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_groupby_projection_pd_same_column() -> PolarsResult<()> {
+fn test_group_by_projection_pd_same_column() -> PolarsResult<()> {
     // this query failed when projection pushdown was enabled
 
     let a = || {
@@ -952,7 +954,7 @@ fn test_groupby_projection_pd_same_column() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_groupby_sort_slice() -> PolarsResult<()> {
+fn test_group_by_sort_slice() -> PolarsResult<()> {
     let df = df![
         "groups" => [1, 2, 2, 3, 3, 3],
         "vals" => [1, 5, 6, 3, 9, 8]
@@ -975,14 +977,14 @@ fn test_groupby_sort_slice() -> PolarsResult<()> {
                 ..Default::default()
             },
         )
-        .groupby([col("groups")])
+        .group_by([col("groups")])
         .agg([col("vals").head(Some(2)).alias("foo")])
         .sort("groups", SortOptions::default())
         .collect()?;
 
     let out2 = df
         .lazy()
-        .groupby([col("groups")])
+        .group_by([col("groups")])
         .agg([col("vals").sort(true).head(Some(2)).alias("foo")])
         .sort("groups", SortOptions::default())
         .collect()?;
@@ -992,7 +994,7 @@ fn test_groupby_sort_slice() -> PolarsResult<()> {
 }
 
 #[test]
-fn test_groupby_cumsum() -> PolarsResult<()> {
+fn test_group_by_cumsum() -> PolarsResult<()> {
     let df = df![
         "groups" => [1, 2, 2, 3, 3, 3],
         "vals" => [1, 5, 6, 3, 9, 8]
@@ -1000,7 +1002,7 @@ fn test_groupby_cumsum() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .groupby([col("groups")])
+        .group_by([col("groups")])
         .agg([col("vals").cumsum(false)])
         .sort("groups", Default::default())
         .collect()?;
@@ -1059,7 +1061,7 @@ fn test_multiple_explode() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .groupby([col("a")])
+        .group_by([col("a")])
         .agg([col("b").alias("b_list"), col("c").alias("c_list")])
         .explode([col("c_list"), col("b_list")])
         .collect()?;
@@ -1132,20 +1134,17 @@ fn test_fill_forward() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .select([col("b").forward_fill(None).over_with_options(
-            [col("a")],
-            WindowOptions {
-                mapping: WindowMapping::Join,
-            },
-        )])
+        .select([col("b")
+            .forward_fill(None)
+            .over_with_options([col("a")], WindowMapping::Join.into())])
         .collect()?;
     let agg = out.column("b")?.list()?;
 
-    let a: Series = agg.get(0).unwrap();
+    let a: Series = agg.get_as_series(0).unwrap();
     assert!(a.series_equal(&Series::new("b", &[1, 1])));
-    let a: Series = agg.get(2).unwrap();
+    let a: Series = agg.get_as_series(2).unwrap();
     assert!(a.series_equal(&Series::new("b", &[1, 1])));
-    let a: Series = agg.get(1).unwrap();
+    let a: Series = agg.get_as_series(1).unwrap();
     assert_eq!(a.null_count(), 1);
     Ok(())
 }
@@ -1261,7 +1260,7 @@ fn test_sort_by() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .groupby_stable([col("b")])
+        .group_by_stable([col("b")])
         .agg([col("a").sort_by([col("b"), col("c")], [false])])
         .collect()?;
     let a = out.column("a")?.explode()?;
@@ -1273,7 +1272,7 @@ fn test_sort_by() -> PolarsResult<()> {
     // evaluate_on_groups
     let out = df
         .lazy()
-        .groupby_stable([col("b")])
+        .group_by_stable([col("b")])
         .agg([col("a").sort_by([col("b"), col("c")], [false])])
         .collect()?;
 
@@ -1297,12 +1296,7 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
             col("B")
                 .shift(1)
                 .filter(col("B").shift(1).gt(lit(4)))
-                .over_with_options(
-                    [col("fruits")],
-                    WindowOptions {
-                        mapping: WindowMapping::Join,
-                    },
-                )
+                .over_with_options([col("fruits")], WindowMapping::Join.into())
                 .alias("filtered"),
         ])
         .collect()?;
@@ -1310,7 +1304,7 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
     assert_eq!(
         out.column("filtered")?
             .list()?
-            .get(0)
+            .get_as_series(0)
             .unwrap()
             .i32()?
             .get(0)
@@ -1320,14 +1314,21 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
     assert_eq!(
         out.column("filtered")?
             .list()?
-            .get(1)
+            .get_as_series(1)
             .unwrap()
             .i32()?
             .get(0)
             .unwrap(),
         5
     );
-    assert_eq!(out.column("filtered")?.list()?.get(2).unwrap().len(), 0);
+    assert_eq!(
+        out.column("filtered")?
+            .list()?
+            .get_as_series(2)
+            .unwrap()
+            .len(),
+        0
+    );
 
     Ok(())
 }
@@ -1394,7 +1395,7 @@ fn test_filter_count() -> PolarsResult<()> {
 
 #[test]
 #[cfg(feature = "dtype-i16")]
-fn test_groupby_small_ints() -> PolarsResult<()> {
+fn test_group_by_small_ints() -> PolarsResult<()> {
     let df = df![
         "id_32" => [1i32, 2],
         "id_16" => [1i16, 2]
@@ -1403,7 +1404,7 @@ fn test_groupby_small_ints() -> PolarsResult<()> {
     // https://github.com/pola-rs/polars/issues/1255
     let out = df
         .lazy()
-        .groupby([col("id_16"), col("id_32")])
+        .group_by([col("id_16"), col("id_32")])
         .agg([col("id_16").sum().alias("foo")])
         .sort(
             "foo",
@@ -1468,7 +1469,7 @@ fn test_round_after_agg() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .groupby([col("fruits")])
+        .group_by([col("fruits")])
         .agg([col("A")
             .cast(DataType::Float32)
             .mean()
@@ -1504,7 +1505,7 @@ fn test_round_after_agg() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .groupby_stable([col("groups")])
+        .group_by_stable([col("groups")])
         .agg([((col("b") * col("c")).sum() / col("b").sum())
             .round(2)
             .alias("foo")])
@@ -1549,11 +1550,11 @@ fn test_exclude_regex() -> PolarsResult<()> {
 
 #[test]
 #[cfg(feature = "rank")]
-fn test_groupby_rank() -> PolarsResult<()> {
+fn test_group_by_rank() -> PolarsResult<()> {
     let df = fruits_cars();
     let out = df
         .lazy()
-        .groupby_stable([col("cars")])
+        .group_by_stable([col("cars")])
         .agg([col("B").rank(
             RankOptions {
                 method: RankMethod::Dense,
@@ -1564,7 +1565,7 @@ fn test_groupby_rank() -> PolarsResult<()> {
         .collect()?;
 
     let out = out.column("B")?;
-    let out = out.list()?.get(1).unwrap();
+    let out = out.list()?.get_as_series(1).unwrap();
     let out = out.idx()?;
 
     assert_eq!(Vec::from(out), &[Some(1)]);
@@ -1654,16 +1655,11 @@ fn test_single_ranked_group() -> PolarsResult<()> {
                 },
                 None,
             )
-            .over_with_options(
-                [col("group")],
-                WindowOptions {
-                    mapping: WindowMapping::Join,
-                },
-            )])
+            .over_with_options([col("group")], WindowMapping::Join.into())])
         .collect()?;
 
     let out = out.column("value")?.explode()?;
-    let out = out.f32()?;
+    let out = out.f64()?;
     assert_eq!(
         Vec::from(out),
         &[Some(1.0), Some(2.0), Some(1.0), Some(2.0), Some(1.0)]
@@ -1703,7 +1699,7 @@ fn test_apply_flatten() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .groupby_stable([col("B")])
+        .group_by_stable([col("B")])
         .agg([col("A").abs().sum().alias("A_sum")])
         .collect()?;
 
@@ -1723,7 +1719,7 @@ fn test_is_in() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .groupby_stable([col("fruits")])
+        .group_by_stable([col("fruits")])
         .agg([col("cars").is_in(col("cars").filter(col("cars").eq(lit("beetle"))))])
         .collect()?;
     let out = out.column("cars").unwrap();
@@ -1737,7 +1733,7 @@ fn test_is_in() -> PolarsResult<()> {
     // this will be executed by map
     let out = df
         .lazy()
-        .groupby_stable([col("fruits")])
+        .group_by_stable([col("fruits")])
         .agg([col("cars").is_in(lit(Series::new("a", ["beetle", "vw"])))])
         .collect()?;
 
@@ -1761,7 +1757,7 @@ fn test_partitioned_gb_1() -> PolarsResult<()> {
         "vals" => ["a", "b", "c", "a", "a"]
     ]?
     .lazy()
-    .groupby([col("keys")])
+    .group_by([col("keys")])
     .agg([
         (col("vals").eq(lit("a"))).sum().alias("eq_a"),
         (col("vals").eq(lit("b"))).sum().alias("eq_b"),
@@ -1785,7 +1781,7 @@ fn test_partitioned_gb_count() -> PolarsResult<()> {
         "col" => (0..100).map(|_| Some(0)).collect::<Int32Chunked>().into_series(),
     ]?
     .lazy()
-    .groupby([col("col")])
+    .group_by([col("col")])
     .agg([
         // we make sure to alias with a different name
         count().alias("counted"),
@@ -1810,7 +1806,7 @@ fn test_partitioned_gb_mean() -> PolarsResult<()> {
     ]?
     .lazy()
     .with_columns([lit("a").alias("str"), lit(1).alias("int")])
-    .groupby([col("key")])
+    .group_by([col("key")])
     .agg([
         col("str").mean().alias("mean_str"),
         col("int").mean().alias("mean_int"),
@@ -1836,7 +1832,7 @@ fn test_partitioned_gb_binary() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
-        .groupby([col("col")])
+        .group_by([col("col")])
         .agg([(col("col") + lit(10)).sum().alias("sum")])
         .collect()?;
 
@@ -1847,7 +1843,7 @@ fn test_partitioned_gb_binary() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .groupby([col("col")])
+        .group_by([col("col")])
         .agg([(col("col").cast(DataType::Float32) + lit(10.0))
             .sum()
             .alias("sum")])
@@ -1871,7 +1867,7 @@ fn test_partitioned_gb_ternary() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .groupby([col("col")])
+        .group_by([col("col")])
         .agg([when(col("val").gt(lit(10)))
             .then(lit(1))
             .otherwise(lit(0))

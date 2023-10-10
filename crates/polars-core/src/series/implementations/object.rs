@@ -5,8 +5,11 @@ use ahash::RandomState;
 
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ops::compare_inner::{IntoPartialEqInner, PartialEqInner};
+#[cfg(feature = "chunked_ids")]
+use crate::chunked_array::ops::take::TakeChunked;
 use crate::chunked_array::Settings;
-use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
+#[cfg(feature = "algorithm_group_by")]
+use crate::frame::group_by::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
@@ -55,15 +58,16 @@ where
     }
 
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
-        self.0.vec_hash(random_state, buf);
+        self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
     fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
-        self.0.vec_hash_combine(build_hasher, hashes);
+        self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
@@ -97,6 +101,9 @@ where
     fn chunks(&self) -> &Vec<ArrayRef> {
         ObjectChunked::chunks(&self.0)
     }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.chunks_mut()
+    }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
         ObjectChunked::slice(&self.0, offset, length).into_series()
@@ -129,33 +136,19 @@ where
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        Ok(ChunkTake::take(&self.0, indices.into())?.into_series())
+        Ok(self.0.take(indices)?.into_series())
     }
 
-    fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
+    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+        self.0.take_unchecked(indices).into_series()
     }
 
-    unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
+    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+        Ok(self.0.take(indices)?.into_series())
     }
 
-    unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-        let idx = if idx.chunks.len() > 1 {
-            Cow::Owned(idx.rechunk())
-        } else {
-            Cow::Borrowed(idx)
-        };
-        Ok(ChunkTake::take_unchecked(&self.0, (&*idx).into()).into_series())
-    }
-
-    unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
-    }
-
-    #[cfg(feature = "take_opt_iter")]
-    fn take_opt_iter(&self, _iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-        todo!()
+    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+        self.0.take_unchecked(indices).into_series()
     }
 
     fn len(&self) -> usize {

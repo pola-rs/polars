@@ -1,6 +1,6 @@
 mod functions;
 mod generic;
-mod groupby;
+mod group_by;
 mod hstack;
 mod joins;
 mod projection;
@@ -17,7 +17,7 @@ use semi_anti_join::process_semi_anti_join;
 use crate::logical_plan::Context;
 use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
-use crate::prelude::optimizer::projection_pushdown::groupby::process_groupby;
+use crate::prelude::optimizer::projection_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::projection_pushdown::hstack::process_hstack;
 use crate::prelude::optimizer::projection_pushdown::joins::process_join;
 use crate::prelude::optimizer::projection_pushdown::projection::process_projection;
@@ -149,17 +149,11 @@ fn update_scan_schema(
     Ok(new_schema)
 }
 
-pub struct ProjectionPushDown {
-    pub(crate) has_joins_or_unions: bool,
-    pub(crate) has_cache: bool,
-}
+pub struct ProjectionPushDown {}
 
 impl ProjectionPushDown {
     pub(super) fn new() -> Self {
-        Self {
-            has_joins_or_unions: false,
-            has_cache: false,
-        }
+        Self {}
     }
 
     /// Projection will be done at this node, but we continue optimization
@@ -337,70 +331,6 @@ impl ProjectionPushDown {
                 lp_arena,
                 expr_arena,
             ),
-            LocalProjection { expr, input, .. } => {
-                self.pushdown_and_assign(
-                    input,
-                    acc_projections,
-                    projected_names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )?;
-                let lp = lp_arena.get(input);
-                let schema = lp.schema(lp_arena);
-
-                // projection from a wildcard may be dropped if the schema changes due to the optimization
-                let proj = expr
-                    .into_iter()
-                    .filter(|e| check_input_node(*e, &schema, expr_arena))
-                    .collect();
-                Ok(ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
-                    .project_local(proj)
-                    .build())
-            },
-            AnonymousScan {
-                function,
-                file_info,
-                predicate,
-                mut options,
-                output_schema,
-            } => {
-                if function.allows_projection_pushdown() {
-                    let mut_options = Arc::make_mut(&mut options);
-                    mut_options.with_columns =
-                        get_scan_columns(&mut acc_projections, expr_arena, None);
-
-                    let output_schema = if mut_options.with_columns.is_none() {
-                        None
-                    } else {
-                        Some(Arc::new(update_scan_schema(
-                            &acc_projections,
-                            expr_arena,
-                            &file_info.schema,
-                            true,
-                        )?))
-                    };
-                    mut_options.output_schema = output_schema.clone();
-
-                    let lp = AnonymousScan {
-                        function,
-                        file_info,
-                        output_schema,
-                        options,
-                        predicate,
-                    };
-                    Ok(lp)
-                } else {
-                    let lp = AnonymousScan {
-                        function,
-                        file_info,
-                        predicate,
-                        options,
-                        output_schema,
-                    };
-                    Ok(lp)
-                }
-            },
             DataFrameScan {
                 df,
                 schema,
@@ -452,24 +382,43 @@ impl ProjectionPushDown {
                 scan_type,
                 predicate,
                 mut file_options,
-                ..
+                mut output_schema,
             } => {
-                file_options.with_columns = get_scan_columns(
-                    &mut acc_projections,
-                    expr_arena,
-                    file_options.row_count.as_ref(),
-                );
+                let mut do_optimization = true;
+                if let FileScan::Anonymous { ref function, .. } = scan_type {
+                    do_optimization = function.allows_projection_pushdown();
+                }
 
-                let output_schema = if file_options.with_columns.is_none() {
-                    None
-                } else {
-                    Some(Arc::new(update_scan_schema(
-                        &acc_projections,
+                if do_optimization {
+                    file_options.with_columns = get_scan_columns(
+                        &mut acc_projections,
                         expr_arena,
-                        &file_info.schema,
-                        scan_type.sort_projection(&file_options),
-                    )?))
-                };
+                        file_options.row_count.as_ref(),
+                    );
+
+                    output_schema = if file_options.with_columns.is_none() {
+                        None
+                    } else {
+                        let mut schema = update_scan_schema(
+                            &acc_projections,
+                            expr_arena,
+                            &file_info.schema,
+                            scan_type.sort_projection(&file_options),
+                        )?;
+                        // Hive partitions are created AFTER the projection, so the output
+                        // schema is incorrect. Here we ensure the columns that are projected and hive
+                        // parts are added at the proper place in the schema, which is at the end.
+                        if let Some(parts) = file_info.hive_parts.as_deref() {
+                            let partition_schema = parts.schema();
+                            for (name, _) in partition_schema.iter() {
+                                if let Some(dt) = schema.shift_remove(name) {
+                                    schema.with_column(name.clone(), dt);
+                                }
+                            }
+                        }
+                        Some(Arc::new(schema))
+                    };
+                }
 
                 let lp = Scan {
                     path,
@@ -580,7 +529,7 @@ impl ProjectionPushDown {
                 schema,
                 maintain_order,
                 options,
-            } => process_groupby(
+            } => process_group_by(
                 self,
                 input,
                 keys,
@@ -696,20 +645,17 @@ impl ProjectionPushDown {
                 lp_arena,
                 expr_arena,
             ),
-            lp @ Union { .. } => {
-                self.has_joins_or_unions = true;
-                process_generic(
-                    self,
-                    lp,
-                    acc_projections,
-                    projected_names,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )
-            },
+            lp @ Union { .. } => process_generic(
+                self,
+                lp,
+                acc_projections,
+                projected_names,
+                projections_seen,
+                lp_arena,
+                expr_arena,
+            ),
             // These nodes only have inputs and exprs, so we can use same logic.
-            lp @ Slice { .. } | lp @ FileSink { .. } => process_generic(
+            lp @ Slice { .. } | lp @ Sink { .. } => process_generic(
                 self,
                 lp,
                 acc_projections,
@@ -719,7 +665,6 @@ impl ProjectionPushDown {
                 expr_arena,
             ),
             Cache { .. } => {
-                self.has_cache = true;
                 // projections above this cache will be accumulated and pushed down
                 // later
                 // the redundant projection will be cleaned in the fast projection optimization

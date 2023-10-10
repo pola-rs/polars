@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -65,7 +65,7 @@ def test_join_same_cat_src() -> None:
         data={"column": ["a", "a", "b"], "more": [1, 2, 3]},
         schema=[("column", pl.Categorical), ("more", pl.Int32)],
     )
-    df_agg = df.groupby("column").agg(pl.col("more").mean())
+    df_agg = df.group_by("column").agg(pl.col("more").mean())
     assert df.join(df_agg, on="column").to_dict(False) == {
         "column": ["a", "a", "b"],
         "more": [1, 2, 3],
@@ -434,7 +434,7 @@ def test_semi_join_projection_pushdown_6455() -> None:
         }
     ).lazy()
 
-    latest = df.groupby("id").agg(pl.col("timestamp").max())
+    latest = df.group_by("id").agg(pl.col("timestamp").max())
     df = df.join(latest, on=["id", "timestamp"], how="semi")
     assert df.select(["id", "value"]).collect().to_dict(False) == {
         "id": [1, 2],
@@ -443,6 +443,94 @@ def test_semi_join_projection_pushdown_6455() -> None:
 
 
 def test_update() -> None:
+    df1 = pl.DataFrame(
+        {
+            "key1": [1, 2, 3, 4],
+            "key2": [1, 2, 3, 4],
+            "a": [1, 2, 3, 4],
+            "b": [1, 2, 3, 4],
+            "c": ["1", "2", "3", "4"],
+            "d": [
+                date(2023, 1, 1),
+                date(2023, 1, 2),
+                date(2023, 1, 3),
+                date(2023, 1, 4),
+            ],
+        }
+    )
+
+    df2 = pl.DataFrame(
+        {
+            "key1": [1, 2, 3, 4],
+            "key2": [1, 2, 3, 5],
+            "a": [1, 1, 1, 1],
+            "b": [2, 2, 2, 2],
+            "c": ["3", "3", "3", "3"],
+            "d": [
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+            ],
+        }
+    )
+
+    # update only on key1
+    expected = pl.DataFrame(
+        {
+            "key1": [1, 2, 3, 4],
+            "key2": [1, 2, 3, 5],
+            "a": [1, 1, 1, 1],
+            "b": [2, 2, 2, 2],
+            "c": ["3", "3", "3", "3"],
+            "d": [
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+            ],
+        }
+    )
+    assert_frame_equal(df1.update(df2, on="key1"), expected)
+
+    # update on key1 using different left/right names
+    assert_frame_equal(
+        df1.update(
+            df2.rename({"key1": "key1b"}),
+            left_on="key1",
+            right_on="key1b",
+        ),
+        expected,
+    )
+
+    # update on key1 and key2. This should fail to match the last item.
+    expected = pl.DataFrame(
+        {
+            "key1": [1, 2, 3, 4],
+            "key2": [1, 2, 3, 4],
+            "a": [1, 1, 1, 4],
+            "b": [2, 2, 2, 4],
+            "c": ["3", "3", "3", "4"],
+            "d": [
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 5, 5),
+                date(2023, 1, 4),
+            ],
+        }
+    )
+    assert_frame_equal(df1.update(df2, on=["key1", "key2"]), expected)
+
+    # update on key1 and key2 using different left/right names
+    assert_frame_equal(
+        df1.update(
+            df2.rename({"key1": "key1b", "key2": "key2b"}),
+            left_on=["key1", "key2"],
+            right_on=["key1b", "key2b"],
+        ),
+        expected,
+    )
+
     df = pl.DataFrame({"A": [1, 2, 3, 4], "B": [400, 500, 600, 700]})
 
     new_df = pl.DataFrame({"B": [4, None, 6], "C": [7, 8, 9]})
@@ -467,13 +555,13 @@ def test_join_frame_consistency() -> None:
     df = pl.DataFrame({"A": [1, 2, 3]})
     ldf = pl.DataFrame({"A": [1, 2, 5]}).lazy()
 
-    with pytest.raises(TypeError, match="Expected 'other'.* LazyFrame"):
+    with pytest.raises(TypeError, match="expected `other`.* LazyFrame"):
         _ = ldf.join(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="Expected 'other'.* DataFrame"):
+    with pytest.raises(TypeError, match="expected `other`.* DataFrame"):
         _ = df.join(ldf, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="Expected 'other'.* LazyFrame"):
+    with pytest.raises(TypeError, match="expected `other`.* LazyFrame"):
         _ = ldf.join_asof(df, on="A")  # type: ignore[arg-type]
-    with pytest.raises(TypeError, match="Expected 'other'.* DataFrame"):
+    with pytest.raises(TypeError, match="expected `other`.* DataFrame"):
         _ = df.join_asof(ldf, on="A")  # type: ignore[arg-type]
 
 
@@ -585,3 +673,13 @@ def test_join_validation() -> None:
 
         # right longer
         test_each_join_validation(short_unique, long_duplicate, how)
+
+
+def test_outer_join_bool() -> None:
+    df1 = pl.DataFrame({"id": [True, False], "val": [1, 2]})
+    df2 = pl.DataFrame({"id": [True, False], "val": [0, -1]})
+    assert df1.join(df2, on="id", how="outer").to_dict(False) == {
+        "id": [True, False],
+        "val": [1, 2],
+        "val_right": [0, -1],
+    }
