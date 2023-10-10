@@ -177,14 +177,14 @@ def time_(
 
 def duration(
     *,
-    days: Expr | str | int | None = None,
-    seconds: Expr | str | int | None = None,
-    nanoseconds: Expr | str | int | None = None,
-    microseconds: Expr | str | int | None = None,
-    milliseconds: Expr | str | int | None = None,
-    minutes: Expr | str | int | None = None,
-    hours: Expr | str | int | None = None,
     weeks: Expr | str | int | None = None,
+    days: Expr | str | int | None = None,
+    hours: Expr | str | int | None = None,
+    minutes: Expr | str | int | None = None,
+    seconds: Expr | str | int | None = None,
+    milliseconds: Expr | str | int | None = None,
+    microseconds: Expr | str | int | None = None,
+    nanoseconds: Expr | str | int | None = None,
     time_unit: TimeUnit = "us",
 ) -> Expr:
     """
