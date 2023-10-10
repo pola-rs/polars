@@ -236,20 +236,27 @@ def scan_parquet(
     retries
         Number of retries if accessing a cloud instance fails.
 
+    See Also
+    --------
+    read_parquet
+    scan_pyarrow_dataset
+
     Examples
     --------
+    Scan a local Parquet file.
+
+    >>> pl.scan_parquet("path/to/file.parquet")  # doctest: +SKIP
+
+    Scan a file on AWS S3.
+
     >>> source = "s3://bucket/*.parquet"
+    >>> pl.scan_parquet(source)  # doctest: +SKIP
     >>> storage_options = {
     ...     "aws_access_key_id": "<secret>",
     ...     "aws_secret_access_key": "<secret>",
     ...     "aws_region": "us-east-1",
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
-
-    See Also
-    --------
-    read_parquet
-    scan_pyarrow_dataset
 
     """
     if isinstance(source, (str, Path)):
