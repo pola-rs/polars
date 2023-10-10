@@ -122,8 +122,11 @@ def test_struct_unnesting() -> None:
         }
     )
     for cols in ("foo", cs.ends_with("oo")):
-        out = df.unnest(cols)  # type: ignore[arg-type]
-        assert_frame_equal(out, expected)
+        out_eager = df.unnest(cols)  # type: ignore[arg-type]
+        assert_frame_equal(out_eager, expected)
+
+        out_lazy = df.lazy().unnest(cols)  # type: ignore[arg-type]
+        assert_frame_equal(out_lazy, expected.lazy())
 
     out = (
         df_base.lazy()
