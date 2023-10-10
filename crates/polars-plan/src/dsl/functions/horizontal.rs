@@ -286,7 +286,7 @@ pub fn coalesce(exprs: &[Expr]) -> Expr {
         input,
         function: FunctionExpr::Coalesce,
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
+            collect_groups: ApplyOptions::ApplyFlat,
             cast_to_supertypes: true,
             input_wildcard_expansion: true,
             ..Default::default()
