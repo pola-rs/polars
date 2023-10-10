@@ -55,16 +55,16 @@ nav:
       - user-guide/lazy/using.md
       - user-guide/lazy/optimizations.md
       - user-guide/lazy/schemas.md
-      - user-guide/lazy/query_plan.md
+      - user-guide/lazy/query-plan.md
       - user-guide/lazy/execution.md
       - user-guide/lazy/streaming.md
     - IO:
       - user-guide/io/csv.md
       - user-guide/io/parquet.md
-      - user-guide/io/json_file.md
+      - user-guide/io/json.md
       - user-guide/io/multiple.md
       - user-guide/io/database.md
-      - user-guide/io/aws.md
+      - user-guide/io/cloud-storage.md
       - user-guide/io/bigquery.md
     - SQL:
       - user-guide/sql/intro.md
