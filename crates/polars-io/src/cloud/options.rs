@@ -90,8 +90,8 @@ impl FromStr for CloudType {
     fn from_str(url: &str) -> Result<Self, Self::Err> {
         let parsed = Url::parse(url).map_err(to_compute_err)?;
         Ok(match parsed.scheme() {
-            "s3" => Self::Aws,
-            "az" | "adl" | "abfs" => Self::Azure,
+            "s3" | "s3a" => Self::Aws,
+            "az" | "azure" | "adl" | "abfs" | "abfss" => Self::Azure,
             "gs" | "gcp" | "gcs" => Self::Gcp,
             "file" => Self::File,
             _ => polars_bail!(ComputeError: "unknown url scheme"),
