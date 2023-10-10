@@ -310,7 +310,7 @@ def test_nested_categorical_aggregation_7848() -> None:
     ).with_columns([pl.col("letter").cast(pl.Categorical)]).group_by(
         maintain_order=True, by=["group"]
     ).all().with_columns(
-        [pl.col("letter").list.lengths().alias("c_group")]
+        [pl.col("letter").list.len().alias("c_group")]
     ).group_by(
         by=["c_group"], maintain_order=True
     ).agg(

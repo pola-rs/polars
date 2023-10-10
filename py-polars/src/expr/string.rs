@@ -112,12 +112,12 @@ impl PyExpr {
         self.inner.clone().str().to_titlecase().into()
     }
 
-    fn str_lengths(&self) -> Self {
-        self.inner.clone().str().lengths().into()
+    fn str_len_bytes(&self) -> Self {
+        self.inner.clone().str().len_bytes().into()
     }
 
-    fn str_n_chars(&self) -> Self {
-        self.inner.clone().str().n_chars().into()
+    fn str_len_chars(&self) -> Self {
+        self.inner.clone().str().len_chars().into()
     }
 
     #[cfg(feature = "lazy_regex")]

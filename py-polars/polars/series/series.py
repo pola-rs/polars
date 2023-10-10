@@ -3719,11 +3719,13 @@ class Series:
 
     def len(self) -> int:
         """
-        Length of this Series.
+        Return the number of elements in this Series.
+
+        Null values are treated like regular elements in this context.
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s = pl.Series("a", [1, 2, None])
         >>> s.len()
         3
 

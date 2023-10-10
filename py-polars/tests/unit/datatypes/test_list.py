@@ -133,7 +133,7 @@ def test_list_fill_null() -> None:
     df = pl.DataFrame({"C": [["a", "b", "c"], [], [], ["d", "e"]]})
     assert df.with_columns(
         [
-            pl.when(pl.col("C").list.lengths() == 0)
+            pl.when(pl.col("C").list.len() == 0)
             .then(None)
             .otherwise(pl.col("C"))
             .alias("C")
@@ -144,7 +144,7 @@ def test_list_fill_null() -> None:
 def test_list_fill_list() -> None:
     assert pl.DataFrame({"a": [[1, 2, 3], []]}).select(
         [
-            pl.when(pl.col("a").list.lengths() == 0)
+            pl.when(pl.col("a").list.len() == 0)
             .then([5])
             .otherwise(pl.col("a"))
             .alias("filled")

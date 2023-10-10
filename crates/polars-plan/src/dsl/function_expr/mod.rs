@@ -772,8 +772,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ExtractGroups { pat, dtype } => {
                 map!(strings::extract_groups, &pat, &dtype)
             },
-            NChars => map!(strings::n_chars),
-            Length => map!(strings::lengths),
+            LenBytes => map!(strings::len_bytes),
+            LenChars => map!(strings::len_chars),
             #[cfg(feature = "string_justify")]
             Zfill(alignment) => {
                 map!(strings::zfill, alignment)

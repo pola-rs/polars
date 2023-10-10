@@ -53,8 +53,8 @@ impl PyExpr {
         self.inner.clone().list().join(separator.inner).into()
     }
 
-    fn list_lengths(&self) -> Self {
-        self.inner.clone().list().lengths().into()
+    fn list_len(&self) -> Self {
+        self.inner.clone().list().len().into()
     }
 
     fn list_max(&self) -> Self {

@@ -142,8 +142,8 @@ python:
   str.replace_all: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.replace_all.html
   str.to_datetime: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.to_datetime.html
   str.to_date: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.to_date.html
-  str.n_chars: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.n_chars.html
-  str.lengths: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.lengths.html
+  str.len_chars: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.len_chars.html
+  str.len_bytes: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.len_bytes.html
 
   struct.field: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.struct.field.html
   struct.rename_fields: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.struct.rename_fields.html
@@ -354,12 +354,12 @@ rust:
     name: str.replace_all
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.to_datetime
     feature_flags: [dtype-datetime]
-  str.n_chars:
-    name: str.n_chars
-    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.n_chars
-  str.lengths:
-    name: str.lengths
-    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.lengths
+  str.len_chars:
+    name: str.len_chars
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.len_chars
+  str.len_bytes:
+    name: str.len_bytes
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.len_bytes
 
   struct.rename_fields: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/struct.StructNameSpace.html#method.rename_fields
   struct.field:

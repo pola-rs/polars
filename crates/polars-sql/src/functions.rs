@@ -631,7 +631,7 @@ impl SqlFunctionVisitor<'_> {
                     }
                 }))
             }),
-            Length => self.visit_unary(|e| e.str().n_chars()),
+            Length => self.visit_unary(|e| e.str().len_chars()),
             Lower => self.visit_unary(|e| e.str().to_lowercase()),
             LTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().strip_chars_start(lit(Null))),
@@ -641,7 +641,7 @@ impl SqlFunctionVisitor<'_> {
                     function.args.len()
                 ),
             },
-            OctetLength => self.visit_unary(|e| e.str().lengths()),
+            OctetLength => self.visit_unary(|e| e.str().len_bytes()),
             RegexpLike => match function.args.len() {
                 2 => self.visit_binary(|e, s| e.str().contains(s, true)),
                 3 => self.try_visit_ternary(|e, pat, flags| {
@@ -714,7 +714,7 @@ impl SqlFunctionVisitor<'_> {
             // ----
             ArrayContains => self.visit_binary::<Expr>(|e, s| e.list().contains(s)),
             ArrayGet => self.visit_binary(|e, i| e.list().get(i)),
-            ArrayLength => self.visit_unary(|e| e.list().lengths()),
+            ArrayLength => self.visit_unary(|e| e.list().len()),
             ArrayMax => self.visit_unary(|e| e.list().max()),
             ArrayMean => self.visit_unary(|e| e.list().mean()),
             ArrayMin => self.visit_unary(|e| e.list().min()),
