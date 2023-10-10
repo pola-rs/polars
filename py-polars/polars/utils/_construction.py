@@ -1061,9 +1061,7 @@ def _sequence_of_sequence_to_pydf(
         ]
         return PyDataFrame(data_series)
 
-    raise ValueError(
-        f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}"
-    )
+    raise ValueError(f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}")
 
 
 @_sequence_to_pydf_dispatcher.register(tuple)
