@@ -62,7 +62,7 @@ def test_sink_parquet_cloud(io_files_path: Path, tmp_path: Path) -> None:
     target = f"file://{sink_file.absolute().as_posix()}"
 
     df_scanned = pl.scan_parquet(source)
-    df_scanned.sink_parquet_cloud(target)
+    df_scanned.sink_parquet(target)
 
     with pl.StringCache():
         original = pl.read_parquet(source)
