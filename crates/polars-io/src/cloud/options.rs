@@ -1,4 +1,6 @@
 use std::str::FromStr;
+#[cfg(feature = "aws")]
+use std::sync::Arc;
 
 #[cfg(feature = "aws")]
 use object_store::aws::AmazonS3Builder;
@@ -30,8 +32,8 @@ use smartstring::alias::String as SmartString;
 use url::Url;
 
 #[cfg(feature = "aws")]
-static BUCKET_REGION: Lazy<tokio::sync::Mutex<FastFixedCache<SmartString, SmartString>>> =
-    Lazy::new(|| tokio::sync::Mutex::new(FastFixedCache::default()));
+static BUCKET_REGION: Lazy<Arc<tokio::sync::Mutex<FastFixedCache<SmartString, SmartString>>>> =
+    Lazy::new(|| Arc::new(tokio::sync::Mutex::new(FastFixedCache::default())));
 
 /// The type of the config keys must satisfy the following requirements:
 /// 1. must be easily collected into a HashMap, the type required by the object_crate API.
