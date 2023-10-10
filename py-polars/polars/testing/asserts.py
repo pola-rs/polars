@@ -116,7 +116,7 @@ def assert_frame_equal(
             right = right.sort(by=left.columns)
         except ComputeError as exc:
             raise InvalidAssert(
-                "cannot set 'check_row_order=False' on frame with unsortable columns"
+                "cannot set `check_row_order=False` on frame with unsortable columns"
             ) from exc
 
     # note: does not assume a particular column order

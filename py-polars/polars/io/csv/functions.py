@@ -887,7 +887,7 @@ def scan_csv(
     elif new_columns:
         if with_column_names:
             raise ValueError(
-                "cannot set both 'with_column_names' and 'new_columns'; mutually exclusive"
+                "cannot set both `with_column_names` and `new_columns`; mutually exclusive"
             )
         if dtypes and isinstance(dtypes, Sequence):
             dtypes = dict(zip(new_columns, dtypes))

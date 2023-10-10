@@ -2838,8 +2838,8 @@ def test_set() -> None:
     )
     with pytest.raises(
         TypeError,
-        match=r"DataFrame object does not support `Series` assignment by index."
-        r"\n\nUse `DataFrame.with_columns`",
+        match=r"DataFrame object does not support `Series` assignment by index"
+        r"\n\nUse `DataFrame.with_columns`.",
     ):
         df["new"] = np.random.rand(10)
 

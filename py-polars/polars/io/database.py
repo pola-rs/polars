@@ -419,8 +419,8 @@ def read_database(  # noqa D417
                 import arrow_odbc  # noqa: F401
             except ModuleNotFoundError:
                 raise ModuleNotFoundError(
-                    "use of an ODBC connection string requires the `arrow-odbc` package."
-                    "\n\nPlease run `pip install arrow-odbc`."
+                    "use of an ODBC connection string requires the `arrow-odbc` package"
+                    "\n\nPlease run: pip install arrow-odbc"
                 ) from None
 
             connection = ODBCCursorProxy(connection)
@@ -605,7 +605,7 @@ def _read_sql_connectorx(
     except ModuleNotFoundError:
         raise ModuleNotFoundError(
             "connectorx is not installed"
-            "\n\nPlease run `pip install connectorx>=0.3.2`."
+            "\n\nPlease run: pip install connectorx>=0.3.2"
         ) from None
 
     tbl = cx.read_sql(
@@ -644,8 +644,7 @@ def _open_adbc_connection(connection_uri: str) -> Any:
     except ImportError:
         raise ModuleNotFoundError(
             f"ADBC {driver_name} driver not detected"
-            "\n\nIf ADBC supports this database, please run:"
-            " `pip install adbc-driver-{driver_name} pyarrow`"
+            f"\n\nIf ADBC supports this database, please run: pip install adbc-driver-{driver_name} pyarrow"
         ) from None
 
     # some backends require the driver name to be stripped from the URI

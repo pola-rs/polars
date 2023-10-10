@@ -2193,17 +2193,17 @@ def test_ewm_param_validation() -> None:
     with pytest.raises(ValueError, match="mutually exclusive"):
         s.ewm_var(alpha=0.5, span=1.5)
 
-    with pytest.raises(ValueError, match="require 'com' >= 0"):
+    with pytest.raises(ValueError, match="require `com` >= 0"):
         s.ewm_std(com=-0.5)
 
-    with pytest.raises(ValueError, match="require 'span' >= 1"):
+    with pytest.raises(ValueError, match="require `span` >= 1"):
         s.ewm_mean(span=0.5)
 
-    with pytest.raises(ValueError, match="require 'half_life' > 0"):
+    with pytest.raises(ValueError, match="require `half_life` > 0"):
         s.ewm_var(half_life=0)
 
     for alpha in (-0.5, -0.0000001, 0.0, 1.0000001, 1.5):
-        with pytest.raises(ValueError, match="require 0 < 'alpha' <= 1"):
+        with pytest.raises(ValueError, match="require 0 < `alpha` <= 1"):
             s.ewm_std(alpha=alpha)
 
 

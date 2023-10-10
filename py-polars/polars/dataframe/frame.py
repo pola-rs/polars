@@ -728,7 +728,7 @@ class DataFrame:
             if dtype_slice is not None:
                 raise ValueError(
                     "cannot use glob patterns and unnamed dtypes as `dtypes` argument"
-                    "\n\nUse `dtypes`: Mapping[str, Type[DataType]"
+                    "\n\nUse `dtypes`: Mapping[str, Type[DataType]]"
                 )
             from polars import scan_csv
 
@@ -1719,7 +1719,7 @@ class DataFrame:
         # df["foo"] = series
         if isinstance(key, str):
             raise TypeError(
-                "DataFrame object does not support `Series` assignment by index."
+                "DataFrame object does not support `Series` assignment by index"
                 "\n\nUse `DataFrame.with_columns`."
             )
 
@@ -2996,7 +2996,7 @@ class DataFrame:
         except ImportError:
             raise ImportError(
                 "Excel export requires xlsxwriter"
-                "\n\nPlease run `pip install XlsxWriter`"
+                "\n\nPlease run: pip install XlsxWriter"
             ) from None
 
         # setup workbook/worksheet
@@ -3427,7 +3427,7 @@ class DataFrame:
             else:
                 raise ValueError(
                     f"unexpected value for `if_exists`: {if_exists!r}"
-                    f"\n\nChoose one of: {'fail', 'replace', 'append'}"
+                    f"\n\nChoose one of {{'fail', 'replace', 'append'}}"
                 )
             with _open_adbc_connection(connection) as conn, conn.cursor() as cursor:
                 cursor.adbc_ingest(table_name, self.to_arrow(), mode)
@@ -3443,7 +3443,8 @@ class DataFrame:
                 from sqlalchemy import create_engine
             except ModuleNotFoundError as exc:
                 raise ModuleNotFoundError(
-                    "'sqlalchemy' not found. Install polars with 'pip install polars[sqlalchemy]'"
+                    "sqlalchemy not found"
+                    "\n\nInstall Polars with: pip install polars[sqlalchemy]"
                 ) from exc
             from csv import reader as delimited_read
 

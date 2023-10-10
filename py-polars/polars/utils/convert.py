@@ -113,7 +113,7 @@ def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
         return _timestamp_in_seconds(dt) * 1_000 + millis
     else:
         raise ValueError(
-            f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
+            f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
         )
 
 
@@ -139,7 +139,7 @@ def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None = None)
         return int(td.total_seconds() * 1e6)
     else:
         raise ValueError(
-            f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
+            f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
         )
 
 
@@ -165,7 +165,7 @@ def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "ns") -> time
         return timedelta(milliseconds=value)
     else:
         raise ValueError(
-            f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
+            f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
         )
 
 
@@ -190,7 +190,7 @@ def _to_python_datetime(
             return EPOCH + timedelta(milliseconds=value)
         else:
             raise ValueError(
-                f"time_unit must be one of {{'ns','us','ms'}}, got {time_unit!r}"
+                f"`time_unit` must be one of {{'ns','us','ms'}}, got {time_unit!r}"
             )
     elif _ZONEINFO_AVAILABLE:
         if time_unit == "us":
@@ -201,7 +201,7 @@ def _to_python_datetime(
             dt = EPOCH_UTC + timedelta(milliseconds=value)
         else:
             raise ValueError(
-                f"time_unit must be one of {{'ns','us','ms'}}, got {time_unit!r}"
+                f"`time_unit` must be one of {{'ns','us','ms'}}, got {time_unit!r}"
             )
         return _localize(dt, time_zone)
     else:
