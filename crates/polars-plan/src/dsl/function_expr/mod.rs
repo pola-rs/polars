@@ -446,8 +446,11 @@ impl Display for FunctionExpr {
             SumHorizontal => "sum_horizontal",
             MaxHorizontal => "max_horizontal",
             MinHorizontal => "min_horizontal",
+            #[cfg(feature = "ewma")]
             EwmMean { .. } => "ewm_mean",
+            #[cfg(feature = "ewma")]
             EwmStd { .. } => "ewm_std",
+            #[cfg(feature = "ewma")]
             EwmVar { .. } => "ewm_var",
         };
         write!(f, "{s}")
