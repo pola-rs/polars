@@ -511,7 +511,6 @@ impl BatchedParquetReader {
     }
 
     pub async fn next_batches(&mut self, n: usize) -> PolarsResult<Option<Vec<DataFrame>>> {
-        dbg!(n);
         // fill up fifo stack
         if self.row_group_offset <= self.n_row_groups && self.chunks_fifo.len() < n {
             let row_group_start = self.row_group_offset;
