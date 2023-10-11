@@ -245,7 +245,6 @@ pub(super) fn join_asof_nearest_with_tolerance<
             }
 
             // We made it to the window: matches are now possible, start measuring distance.
-            found_window = true;
             let current_dist = if val_l > val_r {
                 val_l - val_r
             } else {
@@ -259,10 +258,15 @@ pub(super) fn join_asof_nearest_with_tolerance<
                     break;
                 }
             } else {
-                // We'ved moved farther away, so the last element was the match.
-                out.push(Some(offset - 1));
+                // We'ved moved farther away, so the last element was the match if it's within tolerance
+                if found_window {
+                    out.push(Some(offset - 1));
+                } else {
+                    out.push(None);
+                }
                 break;
             }
+            found_window = true;
             offset += 1;
         }
     }
