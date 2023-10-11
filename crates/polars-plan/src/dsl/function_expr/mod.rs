@@ -18,6 +18,7 @@ mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;
 mod dispatch;
+#[cfg(feature = "ewma")]
 mod ewm;
 mod fill_null;
 #[cfg(feature = "fused")]
