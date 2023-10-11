@@ -449,7 +449,8 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         precision : int
-            Number of decimal places to display
+            Number of decimal places to display; set to ``None`` to revert to the
+            default/standard behaviour.
 
         Notes
         -----
