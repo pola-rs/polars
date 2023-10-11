@@ -695,7 +695,7 @@ def read_csv_batched(
 
 
 def scan_csv(
-    source: str | Path,
+    source: str | Path | list[str] | list[Path],
     *,
     has_header: bool = True,
     separator: str = ",",
@@ -905,6 +905,8 @@ def scan_csv(
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
+    else:
+        source = [normalize_filepath(source) for source in source]
 
     return pl.LazyFrame._scan_csv(
         source,

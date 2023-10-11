@@ -40,7 +40,6 @@ pub trait LazyFileListReader: Clone {
                 .enumerate()
                 .map(|(i, r)| {
                     let path = r?;
-                    dbg!(&path);
                     let lf = self
                         .clone()
                         .with_path(path.clone())
@@ -77,7 +76,6 @@ pub trait LazyFileListReader: Clone {
 
             Ok(lf)
         } else {
-            dbg!("here");
             self.finish_no_glob()
         }
     }

@@ -40,6 +40,10 @@ pub struct LazyCsvReader<'a> {
 
 #[cfg(feature = "csv")]
 impl<'a> LazyCsvReader<'a> {
+    pub fn new_paths(paths: Vec<PathBuf>) -> Self {
+        Self::new("").with_paths(paths)
+    }
+
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyCsvReader {
             path: path.as_ref().to_owned(),

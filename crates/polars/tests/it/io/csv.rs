@@ -475,7 +475,6 @@ fn test_skip_rows() -> PolarsResult<()> {
         .with_separator(b' ')
         .finish()?;
 
-    dbg!(&df);
     assert_eq!(df.height(), 3);
     Ok(())
 }

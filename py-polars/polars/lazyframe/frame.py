@@ -312,7 +312,7 @@ class LazyFrame:
     @classmethod
     def _scan_csv(
         cls,
-        source: str,
+        source: str | list[str] | list[Path],
         *,
         has_header: bool = True,
         separator: str = ",",
@@ -356,9 +356,16 @@ class LazyFrame:
                 dtype_list.append((k, py_type_to_dtype(v)))
         processed_null_values = _process_null_values(null_values)
 
+        if isinstance(source, list):
+            sources = source
+            source = None  # type: ignore[assignment]
+        else:
+            sources = []  # type: ignore[assignment]
+
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_csv(
             source,
+            sources,
             separator,
             has_header,
             ignore_errors,
@@ -456,7 +463,7 @@ class LazyFrame:
     @classmethod
     def _scan_ipc(
         cls,
-        source: str | Path,
+        source: str | Path | list[str] | list[Path],
         *,
         n_rows: int | None = None,
         cache: bool = True,
@@ -477,11 +484,17 @@ class LazyFrame:
 
         """
         if isinstance(source, (str, Path)):
+            can_use_fsspec = True
             source = normalize_filepath(source)
+            sources = []
+        else:
+            can_use_fsspec = False
+            sources = [normalize_filepath(source) for source in source]
+            source = None  # type: ignore[assignment]
 
         # try fsspec scanner
-        if not _is_local_file(source):
-            scan = _scan_ipc_fsspec(source, storage_options)
+        if can_use_fsspec and _is_local_file(source):  # type: ignore[arg-type]
+            scan = _scan_ipc_fsspec(source, storage_options)  # type: ignore[arg-type]
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
@@ -491,6 +504,7 @@ class LazyFrame:
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_ipc(
             source,
+            sources,
             n_rows,
             cache,
             rechunk,

@@ -136,14 +136,15 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[cfg(feature = "csv")]
-    #[pyo3(signature = (path, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
+    #[pyo3(signature = (path, paths, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_char, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_count, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, schema
     )
     )]
     fn new_from_csv(
-        path: String,
+        path: Option<PathBuf>,
+        paths: Vec<PathBuf>,
         separator: &str,
         has_header: bool,
         ignore_errors: bool,
@@ -181,7 +182,14 @@ impl PyLazyFrame {
                 .map(|(name, dtype)| Field::new(name, dtype.0))
                 .collect::<Schema>()
         });
-        let mut r = LazyCsvReader::new(path)
+
+        let r = if let Some(path) = path.as_ref() {
+            LazyCsvReader::new(path)
+        } else {
+            LazyCsvReader::new_paths(paths)
+        };
+
+        let mut r = r
             .with_infer_schema_length(infer_schema_length)
             .with_separator(separator)
             .has_header(has_header)
@@ -295,9 +303,10 @@ impl PyLazyFrame {
 
     #[cfg(feature = "ipc")]
     #[staticmethod]
-    #[pyo3(signature = (path, n_rows, cache, rechunk, row_count, memory_map))]
+    #[pyo3(signature = (path, paths, n_rows, cache, rechunk, row_count, memory_map))]
     fn new_from_ipc(
-        path: String,
+        path: Option<PathBuf>,
+        paths: Vec<PathBuf>,
         n_rows: Option<usize>,
         cache: bool,
         rechunk: bool,
@@ -312,7 +321,13 @@ impl PyLazyFrame {
             row_count,
             memmap: memory_map,
         };
-        let lf = LazyFrame::scan_ipc(path, args).map_err(PyPolarsErr::from)?;
+
+        let lf = if let Some(path) = &path {
+            LazyFrame::scan_ipc(path, args)
+        } else {
+            LazyFrame::scan_ipc_files(paths, args)
+        }
+        .map_err(PyPolarsErr::from)?;
         Ok(lf.into())
     }
 

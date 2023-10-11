@@ -46,7 +46,7 @@ pub trait DataFrameOps: IntoDf {
     ///   }.unwrap();
     ///
     ///   let dummies = df.to_dummies(None, false).unwrap();
-    ///   dbg!(dummies);
+    ///   println!("{}", dummies);
     /// # }
     /// ```
     /// Outputs:

@@ -209,7 +209,7 @@ def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDa
 
 
 def scan_ipc(
-    source: str | Path,
+    source: str | Path | list[str] | list[Path],
     *,
     n_rows: int | None = None,
     cache: bool = True,
