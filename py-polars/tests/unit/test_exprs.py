@@ -380,6 +380,11 @@ def test_rank_so_4109() -> None:
     }
 
 
+def test_rank_string_null_11252() -> None:
+    rank = pl.Series([None, "", "z", None, "a"]).rank()
+    assert rank.to_list() == [None, 1.0, 3.0, None, 2.0]
+
+
 def test_unique_empty() -> None:
     for dt in [pl.Utf8, pl.Boolean, pl.Int32, pl.UInt32]:
         s = pl.Series([], dtype=dt)
