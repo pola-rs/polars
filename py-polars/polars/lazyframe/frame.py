@@ -493,7 +493,7 @@ class LazyFrame:
             source = None  # type: ignore[assignment]
 
         # try fsspec scanner
-        if can_use_fsspec and _is_local_file(source):  # type: ignore[arg-type]
+        if can_use_fsspec and not _is_local_file(source):  # type: ignore[arg-type]
             scan = _scan_ipc_fsspec(source, storage_options)  # type: ignore[arg-type]
             if n_rows:
                 scan = scan.head(n_rows)
