@@ -23,9 +23,12 @@ pub mod gather_skip_nulls;
 #[cfg(feature = "repeat_by")]
 mod repeat_by;
 
+pub mod for_each;
+
 pub use binary::*;
 #[cfg(feature = "timezones")]
 pub use datetime::*;
+pub use for_each::*;
 #[cfg(feature = "interpolate")]
 pub use interpolate::*;
 pub use list::*;

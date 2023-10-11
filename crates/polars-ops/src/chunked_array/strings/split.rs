@@ -3,6 +3,7 @@ use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
 use polars_core::chunked_array::ops::arity::binary_elementwise_for_each;
 
 use super::*;
+use crate::prelude::for_each;
 
 #[cfg(feature = "dtype-struct")]
 pub fn split_to_struct<'a, F, I>(
@@ -21,7 +22,7 @@ where
 
     if by.len() == 1 {
         if let Some(by) = by.get(0) {
-            ca.for_each(|opt_s| match opt_s {
+            for_each(ca, |opt_s| match opt_s {
                 None => {
                     for arr in &mut arrs {
                         arr.push_null()
@@ -86,7 +87,7 @@ where
             let mut builder =
                 ListUtf8ChunkedBuilder::new(ca.name(), ca.len(), ca.get_values_size());
 
-            ca.for_each(|opt_s| match opt_s {
+            for_each(ca, |opt_s| match opt_s {
                 Some(s) => {
                     let iter = op(s, by);
                     builder.append_values_iter(iter)
