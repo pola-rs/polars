@@ -1356,6 +1356,7 @@ fn test_lazy_ternary_predicate_pushdown() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "dtype-categorical")]
 fn test_categorical_addition() -> PolarsResult<()> {
     let df = fruits_cars();
 
@@ -1464,6 +1465,7 @@ fn test_list_in_select_context() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "round_series")]
 fn test_round_after_agg() -> PolarsResult<()> {
     let df = fruits_cars();
 
