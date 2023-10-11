@@ -28,6 +28,19 @@ These are some tools that share similar functionality to what polars does.
 
   Similar to Dask
 
+- [Ibis](https://ibis-project.org/)
+
+  A dataframe interface to many compute engines (often SQL-based).
+  Similar to polars, ibis uses a lazy, well-typed expression system
+  to build up complex queries, that can then be optimized, compiled, and sent to the backend for computation.
+  Code written for Ibis ends up looking quite similar to code written for polars.
+  Unlike polars, ibis itself doesn't do the computation, but delegates this to the backend.
+  If you use polars as the backend, then you get the exact same performance characteristics of polars.
+  But, with minimal code changes, you can switch to an out-of-core local backend such as duckdb
+  to handle larger datasets (5-100GB), or you can scale up to multi-node backends such as
+  pyspark, bigquery, snowflake, trino, clickhouse, etc. for even larger datasets.
+  Also focuses on pyarrow interoperability, supports UDFs, and allows for using SQL as an escape hatch.
+
 - Vaex
 
   Vaexs method of out-of-core analysis is memory mapping files. This works until it doesn't. For instance parquet
