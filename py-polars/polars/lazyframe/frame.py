@@ -516,7 +516,7 @@ class LazyFrame:
     @classmethod
     def _scan_ndjson(
         cls,
-        source: str | list[str] | list[Path],
+        source: str | Path | list[str] | list[Path],
         *,
         infer_schema_length: int | None = None,
         batch_size: int | None = None,

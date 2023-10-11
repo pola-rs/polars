@@ -56,7 +56,7 @@ def read_ndjson(
 
 
 def scan_ndjson(
-    source: str | list[str] | list[Path],
+    source: str | Path | list[str] | list[Path],
     *,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int | None = 1024,
