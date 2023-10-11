@@ -399,3 +399,13 @@ def test_parquet_statistics_filter_11069(tmp_path: Path) -> None:
     assert pl.scan_parquet(file_path).filter(pl.col("x").is_null()).collect().to_dict(
         False
     ) == {"x": [None]}
+
+
+def test_parquet_list_arg(io_files_path: Path) -> None:
+    first = io_files_path / "foods1.parquet"
+    second = io_files_path / "foods2.parquet"
+
+    df = pl.scan_parquet(source=[first, second]).collect()
+    assert df.shape == (54, 4)
+    assert df.row(-1) == ("seafood", 194, 12.0, 1)
+    assert df.row(0) == ("vegetables", 45, 0.5, 2)

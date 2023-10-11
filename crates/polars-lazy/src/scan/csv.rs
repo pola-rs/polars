@@ -13,6 +13,7 @@ use crate::prelude::*;
 #[cfg(feature = "csv")]
 pub struct LazyCsvReader<'a> {
     path: PathBuf,
+    paths: Vec<PathBuf>,
     separator: u8,
     has_header: bool,
     ignore_errors: bool,
@@ -39,9 +40,14 @@ pub struct LazyCsvReader<'a> {
 
 #[cfg(feature = "csv")]
 impl<'a> LazyCsvReader<'a> {
+    pub fn new_paths(paths: Vec<PathBuf>) -> Self {
+        Self::new("").with_paths(paths)
+    }
+
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyCsvReader {
             path: path.as_ref().to_owned(),
+            paths: vec![],
             separator: b',',
             has_header: true,
             ignore_errors: false,
@@ -225,7 +231,7 @@ impl<'a> LazyCsvReader<'a> {
     where
         F: Fn(Schema) -> PolarsResult<Schema>,
     {
-        let mut file = if let Some(mut paths) = self.glob()? {
+        let mut file = if let Some(mut paths) = self.iter_paths()? {
             let path = match paths.next() {
                 Some(globresult) => globresult?,
                 None => polars_bail!(ComputeError: "globbing pattern did not match any files"),
@@ -302,8 +308,17 @@ impl LazyFileListReader for LazyCsvReader<'_> {
         &self.path
     }
 
+    fn paths(&self) -> &[PathBuf] {
+        &self.paths
+    }
+
     fn with_path(mut self, path: PathBuf) -> Self {
         self.path = path;
+        self
+    }
+
+    fn with_paths(mut self, paths: Vec<PathBuf>) -> Self {
+        self.paths = paths;
         self
     }
 
