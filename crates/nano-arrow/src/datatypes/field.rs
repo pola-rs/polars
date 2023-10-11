@@ -53,7 +53,7 @@ impl Field {
     }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 impl From<Field> for arrow_schema::Field {
     fn from(value: Field) -> Self {
         Self::new(value.name, value.data_type.into(), value.is_nullable)
@@ -61,14 +61,14 @@ impl From<Field> for arrow_schema::Field {
     }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 impl From<arrow_schema::Field> for Field {
     fn from(value: arrow_schema::Field) -> Self {
         (&value).into()
     }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 impl From<&arrow_schema::Field> for Field {
     fn from(value: &arrow_schema::Field) -> Self {
         let data_type = value.data_type().clone().into();
@@ -81,14 +81,14 @@ impl From<&arrow_schema::Field> for Field {
     }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 impl From<arrow_schema::FieldRef> for Field {
     fn from(value: arrow_schema::FieldRef) -> Self {
         value.as_ref().into()
     }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 impl From<&arrow_schema::FieldRef> for Field {
     fn from(value: &arrow_schema::FieldRef) -> Self {
         value.as_ref().into()

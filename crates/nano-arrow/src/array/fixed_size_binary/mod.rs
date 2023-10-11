@@ -4,7 +4,7 @@ use crate::buffer::Buffer;
 use crate::datatypes::DataType;
 use crate::error::Error;
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 mod data;
 mod ffi;
 pub(super) mod fmt;

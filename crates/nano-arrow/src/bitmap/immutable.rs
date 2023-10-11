@@ -427,7 +427,7 @@ impl Bitmap {
     /// Create a new [`Bitmap`] from an arrow [`NullBuffer`]
     ///
     /// [`NullBuffer`]: arrow_buffer::buffer::NullBuffer
-    #[cfg(feature = "arrow")]
+    #[cfg(feature = "arrow-rs")]
     pub fn from_null_buffer(value: arrow_buffer::buffer::NullBuffer) -> Self {
         let offset = value.offset();
         let length = value.len();
@@ -459,7 +459,7 @@ impl IntoIterator for Bitmap {
     }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 impl From<Bitmap> for arrow_buffer::buffer::NullBuffer {
     fn from(value: Bitmap) -> Self {
         let null_count = value.unset_bits;

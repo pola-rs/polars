@@ -3,7 +3,7 @@ use crate::bitmap::Bitmap;
 use crate::datatypes::{DataType, Field};
 use crate::error::Error;
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 mod data;
 mod ffi;
 pub(super) mod fmt;

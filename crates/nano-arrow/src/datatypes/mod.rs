@@ -159,7 +159,7 @@ pub enum DataType {
     Extension(String, Box<DataType>, Option<String>),
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 impl From<DataType> for arrow_schema::DataType {
     fn from(value: DataType) -> Self {
         use arrow_schema::{Field as ArrowField, UnionFields};
@@ -218,7 +218,7 @@ impl From<DataType> for arrow_schema::DataType {
     }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 impl From<arrow_schema::DataType> for DataType {
     fn from(value: arrow_schema::DataType) -> Self {
         use arrow_schema::DataType;
@@ -291,7 +291,7 @@ pub enum UnionMode {
     Sparse,
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 impl From<UnionMode> for arrow_schema::UnionMode {
     fn from(value: UnionMode) -> Self {
         match value {
@@ -301,7 +301,7 @@ impl From<UnionMode> for arrow_schema::UnionMode {
     }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 impl From<arrow_schema::UnionMode> for UnionMode {
     fn from(value: arrow_schema::UnionMode) -> Self {
         match value {
@@ -347,7 +347,7 @@ pub enum TimeUnit {
     Nanosecond,
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 impl From<TimeUnit> for arrow_schema::TimeUnit {
     fn from(value: TimeUnit) -> Self {
         match value {
@@ -359,7 +359,7 @@ impl From<TimeUnit> for arrow_schema::TimeUnit {
     }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 impl From<arrow_schema::TimeUnit> for TimeUnit {
     fn from(value: arrow_schema::TimeUnit) -> Self {
         match value {
@@ -384,7 +384,7 @@ pub enum IntervalUnit {
     MonthDayNano,
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 impl From<IntervalUnit> for arrow_schema::IntervalUnit {
     fn from(value: IntervalUnit) -> Self {
         match value {
@@ -395,7 +395,7 @@ impl From<IntervalUnit> for arrow_schema::IntervalUnit {
     }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 impl From<arrow_schema::IntervalUnit> for IntervalUnit {
     fn from(value: arrow_schema::IntervalUnit) -> Self {
         match value {

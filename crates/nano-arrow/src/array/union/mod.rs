@@ -5,7 +5,7 @@ use crate::datatypes::{DataType, Field, UnionMode};
 use crate::error::Error;
 use crate::scalar::{new_scalar, Scalar};
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow-rs")]
 mod data;
 mod ffi;
 pub(super) mod fmt;
