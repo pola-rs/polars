@@ -351,9 +351,9 @@ impl Display for FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK(descending) => {
                 if *descending {
-                    "top_k"
-                } else {
                     "bottom_k"
+                } else {
+                    "top_k"
                 }
             },
             Shift(_) => "shift",
@@ -410,7 +410,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "peaks")]
             PeakMin => "peak_min",
             #[cfg(feature = "peaks")]
-            PeakMax => "peak_min",
+            PeakMax => "peak_max",
             #[cfg(feature = "cutqcut")]
             Cut { .. } => "cut",
             #[cfg(feature = "cutqcut")]
