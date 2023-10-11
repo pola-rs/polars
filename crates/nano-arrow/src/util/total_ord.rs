@@ -228,8 +228,8 @@ macro_rules! impl_eq_ord_float {
         impl TotalEq for $f {
             #[inline(always)]
             fn tot_eq(&self, other: &Self) -> bool {
-                if self.is_nan() && other.is_nan() {
-                    true
+                if self.is_nan() {
+                    other.is_nan()
                 } else {
                     self == other
                 }
