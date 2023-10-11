@@ -444,12 +444,38 @@ class Config(contextlib.ContextDecorator):
     @classmethod
     def set_float_precision(cls, precision: int | None = None) -> type[Config]:
         """
-        Control how floating point values are displayed.
+        Control the number of decimal places displayed for floating point values.
 
         Parameters
         ----------
         precision : int
             Number of decimal places to display
+
+        Notes
+        -----
+        When setting this to a larger value you should ensure that you are aware of both
+        the limitations of floating point representations, and of the precision of the
+        data that you are looking at.
+
+        This setting only applies to Float32 and Float64 dtypes; it does not cover
+        Decimal dtype values (which are displayed at their native level of precision).
+
+        Examples
+        --------
+        >>> from math import pi, e
+        >>> df = pl.DataFrame({"const": ["pi", "e"], "value": [pi, e]})
+        >>> with pl.Config(float_precision=15):
+        ...     print(repr(df))
+        ...
+        shape: (2, 2)
+        ┌───────┬───────────────────┐
+        │ const ┆ value             │
+        │ ---   ┆ ---               │
+        │ str   ┆ f64               │
+        ╞═══════╪═══════════════════╡
+        │ pi    ┆ 3.141592653589793 │
+        │ e     ┆ 2.718281828459045 │
+        └───────┴───────────────────┘
 
         """
         _set_float_precision(precision)
