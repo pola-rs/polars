@@ -7,11 +7,11 @@ use polars_io::{is_cloud_url, RowCount};
 
 use crate::prelude::*;
 
-pub type GlobIterator = Box<dyn Iterator<Item = PolarsResult<PathBuf>>>;
+pub type PathIterator = Box<dyn Iterator<Item = PolarsResult<PathBuf>>>;
 
 // cloud_options is used only with async feature
 #[allow(unused_variables)]
-fn polars_glob(pattern: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<GlobIterator> {
+fn polars_glob(pattern: &str, cloud_options: Option<&CloudOptions>) -> PolarsResult<PathIterator> {
     if is_cloud_url(pattern) {
         #[cfg(feature = "async")]
         {
@@ -35,11 +35,12 @@ fn polars_glob(pattern: &str, cloud_options: Option<&CloudOptions>) -> PolarsRes
 pub trait LazyFileListReader: Clone {
     /// Get the final [LazyFrame].
     fn finish(mut self) -> PolarsResult<LazyFrame> {
-        if let Some(paths) = self.glob()? {
+        if let Some(paths) = self.iter_paths()? {
             let lfs = paths
                 .enumerate()
                 .map(|(i, r)| {
                     let path = r?;
+                    dbg!(&path);
                     let lf = self
                         .clone()
                         .with_path(path.clone())
@@ -76,6 +77,7 @@ pub trait LazyFileListReader: Clone {
 
             Ok(lf)
         } else {
+            dbg!("here");
             self.finish_no_glob()
         }
     }
@@ -98,10 +100,17 @@ pub trait LazyFileListReader: Clone {
     /// It can be potentially a glob pattern.
     fn path(&self) -> &Path;
 
+    fn paths(&self) -> &[PathBuf];
+
     /// Set path of the scanned file.
     /// Support glob patterns.
     #[must_use]
     fn with_path(self, path: PathBuf) -> Self;
+
+    /// Set paths of the scanned files.
+    /// Doesn't glob patterns.
+    #[must_use]
+    fn with_paths(self, paths: Vec<PathBuf>) -> Self;
 
     /// Rechunk the memory to contiguous chunks when parsing is done.
     fn rechunk(&self) -> bool;
@@ -133,12 +142,20 @@ pub trait LazyFileListReader: Clone {
     /// Get list of files referenced by this reader.
     ///
     /// Returns [None] if path is not a glob pattern.
-    fn glob(&self) -> PolarsResult<Option<GlobIterator>> {
-        let path_str = self.path().to_string_lossy();
-        if path_str.contains('*') || path_str.contains('?') || path_str.contains('[') {
-            polars_glob(&path_str, self.cloud_options()).map(Some)
+    fn iter_paths(&self) -> PolarsResult<Option<PathIterator>> {
+        let paths = self.paths();
+        if paths.is_empty() {
+            let path_str = self.path().to_string_lossy();
+            if path_str.contains('*') || path_str.contains('?') || path_str.contains('[') {
+                polars_glob(&path_str, self.cloud_options()).map(Some)
+            } else {
+                Ok(None)
+            }
         } else {
-            Ok(None)
+            polars_ensure!(self.path().to_string_lossy() == "", InvalidOperation: "expected only a single path argument");
+            Ok(Some(Box::new(
+                paths.to_vec().into_iter().map(|path| Ok(path)),
+            )))
         }
     }
 }

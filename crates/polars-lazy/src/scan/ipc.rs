@@ -30,11 +30,16 @@ impl Default for ScanArgsIpc {
 struct LazyIpcReader {
     args: ScanArgsIpc,
     path: PathBuf,
+    paths: Vec<PathBuf>,
 }
 
 impl LazyIpcReader {
     fn new(path: PathBuf, args: ScanArgsIpc) -> Self {
-        Self { args, path }
+        Self {
+            args,
+            path,
+            paths: vec![],
+        }
     }
 }
 
@@ -70,8 +75,17 @@ impl LazyFileListReader for LazyIpcReader {
         self.path.as_path()
     }
 
+    fn paths(&self) -> &[PathBuf] {
+        &self.paths
+    }
+
     fn with_path(mut self, path: PathBuf) -> Self {
         self.path = path;
+        self
+    }
+
+    fn with_paths(mut self, paths: Vec<PathBuf>) -> Self {
+        self.paths = paths;
         self
     }
 

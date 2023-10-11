@@ -388,7 +388,7 @@ class LazyFrame:
     @classmethod
     def _scan_parquet(
         cls,
-        source: str,
+        source: str | list[str] | list[Path],
         *,
         n_rows: int | None = None,
         cache: bool = True,
@@ -412,9 +412,21 @@ class LazyFrame:
         polars.io.scan_parquet
 
         """
+        if isinstance(source, list):
+            sources = source
+            source = None  # type: ignore[assignment]
+            can_use_fsspec = False
+        else:
+            can_use_fsspec = True
+            sources = []  # type: ignore[assignment]
+
         # try fsspec scanner
-        if not _is_local_file(source) and not _is_supported_cloud(source):
-            scan = _scan_parquet_fsspec(source, storage_options)
+        if (
+            can_use_fsspec
+            and not _is_local_file(source)  # type: ignore[arg-type]
+            and not _is_supported_cloud(source)  # type: ignore[arg-type]
+        ):
+            scan = _scan_parquet_fsspec(source, storage_options)  # type: ignore[arg-type]
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
@@ -427,6 +439,7 @@ class LazyFrame:
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(
             source,
+            sources,
             n_rows,
             cache,
             parallel,

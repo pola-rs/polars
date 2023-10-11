@@ -233,11 +233,12 @@ impl PyLazyFrame {
 
     #[cfg(feature = "parquet")]
     #[staticmethod]
-    #[pyo3(signature = (path, n_rows, cache, parallel, rechunk, row_count,
+    #[pyo3(signature = (path, paths, n_rows, cache, parallel, rechunk, row_count,
         low_memory, cloud_options, use_statistics, hive_partitioning, retries)
     )]
     fn new_from_parquet(
-        path: String,
+        path: Option<PathBuf>,
+        paths: Vec<PathBuf>,
         n_rows: Option<usize>,
         cache: bool,
         parallel: Wrap<ParallelStrategy>,
@@ -249,8 +250,17 @@ impl PyLazyFrame {
         hive_partitioning: bool,
         retries: usize,
     ) -> PyResult<Self> {
+        let first_path = if let Some(path) = &path {
+            path
+        } else {
+            paths
+                .get(0)
+                .ok_or_else(|| PyValueError::new_err("expected a path argument"))?
+        };
+
+        let first_path_url = first_path.to_string_lossy();
         let mut cloud_options = cloud_options
-            .map(|kv| parse_cloud_options(&path, kv))
+            .map(|kv| parse_cloud_options(&first_path_url, kv))
             .transpose()?;
         if retries > 0 {
             cloud_options =
@@ -273,7 +283,13 @@ impl PyLazyFrame {
             use_statistics,
             hive_partitioning,
         };
-        let lf = LazyFrame::scan_parquet(path, args).map_err(PyPolarsErr::from)?;
+
+        let lf = if path.is_some() {
+            LazyFrame::scan_parquet(first_path, args)
+        } else {
+            LazyFrame::scan_parquet_files(paths, args)
+        }
+        .map_err(PyPolarsErr::from)?;
         Ok(lf.into())
     }
 

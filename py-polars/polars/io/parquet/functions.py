@@ -167,7 +167,7 @@ def read_parquet_schema(
 
 
 def scan_parquet(
-    source: str | Path,
+    source: str | Path | list[str] | list[Path],
     *,
     n_rows: int | None = None,
     cache: bool = True,
@@ -196,7 +196,8 @@ def scan_parquet(
     Parameters
     ----------
     source
-        Path to a file.
+        Path(s) to a file
+        If a single path is given, it can be a globbing pattern.
     n_rows
         Stop reading from parquet file after reading ``n_rows``.
     cache
@@ -261,6 +262,8 @@ def scan_parquet(
     """
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
+    else:
+        source = [normalize_filepath(source) for source in source]
 
     return pl.LazyFrame._scan_parquet(
         source,
