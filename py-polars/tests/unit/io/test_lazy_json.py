@@ -100,3 +100,13 @@ def test_glob_n_rows(io_files_path: Path) -> None:
 # See #10661.
 def test_json_no_unicode_truncate() -> None:
     assert pl.read_ndjson(rb'{"field": "\ufffd1234"}')[0, 0] == "\ufffd1234"
+
+
+def test_ndjson_list_arg(io_files_path: Path) -> None:
+    first = io_files_path / "foods1.ndjson"
+    second = io_files_path / "foods2.ndjson"
+
+    df = pl.scan_ndjson(source=[first, second]).collect()
+    assert df.shape == (54, 4)
+    assert df.row(-1) == ("seafood", 194, 12.0, 1)
+    assert df.row(0) == ("vegetables", 45, 0.5, 2)

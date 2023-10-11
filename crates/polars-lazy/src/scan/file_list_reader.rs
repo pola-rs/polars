@@ -151,9 +151,9 @@ pub trait LazyFileListReader: Clone {
             }
         } else {
             polars_ensure!(self.path().to_string_lossy() == "", InvalidOperation: "expected only a single path argument");
-            Ok(Some(Box::new(
-                paths.to_vec().into_iter().map(|path| Ok(path)),
-            )))
+            // Lint is incorrect as we need static lifetime.
+            #[allow(clippy::unnecessary_to_owned)]
+            Ok(Some(Box::new(paths.to_vec().into_iter().map(Ok))))
         }
     }
 }

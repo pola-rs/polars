@@ -516,7 +516,7 @@ class LazyFrame:
     @classmethod
     def _scan_ndjson(
         cls,
-        source: str,
+        source: str | list[str] | list[Path],
         *,
         infer_schema_length: int | None = None,
         batch_size: int | None = None,
@@ -536,9 +536,16 @@ class LazyFrame:
         polars.io.scan_ndjson
 
         """
+        if isinstance(source, (str, Path)):
+            source = normalize_filepath(source)
+            sources = []
+        else:
+            sources = [normalize_filepath(source) for source in source]
+            source = None  # type: ignore[assignment]
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_ndjson(
             source,
+            sources,
             infer_schema_length,
             batch_size,
             n_rows,

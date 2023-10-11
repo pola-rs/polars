@@ -20,6 +20,10 @@ pub struct LazyJsonLineReader {
 }
 
 impl LazyJsonLineReader {
+    pub fn new_paths(paths: Vec<PathBuf>) -> Self {
+        Self::new(PathBuf::new()).with_paths(paths)
+    }
+
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyJsonLineReader {
             path: path.as_ref().to_path_buf(),
