@@ -5375,7 +5375,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.select(F.col("*").interpolate())
 
-    def unnest(self, columns: str | Sequence[str], *more_columns: str) -> Self:
+    def unnest(
+        self,
+        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
+        *more_columns: ColumnNameOrSelector,
+    ) -> Self:
         """
         Decompose struct columns into separate columns for each of their fields.
 
@@ -5423,11 +5427,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └────────┴─────┴─────┴──────┴───────────┴───────┘
 
         """
-        if isinstance(columns, str):
-            columns = [columns]
-        if more_columns:
-            columns = list(columns)
-            columns.extend(more_columns)
+        columns = _expand_selectors(self, columns, *more_columns)
         return self._from_pyldf(self._ldf.unnest(columns))
 
     def merge_sorted(self, other: LazyFrame, key: str) -> Self:
