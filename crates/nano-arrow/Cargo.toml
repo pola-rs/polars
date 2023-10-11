@@ -68,10 +68,10 @@ multiversion = { workspace = true, optional = true }
 ahash = { workspace = true }
 
 # Support conversion to/from arrow-rs
-arrow-array = { version = ">=40", optional = true }
-arrow-buffer = { version = ">=40", optional = true }
-arrow-data = { version = ">=40", optional = true }
-arrow-schema = { version = ">=40", optional = true }
+arrow-array = { workspace = true, optional = true }
+arrow-buffer = { workspace = true, optional = true }
+arrow-data = { workspace = true, optional = true }
+arrow-schema = { workspace = true, optional = true }
 
 # parquet support
 [dependencies.parquet2]

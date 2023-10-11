@@ -5,7 +5,7 @@ use crate::datatypes::{DataType, Field};
 use crate::error::Error;
 use crate::offset::OffsetsBuffer;
 
-#[cfg(feature = "arrow-rs")]
+#[cfg(feature = "arrow_rs")]
 mod data;
 mod ffi;
 pub(super) mod fmt;
