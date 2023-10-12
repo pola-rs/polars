@@ -1057,7 +1057,7 @@ pub(crate) fn dicts_to_rows(
 
         let mut row = Vec::with_capacity(key_names.len());
         for k in key_names.iter() {
-            let val = match d.get_item(k) {
+            let val = match d.get_item(k)? {
                 None => AnyValue::Null,
                 Some(val) => val.extract::<Wrap<AnyValue>>()?.0,
             };
