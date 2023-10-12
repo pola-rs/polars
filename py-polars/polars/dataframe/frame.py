@@ -3928,7 +3928,7 @@ class DataFrame:
         Filter on one condition:
 
         >>> df.filter(pl.col("foo") < 3)
-        shape: (2, 3)
+        shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
@@ -3999,17 +3999,13 @@ class DataFrame:
             ]
 
             # if multiple predicates are supplied, perform logical AND
-            predicate_iter = iter(predicates)
-            predicates = next(predicate_iter)  # type: ignore[arg-type]
-            for pred in predicate_iter:
-                predicates = predicates & pred  # type: ignore[assignment, operator]
+            if len(predicates) > 1:
+                predicates = F.all_horizontal(predicates)  # type: ignore[assignment, arg-type]
+            else:
+                predicates = predicates[0]  # type: ignore[assignment]
         if has_constraints:
-            # basic column filters provided. Logically AND them together
-            constraint_iter = iter(constraints.items())
-            key, value = next(constraint_iter)
-            constraints = col(key) == value  # type: ignore[assignment]
-            for key, value in constraint_iter:
-                constraints = constraints & (col(key) == value)  # type: ignore[assignment]
+            # basic column filters provided
+            constraints = F.all_horizontal(col(k) == v for k, v in constraints.items())  # type: ignore[assignment]
 
         if has_predicates and has_constraints:
             predicates = predicates & constraints  # type: ignore[operator]
