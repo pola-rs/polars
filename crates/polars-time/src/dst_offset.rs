@@ -9,7 +9,7 @@ use polars_core::prelude::*;
 
 #[cfg(feature = "timezones")]
 pub fn dst_offset(ca: &DatetimeChunked, time_unit: &TimeUnit, time_zone: &Tz) -> DurationChunked {
-    let timestamp_to_datetime = timestamp_to_naive_datetime_method(&time_unit);
+    let timestamp_to_datetime = timestamp_to_naive_datetime_method(time_unit);
     ca.0.apply_values(|t| {
         let ndt = timestamp_to_datetime(t);
         let dt = time_zone.from_utc_datetime(&ndt);

@@ -55,11 +55,7 @@ impl LogicalType for DatetimeChunked {
                     TimeUnit::Microseconds => v * 1000i64,
                     TimeUnit::Milliseconds => v * 1_000_000i64,
                 };
-                Ok(v
-                    .cast(&Int64)
-                    .unwrap()
-                    .into_time()
-                    .into_series())
+                Ok(v.cast(&Int64).unwrap().into_time().into_series())
             },
             _ => self.0.cast(dtype),
         }

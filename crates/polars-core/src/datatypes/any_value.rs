@@ -480,7 +480,7 @@ impl<'a> AnyValue<'a> {
                 DataType::Int64 => AnyValue::Int64(*v),
                 #[cfg(feature = "dtype-date")]
                 DataType::Date => {
-                    let convert = timestamp_to_naive_datetime_method(&tu);
+                    let convert = timestamp_to_naive_datetime_method(tu);
                     let ndt = convert(*v);
                     let date_value = naive_datetime_to_date(ndt);
                     AnyValue::Date(date_value)

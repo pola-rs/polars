@@ -15,7 +15,7 @@ impl From<&AnyValue<'_>> for NaiveDateTime {
             },
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(v, tu, _) => {
-                let conversion_method = timestamp_to_naive_datetime_method(&tu);
+                let conversion_method = timestamp_to_naive_datetime_method(tu);
                 conversion_method(*v)
             },
             _ => panic!("can only convert date/datetime to NaiveDateTime"),
