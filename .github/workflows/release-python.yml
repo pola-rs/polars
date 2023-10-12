@@ -167,7 +167,6 @@ jobs:
           path: dist/*.whl
 
   publish-to-pypi:
-    if: inputs.dry-run == false
     needs: [create-sdist, build-wheels]
     environment:
       name: release-python
@@ -190,6 +189,7 @@ jobs:
           path: dist
 
       - name: Publish to PyPI
+        if: inputs.dry-run == false
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           verbose: true
@@ -221,8 +221,8 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
 
-      - name: Create and publish GitHub release
-        id: release
+      - name: Create GitHub release
+        id: github-release
         uses: release-drafter/release-drafter@v5
         with:
           config-name: release-drafter-python.yml
@@ -231,15 +231,20 @@ jobs:
           version: ${{ steps.version.outputs.version }}
           prerelease: ${{ steps.version.outputs.is_prerelease }}
           commitish: ${{ inputs.sha }}
-          publish: true
           disable-autolabeler: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload sdist as asset to GitHub release
-        uses: svenstaro/upload-release-action@v2
-        with:
-          file: dist/polars-*.tar.gz
-          file_glob: true
-          tag: ${{ steps.release.outputs.tag_name }}
-          overwrite: true
+      - name: Upload sdist to GitHub release
+        run: gh release upload $TAG $FILES --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.github-release.outputs.tag_name }}
+          FILES: dist/polars-*.tar.gz
+
+      - name: Publish GitHub release
+        if: inputs.dry-run == false
+        run: gh release edit $TAG --draft=false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.github-release.outputs.tag_name }}
