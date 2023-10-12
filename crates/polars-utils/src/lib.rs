@@ -1,4 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
+pub mod abs_diff;
 pub mod arena;
 pub mod atomic;
 pub mod cache;

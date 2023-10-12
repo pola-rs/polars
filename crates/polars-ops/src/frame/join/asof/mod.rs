@@ -4,7 +4,6 @@ use std::borrow::Cow;
 
 use default::*;
 pub(super) use groups::AsofJoinBy;
-use num_traits::Bounded;
 use polars_core::prelude::*;
 use polars_core::utils::{ensure_sorted_arg, slice_slice};
 use polars_core::with_match_physical_numeric_polars_type;
@@ -19,6 +18,89 @@ use super::{
     prepare_bytes,
 };
 use crate::frame::IntoDf;
+
+// If called with increasing val_l it will increment offset to the first
+// right(offset) >= val_l, and also returns whether this is within tolerance.
+// If offset == n_right, the loop is done (but harmless to call again).
+// offset should initially be 0.
+fn join_asof_forward_step<T: NumericNative, F: FnMut(usize) -> T>(
+    offset: &mut usize,
+    val_l: T,
+    mut right: F,
+    n_right: usize,
+    tolerance: T::Abs,
+) -> bool {
+    while *offset < n_right {
+        let val_r = right(*offset);
+        if val_r >= val_l {
+            return val_l.abs_diff(val_r) <= tolerance;
+        }
+        *offset += 1;
+    }
+    return false;
+}
+
+// If called with decreasing val_l it will decrement offset to the last
+// right(offset - 1) <= val_l, and also returns whether this is within tolerance.
+// If offset == 0, the loop is done (but harmless to call again).
+// offset should initially be right.len().
+fn join_asof_backward_step<T: NumericNative, F: FnMut(usize) -> T>(
+    offset: &mut usize,
+    val_l: T,
+    mut right: F,
+    tolerance: T::Abs,
+) -> bool {
+    while *offset > 0 {
+        let val_r = right(*offset - 1);
+        if val_r <= val_l {
+            return val_l.abs_diff(val_r) <= tolerance;
+        }
+        *offset -= 1;
+    }
+    return false;
+}
+
+// If called with decreasing val_l it will decrement offset to the last
+// right(offset - 1) which is nearest to val_l, and also returns whether this is
+// within tolerance. If offset == 0, the loop is done (but harmless to call again).
+// offset should initially be right.len().
+fn join_asof_nearest_step<T: NumericNative, F: FnMut(usize) -> T>(
+    offset: &mut usize,
+    val_l: T,
+    mut right: F,
+    tolerance: T::Abs,
+) -> bool {
+    // Keep decrementing until right(*offset - 2) is <= val_l.
+    // Then either *offset - 1 or *offset - 2 is the nearest element.
+    while *offset >= 2 && right(*offset - 2) > val_l {
+        *offset -= 1;
+    }
+    
+    if *offset >= 2 {
+        let lo = right(*offset - 2);
+        let hi = right(*offset - 1);
+        let lo_diff = val_l.abs_diff(lo);
+        let hi_diff = val_l.abs_diff(hi);
+        
+        if lo_diff < hi_diff {
+            *offset -= 1;
+            return lo_diff <= tolerance;
+        }
+
+        return hi_diff <= tolerance;
+    } else if *offset == 1 {
+        // Last possible element.
+        let val_r = right(0);
+        let in_tolerance = val_l.abs_diff(val_r) <= tolerance;
+        if !in_tolerance && val_l < val_r {
+            // No more possible matches.
+            *offset -= 1;
+        }
+        return in_tolerance;
+    }
+
+    return false;
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -72,59 +154,6 @@ pub enum AsofStrategy {
     Nearest,
 }
 
-pub(crate) fn join_asof<T>(
-    input_ca: &ChunkedArray<T>,
-    other: &Series,
-    strategy: AsofStrategy,
-    tolerance: Option<AnyValue<'static>>,
-) -> PolarsResult<Vec<Option<IdxSize>>>
-where
-    T: PolarsNumericType,
-    T::Native: Bounded + PartialOrd,
-{
-    let other = input_ca.unpack_series_matching_type(other)?;
-
-    // cont_slice requires a single chunk
-    let ca = input_ca.rechunk();
-    let other = other.rechunk();
-
-    let out = match strategy {
-        AsofStrategy::Forward => match tolerance {
-            None => join_asof_forward(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
-            Some(tolerance) => {
-                let tolerance = tolerance.extract::<T::Native>().unwrap();
-                join_asof_forward_with_tolerance(
-                    ca.cont_slice().unwrap(),
-                    other.cont_slice().unwrap(),
-                    tolerance,
-                )
-            },
-        },
-        AsofStrategy::Backward => match tolerance {
-            None => join_asof_backward(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
-            Some(tolerance) => {
-                let tolerance = tolerance.extract::<T::Native>().unwrap();
-                join_asof_backward_with_tolerance(
-                    input_ca.cont_slice().unwrap(),
-                    other.cont_slice().unwrap(),
-                    tolerance,
-                )
-            },
-        },
-        AsofStrategy::Nearest => match tolerance {
-            None => join_asof_nearest(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
-            Some(tolerance) => {
-                let tolerance = tolerance.extract::<T::Native>().unwrap();
-                join_asof_nearest_with_tolerance(
-                    input_ca.cont_slice().unwrap(),
-                    other.cont_slice().unwrap(),
-                    tolerance,
-                )
-            },
-        },
-    };
-    Ok(out)
-}
 
 pub trait AsofJoin: IntoDf {
     #[doc(hidden)]
@@ -147,7 +176,7 @@ pub trait AsofJoin: IntoDf {
         let left_key = left_key.to_physical_repr();
         let right_key = right_key.to_physical_repr();
 
-        let take_idx = match left_key.dtype() {
+        let mut take_idx = match left_key.dtype() {
             DataType::Int64 => {
                 let ca = left_key.i64().unwrap();
                 join_asof(ca, &right_key, strategy, tolerance)
@@ -180,12 +209,7 @@ pub trait AsofJoin: IntoDf {
             },
         }?;
 
-        // take_idx are sorted so this is a bound check for all
-        if let Some(Some(idx)) = take_idx.last() {
-            assert!((*idx as usize) < other.height())
-        }
-
-        // drop right join column
+        // Drop right join column.
         let other = if left_on == right_on {
             Cow::Owned(other.drop(right_on)?)
         } else {
@@ -193,15 +217,13 @@ pub trait AsofJoin: IntoDf {
         };
 
         let mut left = self_df.clone();
-        let mut take_idx = &*take_idx;
-
         if let Some((offset, len)) = slice {
             left = left.slice(offset, len);
-            take_idx = slice_slice(take_idx, offset, len);
+            take_idx = take_idx.slice(offset, len);
         }
 
         // SAFETY: join tuples are in bounds.
-        let right_df = unsafe { other.take_unchecked(&take_idx.iter().copied().collect_ca("")) };
+        let right_df = unsafe { other.take_unchecked(&take_idx) };
 
         _finish_join(left, right_df, suffix.as_deref())
     }
