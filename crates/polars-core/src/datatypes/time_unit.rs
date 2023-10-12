@@ -59,24 +59,35 @@ impl TimeUnit {
 }
 
 #[inline]
-pub(crate) fn conversion_factor_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> f64 {
-    timeunit_scale(tu_l.to_arrow(), tu_r.to_arrow())
+pub(crate) fn convert_time_units<T>(v: T, tu_l: &TimeUnit, tu_r: &TimeUnit) -> T
+where
+    T: Div<i64, Output = T> + Mul<i64, Output = T>,
+{
+    let factor = timeunit_scale(tu_l.to_arrow(), tu_r.to_arrow());
+    if factor < 1.0 {
+        let divide_by = 10i64.pow(factor.log10().abs() as u32);
+        v / divide_by
+    } else {
+        let multiply_by = factor as i64;
+        v * multiply_by
+    }
 }
 
 #[inline]
-pub(crate) fn convert_time_units(v: i64, tu_l: TimeUnit, tu_r: TimeUnit) -> i64 {
-    let factor = conversion_factor_time_units(&tu_l, &tu_r);
-
-    (v as f64 * factor) as i64
-}
-
-#[inline]
-#[cfg(feature = "temporal")]
 pub(crate) fn get_seconds_in_day(tu: &TimeUnit) -> i64 {
     match tu {
         TimeUnit::Milliseconds => MS_IN_DAY,
         TimeUnit::Microseconds => US_IN_DAY,
         TimeUnit::Nanoseconds => NS_IN_DAY,
+    }
+}
+
+#[inline]
+pub(crate) fn get_duration_offset(tu: &TimeUnit) -> fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64> {
+    match tu {
+        TimeUnit::Milliseconds => Duration::add_ms,
+        TimeUnit::Microseconds => Duration::add_us,
+        TimeUnit::Nanoseconds => Duration::add_ns,
     }
 }
 

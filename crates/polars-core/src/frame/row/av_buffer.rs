@@ -93,14 +93,14 @@ impl<'a> AnyValueBuffer<'a> {
             (Datetime(builder, tu_l, _), AnyValue::Datetime(v, tu_r, _)) => {
                 // we convert right tu to left tu
                 // so we swap.
-                let v = convert_time_units(v, tu_r, *tu_l);
+                let v = convert_time_units(v, &tu_r, tu_l);
                 builder.append_value(v)
             },
             #[cfg(feature = "dtype-duration")]
             (Duration(builder, _), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-duration")]
             (Duration(builder, tu_l), AnyValue::Duration(v, tu_r)) => {
-                let v = convert_time_units(v, tu_r, *tu_l);
+                let v = convert_time_units(v, &tu_r, tu_l);
                 builder.append_value(v)
             },
             #[cfg(feature = "dtype-time")]

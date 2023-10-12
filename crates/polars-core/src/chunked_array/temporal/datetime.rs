@@ -165,10 +165,7 @@ impl DatetimeChunked {
         let current_unit = self.time_unit();
         let mut out = self.clone();
         out.set_time_unit(tu);
-
-        let factor = conversion_factor_time_units(&current_unit, &tu);
-        let ca = &self.0 * factor;
-        out.0 = ca;
+        out.0 = convert_time_units(self.0.clone(), &current_unit, &tu);
         out
     }
 

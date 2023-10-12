@@ -175,11 +175,7 @@ pub(super) fn date_offset(s: &[Series]) -> PolarsResult<Series> {
         DataType::Datetime(tu, tz) => {
             let datetime = ts.datetime().unwrap();
 
-            let offset_fn = match tu {
-                TimeUnit::Nanoseconds => Duration::add_ns,
-                TimeUnit::Microseconds => Duration::add_us,
-                TimeUnit::Milliseconds => Duration::add_ms,
-            };
+            let offset_fn = get_duration_offset(tu);
 
             let out = match tz {
                 #[cfg(feature = "timezones")]

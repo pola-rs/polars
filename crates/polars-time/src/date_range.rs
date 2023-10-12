@@ -111,23 +111,19 @@ pub(crate) fn datetime_range_i64(
 ) -> PolarsResult<Vec<i64>> {
     check_range_bounds(start, end, interval)?;
 
-    let size: usize;
-    let offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>;
+    let offset_fn = get_duration_offset(tu);
 
-    match tu {
+    let size = match tu {
         TimeUnit::Nanoseconds => {
-            size = ((end - start) / interval.duration_ns() + 1) as usize;
-            offset_fn = Duration::add_ns;
+            ((end - start) / interval.duration_ns() + 1) as usize
         },
         TimeUnit::Microseconds => {
-            size = ((end - start) / interval.duration_us() + 1) as usize;
-            offset_fn = Duration::add_us;
+            ((end - start) / interval.duration_us() + 1) as usize
         },
         TimeUnit::Milliseconds => {
-            size = ((end - start) / interval.duration_ms() + 1) as usize;
-            offset_fn = Duration::add_ms;
+            ((end - start) / interval.duration_ms() + 1) as usize
         },
-    }
+    };
     let mut ts = Vec::with_capacity(size);
 
     let mut t = start;

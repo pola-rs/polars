@@ -149,11 +149,7 @@ impl<'a> BoundsIter<'a> {
         let bi = match start_by {
             StartBy::DataPoint => {
                 let mut boundary = boundary;
-                let offset_fn = match tu {
-                    TimeUnit::Nanoseconds => Duration::add_ns,
-                    TimeUnit::Microseconds => Duration::add_us,
-                    TimeUnit::Milliseconds => Duration::add_ms,
-                };
+                let offset_fn = get_duration_offset(tu);
                 boundary.stop = offset_fn(&window.period, boundary.start, tz)?;
                 boundary
             },
@@ -164,28 +160,10 @@ impl<'a> BoundsIter<'a> {
             },
             _ => {
                 {
-                    #[allow(clippy::type_complexity)]
-                    let (from, to, offset): (
-                        fn(i64) -> NaiveDateTime,
-                        fn(NaiveDateTime) -> i64,
-                        fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
-                    ) = match tu {
-                        TimeUnit::Nanoseconds => (
-                            timestamp_ns_to_datetime,
-                            datetime_to_timestamp_ns,
-                            Duration::add_ns,
-                        ),
-                        TimeUnit::Microseconds => (
-                            timestamp_us_to_datetime,
-                            datetime_to_timestamp_us,
-                            Duration::add_us,
-                        ),
-                        TimeUnit::Milliseconds => (
-                            timestamp_ms_to_datetime,
-                            datetime_to_timestamp_ms,
-                            Duration::add_ms,
-                        ),
-                    };
+                    let from = timestamp_to_naive_datetime_method(&tu);
+                    let to = datetime_to_timestamp_method(&tu);
+                    let offset = get_duration_offset(tu);
+
                     // find beginning of the week.
                     let mut boundary = boundary;
                     let dt = from(boundary.start);

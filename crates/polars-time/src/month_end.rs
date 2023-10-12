@@ -31,11 +31,7 @@ impl PolarsMonthEnd for DatetimeChunked {
     fn month_end(&self, time_zone: Option<&Tz>) -> PolarsResult<Self> {
         let timestamp_to_datetime = timestamp_to_naive_datetime_method(&self.time_unit());
         let datetime_to_timestamp = datetime_to_timestamp_method(&self.time_unit());
-        let offset_fn = match self.time_unit() {
-            TimeUnit::Nanoseconds => Duration::add_ns,
-            TimeUnit::Microseconds => Duration::add_us,
-            TimeUnit::Milliseconds => Duration::add_ms,
-        };
+        let offset_fn = get_duration_offset(tu);
         Ok(self
             .0
             .try_apply(|t| {

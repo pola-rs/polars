@@ -280,11 +280,7 @@ pub fn duration(args: DurationArgs) -> Expr {
             (s.len() != max_len && s.get(0).unwrap() != AnyValue::Int64(0)) || s.len() == max_len
         };
 
-        let multiplier = match args.time_unit {
-            TimeUnit::Nanoseconds => NANOSECONDS,
-            TimeUnit::Microseconds => MICROSECONDS,
-            TimeUnit::Milliseconds => MILLISECONDS,
-        };
+        let multiplier = convert_time_units(1i64, args.time_unit, TimeUnit::Nanoseconds);
 
         let mut duration = match args.time_unit {
             TimeUnit::Nanoseconds => {

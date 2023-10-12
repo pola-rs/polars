@@ -232,11 +232,7 @@ pub(crate) fn group_by_values_iter_lookbehind(
 ) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
     debug_assert!(offset.duration_ns() == period.duration_ns());
     debug_assert!(offset.negative);
-    let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
+    let add = get_duration_offset(tu);
 
     let upper_bound = upper_bound.unwrap_or(time.len());
     // Use binary search to find the initial start as that is behind.
@@ -300,11 +296,7 @@ pub(crate) fn group_by_values_iter_window_behind_t(
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
-    let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
+    let add = get_duration_offset(tu);
 
     let mut start = 0;
     let mut end = start;
@@ -350,11 +342,7 @@ pub(crate) fn group_by_values_iter_partial_lookbehind(
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
-    let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
+    let add = get_duration_offset(tu);
 
     let mut start = 0;
     let mut end = start;
@@ -402,11 +390,7 @@ pub(crate) fn group_by_values_iter_lookahead(
 ) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
     let upper_bound = upper_bound.unwrap_or(time.len());
 
-    let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
+    let add = get_duration_offset(tu);
     let mut start = start_offset;
     let mut end = start;
 
