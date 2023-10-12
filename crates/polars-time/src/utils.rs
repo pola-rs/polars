@@ -1,15 +1,11 @@
 #[cfg(feature = "timezones")]
-use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
-};
-#[cfg(feature = "timezones")]
 use chrono::TimeZone;
 #[cfg(feature = "timezones")]
 use chrono::{LocalResult, NaiveDateTime};
 #[cfg(feature = "timezones")]
 use polars_arrow::time_zone::Tz;
 #[cfg(feature = "timezones")]
-use polars_core::prelude::{polars_bail, PolarsResult, TimeUnit};
+use polars_core::prelude::{polars_bail, PolarsResult, TimeUnit, timestamp_to_naive_datetime_method};
 
 #[cfg(feature = "timezones")]
 pub(crate) fn localize_datetime(
@@ -49,7 +45,7 @@ pub(crate) fn unlocalize_datetime(ndt: NaiveDateTime, tz: &Tz) -> NaiveDateTime 
 
 #[cfg(feature = "timezones")]
 pub(crate) fn localize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> PolarsResult<i64> {
-    let dt = timestamp_to_naive_datetime_method(timestamp, &tu);
+    let dt = timestamp_to_naive_datetime_method(&tu)(timestamp);
     let localized = localize_datetime(dt, &tz, "raise")?;
 
     match tu {
@@ -61,8 +57,8 @@ pub(crate) fn localize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> Polars
 
 #[cfg(feature = "timezones")]
 pub(crate) fn unlocalize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> i64 {
-    let ts = datetime_to_timestamp_method(timestamp, &tu);
-    let unlocalized = unlocalize_datetime(timestamp_ns_to_datetime(timestamp), &tz);
+    let ts = timestamp_to_naive_datetime_method(&tu)(timestamp);
+    let unlocalized = unlocalize_datetime(ts, &tz);
 
     match tu {
         TimeUnit::Nanoseconds => unlocalized.timestamp_nanos_opt().unwrap(),

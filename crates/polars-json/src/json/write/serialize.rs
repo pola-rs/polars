@@ -11,7 +11,7 @@ use arrow::temporal_conversions::{
     date32_to_date, date64_to_date, duration_ms_to_duration, duration_ns_to_duration,
     duration_s_to_duration, duration_us_to_duration, parse_offset, timestamp_ms_to_datetime,
     timestamp_ns_to_datetime, timestamp_s_to_datetime, timestamp_to_datetime,
-    timestamp_to_naive_datetime, timestamp_us_to_datetime,
+    timestamp_us_to_datetime,
 };
 use arrow::types::NativeType;
 use chrono::{Duration, NaiveDate, NaiveDateTime};
@@ -450,7 +450,12 @@ pub(crate) fn new_serializer<'a>(
             take,
         ),
         DataType::Timestamp(tu, None) => {
-            let convert = |v| timestamp_to_naive_datetime(v, *tu);
+            let convert = match tu {
+                TimeUnit::Nanosecond => timestamp_ns_to_datetime,
+                TimeUnit::Microsecond => timestamp_us_to_datetime,
+                TimeUnit::Millisecond => timestamp_ms_to_datetime,
+                TimeUnit::Second => timestamp_s_to_datetime,
+            };
             timestamp_serializer(
                 array.as_any().downcast_ref().unwrap(),
                 convert,

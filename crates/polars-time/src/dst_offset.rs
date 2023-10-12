@@ -6,10 +6,6 @@ use chrono_tz::OffsetComponents;
 use polars_arrow::time_zone::Tz;
 #[cfg(feature = "timezones")]
 use polars_core::prelude::*;
-#[cfg(feature = "timezones")]
-use polars_core::utils::arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
-};
 
 #[cfg(feature = "timezones")]
 pub fn dst_offset(ca: &DatetimeChunked, time_unit: &TimeUnit, time_zone: &Tz) -> DurationChunked {
