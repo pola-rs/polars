@@ -688,7 +688,7 @@ def test_sort_by_err_9259() -> None:
 def test_empty_inputs_error() -> None:
     df = pl.DataFrame({"col1": [1]})
     with pytest.raises(
-        pl.ComputeError, match="expression: 'fold' didn't get any inputs"
+        pl.ComputeError, match="expression: 'sum_horizontal' didn't get any inputs"
     ):
         df.select(pl.sum_horizontal(pl.exclude("col1")))
 

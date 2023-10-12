@@ -59,3 +59,7 @@ pub(super) fn backward_fill(s: &Series, limit: FillNullLimit) -> PolarsResult<Se
 pub(super) fn forward_fill(s: &Series, limit: FillNullLimit) -> PolarsResult<Series> {
     s.fill_null(FillNullStrategy::Forward(limit))
 }
+
+pub(super) fn sum_horizontal(s: &[Series]) -> PolarsResult<Series> {
+    polars_ops::prelude::sum_horizontal(s)
+}

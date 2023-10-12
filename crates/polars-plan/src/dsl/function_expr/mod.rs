@@ -256,6 +256,7 @@ pub enum FunctionExpr {
     ForwardFill {
         limit: FillNullLimit,
     },
+    SumHorizontal,
 }
 
 impl Hash for FunctionExpr {
@@ -427,6 +428,7 @@ impl Display for FunctionExpr {
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
             BackwardFill { .. } => "backward_fill",
             ForwardFill { .. } => "forward_fill",
+            SumHorizontal => "sum_horizontal",
         };
         write!(f, "{s}")
     }
@@ -746,6 +748,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             BackwardFill { limit } => map!(dispatch::backward_fill, limit),
             ForwardFill { limit } => map!(dispatch::forward_fill, limit),
+            SumHorizontal => map_as_slice!(dispatch::sum_horizontal),
         }
     }
 }

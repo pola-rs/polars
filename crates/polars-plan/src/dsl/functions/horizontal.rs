@@ -262,19 +262,20 @@ pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
 ///
 /// The name of the resulting column will be `"sum"`; use [`alias`](Expr::alias) to choose a different name.
 pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let mut exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| {
-        Ok(Some(
-            &s1.fill_null(FillNullStrategy::Zero).unwrap()
-                + &s2.fill_null(FillNullStrategy::Zero).unwrap(),
-        ))
-    };
-    let init = match exprs.pop() {
-        Some(e) => e,
-        // use u32 as that is not cast to float as eagerly
-        _ => lit(0u32),
-    };
-    fold_exprs(init, func, exprs).alias("sum")
+    let exprs = exprs.as_ref().to_vec();
+
+    Expr::Function {
+        input: exprs,
+        function: FunctionExpr::SumHorizontal,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyFlat,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            cast_to_supertypes: false,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
 }
 
 /// Folds the expressions from left to right keeping the first non-null values.
