@@ -5560,45 +5560,42 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         on: str | Sequence[str] | None = None,
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
-        how: Literal["left", "inner"] = "left",
+        how: Literal["left", "inner", "outer"] = "left",
     ) -> Self:
         """
         Update the values in this `LazyFrame` with the non-null values in `other`.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Parameters
         ----------
         other
             LazyFrame that will be used to update the values
         on
-            Column names that will be joined on.
-            If none given the row count is used.
+            Column names that will be joined on; if given ``None`` the implicit row
+            index is used as a join key instead.
         left_on
            Join column(s) of the left DataFrame.
         right_on
            Join column(s) of the right DataFrame.
-        how : {'left', 'inner'}
-            'left' will keep all rows from the left table. Rows may be duplicated if
-            multiple rows in right frame match left row's `on` key.
-            'inner' will remove rows that are not found in other
+        how : {'left', 'inner', 'outer'}
+            * 'left' will keep all rows from the left table; rows may be duplicated
+              if multiple rows in the right frame match the left row's key.
+            * 'inner' keeps only those rows where the key exists in both frames.
+            * 'outer' will update existing rows where the key matches while also
+              adding any new rows contained in the given frame.
 
         Notes
         -----
-        This is syntactic sugar for a left/inner join + coalesce
+        This is syntactic sugar for a join + coalesce (upsert) operation.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "A": [1, 2, 3, 4],
         ...         "B": [400, 500, 600, 700],
         ...     }
         ... )
-        >>> df
+        >>> lf.collect()
         shape: (4, 2)
         ┌─────┬─────┐
         │ A   ┆ B   │
@@ -5610,34 +5607,58 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ 600 │
         │ 4   ┆ 700 │
         └─────┴─────┘
-        >>> new_df = pl.DataFrame(
+        >>> new_lf = pl.LazyFrame(
         ...     {
-        ...         "B": [4, None, 6],
-        ...         "C": [7, 8, 9],
+        ...         "B": [-66, None, -99],
+        ...         "C": [5, 3, 1],
         ...     }
         ... )
-        >>> new_df
-        shape: (3, 2)
-        ┌──────┬─────┐
-        │ B    ┆ C   │
-        │ ---  ┆ --- │
-        │ i64  ┆ i64 │
-        ╞══════╪═════╡
-        │ 4    ┆ 7   │
-        │ null ┆ 8   │
-        │ 6    ┆ 9   │
-        └──────┴─────┘
-        >>> df.update(new_df)
+
+        Update `df` values with the non-null values in `new_df`, by row index:
+
+        >>> lf.update(new_lf).collect()
         shape: (4, 2)
         ┌─────┬─────┐
         │ A   ┆ B   │
         │ --- ┆ --- │
         │ i64 ┆ i64 │
         ╞═════╪═════╡
-        │ 1   ┆ 4   │
+        │ 1   ┆ -66 │
         │ 2   ┆ 500 │
-        │ 3   ┆ 6   │
+        │ 3   ┆ -99 │
         │ 4   ┆ 700 │
+        └─────┴─────┘
+
+        Update `df` values with the non-null values in `new_df`, by row index,
+        but only keeping those rows that are common to both frames:
+
+        >>> lf.update(new_lf, how="inner").collect()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ A   ┆ B   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ -66 │
+        │ 2   ┆ 500 │
+        │ 3   ┆ -99 │
+        └─────┴─────┘
+
+        Update `df` values with the non-null values in `new_df`, using an outer join
+        strategy that defines explicit join columns in each frame:
+
+        >>> lf.update(new_lf, left_on=["A"], right_on=["C"], how="outer").collect()
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ A   ┆ B   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ -99 │
+        │ 2   ┆ 500 │
+        │ 3   ┆ 600 │
+        │ 4   ┆ 700 │
+        │ 5   ┆ -66 │
         └─────┴─────┘
 
         """
@@ -5657,7 +5678,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     raise ValueError("missing join columns for left frame")
                 if right_on is None:
                     raise ValueError("missing join columns for right frame")
-
         else:
             # move on into left/right_on to simplify logic
             left_on = right_on = on
@@ -5676,8 +5696,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if name not in right_names:
                 raise ValueError(f"right join column {name!r} not found")
 
-        # no need to join if only join columns are in other
-        if len(other.columns) == len(right_on):
+        # no need to join if *only* join columns are in other (inner/left update only)
+        if how != "outer" and len(other.columns) == len(right_on):
             if row_count_used:
                 return self.drop(row_count_name)
             return self
