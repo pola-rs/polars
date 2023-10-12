@@ -164,7 +164,7 @@ unsafe fn write_anyvalue(
                         AnyValue::Datetime(v, tu, tz) => {
                             let datetime_format = { *datetime_formats.get_unchecked(i) };
                             let time_zone = { time_zones.get_unchecked(i) };
-                            let ndt = timestamp_to_naive_datetime_method(v, tu);
+                            let ndt = timestamp_to_naive_datetime_method(&tu)(v);
                             let formatted = match time_zone {
                                 #[cfg(feature = "timezones")]
                                 Some(time_zone) => {

@@ -436,8 +436,6 @@ where
         }
     };
 
-    let nr: Option<i64> = lexical::parse(bytes).ok();
-
     let pattern = match &buf.compiled {
         Some(compiled) => compiled.pattern,
         None => match infer_pattern_single(val) {
