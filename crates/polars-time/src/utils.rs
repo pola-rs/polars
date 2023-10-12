@@ -5,7 +5,9 @@ use chrono::{LocalResult, NaiveDateTime};
 #[cfg(feature = "timezones")]
 use polars_arrow::time_zone::Tz;
 #[cfg(feature = "timezones")]
-use polars_core::prelude::{polars_bail, PolarsResult, TimeUnit, timestamp_to_naive_datetime_method};
+use polars_core::prelude::{
+    polars_bail, timestamp_to_naive_datetime_method, PolarsResult, TimeUnit,
+};
 
 #[cfg(feature = "timezones")]
 pub(crate) fn localize_datetime(

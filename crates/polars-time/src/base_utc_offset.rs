@@ -6,7 +6,6 @@ use chrono_tz::OffsetComponents;
 use polars_arrow::time_zone::Tz;
 #[cfg(feature = "timezones")]
 use polars_core::prelude::*;
-#[cfg(feature = "timezones")]
 
 #[cfg(feature = "timezones")]
 pub fn base_utc_offset(
