@@ -16,12 +16,14 @@ pub(super) fn process_group_by(
 ) -> PolarsResult<ALogicalPlan> {
     use ALogicalPlan::*;
 
+    #[cfg(feature = "dynamic_group_by")]
+    let no_push = { options.rolling.is_some() || options.dynamic.is_some() };
+
+    #[cfg(not(feature = "dynamic_group_by"))]
+    let no_push = false;
+
     // Don't pushdown predicates on these cases.
-    if apply.is_some()
-        || options.rolling.is_some()
-        || options.dynamic.is_some()
-        || options.slice.is_some()
-    {
+    if apply.is_some() || no_push || options.slice.is_some() {
         let lp = Aggregate {
             input,
             keys,
