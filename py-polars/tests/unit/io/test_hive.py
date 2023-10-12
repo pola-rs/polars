@@ -74,6 +74,7 @@ def test_hive_partitioned_slice_pushdown(io_files_path: Path, tmp_path: Path) ->
 
     # tests: 11682
     assert q.head(1).collect().select(pl.all_horizontal(pl.all().count() == 1)).item()
+    assert q.head(0).collect().columns == ["calories", "sugars_g", "category", "fats_g"]
 
 
 @pytest.mark.write_disk()
