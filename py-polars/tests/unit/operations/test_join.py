@@ -566,6 +566,14 @@ def test_update() -> None:
     y = pl.DataFrame({"a": [2, 3]})
     assert [0, 1, 2, 3] == sorted(x.update(y, on="a", how="outer")["a"].to_list())
 
+    # disallowed join strategies
+    for join_strategy in ("cross", "anti", "semi"):
+        with pytest.raises(
+            ValueError,
+            match=f"`how` must be one of {{'left', 'inner', 'outer'}}; found '{join_strategy}'",
+        ):
+            a.update(b, how=join_strategy)  # type: ignore[arg-type]
+
 
 def test_join_frame_consistency() -> None:
     df = pl.DataFrame({"A": [1, 2, 3]})

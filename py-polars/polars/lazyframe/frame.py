@@ -5662,8 +5662,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        row_count_used = False
+        if how not in ("left", "inner", "outer"):
+            raise ValueError(
+                f"`how` must be one of {{'left', 'inner', 'outer'}}; found {how!r}"
+            )
 
+        row_count_used = False
         if on is None:
             if left_on is None and right_on is None:
                 # no keys provided--use row count
