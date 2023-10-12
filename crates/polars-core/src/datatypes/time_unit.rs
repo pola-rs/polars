@@ -1,3 +1,9 @@
+use arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_s_to_datetime,
+    timestamp_us_to_datetime, timeunit_scale,
+};
+use chrono::NaiveDateTime;
+
 use super::*;
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
@@ -9,6 +15,7 @@ pub enum TimeUnit {
     Nanoseconds,
     Microseconds,
     Milliseconds,
+    Seconds,
 }
 
 impl From<&ArrowTimeUnit> for TimeUnit {
@@ -35,6 +42,9 @@ impl Display for TimeUnit {
             TimeUnit::Milliseconds => {
                 write!(f, "ms")
             },
+            TimeUnit::Seconds => {
+                write!(f, "s")
+            },
         }
     }
 }
@@ -46,6 +56,7 @@ impl TimeUnit {
             Nanoseconds => "ns",
             Microseconds => "us",
             Milliseconds => "ms",
+            Seconds => "s",
         }
     }
 
@@ -54,20 +65,51 @@ impl TimeUnit {
             TimeUnit::Nanoseconds => ArrowTimeUnit::Nanosecond,
             TimeUnit::Microseconds => ArrowTimeUnit::Microsecond,
             TimeUnit::Milliseconds => ArrowTimeUnit::Millisecond,
+            TimeUnit::Seconds => ArrowTimeUnit::Second,
         }
     }
 }
 
 #[inline]
+pub(crate) fn conversion_factor_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> f64 {
+    timeunit_scale(tu_l.to_arrow(), tu_r.to_arrow())
+}
+
+#[inline]
 pub(crate) fn convert_time_units(v: i64, tu_l: TimeUnit, tu_r: TimeUnit) -> i64 {
-    use TimeUnit::*;
-    match (tu_l, tu_r) {
-        (Nanoseconds, Microseconds) => v / 1_000,
-        (Nanoseconds, Milliseconds) => v / 1_000_000,
-        (Microseconds, Nanoseconds) => v * 1_000,
-        (Microseconds, Milliseconds) => v / 1_000,
-        (Milliseconds, Microseconds) => v * 1_000,
-        (Milliseconds, Nanoseconds) => v * 1_000_000,
-        _ => v,
+    let factor = conversion_factor_time_units(&tu_l, &tu_r);
+
+    (v as f64 * factor) as i64
+}
+
+#[inline]
+pub(crate) fn get_seconds_in_day(tu: &TimeUnit) -> i64 {
+    match tu {
+        TimeUnit::Seconds => SECONDS_IN_DAY,
+        TimeUnit::Milliseconds => MS_IN_DAY,
+        TimeUnit::Microseconds => US_IN_DAY,
+        TimeUnit::Nanoseconds => NS_IN_DAY,
+    }
+}
+
+/// Largely based on nano-arrow::timestamp_to_naive_datetime, but just returns the
+/// method instead of doing the calculations.
+#[inline]
+pub(crate) fn timestamp_to_naive_datetime_method(time_unit: &TimeUnit) -> fn(i64) -> NaiveDateTime {
+    match time_unit {
+        TimeUnit::Seconds => timestamp_s_to_datetime,
+        TimeUnit::Milliseconds => timestamp_ms_to_datetime,
+        TimeUnit::Microseconds => timestamp_us_to_datetime,
+        TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
+    }
+}
+
+#[inline]
+pub(crate) fn datetime_to_timestamp_method(time_unit: &TimeUnit) -> fn(NaiveDateTime) -> i64 {
+    match time_unit {
+        TimeUnit::Seconds => datetime_to_timestamp_s,
+        TimeUnit::Milliseconds => datetime_to_timestamp_ms,
+        TimeUnit::Microseconds => datetime_to_timestamp_us,
+        TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
     }
 }

@@ -18,6 +18,7 @@ impl From<&AnyValue<'_>> for NaiveDateTime {
                 TimeUnit::Nanoseconds => timestamp_ns_to_datetime(*v),
                 TimeUnit::Microseconds => timestamp_us_to_datetime(*v),
                 TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
+                TimeUnit::Seconds => timestamp_s_to_datetime(*v),
             },
             _ => panic!("can only convert date/datetime to NaiveDateTime"),
         }
@@ -45,6 +46,11 @@ pub fn datetime_to_timestamp_ms(v: NaiveDateTime) -> i64 {
 }
 
 // Used by lazy for literal conversion
+pub fn datetime_to_timestamp_s(v: NaiveDateTime) -> i64 {
+    v.timestamp_millis() * 1_000
+}
+
+// Used by lazy for literal conversion
 pub fn datetime_to_timestamp_us(v: NaiveDateTime) -> i64 {
     let us = v.timestamp() * 1_000_000;
     us + v.timestamp_subsec_micros() as i64
@@ -57,3 +63,4 @@ pub(crate) fn naive_datetime_to_date(v: NaiveDateTime) -> i32 {
 pub(crate) const NS_IN_DAY: i64 = 86_400_000_000_000;
 pub(crate) const US_IN_DAY: i64 = 86_400_000_000;
 pub(crate) const MS_IN_DAY: i64 = 86_400_000;
+pub(crate) const S_IN_DAY: i64 = SECONDS_IN_DAY;

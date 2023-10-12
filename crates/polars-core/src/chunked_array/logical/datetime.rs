@@ -30,73 +30,29 @@ impl LogicalType for DatetimeChunked {
 
     fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         use DataType::*;
+
         match (self.dtype(), dtype) {
-            (Datetime(TimeUnit::Milliseconds, _), Datetime(TimeUnit::Nanoseconds, tz)) => {
-                Ok((self.0.as_ref() * 1_000_000i64)
-                    .into_datetime(TimeUnit::Nanoseconds, tz.clone())
-                    .into_series())
-            },
-            (Datetime(TimeUnit::Milliseconds, _), Datetime(TimeUnit::Microseconds, tz)) => {
-                Ok((self.0.as_ref() * 1_000i64)
-                    .into_datetime(TimeUnit::Microseconds, tz.clone())
-                    .into_series())
-            },
-            (Datetime(TimeUnit::Nanoseconds, _), Datetime(TimeUnit::Milliseconds, tz)) => {
-                Ok((self.0.as_ref() / 1_000_000i64)
-                    .into_datetime(TimeUnit::Milliseconds, tz.clone())
-                    .into_series())
-            },
-            (Datetime(TimeUnit::Nanoseconds, _), Datetime(TimeUnit::Microseconds, tz)) => {
-                Ok((self.0.as_ref() / 1_000i64)
-                    .into_datetime(TimeUnit::Microseconds, tz.clone())
-                    .into_series())
-            },
-            (Datetime(TimeUnit::Microseconds, _), Datetime(TimeUnit::Milliseconds, tz)) => {
-                Ok((self.0.as_ref() / 1_000i64)
-                    .into_datetime(TimeUnit::Milliseconds, tz.clone())
-                    .into_series())
-            },
-            (Datetime(TimeUnit::Microseconds, _), Datetime(TimeUnit::Nanoseconds, tz)) => {
-                Ok((self.0.as_ref() * 1_000i64)
-                    .into_datetime(TimeUnit::Nanoseconds, tz.clone())
+            (Datetime(tu_l, _), Datetime(tu_r, tz)) => {
+                let factor = conversion_factor_time_units(tu_l, tu_r);
+
+                Ok((self.0.as_ref() * factor)
+                    .cast(&Int64)
+                    .unwrap()
+                    .into_datetime(*tu_r, tz.clone())
                     .into_series())
             },
             #[cfg(feature = "dtype-date")]
-            (Datetime(tu, _), Date) => match tu {
-                TimeUnit::Nanoseconds => Ok((self.0.as_ref() / NS_IN_DAY)
-                    .cast(&Int32)
-                    .unwrap()
-                    .into_date()
-                    .into_series()),
-                TimeUnit::Microseconds => Ok((self.0.as_ref() / US_IN_DAY)
-                    .cast(&Int32)
-                    .unwrap()
-                    .into_date()
-                    .into_series()),
-                TimeUnit::Milliseconds => Ok((self.0.as_ref() / MS_IN_DAY)
-                    .cast(&Int32)
-                    .unwrap()
-                    .into_date()
-                    .into_series()),
-            },
+            (Datetime(tu, _), Date) => Ok((self.0.as_ref() / get_seconds_in_day(tu))
+                .cast(&Int32)
+                .unwrap()
+                .into_date()
+                .into_series()),
             #[cfg(feature = "dtype-time")]
-            (Datetime(tu, _), Time) => match tu {
-                TimeUnit::Nanoseconds => Ok((self.0.as_ref() % NS_IN_DAY)
-                    .cast(&Int64)
-                    .unwrap()
-                    .into_time()
-                    .into_series()),
-                TimeUnit::Microseconds => Ok((self.0.as_ref() % US_IN_DAY * 1_000i64)
-                    .cast(&Int64)
-                    .unwrap()
-                    .into_time()
-                    .into_series()),
-                TimeUnit::Milliseconds => Ok((self.0.as_ref() % MS_IN_DAY * 1_000_000i64)
-                    .cast(&Int64)
-                    .unwrap()
-                    .into_time()
-                    .into_series()),
-            },
+            (Datetime(tu, _), Time) => Ok((self.0.as_ref() % get_seconds_in_day(tu))
+                .cast(&Int64)
+                .unwrap()
+                .into_time()
+                .into_series()),
             _ => self.0.cast(dtype),
         }
     }

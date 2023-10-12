@@ -98,7 +98,7 @@ impl Pattern {
         match self {
             Pattern::DateDMY => true, // there are very few Date patterns, so it's cheaper
             Pattern::DateYMD => true, // to just try them
-            Pattern::Int64 => true,
+            Pattern::Int64 => false,
             Pattern::DatetimeDMY => match DATETIME_DMY_RE.captures(val) {
                 Some(search) => (1..=12).contains(
                     &search
@@ -393,7 +393,7 @@ fn transform_tzaware_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
 
 pub fn infer_pattern_single(val: &str) -> Option<Pattern> {
     // Dates come first, because we see datetimes as superset of dates
-    infer_pattern_date_single(val).or_else(|| infer_pattern_datetime_single(val)).or_else(|| infer_pattern_i64(val))
+    infer_pattern_date_single(val).or_else(|| infer_pattern_datetime_single(val))
 }
 
 fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {

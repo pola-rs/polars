@@ -34,11 +34,7 @@ impl LogicalType for DateChunked {
             (Date, Datetime(tu, tz)) => {
                 let casted = self.0.cast(dtype)?;
                 let casted = casted.datetime().unwrap();
-                let conversion = match tu {
-                    TimeUnit::Nanoseconds => NS_IN_DAY,
-                    TimeUnit::Microseconds => US_IN_DAY,
-                    TimeUnit::Milliseconds => MS_IN_DAY,
-                };
+                let conversion = get_seconds_in_day(tu);
                 Ok((casted.deref() * conversion)
                     .into_datetime(*tu, tz.clone())
                     .into_series())

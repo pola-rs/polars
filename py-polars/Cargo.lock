@@ -1896,6 +1896,7 @@ dependencies = [
  "atoi",
  "chrono",
  "chrono-tz",
+ "lexical",
  "nano-arrow",
  "now",
  "once_cell",

@@ -1,8 +1,5 @@
 use std::fmt::Write;
 
-use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
-};
 use chrono::format::{DelayedFormat, StrftimeItems};
 use chrono::NaiveDate;
 #[cfg(feature = "timezones")]
@@ -66,11 +63,7 @@ impl DatetimeChunked {
     pub fn as_datetime_iter(
         &self,
     ) -> impl Iterator<Item = Option<NaiveDateTime>> + TrustedLen + '_ {
-        let func = match self.time_unit() {
-            TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
-            TimeUnit::Microseconds => timestamp_us_to_datetime,
-            TimeUnit::Milliseconds => timestamp_ms_to_datetime,
-        };
+        let func = timestamp_to_naive_datetime_method(&self.time_unit());
         // we know the iterators len
         unsafe {
             self.downcast_iter()
@@ -98,11 +91,8 @@ impl DatetimeChunked {
     pub fn to_string(&self, format: &str) -> PolarsResult<Utf8Chunked> {
         #[cfg(feature = "timezones")]
         use chrono::Utc;
-        let conversion_f = match self.time_unit() {
-            TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
-            TimeUnit::Microseconds => timestamp_us_to_datetime,
-            TimeUnit::Milliseconds => timestamp_ms_to_datetime,
-        };
+        // let conversion_f = {|v| timestamp_to_naive_datetime(v, self.time_unit())};
+        let conversion_f = timestamp_to_naive_datetime_method(&self.time_unit());
 
         let dt = NaiveDate::from_ymd_opt(2001, 1, 1)
             .unwrap()
@@ -156,11 +146,7 @@ impl DatetimeChunked {
         v: I,
         tu: TimeUnit,
     ) -> Self {
-        let func = match tu {
-            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-            TimeUnit::Microseconds => datetime_to_timestamp_us,
-            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
-        };
+        let func = datetime_to_timestamp_method(&tu);
         let vals = v.into_iter().map(func).collect::<Vec<_>>();
         Int64Chunked::from_vec(name, vals).into_datetime(tu, None)
     }
@@ -170,11 +156,7 @@ impl DatetimeChunked {
         v: I,
         tu: TimeUnit,
     ) -> Self {
-        let func = match tu {
-            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-            TimeUnit::Microseconds => datetime_to_timestamp_us,
-            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
-        };
+        let func = datetime_to_timestamp_method(&tu);
         let vals = v.into_iter().map(|opt_nd| opt_nd.map(func));
         Int64Chunked::from_iter_options(name, vals).into_datetime(tu, None)
     }
@@ -187,41 +169,10 @@ impl DatetimeChunked {
         out.set_time_unit(tu);
 
         use TimeUnit::*;
-        match (current_unit, tu) {
-            (Nanoseconds, Microseconds) => {
-                let ca = &self.0 / 1_000;
-                out.0 = ca;
-                out
-            },
-            (Nanoseconds, Milliseconds) => {
-                let ca = &self.0 / 1_000_000;
-                out.0 = ca;
-                out
-            },
-            (Microseconds, Nanoseconds) => {
-                let ca = &self.0 * 1_000;
-                out.0 = ca;
-                out
-            },
-            (Microseconds, Milliseconds) => {
-                let ca = &self.0 / 1_000;
-                out.0 = ca;
-                out
-            },
-            (Milliseconds, Nanoseconds) => {
-                let ca = &self.0 * 1_000_000;
-                out.0 = ca;
-                out
-            },
-            (Milliseconds, Microseconds) => {
-                let ca = &self.0 * 1_000;
-                out.0 = ca;
-                out
-            },
-            (Nanoseconds, Nanoseconds)
-            | (Microseconds, Microseconds)
-            | (Milliseconds, Milliseconds) => out,
-        }
+        let factor = conversion_factor_time_units(&current_unit, &tu);
+        let ca = &self.0 * factor;
+        out.0 = ca;
+        out
     }
 
     /// Change the underlying [`TimeUnit`]. This does not modify the data.

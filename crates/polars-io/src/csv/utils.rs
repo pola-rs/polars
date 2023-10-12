@@ -74,7 +74,7 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
                         Pattern::DatetimeYMDZ => {
                             DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
                         },
-                        Pattern::Int64 => {}
+                        Pattern::Int64 => {},
                     },
                     None => DataType::Utf8,
                 }

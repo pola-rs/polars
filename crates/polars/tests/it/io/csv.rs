@@ -1,6 +1,7 @@
 use std::io::Cursor;
 
 use polars::io::RowCount;
+use polars::prelude::Expr::Column;
 
 use super::*;
 
@@ -1114,5 +1115,32 @@ fn test_leading_whitespace_with_quote() -> PolarsResult<()> {
     let col_2 = df.column("DEF").unwrap();
     assert_eq!(col_1.get(0)?, AnyValue::Float64(24.5));
     assert_eq!(col_2.get(0)?, AnyValue::Float64(4.1));
+    Ok(())
+}
+
+#[test]
+fn test_steven() -> PolarsResult<()> {
+    // test if timestamps can be parsed as Datetime
+    let csv = r#"a,b,c,d,e
+AUDCAD,1616455919,0.91212,0.95556,1
+AUDCAD,1616455920,0.92212,0.95556,1
+AUDCAD,1616455921,0.96212,0.95666,1
+"#;
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file)
+        .has_header(true)
+        .finish()?
+        .select(Column("b").cast(Datetime("s")));
+
+    assert_eq!(
+        df.dtypes(),
+        &[
+            DataType::Utf8,
+            DataType::Datetime(TimeUnit::Nanoseconds, None),
+            DataType::Float64,
+            DataType::Float64,
+            DataType::Int64
+        ]
+    );
     Ok(())
 }

@@ -1579,3 +1579,16 @@ def test_provide_schema() -> None:
         "B": [None, "ragged", None],
         "C": [None, None, None],
     }
+
+
+def test_steven() -> None:
+    # can be used to overload schema with ragged csv files
+    sut = pl.read_csv(
+                  io.StringIO("A\n1616455919"),
+                  has_header=True,
+              ).select(pl.col("A").cast(pl.Datetime("s")))
+    assert sut.to_dict(False) == {
+        "A": ["A", "B", "C"],
+        "B": [None, "ragged", None],
+        "C": [None, None, None],
+    }
