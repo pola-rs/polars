@@ -90,7 +90,6 @@ impl DatetimeChunked {
     pub fn to_string(&self, format: &str) -> PolarsResult<Utf8Chunked> {
         #[cfg(feature = "timezones")]
         use chrono::Utc;
-        // let conversion_f = {|v| timestamp_to_naive_datetime(v, self.time_unit())};
         let conversion_f = timestamp_to_naive_datetime_method(&self.time_unit());
 
         let dt = NaiveDate::from_ymd_opt(2001, 1, 1)

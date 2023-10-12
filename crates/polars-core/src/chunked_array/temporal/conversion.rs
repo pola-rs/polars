@@ -44,11 +44,6 @@ pub fn datetime_to_timestamp_ms(v: NaiveDateTime) -> i64 {
 }
 
 // Used by lazy for literal conversion
-pub fn datetime_to_timestamp_s(v: NaiveDateTime) -> i64 {
-    v.timestamp_millis() * 1_000
-}
-
-// Used by lazy for literal conversion
 pub fn datetime_to_timestamp_us(v: NaiveDateTime) -> i64 {
     let us = v.timestamp() * 1_000_000;
     us + v.timestamp_subsec_micros() as i64
