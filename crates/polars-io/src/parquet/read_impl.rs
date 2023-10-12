@@ -99,9 +99,11 @@ pub(super) fn array_iter_to_series(
 fn materialize_hive_partitions(
     df: &mut DataFrame,
     hive_partition_columns: Option<&[Series]>,
-    num_rows: usize,
+    num_rows: Option<usize>,
 ) {
     if let Some(hive_columns) = hive_partition_columns {
+        let num_rows = num_rows.unwrap_or(df.height());
+
         for s in hive_columns {
             unsafe { df.with_column_unchecked(s.new_from_index(0, num_rows)) };
         }
@@ -220,12 +222,11 @@ fn rg_to_dfs_optionally_par_over_columns(
         *remaining_rows = remaining_rows.saturating_sub(file_metadata.row_groups[rg].num_rows());
 
         let mut df = DataFrame::new_no_checks(columns);
-        let num_read_rows = df.height();
-
         if let Some(rc) = &row_count {
             df.with_row_count_mut(&rc.name, Some(*previous_row_count + rc.offset));
         }
-        materialize_hive_partitions(&mut df, hive_partition_columns, num_read_rows);
+        materialize_hive_partitions(&mut df, hive_partition_columns, None);
+
         apply_predicate(&mut df, predicate.as_deref(), true)?;
 
         *previous_row_count += current_row_count;
@@ -296,12 +297,11 @@ fn rg_to_dfs_par_over_rg(
                 .collect::<PolarsResult<Vec<_>>>()?;
 
             let mut df = DataFrame::new_no_checks(columns);
-            let num_read_rows = df.height();
 
             if let Some(rc) = &row_count {
                 df.with_row_count_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
             }
-            materialize_hive_partitions(&mut df, hive_partition_columns, num_read_rows);
+            materialize_hive_partitions(&mut df, hive_partition_columns, None);
 
             apply_predicate(&mut df, predicate.as_deref(), false)?;
 
