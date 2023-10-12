@@ -220,12 +220,10 @@ fn rg_to_dfs_optionally_par_over_columns(
         *remaining_rows = remaining_rows.saturating_sub(file_metadata.row_groups[rg].num_rows());
 
         let mut df = DataFrame::new_no_checks(columns);
-        let num_read_rows = df.height();
-
         if let Some(rc) = &row_count {
             df.with_row_count_mut(&rc.name, Some(*previous_row_count + rc.offset));
         }
-        materialize_hive_partitions(&mut df, hive_partition_columns, num_read_rows);
+        materialize_hive_partitions(&mut df, hive_partition_columns, df.height());
         apply_predicate(&mut df, predicate.as_deref(), true)?;
 
         *previous_row_count += current_row_count;
@@ -296,12 +294,10 @@ fn rg_to_dfs_par_over_rg(
                 .collect::<PolarsResult<Vec<_>>>()?;
 
             let mut df = DataFrame::new_no_checks(columns);
-            let num_read_rows = df.height();
-
             if let Some(rc) = &row_count {
                 df.with_row_count_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
             }
-            materialize_hive_partitions(&mut df, hive_partition_columns, num_read_rows);
+            materialize_hive_partitions(&mut df, hive_partition_columns, df.height());
 
             apply_predicate(&mut df, predicate.as_deref(), false)?;
 
