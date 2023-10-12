@@ -23,12 +23,13 @@ once_cell = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 smartstring = { workspace = true }
+lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-integers"] }
 
 [features]
-dtype-date = ["polars-core/dtype-date", "polars-core/temporal"]
-dtype-datetime = ["polars-core/dtype-date", "polars-core/temporal"]
-dtype-time = ["polars-core/dtype-time", "polars-core/temporal"]
-dtype-duration = ["polars-core/dtype-duration", "polars-core/temporal"]
+dtype-date = ["polars-core/dtype-date", "lexical"]
+dtype-datetime = ["polars-core/dtype-date", "lexical"]
+dtype-time = ["polars-core/dtype-time", "lexical"]
+dtype-duration = ["polars-core/dtype-duration"]
 rolling_window = ["polars-core/rolling_window", "dtype-duration"]
 fmt = ["polars-core/fmt"]
 timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones", "polars-arrow/timezones", "polars-ops/timezones"]

@@ -141,6 +141,11 @@ pub(super) static DATETIME_Y_M_D_Z: &[&str] = &[
     "%+",
 ];
 
+pub(super) static DATETIME_I64_DUMMY: &[&str] = &[
+    "",
+];
+
+
 #[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
 pub enum Pattern {
     DateDMY,
@@ -148,4 +153,8 @@ pub enum Pattern {
     DatetimeYMD,
     DatetimeDMY,
     DatetimeYMDZ,
+    Int64Seconds,
+    Int64Millis,
+    Int64Micros,
+    Int64Nanos,
 }

@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, NaiveDateTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone};
 use once_cell::sync::Lazy;
 use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_core::prelude::*;
@@ -98,6 +98,7 @@ impl Pattern {
         match self {
             Pattern::DateDMY => true, // there are very few Date patterns, so it's cheaper
             Pattern::DateYMD => true, // to just try them
+            Pattern::Int64 => true,
             Pattern::DatetimeDMY => match DATETIME_DMY_RE.captures(val) {
                 Some(search) => (1..=12).contains(
                     &search
@@ -233,6 +234,7 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
         let time_unit = time_unit.expect("time_unit must be provided for datetime");
 
         let transform = match (time_unit , value) {
+            (_, Pattern::Int64) => { |val: &str, _: &str| val.parse::<i64>().ok() },
             (TimeUnit::Milliseconds, Pattern::DatetimeYMDZ) => transform_tzaware_datetime_ms,
             (TimeUnit::Milliseconds, _) => transform_datetime_ms,
             (TimeUnit::Microseconds, Pattern::DatetimeYMDZ) => transform_tzaware_datetime_us,
@@ -241,9 +243,10 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
             (TimeUnit::Nanoseconds, _) => transform_datetime_ns,
         };
         let (pattern, patterns) = match value {
-            (Pattern::DatetimeDMY | Pattern::DateDMY) => (Pattern::DatetimeDMY, patterns::DATETIME_D_M_Y),
-            (Pattern::DatetimeYMD | Pattern::DateYMD) => (Pattern::DatetimeYMD, patterns::DATETIME_Y_M_D),
-            (Pattern::DatetimeYMDZ) => (Pattern::DatetimeYMDZ, patterns::DATETIME_Y_M_D_Z),
+            Pattern::Int64 => (Pattern::Int64 , patterns::DATETIME_I64_DUMMY),
+            Pattern::DatetimeDMY | Pattern::DateDMY => (Pattern::DatetimeDMY, patterns::DATETIME_D_M_Y),
+            Pattern::DatetimeYMD | Pattern::DateYMD => (Pattern::DatetimeYMD, patterns::DATETIME_Y_M_D),
+            Pattern::DatetimeYMDZ => (Pattern::DatetimeYMDZ, patterns::DATETIME_Y_M_D_Z),
         };
 
         Ok(DatetimeInfer {
@@ -388,7 +391,7 @@ fn transform_tzaware_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
 
 pub fn infer_pattern_single(val: &str) -> Option<Pattern> {
     // Dates come first, because we see datetimes as superset of dates
-    infer_pattern_date_single(val).or_else(|| infer_pattern_datetime_single(val))
+    infer_pattern_date_single(val).or_else(|| infer_pattern_datetime_single(val)).or_else(|| infer_pattern_i64(val))
 }
 
 fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
@@ -410,6 +413,48 @@ fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
     } else {
         None
     }
+}
+
+/// Infer if it's a number, what is most likely to be the granularity.
+///
+/// I'm assuming here that the passed entry is a UTC date.
+/// And I'm assuming that the dates are within a range of 100 years from now.
+///
+/// I think these are good enough assumptions. If not, the consumer needs to provide
+/// these dtypes themselves. After all, we're doing auto-recognition here.
+fn infer_pattern_i64(val: &str) -> Option<Pattern> {
+    let secs = lexical::parse::<i64, _>(val);
+    if secs.is_err() {
+        return None;
+    }
+    let secs = secs?;
+
+    let hundred_years = chrono::Duration::days(365) * 100;
+    let now = chrono::offset::Utc::now();
+    let lowerbound = now - hundred_years;
+    let upperbound = now + hundred_years;
+
+    let converted = chrono::Utc.timestamp_opt(secs, 0);
+    if converted.is_some() && lowerbound < converted.ok() && converted.ok() < upperbound {
+        return Some(Pattern::Int64Seconds);
+    }
+
+    let converted = chrono::Utc.timestamp_millis_opt(secs);
+    if converted.is_some() && lowerbound < converted.ok() && converted.ok() < upperbound {
+        return Some(Pattern::Int64Millis);
+    }
+
+    let converted = chrono::Utc.timestamp_micros(secs);
+    if converted.is_some() && lowerbound < converted.ok() && converted.ok() < upperbound {
+        return Some(Pattern::Int64Micros);
+    }
+
+    let converted = chrono::Utc.timestamp_nanos(secs);
+    if lowerbound < converted && converted < upperbound {
+        return Some(Pattern::Int64Nanos);
+    }
+
+    return None;
 }
 
 fn infer_pattern_date_single(val: &str) -> Option<Pattern> {
