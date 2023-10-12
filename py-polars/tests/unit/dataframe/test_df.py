@@ -2815,6 +2815,27 @@ def test_filter_sequence() -> None:
     assert df.filter(np.array([True, False, True]))["a"].to_list() == [1, 3]
 
 
+def test_filter_multiple_predicates() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 1, 1, 2, 2], "b": [1, 1, 2, 2, 2], "c": [1, 1, 2, 3, 4]}
+    )
+
+    # using multiple predicates
+    out = df.filter(pl.col("a") == 1, pl.col("b") <= 2)
+    expected = pl.DataFrame({"a": [1, 1, 1], "b": [1, 1, 2], "c": [1, 1, 2]})
+    assert_frame_equal(out, expected)
+
+    # using multiple kwargs
+    out = df.filter(a=1, b=2)  # type: ignore[arg-type]
+    expected = pl.DataFrame({"a": [1], "b": [2], "c": [2]})
+    assert_frame_equal(out, expected)
+
+    # using both
+    out = df.filter(pl.col("a") == 1, pl.col("b") <= 2, a=1, b=2)  # type: ignore[arg-type]
+    expected = pl.DataFrame({"a": [1], "b": [2], "c": [2]})
+    assert_frame_equal(out, expected)
+
+
 def test_indexing_set() -> None:
     df = pl.DataFrame({"bool": [True, True], "str": ["N/A", "N/A"], "nr": [1, 2]})
 

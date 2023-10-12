@@ -3899,7 +3899,9 @@ class DataFrame:
 
     def filter(
         self,
-        predicate: (Expr | str | Series | list[bool] | np.ndarray[Any, Any] | bool),
+        *predicates: (Expr | str | Series | list[bool] | np.ndarray[Any, Any] | bool)
+        | None,
+        **constraints: dict[str, Any],
     ) -> DataFrame:
         """
         Filter the rows in the DataFrame based on a predicate expression.
@@ -3908,8 +3910,10 @@ class DataFrame:
 
         Parameters
         ----------
-        predicate
+        predicates
             Expression that evaluates to a boolean Series.
+        constraints
+            Column filters. Use name=value to filter column name by the supplied value.
 
         Examples
         --------
@@ -3959,12 +3963,58 @@ class DataFrame:
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
 
+        Provided multiple filters using alternative syntax:
+
+        >>> df.filter(pl.col("foo") == 1, pl.col("ham") == "a")
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        └─────┴─────┴─────┘
+
+        Use column-supplied filters:
+        >>> df.filter(foo=1, ham="a")
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        └─────┴─────┴─────┘
+
         """
-        if _check_for_numpy(predicate) and isinstance(predicate, np.ndarray):
-            predicate = pl.Series(predicate)
+        has_predicates = len(predicates) > 0
+        has_constraints = len(constraints) > 0
+        if has_predicates:
+            predicates = [  # type: ignore[assignment]
+                pl.Series(predicate)
+                if _check_for_numpy(predicate) and isinstance(predicate, np.ndarray)
+                else predicate
+                for predicate in predicates
+            ]
+            predicate_iter = iter(predicates)
+            predicates = next(predicate_iter)  # type: ignore[arg-type]
+            for pred in predicate_iter:
+                predicates = predicates & pred  # type: ignore[assignment, operator]
+        if has_constraints:
+            # basic column filters provided
+            constraint_iter = iter(constraints.items())
+            key, value = next(constraint_iter)
+            constraints = col(key) == value  # type: ignore[assignment]
+            for key, value in constraint_iter:
+                constraints = constraints & (col(key) == value)  # type: ignore[assignment]
+
+        if has_predicates and has_constraints:
+            predicates = predicates & constraints  # type: ignore[operator]
+        elif has_constraints:
+            predicates = constraints  # type: ignore[assignment]
 
         return (
-            self.lazy().filter(predicate).collect(_eager=True)  # type: ignore[arg-type]
+            self.lazy().filter(predicates).collect(_eager=True)  # type: ignore[arg-type]
         )
 
     @overload
