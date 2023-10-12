@@ -399,7 +399,7 @@ pub fn new_null_array(data_type: DataType, length: usize) -> Box<dyn Array> {
 /// Trait providing bi-directional conversion between arrow2 [`Array`] and arrow-rs [`ArrayData`]
 ///
 /// [`ArrayData`]: arrow_data::ArrayData
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow_rs")]
 pub trait Arrow2Arrow: Array {
     /// Convert this [`Array`] into [`ArrayData`]
     fn to_data(&self) -> arrow_data::ArrayData;
@@ -408,7 +408,7 @@ pub trait Arrow2Arrow: Array {
     fn from_data(data: &arrow_data::ArrayData) -> Self;
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow_rs")]
 macro_rules! to_data_dyn {
     ($array:expr, $ty:ty) => {{
         let f = |x: &$ty| x.to_data();
@@ -416,28 +416,28 @@ macro_rules! to_data_dyn {
     }};
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow_rs")]
 impl From<Box<dyn Array>> for arrow_array::ArrayRef {
     fn from(value: Box<dyn Array>) -> Self {
         value.as_ref().into()
     }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow_rs")]
 impl From<&dyn Array> for arrow_array::ArrayRef {
     fn from(value: &dyn Array) -> Self {
         arrow_array::make_array(to_data(value))
     }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow_rs")]
 impl From<arrow_array::ArrayRef> for Box<dyn Array> {
     fn from(value: arrow_array::ArrayRef) -> Self {
         value.as_ref().into()
     }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow_rs")]
 impl From<&dyn arrow_array::Array> for Box<dyn Array> {
     fn from(value: &dyn arrow_array::Array) -> Self {
         from_data(&value.to_data())
@@ -445,7 +445,7 @@ impl From<&dyn arrow_array::Array> for Box<dyn Array> {
 }
 
 /// Convert an arrow2 [`Array`] to [`arrow_data::ArrayData`]
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow_rs")]
 pub fn to_data(array: &dyn Array) -> arrow_data::ArrayData {
     use crate::datatypes::PhysicalType::*;
     match array.data_type().to_physical_type() {
@@ -474,7 +474,7 @@ pub fn to_data(array: &dyn Array) -> arrow_data::ArrayData {
 }
 
 /// Convert an [`arrow_data::ArrayData`] to arrow2 [`Array`]
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow_rs")]
 pub fn from_data(data: &arrow_data::ArrayData) -> Box<dyn Array> {
     use crate::datatypes::PhysicalType::*;
     let data_type: DataType = data.data_type().clone().into();

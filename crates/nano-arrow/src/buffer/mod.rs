@@ -10,7 +10,7 @@ use crate::ffi::InternalArrowArray;
 pub(crate) enum BytesAllocator {
     InternalArrowArray(InternalArrowArray),
 
-    #[cfg(feature = "arrow")]
+    #[cfg(feature = "arrow_rs")]
     Arrow(arrow_buffer::Buffer),
 }
 pub(crate) type BytesInner<T> = foreign_vec::ForeignVec<BytesAllocator, T>;
@@ -65,7 +65,7 @@ impl<T> From<BytesInner<T>> for Bytes<T> {
     }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow_rs")]
 pub(crate) fn to_buffer<T: crate::types::NativeType>(
     value: std::sync::Arc<Bytes<T>>,
 ) -> arrow_buffer::Buffer {
@@ -76,7 +76,7 @@ pub(crate) fn to_buffer<T: crate::types::NativeType>(
     unsafe { arrow_buffer::Buffer::from_custom_allocation(ptr, len, value) }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow_rs")]
 pub(crate) fn to_bytes<T: crate::types::NativeType>(value: arrow_buffer::Buffer) -> Bytes<T> {
     let ptr = value.as_ptr();
     let align = ptr.align_offset(std::mem::align_of::<T>());

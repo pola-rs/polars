@@ -68,10 +68,10 @@ multiversion = { workspace = true, optional = true }
 ahash = { workspace = true }
 
 # Support conversion to/from arrow-rs
-arrow-array = { version = ">=40", optional = true }
-arrow-buffer = { version = ">=40", optional = true }
-arrow-data = { version = ">=40", optional = true }
-arrow-schema = { version = ">=40", optional = true }
+arrow-array = { workspace = true, optional = true }
+arrow-buffer = { workspace = true, optional = true }
+arrow-data = { workspace = true, optional = true }
+arrow-schema = { workspace = true, optional = true }
 
 # parquet support
 [dependencies.parquet2]
@@ -107,7 +107,7 @@ getrandom = { version = "0.2", features = ["js"] }
 [features]
 default = []
 full = [
-  "arrow",
+  "arrow_rs",
   "io_ipc",
   "io_flight",
   "io_ipc_write_async",
@@ -123,7 +123,7 @@ full = [
   # parses timezones used in timestamp conversions
   "chrono-tz",
 ]
-arrow = ["arrow-buffer", "arrow-schema", "arrow-data", "arrow-array"]
+arrow_rs = ["arrow-buffer", "arrow-schema", "arrow-data", "arrow-array"]
 io_ipc = ["arrow-format"]
 io_ipc_write_async = ["io_ipc", "futures"]
 io_ipc_read_async = ["io_ipc", "futures", "async-stream"]
