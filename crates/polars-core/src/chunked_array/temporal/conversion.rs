@@ -3,9 +3,6 @@ use chrono::*;
 
 use crate::prelude::*;
 
-/// Number of seconds in a day
-pub(crate) const SECONDS_IN_DAY: i64 = 86_400;
-
 impl From<&AnyValue<'_>> for NaiveDateTime {
     fn from(v: &AnyValue) -> Self {
         match v {
@@ -56,3 +53,4 @@ pub(crate) fn naive_datetime_to_date(v: NaiveDateTime) -> i32 {
 pub(crate) const NS_IN_DAY: i64 = 86_400_000_000_000;
 pub(crate) const US_IN_DAY: i64 = 86_400_000_000;
 pub(crate) const MS_IN_DAY: i64 = 86_400_000;
+pub(crate) const SECONDS_IN_DAY: i64 = 86_400;

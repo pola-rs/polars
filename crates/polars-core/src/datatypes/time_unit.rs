@@ -1,8 +1,3 @@
-use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, timeunit_scale,
-};
-use chrono::NaiveDateTime;
-
 use super::*;
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
@@ -76,6 +71,7 @@ pub(crate) fn convert_time_units(v: i64, tu_l: TimeUnit, tu_r: TimeUnit) -> i64 
 }
 
 #[inline]
+#[cfg(feature = "temporal")]
 pub(crate) fn get_seconds_in_day(tu: &TimeUnit) -> i64 {
     match tu {
         TimeUnit::Milliseconds => MS_IN_DAY,
@@ -87,7 +83,9 @@ pub(crate) fn get_seconds_in_day(tu: &TimeUnit) -> i64 {
 /// Largely based on nano-arrow::timestamp_to_naive_datetime, but just returns the
 /// method instead of doing the calculations.
 #[inline]
-pub fn timestamp_to_naive_datetime_method(time_unit: &TimeUnit) -> fn(i64) -> NaiveDateTime {
+pub fn timestamp_to_naive_datetime_method(
+    time_unit: &TimeUnit,
+) -> fn(i64) -> chrono::NaiveDateTime {
     match time_unit {
         TimeUnit::Milliseconds => timestamp_ms_to_datetime,
         TimeUnit::Microseconds => timestamp_us_to_datetime,
@@ -96,7 +94,7 @@ pub fn timestamp_to_naive_datetime_method(time_unit: &TimeUnit) -> fn(i64) -> Na
 }
 
 #[inline]
-pub fn datetime_to_timestamp_method(time_unit: &TimeUnit) -> fn(NaiveDateTime) -> i64 {
+pub fn datetime_to_timestamp_method(time_unit: &TimeUnit) -> fn(chrono::NaiveDateTime) -> i64 {
     match time_unit {
         TimeUnit::Milliseconds => datetime_to_timestamp_ms,
         TimeUnit::Microseconds => datetime_to_timestamp_us,
