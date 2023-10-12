@@ -236,11 +236,18 @@ pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     if exprs.is_empty() {
         return Expr::Columns(Vec::new());
     }
-    let func = |s1, s2| {
-        let df = DataFrame::new_no_checks(vec![s1, s2]);
-        df.hmax()
-    };
-    reduce_exprs(func, exprs).alias("max")
+
+    Expr::Function {
+        input: exprs,
+        function: FunctionExpr::MaxHorizontal,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyFlat,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
 }
 
 /// Create a new column with the the minimum value per row.
@@ -251,11 +258,18 @@ pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     if exprs.is_empty() {
         return Expr::Columns(Vec::new());
     }
-    let func = |s1, s2| {
-        let df = DataFrame::new_no_checks(vec![s1, s2]);
-        df.hmin()
-    };
-    reduce_exprs(func, exprs).alias("min")
+
+    Expr::Function {
+        input: exprs,
+        function: FunctionExpr::MinHorizontal,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyFlat,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
 }
 
 /// Create a new column with the the sum of the values in each row.

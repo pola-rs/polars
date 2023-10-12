@@ -257,6 +257,8 @@ pub enum FunctionExpr {
         limit: FillNullLimit,
     },
     SumHorizontal,
+    MaxHorizontal,
+    MinHorizontal,
 }
 
 impl Hash for FunctionExpr {
@@ -429,6 +431,8 @@ impl Display for FunctionExpr {
             BackwardFill { .. } => "backward_fill",
             ForwardFill { .. } => "forward_fill",
             SumHorizontal => "sum_horizontal",
+            MaxHorizontal => "max_horizontal",
+            MinHorizontal => "min_horizontal",
         };
         write!(f, "{s}")
     }
@@ -749,6 +753,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             BackwardFill { limit } => map!(dispatch::backward_fill, limit),
             ForwardFill { limit } => map!(dispatch::forward_fill, limit),
             SumHorizontal => map_as_slice!(dispatch::sum_horizontal),
+            MaxHorizontal => wrap!(dispatch::max_horizontal),
+            MinHorizontal => wrap!(dispatch::min_horizontal),
         }
     }
 }
