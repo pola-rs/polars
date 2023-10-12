@@ -44,7 +44,8 @@ from polars.datatypes import (
     Utf8,
     py_type_to_dtype,
 )
-from polars.dependencies import dataframe_api_compat, subprocess
+from polars.dependencies import _check_for_numpy, dataframe_api_compat, subprocess
+from polars.dependencies import numpy as np
 from polars.io._utils import _is_local_file, _is_supported_cloud
 from polars.io.csv._utils import _check_arg_is_1byte
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
@@ -2506,7 +2507,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.clone())
 
-    def filter(self, predicate: IntoExpr) -> Self:
+    def filter(self, *predicates: IntoExpr, **constraints: dict[str, Any]) -> Self:
         """
         Filter the rows in the LazyFrame based on a predicate expression.
 
@@ -2514,8 +2515,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Parameters
         ----------
-        predicate
+        predicates
             Expression that evaluates to a boolean Series.
+        constraints
+            Column filters. Use name=value to filter column name by the supplied value.
 
         Examples
         --------
@@ -2552,6 +2555,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 6   ┆ a   │
         └─────┴─────┴─────┘
 
+        Provided multiple filters using alternative syntax:
+
+        >>> lf.filter(pl.col("foo") == 1, pl.col("ham") == "a").collect()
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        └─────┴─────┴─────┘
+
         Filter on an OR condition:
 
         >>> lf.filter((pl.col("foo") == 1) | (pl.col("ham") == "c")).collect()
@@ -2566,11 +2581,36 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
 
         """
-        if isinstance(predicate, list):
-            predicate = pl.Series(predicate)
+        has_predicates = len(predicates) > 0
+        has_constraints = len(constraints) > 0
 
-        predicate = parse_as_expression(predicate)
-        return self._from_pyldf(self._ldf.filter(predicate))
+        if not (has_predicates or has_constraints):
+            raise ValueError("No predicates or constraints provided")
+
+        if has_predicates:
+            predicates = [  # type: ignore[assignment]
+                pl.Series(predicate)
+                if isinstance(predicate, list)
+                or (_check_for_numpy(predicate) and isinstance(predicate, np.ndarray))
+                else predicate
+                for predicate in predicates
+            ]
+            if len(predicates) > 1:
+                # multiple predicates supplied, AND them together
+                predicates = F.all_horizontal(*predicates)  # type: ignore[assignment]
+            else:
+                predicates = predicates[0]  # type: ignore[assignment]
+
+        if has_constraints:
+            constraints = F.all_horizontal(F.col(k) == v for k, v in constraints.items())  # type: ignore[assignment]
+
+        if has_predicates and has_constraints:
+            predicates = predicates & constraints  # type: ignore[operator]
+        elif has_constraints:
+            predicates = constraints  # type: ignore[assignment]
+
+        predicates = parse_as_expression(predicates)  # type: ignore[assignment, arg-type]
+        return self._from_pyldf(self._ldf.filter(predicates))
 
     def select(
         self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr

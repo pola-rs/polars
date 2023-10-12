@@ -3966,7 +3966,7 @@ class DataFrame:
         Provided multiple filters using alternative syntax:
 
         >>> df.filter(pl.col("foo") == 1, pl.col("ham") == "a")
-        shape: (2, 3)
+        shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
@@ -3977,7 +3977,7 @@ class DataFrame:
 
         Use column-supplied filters:
         >>> df.filter(foo=1, ham="a")
-        shape: (2, 3)
+        shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
@@ -3987,34 +3987,8 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        has_predicates = len(predicates) > 0
-        has_constraints = len(constraints) > 0
-        if has_predicates:
-            # convert numpy boolean arrays to Series if supplied
-            predicates = [  # type: ignore[assignment]
-                pl.Series(predicate)
-                if _check_for_numpy(predicate) and isinstance(predicate, np.ndarray)
-                else predicate
-                for predicate in predicates
-            ]
-
-            # if multiple predicates are supplied, perform logical AND
-            if len(predicates) > 1:
-                predicates = F.all_horizontal(predicates)  # type: ignore[assignment, arg-type]
-            else:
-                predicates = predicates[0]  # type: ignore[assignment]
-        if has_constraints:
-            # basic column filters provided
-            constraints = F.all_horizontal(col(k) == v for k, v in constraints.items())  # type: ignore[assignment]
-
-        if has_predicates and has_constraints:
-            predicates = predicates & constraints  # type: ignore[operator]
-        elif has_constraints:
-            # only constraints were supplied, assign as predicates
-            predicates = constraints  # type: ignore[assignment]
-
         return (
-            self.lazy().filter(predicates).collect(_eager=True)  # type: ignore[arg-type]
+            self.lazy().filter(*predicates, **constraints).collect(_eager=True)  # type: ignore[arg-type]
         )
 
     @overload
