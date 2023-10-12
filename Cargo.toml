@@ -39,7 +39,7 @@ multiversion = "0.7"
 num-traits = "0.2"
 object_store = { version = "0.7", default-features = false }
 once_cell = "1"
-pyo3 = "0.19"
+pyo3 = "0.20"
 rand = "0.8"
 rayon = "1.8"
 regex = "1.9"
