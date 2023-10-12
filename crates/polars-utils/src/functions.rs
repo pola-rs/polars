@@ -1,4 +1,4 @@
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::{BuildHasher, Hash};
 
 // Faster than collecting from a flattened iterator.
 pub fn flatten<T: Clone, R: AsRef<[T]>>(bufs: &[R], len: Option<usize>) -> Vec<T> {
@@ -20,7 +20,5 @@ pub fn hash_to_partition(h: u64, n_partitions: usize) -> usize {
 
 #[inline]
 pub fn get_hash<T: Hash, B: BuildHasher>(value: T, hb: &B) -> u64 {
-    let mut hasher = hb.build_hasher();
-    value.hash(&mut hasher);
-    hasher.finish()
+    hb.hash_one(value)
 }
