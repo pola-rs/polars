@@ -503,11 +503,7 @@ impl<'a> AnyValue<'a> {
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(tu, None) => {
                     let ndt = arrow::temporal_conversions::date32_to_datetime(*v);
-                    let func = match tu {
-                        TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-                        TimeUnit::Microseconds => datetime_to_timestamp_us,
-                        TimeUnit::Milliseconds => datetime_to_timestamp_ms,
-                    };
+                    let func = datetime_to_timestamp_method(tu);
                     let value = func(ndt);
                     AnyValue::Datetime(value, *tu, &None)
                 },

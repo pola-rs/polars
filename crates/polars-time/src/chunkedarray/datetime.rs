@@ -133,11 +133,7 @@ pub trait DatetimeMethods: AsDatetime {
     }
 
     fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str, tu: TimeUnit) -> DatetimeChunked {
-        let func = match tu {
-            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-            TimeUnit::Microseconds => datetime_to_timestamp_us,
-            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
-        };
+        let func = datetime_to_timestamp_method(&tu);
 
         Int64Chunked::from_iter_options(
             name,

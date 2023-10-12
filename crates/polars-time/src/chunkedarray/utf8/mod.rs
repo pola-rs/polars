@@ -172,11 +172,7 @@ pub trait Utf8Methods: AsUtf8 {
             None => sniff_fmt_datetime(utf8_ca)?,
         };
 
-        let func = match tu {
-            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-            TimeUnit::Microseconds => datetime_to_timestamp_us,
-            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
-        };
+        let func = datetime_to_timestamp_method(&tu);
 
         let ca = utf8_ca
             .apply_generic(|opt_s| {
@@ -277,11 +273,7 @@ pub trait Utf8Methods: AsUtf8 {
         let fmt = strptime::compile_fmt(fmt)?;
         let use_cache = use_cache && utf8_ca.len() > 50;
 
-        let func = match tu {
-            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
-            TimeUnit::Microseconds => datetime_to_timestamp_us,
-            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
-        };
+        let func = datetime_to_timestamp_method(&tu);
 
         if tz_aware {
             #[cfg(feature = "timezones")]

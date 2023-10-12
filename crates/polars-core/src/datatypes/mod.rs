@@ -14,6 +14,7 @@ mod dtype;
 mod field;
 mod static_array;
 mod static_array_collect;
+#[cfg(feature = "temporal")]
 mod time_unit;
 
 use std::cmp::Ordering;

@@ -145,12 +145,7 @@ impl StrpTimeParser<i64> for DatetimeInfer<Int64Type> {
         if self.fmt_len == 0 {
             self.fmt_len = strptime::fmt_len(self.latest_fmt.as_bytes())?;
         }
-        let transform = match time_unit {
-            Some(TimeUnit::Nanoseconds) => datetime_to_timestamp_ns,
-            Some(TimeUnit::Microseconds) => datetime_to_timestamp_us,
-            Some(TimeUnit::Milliseconds) => datetime_to_timestamp_ms,
-            _ => unreachable!(), // time_unit has to be provided for datetime
-        };
+        let transform = datetime_to_timestamp_method(&time_unit.ok());
         unsafe {
             self.transform_bytes
                 .parse(val, self.latest_fmt.as_bytes(), self.fmt_len)
