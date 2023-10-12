@@ -114,15 +114,9 @@ pub(crate) fn datetime_range_i64(
     let offset_fn = get_duration_offset(tu);
 
     let size = match tu {
-        TimeUnit::Nanoseconds => {
-            ((end - start) / interval.duration_ns() + 1) as usize
-        },
-        TimeUnit::Microseconds => {
-            ((end - start) / interval.duration_us() + 1) as usize
-        },
-        TimeUnit::Milliseconds => {
-            ((end - start) / interval.duration_ms() + 1) as usize
-        },
+        TimeUnit::Nanoseconds => ((end - start) / interval.duration_ns() + 1) as usize,
+        TimeUnit::Microseconds => ((end - start) / interval.duration_us() + 1) as usize,
+        TimeUnit::Milliseconds => ((end - start) / interval.duration_ms() + 1) as usize,
     };
     let mut ts = Vec::with_capacity(size);
 

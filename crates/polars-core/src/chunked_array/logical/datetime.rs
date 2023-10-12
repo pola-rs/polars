@@ -33,8 +33,7 @@ impl LogicalType for DatetimeChunked {
 
         match (self.dtype(), dtype) {
             (Datetime(tu_l, _), Datetime(tu_r, tz)) => {
-                Ok(convert_time_units(self.0.as_ref(), tu_l, tu_r)
-                    .unwrap()
+                Ok(convert_time_units(self.0.clone(), tu_l, tu_r)
                     .into_datetime(*tu_r, tz.clone())
                     .into_series())
             },

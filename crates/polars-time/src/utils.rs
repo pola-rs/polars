@@ -10,6 +10,9 @@ use polars_core::prelude::{
 };
 
 #[cfg(feature = "timezones")]
+use crate::Duration;
+
+#[cfg(feature = "timezones")]
 pub(crate) fn localize_datetime(
     ndt: NaiveDateTime,
     tz: &Tz,
@@ -66,5 +69,17 @@ pub(crate) fn unlocalize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> i64 
         TimeUnit::Nanoseconds => unlocalized.timestamp_nanos_opt().unwrap(),
         TimeUnit::Microseconds => unlocalized.timestamp_micros(),
         TimeUnit::Milliseconds => unlocalized.timestamp_millis(),
+    }
+}
+
+#[inline]
+#[cfg(feature = "timezones")]
+pub(crate) fn get_duration_offset(
+    tu: &TimeUnit,
+) -> fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64> {
+    match tu {
+        TimeUnit::Milliseconds => Duration::add_ms,
+        TimeUnit::Microseconds => Duration::add_us,
+        TimeUnit::Nanoseconds => Duration::add_ns,
     }
 }

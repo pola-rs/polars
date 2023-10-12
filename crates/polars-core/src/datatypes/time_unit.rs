@@ -82,15 +82,6 @@ pub(crate) fn get_seconds_in_day(tu: &TimeUnit) -> i64 {
     }
 }
 
-#[inline]
-pub(crate) fn get_duration_offset(tu: &TimeUnit) -> fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64> {
-    match tu {
-        TimeUnit::Milliseconds => Duration::add_ms,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Nanoseconds => Duration::add_ns,
-    }
-}
-
 /// Largely based on nano-arrow::timestamp_to_naive_datetime, but just returns the
 /// method instead of doing the calculations.
 #[inline]
