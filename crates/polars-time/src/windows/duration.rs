@@ -668,43 +668,42 @@ impl Duration {
         Ok(new_t)
     }
 
-    pub fn add_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    pub fn add_ns_generic(
+        &self,
+        t: i64,
+        tz: Option<&Tz>,
+        factor: i64,
+        t2d: fn(i64) -> NaiveDateTime,
+        d2t: fn(NaiveDateTime) -> i64,
+    ) -> PolarsResult<i64> {
         let d = self;
-        let new_t = self.add_impl_month_week_or_day(
-            t,
-            tz,
-            |nsecs| nsecs,
-            timestamp_ns_to_datetime,
-            datetime_to_timestamp_ns,
-        );
+        let new_t = self.add_impl_month_week_or_day(t, tz, |nsecs| nsecs / factor, t2d, d2t);
         let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
-        Ok(new_t? + nsecs)
+        Ok(new_t? + nsecs / factor)
+    }
+
+    pub fn add_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+        self.add_ns_generic(t, tz, 1, timestamp_ns_to_datetime, datetime_to_timestamp_ns)
     }
 
     pub fn add_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        let d = self;
-        let new_t = self.add_impl_month_week_or_day(
+        self.add_ns_generic(
             t,
             tz,
-            |nsecs| nsecs / 1000,
+            1_000,
             timestamp_us_to_datetime,
             datetime_to_timestamp_us,
-        );
-        let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
-        Ok(new_t? + nsecs / 1_000)
+        )
     }
 
     pub fn add_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        let d = self;
-        let new_t = self.add_impl_month_week_or_day(
+        self.add_ns_generic(
             t,
             tz,
-            |nsecs| nsecs / 1_000_000,
+            1_000_000,
             timestamp_ms_to_datetime,
             datetime_to_timestamp_ms,
-        );
-        let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
-        Ok(new_t? + nsecs / 1_000_000)
+        )
     }
 }
 

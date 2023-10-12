@@ -7,7 +7,6 @@ use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 
-use super::conversion::{datetime_to_timestamp_ms, datetime_to_timestamp_ns};
 use super::*;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::validate_time_zone;
@@ -168,7 +167,6 @@ impl DatetimeChunked {
         let mut out = self.clone();
         out.set_time_unit(tu);
 
-        use TimeUnit::*;
         let factor = conversion_factor_time_units(&current_unit, &tu);
         let ca = &self.0 * factor;
         out.0 = ca;

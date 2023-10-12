@@ -49,40 +49,24 @@ pub(crate) fn unlocalize_datetime(ndt: NaiveDateTime, tz: &Tz) -> NaiveDateTime 
 
 #[cfg(feature = "timezones")]
 pub(crate) fn localize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> PolarsResult<i64> {
+    let dt = timestamp_to_naive_datetime_method(timestamp, &tu);
+    let localized = localize_datetime(dt, &tz, "raise")?;
+
     match tu {
-        TimeUnit::Nanoseconds => {
-            Ok(
-                localize_datetime(timestamp_ns_to_datetime(timestamp), &tz, "raise")?
-                    .timestamp_nanos_opt()
-                    .unwrap(),
-            )
-        },
-        TimeUnit::Microseconds => {
-            Ok(
-                localize_datetime(timestamp_us_to_datetime(timestamp), &tz, "raise")?
-                    .timestamp_micros(),
-            )
-        },
-        TimeUnit::Milliseconds => {
-            Ok(
-                localize_datetime(timestamp_ms_to_datetime(timestamp), &tz, "raise")?
-                    .timestamp_millis(),
-            )
-        },
+        TimeUnit::Nanoseconds => Ok(localized.timestamp_nanos_opt().unwrap()),
+        TimeUnit::Microseconds => Ok(localized.timestamp_micros()),
+        TimeUnit::Milliseconds => Ok(localized.timestamp_millis()),
     }
 }
 
 #[cfg(feature = "timezones")]
 pub(crate) fn unlocalize_timestamp(timestamp: i64, tu: TimeUnit, tz: Tz) -> i64 {
+    let ts = datetime_to_timestamp_method(timestamp, &tu);
+    let unlocalized = unlocalize_datetime(timestamp_ns_to_datetime(timestamp), &tz);
+
     match tu {
-        TimeUnit::Nanoseconds => unlocalize_datetime(timestamp_ns_to_datetime(timestamp), &tz)
-            .timestamp_nanos_opt()
-            .unwrap(),
-        TimeUnit::Microseconds => {
-            unlocalize_datetime(timestamp_us_to_datetime(timestamp), &tz).timestamp_micros()
-        },
-        TimeUnit::Milliseconds => {
-            unlocalize_datetime(timestamp_ms_to_datetime(timestamp), &tz).timestamp_millis()
-        },
+        TimeUnit::Nanoseconds => unlocalized.timestamp_nanos_opt().unwrap(),
+        TimeUnit::Microseconds => unlocalized.timestamp_micros(),
+        TimeUnit::Milliseconds => unlocalized.timestamp_millis(),
     }
 }

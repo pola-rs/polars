@@ -841,11 +841,8 @@ impl Display for AnyValue<'_> {
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(v, tu, tz) => {
-                let ndt = match tu {
-                    TimeUnit::Nanoseconds => timestamp_ns_to_datetime(*v),
-                    TimeUnit::Microseconds => timestamp_us_to_datetime(*v),
-                    TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
-                };
+                let conversion_method = timestamp_to_naive_datetime_method(&tu);
+                let ndt = conversion_method(*v);
                 match tz {
                     None => write!(f, "{ndt}"),
                     Some(tz) => {

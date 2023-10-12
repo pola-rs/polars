@@ -2,8 +2,7 @@ use chrono::NaiveDateTime;
 use polars_arrow::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
-    SECONDS_IN_DAY,
+    timestamp_ms_to_datetime, MILLISECONDS, SECONDS_IN_DAY,
 };
 
 use crate::month_start::roll_backward;
@@ -30,23 +29,18 @@ pub trait PolarsMonthEnd {
 
 impl PolarsMonthEnd for DatetimeChunked {
     fn month_end(&self, time_zone: Option<&Tz>) -> PolarsResult<Self> {
-        let timestamp_to_datetime: fn(i64) -> NaiveDateTime;
-        let datetime_to_timestamp: fn(NaiveDateTime) -> i64;
         let offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>;
+
+        let timestamp_to_datetime = timestamp_to_naive_datetime_method(&self.time_unit());
+        let datetime_to_timestamp = datetime_to_timestamp_method(&self.time_unit());
         match self.time_unit() {
             TimeUnit::Nanoseconds => {
-                timestamp_to_datetime = timestamp_ns_to_datetime;
-                datetime_to_timestamp = datetime_to_timestamp_ns;
                 offset_fn = Duration::add_ns;
             },
             TimeUnit::Microseconds => {
-                timestamp_to_datetime = timestamp_us_to_datetime;
-                datetime_to_timestamp = datetime_to_timestamp_us;
                 offset_fn = Duration::add_us;
             },
             TimeUnit::Milliseconds => {
-                timestamp_to_datetime = timestamp_ms_to_datetime;
-                datetime_to_timestamp = datetime_to_timestamp_ms;
                 offset_fn = Duration::add_ms;
             },
         };

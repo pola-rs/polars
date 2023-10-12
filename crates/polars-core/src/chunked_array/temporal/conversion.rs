@@ -14,11 +14,9 @@ impl From<&AnyValue<'_>> for NaiveDateTime {
                 NaiveDateTime::from_timestamp_opt(*v as i64 * SECONDS_IN_DAY, 0).unwrap()
             },
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v, tu, _) => match tu {
-                TimeUnit::Nanoseconds => timestamp_ns_to_datetime(*v),
-                TimeUnit::Microseconds => timestamp_us_to_datetime(*v),
-                TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
-                TimeUnit::Seconds => timestamp_s_to_datetime(*v),
+            AnyValue::Datetime(v, tu, _) => {
+                let conversion_method = timestamp_to_naive_datetime_method(&tu);
+                conversion_method(*v)
             },
             _ => panic!("can only convert date/datetime to NaiveDateTime"),
         }
@@ -63,4 +61,3 @@ pub(crate) fn naive_datetime_to_date(v: NaiveDateTime) -> i32 {
 pub(crate) const NS_IN_DAY: i64 = 86_400_000_000_000;
 pub(crate) const US_IN_DAY: i64 = 86_400_000_000;
 pub(crate) const MS_IN_DAY: i64 = 86_400_000;
-pub(crate) const S_IN_DAY: i64 = SECONDS_IN_DAY;

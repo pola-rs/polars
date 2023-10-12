@@ -1,6 +1,3 @@
-use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
-};
 use arrow::types::PrimitiveType;
 #[cfg(feature = "dtype-struct")]
 use polars_arrow::trusted_len::TrustedLenPush;
@@ -483,11 +480,7 @@ impl<'a> AnyValue<'a> {
                 DataType::Int64 => AnyValue::Int64(*v),
                 #[cfg(feature = "dtype-date")]
                 DataType::Date => {
-                    let convert = match tu {
-                        TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
-                        TimeUnit::Microseconds => timestamp_us_to_datetime,
-                        TimeUnit::Milliseconds => timestamp_ms_to_datetime,
-                    };
+                    let convert = timestamp_to_naive_datetime_method(&tu);
                     let ndt = convert(*v);
                     let date_value = naive_datetime_to_date(ndt);
                     AnyValue::Date(date_value)

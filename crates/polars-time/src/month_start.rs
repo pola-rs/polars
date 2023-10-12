@@ -2,8 +2,7 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use polars_arrow::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
-    SECONDS_IN_DAY,
+    timestamp_ms_to_datetime, MILLISECONDS, SECONDS_IN_DAY,
 };
 
 #[cfg(feature = "timezones")]
@@ -59,22 +58,9 @@ pub trait PolarsMonthStart {
 
 impl PolarsMonthStart for DatetimeChunked {
     fn month_start(&self, tz: Option<&Tz>) -> PolarsResult<Self> {
-        let timestamp_to_datetime: fn(i64) -> NaiveDateTime;
-        let datetime_to_timestamp: fn(NaiveDateTime) -> i64;
-        match self.time_unit() {
-            TimeUnit::Nanoseconds => {
-                timestamp_to_datetime = timestamp_ns_to_datetime;
-                datetime_to_timestamp = datetime_to_timestamp_ns;
-            },
-            TimeUnit::Microseconds => {
-                timestamp_to_datetime = timestamp_us_to_datetime;
-                datetime_to_timestamp = datetime_to_timestamp_us;
-            },
-            TimeUnit::Milliseconds => {
-                timestamp_to_datetime = timestamp_ms_to_datetime;
-                datetime_to_timestamp = datetime_to_timestamp_ms;
-            },
-        };
+        let timestamp_to_datetime = timestamp_to_naive_datetime_method(&self.time_unit());
+        let datetime_to_timestamp = datetime_to_timestamp_method(&self.time_unit());
+
         Ok(self
             .0
             .try_apply(|t| roll_backward(t, tz, timestamp_to_datetime, datetime_to_timestamp))?

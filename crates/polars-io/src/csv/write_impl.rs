@@ -164,17 +164,7 @@ unsafe fn write_anyvalue(
                         AnyValue::Datetime(v, tu, tz) => {
                             let datetime_format = { *datetime_formats.get_unchecked(i) };
                             let time_zone = { time_zones.get_unchecked(i) };
-                            let ndt = match tu {
-                                TimeUnit::Nanoseconds => {
-                                    temporal_conversions::timestamp_ns_to_datetime(v)
-                                },
-                                TimeUnit::Microseconds => {
-                                    temporal_conversions::timestamp_us_to_datetime(v)
-                                },
-                                TimeUnit::Milliseconds => {
-                                    temporal_conversions::timestamp_ms_to_datetime(v)
-                                },
-                            };
+                            let ndt = timestamp_to_naive_datetime_method(v, tu);
                             let formatted = match time_zone {
                                 #[cfg(feature = "timezones")]
                                 Some(time_zone) => {
