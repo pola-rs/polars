@@ -54,6 +54,9 @@ def test_hive_partitioned_predicate_pushdown(
     # tests: 11536
     assert q.filter(pl.col("sugars_g") == 25).collect().shape == (1, 4)
 
+    # tests: 11682
+    assert q.head(1).collect().select(pl.all_horizontal(pl.all().count() == 1)).item()
+
 
 @pytest.mark.write_disk()
 def test_hive_partitioned_projection_pushdown(
