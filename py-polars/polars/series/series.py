@@ -1501,7 +1501,7 @@ class Series:
         return wrap_df(PyDataFrame([self._s]))
 
     def describe(
-        self, percentiles: Sequence[float] | float | None = (0.25, 0.75)
+        self, percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75)
     ) -> DataFrame:
         """
         Quick summary statistics of a series.
@@ -1514,6 +1514,10 @@ class Series:
         percentiles
             One or more percentiles to include in the summary statistics (if the
             series has a numeric dtype). All values must be in the range `[0, 1]`.
+
+        Notes
+        -----
+        The median is included by default as the 50% percentile.
 
         Returns
         -------

@@ -4079,7 +4079,7 @@ class DataFrame:
         return None
 
     def describe(
-        self, percentiles: Sequence[float] | float | None = (0.25, 0.75)
+        self, percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75)
     ) -> Self:
         """
         Summary statistics for a DataFrame.
@@ -4089,6 +4089,10 @@ class DataFrame:
         percentiles
             One or more percentiles to include in the summary statistics.
             All values must be in the range `[0, 1]`.
+
+        Notes
+        -----
+        The median is included by default as the 50% percentile.
 
         See Also
         --------
