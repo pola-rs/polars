@@ -178,7 +178,7 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for NullArray {
     }
 }
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow_rs")]
 mod arrow {
     use arrow_data::{ArrayData, ArrayDataBuilder};
 

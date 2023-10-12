@@ -233,8 +233,7 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
     fn try_from_with_unit(value: Pattern, time_unit: Option<TimeUnit>) -> PolarsResult<Self> {
         let time_unit = time_unit.expect("time_unit must be provided for datetime");
 
-        let transform = match (time_unit , value) {
-            (_, Pattern::Int64) => { |val: &str, _: &str| val.parse::<i64>().ok() },
+        let transform = match (time_unit, value) {
             (TimeUnit::Milliseconds, Pattern::DatetimeYMDZ) => transform_tzaware_datetime_ms,
             (TimeUnit::Milliseconds, _) => transform_datetime_ms,
             (TimeUnit::Microseconds, Pattern::DatetimeYMDZ) => transform_tzaware_datetime_us,
@@ -243,9 +242,12 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
             (TimeUnit::Nanoseconds, _) => transform_datetime_ns,
         };
         let (pattern, patterns) = match value {
-            Pattern::Int64 => (Pattern::Int64 , patterns::DATETIME_I64_DUMMY),
-            Pattern::DatetimeDMY | Pattern::DateDMY => (Pattern::DatetimeDMY, patterns::DATETIME_D_M_Y),
-            Pattern::DatetimeYMD | Pattern::DateYMD => (Pattern::DatetimeYMD, patterns::DATETIME_Y_M_D),
+            Pattern::DatetimeDMY | Pattern::DateDMY => {
+                (Pattern::DatetimeDMY, patterns::DATETIME_D_M_Y)
+            },
+            Pattern::DatetimeYMD | Pattern::DateYMD => {
+                (Pattern::DatetimeYMD, patterns::DATETIME_Y_M_D)
+            },
             Pattern::DatetimeYMDZ => (Pattern::DatetimeYMDZ, patterns::DATETIME_Y_M_D_Z),
         };
 
