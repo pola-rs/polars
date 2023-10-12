@@ -2532,14 +2532,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Filter on one condition:
 
-        >>> lf.filter(pl.col("foo") < 3).collect()
+        >>> lf.filter(pl.col("foo") > 1).collect()
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ i64 ┆ str │
         ╞═════╪═════╪═════╡
-        │ 1   ┆ 6   ┆ a   │
+        │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
+        └─────┴─────┴─────┘
+
+        Filter on an equality condition using kwargs constraint syntax:
+
+        >>> lf.filter(foo=2).collect()
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
         │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
 
@@ -2581,36 +2593,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
 
         """
-        has_predicates = len(predicates) > 0
-        has_constraints = len(constraints) > 0
+        all_predicates = [
+            F.lit(pl.Series(p))
+            if (
+                isinstance(p, (list, tuple))
+                or _check_for_numpy(p)
+                and isinstance(p, np.ndarray)
+            )
+            else parse_as_expression(p, wrap=True)
+            for p in predicates
+        ] + [F.col(name).eq(value) for name, value in constraints.items()]
 
-        if not (has_predicates or has_constraints):
-            raise ValueError("No predicates or constraints provided")
+        if not all_predicates:
+            raise ValueError("No predicates or constraints provided.")
 
-        if has_predicates:
-            predicates = [  # type: ignore[assignment]
-                pl.Series(predicate)
-                if isinstance(predicate, list)
-                or (_check_for_numpy(predicate) and isinstance(predicate, np.ndarray))
-                else predicate
-                for predicate in predicates
-            ]
-            if len(predicates) > 1:
-                # multiple predicates supplied, AND them together
-                predicates = F.all_horizontal(*predicates)  # type: ignore[assignment]
-            else:
-                predicates = predicates[0]  # type: ignore[assignment]
+        combined_predicates = (
+            F.all_horizontal(*all_predicates)
+            if len(all_predicates) > 1
+            else all_predicates[0]
+        )._pyexpr
 
-        if has_constraints:
-            constraints = F.all_horizontal(F.col(k) == v for k, v in constraints.items())  # type: ignore[assignment]
-
-        if has_predicates and has_constraints:
-            predicates = predicates & constraints  # type: ignore[operator]
-        elif has_constraints:
-            predicates = constraints  # type: ignore[assignment]
-
-        predicates = parse_as_expression(predicates)  # type: ignore[assignment, arg-type]
-        return self._from_pyldf(self._ldf.filter(predicates))
+        return self._from_pyldf(self._ldf.filter(combined_predicates))
 
     def select(
         self, *exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr

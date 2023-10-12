@@ -3899,8 +3899,7 @@ class DataFrame:
 
     def filter(
         self,
-        *predicates: (Expr | str | Series | list[bool] | np.ndarray[Any, Any] | bool)
-        | None,
+        *predicates: IntoExpr | list[bool] | np.ndarray[Any, Any],
         **constraints: dict[str, Any],
     ) -> DataFrame:
         """
@@ -3928,7 +3927,7 @@ class DataFrame:
         Filter on one condition:
 
         >>> df.filter(pl.col("foo") < 3)
-        shape: (1, 3)
+        shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
@@ -3988,7 +3987,9 @@ class DataFrame:
 
         """
         return (
-            self.lazy().filter(*predicates, **constraints).collect(_eager=True)  # type: ignore[arg-type]
+            self.lazy()
+            .filter(*predicates, **constraints)  # type: ignore[arg-type]
+            .collect(_eager=True)
         )
 
     @overload
