@@ -3990,18 +3990,21 @@ class DataFrame:
         has_predicates = len(predicates) > 0
         has_constraints = len(constraints) > 0
         if has_predicates:
+            # convert numpy boolean arrays to Series if supplied
             predicates = [  # type: ignore[assignment]
                 pl.Series(predicate)
                 if _check_for_numpy(predicate) and isinstance(predicate, np.ndarray)
                 else predicate
                 for predicate in predicates
             ]
+
+            # if multiple predicates are supplied, perform logical AND
             predicate_iter = iter(predicates)
             predicates = next(predicate_iter)  # type: ignore[arg-type]
             for pred in predicate_iter:
                 predicates = predicates & pred  # type: ignore[assignment, operator]
         if has_constraints:
-            # basic column filters provided
+            # basic column filters provided. Logically AND them together
             constraint_iter = iter(constraints.items())
             key, value = next(constraint_iter)
             constraints = col(key) == value  # type: ignore[assignment]
@@ -4011,6 +4014,7 @@ class DataFrame:
         if has_predicates and has_constraints:
             predicates = predicates & constraints  # type: ignore[operator]
         elif has_constraints:
+            # only constraints were supplied, assign as predicates
             predicates = constraints  # type: ignore[assignment]
 
         return (
