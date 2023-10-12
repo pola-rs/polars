@@ -161,6 +161,27 @@ def test_filter_str() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_filter_multiple_predicates() -> None:
+    ldf = pl.LazyFrame(
+        {"a": [1, 1, 1, 2, 2], "b": [1, 1, 2, 2, 2], "c": [1, 1, 2, 3, 4]}
+    )
+
+    # using multiple predicates
+    out = ldf.filter(pl.col("a") == 1, pl.col("b") <= 2).collect()
+    expected = pl.DataFrame({"a": [1, 1, 1], "b": [1, 1, 2], "c": [1, 1, 2]})
+    assert_frame_equal(out, expected)
+
+    # using multiple kwargs
+    out = ldf.filter(a=1, b=2).collect()  # type: ignore[arg-type]
+    expected = pl.DataFrame({"a": [1], "b": [2], "c": [2]})
+    assert_frame_equal(out, expected)
+
+    # using both
+    out = ldf.filter(pl.col("a") == 1, pl.col("b") <= 2, a=1, b=2).collect()  # type: ignore[arg-type]
+    expected = pl.DataFrame({"a": [1], "b": [2], "c": [2]})
+    assert_frame_equal(out, expected)
+
+
 def test_apply_custom_function() -> None:
     ldf = pl.LazyFrame(
         {
