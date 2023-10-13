@@ -1065,13 +1065,15 @@ def test_asof_join_nearest_by_date() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_asof_join_string_err() -> None:
-    left = pl.DataFrame({"date_str": ["2023/02/15"]}).sort("date_str")
-    right = pl.DataFrame(
-        {"date_str": ["2023/01/31", "2023/02/28"], "value": [0, 1]}
-    ).sort("date_str")
-    with pytest.raises(pl.InvalidOperationError):
-        left.join_asof(right, on="date_str")
+def test_asof_join_string() -> None:
+    left = pl.DataFrame({"x": [None, "a", "b", "c", None, "d", None]}).set_sorted("x")
+    right = pl.DataFrame({"x": ["apple", None, "chutney"], "y": [0, 1, 2]}).set_sorted("x")
+    forward = left.join_asof(right, on="x", strategy="forward")
+    backward = left.join_asof(right, on="x", strategy="backward")
+    forward_expected = pl.DataFrame({"x": [None, "a", "b", "c", None, "d", None], "y": [None, 0, 2, 2, None, None, None]})
+    backward_expected = pl.DataFrame({"x": [None, "a", "b", "c", None, "d", None], "y": [None, None, 0, 0, None, 2, None]})
+    assert_frame_equal(forward, forward_expected)
+    assert_frame_equal(backward, backward_expected)
 
 
 def test_join_asof_by_argument_parsing() -> None:

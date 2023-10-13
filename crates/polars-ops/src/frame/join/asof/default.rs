@@ -1,17 +1,21 @@
+use arrow::array::Array;
 use arrow::bitmap::Bitmap;
-use num_traits::{Zero, Bounded};
+use num_traits::Zero;
 use polars_arrow::index::IdxSize;
 use polars_core::prelude::*;
 use polars_utils::abs_diff::AbsDiff;
 
-use super::{AsofStrategy, join_asof_backward_step, join_asof_forward_step, join_asof_nearest_step};
+use super::{asof_backward_step, asof_forward_step, asof_nearest_step, AsofStrategy};
 
-fn join_asof_forward<T: NumericNative>(
-    left: &[T],
-    right: &[T],
-    tolerance: T::Abs,
-) -> IdxCa {
-    if left.is_empty() || right.is_empty() {
+fn join_asof_forward<'a, T: PolarsDataType, F: FnMut(T::Physical<'a>, T::Physical<'a>) -> bool>(
+    left: &'a T::Array,
+    right: &'a T::Array,
+    mut filter: F,
+) -> IdxCa
+where
+    T::Physical<'a>: PartialOrd
+{
+    if left.len() == left.null_count() || right.len() == right.null_count() {
         return IdxCa::full_null("", left.len());
     }
 
@@ -19,10 +23,13 @@ fn join_asof_forward<T: NumericNative>(
     let mut mask = vec![0; (left.len() + 7) / 8];
     let mut offset = 0;
 
-    for (i, &val_l) in left.iter().enumerate() {
-        if join_asof_forward_step(&mut offset, val_l, |j| right[j], right.len(), tolerance) {
+    for (i, opt_val_l) in left.iter().enumerate() {
+        if let Some(val_l) = opt_val_l {
+            let Some(val_r) = asof_forward_step(&mut offset, &val_l, |j| right.get(j), right.len()) else {
+                break;
+            };
             out[i] = offset as IdxSize;
-            mask[i / 8] |= 1 << (i % 8);
+            mask[i / 8] |= (filter(val_l, val_r) as u8) << (i % 8);
         }
     }
 
@@ -30,12 +37,15 @@ fn join_asof_forward<T: NumericNative>(
     IdxCa::new_from_owned_with_null_bitmap("", out, Some(bitmap))
 }
 
-fn join_asof_backward<T: NumericNative>(
-    left: &[T],
-    right: &[T],
-    tolerance: T::Abs,
-) -> IdxCa {
-    if left.is_empty() || right.is_empty() {
+fn join_asof_backward<'a, T: PolarsDataType, F: FnMut(T::Physical<'a>, T::Physical<'a>) -> bool>(
+    left: &'a T::Array,
+    right: &'a T::Array,
+    mut filter: F,
+) -> IdxCa
+where
+    T::Physical<'a>: PartialOrd
+{
+    if left.len() == left.null_count() || right.len() == right.null_count() {
         return IdxCa::full_null("", left.len());
     }
 
@@ -43,10 +53,15 @@ fn join_asof_backward<T: NumericNative>(
     let mut mask = vec![0; (left.len() + 7) / 8];
     let mut offset = right.len();
 
-    for (i, &val_l) in left.iter().enumerate().rev() {
-        if join_asof_backward_step(&mut offset, val_l, |j| right[j], tolerance) {
+    let mut i = left.len();
+    while i > 0 {
+        i -= 1;
+        if let Some(val_l) = left.get(i) {
+            let Some(val_r) = asof_backward_step(&mut offset, &val_l, |j| right.get(j)) else {
+                break;
+            };
             out[i] = offset as IdxSize - 1;
-            mask[i / 8] |= 1 << (i % 8);
+            mask[i / 8] |= (filter(val_l, val_r) as u8) << (i % 8);
         }
     }
 
@@ -54,106 +69,129 @@ fn join_asof_backward<T: NumericNative>(
     IdxCa::new_from_owned_with_null_bitmap("", out, Some(bitmap))
 }
 
-fn join_asof_nearest<T: NumericNative>(
-    left: &[T],
-    right: &[T],
-    tolerance: T::Abs,
+fn join_asof_nearest<'a, T: PolarsNumericType, F: FnMut(T::Physical<'a>, T::Physical<'a>) -> bool>(
+    left: &'a T::Array,
+    right: &'a T::Array,
+    mut filter: F,
 ) -> IdxCa {
-    if left.is_empty() || right.is_empty() {
+    if left.len() == left.null_count() || right.len() == right.null_count() {
         return IdxCa::full_null("", left.len());
     }
 
     let mut out = vec![0; left.len()];
     let mut mask = vec![0; (left.len() + 7) / 8];
     let mut offset = right.len();
+    let mut next_offset = offset;
 
-    for (i, &val_l) in left.iter().enumerate().rev() {
-        if join_asof_nearest_step(&mut offset, val_l, |j| right[j], tolerance) {
+    let mut i = left.len();
+    while i > 0 {
+        i -= 1;
+        if let Some(val_l) = left.get(i) {
+            let Some(val_r) = asof_nearest_step(&mut offset, &mut next_offset, &val_l, |j| right.get(j)) else {
+                break;
+            };
             out[i] = offset as IdxSize - 1;
-            mask[i / 8] |= 1 << (i % 8);
+            mask[i / 8] |= (filter(val_l, val_r) as u8) << (i % 8);
         }
     }
 
     let bitmap = Bitmap::try_new(mask, out.len()).unwrap();
     IdxCa::new_from_owned_with_null_bitmap("", out, Some(bitmap))
+}
+
+pub(crate) fn join_asof_numeric<T: PolarsNumericType>(
+    input_ca: &ChunkedArray<T>,
+    other: &Series,
+    strategy: AsofStrategy,
+    tolerance: Option<AnyValue<'static>>,
+) -> PolarsResult<IdxCa> {
+    let other = input_ca.unpack_series_matching_type(other)?;
+
+    let ca = input_ca.rechunk();
+    let other = other.rechunk();
+    let left = ca.downcast_iter().next().unwrap();
+    let right = other.downcast_iter().next().unwrap();
+
+    let out = if let Some(t) = tolerance {
+        let native_tolerance = t.extract::<T::Native>().unwrap();
+        let abs_tolerance = native_tolerance.abs_diff(T::Native::zero());
+        let filter = |l: T::Native, r: T::Native| l.abs_diff(r) <= abs_tolerance;
+        match strategy {
+            AsofStrategy::Backward => join_asof_backward::<T, _>(left, right, filter),
+            AsofStrategy::Forward => join_asof_forward::<T, _>(left, right, filter),
+            AsofStrategy::Nearest => join_asof_nearest::<T, _>(left, right, filter),
+        }
+    } else {
+        let filter = |_l: T::Native, _r: T::Native| true;
+        match strategy {
+            AsofStrategy::Backward => join_asof_backward::<T, _>(left, right, filter),
+            AsofStrategy::Forward => join_asof_forward::<T, _>(left, right, filter),
+            AsofStrategy::Nearest => join_asof_nearest::<T, _>(left, right, filter),
+        }
+    };
+    Ok(out)
 }
 
 pub(crate) fn join_asof<T>(
     input_ca: &ChunkedArray<T>,
     other: &Series,
     strategy: AsofStrategy,
-    tolerance: Option<AnyValue<'static>>,
 ) -> PolarsResult<IdxCa>
 where
-    T: PolarsNumericType,
-    T::Native: Bounded + PartialOrd,
-    <T::Native as AbsDiff>::Abs: Bounded,
+    T: PolarsDataType,
+    for<'a> T::Physical<'a>: PartialOrd,
 {
-    let abs_tolerance = if let Some(t) = tolerance {
-        t.extract::<T::Native>().unwrap().abs_diff(T::Native::zero())
-    } else {
-        T::Native::max_abs_diff()       
-    };
     let other = input_ca.unpack_series_matching_type(other)?;
 
-    // Cont_slice requires a single chunk.
     let ca = input_ca.rechunk();
     let other = other.rechunk();
+    let left = ca.downcast_iter().next().unwrap();
+    let right = other.downcast_iter().next().unwrap();
 
-    let out = match strategy {
-        AsofStrategy::Forward => join_asof_forward(
-            ca.cont_slice().unwrap(),
-            other.cont_slice().unwrap(),
-            abs_tolerance,
-        ),
-        AsofStrategy::Backward => join_asof_backward(
-            ca.cont_slice().unwrap(),
-            other.cont_slice().unwrap(),
-            abs_tolerance
-        ),
-        AsofStrategy::Nearest => join_asof_nearest(
-            ca.cont_slice().unwrap(),
-            other.cont_slice().unwrap(),
-            abs_tolerance
-        ),
-    };
-    Ok(out)
+    let filter = |_l: T::Physical<'_>, _r: T::Physical<'_>| true;
+    Ok(match strategy {
+        AsofStrategy::Backward => join_asof_backward::<T, _>(left, right, filter),
+        AsofStrategy::Forward => join_asof_forward::<T, _>(left, right, filter),
+        AsofStrategy::Nearest => unimplemented!(),
+    })
 }
 
 #[cfg(test)]
 mod test {
+    use arrow::array::PrimitiveArray;
+
     use super::*;
 
     #[test]
     fn test_asof_backward() {
-        let a = [-1, 2, 3, 3, 3, 4];
-        let b = [1, 2, 3, 3];
+        let a = PrimitiveArray::from_slice(&[-1, 2, 3, 3, 3, 4]);
+        let b = PrimitiveArray::from_slice(&[1, 2, 3, 3]);
 
-        let tuples = join_asof_backward(&a, &b, u32::MAX);
+        let tuples = join_asof_backward::<Int32Type, _>(&a, &b, |_, _| true);
         assert_eq!(tuples.len(), a.len());
         assert_eq!(
             tuples.to_vec(),
             &[None, Some(1), Some(3), Some(3), Some(3), Some(3)]
         );
 
-        let b = [1, 2, 4, 5];
-        let tuples = join_asof_backward(&a, &b, u32::MAX);
+        let b = PrimitiveArray::from_slice(&[1, 2, 4, 5]);
+        let tuples = join_asof_backward::<Int32Type, _>(&a, &b, |_, _| true);
         assert_eq!(
             tuples.to_vec(),
             &[None, Some(1), Some(1), Some(1), Some(1), Some(2)]
         );
 
-        let a = [2, 4, 4, 4];
-        let b = [1, 2, 3, 3];
-        let tuples = join_asof_backward(&a, &b, u32::MAX);
+        let a = PrimitiveArray::from_slice(&[2, 4, 4, 4]);
+        let b = PrimitiveArray::from_slice(&[1, 2, 3, 3]);
+        let tuples = join_asof_backward::<Int32Type, _>(&a, &b, |_, _| true);
         assert_eq!(tuples.to_vec(), &[Some(1), Some(3), Some(3), Some(3)]);
     }
 
     #[test]
     fn test_asof_backward_tolerance() {
-        let a = [-1, 20, 25, 30, 30, 40];
-        let b = [10, 20, 30, 30];
-        let tuples = join_asof_backward(&a, &b, 4u32);
+        let a = PrimitiveArray::from_slice(&[-1, 20, 25, 30, 30, 40]);
+        let b = PrimitiveArray::from_slice(&[10, 20, 30, 30]);
+        let tuples = join_asof_backward::<Int32Type, _>(&a, &b, |l, r| l.abs_diff(r) <= 4u32);
         assert_eq!(
             tuples.to_vec(),
             &[None, Some(1), None, Some(3), Some(3), None]
@@ -162,9 +200,9 @@ mod test {
 
     #[test]
     fn test_asof_forward_tolerance() {
-        let a = [-1, 20, 25, 30, 30, 40, 52];
-        let b = [10, 20, 33, 55];
-        let tuples = join_asof_forward(&a, &b, 4u32);
+        let a = PrimitiveArray::from_slice(&[-1, 20, 25, 30, 30, 40, 52]);
+        let b = PrimitiveArray::from_slice(&[10, 20, 33, 55]);
+        let tuples = join_asof_forward::<Int32Type, _>(&a, &b, |l, r| l.abs_diff(r) <= 4u32);
         assert_eq!(
             tuples.to_vec(),
             &[None, Some(1), None, Some(2), Some(2), None, Some(3)]
@@ -173,10 +211,10 @@ mod test {
 
     #[test]
     fn test_asof_forward() {
-        let a = [-1, 1, 2, 4, 6];
-        let b = [1, 2, 4, 5];
+        let a = PrimitiveArray::from_slice(&[-1, 1, 2, 4, 6]);
+        let b = PrimitiveArray::from_slice(&[1, 2, 4, 5]);
 
-        let tuples = join_asof_forward(&a, &b, u32::MAX);
+        let tuples = join_asof_forward::<Int32Type, _>(&a, &b, |_, _| true);
         assert_eq!(tuples.len(), a.len());
         assert_eq!(tuples.to_vec(), &[Some(0), Some(0), Some(1), Some(2), None]);
     }

@@ -794,6 +794,7 @@ pub trait AsofJoinBy: IntoDf {
         check_asof_columns(
             &left_asof,
             &right_asof,
+            tolerance.is_some(),
             left_by.is_empty() && right_by.is_empty(),
         )?;
 

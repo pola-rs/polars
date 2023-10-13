@@ -20,86 +20,93 @@ use super::{
 use crate::frame::IntoDf;
 
 // If called with increasing val_l it will increment offset to the first
-// right(offset) >= val_l, and also returns whether this is within tolerance.
-// If offset == n_right, the loop is done (but harmless to call again).
-// offset should initially be 0.
-fn join_asof_forward_step<T: NumericNative, F: FnMut(usize) -> T>(
+// right(offset) >= val_l and return it. If offset == n_right, the loop is done
+// (but harmless to call again). offset should initially be 0.
+fn asof_forward_step<T: PartialOrd, F: FnMut(usize) -> Option<T>>(
     offset: &mut usize,
-    val_l: T,
+    val_l: &T,
     mut right: F,
     n_right: usize,
-    tolerance: T::Abs,
-) -> bool {
+) -> Option<T> {
     while *offset < n_right {
-        let val_r = right(*offset);
-        if val_r >= val_l {
-            return val_l.abs_diff(val_r) <= tolerance;
+        if let Some(val_r) = right(*offset) {
+            if val_r >= *val_l {
+                return Some(val_r);
+            }
         }
         *offset += 1;
     }
-    return false;
+    None
 }
 
 // If called with decreasing val_l it will decrement offset to the last
-// right(offset - 1) <= val_l, and also returns whether this is within tolerance.
-// If offset == 0, the loop is done (but harmless to call again).
-// offset should initially be right.len().
-fn join_asof_backward_step<T: NumericNative, F: FnMut(usize) -> T>(
+// right(offset - 1) <= val_l and return it. If offset == 0, the loop is done
+// (but harmless to call again). offset should initially be right.len().
+fn asof_backward_step<T: PartialOrd, F: FnMut(usize) -> Option<T>>(
     offset: &mut usize,
-    val_l: T,
+    val_l: &T,
     mut right: F,
-    tolerance: T::Abs,
-) -> bool {
+) -> Option<T> {
     while *offset > 0 {
-        let val_r = right(*offset - 1);
-        if val_r <= val_l {
-            return val_l.abs_diff(val_r) <= tolerance;
+        if let Some(val_r) = right(*offset - 1) {
+            if val_r <= *val_l {
+                return Some(val_r);
+            }
         }
         *offset -= 1;
     }
-    return false;
+    None
 }
 
 // If called with decreasing val_l it will decrement offset to the last
-// right(offset - 1) which is nearest to val_l, and also returns whether this is
-// within tolerance. If offset == 0, the loop is done (but harmless to call again).
-// offset should initially be right.len().
-fn join_asof_nearest_step<T: NumericNative, F: FnMut(usize) -> T>(
+// right(offset - 1) which is nearest to val_l and return it. This loop never
+// indicates it is done by itself, there is always a nearest element.
+// offset and next_offset should initially be right.len().
+fn asof_nearest_step<T: NumericNative, F: FnMut(usize) -> Option<T>>(
     offset: &mut usize,
-    val_l: T,
+    next_offset: &mut usize,
+    val_l: &T,
     mut right: F,
-    tolerance: T::Abs,
-) -> bool {
-    // Keep decrementing until right(*offset - 2) is <= val_l.
-    // Then either *offset - 1 or *offset - 2 is the nearest element.
-    while *offset >= 2 && right(*offset - 2) > val_l {
-        *offset -= 1;
+) -> Option<T> {
+    // right(offset - 1) is the best known bound on the nearest value.
+    // next_offset is the rightmost value <= val_l, which is a candidate for
+    // being closer.
+    while *next_offset > 0 {
+        if let Some(val_r) = right(*next_offset - 1) {
+            if val_r <= *val_l {
+                break;
+            } else {
+                *offset = *next_offset;
+            }
+        }
+        
+        *next_offset -= 1;
     }
     
-    if *offset >= 2 {
-        let lo = right(*offset - 2);
-        let hi = right(*offset - 1);
-        let lo_diff = val_l.abs_diff(lo);
-        let hi_diff = val_l.abs_diff(hi);
-        
-        if lo_diff < hi_diff {
-            *offset -= 1;
-            return lo_diff <= tolerance;
-        }
-
-        return hi_diff <= tolerance;
-    } else if *offset == 1 {
-        // Last possible element.
-        let val_r = right(0);
-        let in_tolerance = val_l.abs_diff(val_r) <= tolerance;
-        if !in_tolerance && val_l < val_r {
-            // No more possible matches.
-            *offset -= 1;
-        }
-        return in_tolerance;
+    // No new candidate option for nearest.
+    if *next_offset == 0 {
+        return right(*offset - 1);
     }
-
-    return false;
+    
+    if let Some(val_r) = right(*offset - 1) {
+        // SAFETY: if right(offset - 1) is non-null and next_offset > 0, then
+        // this must be non-null as well.
+        let next_val_r = unsafe { right(*next_offset - 1).unwrap_unchecked() };
+        let diff = val_l.abs_diff(val_r);
+        let next_diff = val_l.abs_diff(next_val_r);
+        // Because diff can be NaN, but next_diff can't be, we use a 'backwards'
+        // check to see if next_diff is worse rather than to see if it's better.
+        // This way, if diff is NaN it gets replaced.
+        if next_diff >= diff {
+            Some(val_r)
+        } else {
+            *offset = *next_offset;
+            Some(next_val_r)
+        }
+    } else {
+        *offset = *next_offset;
+        right(*offset - 1)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -118,22 +125,27 @@ pub struct AsOfOptions {
     pub right_by: Option<Vec<SmartString>>,
 }
 
-fn check_asof_columns(a: &Series, b: &Series, check_sorted: bool) -> PolarsResult<()> {
+fn check_asof_columns(a: &Series, b: &Series, has_tolerance: bool, check_sorted: bool) -> PolarsResult<()> {
     let dtype_a = a.dtype();
     let dtype_b = b.dtype();
-    polars_ensure!(
-        dtype_a.to_physical().is_numeric() && dtype_b.to_physical().is_numeric(),
-        InvalidOperation:
-        "asof join only supported on numeric/temporal keys"
-    );
+    if has_tolerance {
+        polars_ensure!(
+            dtype_a.to_physical().is_numeric() && dtype_b.to_physical().is_numeric(),
+            InvalidOperation:
+            "asof join with tolerance is only supported on numeric/temporal keys"
+        );
+    } else {
+        polars_ensure!(
+            dtype_a.to_physical().is_primitive() && dtype_b.to_physical().is_primitive(),
+            InvalidOperation:
+            "asof join is only supported on primitive key typess"
+        );
+
+    }
     polars_ensure!(
         dtype_a == dtype_b,
         ComputeError: "mismatching key dtypes in asof-join: `{}` and `{}`",
         a.dtype(), b.dtype()
-    );
-    polars_ensure!(
-        a.null_count() == 0 && b.null_count() == 0,
-        ComputeError: "asof join must not have null values in 'on' arguments"
     );
     if check_sorted {
         ensure_sorted_arg(a, "asof_join")?;
@@ -172,40 +184,53 @@ pub trait AsofJoin: IntoDf {
         let left_key = self_df.column(left_on)?;
         let right_key = other.column(right_on)?;
 
-        check_asof_columns(left_key, right_key, true)?;
+        check_asof_columns(left_key, right_key, tolerance.is_some(), true)?;
         let left_key = left_key.to_physical_repr();
         let right_key = right_key.to_physical_repr();
 
         let mut take_idx = match left_key.dtype() {
             DataType::Int64 => {
                 let ca = left_key.i64().unwrap();
-                join_asof(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance)
             },
             DataType::Int32 => {
                 let ca = left_key.i32().unwrap();
-                join_asof(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance)
             },
             DataType::UInt64 => {
                 let ca = left_key.u64().unwrap();
-                join_asof(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance)
             },
             DataType::UInt32 => {
                 let ca = left_key.u32().unwrap();
-                join_asof(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance)
             },
             DataType::Float32 => {
                 let ca = left_key.f32().unwrap();
-                join_asof(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance)
             },
             DataType::Float64 => {
                 let ca = left_key.f64().unwrap();
-                join_asof(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance)
+            },
+            DataType::Boolean => {
+                let ca = left_key.bool().unwrap();
+                join_asof::<BooleanType>(ca, &right_key, strategy)
+            },
+            DataType::Binary => {
+                let ca = left_key.binary().unwrap();
+                join_asof::<BinaryType>(ca, &right_key, strategy)
+            },
+            DataType::Utf8 => {
+                let ca = left_key.utf8().unwrap();
+                let right_binary = right_key.cast(&DataType::Binary).unwrap();
+                join_asof::<BinaryType>(&ca.as_binary(), &right_binary, strategy)
             },
             _ => {
                 let left_key = left_key.cast(&DataType::Int32).unwrap();
                 let right_key = right_key.cast(&DataType::Int32).unwrap();
                 let ca = left_key.i32().unwrap();
-                join_asof(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance)
             },
         }?;
 
