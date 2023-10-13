@@ -127,7 +127,6 @@ pub(super) unsafe fn join_asof_nearest_with_indirection_and_tolerance<
         }
 
         // We made it to the window: matches are now possible, start measuring distance.
-        found_window = true;
         let current_dist = if val_l > val_r {
             val_l - val_r
         } else {
@@ -141,9 +140,14 @@ pub(super) unsafe fn join_asof_nearest_with_indirection_and_tolerance<
             }
             prev_offset = offset;
         } else {
-            // We'ved moved farther away, so the last element was the match.
-            return (Some(prev_offset), idx - 1);
+            // We'ved moved farther away, so the last element was the match if it's within tolerance
+            if found_window {
+                return (Some(prev_offset), idx - 1);
+            } else {
+                return (None, n_right - 1);
+            }
         }
+        found_window = true;
     }
 
     // This should be unreachable.

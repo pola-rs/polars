@@ -133,7 +133,7 @@ def read_csv(
         ``utf8-lossy``, the input is first decoded in memory with
         python. Defaults to ``utf8``.
     low_memory
-        Reduce memory usage at expense of performance.
+        Reduce memory pressure at the expense of performance.
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
@@ -504,7 +504,7 @@ def read_csv_batched(
         ``utf8-lossy``, the input is first decoded in memory with
         python. Defaults to ``utf8``.
     low_memory
-        Reduce memory usage at expense of performance.
+        Reduce memory pressure at the expense of performance.
     rechunk
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
@@ -695,7 +695,7 @@ def read_csv_batched(
 
 
 def scan_csv(
-    source: str | Path,
+    source: str | Path | list[str] | list[Path],
     *,
     has_header: bool = True,
     separator: str = ",",
@@ -787,7 +787,7 @@ def scan_csv(
         Lossy means that invalid utf8 values are replaced with ``�``
         characters. Defaults to "utf8".
     low_memory
-        Reduce memory usage in expense of performance.
+        Reduce memory pressure at the expense of performance.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
     skip_rows_after_header
@@ -887,7 +887,7 @@ def scan_csv(
     elif new_columns:
         if with_column_names:
             raise ValueError(
-                "cannot set both 'with_column_names' and 'new_columns'; mutually exclusive"
+                "cannot set both `with_column_names` and `new_columns`; mutually exclusive"
             )
         if dtypes and isinstance(dtypes, Sequence):
             dtypes = dict(zip(new_columns, dtypes))
@@ -905,6 +905,8 @@ def scan_csv(
 
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
+    else:
+        source = [normalize_filepath(source) for source in source]
 
     return pl.LazyFrame._scan_csv(
         source,

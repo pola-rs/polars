@@ -50,7 +50,7 @@ out = df.select(
     pl.struct(["keys", "values"])
     .map_elements(lambda x: len(x["keys"]) + x["values"])
     .alias("solution_apply"),
-    (pl.col("keys").str.lengths() + pl.col("values")).alias("solution_expr"),
+    (pl.col("keys").str.len_bytes() + pl.col("values")).alias("solution_expr"),
 )
 print(out)
 # --8<-- [end:combine]

@@ -369,16 +369,29 @@ impl StringNameSpace {
             )))
     }
 
-    /// Return the number of characters in the string (not bytes).
-    pub fn n_chars(self) -> Expr {
+    /// Return the length of each string as the number of bytes.
+    ///
+    /// When working with non-ASCII text, the length in bytes is not the same
+    /// as the length in characters. You may want to use
+    /// [`len_chars`] instead. Note that `len_bytes` is much more
+    /// performant (_O(1)_) than [`len_chars`] (_O(n)_).
+    ///
+    /// [`len_chars`]: StringNameSpace::len_chars
+    pub fn len_bytes(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::NChars))
+            .map_private(FunctionExpr::StringExpr(StringFunction::LenBytes))
     }
 
-    /// Return the number of bytes in the string (not characters).
-    pub fn lengths(self) -> Expr {
+    /// Return the length of each string as the number of characters.
+    ///
+    /// When working with ASCII text, use [`len_bytes`] instead to achieve
+    /// equivalent output with much better performance:
+    /// [`len_bytes`] runs in _O(1)_, while `len_chars` runs in _O(n)_.
+    ///
+    /// [`len_bytes`]: StringNameSpace::len_bytes
+    pub fn len_chars(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::Length))
+            .map_private(FunctionExpr::StringExpr(StringFunction::LenChars))
     }
 
     /// Slice the string values.

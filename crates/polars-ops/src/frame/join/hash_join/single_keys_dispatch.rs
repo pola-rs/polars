@@ -366,9 +366,7 @@ pub fn prepare_bytes<'a>(
             .map(|ca| {
                 ca.into_iter()
                     .map(|opt_b| {
-                        let mut state = hb.build_hasher();
-                        opt_b.hash(&mut state);
-                        let hash = state.finish();
+                        let hash = hb.hash_one(opt_b);
                         BytesHash::new(opt_b, hash)
                     })
                     .collect::<Vec<_>>()

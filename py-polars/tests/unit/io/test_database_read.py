@@ -6,6 +6,7 @@ import sys
 from contextlib import suppress
 from datetime import date
 from pathlib import Path
+from types import GeneratorType
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pytest
@@ -17,7 +18,7 @@ from polars.exceptions import UnsuitableSQLError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import DbReadEngine, SchemaDict
+    from polars.type_aliases import DbReadEngine, SchemaDefinition, SchemaDict
 
 
 def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
@@ -25,18 +26,6 @@ def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
         from adbc_driver_sqlite.dbapi import connect
 
         return connect(*args, **kwargs)
-
-
-@pytest.fixture()
-def sample_df() -> pl.DataFrame:
-    return pl.DataFrame(
-        {
-            "id": [1, 2],
-            "name": ["misc", "other"],
-            "value": [100.0, -99.0],
-            "date": ["2020-01-01", "2021-12-31"],
-        }
-    )
 
 
 def create_temp_sqlite_db(test_db: str) -> None:
@@ -71,11 +60,35 @@ def create_temp_sqlite_db(test_db: str) -> None:
     conn.close()
 
 
+class DatabaseReadTestParams(NamedTuple):
+    """Clarify read test params."""
+
+    read_method: str
+    connect_using: Any
+    expected_dtypes: SchemaDefinition
+    expected_dates: list[date | str]
+    schema_overrides: SchemaDict | None = None
+    batch_size: int | None = None
+
+
+class ExceptionTestParams(NamedTuple):
+    """Clarify exception test params."""
+
+    read_method: str
+    query: str | list[str]
+    protocol: Any
+    errclass: type[Exception]
+    errmsg: str
+    engine: str | None = None
+    execute_options: dict[str, Any] | None = None
+    kwargs: dict[str, Any] | None = None
+
+
 @pytest.mark.write_disk()
 @pytest.mark.parametrize(
     (
         "read_method",
-        "engine_or_connection_init",
+        "connect_using",
         "expected_dtypes",
         "expected_dates",
         "schema_overrides",
@@ -83,31 +96,33 @@ def create_temp_sqlite_db(test_db: str) -> None:
     ),
     [
         pytest.param(
-            "read_database_uri",
-            "connectorx",
-            {
-                "id": pl.UInt8,
-                "name": pl.Utf8,
-                "value": pl.Float64,
-                "date": pl.Date,
-            },
-            [date(2020, 1, 1), date(2021, 12, 31)],
-            {"id": pl.UInt8},
-            None,
+            *DatabaseReadTestParams(
+                read_method="read_database_uri",
+                connect_using="connectorx",
+                expected_dtypes={
+                    "id": pl.UInt8,
+                    "name": pl.Utf8,
+                    "value": pl.Float64,
+                    "date": pl.Date,
+                },
+                expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
+                schema_overrides={"id": pl.UInt8},
+            ),
             id="uri: connectorx",
         ),
         pytest.param(
-            "read_database_uri",
-            "adbc",
-            {
-                "id": pl.UInt8,
-                "name": pl.Utf8,
-                "value": pl.Float64,
-                "date": pl.Utf8,
-            },
-            ["2020-01-01", "2021-12-31"],
-            {"id": pl.UInt8},
-            None,
+            *DatabaseReadTestParams(
+                read_method="read_database_uri",
+                connect_using="adbc",
+                expected_dtypes={
+                    "id": pl.UInt8,
+                    "name": pl.Utf8,
+                    "value": pl.Float64,
+                    "date": pl.Utf8,
+                },
+                expected_dates=["2020-01-01", "2021-12-31"],
+                schema_overrides={"id": pl.UInt8},
+            ),
             marks=pytest.mark.skipif(
                 sys.version_info < (3, 9) or sys.platform == "win32",
                 reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
@@ -115,48 +130,65 @@ def create_temp_sqlite_db(test_db: str) -> None:
             id="uri: adbc",
         ),
         pytest.param(
-            "read_database",
-            lambda path: sqlite3.connect(path, detect_types=True),
-            {
-                "id": pl.UInt8,
-                "name": pl.Utf8,
-                "value": pl.Float32,
-                "date": pl.Date,
-            },
-            [date(2020, 1, 1), date(2021, 12, 31)],
-            {"id": pl.UInt8, "value": pl.Float32},
-            None,
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=lambda path: sqlite3.connect(path, detect_types=True),
+                expected_dtypes={
+                    "id": pl.UInt8,
+                    "name": pl.Utf8,
+                    "value": pl.Float32,
+                    "date": pl.Date,
+                },
+                expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
+                schema_overrides={"id": pl.UInt8, "value": pl.Float32},
+            ),
             id="conn: sqlite3",
         ),
         pytest.param(
-            "read_database",
-            lambda path: create_engine(
-                f"sqlite:///{path}",
-                connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
-            ).connect(),
-            {
-                "id": pl.Int64,
-                "name": pl.Utf8,
-                "value": pl.Float64,
-                "date": pl.Date,
-            },
-            [date(2020, 1, 1), date(2021, 12, 31)],
-            None,
-            None,
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=lambda path: sqlite3.connect(path, detect_types=True),
+                expected_dtypes={
+                    "id": pl.Int32,
+                    "name": pl.Utf8,
+                    "value": pl.Float32,
+                    "date": pl.Date,
+                },
+                expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
+                schema_overrides={"id": pl.Int32, "value": pl.Float32},
+                batch_size=1,
+            ),
+            id="conn: sqlite3",
+        ),
+        pytest.param(
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=lambda path: create_engine(
+                    f"sqlite:///{path}",
+                    connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
+                ).connect(),
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.Utf8,
+                    "value": pl.Float64,
+                    "date": pl.Date,
+                },
+                expected_dates=[date(2020, 1, 1), date(2021, 12, 31)],
+            ),
             id="conn: sqlalchemy",
         ),
         pytest.param(
-            "read_database",
-            adbc_sqlite_connect,
-            {
-                "id": pl.Int64,
-                "name": pl.Utf8,
-                "value": pl.Float64,
-                "date": pl.Utf8,
-            },
-            ["2020-01-01", "2021-12-31"],
-            None,
-            None,
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=adbc_sqlite_connect,
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.Utf8,
+                    "value": pl.Float64,
+                    "date": pl.Utf8,
+                },
+                expected_dates=["2020-01-01", "2021-12-31"],
+            ),
             marks=pytest.mark.skipif(
                 sys.version_info < (3, 9) or sys.platform == "win32",
                 reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
@@ -164,17 +196,18 @@ def create_temp_sqlite_db(test_db: str) -> None:
             id="conn: adbc (fetchall)",
         ),
         pytest.param(
-            "read_database",
-            adbc_sqlite_connect,
-            {
-                "id": pl.Int64,
-                "name": pl.Utf8,
-                "value": pl.Float64,
-                "date": pl.Utf8,
-            },
-            ["2020-01-01", "2021-12-31"],
-            None,
-            1,
+            *DatabaseReadTestParams(
+                read_method="read_database",
+                connect_using=adbc_sqlite_connect,
+                expected_dtypes={
+                    "id": pl.Int64,
+                    "name": pl.Utf8,
+                    "value": pl.Float64,
+                    "date": pl.Utf8,
+                },
+                expected_dates=["2020-01-01", "2021-12-31"],
+                batch_size=1,
+            ),
             marks=pytest.mark.skipif(
                 sys.version_info < (3, 9) or sys.platform == "win32",
                 reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
@@ -185,7 +218,7 @@ def create_temp_sqlite_db(test_db: str) -> None:
 )
 def test_read_database(
     read_method: str,
-    engine_or_connection_init: Any,
+    connect_using: Any,
     expected_dtypes: dict[str, pl.DataType],
     expected_dates: list[date | str],
     schema_overrides: SchemaDict | None,
@@ -201,12 +234,12 @@ def test_read_database(
         df = pl.read_database_uri(
             uri=f"sqlite:///{test_db}",
             query="SELECT * FROM test_data",
-            engine=str(engine_or_connection_init),  # type: ignore[arg-type]
+            engine=str(connect_using),  # type: ignore[arg-type]
             schema_overrides=schema_overrides,
         )
     elif "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
         # externally instantiated adbc connections
-        with engine_or_connection_init(test_db) as conn, conn.cursor():
+        with connect_using(test_db) as conn, conn.cursor():
             df = pl.read_database(
                 connection=conn,
                 query="SELECT * FROM test_data",
@@ -216,7 +249,7 @@ def test_read_database(
     else:
         # other user-supplied connections
         df = pl.read_database(
-            connection=engine_or_connection_init(test_db),
+            connection=connect_using(test_db),
             query="SELECT * FROM test_data WHERE name NOT LIKE '%polars%'",
             schema_overrides=schema_overrides,
             batch_size=batch_size,
@@ -253,19 +286,25 @@ def test_read_database_parameterisd(tmp_path: Path) -> None:
     create_temp_sqlite_db(test_db := str(tmp_path / "test.db"))
     conn = create_engine(f"sqlite:///{test_db}")
 
-    # establish a parameterised query and validate usage
-    parameterised_query = """
+    # establish parameterised queries and validate usage
+    query = """
         SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
-        FROM test_data WHERE value < :n
+        FROM test_data
+        WHERE value < {n}
     """
-    assert_frame_equal(
-        pl.read_database(
-            parameterised_query,
-            connection=conn.connect(),
-            execute_options={"parameters": {"n": 0}},
-        ),
-        pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
-    )
+    for param, param_value in (
+        (":n", {"n": 0}),
+        ("?", (0,)),
+        ("?", [0]),
+    ):
+        assert_frame_equal(
+            pl.read_database(
+                query.format(n=param),
+                connection=conn.connect(),
+                execute_options={"parameters": param_value},
+            ),
+            pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
+        )
 
 
 def test_read_database_mocked() -> None:
@@ -305,38 +344,34 @@ def test_read_database_mocked() -> None:
             return self
 
     # since we don't have access to snowflake/databricks/etc from CI we
-    # mock them so we can check that we're calling the right methods
-    for driver, batch_size, expected_call in (
-        ("snowflake", None, "fetch_arrow_all"),
-        ("snowflake", 10_000, "fetch_arrow_batches"),
-        ("databricks", None, "fetchall_arrow"),
-        ("databricks", 25_000, "fetchmany_arrow"),
-        ("turbodbc", None, "fetchallarrow"),
-        ("turbodbc", 50_000, "fetcharrowbatches"),
-        ("adbc_driver_postgresql", None, "fetch_arrow_table"),
-        ("adbc_driver_postgresql", 75_000, "fetch_arrow_table"),
+    # mock them so we can check that we're calling the expected methods
+    for driver, batch_size, iter_batches, expected_call in (
+        ("snowflake", None, False, "fetch_arrow_all"),
+        ("snowflake", 10_000, False, "fetch_arrow_all"),
+        ("snowflake", 10_000, True, "fetch_arrow_batches"),
+        ("databricks", None, False, "fetchall_arrow"),
+        ("databricks", 25_000, False, "fetchall_arrow"),
+        ("databricks", 25_000, True, "fetchmany_arrow"),
+        ("turbodbc", None, False, "fetchallarrow"),
+        ("turbodbc", 50_000, False, "fetchallarrow"),
+        ("turbodbc", 50_000, True, "fetcharrowbatches"),
+        ("adbc_driver_postgresql", None, False, "fetch_arrow_table"),
+        ("adbc_driver_postgresql", 75_000, False, "fetch_arrow_table"),
+        ("adbc_driver_postgresql", 75_000, True, "fetch_arrow_table"),
     ):
         mc = MockConnection(driver, batch_size)
-        df = pl.read_database(
-            connection=mc,
+        res = pl.read_database(  # type: ignore[call-overload]
             query="SELECT * FROM test_data",
+            connection=mc,
+            iter_batches=iter_batches,
             batch_size=batch_size,
         )
         assert expected_call in mc.cursor().called
-        assert df.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
+        if iter_batches:
+            assert isinstance(res, GeneratorType)
+            res = pl.concat(res)
 
-
-class ExceptionTestParams(NamedTuple):
-    """Clarify exception testing params."""
-
-    read_method: str
-    query: str | list[str]
-    protocol: Any
-    errclass: type[Exception]
-    errmsg: str
-    engine: str | None = None
-    execute_options: dict[str, Any] | None = None
-    kwargs: dict[str, Any] | None = None
+        assert res.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
 
 
 @pytest.mark.parametrize(
@@ -438,14 +473,24 @@ class ExceptionTestParams(NamedTuple):
         pytest.param(
             *ExceptionTestParams(
                 read_method="read_database",
-                engine="adbc",
                 query="SELECT * FROM test_data",
                 protocol=sqlite3.connect(":memory:"),
-                errclass=TypeError,
-                errmsg="takes no keyword arguments",
-                execute_options={"parameters": {"n": 0}},
+                errclass=ValueError,
+                errmsg=r"`read_database` \*\*kwargs only exist for passthrough to `read_database_uri`",
+                kwargs={"partition_on": "id"},
             ),
-            id="Invalid execute_options",
+            id="Invalid kwargs",
+        ),
+        pytest.param(
+            *ExceptionTestParams(
+                read_method="read_database",
+                query="SELECT * FROM sqlite_master",
+                protocol=sqlite3.connect(":memory:"),
+                errclass=ValueError,
+                kwargs={"iter_batches": True},
+                errmsg="Cannot set `iter_batches` without also setting a non-zero `batch_size`",
+            ),
+            id="Invalid batch_size",
         ),
         pytest.param(
             *ExceptionTestParams(
@@ -485,3 +530,18 @@ def test_read_database_exceptions(
     read_database = getattr(pl, read_method)
     with pytest.raises(errclass, match=errmsg):
         read_database(**params)
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "fakedb://123:456@account/database/schema?warehouse=warehouse&role=role",
+        "fakedb://my#%us3r:p433w0rd@not_a_real_host:9999/database",
+    ],
+)
+def test_read_database_cx_credentials(uri: str) -> None:
+    # check that we masked the potential credentials leak; this isn't really
+    # our responsibility (ideally would be handled by connectorx), but we
+    # can reasonably mitigate the issue.
+    with pytest.raises(BaseException, match=r"fakedb://\*\*\*:\*\*\*@\w+"):
+        pl.read_database_uri("SELECT * FROM data", uri=uri)

@@ -318,60 +318,71 @@ class StringNameSpace:
 
         """
 
-    def lengths(self) -> Series:
+    def len_bytes(self) -> Series:
         """
-        Get length of the string values in the Series (as number of bytes).
-
-        Notes
-        -----
-        The returned lengths are equal to the number of bytes in the UTF8 string. If you
-        need the length in terms of the number of characters, use ``n_chars`` instead.
+        Return the length of each string as the number of bytes.
 
         Returns
         -------
         Series
             Series of data type :class:`UInt32`.
 
+        See Also
+        --------
+        len_chars
+
+        Notes
+        -----
+        When working with non-ASCII text, the length in bytes is not the same as the
+        length in characters. You may want to use :func:`len_chars` instead.
+        Note that :func:`len_bytes` is much more performant (_O(1)_) than
+        :func:`len_chars` (_O(n)_).
+
         Examples
         --------
-        >>> s = pl.Series(["Café", None, "345", "東京"])
-        >>> s.str.lengths()
+        >>> s = pl.Series(["Café", "345", "東京", None])
+        >>> s.str.len_bytes()
         shape: (4,)
         Series: '' [u32]
         [
             5
-            null
             3
             6
+            null
         ]
 
         """
 
-    def n_chars(self) -> Series:
+    def len_chars(self) -> Series:
         """
-        Get length of the string values in the Series (as number of chars).
+        Return the length of each string as the number of characters.
 
         Returns
         -------
         Series
             Series of data type :class:`UInt32`.
 
+        See Also
+        --------
+        len_bytes
+
         Notes
         -----
-        If you know that you are working with ASCII text, ``lengths`` will be
-        equivalent, and faster (returns length in terms of the number of bytes).
+        When working with ASCII text, use :func:`len_bytes` instead to achieve
+        equivalent output with much better performance:
+        :func:`len_bytes` runs in _O(1)_, while :func:`len_chars` runs in (_O(n)_).
 
         Examples
         --------
-        >>> s = pl.Series(["Café", None, "345", "東京"])
-        >>> s.str.n_chars()
+        >>> s = pl.Series(["Café", "345", "東京", None])
+        >>> s.str.len_chars()
         shape: (4,)
         Series: '' [u32]
         [
             4
-            null
             3
             2
+            null
         ]
 
         """
@@ -1457,18 +1468,16 @@ class StringNameSpace:
 
         """
 
-    def parse_int(self, radix: int = 2, *, strict: bool = True) -> Series:
-        r"""
+    def parse_int(self, radix: int | None = None, *, strict: bool = True) -> Series:
+        """
         Parse integers with base radix from strings.
 
-        By default base 2. ParseError/Overflows become Nulls.
+        ParseError/Overflows become Nulls.
 
         Parameters
         ----------
         radix
             Positive integer which is the base of the string we are parsing.
-            Default: 2
-
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
@@ -1575,5 +1584,25 @@ class StringNameSpace:
         Series
             Series of data type :class:`UInt32`. Returns null if the original
             value is null.
+
+        """
+
+    @deprecate_renamed_function("len_bytes", version="0.19.8")
+    def lengths(self) -> Series:
+        """
+        Return the number of bytes in each string.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len_bytes`.
+
+        """
+
+    @deprecate_renamed_function("len_chars", version="0.19.8")
+    def n_chars(self) -> Series:
+        """
+        Return the length of each string as the number of characters.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len_chars`.
 
         """

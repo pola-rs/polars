@@ -85,8 +85,7 @@ def read_ipc(
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
                 raise ModuleNotFoundError(
-                    "'pyarrow' is required when using"
-                    " 'read_ipc(..., use_pyarrow=True)'"
+                    "pyarrow is required when using `read_ipc(..., use_pyarrow=True)`"
                 )
 
             import pyarrow as pa
@@ -210,7 +209,7 @@ def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDa
 
 
 def scan_ipc(
-    source: str | Path,
+    source: str | Path | list[str] | list[Path],
     *,
     n_rows: int | None = None,
     cache: bool = True,

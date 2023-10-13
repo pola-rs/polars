@@ -11,6 +11,7 @@ from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.deprecation import (
     deprecate_renamed_function,
+    issue_deprecation_warning,
     rename_use_earliest_to_ambiguous,
 )
 from polars.utils.various import find_stacklevel
@@ -368,71 +369,88 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_to_decimal(inference_length))
 
-    def lengths(self) -> Expr:
+    def len_bytes(self) -> Expr:
         """
-        Get length of the strings as UInt32 (as number of bytes).
+        Return the length of each string as the number of bytes.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`.
+
+        See Also
+        --------
+        len_chars
 
         Notes
         -----
-        The returned lengths are equal to the number of bytes in the UTF8 string. If you
-        need the length in terms of the number of characters, use ``n_chars`` instead.
+        When working with non-ASCII text, the length in bytes is not the same as the
+        length in characters. You may want to use :func:`len_chars` instead.
+        Note that :func:`len_bytes` is much more performant (_O(1)_) than
+        :func:`len_chars` (_O(n)_).
 
         Examples
         --------
-        >>> df = pl.DataFrame({"s": ["Café", None, "345", "東京"]}).with_columns(
-        ...     [
-        ...         pl.col("s").str.lengths().alias("length"),
-        ...         pl.col("s").str.n_chars().alias("nchars"),
-        ...     ]
+        >>> df = pl.DataFrame({"a": ["Café", "345", "東京", None]})
+        >>> df.with_columns(
+        ...     pl.col("a").str.len_bytes().alias("n_bytes"),
+        ...     pl.col("a").str.len_chars().alias("n_chars"),
         ... )
-        >>> df
         shape: (4, 3)
-        ┌──────┬────────┬────────┐
-        │ s    ┆ length ┆ nchars │
-        │ ---  ┆ ---    ┆ ---    │
-        │ str  ┆ u32    ┆ u32    │
-        ╞══════╪════════╪════════╡
-        │ Café ┆ 5      ┆ 4      │
-        │ null ┆ null   ┆ null   │
-        │ 345  ┆ 3      ┆ 3      │
-        │ 東京  ┆ 6      ┆ 2      │
-        └──────┴────────┴────────┘
+        ┌──────┬─────────┬─────────┐
+        │ a    ┆ n_bytes ┆ n_chars │
+        │ ---  ┆ ---     ┆ ---     │
+        │ str  ┆ u32     ┆ u32     │
+        ╞══════╪═════════╪═════════╡
+        │ Café ┆ 5       ┆ 4       │
+        │ 345  ┆ 3       ┆ 3       │
+        │ 東京 ┆ 6       ┆ 2       │
+        │ null ┆ null    ┆ null    │
+        └──────┴─────────┴─────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_lengths())
+        return wrap_expr(self._pyexpr.str_len_bytes())
 
-    def n_chars(self) -> Expr:
+    def len_chars(self) -> Expr:
         """
-        Get length of the strings as UInt32 (as number of chars).
+        Return the length of each string as the number of characters.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`UInt32`.
+
+        See Also
+        --------
+        len_bytes
 
         Notes
         -----
-        If you know that you are working with ASCII text, ``lengths`` will be
-        equivalent, and faster (returns length in terms of the number of bytes).
+        When working with ASCII text, use :func:`len_bytes` instead to achieve
+        equivalent output with much better performance:
+        :func:`len_bytes` runs in _O(1)_, while :func:`len_chars` runs in (_O(n)_).
 
         Examples
         --------
-        >>> df = pl.DataFrame({"s": ["Café", None, "345", "東京"]}).with_columns(
-        ...     [
-        ...         pl.col("s").str.n_chars().alias("nchars"),
-        ...         pl.col("s").str.lengths().alias("length"),
-        ...     ]
+        >>> df = pl.DataFrame({"a": ["Café", "345", "東京", None]})
+        >>> df.with_columns(
+        ...     pl.col("a").str.len_chars().alias("n_chars"),
+        ...     pl.col("a").str.len_bytes().alias("n_bytes"),
         ... )
-        >>> df
         shape: (4, 3)
-        ┌──────┬────────┬────────┐
-        │ s    ┆ nchars ┆ length │
-        │ ---  ┆ ---    ┆ ---    │
-        │ str  ┆ u32    ┆ u32    │
-        ╞══════╪════════╪════════╡
-        │ Café ┆ 4      ┆ 5      │
-        │ null ┆ null   ┆ null   │
-        │ 345  ┆ 3      ┆ 3      │
-        │ 東京  ┆ 2      ┆ 6      │
-        └──────┴────────┴────────┘
+        ┌──────┬─────────┬─────────┐
+        │ a    ┆ n_chars ┆ n_bytes │
+        │ ---  ┆ ---     ┆ ---     │
+        │ str  ┆ u32     ┆ u32     │
+        ╞══════╪═════════╪═════════╡
+        │ Café ┆ 4       ┆ 5       │
+        │ 345  ┆ 3       ┆ 3       │
+        │ 東京 ┆ 2       ┆ 6       │
+        │ null ┆ null    ┆ null    │
+        └──────┴─────────┴─────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_n_chars())
+        return wrap_expr(self._pyexpr.str_len_chars())
 
     def concat(self, delimiter: str = "-") -> Expr:
         """
@@ -1164,7 +1182,7 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_base64_decode(strict))
         else:
             raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+                f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
             )
 
     def encode(self, encoding: TransferEncoding) -> Expr:
@@ -1203,7 +1221,7 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_base64_encode())
         else:
             raise ValueError(
-                f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
+                f"`encoding` must be one of {{'hex', 'base64'}}, got {encoding!r}"
             )
 
     def extract(self, pattern: str, group_index: int = 1) -> Expr:
@@ -1917,18 +1935,16 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_explode())
 
-    def parse_int(self, radix: int = 2, *, strict: bool = True) -> Expr:
+    def parse_int(self, radix: int | None = None, *, strict: bool = True) -> Expr:
         """
         Parse integers with base radix from strings.
 
-        By default base 2. ParseError/Overflows become Nulls.
+        ParseError/Overflows become Nulls.
 
         Parameters
         ----------
         radix
             Positive integer which is the base of the string we are parsing.
-            Default: 2.
-
         strict
             Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
@@ -1969,6 +1985,14 @@ class ExprStringNameSpace:
         └───────┘
 
         """
+        if radix is None:
+            issue_deprecation_warning(
+                "The default value for the `radix` parameter of `parse_int` will be removed in a future version."
+                " Call `parse_int(radix=2)` to keep current behavior and silence this warning.",
+                version="0.19.8",
+            )
+            radix = 2
+
         return wrap_expr(self._pyexpr.str_parse_int(radix, strict))
 
     @deprecate_renamed_function("strip_chars", version="0.19.3")
@@ -2047,6 +2071,28 @@ class ExprStringNameSpace:
 
         """
         return self.count_matches(pattern)
+
+    @deprecate_renamed_function("len_bytes", version="0.19.8")
+    def lengths(self) -> Expr:
+        """
+        Return the length of each string as the number of bytes.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len_bytes`.
+
+        """
+        return self.len_bytes()
+
+    @deprecate_renamed_function("len_chars", version="0.19.8")
+    def n_chars(self) -> Expr:
+        """
+        Return the length of each string as the number of characters.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len_chars`.
+
+        """
+        return self.len_chars()
 
 
 def _validate_format_argument(format: str | None) -> None:

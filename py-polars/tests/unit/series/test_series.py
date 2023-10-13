@@ -1296,10 +1296,10 @@ def test_kurtosis() -> None:
 
 def test_arr_lengths() -> None:
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
-    assert_series_equal(s.list.lengths(), pl.Series("a", [2, 3], dtype=UInt32))
+    assert_series_equal(s.list.len(), pl.Series("a", [2, 3], dtype=UInt32))
     df = pl.DataFrame([s])
     assert_series_equal(
-        df.select(pl.col("a").list.lengths())["a"], pl.Series("a", [2, 3], dtype=UInt32)
+        df.select(pl.col("a").list.len())["a"], pl.Series("a", [2, 3], dtype=UInt32)
     )
 
 
@@ -2193,17 +2193,17 @@ def test_ewm_param_validation() -> None:
     with pytest.raises(ValueError, match="mutually exclusive"):
         s.ewm_var(alpha=0.5, span=1.5)
 
-    with pytest.raises(ValueError, match="require 'com' >= 0"):
+    with pytest.raises(ValueError, match="require `com` >= 0"):
         s.ewm_std(com=-0.5)
 
-    with pytest.raises(ValueError, match="require 'span' >= 1"):
+    with pytest.raises(ValueError, match="require `span` >= 1"):
         s.ewm_mean(span=0.5)
 
-    with pytest.raises(ValueError, match="require 'half_life' > 0"):
+    with pytest.raises(ValueError, match="require `half_life` > 0"):
         s.ewm_var(half_life=0)
 
     for alpha in (-0.5, -0.0000001, 0.0, 1.0000001, 1.5):
-        with pytest.raises(ValueError, match="require 0 < 'alpha' <= 1"):
+        with pytest.raises(ValueError, match="require 0 < `alpha` <= 1"):
             s.ewm_std(alpha=alpha)
 
 

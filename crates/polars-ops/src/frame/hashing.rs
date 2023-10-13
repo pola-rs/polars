@@ -1,4 +1,4 @@
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::Hash;
 
 use ahash::RandomState;
 use hashbrown::hash_map::RawEntryMut;
@@ -88,11 +88,7 @@ where
             .map(|iter| {
                 // create hashes and keys
                 iter.into_iter()
-                    .map(|val| {
-                        let mut hasher = build_hasher.build_hasher();
-                        val.hash(&mut hasher);
-                        (hasher.finish(), val)
-                    })
+                    .map(|val| (build_hasher.hash_one(&val), val))
                     .collect_trusted::<Vec<_>>()
             })
             .collect()

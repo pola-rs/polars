@@ -7,7 +7,7 @@ use crate::datatypes::{DataType, PhysicalType};
 use crate::error::Error;
 use crate::trusted_len::TrustedLen;
 
-#[cfg(feature = "arrow")]
+#[cfg(feature = "arrow_rs")]
 mod data;
 mod ffi;
 pub(super) mod fmt;

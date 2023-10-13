@@ -161,7 +161,6 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
-    #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
     #[pyo3(signature = (
         py_f, infer_schema_length, chunk_size, has_header, ignore_errors, n_rows,
@@ -262,7 +261,6 @@ impl PyDataFrame {
     #[staticmethod]
     #[cfg(feature = "parquet")]
     #[pyo3(signature = (py_f, columns, projection, n_rows, parallel, row_count, low_memory, use_statistics, rechunk))]
-    #[allow(clippy::too_many_arguments)]
     pub fn read_parquet(
         py_f: PyObject,
         columns: Option<Vec<String>>,
@@ -580,7 +578,6 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv")]
     pub fn write_csv(
         &mut self,
@@ -1190,7 +1187,6 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "pivot")]
-    #[allow(clippy::too_many_arguments)]
     pub fn pivot_expr(
         &self,
         values: Vec<String>,

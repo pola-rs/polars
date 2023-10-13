@@ -250,6 +250,15 @@ pub enum FunctionExpr {
         lib: Arc<str>,
         symbol: Arc<str>,
     },
+    BackwardFill {
+        limit: FillNullLimit,
+    },
+    ForwardFill {
+        limit: FillNullLimit,
+    },
+    SumHorizontal,
+    MaxHorizontal,
+    MinHorizontal,
 }
 
 impl Hash for FunctionExpr {
@@ -345,9 +354,9 @@ impl Display for FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK(descending) => {
                 if *descending {
-                    "top_k"
-                } else {
                     "bottom_k"
+                } else {
+                    "top_k"
                 }
             },
             Shift(_) => "shift",
@@ -404,7 +413,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "peaks")]
             PeakMin => "peak_min",
             #[cfg(feature = "peaks")]
-            PeakMax => "peak_min",
+            PeakMax => "peak_max",
             #[cfg(feature = "cutqcut")]
             Cut { .. } => "cut",
             #[cfg(feature = "cutqcut")]
@@ -419,6 +428,11 @@ impl Display for FunctionExpr {
             SetSortedFlag(_) => "set_sorted",
             #[cfg(feature = "ffi_plugin")]
             FfiPlugin { lib, symbol, .. } => return write!(f, "{lib}:{symbol}"),
+            BackwardFill { .. } => "backward_fill",
+            ForwardFill { .. } => "forward_fill",
+            SumHorizontal => "sum_horizontal",
+            MaxHorizontal => "max_horizontal",
+            MinHorizontal => "min_horizontal",
         };
         write!(f, "{s}")
     }
@@ -736,6 +750,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             FfiPlugin { lib, symbol, .. } => unsafe {
                 map_as_slice!(plugin::call_plugin, lib.as_ref(), symbol.as_ref())
             },
+            BackwardFill { limit } => map!(dispatch::backward_fill, limit),
+            ForwardFill { limit } => map!(dispatch::forward_fill, limit),
+            SumHorizontal => map_as_slice!(dispatch::sum_horizontal),
+            MaxHorizontal => wrap!(dispatch::max_horizontal),
+            MinHorizontal => wrap!(dispatch::min_horizontal),
         }
     }
 }
@@ -762,8 +781,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ExtractGroups { pat, dtype } => {
                 map!(strings::extract_groups, &pat, &dtype)
             },
-            NChars => map!(strings::n_chars),
-            Length => map!(strings::lengths),
+            LenBytes => map!(strings::len_bytes),
+            LenChars => map!(strings::len_chars),
             #[cfg(feature = "string_justify")]
             Zfill(alignment) => {
                 map!(strings::zfill, alignment)
@@ -857,7 +876,12 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Millisecond => map!(datetime::millisecond),
             Microsecond => map!(datetime::microsecond),
             Nanosecond => map!(datetime::nanosecond),
+            ToString(format) => map!(datetime::to_string, &format),
             TimeStamp(tu) => map!(datetime::timestamp, tu),
+            #[cfg(feature = "timezones")]
+            ConvertTimeZone(tz) => map!(datetime::convert_time_zone, &tz),
+            WithTimeUnit(tu) => map!(datetime::with_time_unit, tu),
+            CastTimeUnit(tu) => map!(datetime::cast_time_unit, tu),
             Truncate(offset) => {
                 map_as_slice!(datetime::truncate, &offset)
             },

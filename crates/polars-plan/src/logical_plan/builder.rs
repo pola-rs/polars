@@ -85,26 +85,27 @@ macro_rules! try_delayed {
 }
 
 #[cfg(any(feature = "parquet", feature = "parquet_async",))]
-fn prepare_schema(mut schema: Schema, row_count: Option<&RowCount>) -> SchemaRef {
+fn prepare_schema(mut schema: SchemaRef, row_count: Option<&RowCount>) -> SchemaRef {
+    let schema_mut = Arc::make_mut(&mut schema);
     if let Some(rc) = row_count {
-        let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+        let _ = schema_mut.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
     }
-    Arc::new(schema)
+    schema
 }
 
 impl LogicalPlanBuilder {
     pub fn anonymous_scan(
         function: Arc<dyn AnonymousScan>,
-        schema: Option<Schema>,
+        schema: Option<SchemaRef>,
         infer_schema_length: Option<usize>,
         skip_rows: Option<usize>,
         n_rows: Option<usize>,
         name: &'static str,
     ) -> PolarsResult<Self> {
-        let schema = Arc::new(match schema {
+        let schema = match schema {
             Some(s) => s,
             None => function.schema(infer_schema_length)?,
-        });
+        };
 
         let file_info = FileInfo::new(schema.clone(), (n_rows, n_rows.unwrap_or(usize::MAX)));
         let file_options = FileScanOptions {
@@ -167,7 +168,7 @@ impl LogicalPlanBuilder {
                     let mut reader =
                         ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), None, None)
                             .await?;
-                    let schema = Arc::new(reader.schema().await?);
+                    let schema = reader.schema().await?;
                     let num_rows = reader.num_rows().await?;
                     let metadata = reader.get_metadata().await?.clone();
 

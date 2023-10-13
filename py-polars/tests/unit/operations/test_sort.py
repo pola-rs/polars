@@ -711,3 +711,20 @@ def test_sorted_update_flags_10327() -> None:
             pl.Series("a", [], dtype=pl.Int64).to_frame(),
         ]
     )["a"].to_list() == [1, 2]
+
+
+def test_sort_by_11653() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [0, 0, 0, 0, 0, 1],
+            "weights": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "other": [0.8, 0.4, 0.5, 0.6, 0.7, 0.8],
+        }
+    )
+
+    assert df.group_by("id").agg(
+        (pl.col("weights") / pl.col("weights").sum())
+        .sort_by("other")
+        .sum()
+        .alias("sort_by"),
+    ).sort("id").to_dict(False) == {"id": [0, 1], "sort_by": [1.0, 1.0]}

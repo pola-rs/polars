@@ -30,6 +30,11 @@ pub enum TemporalFunction {
     Millisecond,
     Microsecond,
     Nanosecond,
+    ToString(String),
+    CastTimeUnit(TimeUnit),
+    WithTimeUnit(TimeUnit),
+    #[cfg(feature = "timezones")]
+    ConvertTimeZone(TimeZone),
     TimeStamp(TimeUnit),
     Truncate(String),
     #[cfg(feature = "date_offset")]
@@ -48,6 +53,63 @@ pub enum TemporalFunction {
         time_unit: TimeUnit,
         time_zone: Option<TimeZone>,
     },
+}
+
+impl TemporalFunction {
+    pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
+        use TemporalFunction::*;
+        match self {
+            Year | IsoYear => mapper.with_dtype(DataType::Int32),
+            Month | Quarter | Week | WeekDay | Day | OrdinalDay | Hour | Minute | Millisecond
+            | Microsecond | Nanosecond | Second => mapper.with_dtype(DataType::UInt32),
+            ToString(_) => mapper.with_dtype(DataType::Utf8),
+            WithTimeUnit(_) => mapper.with_same_dtype(),
+            CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
+                DataType::Duration(_) => Ok(DataType::Duration(*tu)),
+                DataType::Datetime(_, tz) => Ok(DataType::Datetime(*tu, tz.clone())),
+                dtype => polars_bail!(ComputeError: "expected duration or datetime, got {}", dtype),
+            }),
+            #[cfg(feature = "timezones")]
+            ConvertTimeZone(tz) => mapper.try_map_dtype(|dt| match dt {
+                DataType::Datetime(tu, _) => Ok(DataType::Datetime(*tu, Some(tz.clone()))),
+                dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
+            }),
+            TimeStamp(_) => mapper.with_dtype(DataType::Int64),
+            IsLeapYear => mapper.with_dtype(DataType::Boolean),
+            Time => mapper.with_dtype(DataType::Time),
+            Date => mapper.with_dtype(DataType::Date),
+            Datetime => mapper.try_map_dtype(|dt| match dt {
+                DataType::Datetime(tu, _) => Ok(DataType::Datetime(*tu, None)),
+                dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
+            }),
+            Truncate(_) => mapper.with_same_dtype(),
+            #[cfg(feature = "date_offset")]
+            MonthStart => mapper.with_same_dtype(),
+            #[cfg(feature = "date_offset")]
+            MonthEnd => mapper.with_same_dtype(),
+            #[cfg(feature = "timezones")]
+            BaseUtcOffset => mapper.with_dtype(DataType::Duration(TimeUnit::Milliseconds)),
+            #[cfg(feature = "timezones")]
+            DSTOffset => mapper.with_dtype(DataType::Duration(TimeUnit::Milliseconds)),
+            Round(..) => mapper.with_same_dtype(),
+            #[cfg(feature = "timezones")]
+            ReplaceTimeZone(tz) => mapper.map_datetime_dtype_timezone(tz.as_ref()),
+            DatetimeFunction {
+                time_unit,
+                time_zone,
+            } => Ok(Field::new(
+                "datetime",
+                DataType::Datetime(*time_unit, time_zone.clone()),
+            )),
+            Combine(tu) => mapper.try_map_dtype(|dt| match dt {
+                DataType::Datetime(_, tz) => Ok(DataType::Datetime(*tu, tz.clone())),
+                DataType::Date => Ok(DataType::Datetime(*tu, None)),
+                dtype => {
+                    polars_bail!(ComputeError: "expected Date or Datetime, got {}", dtype)
+                },
+            }),
+        }
+    }
 }
 
 impl Display for TemporalFunction {
@@ -72,6 +134,11 @@ impl Display for TemporalFunction {
             Millisecond => "millisecond",
             Microsecond => "microsecond",
             Nanosecond => "nanosecond",
+            ToString(_) => "to_string",
+            #[cfg(feature = "timezones")]
+            ConvertTimeZone(_) => "convert_time_zone",
+            CastTimeUnit(_) => "cast_time_unit",
+            WithTimeUnit(_) => "with_time_unit",
             TimeStamp(tu) => return write!(f, "dt.timestamp({tu})"),
             Truncate(..) => "truncate",
             #[cfg(feature = "date_offset")]
@@ -199,6 +266,54 @@ pub(super) fn nanosecond(s: &Series) -> PolarsResult<Series> {
 }
 pub(super) fn timestamp(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
     s.timestamp(tu).map(|ca| ca.into_series())
+}
+pub(super) fn to_string(s: &Series, format: &str) -> PolarsResult<Series> {
+    TemporalMethods::to_string(s, format)
+}
+#[cfg(feature = "timezones")]
+pub(super) fn convert_time_zone(s: &Series, time_zone: &TimeZone) -> PolarsResult<Series> {
+    match s.dtype() {
+        DataType::Datetime(_, Some(_)) => {
+            let mut ca = s.datetime()?.clone();
+            ca.set_time_zone(time_zone.clone())?;
+            Ok(ca.into_series())
+        },
+        _ => polars_bail!(
+            ComputeError:
+            "cannot call `convert_time_zone` on tz-naive; set a time zone first \
+            with `replace_time_zone`"
+        ),
+    }
+}
+pub(super) fn with_time_unit(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
+    match s.dtype() {
+        DataType::Datetime(_, _) => {
+            let mut ca = s.datetime()?.clone();
+            ca.set_time_unit(tu);
+            Ok(ca.into_series())
+        },
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(_) => {
+            let mut ca = s.duration()?.clone();
+            ca.set_time_unit(tu);
+            Ok(ca.into_series())
+        },
+        dt => polars_bail!(ComputeError: "dtype `{}` has no time unit", dt),
+    }
+}
+pub(super) fn cast_time_unit(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
+    match s.dtype() {
+        DataType::Datetime(_, _) => {
+            let ca = s.datetime()?;
+            Ok(ca.cast_time_unit(tu).into_series())
+        },
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(_) => {
+            let ca = s.duration()?;
+            Ok(ca.cast_time_unit(tu).into_series())
+        },
+        dt => polars_bail!(ComputeError: "dtype `{}` has no time unit", dt),
+    }
 }
 
 pub(super) fn truncate(s: &[Series], offset: &str) -> PolarsResult<Series> {

@@ -81,14 +81,21 @@ class ListNameSpace:
 
         """
 
-    def lengths(self) -> Series:
+    def len(self) -> Series:
         """
-        Get the length of the arrays as UInt32.
+        Return the number of elements in each list.
+
+        Null values are treated like regular elements in this context.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`UInt32`.
 
         Examples
         --------
-        >>> s = pl.Series([[1, 2, 3], [5]])
-        >>> s.list.lengths()
+        >>> s = pl.Series([[1, 2, None], [5]])
+        >>> s.list.len()
         shape: (2,)
         Series: '' [u32]
         [
@@ -728,5 +735,15 @@ class ListNameSpace:
         ----------
         element
             An expression that produces a single value
+
+        """
+
+    @deprecate_renamed_function("len", version="0.19.8")
+    def lengths(self) -> Series:
+        """
+        Return the number of elements in each list.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len`.
 
         """

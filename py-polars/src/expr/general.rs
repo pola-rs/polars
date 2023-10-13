@@ -882,7 +882,6 @@ impl PyExpr {
     }
 
     #[cfg(feature = "ffi_plugin")]
-    #[allow(clippy::too_many_arguments)]
     fn register_plugin(
         &self,
         lib: &str,

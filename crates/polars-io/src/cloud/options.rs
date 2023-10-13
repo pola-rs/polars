@@ -30,8 +30,8 @@ use smartstring::alias::String as SmartString;
 use url::Url;
 
 #[cfg(feature = "aws")]
-static BUCKET_REGION: Lazy<tokio::sync::Mutex<FastFixedCache<SmartString, SmartString>>> =
-    Lazy::new(|| tokio::sync::Mutex::new(FastFixedCache::default()));
+static BUCKET_REGION: Lazy<std::sync::Mutex<FastFixedCache<SmartString, SmartString>>> =
+    Lazy::new(|| std::sync::Mutex::new(FastFixedCache::new(32)));
 
 /// The type of the config keys must satisfy the following requirements:
 /// 1. must be easily collected into a HashMap, the type required by the object_crate API.
@@ -90,8 +90,8 @@ impl FromStr for CloudType {
     fn from_str(url: &str) -> Result<Self, Self::Err> {
         let parsed = Url::parse(url).map_err(to_compute_err)?;
         Ok(match parsed.scheme() {
-            "s3" => Self::Aws,
-            "az" | "adl" | "abfs" => Self::Azure,
+            "s3" | "s3a" => Self::Aws,
+            "az" | "azure" | "adl" | "abfs" | "abfss" => Self::Azure,
             "gs" | "gcp" | "gcs" => Self::Gcp,
             "file" => Self::File,
             _ => polars_bail!(ComputeError: "unknown url scheme"),
@@ -146,10 +146,13 @@ impl CloudOptions {
                 .get_config_value(&AmazonS3ConfigKey::Region)
                 .is_none()
         {
-            let mut bucket_region = BUCKET_REGION.lock().await;
             let bucket = crate::cloud::CloudLocation::new(url)?.bucket;
+            let region = {
+                let bucket_region = BUCKET_REGION.lock().unwrap();
+                bucket_region.get(bucket.as_str()).cloned()
+            };
 
-            match bucket_region.get(bucket.as_str()) {
+            match region {
                 Some(region) => {
                     builder = builder.with_config(AmazonS3ConfigKey::Region, region.as_str())
                 },
@@ -165,6 +168,7 @@ impl CloudOptions {
                     if let Some(region) = result.headers().get("x-amz-bucket-region") {
                         let region =
                             std::str::from_utf8(region.as_bytes()).map_err(to_compute_err)?;
+                        let mut bucket_region = BUCKET_REGION.lock().unwrap();
                         bucket_region.insert(bucket.into(), region.into());
                         builder = builder.with_config(AmazonS3ConfigKey::Region, region)
                     }

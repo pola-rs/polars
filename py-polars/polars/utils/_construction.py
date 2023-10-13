@@ -483,10 +483,9 @@ def sequence_to_pyseries(
                     dtype_tz is not None and dtype_tz != "UTC"
                 ):
                     raise ValueError(
-                        "time-zone-aware datetimes are converted to UTC. "
-                        "Please either drop the time zone from the dtype, "
-                        "or set it to 'UTC'. To convert to a different time zone, "
-                        "please use `.dt.convert_time_zone`"
+                        "time-zone-aware datetimes are converted to UTC"
+                        "\n\nPlease either drop the time zone from the dtype, or set it to 'UTC'."
+                        " To convert to a different time zone, please use `.dt.convert_time_zone`."
                     )
                 if values_tz != "UTC" and dtype_tz is None:
                     warnings.warn(
@@ -627,7 +626,9 @@ def _handle_columns_arg(
                     data[i].rename(c)
             return data
         else:
-            raise ValueError("dimensions of columns arg must match data dimensions")
+            raise ValueError(
+                f"dimensions of columns arg ({len(columns)}) must match data dimensions ({len(data)})"
+            )
 
 
 def _post_apply_columns(
@@ -1023,7 +1024,7 @@ def _sequence_of_sequence_to_pydf(
         local_schema_override = (
             include_unknowns(schema_overrides, column_names) if schema_overrides else {}
         )
-        if column_names and len(first_element) != len(column_names):
+        if column_names and first_element and len(first_element) != len(column_names):
             raise ShapeError("the row data does not match the number of columns")
 
         unpack_nested = False
@@ -1062,9 +1063,7 @@ def _sequence_of_sequence_to_pydf(
         ]
         return PyDataFrame(data_series)
 
-    raise ValueError(
-        f"orient must be one of {{'col', 'row', None}}, got {orient!r} instead"
-    )
+    raise ValueError(f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}")
 
 
 @_sequence_to_pydf_dispatcher.register(tuple)
@@ -1372,7 +1371,7 @@ def numpy_to_pydf(
                 n_columns = shape[0]
             else:
                 raise ValueError(
-                    f"orient must be one of {{'col', 'row', None}}; found {orient!r} instead"
+                    f"`orient` must be one of {{'col', 'row', None}}, got {orient!r}"
                 )
         else:
             raise ValueError(
@@ -1380,7 +1379,7 @@ def numpy_to_pydf(
             )
 
     if schema is not None and len(schema) != n_columns:
-        raise ValueError("dimensions of 'schema' arg must match data dimensions")
+        raise ValueError("dimensions of `schema` arg must match data dimensions")
 
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides, n_expected=n_columns
@@ -1715,7 +1714,7 @@ def numpy_to_idxs(idxs: np.ndarray[Any, Any], size: int) -> pl.Series:
 
     # Numpy array with signed or unsigned integers.
     if idxs.dtype.kind not in ("i", "u"):
-        raise NotImplementedError("unsupported idxs datatype.")
+        raise NotImplementedError("unsupported idxs datatype")
 
     if idx_type == UInt32:
         if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:

@@ -145,15 +145,15 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     /// Get the length of the string values as number of chars.
-    fn str_n_chars(&self) -> UInt32Chunked {
+    fn str_len_chars(&self) -> UInt32Chunked {
         let ca = self.as_utf8();
-        ca.apply_kernel_cast(&string_nchars)
+        ca.apply_kernel_cast(&string_len_chars)
     }
 
     /// Get the length of the string values as number of bytes.
-    fn str_lengths(&self) -> UInt32Chunked {
+    fn str_len_bytes(&self) -> UInt32Chunked {
         let ca = self.as_utf8();
-        ca.apply_kernel_cast(&string_lengths)
+        ca.apply_kernel_cast(&string_len_bytes)
     }
 
     /// Return a copy of the string left filled with ASCII '0' digits to make a string of length width.

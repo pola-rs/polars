@@ -8,17 +8,17 @@ For any lazy query `Polars` has both:
 We can understand both the non-optimized and optimized query plans with visualization and by printing them as text.
 
 <div style="display:none">
-```python exec="on" result="text" session="user-guide/lazy/query_plan"
---8<-- "python/user-guide/lazy/query_plan.py:setup"
+```python exec="on" result="text" session="user-guide/lazy/query-plan"
+--8<-- "python/user-guide/lazy/query-plan.py:setup"
 ```
 </div>
 
 Below we consider the following query:
 
-{{code_block('user-guide/lazy/query_plan','plan',[])}}
+{{code_block('user-guide/lazy/query-plan','plan',[])}}
 
-```python exec="on" session="user-guide/lazy/query_plan"
---8<-- "python/user-guide/lazy/query_plan.py:plan"
+```python exec="on" session="user-guide/lazy/query-plan"
+--8<-- "python/user-guide/lazy/query-plan.py:plan"
 ```
 
 ## Non-optimized query plan
@@ -27,10 +27,10 @@ Below we consider the following query:
 
 First we visualise the non-optimized plan by setting `optimized=False`.
 
-{{code_block('user-guide/lazy/query_plan','showplan',['show_graph'])}}
+{{code_block('user-guide/lazy/query-plan','showplan',['show_graph'])}}
 
-```python exec="on" session="user-guide/lazy/query_plan"
---8<-- "python/user-guide/lazy/query_plan.py:createplan"
+```python exec="on" session="user-guide/lazy/query-plan"
+--8<-- "python/user-guide/lazy/query-plan.py:createplan"
 ```
 
 The query plan visualization should be read from bottom to top. In the visualization:
@@ -43,10 +43,10 @@ The query plan visualization should be read from bottom to top. In the visualiza
 
 We can also print the non-optimized plan with `explain(optimized=False)`
 
-{{code_block('user-guide/lazy/query_plan','describe',['explain'])}}
+{{code_block('user-guide/lazy/query-plan','describe',['explain'])}}
 
-```python exec="on" session="user-guide/lazy/query_plan"
---8<-- "python/user-guide/lazy/query_plan.py:describe"
+```python exec="on" session="user-guide/lazy/query-plan"
+--8<-- "python/user-guide/lazy/query-plan.py:describe"
 ```
 
 ```text
@@ -68,15 +68,15 @@ The printed plan should also be read from bottom to top. This non-optimized plan
 
 Now we visualize the optimized plan with `show_graph`.
 
-{{code_block('user-guide/lazy/query_plan','show',['show_graph'])}}
+{{code_block('user-guide/lazy/query-plan','show',['show_graph'])}}
 
-```python exec="on" session="user-guide/lazy/query_plan"
---8<-- "python/user-guide/lazy/query_plan.py:createplan2"
+```python exec="on" session="user-guide/lazy/query-plan"
+--8<-- "python/user-guide/lazy/query-plan.py:createplan2"
 ```
 
 We can also print the optimized plan with `explain`
 
-{{code_block('user-guide/lazy/query_plan','optimized',['explain'])}}
+{{code_block('user-guide/lazy/query-plan','optimized',['explain'])}}
 
 ```text
  WITH_COLUMNS:

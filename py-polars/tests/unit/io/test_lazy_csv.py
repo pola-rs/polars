@@ -242,3 +242,13 @@ def test_scan_csv_schema_overwrite_not_projected_8483(foods_file_path: Path) -> 
     )
     expected = pl.DataFrame({"count": 27}, schema={"count": pl.UInt32})
     assert_frame_equal(df, expected)
+
+
+def test_csv_list_arg(io_files_path: Path) -> None:
+    first = io_files_path / "foods1.csv"
+    second = io_files_path / "foods2.csv"
+
+    df = pl.scan_csv(source=[first, second]).collect()
+    assert df.shape == (54, 4)
+    assert df.row(-1) == ("seafood", 194, 12.0, 1)
+    assert df.row(0) == ("vegetables", 45, 0.5, 2)

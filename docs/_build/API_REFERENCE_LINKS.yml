@@ -12,8 +12,7 @@ python:
   write_csv: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_csv.html
   read_json: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_json.html
   write_json: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_json.html
-  read_parquet: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_parquet.html
-  write_parquet: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_parquet.html
+  read_ipc: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_ipc.html
   min: https://pola-rs.github.io/polars/py-polars/html/reference/series/api/polars.Series.min.html
   max: https://pola-rs.github.io/polars/py-polars/html/reference/series/api/polars.Series.max.html
   value_counts: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.value_counts.html
@@ -65,6 +64,7 @@ python:
   write_database:
     name: write_database
     link: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_database.html
+  read_database_uri: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_database_uri.html
   read_parquet: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.read_parquet.html
   write_parquet: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_parquet.html
   scan_parquet: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.scan_parquet.html
@@ -73,6 +73,7 @@ python:
   write_ndjson: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_ndjson.html
   write_json: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.write_json.html
   scan_ndjson: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.scan_ndjson.html
+  scan_pyarrow_dataset: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.scan_pyarrow_dataset.html
   from_arrow:
     name: from_arrow
     link: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.from_arrow.html
@@ -142,8 +143,8 @@ python:
   str.replace_all: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.replace_all.html
   str.to_datetime: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.to_datetime.html
   str.to_date: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.to_date.html
-  str.n_chars: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.n_chars.html
-  str.lengths: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.lengths.html
+  str.len_chars: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.len_chars.html
+  str.len_bytes: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.str.len_bytes.html
 
   struct.field: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.struct.field.html
   struct.rename_fields: https://pola-rs.github.io/polars/py-polars/html/reference/expressions/api/polars.Expr.struct.rename_fields.html
@@ -197,7 +198,7 @@ rust:
     feature_flags: ['json']
   read_ndjson:
     name: JsonLineReader
-    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_io/ndjson_core/ndjson/struct.JsonLineReader.html
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_io/ndjson/core/struct.JsonLineReader.html
     feature_flags: ['json']
   write_json:
     name: JsonWriter
@@ -223,6 +224,12 @@ rust:
     name: scan_parquet
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars/prelude/struct.LazyFrame.html#method.scan_parquet
     feature_flags: ['parquet']
+  read_ipc:
+    name: IpcReader
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_io/prelude/struct.IpcReader.html
+    feature_flags: ['ipc']
+  scan_pyarrow_dataset: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.scan_pyarrow_dataset.html
+  
   min: https://pola-rs.github.io/polars/docs/rust/dev/polars/series/struct.Series.html#method.min
   max: https://pola-rs.github.io/polars/docs/rust/dev/polars/series/struct.Series.html#method.max
   struct:
@@ -354,12 +361,12 @@ rust:
     name: str.replace_all
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.to_datetime
     feature_flags: [dtype-datetime]
-  str.n_chars:
-    name: str.n_chars
-    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.n_chars
-  str.lengths:
-    name: str.lengths
-    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.lengths
+  str.len_chars:
+    name: str.len_chars
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.len_chars
+  str.len_bytes:
+    name: str.len_bytes
+    link: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/string/struct.StringNameSpace.html#method.len_bytes
 
   struct.rename_fields: https://pola-rs.github.io/polars/docs/rust/dev/polars_lazy/dsl/struct.StructNameSpace.html#method.rename_fields
   struct.field:
