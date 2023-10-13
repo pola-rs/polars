@@ -829,7 +829,7 @@ def dict_to_pydf(
     nan_to_null: bool = False,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from a dictionary of sequences."""
-    if isinstance(schema, dict) and data:
+    if not isinstance(schema, dict) and data:
         if not all((col in schema) for col in data):
             raise ValueError(
                 "the given column-schema names do not match the data dictionary"

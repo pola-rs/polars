@@ -4,6 +4,7 @@ import sys
 from collections import namedtuple
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from functools import partial
 from random import shuffle
 from typing import TYPE_CHECKING, Any, List, Literal, NamedTuple
 
@@ -864,6 +865,51 @@ def test_init_errors() -> None:
     # Duplicate schema
     with pytest.raises(DuplicateError):
         pl.DataFrame(schema=["", ""])
+
+
+def test_init_schema() -> None:
+    funcs = (
+        pl.DataFrame,
+        pl.LazyFrame,
+        partial(pl.from_dict, dict(a=[1], b=[2])),
+        partial(pl.from_dicts, [dict(a=1, b=2)]),
+        partial(pl.from_records, ([1], [2])),
+        partial(pl.from_numpy, np.array([[1], [2]])),
+        partial(pl.from_arrow, pl.DataFrame(dict(a=[1], b=[2])).to_arrow()),
+    )
+
+    for f in funcs:
+        # Raise on duplicates
+        with pytest.raises(DuplicateError):
+            f(schema=("", ""))
+            pytest.fail(f"Did not raise duplicate {f=}")
+
+    funcs = (
+        partial(pl.DataFrame, dict(a=[1], b=[2])),
+        partial(pl.from_dict, dict(a=[1], b=[2])),
+        partial(pl.from_dicts, [dict(a=1, b=2)]),
+        partial(pl.from_records, ([1], [2])),
+    )
+
+    for f in funcs:
+        try:
+            assert f(
+                schema=dict(b=pl.Int8, a=pl.Int8), schema_overrides=dict(b=pl.UInt8)
+            ).schema == dict(a=pl.Int8, b=pl.UInt8)
+
+        except Exception as e:
+            raise Exception(f"{e} {f=}") from e
+
+        try:
+            assert f(schema=("x", "a")).to_dict(as_series=False) == dict(a=[2], x=[1])
+
+        except Exception as e:
+            raise Exception(f"{e} {f=}") from e
+
+        # Raise on incorrect dimension
+        with pytest.raises(ValueError):
+            f(schema=dict(a=pl.Int8))
+            pytest.fail(f"Did not raise dimension {f=}")
 
 
 def test_init_records() -> None:
