@@ -1,4 +1,5 @@
 //! Read parquet files in parallel from the Object Store without a third party crate.
+use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -19,6 +20,8 @@ use super::cloud::{build_object_store, CloudLocation, CloudReader};
 use super::mmap;
 use super::mmap::ColumnStore;
 use crate::cloud::CloudOptions;
+use crate::predicates::PhysicalIoExpr;
+use crate::prelude::predicates::read_this_row_group;
 
 pub struct ParquetObjectStore {
     store: Arc<dyn ObjectStore>,
@@ -155,6 +158,8 @@ pub struct FetchRowGroupsFromObjectStore {
     reader: Arc<ParquetObjectStore>,
     row_groups_metadata: Vec<RowGroupMetaData>,
     projected_fields: Vec<SmartString>,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    schema: SchemaRef,
     logging: bool,
 }
 
@@ -164,6 +169,7 @@ impl FetchRowGroupsFromObjectStore {
         metadata: &FileMetaData,
         schema: SchemaRef,
         projection: Option<&[usize]>,
+        predicate: Option<Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<Self> {
         let logging = verbose();
 
@@ -180,6 +186,8 @@ impl FetchRowGroupsFromObjectStore {
             reader: Arc::new(reader),
             row_groups_metadata: metadata.row_groups.to_owned(),
             projected_fields,
+            predicate,
+            schema,
             logging,
         })
     }
@@ -199,9 +207,23 @@ impl FetchRowGroupsFromObjectStore {
                 Ok,
             )?;
 
+        let row_groups = if let Some(pred) = self.predicate.as_deref() {
+            Cow::Owned(
+                row_groups
+                    .iter()
+                    .filter(|rg| {
+                        matches!(read_this_row_group(Some(pred), rg, &self.schema), Ok(true))
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            Cow::Borrowed(row_groups)
+        };
+
         // Package in the format required by ColumnStore.
         let downloaded =
-            download_projection(&self.projected_fields, row_groups, &self.reader).await?;
+            download_projection(&self.projected_fields, &row_groups, &self.reader).await?;
 
         if self.logging {
             eprintln!(

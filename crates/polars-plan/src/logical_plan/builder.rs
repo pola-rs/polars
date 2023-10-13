@@ -85,11 +85,12 @@ macro_rules! try_delayed {
 }
 
 #[cfg(any(feature = "parquet", feature = "parquet_async",))]
-fn prepare_schema(mut schema: Schema, row_count: Option<&RowCount>) -> SchemaRef {
+fn prepare_schema(mut schema: SchemaRef, row_count: Option<&RowCount>) -> SchemaRef {
+    let schema_mut = Arc::make_mut(&mut schema);
     if let Some(rc) = row_count {
-        let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+        let _ = schema_mut.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
     }
-    Arc::new(schema)
+    schema
 }
 
 impl LogicalPlanBuilder {
@@ -167,7 +168,7 @@ impl LogicalPlanBuilder {
                     let mut reader =
                         ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), None, None)
                             .await?;
-                    let schema = Arc::new(reader.schema().await?);
+                    let schema = reader.schema().await?;
                     let num_rows = reader.num_rows().await?;
                     let metadata = reader.get_metadata().await?.clone();
 

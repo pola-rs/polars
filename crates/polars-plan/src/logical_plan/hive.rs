@@ -76,7 +76,7 @@ impl HivePartitions {
         } else {
             let schema: Schema = partitions.as_slice().into();
             let stats = BatchStats::new(
-                schema,
+                Arc::new(schema),
                 partitions
                     .into_iter()
                     .map(ColumnStats::from_column_literal)

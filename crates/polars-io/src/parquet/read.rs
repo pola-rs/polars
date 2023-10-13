@@ -49,6 +49,7 @@ pub struct ParquetReader<R: Read + Seek> {
     columns: Option<Vec<String>>,
     projection: Option<Vec<usize>>,
     parallel: ParallelStrategy,
+    schema: Option<SchemaRef>,
     row_count: Option<RowCount>,
     low_memory: bool,
     metadata: Option<Arc<FileMetaData>>,
@@ -65,8 +66,8 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         projection: Option<&[usize]>,
     ) -> PolarsResult<DataFrame> {
         // this path takes predicates and parallelism into account
-        let metadata = read::read_metadata(&mut self.reader)?;
-        let schema = read::schema::infer_schema(&metadata)?;
+        let metadata = self.get_metadata()?.clone();
+        let schema = self.schema()?;
 
         let rechunk = self.rechunk;
         read_parquet(
@@ -129,9 +130,16 @@ impl<R: MmapBytesReader> ParquetReader<R> {
     }
 
     /// [`Schema`] of the file.
-    pub fn schema(&mut self) -> PolarsResult<Schema> {
-        let metadata = self.get_metadata()?;
-        Ok(Schema::from_iter(&read::infer_schema(metadata)?.fields))
+    pub fn schema(&mut self) -> PolarsResult<SchemaRef> {
+        match &self.schema {
+            Some(schema) => Ok(schema.clone()),
+            None => {
+                let metadata = self.get_metadata()?;
+                Ok(Arc::new(Schema::from_iter(
+                    &read::infer_schema(metadata)?.fields,
+                )))
+            },
+        }
     }
 
     /// Use statistics in the parquet to determine if pages
@@ -152,7 +160,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
-    pub fn get_metadata(&mut self) -> PolarsResult<&Arc<FileMetaData>> {
+    pub fn get_metadata(&mut self) -> PolarsResult<&FileMetaDataRef> {
         if self.metadata.is_none() {
             self.metadata = Some(Arc::new(read::read_metadata(&mut self.reader)?));
         }
@@ -163,11 +171,13 @@ impl<R: MmapBytesReader> ParquetReader<R> {
 impl<R: MmapBytesReader + 'static> ParquetReader<R> {
     pub fn batched(mut self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
         let metadata = self.get_metadata()?.clone();
+        let schema = self.schema()?;
 
         let row_group_fetcher = FetchRowGroupsFromMmapReader::new(Box::new(self.reader))?.into();
         BatchedParquetReader::new(
             row_group_fetcher,
             metadata,
+            schema,
             self.n_rows.unwrap_or(usize::MAX),
             self.projection,
             self.row_count,
@@ -191,6 +201,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             row_count: None,
             low_memory: false,
             metadata: None,
+            schema: None,
             use_statistics: true,
             hive_partition_columns: None,
         }
@@ -202,11 +213,11 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
     }
 
     fn finish(mut self) -> PolarsResult<DataFrame> {
-        let metadata = read::read_metadata(&mut self.reader)?;
-        let schema = read::schema::infer_schema(&metadata)?;
+        let schema = self.schema()?;
+        let metadata = self.get_metadata()?.clone();
 
         if let Some(cols) = &self.columns {
-            self.projection = Some(columns_to_projection(cols, &schema)?);
+            self.projection = Some(columns_to_projection_pl_schema(cols, schema.as_ref())?);
         }
 
         read_parquet(
@@ -238,6 +249,7 @@ pub struct ParquetAsyncReader {
     n_rows: Option<usize>,
     rechunk: bool,
     projection: Option<Vec<usize>>,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
     row_count: Option<RowCount>,
     use_statistics: bool,
     hive_partition_columns: Option<Vec<Series>>,
@@ -258,14 +270,18 @@ impl ParquetAsyncReader {
             n_rows: None,
             projection: None,
             row_count: None,
+            predicate: None,
             use_statistics: true,
             hive_partition_columns: None,
             schema,
         })
     }
 
-    pub async fn schema(&mut self) -> PolarsResult<Schema> {
-        self.reader.schema().await
+    pub async fn schema(&mut self) -> PolarsResult<SchemaRef> {
+        match &self.schema {
+            Some(schema) => Ok(schema.clone()),
+            None => self.reader.schema().await.map(Arc::new),
+        }
     }
     pub async fn num_rows(&mut self) -> PolarsResult<usize> {
         self.reader.num_rows().await
@@ -291,6 +307,11 @@ impl ParquetAsyncReader {
         self
     }
 
+    pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
+        self.predicate = predicate;
+        self
+    }
+
     /// Use statistics in the parquet to determine if pages
     /// can be skipped from reading.
     pub fn use_statistics(mut self, toggle: bool) -> Self {
@@ -305,17 +326,20 @@ impl ParquetAsyncReader {
 
     pub async fn batched(mut self, chunk_size: usize) -> PolarsResult<BatchedParquetReader> {
         let metadata = self.reader.get_metadata().await?.clone();
+        let schema = self.schema().await?;
         // row group fetched deals with projection
         let row_group_fetcher = FetchRowGroupsFromObjectStore::new(
             self.reader,
             &metadata,
             self.schema.unwrap(),
             self.projection.as_deref(),
+            self.predicate.clone(),
         )?
         .into();
         BatchedParquetReader::new(
             row_group_fetcher,
             metadata,
+            schema,
             self.n_rows.unwrap_or(usize::MAX),
             self.projection,
             self.row_count,
@@ -329,12 +353,10 @@ impl ParquetAsyncReader {
         self.reader.get_metadata().await
     }
 
-    pub async fn finish(
-        self,
-        predicate: Option<Arc<dyn PhysicalIoExpr>>,
-    ) -> PolarsResult<DataFrame> {
+    pub async fn finish(self) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
 
+        let predicate = self.predicate.clone();
         // batched reader deals with slice pushdown
         let reader = self.batched(usize::MAX).await?;
         let mut iter = reader.iter(16);

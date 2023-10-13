@@ -19,15 +19,14 @@ impl ColumnStats {
 /// Collect the statistics in a column chunk.
 pub(crate) fn collect_statistics(
     md: &RowGroupMetaData,
-    arrow_schema: &ArrowSchema,
+    schema: SchemaRef,
 ) -> ArrowResult<Option<BatchStats>> {
-    let mut schema = Schema::with_capacity(arrow_schema.fields.len());
     let mut stats = vec![];
 
-    for fld in &arrow_schema.fields {
-        let st = deserialize(fld, md)?;
-        schema.with_column((&fld.name).into(), (&fld.data_type).into());
-        stats.push(ColumnStats::from_arrow_stats(st, fld));
+    for (name, dt) in schema.iter() {
+        let fld = ArrowField::new(name.as_str(), dt.to_arrow(), true);
+        let st = deserialize(&fld, md)?;
+        stats.push(ColumnStats::from_arrow_stats(st, &fld));
     }
 
     Ok(if stats.is_empty() {
@@ -38,13 +37,13 @@ pub(crate) fn collect_statistics(
 }
 
 pub(super) fn read_this_row_group(
-    predicate: Option<&Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<&dyn PhysicalIoExpr>,
     md: &RowGroupMetaData,
-    schema: &ArrowSchema,
+    schema: &SchemaRef,
 ) -> PolarsResult<bool> {
-    if let Some(pred) = &predicate {
+    if let Some(pred) = predicate {
         if let Some(pred) = pred.as_stats_evaluator() {
-            if let Some(stats) = collect_statistics(md, schema)? {
+            if let Some(stats) = collect_statistics(md, schema.clone())? {
                 let should_read = pred.should_read(&stats);
                 // a parquet file may not have statistics of all columns
                 if matches!(should_read, Ok(false)) {
