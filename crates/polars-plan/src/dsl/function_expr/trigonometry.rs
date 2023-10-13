@@ -177,7 +177,7 @@ where
     T::Native: Float,
     ChunkedArray<T>: IntoSeries,
 {
-    Ok(ca.apply_values(|v| v.cos() / v.sin()).into_series())
+    Ok(ca.apply_values(|v| v.tan().powi(-1)).into_series())
 }
 
 fn sin<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
