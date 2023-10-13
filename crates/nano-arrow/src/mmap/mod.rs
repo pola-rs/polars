@@ -6,6 +6,7 @@ mod array;
 
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{Block, MessageRef, RecordBatchRef};
+use polars_error::{polars_bail, polars_err, PolarsResult, to_compute_err};
 
 use crate::array::Array;
 use crate::chunk::Chunk;
@@ -20,16 +21,16 @@ use crate::io::ipc::{IpcField, CONTINUATION_MARKER};
 fn read_message(
     mut bytes: &[u8],
     block: arrow_format::ipc::Block,
-) -> Result<(MessageRef, usize), Error> {
+) -> PolarsResult<(MessageRef, usize)> {
     let offset: usize = block
         .offset
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
 
     let block_length: usize = block
         .meta_data_length
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
 
     bytes = &bytes[offset..];
     let mut message_length = bytes[..4].try_into().unwrap();
@@ -43,34 +44,32 @@ fn read_message(
 
     let message_length: usize = i32::from_le_bytes(message_length)
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
 
     let message = arrow_format::ipc::MessageRef::read_as_root(&bytes[..message_length])
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
+        .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
 
     Ok((message, offset + block_length))
 }
 
 fn get_buffers_nodes(
     batch: RecordBatchRef,
-) -> Result<(VecDeque<IpcBuffer>, VecDeque<Node>), Error> {
-    let compression = batch.compression()?;
+) -> PolarsResult<(VecDeque<IpcBuffer>, VecDeque<Node>)> {
+    let compression = batch.compression().map_err(to_compute_err)?;
     if compression.is_some() {
-        return Err(Error::nyi(
-            "mmap can only be done on uncompressed IPC files",
-        ));
+        polars_bail!(ComputeError: "mmap can only be done on uncompressed IPC files")
     }
 
     let buffers = batch
         .buffers()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferBuffers(err)))?
-        .ok_or_else(|| Error::from(OutOfSpecKind::MissingMessageBuffers))?;
+        .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidFlatbufferBuffers(err)))?
+        .ok_or_else(|| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::MissingMessageBuffers))?;
     let buffers = buffers.iter().collect::<VecDeque<_>>();
 
     let field_nodes = batch
         .nodes()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferNodes(err)))?
-        .ok_or_else(|| Error::from(OutOfSpecKind::MissingMessageNodes))?;
+        .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidFlatbufferNodes(err)))?
+        .ok_or_else(|| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::MissingMessageNodes))?;
     let field_nodes = field_nodes.iter().collect::<VecDeque<_>>();
 
     Ok((buffers, field_nodes))
@@ -83,7 +82,7 @@ unsafe fn _mmap_record<T: AsRef<[u8]>>(
     batch: RecordBatchRef,
     offset: usize,
     dictionaries: &Dictionaries,
-) -> Result<Chunk<Box<dyn Array>>, Error> {
+) -> PolarsResult<Chunk<Box<dyn Array>>> {
     let (mut buffers, mut field_nodes) = get_buffers_nodes(batch)?;
 
     fields
@@ -102,7 +101,7 @@ unsafe fn _mmap_record<T: AsRef<[u8]>>(
                 &mut buffers,
             )
         })
-        .collect::<Result<_, Error>>()
+        .collect::<PolarsResult<_>>()
         .and_then(Chunk::try_new)
 }
 
@@ -112,7 +111,7 @@ unsafe fn _mmap_unchecked<T: AsRef<[u8]>>(
     data: Arc<T>,
     block: Block,
     dictionaries: &Dictionaries,
-) -> Result<Chunk<Box<dyn Array>>, Error> {
+) -> PolarsResult<Chunk<Box<dyn Array>>> {
     let (message, offset) = read_message(data.as_ref().as_ref(), block)?;
     let batch = get_record_batch(message)?;
     _mmap_record(
@@ -141,7 +140,7 @@ pub unsafe fn mmap_unchecked<T: AsRef<[u8]>>(
     dictionaries: &Dictionaries,
     data: Arc<T>,
     chunk: usize,
-) -> Result<Chunk<Box<dyn Array>>, Error> {
+) -> PolarsResult<Chunk<Box<dyn Array>>> {
     let block = metadata.blocks[chunk];
 
     let (message, offset) = read_message(data.as_ref().as_ref(), block)?;
@@ -161,28 +160,26 @@ unsafe fn mmap_dictionary<T: AsRef<[u8]>>(
     data: Arc<T>,
     block: Block,
     dictionaries: &mut Dictionaries,
-) -> Result<(), Error> {
+) -> PolarsResult<()> {
     let (message, offset) = read_message(data.as_ref().as_ref(), block)?;
     let batch = get_dictionary_batch(&message)?;
 
     let id = batch
         .id()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferId(err)))?;
+        .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidFlatbufferId(err)))?;
     let (first_field, first_ipc_field) =
         first_dict_field(id, &metadata.schema.fields, &metadata.ipc_schema.fields)?;
 
     let batch = batch
         .data()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferData(err)))?
-        .ok_or_else(|| Error::from(OutOfSpecKind::MissingData))?;
+        .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidFlatbufferData(err)))?
+        .ok_or_else(|| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::MissingData))?;
 
     let value_type =
         if let DataType::Dictionary(_, value_type, _) = first_field.data_type.to_logical_type() {
             value_type.as_ref()
         } else {
-            return Err(Error::from(OutOfSpecKind::InvalidIdDataType {
-                requested_id: id,
-            }));
+            polars_bail!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidIdDataType {requested_id: id} )
         };
 
     // Make a fake schema for the dictionary batch.
@@ -210,7 +207,7 @@ unsafe fn mmap_dictionary<T: AsRef<[u8]>>(
 pub unsafe fn mmap_dictionaries_unchecked<T: AsRef<[u8]>>(
     metadata: &FileMetadata,
     data: Arc<T>,
-) -> Result<Dictionaries, Error> {
+) -> PolarsResult<Dictionaries> {
     let blocks = if let Some(blocks) = &metadata.dictionaries {
         blocks
     } else {

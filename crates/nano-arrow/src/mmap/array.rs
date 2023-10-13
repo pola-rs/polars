@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
+use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::PolarsError::ComputeError;
 
 use crate::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, StructArray};
 use crate::datatypes::DataType;
@@ -12,20 +14,20 @@ use crate::offset::Offset;
 use crate::types::NativeType;
 use crate::{match_integer_type, with_match_primitive_type};
 
-fn get_buffer_bounds(buffers: &mut VecDeque<IpcBuffer>) -> Result<(usize, usize), Error> {
+fn get_buffer_bounds(buffers: &mut VecDeque<IpcBuffer>) -> PolarsResult<(usize, usize) > {
     let buffer = buffers
         .pop_front()
-        .ok_or_else(|| Error::from(OutOfSpecKind::ExpectedBuffer))?;
+        .ok_or_else(|| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::ExpectedBuffer))?;
 
     let offset: usize = buffer
         .offset()
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
 
     let length: usize = buffer
         .length()
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
 
     Ok((offset, length))
 }
@@ -35,22 +37,21 @@ fn get_buffer<'a, T: NativeType>(
     block_offset: usize,
     buffers: &mut VecDeque<IpcBuffer>,
     num_rows: usize,
-) -> Result<&'a [u8], Error> {
+) -> PolarsResult<&'a [u8]> {
     let (offset, length) = get_buffer_bounds(buffers)?;
 
     // verify that they are in-bounds
     let values = data
         .get(block_offset + offset..block_offset + offset + length)
-        .ok_or_else(|| Error::OutOfSpec("buffer out of bounds".to_string()))?;
+        .ok_or_else(|| polars_err!(ComputeError: "buffer out of bounds"))?;
 
     // validate alignment
     let v: &[T] = bytemuck::try_cast_slice(values)
-        .map_err(|_| Error::OutOfSpec("buffer not aligned for mmap".to_string()))?;
+        .map_err(|_| polars_err!(ComputeError: "buffer not aligned for mmap"))?;
 
     if v.len() < num_rows {
-        return Err(Error::OutOfSpec(
-            "buffer's length is too small in mmap".to_string(),
-        ));
+        polars_bail!(ComputeError: "buffer's length is too small in mmap",
+        )
     }
 
     Ok(values)
@@ -61,7 +62,7 @@ fn get_validity<'a>(
     block_offset: usize,
     buffers: &mut VecDeque<IpcBuffer>,
     null_count: usize,
-) -> Result<Option<&'a [u8]>, Error> {
+) -> PolarsResult<Option<&'a [u8]>> {
     let validity = get_buffer_bounds(buffers)?;
     let (offset, length) = validity;
 
@@ -69,11 +70,24 @@ fn get_validity<'a>(
         // verify that they are in-bounds and get its pointer
         Some(
             data.get(block_offset + offset..block_offset + offset + length)
-                .ok_or_else(|| Error::OutOfSpec("buffer out of bounds".to_string()))?,
+                .ok_or_else(|| polars_err!(ComputeError: "buffer out of bounds"))?
         )
     } else {
         None
     })
+}
+
+fn get_num_rows_and_null_count(node: &Node) -> PolarsResult<(usize, usize)> {
+    let num_rows: usize = node
+        .length()
+        .try_into()
+        .map_err(|_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
+
+    let null_count: usize = node
+        .null_count()
+        .try_into()
+        .map_err(|_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
+    Ok((num_rows, null_count))
 }
 
 fn mmap_binary<O: Offset, T: AsRef<[u8]>>(
@@ -81,17 +95,8 @@ fn mmap_binary<O: Offset, T: AsRef<[u8]>>(
     node: &Node,
     block_offset: usize,
     buffers: &mut VecDeque<IpcBuffer>,
-) -> Result<ArrowArray, Error> {
-    let num_rows: usize = node
-        .length()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
-
-    let null_count: usize = node
-        .null_count()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
-
+) -> PolarsResult<ArrowArray> {
+    let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
     let data_ref = data.as_ref().as_ref();
 
     let validity = get_validity(data_ref, block_offset, buffers, null_count)?.map(|x| x.as_ptr());
@@ -119,22 +124,13 @@ fn mmap_fixed_size_binary<T: AsRef<[u8]>>(
     block_offset: usize,
     buffers: &mut VecDeque<IpcBuffer>,
     data_type: &DataType,
-) -> Result<ArrowArray, Error> {
+) -> PolarsResult<ArrowArray> {
     let bytes_per_row = if let DataType::FixedSizeBinary(bytes_per_row) = data_type {
         bytes_per_row
     } else {
-        return Err(Error::from(OutOfSpecKind::InvalidDataType));
+       polars_bail!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidDataType);
     };
-
-    let num_rows: usize = node
-        .length()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
-
-    let null_count: usize = node
-        .null_count()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+    let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
 
     let data_ref = data.as_ref().as_ref();
 
@@ -160,16 +156,8 @@ fn mmap_null<T: AsRef<[u8]>>(
     node: &Node,
     _block_offset: usize,
     _buffers: &mut VecDeque<IpcBuffer>,
-) -> Result<ArrowArray, Error> {
-    let num_rows: usize = node
-        .length()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
-
-    let null_count: usize = node
-        .null_count()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+) -> PolarsResult<ArrowArray> {
+    let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
 
     Ok(unsafe {
         create_array(
@@ -189,16 +177,8 @@ fn mmap_boolean<T: AsRef<[u8]>>(
     node: &Node,
     block_offset: usize,
     buffers: &mut VecDeque<IpcBuffer>,
-) -> Result<ArrowArray, Error> {
-    let num_rows: usize = node
-        .length()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
-
-    let null_count: usize = node
-        .null_count()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+) -> PolarsResult<ArrowArray> {
+    let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
 
     let data_ref = data.as_ref().as_ref();
 
@@ -228,18 +208,9 @@ fn mmap_primitive<P: NativeType, T: AsRef<[u8]>>(
     node: &Node,
     block_offset: usize,
     buffers: &mut VecDeque<IpcBuffer>,
-) -> Result<ArrowArray, Error> {
+) -> PolarsResult<ArrowArray> {
     let data_ref = data.as_ref().as_ref();
-
-    let num_rows: usize = node
-        .length()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
-
-    let null_count: usize = node
-        .null_count()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+    let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
 
     let validity = get_validity(data_ref, block_offset, buffers, null_count)?.map(|x| x.as_ptr());
 
@@ -268,18 +239,9 @@ fn mmap_list<O: Offset, T: AsRef<[u8]>>(
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
     buffers: &mut VecDeque<IpcBuffer>,
-) -> Result<ArrowArray, Error> {
+) -> PolarsResult<ArrowArray> {
     let child = ListArray::<O>::try_get_child(data_type)?.data_type();
-
-    let num_rows: usize = node
-        .length()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
-
-    let null_count: usize = node
-        .null_count()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+    let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
 
     let data_ref = data.as_ref().as_ref();
 
@@ -321,20 +283,11 @@ fn mmap_fixed_size_list<T: AsRef<[u8]>>(
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
     buffers: &mut VecDeque<IpcBuffer>,
-) -> Result<ArrowArray, Error> {
+) -> PolarsResult<ArrowArray> {
     let child = FixedSizeListArray::try_child_and_size(data_type)?
         .0
         .data_type();
-
-    let num_rows: usize = node
-        .length()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
-
-    let null_count: usize = node
-        .null_count()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+    let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
 
     let data_ref = data.as_ref().as_ref();
 
@@ -373,18 +326,9 @@ fn mmap_struct<T: AsRef<[u8]>>(
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
     buffers: &mut VecDeque<IpcBuffer>,
-) -> Result<ArrowArray, Error> {
+) -> PolarsResult<ArrowArray> {
     let children = StructArray::try_get_fields(data_type)?;
-
-    let num_rows: usize = node
-        .length()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
-
-    let null_count: usize = node
-        .null_count()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+    let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
 
     let data_ref = data.as_ref().as_ref();
 
@@ -405,7 +349,7 @@ fn mmap_struct<T: AsRef<[u8]>>(
                 buffers,
             )
         })
-        .collect::<Result<Vec<_>, Error>>()?;
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     Ok(unsafe {
         create_array(
@@ -430,22 +374,14 @@ fn mmap_dict<K: DictionaryKey, T: AsRef<[u8]>>(
     dictionaries: &Dictionaries,
     _: &mut VecDeque<Node>,
     buffers: &mut VecDeque<IpcBuffer>,
-) -> Result<ArrowArray, Error> {
-    let num_rows: usize = node
-        .length()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
-
-    let null_count: usize = node
-        .null_count()
-        .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+) -> PolarsResult<ArrowArray> {
+    let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
 
     let data_ref = data.as_ref().as_ref();
 
     let dictionary = dictionaries
         .get(&ipc_field.dictionary_id.unwrap())
-        .ok_or_else(|| Error::oos("Missing dictionary"))?
+        .ok_or_else(|| polars_err!(ComputeError: "out-of-spec: missing dictionary"))?
         .clone();
 
     let validity = get_validity(data_ref, block_offset, buffers, null_count)?.map(|x| x.as_ptr());
@@ -473,11 +409,11 @@ fn get_array<T: AsRef<[u8]>>(
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
     buffers: &mut VecDeque<IpcBuffer>,
-) -> Result<ArrowArray, Error> {
+) -> PolarsResult<ArrowArray> {
     use crate::datatypes::PhysicalType::*;
     let node = field_nodes
         .pop_front()
-        .ok_or_else(|| Error::from(OutOfSpecKind::ExpectedBuffer))?;
+        .ok_or_else(|| polars_err!(ComputeError: "out-of-spec: {:?}", OutOfSpecKind::ExpectedBuffer))?;
 
     match data_type.to_physical_type() {
         Null => mmap_null(data, &node, block_offset, buffers),
@@ -553,7 +489,7 @@ pub(crate) unsafe fn mmap<T: AsRef<[u8]>>(
     dictionaries: &Dictionaries,
     field_nodes: &mut VecDeque<Node>,
     buffers: &mut VecDeque<IpcBuffer>,
-) -> Result<Box<dyn Array>, Error> {
+) -> PolarsResult<Box<dyn Array>> {
     let array = get_array(
         data,
         block_offset,
