@@ -95,16 +95,16 @@ fn prepare_schema(mut schema: Schema, row_count: Option<&RowCount>) -> SchemaRef
 impl LogicalPlanBuilder {
     pub fn anonymous_scan(
         function: Arc<dyn AnonymousScan>,
-        schema: Option<Schema>,
+        schema: Option<SchemaRef>,
         infer_schema_length: Option<usize>,
         skip_rows: Option<usize>,
         n_rows: Option<usize>,
         name: &'static str,
     ) -> PolarsResult<Self> {
-        let schema = Arc::new(match schema {
+        let schema = match schema {
             Some(s) => s,
             None => function.schema(infer_schema_length)?,
-        });
+        };
 
         let file_info = FileInfo::new(schema.clone(), (n_rows, n_rows.unwrap_or(usize::MAX)));
         let file_options = FileScanOptions {

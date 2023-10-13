@@ -433,6 +433,21 @@ fn scan_predicate_on_set_null_values() -> PolarsResult<()> {
 }
 
 #[test]
+fn scan_anonymous_fn() -> PolarsResult<()> {
+    let function = Arc::new(|_scan_opts: AnonymousScanArgs| Ok(fruits_cars()));
+
+    let args = ScanArgsAnonymous {
+        schema: Some(Arc::new(fruits_cars().schema())),
+        ..ScanArgsAnonymous::default()
+    };
+
+    let df = LazyFrame::anonymous_scan(function, args)?.collect()?;
+
+    assert_eq!(df.shape(), (5, 4));
+    Ok(())
+}
+
+#[test]
 #[cfg(feature = "dtype-full")]
 fn scan_small_dtypes() -> PolarsResult<()> {
     let small_dt = vec![

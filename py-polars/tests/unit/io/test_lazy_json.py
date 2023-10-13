@@ -38,6 +38,24 @@ def test_scan_ndjson(foods_ndjson_path: Path) -> None:
     assert df["foo"].to_list() == [10, 16, 21, 23, 24, 30, 35]
 
 
+def test_scan_ndjson_with_schema(foods_ndjson_path: Path) -> None:
+    schema = {
+        "category": pl.Categorical,
+        "calories": pl.Int64,
+        "fats_g": pl.Float64,
+        "sugars_g": pl.Int64,
+    }
+    df = pl.scan_ndjson(foods_ndjson_path, schema=schema).collect()
+    assert df["category"].dtype == pl.Categorical
+    assert df["calories"].dtype == pl.Int64
+    assert df["fats_g"].dtype == pl.Float64
+    assert df["sugars_g"].dtype == pl.Int64
+
+    schema["sugars_g"] = pl.Float64
+    df = pl.scan_ndjson(foods_ndjson_path, schema=schema).collect()
+    assert df["sugars_g"].dtype == pl.Float64
+
+
 @pytest.mark.write_disk()
 def test_scan_with_projection(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
