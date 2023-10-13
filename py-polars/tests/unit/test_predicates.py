@@ -179,3 +179,16 @@ def test_is_in_join_blocked() -> None:
     assert df_all.filter(~pl.col("Groups").is_in(["A", "B", "F"])).collect().to_dict(
         False
     ) == {"values22": [None, 4, 5], "values20": [3, 4, 5], "Groups": ["C", "D", "E"]}
+
+
+def test_predicate_pushdown_group_by_keys() -> None:
+    df = pl.LazyFrame(
+        {"str": ["A", "B", "A", "B", "C"], "group": [1, 1, 2, 1, 2]}
+    ).lazy()
+    assert (
+        'SELECTION: "None"'
+        not in df.group_by("group")
+        .agg([pl.count().alias("str_list")])
+        .filter(pl.col("group") == 1)
+        .explain()
+    )

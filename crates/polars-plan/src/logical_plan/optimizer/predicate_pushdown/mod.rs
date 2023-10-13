@@ -1,3 +1,4 @@
+mod group_by;
 mod join;
 mod keys;
 mod rename;
@@ -11,6 +12,7 @@ use utils::*;
 use super::*;
 use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::optimizer;
+use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::prelude::optimizer::predicate_pushdown::rename::process_rename;
 use crate::utils::{check_input_node, has_aexpr};
@@ -421,6 +423,10 @@ impl<'a> PredicatePushDown<'a> {
                     self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
                 }
             }
+            Aggregate {input, keys, aggs, schema, apply, maintain_order, options, } => {
+                process_group_by(self, lp_arena, expr_arena, input, keys, aggs, schema, maintain_order, apply, options, acc_predicates)
+
+            },
             lp @ Union {..} => {
                 let mut local_predicates = vec![];
 
@@ -462,8 +468,7 @@ impl<'a> PredicatePushDown<'a> {
             lp @ Slice { .. }
             // caches will be different
             | lp @ Cache { .. }
-            // dont push down predicates. An aggregation needs all rows
-            | lp @ Aggregate {..} => {
+             => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             }
             #[cfg(feature = "python")]

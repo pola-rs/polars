@@ -42,12 +42,8 @@ pub(crate) const fn folded_multiply(s: u64, by: u64) -> u64 {
 pub(crate) fn get_null_hash_value(random_state: RandomState) -> u64 {
     // we just start with a large prime number and hash that twice
     // to get a constant hash value for null/None
-    let mut hasher = random_state.build_hasher();
-    3188347919usize.hash(&mut hasher);
-    let first = hasher.finish();
-    let mut hasher = random_state.build_hasher();
-    first.hash(&mut hasher);
-    hasher.finish()
+    let first = random_state.hash_one(3188347919usize);
+    random_state.hash_one(first)
 }
 
 fn insert_null_hash(chunks: &[ArrayRef], random_state: RandomState, buf: &mut Vec<u64>) {
@@ -392,13 +388,8 @@ where
         buf.clear();
         buf.reserve(self.len());
 
-        self.downcast_iter().for_each(|arr| {
-            buf.extend(arr.into_iter().map(|opt_v| {
-                let mut hasher = random_state.build_hasher();
-                opt_v.hash(&mut hasher);
-                hasher.finish()
-            }))
-        });
+        self.downcast_iter()
+            .for_each(|arr| buf.extend(arr.into_iter().map(|opt_v| random_state.hash_one(opt_v))));
 
         Ok(())
     }
@@ -406,9 +397,8 @@ where
     fn vec_hash_combine(&self, random_state: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
         self.apply_to_slice(
             |opt_v, h| {
-                let mut hasher = random_state.build_hasher();
-                opt_v.hash(&mut hasher);
-                _boost_hash_combine(hasher.finish(), *h)
+                let hashed = random_state.hash_one(opt_v);
+                _boost_hash_combine(hashed, *h)
             },
             hashes,
         );
