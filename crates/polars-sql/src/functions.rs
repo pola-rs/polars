@@ -23,161 +23,195 @@ pub(crate) enum PolarsSqlFunctions {
     // Math functions
     // ----
     /// SQL 'abs' function
+    /// Returns the absolute value of the input column
     /// ```sql
     /// SELECT ABS(column_1) from df;
     /// ```
     Abs,
     /// SQL 'cos' function
+    /// Compute the cosine sine of the input column (in radians)
     /// ```sql
     /// SELECT COS(column_1) from df;
     /// ```
     Cos,
     /// SQL 'cot' function
+    /// Compute the cotangent of the input column (in radians)
     /// ```sql
     /// SELECT COT(column_1) from df;
     /// ```
     Cot,
     /// SQL 'sin' function
+    /// Compute the sine of the input column (in radians)
     /// ```sql
     /// SELECT SIN(column_1) from df;
     /// ```
     Sin,
     /// SQL 'tan' function
+    /// Compute the tangent of the input column (in radians)
     /// ```sql
     /// SELECT TAN(column_1) from df;
     /// ```
     Tan,
     /// SQL 'cosd' function
+    /// Compute the cosine sine of the input column (in degrees)
     /// ```sql
     /// SELECT COSD(column_1) from df;
     /// ```
     CosD,
     /// SQL 'cotd' function
+    /// Compute cotangent of the input column (in degrees)
     /// ```sql
     /// SELECT COTD(column_1) from df;
     /// ```
     CotD,
     /// SQL 'sind' function
+    /// Compute the sine of the input column (in degrees)
     /// ```sql
     /// SELECT SIND(column_1) from df;
     /// ```
     SinD,
     /// SQL 'tand' function
+    /// Compute the tangent of the input column (in degrees)
     /// ```sql
     /// SELECT TAND(column_1) from df;
     /// ```
     TanD,
     /// SQL 'acos' function
+    /// Compute inverse cosinus of the input column (in radians)
     /// ```sql
     /// SELECT ACOS(column_1) from df;
     /// ```
     Acos,
     /// SQL 'asin' function
+    /// Compute inverse sine of the input column (in radians)
     /// ```sql
     /// SELECT ASIN(column_1) from df;
     /// ```
     Asin,
     /// SQL 'atan' function
+    /// Compute inverse tangent of the input column (in radians)
     /// ```sql
     /// SELECT ATAN(column_1) from df;
     /// ```
     Atan,
     /// SQL 'atan2' function
+    /// Compute the inverse tangent of column_2/column_1 (in radians).
     /// ```sql
-    /// SELECT ATAN2(column_1) from df;
+    /// SELECT ATAN2(column_1, column_2) from df;
     /// ```
     Atan2,
     /// SQL 'acosd' function
+    /// Compute inverse cosinus of the input column (in degrees)
     /// ```sql
     /// SELECT ACOSD(column_1) from df;
     /// ```
     AcosD,
     /// SQL 'asind' function
+    /// Compute inverse sine of the input column (in degrees)
     /// ```sql
     /// SELECT ASIND(column_1) from df;
     /// ```
     AsinD,
     /// SQL 'atand' function
+    /// Compute inverse tangent of the input column (in degrees)
     /// ```sql
     /// SELECT ATAND(column_1) from df;
     /// ```
     AtanD,
     /// SQL 'atan2d' function
+    /// Compute the inverse tangent of column_2/column_1 (in degrees).
     /// ```sql
     /// SELECT ATAN2D(column_1) from df;
     /// ```
     Atan2D,
     /// SQL 'ceil' function
+    /// Returns the nearest integer closest from zero.
     /// ```sql
     /// SELECT CEIL(column_1) from df;
     /// ```
     Ceil,
     /// SQL 'exp' function
+    /// Computes the exponential of the given value.
     /// ```sql
     /// SELECT EXP(column_1) from df;
     /// ```
     Exp,
     /// SQL 'floor' function
+    /// Returns the nearest integer away from zero.
+    ///   0.5 will be rounded
     /// ```sql
     /// SELECT FLOOR(column_1) from df;
     /// ```
     Floor,
     /// SQL 'pi' function
+    /// Returns a (very good) approximation of 𝜋
     /// ```sql
     /// SELECT PI() from df;
     /// ```
     Pi,
     /// SQL 'ln' function
+    /// Computes the natural logarithm of the given value
     /// ```sql
     /// SELECT LN(column_1) from df;
     /// ```
     Ln,
     /// SQL 'log2' function
+    /// Computes the logarithm of the given value in base 2
     /// ```sql
     /// SELECT LOG2(column_1) from df;
     /// ```
     Log2,
     /// SQL 'log10' function
+    /// Computes the logarithm of the given value in base 10
     /// ```sql
     /// SELECT LOG10(column_1) from df;
     /// ```
     Log10,
     /// SQL 'log' function
+    /// Computes the `base` logarithm of the given value
     /// ```sql
     /// SELECT LOG(column_1, 10) from df;
     /// ```
     Log,
     /// SQL 'log1p' function
+    /// Computes the natural logarithm of the “given value plus one”
     /// ```sql
     /// SELECT LOG1P(column_1) from df;
     /// ```
     Log1p,
     /// SQL 'pow' function
+    /// Returns the value to the power of `exponent`
     /// ```sql
     /// SELECT POW(column_1, 2) from df;
     /// ```
     Pow,
     /// SQL 'sqrt' function
+    /// Returns the square root (√) of a number
     /// ```sql
     /// SELECT SQRT(column_1) from df;
     /// ```
     Sqrt,
     /// SQL 'cbrt' function
+    /// Returns the cube root (∛) of a number
     /// ```sql
     /// SELECT CBRT(column_1) from df;
     /// ```
     Cbrt,
     /// SQL 'round' function
+    /// Round a number to `x` decimals (default: 0) away from zero.
+    ///   .5 is rounded away from zero.
     /// ```sql
     /// SELECT ROUND(column_1, 3) from df;
     /// ```
     Round,
     /// SQL 'degrees' function
+    /// Convert between radians and degrees
     /// ```sql
     /// SELECT DEGREES(column_1) from df;
     /// ```
     Degrees,
     /// SQL 'RADIANS' function
+    /// Convert between degrees and radians
     /// ```sql
     /// SELECT radians(column_1) from df;
     /// ```
@@ -187,32 +221,38 @@ pub(crate) enum PolarsSqlFunctions {
     // String functions
     // ----
     /// SQL 'ends_with' function
+    /// Returns True if the value ends with the second argument.
     /// ```sql
     /// SELECT ENDS_WITH(column_1, 'a') from df;
     /// SELECT column_2 from df WHERE ENDS_WITH(column_1, 'a');
     /// ```
     EndsWith,
     /// SQL 'initcap' function
+    /// Returns the value with the first letter capitalized
     /// ```sql
     /// SELECT INITCAP(column_1) from df;
     /// ```
     InitCap,
     /// SQL 'left' function
+    /// Returns the `length` first characters
     /// ```sql
     /// SELECT LEFT(column_1, 3) from df;
     /// ```
     Left,
     /// SQL 'length' function (characters)
+    /// Returns the character length of the string
     /// ```sql
     /// SELECT LENGTH(column_1) from df;
     /// ```
     Length,
     /// SQL 'lower' function
+    /// Returns an lowercased column
     /// ```sql
     /// SELECT LOWER(column_1) from df;
     /// ```
     Lower,
     /// SQL 'ltrim' function
+    /// Strip whitespaces from the left
     /// ```sql
     /// SELECT LTRIM(column_1) from df;
     /// ```
@@ -223,37 +263,45 @@ pub(crate) enum PolarsSqlFunctions {
     /// ```
     OctetLength,
     /// SQL 'regexp_like' function
+    /// True if `pattern` matches the value (optional: `flags`).
     /// ```sql
-    /// SELECT REGEXP_LIKE(column_1,'xyz', 'i') from df;
+    /// SELECT REGEXP_LIKE(column_1, 'xyz', 'i') from df;
     /// ```
     RegexpLike,
     /// SQL 'rtrim' function
+    /// Strip whitespaces from the right
     /// ```sql
     /// SELECT RTRIM(column_1) from df;
     /// ```
     RTrim,
     /// SQL 'starts_with' function
+    /// Returns True if the value starts with the second argument.
     /// ```sql
     /// SELECT STARTS_WITH(column_1, 'a') from df;
     /// SELECT column_2 from df WHERE STARTS_WITH(column_1, 'a');
     /// ```
     StartsWith,
     /// SQL 'substr' function
+    /// Returns a portion of the data (first character = 0) in the range
+    ///   \[start, start + length]
     /// ```sql
     /// SELECT SUBSTR(column_1, 3, 5) from df;
     /// ```
     Substring,
     /// SQL 'upper' function
+    /// Returns an uppercased column
     /// ```sql
     /// SELECT UPPER(column_1) from df;
     /// ```
     Upper,
     /// SQL 'nullif' function
+    /// Returns NULL if two expressions are equal, otherwise returns the first
     /// ```sql
     /// SELECT NULLIF(column_1, column_2) from df;
     /// ```
     NullIf,
     /// SQL 'coalesce' function
+    /// Returns the first non-null value in the provided values/columns
     /// ```sql
     /// SELECT COALESCE(column_1, ...) from df;
     /// ```
@@ -263,6 +311,7 @@ pub(crate) enum PolarsSqlFunctions {
     // Aggregate functions
     // ----
     /// SQL 'count' function
+    /// Returns the amount of elements in the grouping
     /// ```sql
     /// SELECT COUNT(column_1) from df;
     /// SELECT COUNT(*) from df;
@@ -271,41 +320,49 @@ pub(crate) enum PolarsSqlFunctions {
     /// ```
     Count,
     /// SQL 'sum' function
+    /// Returns the sum of all the elements in the grouping
     /// ```sql
     /// SELECT SUM(column_1) from df;
     /// ```
     Sum,
     /// SQL 'min' function
+    /// Returns the smallest (minimum) of all the elements in the grouping
     /// ```sql
     /// SELECT MIN(column_1) from df;
     /// ```
     Min,
     /// SQL 'max' function
+    /// Returns the greatest (maximum) of all the elements in the grouping
     /// ```sql
     /// SELECT MAX(column_1) from df;
     /// ```
     Max,
     /// SQL 'avg' function
+    /// Returns the average (mean) of all the elements in the grouping
     /// ```sql
     /// SELECT AVG(column_1) from df;
     /// ```
     Avg,
     /// SQL 'stddev' function
+    /// Returns the standard deviation of all the elements in the grouping
     /// ```sql
     /// SELECT STDDEV(column_1) from df;
     /// ```
     StdDev,
     /// SQL 'variance' function
+    /// Returns the variance of all the elements in the grouping
     /// ```sql
     /// SELECT VARIANCE(column_1) from df;
     /// ```
     Variance,
     /// SQL 'first' function
+    /// Returns the first element of the grouping
     /// ```sql
     /// SELECT FIRST(column_1) from df;
     /// ```
     First,
     /// SQL 'last' function
+    /// Returns the last element of the grouping
     /// ```sql
     /// SELECT LAST(column_1) from df;
     /// ```
@@ -315,6 +372,7 @@ pub(crate) enum PolarsSqlFunctions {
     // Array functions
     // ----
     /// SQL 'array_length' function
+    /// Returns the length of the array
     /// ```sql
     /// SELECT ARRAY_LENGTH(column_1) from df;
     /// ```
@@ -356,12 +414,13 @@ pub(crate) enum PolarsSqlFunctions {
     /// ```
     ArrayUnique,
     /// SQL 'unnest' function
-    /// unnest/explodes an array column into multiple rows
+    /// Unnest/explodes an array column into multiple rows
     /// ```sql
     /// SELECT unnest(column_1) from df;
     /// ```
     Explode,
     /// SQL 'array_to_string' function
+    /// Takes all elements of the array and joins them into one string
     /// ```sql
     /// SELECT ARRAY_TO_STRING(column_1, ', ') from df;
     /// ```
