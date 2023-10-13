@@ -3,6 +3,8 @@ mod approx_algo;
 mod approx_unique;
 mod arg_min_max;
 mod clip;
+#[cfg(feature = "cum_agg")]
+mod cum_agg;
 #[cfg(feature = "cutqcut")]
 mod cut;
 #[cfg(feature = "round_series")]
@@ -39,6 +41,8 @@ pub use approx_algo::*;
 pub use approx_unique::*;
 pub use arg_min_max::ArgAgg;
 pub use clip::*;
+#[cfg(feature = "cum_agg")]
+pub use cum_agg::*;
 #[cfg(feature = "cutqcut")]
 pub use cut::*;
 #[cfg(feature = "round_series")]

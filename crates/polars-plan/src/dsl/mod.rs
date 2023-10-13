@@ -54,7 +54,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
-use polars_core::utils::{try_get_supertype, NoNull};
+use polars_core::utils::try_get_supertype;
 #[cfg(feature = "rolling_window")]
 use polars_time::prelude::SeriesOpsTime;
 pub(crate) use selector::Selector;

@@ -14,6 +14,7 @@ mod clip;
 mod coerce;
 mod concat;
 mod correlation;
+#[cfg(feature = "cum_agg")]
 mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;

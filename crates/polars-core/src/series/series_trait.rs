@@ -88,18 +88,6 @@ pub(crate) mod private {
             invalid_operation_panic!(explode_by_offsets, self)
         }
 
-        /// Get an array with the cumulative max computed at every element
-        #[cfg(feature = "cum_agg")]
-        fn _cummax(&self, _reverse: bool) -> Series {
-            panic!("operation cummax not supported for this dtype")
-        }
-
-        /// Get an array with the cumulative min computed at every element
-        #[cfg(feature = "cum_agg")]
-        fn _cummin(&self, _reverse: bool) -> Series {
-            panic!("operation cummin not supported for this dtype")
-        }
-
         unsafe fn equal_element(
             &self,
             _idx_self: usize,
