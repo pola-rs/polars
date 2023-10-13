@@ -1,4 +1,5 @@
 use crate::array::*;
+use crate::{match_integer_type, with_match_primitive_type};
 
 macro_rules! ffi_dyn {
     ($array:expr, $ty:ty) => {{

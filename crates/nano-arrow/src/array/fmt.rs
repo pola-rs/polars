@@ -2,6 +2,7 @@ use std::fmt::{Result, Write};
 
 use super::Array;
 use crate::bitmap::Bitmap;
+use crate::{match_integer_type, with_match_primitive_type};
 
 /// Returns a function that writes the value of the element of `array`
 /// at position `index` to a [`Write`],

@@ -24,3 +24,4 @@ pub use lexical::*;
 pub mod bench_util;
 
 pub mod total_ord;
+pub mod macros;

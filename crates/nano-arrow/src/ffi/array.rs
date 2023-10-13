@@ -10,6 +10,7 @@ use crate::datatypes::{DataType, PhysicalType};
 use crate::error::{Error, Result};
 use crate::ffi::schema::get_child;
 use crate::types::NativeType;
+use crate::{match_integer_type, with_match_primitive_type};
 
 /// Reads a valid `ffi` interface into a `Box<dyn Array>`
 /// # Errors
