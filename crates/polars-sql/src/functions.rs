@@ -356,7 +356,7 @@ pub(crate) enum PolarsSqlFunctions {
     /// ```
     ArrayUnique,
     /// SQL 'unnest' function
-    /// unnest/explods an array column into multiple rows
+    /// unnest/explodes an array column into multiple rows
     /// ```sql
     /// SELECT unnest(column_1) from df;
     /// ```
