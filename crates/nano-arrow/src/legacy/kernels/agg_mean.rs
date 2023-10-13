@@ -11,8 +11,8 @@ use crate::types::NativeType;
 use multiversion::multiversion;
 use num_traits::ToPrimitive;
 
-use crate::legacydata_types::IsFloat;
-use crate::legacyutils::with_match_primitive_type;
+use crate::legacy::data_types::IsFloat;
+use crate::with_match_primitive_type;
 
 // TODO! try to remove this if we can cast again directly
 pub trait SimdCastPl<const N: usize>

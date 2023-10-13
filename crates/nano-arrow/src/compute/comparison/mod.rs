@@ -59,6 +59,7 @@ pub use simd::{Simd8, Simd8Lanes, Simd8PartialEq, Simd8PartialOrd};
 use super::take::take_boolean;
 use crate::bitmap::{binary, Bitmap};
 use crate::compute;
+use crate::match_integer_type;
 
 macro_rules! match_eq_ord {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*

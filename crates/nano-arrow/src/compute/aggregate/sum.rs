@@ -10,6 +10,7 @@ use crate::error::{Error, Result};
 use crate::scalar::*;
 use crate::types::simd::*;
 use crate::types::NativeType;
+use crate::with_match_primitive_type;
 
 /// Object that can reduce itself to a number. This is used in the context of SIMD to reduce
 /// a MD (e.g. `[f32; 16]`) into a single number (`f32`).

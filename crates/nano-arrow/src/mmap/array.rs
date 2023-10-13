@@ -10,6 +10,7 @@ use crate::io::ipc::read::{Dictionaries, IpcBuffer, Node, OutOfSpecKind};
 use crate::io::ipc::IpcField;
 use crate::offset::Offset;
 use crate::types::NativeType;
+use crate::{match_integer_type, with_match_primitive_type};
 
 fn get_buffer_bounds(buffers: &mut VecDeque<IpcBuffer>) -> Result<(usize, usize), Error> {
     let buffer = buffers

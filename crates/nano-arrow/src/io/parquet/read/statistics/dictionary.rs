@@ -2,6 +2,7 @@ use super::make_mutable;
 use crate::array::*;
 use crate::datatypes::{DataType, PhysicalType};
 use crate::error::Result;
+use crate::match_integer_type;
 
 #[derive(Debug)]
 pub struct DynMutableDictionary {

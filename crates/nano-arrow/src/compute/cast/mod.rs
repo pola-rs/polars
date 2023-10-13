@@ -17,6 +17,7 @@ pub use utf8_to::*;
 use crate::array::*;
 use crate::datatypes::*;
 use crate::error::{Error, Result};
+use crate::match_integer_type;
 use crate::offset::{Offset, Offsets};
 
 /// options defining how Cast kernels behave

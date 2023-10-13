@@ -1,9 +1,9 @@
-use arrow::array::PrimitiveArray;
-use arrow::datatypes::DataType;
+use crate::array::PrimitiveArray;
+use crate::datatypes::DataType;
 use polars_error::*;
 
 use super::{get_parameters, max_value};
-use crate::legacycompute::{binary_mut, unary_mut};
+use crate::legacy::compute::{binary_mut, unary_mut};
 
 pub fn commutative<F>(
     lhs: &PrimitiveArray<i128>,

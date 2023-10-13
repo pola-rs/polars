@@ -6,6 +6,7 @@ use super::*;
 use crate::array::PrimitiveArray;
 use crate::datatypes::{DataType, Field};
 use crate::error::{Error, Result};
+use crate::match_integer_type;
 
 /// Converts an iterator of arrays to a trait object returning trait objects
 #[inline]

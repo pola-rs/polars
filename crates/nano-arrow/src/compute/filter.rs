@@ -8,6 +8,7 @@ use crate::datatypes::DataType;
 use crate::error::Result;
 use crate::types::simd::Simd;
 use crate::types::{BitChunkOnes, NativeType};
+use crate::with_match_primitive_type;
 
 /// Function that can filter arbitrary arrays
 pub type Filter<'a> = Box<dyn Fn(&dyn Array) -> Box<dyn Array> + 'a + Send + Sync>;

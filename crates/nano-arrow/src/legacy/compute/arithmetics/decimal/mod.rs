@@ -1,5 +1,5 @@
-use arrow::array::PrimitiveArray;
-use arrow::datatypes::DataType;
+use crate::array::PrimitiveArray;
+use crate::datatypes::DataType;
 use commutative::{
     commutative, commutative_scalar, non_commutative, non_commutative_scalar,
     non_commutative_scalar_swapped,

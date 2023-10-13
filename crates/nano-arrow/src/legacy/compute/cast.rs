@@ -13,17 +13,17 @@ pub fn cast(array: &dyn Array, to_type: &DataType) -> Result<Box<dyn Array>> {
                 *scale,
             )))
         },
-        _ => arrow::compute::cast::cast(array, to_type, Default::default()),
+        _ => crate::compute::cast::cast(array, to_type, Default::default()),
     }
 }
 
 #[cfg(feature = "dtype-decimal")]
-use arrow::array::{PrimitiveArray, Utf8Array};
+use crate::array::{PrimitiveArray, Utf8Array};
 
 #[cfg(feature = "dtype-decimal")]
 use super::decimal::*;
 #[cfg(feature = "dtype-decimal")]
-use crate::legacyprelude::LargeStringArray;
+use crate::legacy::prelude::LargeStringArray;
 #[cfg(feature = "dtype-decimal")]
 pub fn cast_utf8_to_decimal(
     array: &Utf8Array<i64>,

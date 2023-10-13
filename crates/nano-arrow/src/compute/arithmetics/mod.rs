@@ -20,6 +20,7 @@ pub mod time;
 use crate::array::{Array, DictionaryArray, PrimitiveArray};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{DataType, IntervalUnit, TimeUnit};
+use crate::match_integer_type;
 use crate::scalar::{PrimitiveScalar, Scalar};
 use crate::types::NativeType;
 

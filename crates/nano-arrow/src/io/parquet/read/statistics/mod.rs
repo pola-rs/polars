@@ -17,6 +17,7 @@ use crate::array::*;
 use crate::datatypes::{DataType, Field, IntervalUnit, PhysicalType};
 use crate::error::{Error, Result};
 use crate::types::i256;
+use crate::with_match_primitive_type;
 
 mod binary;
 mod boolean;

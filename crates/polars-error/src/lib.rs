@@ -41,8 +41,6 @@ impl Display for ErrString {
 
 #[derive(Debug, thiserror::Error)]
 pub enum PolarsError {
-    #[error(transparent)]
-    ArrowError(Box<ArrowError>),
     #[error("not found: {0}")]
     ColumnNotFound(ErrString),
     #[error("{0}")]
@@ -69,12 +67,6 @@ pub enum PolarsError {
     StructFieldNotFound(ErrString),
 }
 
-impl From<ArrowError> for PolarsError {
-    fn from(err: ArrowError) -> Self {
-        Self::ArrowError(Box::new(err))
-    }
-}
-
 #[cfg(feature = "regex")]
 impl From<regex::Error> for PolarsError {
     fn from(err: regex::Error) -> Self {
@@ -94,13 +86,10 @@ impl From<object_store::Error> for PolarsError {
 
 pub type PolarsResult<T> = Result<T, PolarsError>;
 
-pub use arrow::error::Error as ArrowError;
-
 impl PolarsError {
     pub fn wrap_msg(&self, func: &dyn Fn(&str) -> String) -> Self {
         use PolarsError::*;
         match self {
-            ArrowError(err) => ComputeError(func(&format!("ArrowError: {err}")).into()),
             ColumnNotFound(msg) => ColumnNotFound(func(msg).into()),
             ComputeError(msg) => ComputeError(func(msg).into()),
             Duplicate(msg) => Duplicate(func(msg).into()),

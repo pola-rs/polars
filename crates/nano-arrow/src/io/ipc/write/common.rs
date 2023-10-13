@@ -10,6 +10,7 @@ use crate::datatypes::*;
 use crate::error::{Error, Result};
 use crate::io::ipc::endianness::is_native_little_endian;
 use crate::io::ipc::read::Dictionaries;
+use crate::match_integer_type;
 
 /// Compression codec
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

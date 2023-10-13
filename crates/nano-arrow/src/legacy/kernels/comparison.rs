@@ -1,14 +1,14 @@
 use crate::array::{BooleanArray, FixedSizeListArray};
 use crate::bitmap::utils::count_zeros;
 
-use crate::legacyutils::combine_validities_and;
+use crate::legacy::utils::combine_validities_and;
 
 fn fixed_size_list_cmp<F>(a: &FixedSizeListArray, b: &FixedSizeListArray, func: F) -> BooleanArray
 where
     F: Fn(usize) -> bool,
 {
     assert_eq!(a.size(), b.size());
-    let mask = arrow::compute::comparison::eq(a.values().as_ref(), b.values().as_ref());
+    let mask = crate::compute::comparison::eq(a.values().as_ref(), b.values().as_ref());
     let mask = combine_validities_and(Some(mask.values()), mask.validity()).unwrap();
     let (slice, offset, _len) = mask.as_slice();
     assert_eq!(offset, 0);

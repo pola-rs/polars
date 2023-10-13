@@ -10,6 +10,7 @@ use crate::chunk::Chunk;
 use crate::datatypes::*;
 use crate::error::{Error, Result};
 use crate::types::months_days_ns;
+use crate::with_match_primitive_type;
 
 fn make_mutable(
     data_type: &DataType,

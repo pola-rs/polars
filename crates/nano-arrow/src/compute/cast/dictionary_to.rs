@@ -4,6 +4,7 @@ use crate::compute::cast::cast;
 use crate::compute::take::take;
 use crate::datatypes::DataType;
 use crate::error::{Error, Result};
+use crate::match_integer_type;
 
 macro_rules! key_cast {
     ($keys:expr, $values:expr, $array:expr, $to_keys_type:expr, $to_type:ty, $to_datatype:expr) => {{

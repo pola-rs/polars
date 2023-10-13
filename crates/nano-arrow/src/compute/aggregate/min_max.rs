@@ -10,6 +10,7 @@ use crate::offset::Offset;
 use crate::scalar::*;
 use crate::types::simd::*;
 use crate::types::NativeType;
+use crate::with_match_primitive_type;
 
 /// Trait describing a type describing multiple lanes with an order relationship
 /// consistent with the same order of `T`.

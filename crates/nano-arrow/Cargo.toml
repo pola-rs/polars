@@ -27,8 +27,8 @@ num-traits = { workspace = true }
 simdutf8 = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 polars-error = { workspace = true }
+atoi = { workspace = true, optional = true }
 
-# for decimal i256
 ethnum = { workspace = true }
 
 # To efficiently cast numbers to strings
@@ -197,7 +197,7 @@ simd = []
 # polars-arrow
 timezones = []
 dtype-array = []
-dtype-decimal = []
+dtype-decimal = ["atoi"]
 bigidx = []
 nightly = []
 performant = []

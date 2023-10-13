@@ -68,6 +68,7 @@ pub use schema::to_parquet_type;
 pub use sink::FileSink;
 
 use crate::compute::aggregate::estimated_bytes_size;
+use crate::match_integer_type;
 
 /// returns offset and length to slice the leaf values
 pub fn slice_nested_leaf(nested: &[Nested]) -> (usize, usize) {

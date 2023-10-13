@@ -48,7 +48,7 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
         // TODO! implement proper unchecked version
         #[cfg(feature = "compute")]
         _ => {
-            use arrow::compute::take::take;
+            use crate::compute::take::take;
             take(arr, idx).unwrap()
         },
         #[cfg(not(feature = "compute"))]

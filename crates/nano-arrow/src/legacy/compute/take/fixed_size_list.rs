@@ -6,7 +6,7 @@ use crate::types::NativeType;
 
 use crate::legacy::index::{IdxArr, IdxSize};
 use crate::legacy::prelude::ArrayRef;
-use crate::legacy::utils::with_match_primitive_type;
+use crate::with_match_primitive_type;
 
 pub unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxArr) -> FixedSizeListArray {
     if let (PhysicalType::Primitive(primitive), 0) = (

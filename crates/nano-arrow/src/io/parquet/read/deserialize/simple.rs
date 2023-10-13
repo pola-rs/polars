@@ -9,6 +9,7 @@ use super::{binary, boolean, fixed_size_binary, null, primitive};
 use crate::array::{Array, DictionaryKey, MutablePrimitiveArray, PrimitiveArray};
 use crate::datatypes::{DataType, IntervalUnit, TimeUnit};
 use crate::error::{Error, Result};
+use crate::match_integer_type;
 use crate::types::{days_ms, i256, NativeType};
 
 /// Converts an iterator of arrays to a trait object returning trait objects

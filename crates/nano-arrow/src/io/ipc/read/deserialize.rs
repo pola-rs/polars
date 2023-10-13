@@ -9,6 +9,7 @@ use crate::array::*;
 use crate::datatypes::{DataType, Field, PhysicalType};
 use crate::error::Result;
 use crate::io::ipc::IpcField;
+use crate::{match_integer_type, with_match_primitive_type};
 
 #[allow(clippy::too_many_arguments)]
 pub fn read<R: Read + Seek>(
