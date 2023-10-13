@@ -65,11 +65,6 @@ pub fn hor_str_concat(cas: &[&Utf8Chunked], delimiter: &str) -> PolarsResult<Utf
         ComputeError: "all series in `hor_str_concat` should have equal or unit length"
     );
 
-    let has_empty_ca = cas.iter().any(|ca| ca.is_empty());
-    if has_empty_ca {
-        return Ok(Utf8Chunked::full_null(cas[0].name(), 0));
-    }
-
     // Calculate total capacity needed.
     let tot_strings_bytes: usize = cas
         .iter()
