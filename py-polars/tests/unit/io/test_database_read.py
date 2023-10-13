@@ -286,19 +286,25 @@ def test_read_database_parameterisd(tmp_path: Path) -> None:
     create_temp_sqlite_db(test_db := str(tmp_path / "test.db"))
     conn = create_engine(f"sqlite:///{test_db}")
 
-    # establish a parameterised query and validate usage
-    parameterised_query = """
+    # establish parameterised queries and validate usage
+    query = """
         SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
-        FROM test_data WHERE value < :n
+        FROM test_data
+        WHERE value < {n}
     """
-    assert_frame_equal(
-        pl.read_database(
-            parameterised_query,
-            connection=conn.connect(),
-            execute_options={"parameters": {"n": 0}},
-        ),
-        pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
-    )
+    for param, param_value in (
+        (":n", {"n": 0}),
+        ("?", (0,)),
+        ("?", [0]),
+    ):
+        assert_frame_equal(
+            pl.read_database(
+                query.format(n=param),
+                connection=conn.connect(),
+                execute_options={"parameters": param_value},
+            ),
+            pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]}),
+        )
 
 
 def test_read_database_mocked() -> None:

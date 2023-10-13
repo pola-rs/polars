@@ -279,12 +279,23 @@ class ConnectionExecutor:
                     f"{query_type} statements are not valid 'read' queries"
                 )
 
+        options = options or {}
+        cursor_execute = self.cursor.execute
+
         if self.driver_name == "sqlalchemy" and isinstance(query, str):
-            from sqlalchemy.sql import text
+            params = options.get("parameters")
+            if isinstance(params, Sequence) and hasattr(self.cursor, "exec_driver_sql"):
+                cursor_execute = self.cursor.exec_driver_sql
+                if isinstance(params, list) and not all(
+                    isinstance(p, (dict, tuple)) for p in params
+                ):
+                    options["parameters"] = tuple(params)
+            else:
+                from sqlalchemy.sql import text
 
-            query = text(query)  # type: ignore[assignment]
+                query = text(query)  # type: ignore[assignment]
 
-        if (result := self.cursor.execute(query, **(options or {}))) is None:
+        if (result := cursor_execute(query, **options)) is None:
             result = self.cursor  # some cursors execute in-place
 
         self.result = result
@@ -442,12 +453,21 @@ def read_database(  # noqa: D417
     ...     schema_overrides={"normalised_score": pl.UInt8},
     ... )  # doctest: +SKIP
 
-    Use a parameterised SQLAlchemy query, passing values via ``execute_options``:
+    Use a parameterised SQLAlchemy query, passing named values via ``execute_options``:
 
     >>> df = pl.read_database(
     ...     query="SELECT * FROM test_data WHERE metric > :value",
     ...     connection=alchemy_conn,
     ...     execute_options={"parameters": {"value": 0}},
+    ... )  # doctest: +SKIP
+
+    Use 'qmark' style parameterisation; values are still passed via ``execute_options``,
+    but in this case the "parameters" value is a sequence of literals, not a dict:
+
+    >>> df = pl.read_database(
+    ...     query="SELECT * FROM test_data WHERE metric > ?",
+    ...     connection=alchemy_conn,
+    ...     execute_options={"parameters": [0]},
     ... )  # doctest: +SKIP
 
     Instantiate a DataFrame using an ODBC connection string (requires ``arrow-odbc``)
