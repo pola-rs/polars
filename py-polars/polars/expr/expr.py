@@ -5387,11 +5387,11 @@ class Expr:
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
-        │ i64 ┆ f64 │
+        │ f64 ┆ f64 │
         ╞═════╪═════╡
-        │ 1   ┆ 1.0 │
-        │ 2   ┆ NaN │
-        │ 3   ┆ 3.0 │
+        │ 1.0 ┆ 1.0 │
+        │ 2.0 ┆ NaN │
+        │ 3.0 ┆ 3.0 │
         └─────┴─────┘
 
         Fill null values using nearest interpolation.

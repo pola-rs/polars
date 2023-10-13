@@ -5875,13 +5875,13 @@ class Series:
         >>> s = pl.Series("a", [1, 2, None, None, 5])
         >>> s.interpolate()
         shape: (5,)
-        Series: 'a' [i64]
+        Series: 'a' [f64]
         [
-            1
-            2
-            3
-            4
-            5
+            1.0
+            2.0
+            3.0
+            4.0
+            5.0
         ]
 
         """
