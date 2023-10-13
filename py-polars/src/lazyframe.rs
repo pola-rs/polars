@@ -280,7 +280,7 @@ impl PyLazyFrame {
 
         let first_path_url = first_path.to_string_lossy();
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
-        let cloud_options = parse_cloud_options(&path, cloud_options, retries)?;
+        let cloud_options = parse_cloud_options(&first_path_url, cloud_options, retries)?;
 
         let args = ScanArgsParquet {
             n_rows,
