@@ -240,6 +240,8 @@ impl FunctionExpr {
             BackwardFill { .. } => mapper.with_same_dtype(),
             ForwardFill { .. } => mapper.with_same_dtype(),
             SumHorizontal => mapper.map_to_supertype(),
+            MaxHorizontal => mapper.map_to_supertype(),
+            MinHorizontal => mapper.map_to_supertype(),
         }
     }
 }
