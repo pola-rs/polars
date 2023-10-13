@@ -172,6 +172,16 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT ROUND(column_1, 3) from df;
     /// ```
     Round,
+    /// SQL 'degrees' function
+    /// ```sql
+    /// SELECT DEGREES(column_1) from df;
+    /// ```
+    Degrees,
+    /// SQL 'RADIANS' function
+    /// ```sql
+    /// SELECT radians(column_1) from df;
+    /// ```
+    Radians,
 
     // ----
     // String functions
@@ -309,16 +319,6 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT ARRAY_LENGTH(column_1) from df;
     /// ```
     ArrayLength,
-    /// SQL 'degrees' function
-    /// ```sql
-    /// SELECT DEGREES(column_1) from df;
-    /// ```
-    Degrees,
-    /// SQL 'RADIANS' function
-    /// ```sql
-    /// SELECT radians(column_1) from df;
-    /// ```
-    Radians,
     /// SQL 'array_lower' function
     /// Returns the minimum value in an array; equivalent to `array_min`
     /// ```sql
