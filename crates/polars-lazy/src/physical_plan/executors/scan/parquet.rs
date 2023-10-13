@@ -80,9 +80,10 @@ impl ParquetExec {
                     .with_row_count(mem::take(&mut self.file_options.row_count))
                     .with_projection(projection)
                     .use_statistics(self.options.use_statistics)
+                    .with_predicate(predicate)
                     .with_hive_partition_columns(hive_partitions);
 
-                    reader.finish(predicate).await
+                    reader.finish().await
                 })
             }
             #[cfg(not(feature = "cloud"))]
