@@ -61,7 +61,7 @@ impl PhysicalExpr for AggregationExpr {
                             let out = rename_series(agg_s, &keep_name);
                             return Ok(AggregationContext::new(out, Cow::Borrowed(groups), true))
                         } else {
-                            polars_bail!(ComputeError: "cannot aggregate as {}, the column is already aggregated");
+                            polars_bail!(ComputeError: "cannot aggregate as {}, the column is already aggregated", self.agg_type);
                         }
                     },
                     _ => ()
@@ -427,7 +427,7 @@ impl PartitionedAggregation for AggregationExpr {
                             let ca = unsafe {
                                 // Safety
                                 // The indexes of the group_by operation are never out of bounds
-                                ca.take_unchecked(idx.into())
+                                ca.take_unchecked(idx)
                             };
                             process_group(ca)?;
                         }

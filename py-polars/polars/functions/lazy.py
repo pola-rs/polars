@@ -4,14 +4,9 @@ import contextlib
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
 import polars._reexport as pl
-from polars.datatypes import (
-    DTYPE_TEMPORAL_UNITS,
-    Date,
-    Datetime,
-    Int64,
-    is_polars_dtype,
-)
-from polars.utils._async import _AsyncDataFrameResult
+import polars.functions as F
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Datetime, Int64
+from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
@@ -28,8 +23,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
-    from queue import Queue
-    from typing import Collection, Literal
+    from typing import Awaitable, Collection, Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars.type_aliases import (
@@ -39,181 +33,6 @@ if TYPE_CHECKING:
         PolarsDataType,
         RollingInterpolationMethod,
     )
-
-
-def col(
-    name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
-    *more_names: str | PolarsDataType,
-) -> Expr:
-    """
-    Return an expression representing column(s) in a dataframe.
-
-    Parameters
-    ----------
-    name
-        The name or datatype of the column(s) to represent. Accepts regular expression
-        input. Regular expressions should start with ``^`` and end with ``$``.
-    *more_names
-        Additional names or datatypes of columns to represent, specified as positional
-        arguments.
-
-    Examples
-    --------
-    Pass a single column name to represent that column.
-
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "ham": [1, 2, 3],
-    ...         "hamburger": [11, 22, 33],
-    ...         "foo": [3, 2, 1],
-    ...         "bar": ["a", "b", "c"],
-    ...     }
-    ... )
-    >>> df.select(pl.col("foo"))
-    shape: (3, 1)
-    ┌─────┐
-    │ foo │
-    │ --- │
-    │ i64 │
-    ╞═════╡
-    │ 3   │
-    │ 2   │
-    │ 1   │
-    └─────┘
-
-    Use the wildcard ``*`` to represent all columns.
-
-    >>> df.select(pl.col("*"))
-    shape: (3, 4)
-    ┌─────┬───────────┬─────┬─────┐
-    │ ham ┆ hamburger ┆ foo ┆ bar │
-    │ --- ┆ ---       ┆ --- ┆ --- │
-    │ i64 ┆ i64       ┆ i64 ┆ str │
-    ╞═════╪═══════════╪═════╪═════╡
-    │ 1   ┆ 11        ┆ 3   ┆ a   │
-    │ 2   ┆ 22        ┆ 2   ┆ b   │
-    │ 3   ┆ 33        ┆ 1   ┆ c   │
-    └─────┴───────────┴─────┴─────┘
-    >>> df.select(pl.col("*").exclude("ham"))
-    shape: (3, 3)
-    ┌───────────┬─────┬─────┐
-    │ hamburger ┆ foo ┆ bar │
-    │ ---       ┆ --- ┆ --- │
-    │ i64       ┆ i64 ┆ str │
-    ╞═══════════╪═════╪═════╡
-    │ 11        ┆ 3   ┆ a   │
-    │ 22        ┆ 2   ┆ b   │
-    │ 33        ┆ 1   ┆ c   │
-    └───────────┴─────┴─────┘
-
-    Regular expression input is supported.
-
-    >>> df.select(pl.col("^ham.*$"))
-    shape: (3, 2)
-    ┌─────┬───────────┐
-    │ ham ┆ hamburger │
-    │ --- ┆ ---       │
-    │ i64 ┆ i64       │
-    ╞═════╪═══════════╡
-    │ 1   ┆ 11        │
-    │ 2   ┆ 22        │
-    │ 3   ┆ 33        │
-    └─────┴───────────┘
-
-    Multiple columns can be represented by passing a list of names.
-
-    >>> df.select(pl.col(["hamburger", "foo"]))
-    shape: (3, 2)
-    ┌───────────┬─────┐
-    │ hamburger ┆ foo │
-    │ ---       ┆ --- │
-    │ i64       ┆ i64 │
-    ╞═══════════╪═════╡
-    │ 11        ┆ 3   │
-    │ 22        ┆ 2   │
-    │ 33        ┆ 1   │
-    └───────────┴─────┘
-
-    Or use positional arguments to represent multiple columns in the same way.
-
-    >>> df.select(pl.col("hamburger", "foo"))
-    shape: (3, 2)
-    ┌───────────┬─────┐
-    │ hamburger ┆ foo │
-    │ ---       ┆ --- │
-    │ i64       ┆ i64 │
-    ╞═══════════╪═════╡
-    │ 11        ┆ 3   │
-    │ 22        ┆ 2   │
-    │ 33        ┆ 1   │
-    └───────────┴─────┘
-
-    Easily select all columns that match a certain data type by passing that datatype.
-
-    >>> df.select(pl.col(pl.Utf8))
-    shape: (3, 1)
-    ┌─────┐
-    │ bar │
-    │ --- │
-    │ str │
-    ╞═════╡
-    │ a   │
-    │ b   │
-    │ c   │
-    └─────┘
-    >>> df.select(pl.col(pl.Int64, pl.Float64))
-    shape: (3, 3)
-    ┌─────┬───────────┬─────┐
-    │ ham ┆ hamburger ┆ foo │
-    │ --- ┆ ---       ┆ --- │
-    │ i64 ┆ i64       ┆ i64 │
-    ╞═════╪═══════════╪═════╡
-    │ 1   ┆ 11        ┆ 3   │
-    │ 2   ┆ 22        ┆ 2   │
-    │ 3   ┆ 33        ┆ 1   │
-    └─────┴───────────┴─────┘
-
-    """
-    if more_names:
-        if isinstance(name, str):
-            names_str = [name]
-            names_str.extend(more_names)  # type: ignore[arg-type]
-            return wrap_expr(plr.cols(names_str))
-        elif is_polars_dtype(name):
-            dtypes = [name]
-            dtypes.extend(more_names)
-            return wrap_expr(plr.dtype_cols(dtypes))
-        else:
-            raise TypeError(
-                "invalid input for `col`"
-                f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}."
-            )
-
-    if isinstance(name, str):
-        return wrap_expr(plr.col(name))
-    elif is_polars_dtype(name):
-        return wrap_expr(plr.dtype_cols([name]))
-    elif isinstance(name, Iterable):
-        names = list(name)
-        if not names:
-            return wrap_expr(plr.cols(names))
-
-        item = names[0]
-        if isinstance(item, str):
-            return wrap_expr(plr.cols(names))
-        elif is_polars_dtype(item):
-            return wrap_expr(plr.dtype_cols(names))
-        else:
-            raise TypeError(
-                "invalid input for `col`"
-                "\n\nExpected iterable of type `str` or `DataType`,"
-                f" got iterable of type {type(item).__name__!r}"
-            )
-    else:
-        raise TypeError(
-            "invalid input for `col`"
-            f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}"
-        )
 
 
 def element() -> Expr:
@@ -257,7 +76,7 @@ def element() -> Expr:
     └─────┴─────┴─────────────┘
 
     """
-    return col("")
+    return F.col("")
 
 
 @overload
@@ -324,7 +143,7 @@ def count(column: str | Series | None = None) -> Expr | int:
             version="0.18.8",
         )
         return column.len()
-    return col(column).count()
+    return F.col(column).count()
 
 
 def implode(name: str) -> Expr:
@@ -337,7 +156,7 @@ def implode(name: str) -> Expr:
         Name of the column that should be imploded.
 
     """
-    return col(name).implode()
+    return F.col(name).implode()
 
 
 @overload
@@ -385,7 +204,7 @@ def std(column: str | Series, ddof: int = 1) -> Expr | float | None:
             version="0.18.8",
         )
         return column.std(ddof)
-    return col(column).std(ddof)
+    return F.col(column).std(ddof)
 
 
 @overload
@@ -433,7 +252,7 @@ def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
             version="0.18.8",
         )
         return column.var(ddof)
-    return col(column).var(ddof)
+    return F.col(column).var(ddof)
 
 
 @overload
@@ -470,7 +289,7 @@ def mean(column: str | Series) -> Expr | float | None:
             version="0.18.8",
         )
         return column.mean()
-    return col(column).mean()
+    return F.col(column).mean()
 
 
 @overload
@@ -542,7 +361,7 @@ def median(column: str | Series) -> Expr | float | int | None:
             version="0.18.8",
         )
         return column.median()
-    return col(column).median()
+    return F.col(column).median()
 
 
 @overload
@@ -579,7 +398,7 @@ def n_unique(column: str | Series) -> Expr | int:
             version="0.18.8",
         )
         return column.n_unique()
-    return col(column).n_unique()
+    return F.col(column).n_unique()
 
 
 def approx_n_unique(column: str | Expr) -> Expr:
@@ -609,7 +428,7 @@ def approx_n_unique(column: str | Expr) -> Expr:
     """
     if isinstance(column, pl.Expr):
         return column.approx_n_unique()
-    return col(column).approx_n_unique()
+    return F.col(column).approx_n_unique()
 
 
 @overload
@@ -676,7 +495,7 @@ def first(column: str | Series | None = None) -> Expr | Any:
             return column[0]
         else:
             raise IndexError("the series is empty, so no first value can be returned")
-    return col(column).first()
+    return F.col(column).first()
 
 
 @overload
@@ -741,7 +560,7 @@ def last(column: str | Series | None = None) -> Expr:
             return column[-1]
         else:
             raise IndexError("the series is empty, so no last value can be returned")
-    return col(column).last()
+    return F.col(column).last()
 
 
 @overload
@@ -797,7 +616,7 @@ def head(column: str | Series, n: int = 10) -> Expr | Series:
             version="0.18.8",
         )
         return column.head(n)
-    return col(column).head(n)
+    return F.col(column).head(n)
 
 
 @overload
@@ -853,7 +672,7 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
             version="0.18.8",
         )
         return column.tail(n)
-    return col(column).tail(n)
+    return F.col(column).tail(n)
 
 
 def corr(
@@ -913,9 +732,9 @@ def corr(
     └─────┘
     """
     if isinstance(a, str):
-        a = col(a)
+        a = F.col(a)
     if isinstance(b, str):
-        b = col(b)
+        b = F.col(b)
 
     if method == "pearson":
         return wrap_expr(plr.pearson_corr(a._pyexpr, b._pyexpr, ddof))
@@ -955,9 +774,9 @@ def cov(a: str | Expr, b: str | Expr) -> Expr:
 
     """
     if isinstance(a, str):
-        a = col(a)
+        a = F.col(a)
     if isinstance(b, str):
-        b = col(b)
+        b = F.col(b)
     return wrap_expr(plr.cov(a._pyexpr, b._pyexpr))
 
 
@@ -974,11 +793,11 @@ def map_batches(
     Parameters
     ----------
     exprs
-        Input Series to f
+        Expression(s) representing the input Series to the function.
     function
-        Function to apply over the input
+        Function to apply over the input.
     return_dtype
-        dtype of the output Series
+        dtype of the output Series.
 
     Returns
     -------
@@ -1069,22 +888,14 @@ def map_groups(
         This method is much slower than the native expressions API.
         Only use it if you cannot implement your logic otherwise.
 
-    Depending on the context it has the following behavior:
-
-    * Select
-        Don't use apply, use `map`
-    * GroupBy
-        expected type `f`: Callable[[Series], Series]
-        Applies a python function over each group.
-
     Parameters
     ----------
     exprs
-        Input Series to f
+        Expression(s) representing the input Series to the function.
     function
-        Function to apply over the input
+        Function to apply over the input; should be of type Callable[[Series], Series].
     return_dtype
-        dtype of the output Series
+        dtype of the output Series.
     returns_scalar
         If the function returns a single scalar as output.
 
@@ -1284,7 +1095,7 @@ def fold(
     │ 3   ┆ 2   │
     └─────┴─────┘
     """
-    # in case of pl.col("*")
+    # in case of col("*")
     acc = parse_as_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
@@ -1335,7 +1146,7 @@ def reduce(
     Horizontally sum over all columns.
 
     >>> df.select(
-    ...     pl.reduce(function=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum"),
+    ...     pl.reduce(function=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum")
     ... )
     shape: (3, 1)
     ┌─────┐
@@ -1349,7 +1160,7 @@ def reduce(
     └─────┘
 
     """
-    # in case of pl.col("*")
+    # in case of col("*")
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
@@ -1425,7 +1236,7 @@ def cumfold(
     └───────────┘
 
     """  # noqa: W505
-    # in case of pl.col("*")
+    # in case of col("*")
     acc = parse_as_expression(acc, str_as_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
@@ -1488,7 +1299,7 @@ def cumreduce(
     │ {3,8,15}  │
     └───────────┘
     """  # noqa: W505
-    # in case of pl.col("*")
+    # in case of col("*")
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
@@ -1537,9 +1348,9 @@ def arctan2(y: str | Expr, x: str | Expr) -> Expr:
 
     """
     if isinstance(y, str):
-        y = col(y)
+        y = F.col(y)
     if isinstance(x, str):
-        x = col(x)
+        x = F.col(x)
     return wrap_expr(plr.arctan2(y._pyexpr, x._pyexpr))
 
 
@@ -1584,9 +1395,9 @@ def arctan2d(y: str | Expr, x: str | Expr) -> Expr:
 
     """
     if isinstance(y, str):
-        y = col(y)
+        y = F.col(y)
     if isinstance(x, str):
-        x = col(x)
+        x = F.col(x)
     return wrap_expr(plr.arctan2d(y._pyexpr, x._pyexpr))
 
 
@@ -1660,12 +1471,12 @@ def exclude(
     └──────┘
 
     """
-    return col("*").exclude(columns, *more_columns)
+    return F.col("*").exclude(columns, *more_columns)
 
 
 def groups(column: str) -> Expr:
     """Syntactic sugar for `pl.col("foo").agg_groups()`."""
-    return col(column).agg_groups()
+    return F.col(column).agg_groups()
 
 
 def quantile(
@@ -1686,7 +1497,7 @@ def quantile(
         Interpolation method.
 
     """
-    return col(column).quantile(quantile, interpolation)
+    return F.col(column).quantile(quantile, interpolation)
 
 
 def arg_sort_by(
@@ -1828,6 +1639,7 @@ def collect_all(
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
+            _eager=False,
         )
         prepared.append(ldf)
 
@@ -1839,10 +1651,29 @@ def collect_all(
     return result
 
 
+@overload
 def collect_all_async(
     lazy_frames: Sequence[LazyFrame],
-    queue: Queue[list[DataFrame] | Exception],
     *,
+    gevent: Literal[True],
+    type_coercion: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    no_optimization: bool = True,
+    slice_pushdown: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
+    streaming: bool = True,
+) -> _GeventDataFrameResult[list[DataFrame]]:
+    ...
+
+
+@overload
+def collect_all_async(
+    lazy_frames: Sequence[LazyFrame],
+    *,
+    gevent: Literal[False] = False,
     type_coercion: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
@@ -1852,33 +1683,63 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     streaming: bool = False,
-) -> _AsyncDataFrameResult[list[DataFrame]]:
+) -> Awaitable[list[DataFrame]]:
+    ...
+
+
+def collect_all_async(
+    lazy_frames: Sequence[LazyFrame],
+    *,
+    gevent: bool = False,
+    type_coercion: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    no_optimization: bool = False,
+    slice_pushdown: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
+    streaming: bool = False,
+) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
     Collect multiple LazyFrames at the same time asynchronously in thread pool.
 
-    Collects into a list of DataFrame, like :func:`polars.collect_all`
-    but instead of returning them directly its collected inside thread pool
-    and gets put into `queue` with `put_nowait` method,
-    while this method returns almost instantly.
+    Collects into a list of DataFrame (like :func:`polars.collect_all`),
+    but instead of returning them directly, they are scheduled to be collected
+    inside thread pool, while this method returns almost instantly.
 
     May be useful if you use gevent or asyncio and want to release control to other
     greenlets/tasks while LazyFrames are being collected.
-    You must use correct queue in that case.
-    Given `queue` must be thread safe!
 
-    For gevent use
-    [`gevent.queue.Queue`](https://www.gevent.org/api/gevent.queue.html#gevent.queue.Queue).
-
-    For asyncio
-    [`asyncio.queues.Queue`](https://docs.python.org/3/library/asyncio-queue.html#queue)
-    can not be used, since it's not thread safe!
-    For that purpose use [janus](https://github.com/aio-libs/janus) library.
+    Parameters
+    ----------
+    lazy_frames
+        A list of LazyFrames to collect.
+    gevent
+        Return wrapper to `gevent.event.AsyncResult` instead of Awaitable
+    type_coercion
+        Do type coercion optimization.
+    predicate_pushdown
+        Do predicate pushdown optimization.
+    projection_pushdown
+        Do projection pushdown optimization.
+    simplify_expression
+        Run simplify expressions optimization.
+    no_optimization
+        Turn off (certain) optimizations.
+    slice_pushdown
+        Slice pushdown optimization.
+    comm_subplan_elim
+        Will try to cache branching subplans that occur on self-joins or unions.
+    comm_subexpr_elim
+        Common subexpressions will be cached and reused.
+    streaming
+        Run parts of the query in a streaming fashion (this is in an alpha state)
 
     Notes
     -----
-    Results are put in queue exactly once using `put_nowait`.
-    If error occurred then Exception will be put in the queue instead of result
-    which is then raised by returned wrapper `get` method.
+    In case of error `set_exception` is used on
+    `asyncio.Future`/`gevent.event.AsyncResult` and will be reraised by them.
 
     Warnings
     --------
@@ -1892,8 +1753,10 @@ def collect_all_async(
 
     Returns
     -------
-    Wrapper that has `get` method and `queue` attribute with given queue.
-    `get` accepts kwargs that are passed down to `queue.get`.
+    If `gevent=False` (default) then returns awaitable.
+
+    If `gevent=True` then returns wrapper that has
+    `.get(block=True, timeout=None)` method.
     """
     if no_optimization:
         predicate_pushdown = False
@@ -1914,12 +1777,13 @@ def collect_all_async(
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
+            _eager=False,
         )
         prepared.append(ldf)
 
-    result = _AsyncDataFrameResult(queue)
-    plr.collect_all_with_callback(prepared, result._callback_all)
-    return result
+    result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+    plr.collect_all_with_callback(prepared, result._callback_all)  # type: ignore[attr-defined]
+    return result  # type: ignore[return-value]
 
 
 def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> DataFrame:
@@ -2015,7 +1879,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
                 "expected 'Series' in 'arg_where' if 'eager=True', got"
                 f" {type(condition).__name__!r}"
             )
-        return condition.to_frame().select(arg_where(col(condition.name))).to_series()
+        return condition.to_frame().select(arg_where(F.col(condition.name))).to_series()
     else:
         condition = parse_as_expression(condition)
         return wrap_expr(plr.arg_where(condition))
@@ -2132,7 +1996,7 @@ def from_epoch(
 
     """
     if isinstance(column, str):
-        column = col(column)
+        column = F.col(column)
     elif not isinstance(column, (pl.Series, pl.Expr)):
         column = pl.Series(column)  # Sequence input handled by Series constructor
 
@@ -2144,7 +2008,7 @@ def from_epoch(
         return column.cast(Datetime(time_unit))
     else:
         raise ValueError(
-            f"'time_unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
+            f"`time_unit` must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
         )
 
 
@@ -2181,9 +2045,9 @@ def rolling_cov(
     if min_periods is None:
         min_periods = window_size
     if isinstance(a, str):
-        a = col(a)
+        a = F.col(a)
     if isinstance(b, str):
-        b = col(b)
+        b = F.col(b)
     return wrap_expr(
         plr.rolling_cov(a._pyexpr, b._pyexpr, window_size, min_periods, ddof)
     )
@@ -2222,9 +2086,9 @@ def rolling_corr(
     if min_periods is None:
         min_periods = window_size
     if isinstance(a, str):
-        a = col(a)
+        a = F.col(a)
     if isinstance(b, str):
-        b = col(b)
+        b = F.col(b)
     return wrap_expr(
         plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_periods, ddof)
     )

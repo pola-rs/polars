@@ -4,6 +4,7 @@ use std::fmt::Formatter;
 use serde::de::{MapAccess, Visitor};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::chunked_array::builder::AnonymousListBuilder;
 use crate::chunked_array::Settings;
 use crate::prelude::*;
 
@@ -202,13 +203,15 @@ impl<'de> Deserialize<'de> for Series {
                         let values: Vec<Option<Cow<str>>> = map.next_value()?;
                         Ok(Series::new(&name, values))
                     },
-                    DataType::List(_) => {
+                    DataType::List(inner) => {
                         let values: Vec<Option<Series>> = map.next_value()?;
-                        if values.is_empty() {
-                            Ok(Series::new_empty(&name, &dtype))
-                        } else {
-                            Ok(Series::new(&name, values))
+                        let mut lb = AnonymousListBuilder::new(&name, values.len(), Some(*inner));
+                        for value in &values {
+                            lb.append_opt_series(value.as_ref()).map_err(|e| {
+                                de::Error::custom(format!("could not append series to list: {e}"))
+                            })?;
                         }
+                        Ok(lb.finish().into_series())
                     },
                     DataType::Binary => {
                         let values: Vec<Option<Cow<[u8]>>> = map.next_value()?;

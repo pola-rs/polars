@@ -127,15 +127,6 @@ class CategoricalDescription(TypedDict):
     categories: PolarsColumn
 
 
-class Endianness:
-    """Enum indicating the byte-order of a data type."""
-
-    LITTLE = "<"
-    BIG = ">"
-    NATIVE = "="
-    NA = "|"
-
-
 class Buffer(Protocol):
     """Interchange buffer object."""
 
@@ -202,9 +193,9 @@ class DataFrame(Protocol):
         """Version of the protocol."""
 
     def __dataframe__(
-        self, nan_as_null: bool = False, allow_copy: bool = True
+        self, nan_as_null: bool = False, allow_copy: bool = True  # noqa: FBT001
     ) -> DataFrame:
-        """Construct a new dataframe object, potentially changing the parameters."""
+        """Convert to a dataframe object implementing the dataframe interchange protocol."""  # noqa: W505
 
     @property
     def metadata(self) -> dict[str, Any]:
@@ -239,3 +230,25 @@ class DataFrame(Protocol):
 
     def get_chunks(self, n_chunks: int | None = None) -> Iterable[DataFrame]:
         """Return an iterator yielding the chunks of the dataframe."""
+
+
+class SupportsInterchange(Protocol):
+    """Dataframe that supports conversion into an interchange dataframe object."""
+
+    def __dataframe__(
+        self, nan_as_null: bool = False, allow_copy: bool = True  # noqa: FBT001
+    ) -> SupportsInterchange:
+        """Convert to a dataframe object implementing the dataframe interchange protocol."""  # noqa: W505
+
+
+class Endianness:
+    """Enum indicating the byte-order of a data type."""
+
+    LITTLE = "<"
+    BIG = ">"
+    NATIVE = "="
+    NA = "|"
+
+
+class CopyNotAllowedError(RuntimeError):
+    """Exception raised when a copy is required, but ``allow_copy`` is set to ``False``."""  # noqa: W505

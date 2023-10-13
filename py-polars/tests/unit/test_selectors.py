@@ -43,7 +43,7 @@ def test_selector_all(df: pl.DataFrame) -> None:
 
 
 def test_selector_by_dtype(df: pl.DataFrame) -> None:
-    assert df.select(cs.by_dtype(pl.UInt16, pl.Boolean)).schema == {
+    assert df.select(cs.by_dtype(pl.UInt16) | cs.boolean()).schema == {
         "abc": pl.UInt16,
         "eee": pl.Boolean,
         "fgg": pl.Boolean,
@@ -261,6 +261,24 @@ def test_selector_matches(df: pl.DataFrame) -> None:
     ]
 
 
+def test_selector_miscellaneous(df: pl.DataFrame) -> None:
+    assert df.select(cs.string()).columns == ["qqR"]
+    assert df.select(cs.categorical()).columns == []
+
+    test_schema = {
+        "abc": pl.Utf8,
+        "mno": pl.Binary,
+        "tuv": pl.Object,
+        "xyz": pl.Categorical,
+    }
+    assert expand_selector(test_schema, cs.binary()) == ("mno",)
+    assert expand_selector(test_schema, ~cs.binary()) == ("abc", "tuv", "xyz")
+    assert expand_selector(test_schema, cs.object()) == ("tuv",)
+    assert expand_selector(test_schema, ~cs.object()) == ("abc", "mno", "xyz")
+    assert expand_selector(test_schema, cs.categorical()) == ("xyz",)
+    assert expand_selector(test_schema, ~cs.categorical()) == ("abc", "mno", "tuv")
+
+
 def test_selector_numeric(df: pl.DataFrame) -> None:
     assert df.select(cs.numeric()).schema == {
         "abc": pl.UInt16,
@@ -310,6 +328,8 @@ def test_selector_temporal(df: pl.DataFrame) -> None:
     assert set(df.select(~cs.temporal()).columns) == (
         all_columns - {"ghi", "JJK", "Lmn", "opp"}
     )
+    assert df.select(cs.time()).schema == {"ghi": pl.Time}
+    assert df.select(cs.date() | cs.time()).schema == {"ghi": pl.Time, "JJK": pl.Date}
 
 
 def test_selector_expansion() -> None:
@@ -347,7 +367,7 @@ def test_selector_repr() -> None:
         cs.integer() & cs.matches("z"), "(cs.integer() & cs.matches(pattern='z'))"
     )
     assert_repr_equals(
-        cs.temporal() | cs.by_dtype(pl.Utf8) & cs.string(False),
+        cs.temporal() | cs.by_dtype(pl.Utf8) & cs.string(include_categorical=False),
         "(cs.temporal() | (cs.by_dtype(dtypes=[Utf8]) & cs.string(include_categorical=False)))",
     )
 
@@ -463,3 +483,16 @@ def test_regex_expansion_exclude_10002() -> None:
         ).to_dict(as_series=False)
         == expected
     )
+
+
+def test_selector_or() -> None:
+    df = pl.DataFrame(
+        {
+            "int": [1, 2, 3],
+            "float": [1.0, 2.0, 3.0],
+            "str": ["x", "y", "z"],
+        }
+    ).with_row_count("rn")
+
+    out = df.select(cs.by_name("rn") | ~cs.numeric())
+    assert out.to_dict(False) == {"rn": [0, 1, 2], "str": ["x", "y", "z"]}

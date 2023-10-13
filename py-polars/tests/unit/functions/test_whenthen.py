@@ -140,10 +140,10 @@ def test_list_zip_with_logical_type() -> None:
     )
 
     df = df.with_columns(
-        pl.date_ranges(
+        pl.datetime_ranges(
             pl.col("start"), pl.col("stop"), interval="1h", eager=False, closed="left"
         ).alias("interval_1"),
-        pl.date_ranges(
+        pl.datetime_ranges(
             pl.col("start"), pl.col("stop"), interval="1h", eager=False, closed="left"
         ).alias("interval_2"),
     )
@@ -190,7 +190,7 @@ def test_when_then_edge_cases_3994() -> None:
         .group_by(["id"])
         .agg(pl.col("type"))
         .with_columns(
-            pl.when(pl.col("type").list.lengths() == 0)
+            pl.when(pl.col("type").list.len() == 0)
             .then(pl.lit(None))
             .otherwise(pl.col("type"))
             .keep_name()
@@ -204,7 +204,7 @@ def test_when_then_edge_cases_3994() -> None:
         .group_by(["id"])
         .agg(pl.col("type"))
         .with_columns(
-            pl.when(pl.col("type").list.lengths() == 0)
+            pl.when(pl.col("type").list.len() == 0)
             .then(pl.lit(None))
             .otherwise(pl.col("type"))
             .keep_name()

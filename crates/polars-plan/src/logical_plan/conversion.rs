@@ -128,12 +128,10 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::Window {
             function,
             partition_by,
-            order_by,
             options,
         } => AExpr::Window {
             function: to_aexpr(*function, arena),
             partition_by: to_aexprs(partition_by, arena),
-            order_by: order_by.map(|ob| to_aexpr(*ob, arena)),
             options,
         },
         Expr::Slice {
@@ -148,6 +146,7 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::Wildcard => AExpr::Wildcard,
         Expr::Count => AExpr::Count,
         Expr::Nth(i) => AExpr::Nth(i),
+        Expr::SubPlan { .. } => panic!("no SQLSubquery expected at this point"),
         Expr::KeepName(_) => panic!("no keep_name expected at this point"),
         Expr::Exclude(_, _) => panic!("no exclude expected at this point"),
         Expr::RenameAlias { .. } => panic!("no `rename_alias` expected at this point"),
@@ -180,18 +179,6 @@ pub fn to_alp(
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             scan_type,
             file_options: options,
-        },
-        LogicalPlan::AnonymousScan {
-            function,
-            file_info,
-            predicate,
-            options,
-        } => ALogicalPlan::AnonymousScan {
-            function,
-            file_info,
-            output_schema: None,
-            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
-            options,
         },
         #[cfg(feature = "python")]
         LogicalPlan::PythonScan { options } => ALogicalPlan::PythonScan {
@@ -243,19 +230,6 @@ pub fn to_alp(
                 input: i,
                 schema,
                 options,
-            }
-        },
-        LogicalPlan::LocalProjection {
-            expr,
-            input,
-            schema,
-        } => {
-            let exp = expr.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
-            let i = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::LocalProjection {
-                expr: exp,
-                input: i,
-                schema,
             }
         },
         LogicalPlan::Sort {
@@ -377,9 +351,9 @@ pub fn to_alp(
                 schema,
             }
         },
-        LogicalPlan::FileSink { input, payload } => {
+        LogicalPlan::Sink { input, payload } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::FileSink { input, payload }
+            ALogicalPlan::Sink { input, payload }
         },
     };
     Ok(lp_arena.add(v))
@@ -578,16 +552,13 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         AExpr::Window {
             function,
             partition_by,
-            order_by,
             options,
         } => {
             let function = Box::new(node_to_expr(function, expr_arena));
             let partition_by = nodes_to_exprs(&partition_by, expr_arena);
-            let order_by = order_by.map(|ob| Box::new(node_to_expr(ob, expr_arena)));
             Expr::Window {
                 function,
                 partition_by,
-                order_by,
                 options,
             }
         },
@@ -638,18 +609,6 @@ impl ALogicalPlan {
                 predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
                 scan_type,
                 file_options: options,
-            },
-            ALogicalPlan::AnonymousScan {
-                function,
-                file_info,
-                output_schema: _,
-                predicate,
-                options,
-            } => LogicalPlan::AnonymousScan {
-                function,
-                file_info,
-                predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-                options,
             },
             #[cfg(feature = "python")]
             ALogicalPlan::PythonScan { options, .. } => LogicalPlan::PythonScan { options },
@@ -702,19 +661,6 @@ impl ALogicalPlan {
                     input: Box::new(i),
                     schema,
                     options,
-                }
-            },
-            ALogicalPlan::LocalProjection {
-                expr,
-                input,
-                schema,
-            } => {
-                let i = convert_to_lp(input, lp_arena);
-
-                LogicalPlan::LocalProjection {
-                    expr: nodes_to_exprs(&expr, expr_arena),
-                    input: Box::new(i),
-                    schema,
                 }
             },
             ALogicalPlan::Sort {
@@ -816,9 +762,9 @@ impl ALogicalPlan {
                     schema,
                 }
             },
-            ALogicalPlan::FileSink { input, payload } => {
+            ALogicalPlan::Sink { input, payload } => {
                 let input = Box::new(convert_to_lp(input, lp_arena));
-                LogicalPlan::FileSink { input, payload }
+                LogicalPlan::Sink { input, payload }
             },
         }
     }

@@ -271,7 +271,7 @@ def scan_delta(
     return scan_pyarrow_dataset(pa_ds)
 
 
-def _resolve_delta_lake_uri(table_uri: str, strict: bool = True) -> str:
+def _resolve_delta_lake_uri(table_uri: str, *, strict: bool = True) -> str:
     parsed_result = urlparse(table_uri)
 
     resolved_uri = str(
@@ -316,8 +316,7 @@ def _get_delta_lake_table(
 def _check_if_delta_available() -> None:
     if not _DELTALAKE_AVAILABLE:
         raise ModuleNotFoundError(
-            "deltalake is not installed"
-            "\n\nPlease run: `pip install deltalake>=0.9.0`"
+            "deltalake is not installed\n\nPlease run: pip install deltalake>=0.9.0"
         )
 
 

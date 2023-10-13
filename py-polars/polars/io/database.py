@@ -3,17 +3,19 @@ from __future__ import annotations
 import re
 import sys
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, Iterable, Sequence, TypedDict
+from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence, TypedDict, overload
 
 from polars.convert import from_arrow
-from polars.utils.deprecation import (
-    deprecate_renamed_parameter,
-    issue_deprecation_warning,
-)
+from polars.exceptions import InvalidOperationError, UnsuitableSQLError
+from polars.utils.deprecation import issue_deprecation_warning
 
 if TYPE_CHECKING:
     from types import TracebackType
 
+    if sys.version_info >= (3, 10):
+        from typing import TypeAlias
+    else:
+        from typing_extensions import TypeAlias
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
@@ -21,7 +23,12 @@ if TYPE_CHECKING:
 
     from polars import DataFrame
     from polars.dependencies import pyarrow as pa
-    from polars.type_aliases import ConnectionOrCursor, Cursor, DbReadEngine
+    from polars.type_aliases import ConnectionOrCursor, Cursor, DbReadEngine, SchemaDict
+
+    try:
+        from sqlalchemy.sql.expression import Selectable
+    except ImportError:
+        Selectable: TypeAlias = Any  # type: ignore[no-redef]
 
 
 class _DriverProperties_(TypedDict):
@@ -36,9 +43,19 @@ _ARROW_DRIVER_REGISTRY_: dict[str, _DriverProperties_] = {
         "fetch_batches": None,
         "exact_batch_size": None,
     },
+    "arrow_odbc_proxy": {
+        "fetch_all": "fetch_record_batches",
+        "fetch_batches": "fetch_record_batches",
+        "exact_batch_size": True,
+    },
     "databricks": {
         "fetch_all": "fetchall_arrow",
         "fetch_batches": "fetchmany_arrow",
+        "exact_batch_size": True,
+    },
+    "duckdb": {
+        "fetch_all": "fetch_arrow_table",
+        "fetch_batches": "fetch_record_batch",
         "exact_batch_size": True,
     },
     "snowflake": {
@@ -53,14 +70,68 @@ _ARROW_DRIVER_REGISTRY_: dict[str, _DriverProperties_] = {
     },
 }
 
+_INVALID_QUERY_TYPES = {
+    "ALTER",
+    "ANALYZE",
+    "CREATE",
+    "DELETE",
+    "DROP",
+    "INSERT",
+    "REPLACE",
+    "UPDATE",
+    "UPSERT",
+    "USE",
+    "VACUUM",
+}
+
+
+class ODBCCursorProxy:
+    """Cursor proxy for ODBC connections (requires `arrow-odbc`)."""
+
+    def __init__(self, connection_string: str) -> None:
+        self.connection_string = connection_string
+        self.execute_options: dict[str, Any] = {}
+        self.query: str | None = None
+
+    def close(self) -> None:
+        """Close the cursor (n/a: nothing to close)."""
+
+    def execute(self, query: str, **execute_options: Any) -> None:
+        """Execute a query (n/a: just store query for the fetch* methods)."""
+        self.execute_options = execute_options
+        self.query = query
+
+    def fetch_record_batches(
+        self, batch_size: int = 10_000
+    ) -> Iterable[pa.RecordBatch]:
+        """Fetch results in batches."""
+        from arrow_odbc import read_arrow_batches_from_odbc
+
+        yield from read_arrow_batches_from_odbc(
+            query=self.query,
+            batch_size=batch_size,
+            connection_string=self.connection_string,
+            **self.execute_options,
+        )
+
+    # internally arrow-odbc always reads batches
+    fetchall = fetchmany = fetch_record_batches
+
 
 class ConnectionExecutor:
     """Abstraction for querying databases with user-supplied connection objects."""
 
-    acquired_cursor = False
+    # indicate that we acquired a cursor (and are therefore responsible for closing
+    # it on scope-exit). note that we should never close the underlying connection,
+    # or a user-supplied cursor.
+    acquired_cursor: bool = False
 
     def __init__(self, connection: ConnectionOrCursor) -> None:
-        self.driver = type(connection).__module__.split(".", 1)[0].lower()
+        self.driver_name = (
+            "arrow_odbc_proxy"
+            if isinstance(connection, ODBCCursorProxy)
+            else type(connection).__module__.split(".", 1)[0].lower()
+        )
         self.cursor = self._normalise_cursor(connection)
         self.result: Any = None
 
@@ -78,12 +149,12 @@ class ConnectionExecutor:
             self.cursor.close()
 
     def __repr__(self) -> str:
-        return f"<{type(self).__name__} module={self.driver!r}>"
+        return f"<{type(self).__name__} module={self.driver_name!r}>"
 
     def _normalise_cursor(self, conn: ConnectionOrCursor) -> Cursor:
         """Normalise a connection object such that we have the query executor."""
-        if self.driver == "sqlalchemy" and type(conn).__name__ == "Engine":
-            # sqlalchemy engine; direct use is deprecated, so get the connection
+        if self.driver_name == "sqlalchemy" and type(conn).__name__ == "Engine":
+            # sqlalchemy engine; direct use is deprecated, so prefer the connection
             self.acquired_cursor = True
             return conn.connect()  # type: ignore[union-attr]
         elif hasattr(conn, "cursor"):
@@ -98,16 +169,6 @@ class ConnectionExecutor:
         raise TypeError(
             f"Unrecognised connection {conn!r}; unable to find 'execute' method"
         )
-
-    @staticmethod
-    def _fetch_arrow(
-        result: Cursor, fetch_method: str, batch_size: int | None
-    ) -> Iterable[pa.RecordBatch | pa.Table]:
-        """Iterate over the result set, fetching arrow data in batches."""
-        size = (batch_size,) if batch_size else ()
-        while result:  # type: ignore[truthy-bool]
-            result = getattr(result, fetch_method)(*size)
-            yield result
 
     @staticmethod
     def _fetchall_rows(result: Cursor) -> Iterable[Sequence[Any]]:
@@ -127,68 +188,126 @@ class ConnectionExecutor:
             rows = result.fetchmany(batch_size)
             if not rows:
                 break
-            elif not isinstance(rows[0], (list, tuple)):
-                for row in rows:
-                    yield tuple(row)
+            elif isinstance(rows[0], (list, tuple)):
+                yield rows
             else:
-                yield from rows
+                yield [tuple(row) for row in rows]
 
-    def _from_arrow(self, batch_size: int | None) -> DataFrame | None:
+    def _from_arrow(
+        self,
+        *,
+        batch_size: int | None,
+        iter_batches: bool,
+        schema_overrides: SchemaDict | None,
+    ) -> DataFrame | Iterable[DataFrame] | None:
         """Return resultset data in Arrow format for frame init."""
-        from polars import DataFrame
+        from polars import from_arrow
 
-        for driver, driver_properties in _ARROW_DRIVER_REGISTRY_.items():
-            if re.match(f"^{driver}$", self.driver):
-                size = batch_size if driver_properties["exact_batch_size"] else None
-                fetch_batches = driver_properties["fetch_batches"]
-                return DataFrame(
-                    self._fetch_arrow(self.result, fetch_batches, size)
-                    if batch_size and fetch_batches is not None
-                    else getattr(self.result, driver_properties["fetch_all"])()
-                )
-
-        if self.driver == "duckdb":
-            exec_kwargs = {"rows_per_batch": batch_size} if batch_size else {}
-            return DataFrame(self.result.arrow(**exec_kwargs))
+        try:
+            for driver, driver_properties in _ARROW_DRIVER_REGISTRY_.items():
+                if re.match(f"^{driver}$", self.driver_name):
+                    size = batch_size if driver_properties["exact_batch_size"] else None
+                    fetch_batches = driver_properties["fetch_batches"]
+                    frames = (
+                        from_arrow(batch, schema_overrides=schema_overrides)
+                        for batch in (
+                            getattr(self.result, fetch_batches)(size)
+                            if (iter_batches and fetch_batches is not None)
+                            else [
+                                getattr(self.result, driver_properties["fetch_all"])()
+                            ]
+                        )
+                    )
+                    return frames if iter_batches else next(frames)  # type: ignore[arg-type,return-value]
+        except Exception as err:
+            # eg: valid turbodbc/snowflake connection, but no arrow support
+            # available in the underlying driver or this connection
+            arrow_not_supported = (
+                "does not support Apache Arrow",
+                "Apache Arrow format is not supported",
+            )
+            if not any(e in str(err) for e in arrow_not_supported):
+                raise
 
         return None
 
-    def _from_rows(self, batch_size: int | None) -> DataFrame | None:
+    def _from_rows(
+        self,
+        *,
+        batch_size: int | None,
+        iter_batches: bool,
+        schema_overrides: SchemaDict | None,
+    ) -> DataFrame | Iterable[DataFrame] | None:
         """Return resultset data row-wise for frame init."""
         from polars import DataFrame
 
         if hasattr(self.result, "fetchall"):
             description = (
                 self.result.cursor.description
-                if self.driver == "sqlalchemy"
+                if self.driver_name == "sqlalchemy"
                 else self.result.description
             )
             column_names = [desc[0] for desc in description]
-            return DataFrame(
-                data=(
-                    self._fetchall_rows(self.result)
-                    if not batch_size
-                    else self._fetchmany_rows(self.result, batch_size)
-                ),
-                schema=column_names,
-                orient="row",
+            frames = (
+                DataFrame(
+                    data=rows,
+                    schema=column_names,
+                    schema_overrides=schema_overrides,
+                    orient="row",
+                )
+                for rows in (
+                    self._fetchmany_rows(self.result, batch_size)
+                    if iter_batches
+                    else [self._fetchall_rows(self.result)]  # type: ignore[list-item]
+                )
             )
+            return frames if iter_batches else next(frames)  # type: ignore[arg-type]
         return None
 
-    def execute(self, query: str) -> Self:
-        """Execute a query and reference the result set data."""
-        if self.driver == "sqlalchemy":
-            from sqlalchemy.sql import text
+    def execute(
+        self,
+        query: str | Selectable,
+        *,
+        options: dict[str, Any] | None = None,
+        select_queries_only: bool = True,
+    ) -> Self:
+        """Execute a query and reference the result set."""
+        if select_queries_only and isinstance(query, str):
+            q = re.search(r"\w{3,}", re.sub(r"/\*(.|[\r\n])*?\*/", "", query))
+            if (query_type := "" if not q else q.group(0)) in _INVALID_QUERY_TYPES:
+                raise UnsuitableSQLError(
+                    f"{query_type} statements are not valid 'read' queries"
+                )
 
-            query = text(query)  # type: ignore[assignment]
+        options = options or {}
+        cursor_execute = self.cursor.execute
 
-        if (result := self.cursor.execute(query)) is None:
+        if self.driver_name == "sqlalchemy" and isinstance(query, str):
+            params = options.get("parameters")
+            if isinstance(params, Sequence) and hasattr(self.cursor, "exec_driver_sql"):
+                cursor_execute = self.cursor.exec_driver_sql
+                if isinstance(params, list) and not all(
+                    isinstance(p, (dict, tuple)) for p in params
+                ):
+                    options["parameters"] = tuple(params)
+            else:
+                from sqlalchemy.sql import text
+
+                query = text(query)  # type: ignore[assignment]
+
+        if (result := cursor_execute(query, **options)) is None:
             result = self.cursor  # some cursors execute in-place
 
         self.result = result
         return self
 
-    def to_frame(self, batch_size: int | None = None) -> DataFrame:
+    def to_polars(
+        self,
+        *,
+        iter_batches: bool = False,
+        batch_size: int | None = None,
+        schema_overrides: SchemaDict | None = None,
+    ) -> DataFrame | Iterable[DataFrame]:
         """
         Convert the result set to a DataFrame.
 
@@ -197,49 +316,128 @@ class ConnectionExecutor:
         """
         if self.result is None:
             raise RuntimeError("Cannot return a frame before executing a query")
+        elif iter_batches and not batch_size:
+            raise ValueError(
+                "Cannot set `iter_batches` without also setting a non-zero `batch_size`"
+            )
 
         for frame_init in (
-            self._from_arrow,  # init from arrow-native data (most efficient option)
-            self._from_rows,  # row-wise fallback covering sqlalchemy, dbapi2, pyodbc
+            self._from_arrow,  # init from arrow-native data (where support exists)
+            self._from_rows,  # row-wise fallback (sqlalchemy, dbapi2, pyodbc, etc)
         ):
-            frame = frame_init(batch_size)
+            frame = frame_init(
+                batch_size=batch_size,
+                iter_batches=iter_batches,
+                schema_overrides=schema_overrides,
+            )
             if frame is not None:
                 return frame
 
         raise NotImplementedError(
-            f"Currently no support for {self.driver!r} connection {self.cursor!r}"
+            f"Currently no support for {self.driver_name!r} connection {self.cursor!r}"
         )
 
 
-@deprecate_renamed_parameter("connection_uri", "connection", version="0.18.9")
-def read_database(  # noqa: D417
-    query: str,
-    connection: ConnectionOrCursor,
-    batch_size: int | None = None,
+@overload
+def read_database(
+    query: str | Selectable,
+    connection: ConnectionOrCursor | str,
+    *,
+    iter_batches: Literal[False] = False,
+    batch_size: int | None = ...,
+    schema_overrides: SchemaDict | None = ...,
     **kwargs: Any,
 ) -> DataFrame:
+    ...
+
+
+@overload
+def read_database(
+    query: str | Selectable,
+    connection: ConnectionOrCursor | str,
+    *,
+    iter_batches: Literal[True],
+    batch_size: int | None = ...,
+    schema_overrides: SchemaDict | None = ...,
+    **kwargs: Any,
+) -> Iterable[DataFrame]:
+    ...
+
+
+def read_database(  # noqa: D417
+    query: str | Selectable,
+    connection: ConnectionOrCursor | str,
+    *,
+    iter_batches: bool = False,
+    batch_size: int | None = None,
+    schema_overrides: SchemaDict | None = None,
+    execute_options: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> DataFrame | Iterable[DataFrame]:
     """
     Read the results of a SQL query into a DataFrame, given a connection object.
 
     Parameters
     ----------
     query
-        String SQL query to execute.
+        SQL query to execute (if using a SQLAlchemy connection object this can
+        be a suitable "Selectable", otherwise it is expected to be a string).
     connection
         An instantiated connection (or cursor/client object) that the query can be
-        executed against.
+        executed against. Can also pass a valid ODBC connection string, starting with
+        "Driver=", in which case the ``arrow-odbc`` package will be used to establish
+        the connection and return Arrow-native data to Polars.
+    iter_batches
+        Return an iterator of DataFrames, where each DataFrame represents a batch of
+        data returned by the query; this can be useful for processing large resultsets
+        in a memory-efficient manner. If supported by the backend, this value is passed
+        to the underlying query execution method (note that very low values will
+        typically result in poor performance as it will result in many round-trips to
+        the database as the data is returned). If the backend does not support changing
+        the batch size then a single DataFrame is yielded from the iterator.
     batch_size
-        The number of rows to fetch each time as data is collected; if this option is
-        supported by the backend it will be passed to the underlying query execution
-        method (if the backend does not have such support it is ignored without error).
+        Indicate the size of each batch when ``iter_batches`` is True (note that you can
+        still set this when ``iter_batches`` is False, in which case the resulting
+        DataFrame is constructed internally using batched return before being returned
+        to you. Note that some backends may support batched operation but not allow for
+        an explicit size; in this case you will still receive batches, but their exact
+        size will be determined by the backend (so may not equal the value set here).
+    schema_overrides
+        A dictionary mapping column names to dtypes, used to override the schema
+        inferred from the query cursor or given by the incoming Arrow data (depending
+        on driver/backend). This can be useful if the given types can be more precisely
+        defined (for example, if you know that a given column can be declared as `u32`
+        instead of ``i64``).
+    execute_options
+        These options will be passed through into the underlying query execution method
+        as kwargs. In the case of connections made using an ODBC string (which use
+        `arrow-odbc`) these options are passed to the ``read_arrow_batches_from_odbc``
+        method.
 
     Notes
     -----
-    This function supports a wide range of native database drivers (ranging from SQLite
-    to Snowflake), as well as libraries such as ADBC, SQLAlchemy and various flavours
-    of ODBC. If the backend supports returning Arrow data directly then this facility
-    will be used to efficiently instantiate the DataFrame; otherwise, the DataFrame
-    is initialised from row-wise data.
+    * This function supports a wide range of native database drivers (ranging from local
+      databases such as SQLite to large cloud databases such as Snowflake), as well as
+      generic libraries such as ADBC, SQLAlchemy and various flavours of ODBC. If the
+      backend supports returning Arrow data directly then this facility will be used to
+      efficiently instantiate the DataFrame; otherwise, the DataFrame is initialised
+      from row-wise data.
+
+    * Support for Arrow Flight SQL data is available via the ``adbc-driver-flightsql``
+      package; see https://arrow.apache.org/adbc/current/driver/flight_sql.html for
+      more details about using this driver (notable databases implementing Flight SQL
+      include Dremio and InfluxDB).
+
+    * The ``read_database_uri`` function is likely to be noticeably faster than
+      ``read_database`` if you are using a SQLAlchemy or DBAPI2 connection, as
+      ``connectorx`` will optimise translation of the result set into Arrow format
+      in Rust, whereas these libraries will return row-wise data to Python *before*
+      we can load into Arrow. Note that you can easily determine the connection's
+      URI from a SQLAlchemy engine object by calling ``str(conn.engine.url)``.
+
+    * If polars has to create a cursor from your connection in order to execute the
+      query then that cursor will be automatically closed when the query completes;
+      however, polars will *never* close any other connection or cursor.
 
     See Also
     --------
@@ -251,23 +449,91 @@ def read_database(  # noqa: D417
 
     >>> df = pl.read_database(
     ...     query="SELECT * FROM test_data",
-    ...     connection=conn,
+    ...     connection=user_conn,
+    ...     schema_overrides={"normalised_score": pl.UInt8},
     ... )  # doctest: +SKIP
 
-    """
+    Use a parameterised SQLAlchemy query, passing named values via ``execute_options``:
+
+    >>> df = pl.read_database(
+    ...     query="SELECT * FROM test_data WHERE metric > :value",
+    ...     connection=alchemy_conn,
+    ...     execute_options={"parameters": {"value": 0}},
+    ... )  # doctest: +SKIP
+
+    Use 'qmark' style parameterisation; values are still passed via ``execute_options``,
+    but in this case the "parameters" value is a sequence of literals, not a dict:
+
+    >>> df = pl.read_database(
+    ...     query="SELECT * FROM test_data WHERE metric > ?",
+    ...     connection=alchemy_conn,
+    ...     execute_options={"parameters": [0]},
+    ... )  # doctest: +SKIP
+
+    Instantiate a DataFrame using an ODBC connection string (requires ``arrow-odbc``)
+    setting upper limits on the buffer size of variadic text/binary columns, returning
+    the result as an iterator over DataFrames containing batches of 1000 rows:
+
+    >>> for df in pl.read_database(
+    ...     query="SELECT * FROM test_data",
+    ...     connection="Driver={PostgreSQL};Server=localhost;Port=5432;Database=test;Uid=usr;Pwd=",
+    ...     execute_options={"max_text_size": 512, "max_binary_size": 1024},
+    ...     iter_batches=True,
+    ...     batch_size=1000,
+    ... ):
+    ...     do_something(df)  # doctest: +SKIP
+
+    """  # noqa: W505
     if isinstance(connection, str):
-        issue_deprecation_warning(
-            message="Use of a string URI with 'read_database' is deprecated; use 'read_database_uri' instead",
-            version="0.19.0",
-        )
-        return read_database_uri(query, uri=connection, **kwargs)
-    elif kwargs:
+        # check for odbc connection string
+        if re.sub(r"\s", "", connection[:20]).lower().startswith("driver="):
+            try:
+                import arrow_odbc  # noqa: F401
+            except ModuleNotFoundError:
+                raise ModuleNotFoundError(
+                    "use of an ODBC connection string requires the `arrow-odbc` package"
+                    "\n\nPlease run: pip install arrow-odbc"
+                ) from None
+
+            connection = ODBCCursorProxy(connection)
+        else:
+            # otherwise looks like a call to read_database_uri
+            issue_deprecation_warning(
+                message="Use of a string URI with 'read_database' is deprecated; use `read_database_uri` instead",
+                version="0.19.0",
+            )
+            if iter_batches or batch_size:
+                raise InvalidOperationError(
+                    "Batch parameters are not supported for `read_database_uri`"
+                )
+            if not isinstance(query, (list, str)):
+                raise TypeError(
+                    f"`read_database_uri` expects one or more string queries; found {type(query)}"
+                )
+            return read_database_uri(
+                query,
+                uri=connection,
+                schema_overrides=schema_overrides,
+                **kwargs,
+            )
+
+    # note: can remove this check (and **kwargs) once we drop the
+    # pass-through deprecation support for read_database_uri
+    if kwargs:
         raise ValueError(
-            f"'read_database' does not support arbitrary **kwargs: found {kwargs!r}"
+            f"`read_database` **kwargs only exist for passthrough to `read_database_uri`: found {kwargs!r}"
         )
 
+    # return frame from arbitrary connections using the executor abstraction
     with ConnectionExecutor(connection) as cx:
-        return cx.execute(query).to_frame(batch_size)
+        return cx.execute(
+            query=query,
+            options=execute_options,
+        ).to_polars(
+            batch_size=batch_size,
+            iter_batches=iter_batches,
+            schema_overrides=schema_overrides,
+        )
 
 
 def read_database_uri(
@@ -279,6 +545,7 @@ def read_database_uri(
     partition_num: int | None = None,
     protocol: str | None = None,
     engine: DbReadEngine | None = None,
+    schema_overrides: SchemaDict | None = None,
 ) -> DataFrame:
     """
     Read the results of a SQL query into a DataFrame, given a URI.
@@ -318,10 +585,13 @@ def read_database_uri(
           an up-to-date list of drivers please see the ADBC docs:
 
           * https://arrow.apache.org/adbc/
+    schema_overrides
+        A dictionary mapping column names to dtypes, used to override the schema
+        given in the data returned by the query.
 
     Notes
     -----
-    For ``connectorx``, ensure that you have ``connectorx>=0.3.1``. The documentation
+    For ``connectorx``, ensure that you have ``connectorx>=0.3.2``. The documentation
     is available `here <https://sfu-db.github.io/connector-x/intro.html>`_.
 
     For ``adbc`` you will need to have installed ``pyarrow`` and the ADBC driver associated
@@ -386,11 +656,12 @@ def read_database_uri(
             partition_range=partition_range,
             partition_num=partition_num,
             protocol=protocol,
+            schema_overrides=schema_overrides,
         )
     elif engine == "adbc":
         if not isinstance(query, str):
             raise ValueError("only a single SQL query string is accepted for adbc")
-        return _read_sql_adbc(query, uri)
+        return _read_sql_adbc(query, uri, schema_overrides)
     else:
         raise ValueError(
             f"engine must be one of {{'connectorx', 'adbc'}}, got {engine!r}"
@@ -404,32 +675,41 @@ def _read_sql_connectorx(
     partition_range: tuple[int, int] | None = None,
     partition_num: int | None = None,
     protocol: str | None = None,
+    schema_overrides: SchemaDict | None = None,
 ) -> DataFrame:
     try:
         import connectorx as cx
     except ModuleNotFoundError:
         raise ModuleNotFoundError(
             "connectorx is not installed"
-            "\n\nPlease run `pip install connectorx>=0.3.2`."
+            "\n\nPlease run: pip install connectorx>=0.3.2"
         ) from None
 
-    tbl = cx.read_sql(
-        conn=connection_uri,
-        query=query,
-        return_type="arrow2",
-        partition_on=partition_on,
-        partition_range=partition_range,
-        partition_num=partition_num,
-        protocol=protocol,
-    )
-    return from_arrow(tbl)  # type: ignore[return-value]
+    try:
+        tbl = cx.read_sql(
+            conn=connection_uri,
+            query=query,
+            return_type="arrow2",
+            partition_on=partition_on,
+            partition_range=partition_range,
+            partition_num=partition_num,
+            protocol=protocol,
+        )
+    except BaseException as err:
+        # basic sanitisation of /user:pass/ credentials exposed in connectorx errs
+        errmsg = re.sub("://[^:]+:[^:]+@", "://***:***@", str(err))
+        raise type(err)(errmsg) from err
+
+    return from_arrow(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
 
 
-def _read_sql_adbc(query: str, connection_uri: str) -> DataFrame:
+def _read_sql_adbc(
+    query: str, connection_uri: str, schema_overrides: SchemaDict | None
+) -> DataFrame:
     with _open_adbc_connection(connection_uri) as conn, conn.cursor() as cursor:
         cursor.execute(query)
         tbl = cursor.fetch_arrow_table()
-    return from_arrow(tbl)  # type: ignore[return-value]
+    return from_arrow(tbl, schema_overrides=schema_overrides)  # type: ignore[return-value]
 
 
 def _open_adbc_connection(connection_uri: str) -> Any:
@@ -447,8 +727,7 @@ def _open_adbc_connection(connection_uri: str) -> Any:
     except ImportError:
         raise ModuleNotFoundError(
             f"ADBC {driver_name} driver not detected"
-            "\n\nIf ADBC supports this database, please run:"
-            " `pip install adbc-driver-{driver_name} pyarrow`"
+            f"\n\nIf ADBC supports this database, please run: pip install adbc-driver-{driver_name} pyarrow"
         ) from None
 
     # some backends require the driver name to be stripped from the URI

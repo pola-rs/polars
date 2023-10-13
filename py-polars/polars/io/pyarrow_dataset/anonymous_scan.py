@@ -4,7 +4,7 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 import polars._reexport as pl
-from polars.dependencies import pyarrow as pa  # noqa: TCH001
+from polars.dependencies import pyarrow as pa
 
 if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 def _scan_pyarrow_dataset(
     ds: pa.dataset.Dataset,
+    *,
     allow_pyarrow_filter: bool = True,
     batch_size: int | None = None,
 ) -> LazyFrame:
@@ -34,7 +35,9 @@ def _scan_pyarrow_dataset(
 
     """
     func = partial(_scan_pyarrow_dataset_impl, ds, batch_size=batch_size)
-    return pl.LazyFrame._scan_python_function(ds.schema, func, allow_pyarrow_filter)
+    return pl.LazyFrame._scan_python_function(
+        ds.schema, func, pyarrow=allow_pyarrow_filter
+    )
 
 
 def _scan_pyarrow_dataset_impl(
@@ -68,16 +71,29 @@ def _scan_pyarrow_dataset_impl(
     from polars import from_arrow
 
     _filter = None
+
     if predicate:
-        # imports are used by inline python evaluated by `eval`
-        from polars.datatypes import Date, Datetime, Duration  # noqa: F401
+        from polars.datatypes import Date, Datetime, Duration
         from polars.utils.convert import (
-            _to_python_datetime,  # noqa: F401
-            _to_python_time,  # noqa: F401
-            _to_python_timedelta,  # noqa: F401
+            _to_python_date,
+            _to_python_datetime,
+            _to_python_time,
+            _to_python_timedelta,
         )
 
-        _filter = eval(predicate)
+        _filter = eval(
+            predicate,
+            {
+                "pa": pa,
+                "Date": Date,
+                "Datetime": Datetime,
+                "Duration": Duration,
+                "_to_python_date": _to_python_date,
+                "_to_python_datetime": _to_python_datetime,
+                "_to_python_time": _to_python_time,
+                "_to_python_timedelta": _to_python_timedelta,
+            },
+        )
 
     common_params = {"columns": with_columns, "filter": _filter}
     if batch_size is not None:

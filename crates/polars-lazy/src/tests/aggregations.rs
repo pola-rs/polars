@@ -52,6 +52,7 @@ fn test_agg_unique_first() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "csv")]
 fn test_lazy_agg_scan() {
     let lf = scan_foods_csv;
     let df = lf().min().collect().unwrap();
@@ -183,7 +184,7 @@ fn test_power_in_agg_list1() -> PolarsResult<()> {
         .collect()?;
 
     let agg = out.column("foo")?.list()?;
-    let first = agg.get(0).unwrap();
+    let first = agg.get_as_series(0).unwrap();
     let vals = first.f64()?;
     assert_eq!(Vec::from(vals), &[Some(1.0), Some(4.0), Some(25.0)]);
 

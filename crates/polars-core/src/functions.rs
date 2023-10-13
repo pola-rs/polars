@@ -8,9 +8,7 @@ use std::ops::Add;
 use ahash::AHashSet;
 use arrow::compute;
 use arrow::types::simd::Simd;
-use num_traits::{Float, NumCast, ToPrimitive};
-#[cfg(feature = "concat_str")]
-use polars_arrow::prelude::ValueSize;
+use num_traits::ToPrimitive;
 
 use crate::prelude::*;
 use crate::utils::coalesce_nulls;
@@ -18,27 +16,9 @@ use crate::utils::coalesce_nulls;
 use crate::utils::concat_df;
 
 /// Compute the covariance between two columns.
-pub fn cov_f<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
+pub fn cov<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<f64>
 where
-    T: PolarsFloatType,
-    T::Native: Float,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
-{
-    if a.len() != b.len() {
-        None
-    } else {
-        let tmp = (a - a.mean()?) * (b - b.mean()?);
-        let n = tmp.len() - tmp.null_count();
-        Some(tmp.sum()? / NumCast::from(n - 1).unwrap())
-    }
-}
-
-/// Compute the covariance between two columns.
-pub fn cov_i<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<f64>
-where
-    T: PolarsIntegerType,
+    T: PolarsNumericType,
     T::Native: ToPrimitive,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
@@ -59,133 +39,26 @@ where
 }
 
 /// Compute the pearson correlation between two columns.
-pub fn pearson_corr_i<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>, ddof: u8) -> Option<f64>
+pub fn pearson_corr<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>, ddof: u8) -> Option<f64>
 where
-    T: PolarsIntegerType,
+    T: PolarsNumericType,
     T::Native: ToPrimitive,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
-    ChunkedArray<T>: ChunkVar<f64>,
+    ChunkedArray<T>: ChunkVar,
 {
     let (a, b) = coalesce_nulls(a, b);
     let a = a.as_ref();
     let b = b.as_ref();
 
-    Some(cov_i(a, b)? / (a.std(ddof)? * b.std(ddof)?))
+    Some(cov(a, b)? / (a.std(ddof)? * b.std(ddof)?))
 }
 
-/// Compute the pearson correlation between two columns.
-pub fn pearson_corr_f<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>, ddof: u8) -> Option<T::Native>
-where
-    T: PolarsFloatType,
-    T::Native: Float,
-    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
-        + compute::aggregate::Sum<T::Native>
-        + compute::aggregate::SimdOrd<T::Native>,
-    ChunkedArray<T>: ChunkVar<T::Native>,
-{
-    let (a, b) = coalesce_nulls(a, b);
-    let a = a.as_ref();
-    let b = b.as_ref();
-
-    Some(cov_f(a, b)? / (a.std(ddof)? * b.std(ddof)?))
-}
-
-// utility to be able to also add literals to concat_str function
-#[cfg(feature = "concat_str")]
-enum IterBroadCast<'a> {
-    Column(Box<dyn PolarsIterator<Item = Option<&'a str>> + 'a>),
-    Value(Option<&'a str>),
-}
-
-#[cfg(feature = "concat_str")]
-impl<'a> IterBroadCast<'a> {
-    fn next(&mut self) -> Option<Option<&'a str>> {
-        use IterBroadCast::*;
-        match self {
-            Column(iter) => iter.next(),
-            Value(val) => Some(*val),
-        }
-    }
-}
-
-/// Casts all series to string data and will concat them in linear time.
-/// The concatenated strings are separated by a `delimiter`.
-/// If no `delimiter` is needed, an empty &str should be passed as argument.
-#[cfg(feature = "concat_str")]
-pub fn concat_str(s: &[Series], delimiter: &str) -> PolarsResult<Utf8Chunked> {
-    polars_ensure!(!s.is_empty(), NoData: "expected multiple series in `concat_str`");
-    if s.iter().any(|s| s.is_empty()) {
-        return Ok(Utf8Chunked::full_null(s[0].name(), 0));
-    }
-
-    let len = s.iter().map(|s| s.len()).max().unwrap();
-
-    let cas = s
-        .iter()
-        .map(|s| {
-            let s = s.cast(&DataType::Utf8)?;
-            let mut ca = s.utf8()?.clone();
-            // broadcast
-            if ca.len() == 1 && len > 1 {
-                ca = ca.new_from_index(0, len)
-            }
-
-            Ok(ca)
-        })
-        .collect::<PolarsResult<Vec<_>>>()?;
-
-    polars_ensure!(
-        s.iter().all(|s| s.len() == 1 || s.len() == len),
-        ComputeError: "all series in `concat_str` should have equal or unit length"
-    );
-    let mut iters = cas
-        .iter()
-        .map(|ca| match ca.len() {
-            1 => IterBroadCast::Value(ca.get(0)),
-            _ => IterBroadCast::Column(ca.into_iter()),
-        })
-        .collect::<Vec<_>>();
-
-    let bytes_cap = cas.iter().map(|ca| ca.get_values_size()).sum();
-    let mut builder = Utf8ChunkedBuilder::new(s[0].name(), len, bytes_cap);
-
-    // use a string buffer, to amortize alloc
-    let mut buf = String::with_capacity(128);
-
-    for _ in 0..len {
-        let mut has_null = false;
-
-        iters.iter_mut().enumerate().for_each(|(i, it)| {
-            if i > 0 {
-                buf.push_str(delimiter);
-            }
-
-            match it.next() {
-                Some(Some(s)) => buf.push_str(s),
-                Some(None) => has_null = true,
-                None => {
-                    // should not happen as the out loop counts to length
-                    unreachable!()
-                },
-            }
-        });
-
-        if has_null {
-            builder.append_null();
-        } else {
-            builder.append_value(&buf)
-        }
-        buf.truncate(0)
-    }
-    Ok(builder.finish())
-}
-
-/// Concat `[DataFrame]`s horizontally.
+/// Concat [`DataFrame`]s horizontally.
 #[cfg(feature = "horizontal_concat")]
 /// Concat horizontally and extend with null values if lengths don't match
-pub fn hor_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
+pub fn concat_df_horizontal(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
     let max_len = dfs
         .iter()
         .map(|df| df.height())
@@ -222,10 +95,10 @@ pub fn hor_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
     Ok(first_df)
 }
 
-/// Concat `[DataFrame]`s diagonally.
+/// Concat [`DataFrame`]s diagonally.
 #[cfg(feature = "diagonal_concat")]
 /// Concat diagonally thereby combining different schemas.
-pub fn diag_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
+pub fn concat_df_diagonal(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
     // TODO! replace with lazy only?
     let upper_bound_width = dfs.iter().map(|df| df.width()).sum();
     let mut column_names = AHashSet::with_capacity(upper_bound_width);
@@ -267,11 +140,11 @@ mod test {
     fn test_cov() {
         let a = Series::new("a", &[1.0f32, 2.0, 5.0]);
         let b = Series::new("b", &[1.0f32, 2.0, -3.0]);
-        let out = cov_f(a.f32().unwrap(), b.f32().unwrap());
+        let out = cov(a.f32().unwrap(), b.f32().unwrap());
         assert_eq!(out, Some(-5.0));
         let a = a.cast(&DataType::Int32).unwrap();
         let b = b.cast(&DataType::Int32).unwrap();
-        let out = cov_i(a.i32().unwrap(), b.i32().unwrap());
+        let out = cov(a.i32().unwrap(), b.i32().unwrap());
         assert_eq!(out, Some(-5.0));
     }
 
@@ -279,27 +152,8 @@ mod test {
     fn test_pearson_corr() {
         let a = Series::new("a", &[1.0f32, 2.0]);
         let b = Series::new("b", &[1.0f32, 2.0]);
-        assert!((cov_f(a.f32().unwrap(), b.f32().unwrap()).unwrap() - 0.5).abs() < 0.001);
-        assert!(
-            (pearson_corr_f(a.f32().unwrap(), b.f32().unwrap(), 1).unwrap() - 1.0).abs() < 0.001
-        );
-    }
-
-    #[test]
-    #[cfg(feature = "concat_str")]
-    fn test_concat_str() {
-        let a = Series::new("a", &["foo", "bar"]);
-        let b = Series::new("b", &["spam", "ham"]);
-
-        let out = concat_str(&[a.clone(), b.clone()], "_").unwrap();
-        assert_eq!(Vec::from(&out), &[Some("foo_spam"), Some("bar_ham")]);
-
-        let c = Series::new("b", &["literal"]);
-        let out = concat_str(&[a, b, c], "_").unwrap();
-        assert_eq!(
-            Vec::from(&out),
-            &[Some("foo_spam_literal"), Some("bar_ham_literal")]
-        );
+        assert!((cov(a.f32().unwrap(), b.f32().unwrap()).unwrap() - 0.5).abs() < 0.001);
+        assert!((pearson_corr(a.f32().unwrap(), b.f32().unwrap(), 1).unwrap() - 1.0).abs() < 0.001);
     }
 
     #[test]
@@ -321,7 +175,7 @@ mod test {
             "d" => [1, 2]
         ]?;
 
-        let out = diag_concat_df(&[a, b, c])?;
+        let out = concat_df_diagonal(&[a, b, c])?;
 
         let expected = df![
             "a" => [Some(1), Some(2), None, None, Some(5), Some(7)],

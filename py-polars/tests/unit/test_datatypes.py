@@ -11,6 +11,10 @@ from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     DataTypeClass,
     DataTypeGroup,
+    Field,
+    Int64,
+    List,
+    Struct,
     py_type_to_dtype,
 )
 
@@ -46,10 +50,10 @@ def test_dtype_temporal_units() -> None:
         assert inferred_dtype == expected_dtype
         assert inferred_dtype.time_unit == "us"  # type: ignore[union-attr]
 
-    with pytest.raises(ValueError, match="invalid time_unit"):
+    with pytest.raises(ValueError, match="invalid `time_unit`"):
         pl.Datetime("?")  # type: ignore[arg-type]
 
-    with pytest.raises(ValueError, match="invalid time_unit"):
+    with pytest.raises(ValueError, match="invalid `time_unit`"):
         pl.Duration("?")  # type: ignore[arg-type]
 
 
@@ -162,3 +166,19 @@ def test_conversion_dtype() -> None:
             ],
         ],
     }
+
+
+def test_struct_field_iter() -> None:
+    s = Struct(
+        [Field("a", List(List(Int64))), Field("b", List(Int64)), Field("c", Int64)]
+    )
+    assert list(s) == [
+        ("a", List(List(Int64))),
+        ("b", List(Int64)),
+        ("c", Int64),
+    ]
+    assert list(reversed(s)) == [
+        ("c", Int64),
+        ("b", List(Int64)),
+        ("a", List(List(Int64))),
+    ]

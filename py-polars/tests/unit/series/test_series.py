@@ -219,6 +219,30 @@ def test_concat() -> None:
     assert s.len() == 3
 
 
+def test_equal() -> None:
+    s1 = pl.Series("a", [1.0, 2.0, None], Float64)
+    s2 = pl.Series("a", [1, 2, None], Int64)
+
+    assert s1.series_equal(s2) is True
+    assert s1.series_equal(s2, strict=True) is False
+    assert s1.series_equal(s2, null_equal=False) is False
+
+    df = pl.DataFrame(
+        {"dtm": [datetime(2222, 2, 22, 22, 22, 22)]},
+        schema_overrides={"dtm": Datetime(time_zone="UTC")},
+    ).with_columns(
+        s3=pl.col("dtm").dt.convert_time_zone("Europe/London"),
+        s4=pl.col("dtm").dt.convert_time_zone("Asia/Tokyo"),
+    )
+    s3 = df["s3"].rename("b")
+    s4 = df["s4"].rename("b")
+
+    assert s3.series_equal(s4) is False
+    assert s3.series_equal(s4, strict=True) is False
+    assert s3.series_equal(s4, null_equal=False) is False
+    assert s3.dt.convert_time_zone("Asia/Tokyo").series_equal(s4) is True
+
+
 def test_to_frame() -> None:
     s1 = pl.Series([1, 2])
     s2 = pl.Series("s", [1, 2])
@@ -264,8 +288,10 @@ def test_bitwise_ops() -> None:
 
 
 def test_bitwise_floats_invert() -> None:
-    a = pl.Series([2.0, 3.0, 0.0])
-    assert ~a == NotImplemented
+    s = pl.Series([2.0, 3.0, 0.0])
+
+    with pytest.raises(pl.SchemaError):
+        ~s
 
 
 def test_equality() -> None:
@@ -285,6 +311,9 @@ def test_equality() -> None:
 
     a = pl.Series("name", ["ham", "foo", "bar"])
     assert_series_equal((a == "ham"), pl.Series("name", [True, False, False]))
+
+    a = pl.Series("name", [[1], [1, 2], [2, 3]])
+    assert_series_equal((a == [1]), pl.Series("name", [True, False, False]))
 
 
 def test_agg() -> None:
@@ -684,9 +713,17 @@ def test_arrow() -> None:
 
 
 def test_view() -> None:
-    a = pl.Series("a", [1.0, 2.0, 3.0])
+    a = pl.Series("a", [1.0, 2.5, 3.0])
     assert isinstance(a.view(), np.ndarray)
-    assert np.all(a.view() == np.array([1, 2, 3]))
+    assert np.all(a.view() == np.array([1.0, 2.5, 3.0]))
+
+    b = pl.Series("b", [1, 2, None])
+    assert b.has_validity()
+    with pytest.raises(AssertionError):
+        b.view()
+
+    assert np.all(b[:2].view() == np.array([1, 2]))
+    assert not b[:2].has_validity()
 
 
 def test_ufunc() -> None:
@@ -1151,29 +1188,6 @@ def test_describe() -> None:
         assert empty_s.describe()
 
 
-def test_slice() -> None:
-    s = pl.Series(name="a", values=[0, 1, 2, 3, 4, 5], dtype=pl.UInt8)
-    for srs_slice, expected in (
-        [s.slice(2, 3), [2, 3, 4]],
-        [s.slice(4, 1), [4]],
-        [s.slice(4, None), [4, 5]],
-        [s.slice(3), [3, 4, 5]],
-        [s.slice(-2), [4, 5]],
-    ):
-        assert srs_slice.to_list() == expected  # type: ignore[attr-defined]
-
-    for py_slice in (
-        slice(1, 2),
-        slice(0, 2, 2),
-        slice(3, -3, -1),
-        slice(1, None, -2),
-        slice(-1, -3, -1),
-        slice(-3, None, -3),
-    ):
-        # confirm series slice matches python slice
-        assert s[py_slice].to_list() == s.to_list()[py_slice]
-
-
 def test_round() -> None:
     a = pl.Series("f", [1.003, 2.003])
     b = a.round(2)
@@ -1189,11 +1203,6 @@ def test_apply_list_out() -> None:
     assert out[0].to_list() == [3, 3, 3]
     assert out[1].to_list() == [2, 2]
     assert out[2].to_list() == [2, 2]
-
-
-def test_is_first() -> None:
-    s = pl.Series("", [1, 1, 2])
-    assert s.is_first().to_list() == [True, False, True]
 
 
 def test_reinterpret() -> None:
@@ -1287,10 +1296,10 @@ def test_kurtosis() -> None:
 
 def test_arr_lengths() -> None:
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
-    assert_series_equal(s.list.lengths(), pl.Series("a", [2, 3], dtype=UInt32))
+    assert_series_equal(s.list.len(), pl.Series("a", [2, 3], dtype=UInt32))
     df = pl.DataFrame([s])
     assert_series_equal(
-        df.select(pl.col("a").list.lengths())["a"], pl.Series("a", [2, 3], dtype=UInt32)
+        df.select(pl.col("a").list.len())["a"], pl.Series("a", [2, 3], dtype=UInt32)
     )
 
 
@@ -1831,11 +1840,11 @@ def test_dot() -> None:
 def test_peak_max_peak_min() -> None:
     s = pl.Series("a", [4, 1, 3, 2, 5])
     result = s.peak_min()
-    expected = pl.Series([False, True, False, True, False])
+    expected = pl.Series("a", [False, True, False, True, False])
     assert_series_equal(result, expected)
 
     result = s.peak_max()
-    expected = pl.Series([True, False, True, False, True])
+    expected = pl.Series("a", [True, False, True, False, True])
     assert_series_equal(result, expected)
 
 
@@ -1907,6 +1916,10 @@ def test_iter_nested_list() -> None:
     assert_series_equal(elems[0], pl.Series([1, 2]))
     assert_series_equal(elems[1], pl.Series([3, 4]))
 
+    rev_elems = list(reversed(pl.Series("s", [[1, 2], [3, 4]])))
+    assert_series_equal(rev_elems[0], pl.Series([3, 4]))
+    assert_series_equal(rev_elems[1], pl.Series([1, 2]))
+
 
 def test_iter_nested_struct() -> None:
     # note: this feels inconsistent with the above test for nested list, but
@@ -1914,6 +1927,10 @@ def test_iter_nested_struct() -> None:
     elems = list(pl.Series("s", [{"a": 1, "b": 2}, {"a": 3, "b": 4}]))
     assert elems[0] == {"a": 1, "b": 2}
     assert elems[1] == {"a": 3, "b": 4}
+
+    rev_elems = list(reversed(pl.Series("s", [{"a": 1, "b": 2}, {"a": 3, "b": 4}])))
+    assert rev_elems[0] == {"a": 3, "b": 4}
+    assert rev_elems[1] == {"a": 1, "b": 2}
 
 
 @pytest.mark.parametrize(
@@ -2176,17 +2193,17 @@ def test_ewm_param_validation() -> None:
     with pytest.raises(ValueError, match="mutually exclusive"):
         s.ewm_var(alpha=0.5, span=1.5)
 
-    with pytest.raises(ValueError, match="require 'com' >= 0"):
+    with pytest.raises(ValueError, match="require `com` >= 0"):
         s.ewm_std(com=-0.5)
 
-    with pytest.raises(ValueError, match="require 'span' >= 1"):
+    with pytest.raises(ValueError, match="require `span` >= 1"):
         s.ewm_mean(span=0.5)
 
-    with pytest.raises(ValueError, match="require 'half_life' > 0"):
+    with pytest.raises(ValueError, match="require `half_life` > 0"):
         s.ewm_var(half_life=0)
 
     for alpha in (-0.5, -0.0000001, 0.0, 1.0000001, 1.5):
-        with pytest.raises(ValueError, match="require 0 < 'alpha' <= 1"):
+        with pytest.raises(ValueError, match="require 0 < `alpha` <= 1"):
             s.ewm_std(alpha=alpha)
 
 
@@ -2230,10 +2247,19 @@ def test_product() -> None:
     assert out == 6
     a = pl.Series("a", [1, 2, None])
     out = a.product()
-    assert out is None
+    assert out == 2
     a = pl.Series("a", [None, 2, 3])
     out = a.product()
-    assert out is None
+    assert out == 6
+    a = pl.Series("a", [])
+    out = a.product()
+    assert out == 1
+    a = pl.Series("a", [None, None])
+    out = a.product()
+    assert out == 1
+    a = pl.Series("a", [3.0, None, float("nan")])
+    out = a.product()
+    assert math.isnan(out)
 
 
 def test_ceil() -> None:
@@ -2361,6 +2387,15 @@ def test_set_at_idx() -> None:
     s = pl.Series([True, False, True])
     assert s.set_at_idx([0, 1], [False, True]).to_list() == [False, True, True]
 
+    # set negative indices
+    a = pl.Series(range(5))
+    a[-2] = None
+    a[-5] = None
+    assert a.to_list() == [None, 1, 2, None, 4]
+
+    with pytest.raises(pl.OutOfBoundsError):
+        a[-100] = None
+
 
 def test_repr() -> None:
     s = pl.Series("ints", [1001, 2002, 3003])
@@ -2435,22 +2470,6 @@ def test_get_chunks() -> None:
     chunks = pl.concat([a, b], rechunk=False).get_chunks()
     assert_series_equal(chunks[0], a)
     assert_series_equal(chunks[1], b)
-
-
-def test_item() -> None:
-    s = pl.Series("a", [1])
-    assert s.item() == 1
-
-    s = pl.Series("a", [1, 2])
-    with pytest.raises(ValueError):
-        s.item()
-
-    assert s.item(0) == 1
-    assert s.item(-1) == 2
-
-    s = pl.Series("a", [])
-    with pytest.raises(ValueError):
-        s.item()
 
 
 def test_ptr() -> None:
@@ -2698,3 +2717,19 @@ def test_symmetry_for_max_in_names() -> None:
     # TODO: time arithmetic support?
     # a = pl.Series("a", [1], dtype=pl.Time)
     # assert (a - a.max()).name == (a.max() - a).name == a.name
+
+
+def test_series_getitem_out_of_bounds_positive() -> None:
+    s = pl.Series([1, 2])
+    with pytest.raises(
+        IndexError, match="index 10 is out of bounds for sequence of length 2"
+    ):
+        s[10]
+
+
+def test_series_getitem_out_of_bounds_negative() -> None:
+    s = pl.Series([1, 2])
+    with pytest.raises(
+        IndexError, match="index -10 is out of bounds for sequence of length 2"
+    ):
+        s[-10]

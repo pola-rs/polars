@@ -11,11 +11,13 @@ The following methods are available under the `expr.list` attribute.
 
     Expr.list.all
     Expr.list.any
+    Expr.list.drop_nulls
     Expr.list.arg_max
     Expr.list.arg_min
     Expr.list.concat
     Expr.list.contains
     Expr.list.count_match
+    Expr.list.count_matches
     Expr.list.diff
     Expr.list.difference
     Expr.list.eval
@@ -26,6 +28,7 @@ The following methods are available under the `expr.list` attribute.
     Expr.list.intersection
     Expr.list.join
     Expr.list.last
+    Expr.list.len
     Expr.list.lengths
     Expr.list.max
     Expr.list.mean

@@ -15,7 +15,6 @@ use crate::dsl::function_expr::FunctionExpr;
 #[cfg(feature = "cse")]
 use crate::logical_plan::visitor::AexprNode;
 use crate::logical_plan::Context;
-use crate::prelude::aexpr::NodeInputs::Single;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
 
@@ -179,8 +178,7 @@ pub enum AExpr {
     Window {
         function: Node,
         partition_by: Vec<Node>,
-        order_by: Option<Node>,
-        options: WindowOptions,
+        options: WindowType,
     },
     #[default]
     Wildcard,
@@ -286,9 +284,10 @@ impl AExpr {
                 // latest, so that it is popped first
                 container.push(*input);
             },
-            Agg(agg_e) => {
-                let node = agg_e.get_input().first();
-                container.push(node);
+            Agg(agg_e) => match agg_e.get_input() {
+                NodeInputs::Single(node) => container.push(node),
+                NodeInputs::Many(nodes) => container.extend_from_slice(&nodes),
+                NodeInputs::Leaf => {},
             },
             Ternary {
                 truthy,
@@ -314,13 +313,9 @@ impl AExpr {
             Window {
                 function,
                 partition_by,
-                order_by,
                 options: _,
             } => {
                 for e in partition_by.iter().rev() {
-                    container.push(*e);
-                }
-                if let Some(e) = order_by {
                     container.push(*e);
                 }
                 // latest so that it is popped first
@@ -345,7 +340,7 @@ impl AExpr {
             Column(_) | Literal(_) | Wildcard | Count | Nth(_) => return self,
             Alias(input, _) => input,
             Cast { expr, .. } => expr,
-            Explode(input) | Slice { input, .. } => input,
+            Explode(input) => input,
             BinaryExpr { left, right, .. } => {
                 *right = inputs[0];
                 *left = inputs[1];
@@ -369,7 +364,15 @@ impl AExpr {
                 return self;
             },
             Agg(a) => {
-                a.set_input(inputs[0]);
+                match a {
+                    AAggExpr::Quantile { expr, quantile, .. } => {
+                        *expr = inputs[0];
+                        *quantile = inputs[1];
+                    },
+                    _ => {
+                        a.set_input(inputs[0]);
+                    },
+                }
                 return self;
             },
             Ternary {
@@ -387,17 +390,25 @@ impl AExpr {
                 input.extend(inputs.iter().rev().copied());
                 return self;
             },
+            Slice {
+                input,
+                offset,
+                length,
+            } => {
+                *length = inputs[0];
+                *offset = inputs[1];
+                *input = inputs[2];
+                return self;
+            },
             Window {
                 function,
                 partition_by,
-                order_by,
                 ..
             } => {
                 *function = *inputs.last().unwrap();
                 partition_by.clear();
                 partition_by.extend_from_slice(&inputs[..inputs.len() - 1]);
 
-                assert!(order_by.is_none());
                 return self;
             },
         };
@@ -416,6 +427,7 @@ impl AExpr {
 impl AAggExpr {
     pub fn get_input(&self) -> NodeInputs {
         use AAggExpr::*;
+        use NodeInputs::*;
         match self {
             Min { input, .. } => Single(*input),
             Max { input, .. } => Single(*input),
@@ -425,7 +437,7 @@ impl AAggExpr {
             Last(input) => Single(*input),
             Mean(input) => Single(*input),
             Implode(input) => Single(*input),
-            Quantile { expr, .. } => Single(*expr),
+            Quantile { expr, quantile, .. } => Many(vec![*expr, *quantile]),
             Sum(input) => Single(*input),
             Count(input) => Single(*input),
             Std(input, _) => Single(*input),
@@ -464,7 +476,7 @@ pub enum NodeInputs {
 impl NodeInputs {
     pub fn first(&self) -> Node {
         match self {
-            Single(node) => *node,
+            NodeInputs::Single(node) => *node,
             NodeInputs::Many(nodes) => nodes[0],
             NodeInputs::Leaf => panic!(),
         }

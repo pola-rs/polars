@@ -16,10 +16,10 @@ pub mod ops;
 pub mod arithmetic;
 pub mod builder;
 pub mod cast;
+pub mod collect;
 pub mod comparison;
 pub mod float;
 pub mod iterator;
-pub mod kernels;
 #[cfg(feature = "ndarray")]
 pub(crate) mod ndarray;
 
@@ -62,9 +62,9 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 
 /// # ChunkedArray
 ///
-/// Every Series contains a `ChunkedArray<T>`. Unlike Series, ChunkedArray's are typed. This allows
-/// us to apply closures to the data and collect the results to a `ChunkedArray` of the same type `T`.
-/// Below we use an apply to use the cosine function to the values of a `ChunkedArray`.
+/// Every Series contains a [`ChunkedArray<T>`]. Unlike [`Series`], [`ChunkedArray`]s are typed. This allows
+/// us to apply closures to the data and collect the results to a [`ChunkedArray`] of the same type `T`.
+/// Below we use an apply to use the cosine function to the values of a [`ChunkedArray`].
 ///
 /// ```rust
 /// # use polars_core::prelude::*;
@@ -74,7 +74,7 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 /// ```
 ///
 /// ## Conversion between Series and ChunkedArray's
-/// Conversion from a `Series` to a `ChunkedArray` is effortless.
+/// Conversion from a [`Series`] to a [`ChunkedArray`] is effortless.
 ///
 /// ```rust
 /// # use polars_core::prelude::*;
@@ -89,7 +89,7 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 ///
 /// # Iterators
 ///
-/// `ChunkedArrays` fully support Rust native [Iterator](https://doc.rust-lang.org/std/iter/trait.Iterator.html)
+/// [`ChunkedArray`]s fully support Rust native [Iterator](https://doc.rust-lang.org/std/iter/trait.Iterator.html)
 /// and [DoubleEndedIterator](https://doc.rust-lang.org/std/iter/trait.DoubleEndedIterator.html) traits, thereby
 /// giving access to all the excellent methods available for [Iterators](https://doc.rust-lang.org/std/iter/trait.Iterator.html).
 ///
@@ -110,28 +110,30 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 ///
 /// # Memory layout
 ///
-/// `ChunkedArray`'s use [Apache Arrow](https://github.com/apache/arrow) as backend for the memory layout.
+/// [`ChunkedArray`]s use [Apache Arrow](https://github.com/apache/arrow) as backend for the memory layout.
 /// Arrows memory is immutable which makes it possible to make multiple zero copy (sub)-views from a single array.
 ///
-/// To be able to append data, Polars uses chunks to append new memory locations, hence the `ChunkedArray<T>` data structure.
+/// To be able to append data, Polars uses chunks to append new memory locations, hence the [`ChunkedArray<T>`] data structure.
 /// Appends are cheap, because it will not lead to a full reallocation of the whole array (as could be the case with a Rust Vec).
 ///
-/// However, multiple chunks in a `ChunkArray` will slow down many operations that need random access because we have an extra indirection
+/// However, multiple chunks in a [`ChunkedArray`] will slow down many operations that need random access because we have an extra indirection
 /// and indexes need to be mapped to the proper chunk. Arithmetic may also be slowed down by this.
-/// When multiplying two `ChunkArray'`s with different chunk sizes they cannot utilize [SIMD](https://en.wikipedia.org/wiki/SIMD) for instance.
+/// When multiplying two [`ChunkedArray`]s with different chunk sizes they cannot utilize [SIMD](https://en.wikipedia.org/wiki/SIMD) for instance.
 ///
 /// If you want to have predictable performance
-/// (no unexpected re-allocation of memory), it is advised to call the [ChunkedArray::rechunk] after
+/// (no unexpected re-allocation of memory), it is advised to call the [`ChunkedArray::rechunk`] after
 /// multiple append operations.
 ///
 /// See also [`ChunkedArray::extend`] for appends within a chunk.
 ///
 /// # Invariants
-/// - A `ChunkedArray` should always have at least a single `ArrayRef`.
-/// - The [`PolarsDataType`] `T` should always map to the correct [`ArrowDataType`] in the `ArrayRef`
+/// - A [`ChunkedArray`] should always have at least a single [`ArrayRef`].
+/// - The [`PolarsDataType`] `T` should always map to the correct [`ArrowDataType`] in the [`ArrayRef`]
 ///   chunks.
-/// - Nested datatypes such as `List` and `Array` store the physical types instead of the
+/// - Nested datatypes such as [`List`] and [`Array`] store the physical types instead of the
 ///   logical type given by the datatype.
+///
+/// [`List`]: crate::datatypes::DataType::List
 pub struct ChunkedArray<T: PolarsDataType> {
     pub(crate) field: Arc<Field>,
     pub(crate) chunks: Vec<ArrayRef>,
@@ -195,7 +197,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.bit_settings
     }
 
-    /// Set flags for the Chunked Array
+    /// Set flags for the [`ChunkedArray`]
     pub(crate) fn set_flags(&mut self, flags: Settings) {
         self.bit_settings = flags;
     }
@@ -209,7 +211,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.bit_settings.set_sorted_flag(sorted)
     }
 
-    /// Get the index of the first non null value in this ChunkedArray.
+    /// Get the index of the first non null value in this [`ChunkedArray`].
     pub fn first_non_null(&self) -> Option<usize> {
         if self.is_empty() {
             None
@@ -218,7 +220,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         }
     }
 
-    /// Get the index of the last non null value in this ChunkedArray.
+    /// Get the index of the last non null value in this [`ChunkedArray`].
     pub fn last_non_null(&self) -> Option<usize> {
         last_non_null(self.iter_validities(), self.length as usize)
     }
@@ -234,7 +236,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     #[inline]
-    /// Return if any the chunks in this `[ChunkedArray]` have a validity bitmap.
+    /// Return if any the chunks in this [`ChunkedArray`] have a validity bitmap.
     /// no bitmap means no null values.
     pub fn has_validity(&self) -> bool {
         self.iter_validities().any(|valid| valid.is_some())
@@ -245,7 +247,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.chunks = vec![concatenate_owned_unchecked(self.chunks.as_slice()).unwrap()];
     }
 
-    /// Unpack a Series to the same physical type.
+    /// Unpack a [`Series`] to the same physical type.
     ///
     /// # Safety
     ///
@@ -300,7 +302,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// A mutable reference to the chunks
     ///
     /// # Safety
-    /// The caller must ensure to not change the `DataType` or `length` of any of the chunks.
+    /// The caller must ensure to not change the [`DataType`] or `length` of any of the chunks.
     #[inline]
     pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         &mut self.chunks
@@ -317,7 +319,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.chunks.iter().map(|arr| arr.null_count()).sum()
     }
 
-    /// Create a new ChunkedArray from self, where the chunks are replaced.
+    /// Create a new [`ChunkedArray`] from self, where the chunks are replaced.
     ///
     /// # Safety
     /// The caller must ensure the dtypes of the chunks are correct
@@ -336,7 +338,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         )
     }
 
-    /// Get data type of ChunkedArray.
+    /// Get data type of [`ChunkedArray`].
     pub fn dtype(&self) -> &DataType {
         self.field.data_type()
     }
@@ -346,7 +348,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.field = Arc::new(Field::new(self.name(), dtype))
     }
 
-    /// Name of the ChunkedArray.
+    /// Name of the [`ChunkedArray`].
     pub fn name(&self) -> &str {
         self.field.name()
     }
@@ -356,9 +358,15 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         &self.field
     }
 
-    /// Rename this ChunkedArray.
+    /// Rename this [`ChunkedArray`].
     pub fn rename(&mut self, name: &str) {
         self.field = Arc::new(Field::new(name, self.field.data_type().clone()))
+    }
+
+    /// Return this [`ChunkedArray`] with a new name.
+    pub fn with_name(mut self, name: &str) -> Self {
+        self.rename(name);
+        self
     }
 }
 
@@ -366,9 +374,85 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsDataType,
 {
-    /// Should be used to match the chunk_id of another ChunkedArray.
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<T::Physical<'_>> {
+        let (chunk_idx, arr_idx) = self.index_to_chunked_index(idx);
+        let arr = self.downcast_get(chunk_idx)?;
+
+        // SAFETY: if index_to_chunked_index returns a valid chunk_idx, we know
+        // that arr_idx < arr.len().
+        unsafe { arr.get_unchecked(arr_idx) }
+    }
+
+    /// # Safety
+    /// It is the callers responsibility that the `idx < self.len()`.
+    #[inline]
+    pub unsafe fn get_unchecked(&self, idx: usize) -> Option<T::Physical<'_>> {
+        let (chunk_idx, arr_idx) = self.index_to_chunked_index(idx);
+
+        unsafe {
+            // SAFETY: up to the caller to make sure the index is valid.
+            self.downcast_get_unchecked(chunk_idx)
+                .get_unchecked(arr_idx)
+        }
+    }
+
+    /// # Safety
+    /// It is the callers responsibility that the `idx < self.len()`.
+    #[inline]
+    pub unsafe fn value_unchecked(&self, idx: usize) -> T::Physical<'_> {
+        let (chunk_idx, arr_idx) = self.index_to_chunked_index(idx);
+
+        unsafe {
+            // SAFETY: up to the caller to make sure the index is valid.
+            self.downcast_get_unchecked(chunk_idx)
+                .value_unchecked(arr_idx)
+        }
+    }
+
+    #[inline]
+    pub fn last(&self) -> Option<T::Physical<'_>> {
+        unsafe {
+            let arr = self.downcast_get_unchecked(self.chunks.len().checked_sub(1)?);
+            arr.get_unchecked(arr.len().checked_sub(1)?)
+        }
+    }
+}
+
+impl ListChunked {
+    #[inline]
+    pub fn get_as_series(&self, idx: usize) -> Option<Series> {
+        unsafe {
+            Some(Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![self.get(idx)?],
+                &self.inner_dtype().to_physical(),
+            ))
+        }
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl ArrayChunked {
+    #[inline]
+    pub fn get_as_series(&self, idx: usize) -> Option<Series> {
+        unsafe {
+            Some(Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                vec![self.get(idx)?],
+                &self.inner_dtype().to_physical(),
+            ))
+        }
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+{
+    /// Should be used to match the chunk_id of another [`ChunkedArray`].
     /// # Panics
-    /// It is the callers responsibility to ensure that this ChunkedArray has a single chunk.
+    /// It is the callers responsibility to ensure that this [`ChunkedArray`] has a single chunk.
     pub(crate) fn match_chunks<I>(&self, chunk_id: I) -> Self
     where
         I: Iterator<Item = usize>,
@@ -435,6 +519,35 @@ impl AsSinglePtr for Utf8Chunked {}
 impl AsSinglePtr for BinaryChunked {}
 #[cfg(feature = "object")]
 impl<T: PolarsObject> AsSinglePtr for ObjectChunked<T> {}
+
+pub enum ChunkedArrayLayout<'a, T: PolarsDataType> {
+    SingleNoNull(&'a T::Array),
+    Single(&'a T::Array),
+    MultiNoNull(&'a ChunkedArray<T>),
+    Multi(&'a ChunkedArray<T>),
+}
+
+impl<T> ChunkedArray<T>
+where
+    T: PolarsDataType,
+{
+    pub fn layout(&self) -> ChunkedArrayLayout<'_, T> {
+        if self.chunks.len() == 1 {
+            let arr = self.downcast_iter().next().unwrap();
+            return if arr.null_count() == 0 {
+                ChunkedArrayLayout::SingleNoNull(arr)
+            } else {
+                ChunkedArrayLayout::Single(arr)
+            };
+        }
+
+        if self.downcast_iter().all(|a| a.null_count() == 0) {
+            ChunkedArrayLayout::MultiNoNull(self)
+        } else {
+            ChunkedArrayLayout::Multi(self)
+        }
+    }
+}
 
 impl<T> ChunkedArray<T>
 where
@@ -626,7 +739,7 @@ pub(crate) mod test {
     #[test]
     fn take() {
         let a = get_chunked_array();
-        let new = a.take([0usize, 1].iter().copied().into()).unwrap();
+        let new = a.take(&[0 as IdxSize, 1]).unwrap();
         assert_eq!(new.len(), 2)
     }
 
@@ -714,9 +827,9 @@ pub(crate) mod test {
     #[test]
     #[cfg(feature = "dtype-categorical")]
     fn test_iter_categorical() {
-        use crate::{reset_string_cache, SINGLE_LOCK};
+        use crate::{disable_string_cache, SINGLE_LOCK};
         let _lock = SINGLE_LOCK.lock();
-        reset_string_cache();
+        disable_string_cache();
         let ca = Utf8Chunked::new("", &[Some("foo"), None, Some("bar"), Some("ham")]);
         let ca = ca.cast(&DataType::Categorical(None)).unwrap();
         let ca = ca.categorical().unwrap();

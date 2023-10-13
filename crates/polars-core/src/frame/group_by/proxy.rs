@@ -367,6 +367,23 @@ impl GroupsProxy {
         }
     }
 
+    /// # Safety
+    /// This will not do any bounds checks. The caller must ensure
+    /// all groups have members.
+    pub unsafe fn take_group_lasts(self) -> Vec<IdxSize> {
+        match self {
+            GroupsProxy::Idx(groups) => groups
+                .all
+                .iter()
+                .map(|idx| *idx.get_unchecked(idx.len() - 1))
+                .collect(),
+            GroupsProxy::Slice { groups, .. } => groups
+                .into_iter()
+                .map(|[first, len]| first + len - 1)
+                .collect(),
+        }
+    }
+
     pub fn par_iter(&self) -> GroupsProxyParIter {
         GroupsProxyParIter::new(self)
     }

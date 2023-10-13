@@ -8,6 +8,8 @@ mod count;
 mod filter;
 mod group_iter;
 mod literal;
+#[cfg(feature = "dynamic_group_by")]
+mod rolling;
 mod slice;
 mod sort;
 mod sortby;
@@ -31,6 +33,8 @@ use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
+#[cfg(feature = "dynamic_group_by")]
+pub(crate) use rolling::RollingExpr;
 pub(crate) use slice::*;
 pub(crate) use sort::*;
 pub(crate) use sortby::*;
@@ -265,23 +269,25 @@ impl<'a> AggregationContext<'a> {
                 });
             },
             _ => {
-                let groups = self
-                    .series()
-                    .list()
-                    .expect("impl error, should be a list at this point")
-                    .amortized_iter()
-                    .map(|s| {
-                        if let Some(s) = s {
-                            let len = s.as_ref().len() as IdxSize;
-                            let new_offset = offset + len;
-                            let out = [offset, len];
-                            offset = new_offset;
-                            out
-                        } else {
-                            [offset, 0]
-                        }
-                    })
-                    .collect_trusted();
+                // SAFETY: unstable series never lives longer than the iterator.
+                let groups = unsafe {
+                    self.series()
+                        .list()
+                        .expect("impl error, should be a list at this point")
+                        .amortized_iter()
+                        .map(|s| {
+                            if let Some(s) = s {
+                                let len = s.as_ref().len() as IdxSize;
+                                let new_offset = offset + len;
+                                let out = [offset, len];
+                                offset = new_offset;
+                                out
+                            } else {
+                                [offset, 0]
+                            }
+                        })
+                        .collect_trusted()
+                };
                 self.groups = Cow::Owned(GroupsProxy::Slice {
                     groups,
                     rolling: false,
@@ -621,7 +627,7 @@ impl PhysicalIoExpr for PhysicalIoHelper {
     }
 }
 
-pub(super) fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
+pub(crate) fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
     let has_window_function = if let Some(expr) = expr.as_expression() {
         expr.into_iter()
             .any(|expr| matches!(expr, Expr::Window { .. }))

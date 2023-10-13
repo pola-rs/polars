@@ -28,8 +28,6 @@ use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
 use crate::chunked_array::Settings;
-#[cfg(feature = "rank")]
-use crate::prelude::unique::rank::rank;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{_split_offsets, get_casting_failures, split_ca, split_series, Wrap};
@@ -154,14 +152,13 @@ impl Hash for Wrap<Series> {
 }
 
 impl Series {
-    /// Create a new empty Series
+    /// Create a new empty Series.
     pub fn new_empty(name: &str, dtype: &DataType) -> Series {
         Series::full_null(name, 0, dtype)
     }
 
     pub fn clear(&self) -> Series {
-        // only the inner of objects know their type
-        // so use this hack
+        // Only the inner of objects know their type, so use this hack.
         #[cfg(feature = "object")]
         if matches!(self.dtype(), DataType::Object(_)) {
             return if self.is_empty() {
@@ -229,6 +226,21 @@ impl Series {
         self
     }
 
+    /// Return this Series with a new name.
+    pub fn with_name(mut self, name: &str) -> Series {
+        self.rename(name);
+        self
+    }
+
+    pub fn from_arrow(name: &str, array: ArrayRef) -> PolarsResult<Series> {
+        Self::try_from((name, array))
+    }
+
+    #[cfg(feature = "arrow_rs")]
+    pub fn from_arrow_rs(name: &str, array: &dyn arrow_array::Array) -> PolarsResult<Series> {
+        Self::from_arrow(name, array.into())
+    }
+
     /// Shrink the capacity of this array to fit its length.
     pub fn shrink_to_fit(&mut self) {
         self._get_inner_mut().shrink_to_fit()
@@ -262,23 +274,18 @@ impl Series {
         self._get_inner_mut().as_single_ptr()
     }
 
-    /// Cast `[Series]` to another `[DataType]`
+    /// Cast `[Series]` to another `[DataType]`.
     pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
-        // best leave as is.
+        // Best leave as is.
         if matches!(dtype, DataType::Unknown) {
             return Ok(self.clone());
         }
-        match self.0.cast(dtype) {
-            Ok(out) => Ok(out),
-            Err(err) => {
-                let len = self.len();
-                if self.null_count() == len {
-                    Ok(Series::full_null(self.name(), len, dtype))
-                } else {
-                    Err(err)
-                }
-            },
+        let ret = self.0.cast(dtype);
+        let len = self.len();
+        if ret.is_err() && self.null_count() == len {
+            return Ok(Series::full_null(self.name(), len, dtype));
         }
+        ret
     }
 
     /// Cast from physical to logical types without any checks on the validity of the cast.
@@ -288,25 +295,24 @@ impl Series {
     pub unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
         match self.dtype() {
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => {
-                let ca = self.struct_().unwrap();
-                ca.cast_unchecked(dtype)
-            },
-            DataType::List(_) => {
-                let ca = self.list().unwrap();
-                ca.cast_unchecked(dtype)
-            },
+            DataType::Struct(_) => self.struct_().unwrap().cast_unchecked(dtype),
+            DataType::List(_) => self.list().unwrap().cast_unchecked(dtype),
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
                     let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
                         ca.cast_unchecked(dtype)
                 })
             },
-            DataType::Binary => {
-                let ca = self.binary().unwrap();
-                ca.cast_unchecked(dtype)
-            },
+            DataType::Binary => self.binary().unwrap().cast_unchecked(dtype),
             _ => self.cast(dtype),
+        }
+    }
+
+    /// Cast numerical types to f64, and keep floats as is.
+    pub fn to_float(&self) -> PolarsResult<Series> {
+        match self.dtype() {
+            DataType::Float32 | DataType::Float64 => Ok(self.clone()),
+            _ => self.cast(&DataType::Float64),
         }
     }
 
@@ -326,10 +332,8 @@ impl Series {
     where
         T: NumCast,
     {
-        self.sum_as_series()
-            .cast(&DataType::Float64)
-            .ok()
-            .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
+        let sum = self.sum_as_series().cast(&DataType::Float64).ok()?;
+        T::from(sum.f64().unwrap().get(0)?)
     }
 
     /// Returns the minimum value in the array, according to the natural order.
@@ -343,10 +347,8 @@ impl Series {
     where
         T: NumCast,
     {
-        self.min_as_series()
-            .cast(&DataType::Float64)
-            .ok()
-            .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
+        let min = self.min_as_series().cast(&DataType::Float64).ok()?;
+        T::from(min.f64().unwrap().get(0)?)
     }
 
     /// Returns the maximum value in the array, according to the natural order.
@@ -360,10 +362,8 @@ impl Series {
     where
         T: NumCast,
     {
-        self.max_as_series()
-            .cast(&DataType::Float64)
-            .ok()
-            .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
+        let max = self.max_as_series().cast(&DataType::Float64).ok()?;
+        T::from(max.f64().unwrap().get(0)?)
     }
 
     /// Explode a list Series. This expands every item to a new row..
@@ -444,16 +444,13 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let arr = self.struct_().unwrap();
-                let fields = arr
+                let fields: Vec<_> = arr
                     .fields()
                     .iter()
                     .map(|s| s.to_physical_repr().into_owned())
-                    .collect::<Vec<_>>();
-                Cow::Owned(
-                    StructChunked::new(self.name(), &fields)
-                        .unwrap()
-                        .into_series(),
-                )
+                    .collect();
+                let ca = StructChunked::new(self.name(), &fields).unwrap();
+                Cow::Owned(ca.into_series())
             },
             _ => Cow::Borrowed(self),
         }
@@ -474,7 +471,7 @@ impl Series {
         }
     }
 
-    // take a function pointer to reduce bloat
+    // Take a function pointer to reduce bloat.
     fn threaded_op(
         &self,
         rechunk: bool,
@@ -498,24 +495,31 @@ impl Series {
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> PolarsResult<Series> {
-        let idx = IdxCa::mmap_slice("", idx);
-        self.take_unchecked(&idx)
+    pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> Series {
+        self.take_slice_unchecked(idx)
     }
 
     /// Take by index if ChunkedArray contains a single chunk.
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_threaded(
-        &self,
-        idx: &IdxCa,
-        rechunk: bool,
-    ) -> PolarsResult<Series> {
+    pub unsafe fn take_unchecked_threaded(&self, idx: &IdxCa, rechunk: bool) -> Series {
         self.threaded_op(rechunk, idx.len(), &|offset, len| {
             let idx = idx.slice(offset as i64, len);
-            self.take_unchecked(&idx)
+            Ok(self.take_unchecked(&idx))
         })
+        .unwrap()
+    }
+
+    /// Take by index if ChunkedArray contains a single chunk.
+    ///
+    /// # Safety
+    /// This doesn't check any bounds. Null validity is checked.
+    pub unsafe fn take_slice_unchecked_threaded(&self, idx: &[IdxSize], rechunk: bool) -> Series {
+        self.threaded_op(rechunk, idx.len(), &|offset, len| {
+            Ok(self.take_slice_unchecked(&idx[offset..offset + len]))
+        })
+        .unwrap()
     }
 
     /// # Safety
@@ -560,11 +564,18 @@ impl Series {
         })
     }
 
+    /// Traverse and collect every nth element in a new array.
+    pub fn take_every(&self, n: usize) -> Series {
+        let idx = (0..self.len() as IdxSize).step_by(n).collect_ca("");
+        // SAFETY: we stay in-bounds.
+        unsafe { self.take_unchecked(&idx) }
+    }
+
     /// Filter by boolean mask. This operation clones data.
     pub fn filter_threaded(&self, filter: &BooleanChunked, rechunk: bool) -> PolarsResult<Series> {
-        // this would fail if there is a broadcasting filter.
-        // because we cannot split that filter over threads
-        // besides they are a no-op, so we do the standard filter.
+        // This would fail if there is a broadcasting filter, because we cannot
+        // split that filter over threads besides they are a no-op, so we do the
+        // standard filter.
         if filter.len() == 1 {
             return self.filter(filter);
         }
@@ -598,10 +609,8 @@ impl Series {
         if self.is_empty()
             && (self.dtype().is_numeric() || matches!(self.dtype(), DataType::Boolean))
         {
-            return Series::new(self.name(), [0])
-                .cast(self.dtype())
-                .unwrap()
-                .sum_as_series();
+            let zero = Series::new(self.name(), [0]);
+            return zero.cast(self.dtype()).unwrap().sum_as_series();
         }
         match self.dtype() {
             Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_as_series(),
@@ -609,7 +618,7 @@ impl Series {
         }
     }
 
-    /// Get an array with the cumulative max computed at every element
+    /// Get an array with the cumulative max computed at every element.
     pub fn cummax(&self, _reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
         {
@@ -621,7 +630,7 @@ impl Series {
         }
     }
 
-    /// Get an array with the cumulative min computed at every element
+    /// Get an array with the cumulative min computed at every element.
     pub fn cummin(&self, _reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
         {
@@ -648,30 +657,12 @@ impl Series {
                     let s = self.cast(&Int64).unwrap();
                     s.cumsum(reverse)
                 },
-                Int32 => {
-                    let ca = self.i32().unwrap();
-                    ca.cumsum(reverse).into_series()
-                },
-                UInt32 => {
-                    let ca = self.u32().unwrap();
-                    ca.cumsum(reverse).into_series()
-                },
-                UInt64 => {
-                    let ca = self.u64().unwrap();
-                    ca.cumsum(reverse).into_series()
-                },
-                Int64 => {
-                    let ca = self.i64().unwrap();
-                    ca.cumsum(reverse).into_series()
-                },
-                Float32 => {
-                    let ca = self.f32().unwrap();
-                    ca.cumsum(reverse).into_series()
-                },
-                Float64 => {
-                    let ca = self.f64().unwrap();
-                    ca.cumsum(reverse).into_series()
-                },
+                Int32 => self.i32().unwrap().cumsum(reverse).into_series(),
+                UInt32 => self.u32().unwrap().cumsum(reverse).into_series(),
+                UInt64 => self.u64().unwrap().cumsum(reverse).into_series(),
+                Int64 => self.i64().unwrap().cumsum(reverse).into_series(),
+                Float32 => self.f32().unwrap().cumsum(reverse).into_series(),
+                Float64 => self.f64().unwrap().cumsum(reverse).into_series(),
                 #[cfg(feature = "dtype-duration")]
                 Duration(tu) => {
                     let ca = self.to_physical_repr();
@@ -687,7 +678,7 @@ impl Series {
         }
     }
 
-    /// Get an array with the cumulative product computed at every element
+    /// Get an array with the cumulative product computed at every element.
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16, Int32, UInt32}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
@@ -702,22 +693,10 @@ impl Series {
                     let s = self.cast(&Int64).unwrap();
                     s.cumprod(reverse)
                 },
-                Int64 => {
-                    let ca = self.i64().unwrap();
-                    ca.cumprod(reverse).into_series()
-                },
-                UInt64 => {
-                    let ca = self.u64().unwrap();
-                    ca.cumprod(reverse).into_series()
-                },
-                Float32 => {
-                    let ca = self.f32().unwrap();
-                    ca.cumprod(reverse).into_series()
-                },
-                Float64 => {
-                    let ca = self.f64().unwrap();
-                    ca.cumprod(reverse).into_series()
-                },
+                Int64 => self.i64().unwrap().cumprod(reverse).into_series(),
+                UInt64 => self.u64().unwrap().cumprod(reverse).into_series(),
+                Float32 => self.f32().unwrap().cumprod(reverse).into_series(),
+                Float64 => self.f64().unwrap().cumprod(reverse).into_series(),
                 dt => panic!("cumprod not supported for dtype: {dt:?}"),
             }
         }
@@ -741,34 +720,17 @@ impl Series {
                     let s = self.cast(&Int64).unwrap();
                     s.product()
                 },
-                Int64 => {
-                    let ca = self.i64().unwrap();
-                    ca.prod_as_series()
-                },
-                UInt64 => {
-                    let ca = self.u64().unwrap();
-                    ca.prod_as_series()
-                },
-                Float32 => {
-                    let ca = self.f32().unwrap();
-                    ca.prod_as_series()
-                },
-                Float64 => {
-                    let ca = self.f64().unwrap();
-                    ca.prod_as_series()
-                },
-                dt => panic!("cumprod not supported for dtype: {dt:?}"),
+                Int64 => self.i64().unwrap().prod_as_series(),
+                UInt64 => self.u64().unwrap().prod_as_series(),
+                Float32 => self.f32().unwrap().prod_as_series(),
+                Float64 => self.f64().unwrap().prod_as_series(),
+                dt => panic!("product not supported for dtype: {dt:?}"),
             }
         }
         #[cfg(not(feature = "product"))]
         {
             panic!("activate 'product' feature")
         }
-    }
-
-    #[cfg(feature = "rank")]
-    pub fn rank(&self, options: RankOptions, seed: Option<u64>) -> Series {
-        rank(self, options.method, options.descending, seed)
     }
 
     /// Cast throws an error if conversion had overflows
@@ -962,9 +924,8 @@ impl Series {
     /// than a naive [`Series::unique`](SeriesTrait::unique).
     pub fn unique_stable(&self) -> PolarsResult<Series> {
         let idx = self.arg_unique()?;
-        // Safety:
-        // Indices are in bounds.
-        unsafe { self.take_unchecked(&idx) }
+        // SAFETY: Indices are in bounds.
+        unsafe { Ok(self.take_unchecked(&idx)) }
     }
 
     pub fn idx(&self) -> PolarsResult<&IdxCa> {
@@ -1059,7 +1020,7 @@ where
             DataType::Decimal(None, None) => panic!("impl error"),
             _ => {
                 if &T::get_dtype() == self.dtype() ||
-                    // needed because we want to get ref of List no matter what the inner type is.
+                    // Needed because we want to get ref of List no matter what the inner type is.
                     (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
                 {
                     unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
@@ -1081,7 +1042,7 @@ where
 {
     fn as_mut(&mut self) -> &mut ChunkedArray<T> {
         if &T::get_dtype() == self.dtype() ||
-            // needed because we want to get ref of List no matter what the inner type is.
+            // Needed because we want to get ref of List no matter what the inner type is.
             (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
         {
             unsafe { &mut *(self as *mut dyn SeriesTrait as *mut ChunkedArray<T>) }

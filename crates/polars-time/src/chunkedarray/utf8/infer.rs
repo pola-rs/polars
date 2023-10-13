@@ -231,90 +231,34 @@ impl TryFromWithUnit<Pattern> for DatetimeInfer<Int64Type> {
 
     fn try_from_with_unit(value: Pattern, time_unit: Option<TimeUnit>) -> PolarsResult<Self> {
         let time_unit = time_unit.expect("time_unit must be provided for datetime");
-        match (value, time_unit) {
-            (Pattern::DatetimeDMY, TimeUnit::Milliseconds) => Ok(DatetimeInfer {
-                pattern: Pattern::DatetimeDMY,
-                patterns: patterns::DATETIME_D_M_Y,
-                latest_fmt: patterns::DATETIME_D_M_Y[0],
-                transform: transform_datetime_ms,
-                transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
-                logical_type: DataType::Datetime(TimeUnit::Milliseconds, None),
-            }),
-            (Pattern::DatetimeDMY, TimeUnit::Microseconds) => Ok(DatetimeInfer {
-                pattern: Pattern::DatetimeDMY,
-                patterns: patterns::DATETIME_D_M_Y,
-                latest_fmt: patterns::DATETIME_D_M_Y[0],
-                transform: transform_datetime_us,
-                transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
-                logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
-            }),
-            (Pattern::DatetimeDMY, TimeUnit::Nanoseconds) => Ok(DatetimeInfer {
-                pattern: Pattern::DatetimeDMY,
-                patterns: patterns::DATETIME_D_M_Y,
-                latest_fmt: patterns::DATETIME_D_M_Y[0],
-                transform: transform_datetime_ns,
-                transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
-                logical_type: DataType::Datetime(TimeUnit::Nanoseconds, None),
-            }),
-            (Pattern::DatetimeYMD, TimeUnit::Milliseconds) => Ok(DatetimeInfer {
-                pattern: Pattern::DatetimeYMD,
-                patterns: patterns::DATETIME_Y_M_D,
-                latest_fmt: patterns::DATETIME_Y_M_D[0],
-                transform: transform_datetime_ms,
-                transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
-                logical_type: DataType::Datetime(TimeUnit::Milliseconds, None),
-            }),
-            (Pattern::DatetimeYMD, TimeUnit::Microseconds) => Ok(DatetimeInfer {
-                pattern: Pattern::DatetimeYMD,
-                patterns: patterns::DATETIME_Y_M_D,
-                latest_fmt: patterns::DATETIME_Y_M_D[0],
-                transform: transform_datetime_us,
-                transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
-                logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
-            }),
-            (Pattern::DatetimeYMD, TimeUnit::Nanoseconds) => Ok(DatetimeInfer {
-                pattern: Pattern::DatetimeYMD,
-                patterns: patterns::DATETIME_Y_M_D,
-                latest_fmt: patterns::DATETIME_Y_M_D[0],
-                transform: transform_datetime_ns,
-                transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
-                logical_type: DataType::Datetime(TimeUnit::Nanoseconds, None),
-            }),
-            (Pattern::DatetimeYMDZ, TimeUnit::Milliseconds) => Ok(DatetimeInfer {
-                pattern: Pattern::DatetimeYMDZ,
-                patterns: patterns::DATETIME_Y_M_D_Z,
-                latest_fmt: patterns::DATETIME_Y_M_D_Z[0],
-                transform: transform_tzaware_datetime_ms,
-                transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
-                logical_type: DataType::Datetime(TimeUnit::Milliseconds, None),
-            }),
-            (Pattern::DatetimeYMDZ, TimeUnit::Microseconds) => Ok(DatetimeInfer {
-                pattern: Pattern::DatetimeYMDZ,
-                patterns: patterns::DATETIME_Y_M_D_Z,
-                latest_fmt: patterns::DATETIME_Y_M_D_Z[0],
-                transform: transform_tzaware_datetime_us,
-                transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
-                logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
-            }),
-            (Pattern::DatetimeYMDZ, TimeUnit::Nanoseconds) => Ok(DatetimeInfer {
-                pattern: Pattern::DatetimeYMDZ,
-                patterns: patterns::DATETIME_Y_M_D_Z,
-                latest_fmt: patterns::DATETIME_Y_M_D_Z[0],
-                transform: transform_tzaware_datetime_ns,
-                transform_bytes: StrpTimeState::default(),
-                fmt_len: 0,
-                logical_type: DataType::Datetime(TimeUnit::Nanoseconds, None),
-            }),
-            _ => polars_bail!(ComputeError: "could not convert pattern"),
-        }
+
+        let transform = match (time_unit, value) {
+            (TimeUnit::Milliseconds, Pattern::DatetimeYMDZ) => transform_tzaware_datetime_ms,
+            (TimeUnit::Milliseconds, _) => transform_datetime_ms,
+            (TimeUnit::Microseconds, Pattern::DatetimeYMDZ) => transform_tzaware_datetime_us,
+            (TimeUnit::Microseconds, _) => transform_datetime_us,
+            (TimeUnit::Nanoseconds, Pattern::DatetimeYMDZ) => transform_tzaware_datetime_ns,
+            (TimeUnit::Nanoseconds, _) => transform_datetime_ns,
+        };
+        let (pattern, patterns) = match value {
+            Pattern::DatetimeDMY | Pattern::DateDMY => {
+                (Pattern::DatetimeDMY, patterns::DATETIME_D_M_Y)
+            },
+            Pattern::DatetimeYMD | Pattern::DateYMD => {
+                (Pattern::DatetimeYMD, patterns::DATETIME_Y_M_D)
+            },
+            Pattern::DatetimeYMDZ => (Pattern::DatetimeYMDZ, patterns::DATETIME_Y_M_D_Z),
+        };
+
+        Ok(DatetimeInfer {
+            pattern,
+            patterns,
+            latest_fmt: patterns[0],
+            transform,
+            transform_bytes: StrpTimeState::default(),
+            fmt_len: 0,
+            logical_type: DataType::Datetime(time_unit, None),
+        })
     }
 }
 
@@ -380,12 +324,11 @@ where
                 .map(|opt_val| opt_val.and_then(|val| self.parse(val)));
             PrimitiveArray::from_trusted_len_iter(iter)
         });
-        let mut out = ChunkedArray::from_chunk_iter(ca.name(), chunks)
+        ChunkedArray::from_chunk_iter(ca.name(), chunks)
             .into_series()
             .cast(&self.logical_type)
-            .unwrap();
-        out.rename(ca.name());
-        out
+            .unwrap()
+            .with_name(ca.name())
     }
 }
 

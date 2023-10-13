@@ -74,7 +74,7 @@ def test_repeat_n_non_integer(n: Any) -> None:
 
 def test_repeat_n_empty() -> None:
     df = pl.DataFrame(schema={"a": pl.Int32})
-    with pytest.raises(pl.ComputeError, match="index 0 is out of bounds"):
+    with pytest.raises(pl.OutOfBoundsError, match="index 0 is out of bounds"):
         df.select(pl.repeat(1, n=pl.col("a")))
 
 

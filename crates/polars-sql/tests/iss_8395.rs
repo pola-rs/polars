@@ -1,4 +1,6 @@
+#[cfg(feature = "csv")]
 use polars_core::prelude::*;
+#[cfg(feature = "csv")]
 use polars_sql::*;
 
 #[test]

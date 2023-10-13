@@ -20,10 +20,10 @@ impl SortExec {
             .enumerate()
             .map(|(i, e)| {
                 let mut s = e.evaluate(&df, state)?;
-                // polars core will try to set the sorted columns as sorted
-                // this should only be done with simple col("foo") expressions
+                // Polars core will try to set the sorted columns as sorted.
+                // This should only be done with simple col("foo") expressions,
                 // therefore we rename more complex expressions so that
-                // polars core does not match these
+                // polars core does not match these.
                 if !matches!(e.as_expression(), Some(&Expr::Column(_))) {
                     s.rename(&format!("_POLARS_SORT_BY_{i}"));
                 }

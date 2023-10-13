@@ -1,5 +1,5 @@
 name: '🐞 Bug report - Python'
-description: An issue with Python Polars
+description: Report an issue with Python Polars.
 labels: [bug, python]
 
 body:
@@ -29,6 +29,15 @@ body:
         ```
     validations:
       required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: >
+        Set the environment variable ``POLARS_VERBOSE=1`` before running the query.
+        Paste the output of ``stderr`` here.
+      render: shell
 
   - type: textarea
     id: problem
@@ -64,3 +73,4 @@ body:
         </details>
     validations:
       required: true
+

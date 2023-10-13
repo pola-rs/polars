@@ -1,4 +1,5 @@
-mod join;
+mod hashing;
+pub mod join;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
@@ -45,7 +46,7 @@ pub trait DataFrameOps: IntoDf {
     ///   }.unwrap();
     ///
     ///   let dummies = df.to_dummies(None, false).unwrap();
-    ///   dbg!(dummies);
+    ///   println!("{}", dummies);
     /// # }
     /// ```
     /// Outputs:

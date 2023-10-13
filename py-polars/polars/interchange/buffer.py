@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.interchange.protocol import Buffer, DlpackDeviceType, DtypeKind
+from polars.interchange.protocol import (
+    Buffer,
+    CopyNotAllowedError,
+    DlpackDeviceType,
+    DtypeKind,
+)
 from polars.interchange.utils import polars_dtype_to_dtype
 
 if TYPE_CHECKING:
@@ -28,8 +33,8 @@ class PolarsBuffer(Buffer):
     def __init__(self, data: Series, *, allow_copy: bool = True):
         if data.n_chunks() > 1:
             if not allow_copy:
-                raise RuntimeError(
-                    "non-contiguous buffer must be made contiguous, which is not zero-copy"
+                raise CopyNotAllowedError(
+                    "non-contiguous buffer must be made contiguous"
                 )
             data = data.rechunk()
 
@@ -41,7 +46,7 @@ class PolarsBuffer(Buffer):
         dtype = polars_dtype_to_dtype(self._data.dtype)
 
         if dtype[0] == DtypeKind.STRING:
-            return self._data.str.lengths().sum()  # type: ignore[return-value]
+            return self._data.str.len_bytes().sum()  # type: ignore[return-value]
 
         n_bits = self._data.len() * dtype[1]
 

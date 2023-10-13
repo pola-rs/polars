@@ -9,10 +9,10 @@ repository = { workspace = true }
 description = "Time related code for the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { version = "0.32.0", path = "../polars-arrow", features = ["compute", "temporal"] }
-polars-core = { version = "0.32.0", path = "../polars-core", default-features = false, features = ["dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
-polars-ops = { version = "0.32.0", path = "../polars-ops" }
-polars-utils = { version = "0.32.0", path = "../polars-utils" }
+polars-arrow = { workspace = true, features = ["compute", "temporal"] }
+polars-core = { workspace = true, default-features = false, features = ["dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
+polars-ops = { workspace = true }
+polars-utils = { workspace = true }
 
 arrow = { workspace = true }
 atoi = { workspace = true }

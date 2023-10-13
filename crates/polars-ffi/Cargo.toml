@@ -1,0 +1,15 @@
+[package]
+name = "polars-ffi"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "FFI utils for the Polars project."
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+arrow = { workspace = true }
+polars-core = { workspace = true }

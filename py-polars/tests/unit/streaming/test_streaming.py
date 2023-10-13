@@ -241,31 +241,6 @@ def test_streaming_9776() -> None:
 
 
 @pytest.mark.write_disk()
-def test_streaming_10115(tmp_path: Path) -> None:
-    in_path = tmp_path / "in.parquet"
-    out_path = tmp_path / "out.parquet"
-
-    # this fails if the schema will be incorrectly due to the projection
-    # pushdown
-    (pl.DataFrame([{"x": 1, "y": "foo"}]).write_parquet(in_path))
-
-    joiner = pl.LazyFrame([{"y": "foo", "z": "_"}])
-
-    (
-        pl.scan_parquet(in_path)
-        .join(joiner, how="left", on="y")
-        .select("x", "y", "z")
-        .sink_parquet(out_path)  #
-    )
-
-    assert pl.read_parquet(out_path).to_dict(False) == {
-        "x": [1],
-        "y": ["foo"],
-        "z": ["_"],
-    }
-
-
-@pytest.mark.write_disk()
 def test_stream_empty_file(tmp_path: Path) -> None:
     p = tmp_path / "in.parquet"
     schema = {
@@ -339,3 +314,13 @@ def test_boolean_agg_schema() -> None:
             == agg_df.schema
             == {"x": pl.Int64, "max_y": pl.Boolean}
         )
+
+
+def test_streaming_11219() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["a", "c", None]})
+    lf_other = pl.LazyFrame({"c": ["foo", "ham"]})
+    lf_other2 = pl.LazyFrame({"c": ["foo", "ham"]})
+
+    assert lf.with_context([lf_other, lf_other2]).select(
+        pl.col("b") + pl.col("c").first()
+    ).collect(streaming=True).to_dict(False) == {"b": ["afoo", "cfoo", None]}

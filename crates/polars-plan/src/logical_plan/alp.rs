@@ -12,16 +12,9 @@ use crate::logical_plan::FileScan;
 use crate::prelude::*;
 use crate::utils::PushNode;
 
-/// ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
+/// [`ALogicalPlan`] is a representation of [`LogicalPlan`] with [`Node`]s which are allocated in an [`Arena`]
 #[derive(Clone, Debug)]
 pub enum ALogicalPlan {
-    AnonymousScan {
-        function: Arc<dyn AnonymousScan>,
-        file_info: FileInfo,
-        output_schema: Option<SchemaRef>,
-        predicate: Option<Node>,
-        options: Arc<AnonymousScanOptions>,
-    },
     #[cfg(feature = "python")]
     PythonScan {
         options: PythonOptions,
@@ -59,11 +52,6 @@ pub enum ALogicalPlan {
         expr: ProjectionExprs,
         schema: SchemaRef,
         options: ProjectionOptions,
-    },
-    LocalProjection {
-        expr: Vec<Node>,
-        input: Node,
-        schema: SchemaRef,
     },
     Sort {
         input: Node,
@@ -115,9 +103,9 @@ pub enum ALogicalPlan {
         contexts: Vec<Node>,
         schema: SchemaRef,
     },
-    FileSink {
+    Sink {
         input: Node,
-        payload: FileSinkOptions,
+        payload: SinkType,
     },
 }
 
@@ -141,7 +129,6 @@ impl ALogicalPlan {
             Scan { file_info, .. } => &file_info.schema,
             #[cfg(feature = "python")]
             PythonScan { options, .. } => &options.schema,
-            AnonymousScan { file_info, .. } => &file_info.schema,
             _ => unreachable!(),
         }
     }
@@ -150,14 +137,12 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
         match self {
             Scan { scan_type, .. } => scan_type.into(),
-            AnonymousScan { .. } => "anonymous_scan",
             #[cfg(feature = "python")]
             PythonScan { .. } => "python_scan",
             Slice { .. } => "slice",
             Selection { .. } => "selection",
             DataFrameScan { .. } => "df",
             Projection { .. } => "projection",
-            LocalProjection { .. } => "local_projection",
             Sort { .. } => "sort",
             Cache { .. } => "cache",
             Aggregate { .. } => "aggregate",
@@ -167,7 +152,12 @@ impl ALogicalPlan {
             MapFunction { .. } => "map_function",
             Union { .. } => "union",
             ExtContext { .. } => "ext_context",
-            FileSink { .. } => "file_sink",
+            Sink { payload, .. } => match payload {
+                SinkType::Memory => "sink (memory)",
+                SinkType::File { .. } => "sink (file)",
+                #[cfg(feature = "cloud")]
+                SinkType::Cloud { .. } => "sink (cloud)",
+            },
         }
     }
 
@@ -176,7 +166,7 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
         let schema = match self {
             #[cfg(feature = "python")]
-            PythonScan { options, .. } => &options.schema,
+            PythonScan { options, .. } => options.output_schema.as_ref().unwrap_or(&options.schema),
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
             Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
@@ -190,20 +180,12 @@ impl ALogicalPlan {
                 output_schema,
                 ..
             } => output_schema.as_ref().unwrap_or(schema),
-            AnonymousScan {
-                file_info,
-                output_schema,
-                ..
-            } => output_schema.as_ref().unwrap_or(&file_info.schema),
             Selection { input, .. } => return arena.get(*input).schema(arena),
             Projection { schema, .. } => schema,
-            LocalProjection { schema, .. } => schema,
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
-            Distinct { input, .. } | FileSink { input, .. } => {
-                return arena.get(*input).schema(arena)
-            },
+            Distinct { input, .. } | Sink { input, .. } => return arena.get(*input).schema(arena),
             Slice { input, .. } => return arena.get(*input).schema(arena),
             MapFunction { input, function } => {
                 let input_schema = arena.get(*input).schema(arena);
@@ -248,11 +230,6 @@ impl ALogicalPlan {
             Selection { .. } => Selection {
                 input: inputs[0],
                 predicate: exprs[0],
-            },
-            LocalProjection { schema, .. } => LocalProjection {
-                input: inputs[0],
-                expr: exprs,
-                schema: schema.clone(),
             },
             Projection {
                 schema, options, ..
@@ -356,26 +333,6 @@ impl ALogicalPlan {
                     selection: new_selection,
                 }
             },
-            AnonymousScan {
-                function,
-                file_info,
-                output_schema,
-                predicate,
-                options,
-            } => {
-                let mut new_predicate = None;
-                if predicate.is_some() {
-                    new_predicate = exprs.pop()
-                }
-
-                AnonymousScan {
-                    function: function.clone(),
-                    file_info: file_info.clone(),
-                    output_schema: output_schema.clone(),
-                    predicate: new_predicate,
-                    options: options.clone(),
-                }
-            },
             MapFunction { function, .. } => MapFunction {
                 input: inputs[0],
                 function: function.clone(),
@@ -385,7 +342,7 @@ impl ALogicalPlan {
                 contexts: inputs,
                 schema: schema.clone(),
             },
-            FileSink { payload, .. } => FileSink {
+            Sink { payload, .. } => Sink {
                 input: inputs.pop().unwrap(),
                 payload: payload.clone(),
             },
@@ -400,7 +357,6 @@ impl ALogicalPlan {
             Sort { by_column, .. } => container.extend_from_slice(by_column),
             Selection { predicate, .. } => container.push(*predicate),
             Projection { expr, .. } => container.extend_from_slice(expr),
-            LocalProjection { expr, .. } => container.extend_from_slice(expr),
             Aggregate { keys, aggs, .. } => {
                 let iter = keys.iter().copied().chain(aggs.iter().copied());
                 container.extend(iter)
@@ -424,12 +380,7 @@ impl ALogicalPlan {
             },
             #[cfg(feature = "python")]
             PythonScan { .. } => {},
-            AnonymousScan { predicate, .. } => {
-                if let Some(node) = predicate {
-                    container.push(*node)
-                }
-            },
-            ExtContext { .. } | FileSink { .. } => {},
+            ExtContext { .. } | Sink { .. } => {},
         }
     }
 
@@ -458,7 +409,6 @@ impl ALogicalPlan {
             Slice { input, .. } => *input,
             Selection { input, .. } => *input,
             Projection { input, .. } => *input,
-            LocalProjection { input, .. } => *input,
             Sort { input, .. } => *input,
             Cache { input, .. } => *input,
             Aggregate { input, .. } => *input,
@@ -474,7 +424,7 @@ impl ALogicalPlan {
             HStack { input, .. } => *input,
             Distinct { input, .. } => *input,
             MapFunction { input, .. } => *input,
-            FileSink { input, .. } => *input,
+            Sink { input, .. } => *input,
             ExtContext {
                 input, contexts, ..
             } => {
@@ -485,7 +435,6 @@ impl ALogicalPlan {
             },
             Scan { .. } => return,
             DataFrameScan { .. } => return,
-            AnonymousScan { .. } => return,
             #[cfg(feature = "python")]
             PythonScan { .. } => return,
         };

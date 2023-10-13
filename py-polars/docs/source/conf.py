@@ -1,12 +1,15 @@
 # Configuration file for the Sphinx documentation builder.
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+from __future__ import annotations
+
 import inspect
 import os
 import re
 import sys
 import warnings
 from pathlib import Path
+from typing import Any
 
 import sphinx_autosummary_accessors
 
@@ -103,7 +106,7 @@ html_theme_options = {
     "external_links": [
         {
             "name": "User Guide",
-            "url": f"{web_root}/polars-book/user-guide/index.html",
+            "url": f"{web_root}/polars/user-guide/index.html",
         },
         {
             "name": "Powered by Xomnia",
@@ -135,6 +138,7 @@ html_theme_options = {
         "json_url": f"{web_root}/polars/docs/python/dev/_static/version_switcher.json",
         "version_match": switcher_version,
     },
+    "show_version_warning_banner": False,
     "navbar_end": ["version-switcher", "navbar-icon-links"],
     "check_switcher": False,
 }
@@ -157,7 +161,7 @@ favicons = [
 
 # sphinx-ext-linkcode - Add external links to source code
 # https://www.sphinx-doc.org/en/master/usage/extensions/linkcode.html
-def linkcode_resolve(domain, info):
+def linkcode_resolve(domain: str, info: dict[str, Any]) -> str | None:
     """
     Determine the URL corresponding to Python object.
 

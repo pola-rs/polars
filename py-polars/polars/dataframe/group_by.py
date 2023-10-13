@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from polars.type_aliases import (
         ClosedInterval,
         IntoExpr,
+        Label,
         RollingInterpolationMethod,
         SchemaDict,
         StartBy,
@@ -266,7 +267,7 @@ class GroupBy:
         Parameters
         ----------
         function
-            Custom function.
+            Custom function that receives a DataFrame and returns a DataFrame.
 
         Returns
         -------
@@ -776,6 +777,7 @@ class RollingGroupBy:
         self,
         df: DataFrame,
         index_column: IntoExpr,
+        *,
         period: str | timedelta,
         offset: str | timedelta | None,
         closed: ClosedInterval,
@@ -877,12 +879,12 @@ class RollingGroupBy:
         """
         Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
 
-        Using this is considered an anti-pattern. This will be very slow because:
+        Using this is considered an anti-pattern as it will be very slow because:
 
         - it forces the engine to materialize the whole `DataFrames` for the groups.
-        - it is not parallelized
+        - it is not parallelized.
         - it blocks optimizations as the passed python function is opaque to the
-          optimizer
+          optimizer.
 
         The idiomatic way to apply custom functions over multiple columns is using:
 
@@ -891,7 +893,8 @@ class RollingGroupBy:
         Parameters
         ----------
         function
-            Function to apply over each group of the `LazyFrame`.
+            Function to apply over each group of the `LazyFrame`; it receives
+            a DataFrame and should return a DataFrame.
         schema
             Schema of the output function. This has to be known statically. If the
             given schema is incorrect, this is a bug in the caller's query and may
@@ -949,12 +952,14 @@ class DynamicGroupBy:
         self,
         df: DataFrame,
         index_column: IntoExpr,
+        *,
         every: str | timedelta,
         period: str | timedelta | None,
         offset: str | timedelta | None,
-        truncate: bool,
+        truncate: bool | None,
         include_boundaries: bool,
         closed: ClosedInterval,
+        label: Label,
         by: IntoExpr | Iterable[IntoExpr] | None,
         start_by: StartBy,
         check_sorted: bool,
@@ -969,6 +974,7 @@ class DynamicGroupBy:
         self.period = period
         self.offset = offset
         self.truncate = truncate
+        self.label = label
         self.include_boundaries = include_boundaries
         self.closed = closed
         self.by = by
@@ -986,6 +992,7 @@ class DynamicGroupBy:
                 period=self.period,
                 offset=self.offset,
                 truncate=self.truncate,
+                label=self.label,
                 include_boundaries=self.include_boundaries,
                 closed=self.closed,
                 by=self.by,
@@ -1049,6 +1056,7 @@ class DynamicGroupBy:
                 period=self.period,
                 offset=self.offset,
                 truncate=self.truncate,
+                label=self.label,
                 include_boundaries=self.include_boundaries,
                 closed=self.closed,
                 by=self.by,
@@ -1067,12 +1075,12 @@ class DynamicGroupBy:
         """
         Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
 
-        Using this is considered an anti-pattern. This will be very slow because:
+        Using this is considered an anti-pattern as it will be very slow because:
 
         - it forces the engine to materialize the whole `DataFrames` for the groups.
-        - it is not parallelized
+        - it is not parallelized.
         - it blocks optimizations as the passed python function is opaque to the
-          optimizer
+          optimizer.
 
         The idiomatic way to apply custom functions over multiple columns is using:
 
@@ -1081,7 +1089,8 @@ class DynamicGroupBy:
         Parameters
         ----------
         function
-            Function to apply over each group of the `LazyFrame`.
+            Function to apply over each group of the `LazyFrame`; it receives
+            a DataFrame and should return a DataFrame.
         schema
             Schema of the output function. This has to be known statically. If the
             given schema is incorrect, this is a bug in the caller's query and may

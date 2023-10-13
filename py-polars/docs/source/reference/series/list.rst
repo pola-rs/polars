@@ -11,11 +11,13 @@ The following methods are available under the `Series.list` attribute.
 
     Series.list.all
     Series.list.any
+    Series.list.drop_nulls
     Series.list.arg_max
     Series.list.arg_min
     Series.list.concat
     Series.list.contains
     Series.list.count_match
+    Series.list.count_matches
     Series.list.diff
     Series.list.difference
     Series.list.eval
@@ -26,6 +28,7 @@ The following methods are available under the `Series.list` attribute.
     Series.list.join
     Series.list.intersection
     Series.list.last
+    Series.list.len
     Series.list.lengths
     Series.list.max
     Series.list.mean

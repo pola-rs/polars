@@ -42,6 +42,65 @@ def test_scan_csv_overwrite_small_dtypes(
 
 
 @pytest.mark.write_disk()
+def test_sink_parquet(io_files_path: Path, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    file = io_files_path / "small.parquet"
+
+    file_path = tmp_path / "sink.parquet"
+
+    df_scanned = pl.scan_parquet(file)
+    df_scanned.sink_parquet(file_path)
+
+    with pl.StringCache():
+        result = pl.read_parquet(file_path)
+        df_read = pl.read_parquet(file)
+        assert_frame_equal(result, df_read)
+
+
+@pytest.mark.write_disk()
+def test_sink_parquet_10115(tmp_path: Path) -> None:
+    in_path = tmp_path / "in.parquet"
+    out_path = tmp_path / "out.parquet"
+
+    # this fails if the schema will be incorrectly due to the projection
+    # pushdown
+    (pl.DataFrame([{"x": 1, "y": "foo"}]).write_parquet(in_path))
+
+    joiner = pl.LazyFrame([{"y": "foo", "z": "_"}])
+
+    (
+        pl.scan_parquet(in_path)
+        .join(joiner, how="left", on="y")
+        .select("x", "y", "z")
+        .sink_parquet(out_path)  #
+    )
+
+    assert pl.read_parquet(out_path).to_dict(False) == {
+        "x": [1],
+        "y": ["foo"],
+        "z": ["_"],
+    }
+
+
+@pytest.mark.write_disk()
+def test_sink_ipc(io_files_path: Path, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    file = io_files_path / "small.parquet"
+
+    file_path = tmp_path / "sink.ipc"
+
+    df_scanned = pl.scan_parquet(file)
+    df_scanned.sink_ipc(file_path)
+
+    with pl.StringCache():
+        result = pl.read_ipc(file_path)
+        df_read = pl.read_parquet(file)
+        assert_frame_equal(result, df_read)
+
+
+@pytest.mark.write_disk()
 def test_sink_csv(io_files_path: Path, tmp_path: Path) -> None:
     source_file = io_files_path / "small.parquet"
     target_file = tmp_path / "sink.csv"
@@ -69,7 +128,7 @@ def test_sink_csv_with_options() -> None:
             has_header=False,
             separator=";",
             line_terminator="|",
-            quote="$",
+            quote_char="$",
             batch_size=42,
             datetime_format="%Y",
             date_format="%d",
@@ -85,7 +144,7 @@ def test_sink_csv_with_options() -> None:
             has_header=False,
             separator=ord(";"),
             line_terminator="|",
-            quote=ord("$"),
+            quote_char=ord("$"),
             batch_size=42,
             datetime_format="%Y",
             date_format="%d",
@@ -100,12 +159,24 @@ def test_sink_csv_with_options() -> None:
 @pytest.mark.parametrize(("value"), ["abc", ""])
 def test_sink_csv_exception_for_separator(value: str) -> None:
     df = pl.LazyFrame({"dummy": ["abc"]})
-    with pytest.raises(ValueError, match="only single byte separator is allowed"):
+    with pytest.raises(ValueError, match="should be a single byte character, but is"):
         df.sink_csv("path", separator=value)
 
 
 @pytest.mark.parametrize(("value"), ["abc", ""])
 def test_sink_csv_exception_for_quote(value: str) -> None:
     df = pl.LazyFrame({"dummy": ["abc"]})
-    with pytest.raises(ValueError, match="only single byte quote char is allowed"):
-        df.sink_csv("path", quote=value)
+    with pytest.raises(ValueError, match="should be a single byte character, but is"):
+        df.sink_csv("path", quote_char=value)
+
+
+def test_scan_csv_only_header_10792(io_files_path: Path) -> None:
+    foods_file_path = io_files_path / "only_header.csv"
+    df = pl.scan_csv(foods_file_path).collect(streaming=True)
+    assert df.to_dict(False) == {"Name": [], "Address": []}
+
+
+def test_scan_empty_csv_10818(io_files_path: Path) -> None:
+    empty_file_path = io_files_path / "empty.csv"
+    df = pl.scan_csv(empty_file_path, raise_if_empty=False).collect(streaming=True)
+    assert df.is_empty()

@@ -1,6 +1,8 @@
 use std::any::Any;
 
 use polars_core::error::PolarsResult;
+use polars_core::frame::DataFrame;
+use polars_core::schema::SchemaRef;
 
 use crate::operators::{
     chunks_to_df_unchecked, DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult,
@@ -10,11 +12,15 @@ use crate::operators::{
 #[derive(Clone)]
 pub struct OrderedSink {
     chunks: Vec<DataChunk>,
+    schema: SchemaRef,
 }
 
 impl OrderedSink {
-    pub fn new() -> Self {
-        OrderedSink { chunks: vec![] }
+    pub fn new(schema: SchemaRef) -> Self {
+        OrderedSink {
+            chunks: vec![],
+            schema,
+        }
     }
 
     fn sort(&mut self) {
@@ -41,6 +47,11 @@ impl Sink for OrderedSink {
         Box::new(self.clone())
     }
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
+        if self.chunks.is_empty() {
+            return Ok(FinalizedSink::Finished(DataFrame::from(
+                self.schema.as_ref(),
+            )));
+        }
         self.sort();
         let chunks = std::mem::take(&mut self.chunks);
         Ok(FinalizedSink::Finished(chunks_to_df_unchecked(chunks)))

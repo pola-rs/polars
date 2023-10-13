@@ -14,7 +14,7 @@ pub struct OrdFloat<T>(T);
 
 impl<T: IsFloat + PartialEq + PartialOrd> PartialOrd for OrdFloat<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(compare_fn_nan_max(&self.0, &other.0))
+        Some(self.cmp(other))
     }
 }
 

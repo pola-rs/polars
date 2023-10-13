@@ -1,8 +1,9 @@
-use polars_core::prelude::{polars_bail, polars_err, PolarsError, PolarsResult};
+use polars_core::prelude::{polars_bail, polars_err, PolarsResult};
 use polars_lazy::dsl::Expr;
-use polars_plan::dsl::count;
+use polars_plan::dsl::{coalesce, count, when};
 use polars_plan::logical_plan::LiteralValue;
 use polars_plan::prelude::lit;
+use polars_plan::prelude::LiteralValue::Null;
 use sqlparser::ast::{
     Expr as SqlExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SqlValue,
     WindowSpec, WindowType,
@@ -13,7 +14,7 @@ use crate::SQLContext;
 
 pub(crate) struct SqlFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
-    pub(crate) ctx: &'a SQLContext,
+    pub(crate) ctx: &'a mut SQLContext,
 }
 
 /// SQL functions that are supported by Polars
@@ -181,6 +182,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT column_2 from df WHERE ENDS_WITH(column_1, 'a');
     /// ```
     EndsWith,
+    /// SQL 'initcap' function
+    /// ```sql
+    /// SELECT INITCAP(column_1) from df;
+    /// ```
+    InitCap,
     /// SQL 'left' function
     /// ```sql
     /// SELECT LEFT(column_1, 3) from df;
@@ -232,6 +238,16 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT UPPER(column_1) from df;
     /// ```
     Upper,
+    /// SQL 'nullif' function
+    /// ```sql
+    /// SELECT NULLIF(column_1, column_2) from df;
+    /// ```
+    NullIf,
+    /// SQL 'coalesce' function
+    /// ```sql
+    /// SELECT COALESCE(column_1, ...) from df;
+    /// ```
+    Coalesce,
 
     // ----
     // Aggregate functions
@@ -345,6 +361,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT unnest(column_1) from df;
     /// ```
     Explode,
+    /// SQL 'array_to_string' function
+    /// ```sql
+    /// SELECT ARRAY_TO_STRING(column_1, ', ') from df;
+    /// ```
+    ArrayToString,
     /// SQL 'array_get' function
     /// Returns the value at the given index in the array
     /// ```sql
@@ -357,6 +378,7 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT ARRAY_CONTAINS(column_1, 'foo') from df;
     /// ```
     ArrayContains,
+    Udf(String),
 }
 
 impl PolarsSqlFunctions {
@@ -384,6 +406,7 @@ impl PolarsSqlFunctions {
             "cbrt",
             "ceil",
             "ceiling",
+            "coalesce",
             "cos",
             "cosd",
             "cot",
@@ -406,6 +429,7 @@ impl PolarsSqlFunctions {
             "ltrim",
             "max",
             "min",
+            "nullif",
             "octet_length",
             "pi",
             "pow",
@@ -430,9 +454,8 @@ impl PolarsSqlFunctions {
     }
 }
 
-impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
-    type Error = PolarsError;
-    fn try_from(function: &'_ SQLFunction) -> Result<Self, Self::Error> {
+impl PolarsSqlFunctions {
+    fn try_from_sql(function: &'_ SQLFunction, ctx: &'_ SQLContext) -> PolarsResult<Self> {
         let function_name = function.name.0[0].value.to_lowercase();
         Ok(match function_name.as_str() {
             // ----
@@ -472,9 +495,16 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "round" => Self::Round,
 
             // ----
+            // Comparison functions
+            // ----
+            "nullif" => Self::NullIf,
+            "coalesce" => Self::Coalesce,
+
+            // ----
             // String functions
             // ----
             "ends_with" => Self::EndsWith,
+            "initcap" => Self::InitCap,
             "length" => Self::Length,
             "left" => Self::Left,
             "lower" => Self::Lower,
@@ -509,20 +539,27 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "array_mean" => Self::ArrayMean,
             "array_reverse" => Self::ArrayReverse,
             "array_sum" => Self::ArraySum,
+            "array_to_string" => Self::ArrayToString,
             "array_unique" => Self::ArrayUnique,
             "array_upper" => Self::ArrayMax,
             "unnest" => Self::Explode,
 
-            other => polars_bail!(InvalidOperation: "unsupported SQL function: {}", other),
+            other => {
+                if ctx.function_registry.contains(other) {
+                    Self::Udf(other.to_string())
+                } else {
+                    polars_bail!(InvalidOperation: "unsupported SQL function: {}", other);
+                }
+            },
         })
     }
 }
 
 impl SqlFunctionVisitor<'_> {
-    pub(crate) fn visit_function(&self) -> PolarsResult<Expr> {
+    pub(crate) fn visit_function(&mut self) -> PolarsResult<Expr> {
         let function = self.func;
+        let function_name = PolarsSqlFunctions::try_from_sql(function, self.ctx)?;
 
-        let function_name: PolarsSqlFunctions = function.try_into()?;
         use PolarsSqlFunctions::*;
 
         match function_name {
@@ -574,10 +611,18 @@ impl SqlFunctionVisitor<'_> {
                     polars_bail!(InvalidOperation:"Invalid number of arguments for Round: {}",function.args.len());
                 },
             },
+
+            // ----
+            // Comparison functions
+            // ----
+            NullIf => self.visit_binary(|l, r: Expr| when(l.clone().eq(r)).then(lit(LiteralValue::Null)).otherwise(l)),
+            Coalesce => self.visit_variadic(coalesce),
+
             // ----
             // String functions
             // ----
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
+            InitCap => self.visit_unary(|e| e.str().to_titlecase()),
             Left => self.try_visit_binary(|e, length| {
                 Ok(e.str().str_slice(0, match length {
                     Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
@@ -586,17 +631,17 @@ impl SqlFunctionVisitor<'_> {
                     }
                 }))
             }),
-            Length => self.visit_unary(|e| e.str().n_chars()),
+            Length => self.visit_unary(|e| e.str().len_chars()),
             Lower => self.visit_unary(|e| e.str().to_lowercase()),
             LTrim => match function.args.len() {
-                1 => self.visit_unary(|e| e.str().lstrip(None)),
-                2 => self.visit_binary(|e, s| e.str().lstrip(Some(s))),
+                1 => self.visit_unary(|e| e.str().strip_chars_start(lit(Null))),
+                2 => self.visit_binary(|e, s| e.str().strip_chars_start(s)),
                 _ => polars_bail!(InvalidOperation:
                     "Invalid number of arguments for LTrim: {}",
                     function.args.len()
                 ),
             },
-            OctetLength => self.visit_unary(|e| e.str().lengths()),
+            OctetLength => self.visit_unary(|e| e.str().len_bytes()),
             RegexpLike => match function.args.len() {
                 2 => self.visit_binary(|e, s| e.str().contains(s, true)),
                 3 => self.try_visit_ternary(|e, pat, flags| {
@@ -615,8 +660,8 @@ impl SqlFunctionVisitor<'_> {
                 _ => polars_bail!(InvalidOperation:"Invalid number of arguments for RegexpLike: {}",function.args.len()),
             },
             RTrim => match function.args.len() {
-                1 => self.visit_unary(|e| e.str().rstrip(None)),
-                2 => self.visit_binary(|e, s| e.str().rstrip(Some(s))),
+                1 => self.visit_unary(|e| e.str().strip_chars_end(lit(Null))),
+                2 => self.visit_binary(|e, s| e.str().strip_chars_end(s)),
                 _ => polars_bail!(InvalidOperation:
                     "Invalid number of arguments for RTrim: {}",
                     function.args.len()
@@ -669,18 +714,43 @@ impl SqlFunctionVisitor<'_> {
             // ----
             ArrayContains => self.visit_binary::<Expr>(|e, s| e.list().contains(s)),
             ArrayGet => self.visit_binary(|e, i| e.list().get(i)),
-            ArrayLength => self.visit_unary(|e| e.list().lengths()),
+            ArrayLength => self.visit_unary(|e| e.list().len()),
             ArrayMax => self.visit_unary(|e| e.list().max()),
             ArrayMean => self.visit_unary(|e| e.list().mean()),
             ArrayMin => self.visit_unary(|e| e.list().min()),
             ArrayReverse => self.visit_unary(|e| e.list().reverse()),
             ArraySum => self.visit_unary(|e| e.list().sum()),
+            ArrayToString => self.try_visit_binary(|e, s| {
+                Ok(e.list().join(s))
+            }),
             ArrayUnique => self.visit_unary(|e| e.list().unique()),
             Explode => self.visit_unary(|e| e.explode()),
+            Udf(func_name) => self.visit_udf(&func_name)
         }
     }
 
-    fn visit_unary(&self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
+    fn visit_udf(&mut self, func_name: &str) -> PolarsResult<Expr> {
+        let function = self.func;
+
+        let args = extract_args(function);
+        let args = args
+            .into_iter()
+            .map(|arg| {
+                if let FunctionArgExpr::Expr(e) = arg {
+                    parse_sql_expr(e, self.ctx)
+                } else {
+                    polars_bail!(ComputeError: "Only expressions are supported in UDFs")
+                }
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        if let Some(expr) = self.ctx.function_registry.get_udf(func_name)? {
+            expr.call(args)
+        } else {
+            polars_bail!(ComputeError: "UDF {} not found", func_name)
+        }
+    }
+
+    fn visit_unary(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
         self.visit_unary_no_window(f)
             .and_then(|e| self.apply_window_spec(e, &self.func.over))
     }
@@ -691,7 +761,7 @@ impl SqlFunctionVisitor<'_> {
     /// if there is a cumulative window spec, it will apply the cumulative function,
     /// otherwise it will apply the function
     fn visit_unary_with_opt_cumulative(
-        &self,
+        &mut self,
         f: impl Fn(Expr) -> Expr,
         cumulative_f: impl Fn(Expr, bool) -> Expr,
     ) -> PolarsResult<Expr> {
@@ -709,7 +779,7 @@ impl SqlFunctionVisitor<'_> {
     /// Window specs without partition bys are essentially cumulative functions
     /// e.g. SUM(a) OVER (ORDER BY b DESC) -> CUMSUM(a, false)
     fn apply_cumulative_window(
-        &self,
+        &mut self,
         f: impl Fn(Expr) -> Expr,
         cumulative_f: impl Fn(Expr, bool) -> Expr,
         WindowSpec {
@@ -737,7 +807,7 @@ impl SqlFunctionVisitor<'_> {
         }
     }
 
-    fn visit_unary_no_window(&self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
+    fn visit_unary_no_window(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
         let function = self.func;
 
         let args = extract_args(function);
@@ -751,12 +821,15 @@ impl SqlFunctionVisitor<'_> {
         }
     }
 
-    fn visit_binary<Arg: FromSqlExpr>(&self, f: impl Fn(Expr, Arg) -> Expr) -> PolarsResult<Expr> {
+    fn visit_binary<Arg: FromSqlExpr>(
+        &mut self,
+        f: impl Fn(Expr, Arg) -> Expr,
+    ) -> PolarsResult<Expr> {
         self.try_visit_binary(|e, a| Ok(f(e, a)))
     }
 
     fn try_visit_binary<Arg: FromSqlExpr>(
-        &self,
+        &mut self,
         f: impl Fn(Expr, Arg) -> PolarsResult<Expr>,
     ) -> PolarsResult<Expr> {
         let function = self.func;
@@ -771,6 +844,27 @@ impl SqlFunctionVisitor<'_> {
         }
     }
 
+    fn visit_variadic(&mut self, f: impl Fn(&[Expr]) -> Expr) -> PolarsResult<Expr> {
+        self.try_visit_variadic(|e| Ok(f(e)))
+    }
+
+    fn try_visit_variadic(
+        &mut self,
+        f: impl Fn(&[Expr]) -> PolarsResult<Expr>,
+    ) -> PolarsResult<Expr> {
+        let function = self.func;
+        let args = extract_args(function);
+        let mut expr_args = vec![];
+        for arg in args {
+            if let FunctionArgExpr::Expr(sql_expr) = arg {
+                expr_args.push(parse_sql_expr(sql_expr, self.ctx)?);
+            } else {
+                return self.not_supported_error();
+            };
+        }
+        f(&expr_args)
+    }
+
     // fn visit_ternary<Arg: FromSqlExpr>(
     //     &self,
     //     f: impl Fn(Expr, Arg, Arg) -> Expr,
@@ -779,7 +873,7 @@ impl SqlFunctionVisitor<'_> {
     // }
 
     fn try_visit_ternary<Arg: FromSqlExpr>(
-        &self,
+        &mut self,
         f: impl Fn(Expr, Arg, Arg) -> PolarsResult<Expr>,
     ) -> PolarsResult<Expr> {
         let function = self.func;
@@ -804,23 +898,23 @@ impl SqlFunctionVisitor<'_> {
         Ok(f())
     }
 
-    fn visit_count(&self) -> PolarsResult<Expr> {
+    fn visit_count(&mut self) -> PolarsResult<Expr> {
         let args = extract_args(self.func);
         match (self.func.distinct, args.as_slice()) {
             // count()
             (false, []) => Ok(count()),
             // count(column_name)
             (false, [FunctionArgExpr::Expr(sql_expr)]) => {
-                let expr =
-                    self.apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &self.func.over)?;
+                let expr = parse_sql_expr(sql_expr, self.ctx)?;
+                let expr = self.apply_window_spec(expr, &self.func.over)?;
                 Ok(expr.count())
             },
             // count(*)
             (false, [FunctionArgExpr::Wildcard]) => Ok(count()),
             // count(distinct column_name)
             (true, [FunctionArgExpr::Expr(sql_expr)]) => {
-                let expr =
-                    self.apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &self.func.over)?;
+                let expr = parse_sql_expr(sql_expr, self.ctx)?;
+                let expr = self.apply_window_spec(expr, &self.func.over)?;
                 Ok(expr.n_unique())
             },
             _ => self.not_supported_error(),
@@ -828,7 +922,7 @@ impl SqlFunctionVisitor<'_> {
     }
 
     fn apply_window_spec(
-        &self,
+        &mut self,
         expr: Expr,
         window_type: &Option<WindowType>,
     ) -> PolarsResult<Expr> {
@@ -886,13 +980,13 @@ fn extract_args(sql_function: &SQLFunction) -> Vec<&FunctionArgExpr> {
 }
 
 pub(crate) trait FromSqlExpr {
-    fn from_sql_expr(expr: &SqlExpr, ctx: &SQLContext) -> PolarsResult<Self>
+    fn from_sql_expr(expr: &SqlExpr, ctx: &mut SQLContext) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 
 impl FromSqlExpr for f64 {
-    fn from_sql_expr(expr: &SqlExpr, _ctx: &SQLContext) -> PolarsResult<Self>
+    fn from_sql_expr(expr: &SqlExpr, _ctx: &mut SQLContext) -> PolarsResult<Self>
     where
         Self: Sized,
     {
@@ -909,7 +1003,7 @@ impl FromSqlExpr for f64 {
 }
 
 impl FromSqlExpr for String {
-    fn from_sql_expr(expr: &SqlExpr, _: &SQLContext) -> PolarsResult<Self>
+    fn from_sql_expr(expr: &SqlExpr, _: &mut SQLContext) -> PolarsResult<Self>
     where
         Self: Sized,
     {
@@ -924,7 +1018,7 @@ impl FromSqlExpr for String {
 }
 
 impl FromSqlExpr for Expr {
-    fn from_sql_expr(expr: &SqlExpr, ctx: &SQLContext) -> PolarsResult<Self>
+    fn from_sql_expr(expr: &SqlExpr, ctx: &mut SQLContext) -> PolarsResult<Self>
     where
         Self: Sized,
     {

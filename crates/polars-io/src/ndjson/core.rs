@@ -3,14 +3,12 @@ use std::io::Cursor;
 use std::path::PathBuf;
 
 pub use arrow::array::StructArray;
-pub use arrow::io::ndjson as arrow_ndjson;
 use num_traits::pow::Pow;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::POOL;
 use rayon::prelude::*;
 
-use crate::csv::utils::*;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::ndjson::buffer::*;
 use crate::prelude::*;

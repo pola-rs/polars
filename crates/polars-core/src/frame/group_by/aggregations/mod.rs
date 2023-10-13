@@ -355,7 +355,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = { ca.take_unchecked(idx.into()) };
+                let take = { ca.take_unchecked(idx) };
                 // checked with invalid quantile check
                 take._quantile(quantile, interpol).unwrap_unchecked()
             })
@@ -429,7 +429,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = { ca.take_unchecked(idx.into()) };
+                let take = { ca.take_unchecked(idx) };
                 take._median()
             })
         },
@@ -527,7 +527,7 @@ where
                             1 => self.get(first as usize),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
-                                arr_group.min()
+                                ChunkAgg::min(&arr_group)
                             },
                         }
                     })
@@ -610,7 +610,7 @@ where
                             1 => self.get(first as usize),
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
-                                arr_group.max()
+                                ChunkAgg::max(&arr_group)
                             },
                         }
                     })
@@ -691,11 +691,8 @@ where
 impl<T> SeriesWrap<ChunkedArray<T>>
 where
     T: PolarsFloatType,
-    ChunkedArray<T>: IntoSeries
-        + ChunkVar<T::Native>
-        + VarAggSeries
-        + ChunkQuantile<T::Native>
-        + QuantileAggSeries,
+    ChunkedArray<T>:
+        IntoSeries + ChunkVar + VarAggSeries + ChunkQuantile<T::Native> + QuantileAggSeries,
     T::Native: Simd + NumericNative + Pow<T::Native, Output = T::Native>,
     <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
         + arrow::compute::aggregate::Sum<T::Native>
@@ -987,7 +984,7 @@ where
                                 })
                             },
                             _ => {
-                                let take = { self.take_unchecked(idx.into()) };
+                                let take = { self.take_unchecked(idx) };
                                 take.mean()
                             },
                         }
@@ -1114,5 +1111,3 @@ where
         agg_median_generic::<_, Float64Type>(self, groups)
     }
 }
-
-impl<T: PolarsDataType> ChunkedArray<T> where ChunkedArray<T>: ChunkTake + IntoSeries {}

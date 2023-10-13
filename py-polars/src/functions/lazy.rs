@@ -71,7 +71,7 @@ pub fn arg_where(condition: PyExpr) -> PyExpr {
 #[pyfunction]
 pub fn as_struct(exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
-    dsl::as_struct(&exprs).into()
+    dsl::as_struct(exprs).into()
 }
 
 #[pyfunction]
@@ -193,11 +193,13 @@ pub fn cov(a: PyExpr, b: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
+#[cfg(feature = "trigonometry")]
 pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
     y.inner.arctan2(x.inner).into()
 }
 
 #[pyfunction]
+#[cfg(feature = "trigonometry")]
 pub fn arctan2d(y: PyExpr, x: PyExpr) -> PyExpr {
     y.inner.arctan2(x.inner).degrees().into()
 }
@@ -218,7 +220,6 @@ pub fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     dsl::cumreduce_exprs(func, exprs).into()
 }
 
-#[allow(clippy::too_many_arguments)]
 #[pyfunction]
 #[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=None, ambiguous=None))]
 pub fn datetime(
@@ -240,9 +241,7 @@ pub fn datetime(
     let ambiguous = ambiguous
         .map(|e| e.inner)
         .unwrap_or(dsl::lit(String::from("raise")));
-    println!("ambiguous: {:?}", ambiguous);
     let time_unit = time_unit.0;
-
     let args = DatetimeArgs {
         year,
         month,
@@ -259,7 +258,12 @@ pub fn datetime(
 }
 
 #[pyfunction]
-pub fn diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
+pub fn concat_lf_diagonal(
+    lfs: &PyAny,
+    rechunk: bool,
+    parallel: bool,
+    to_supertypes: bool,
+) -> PyResult<PyLazyFrame> {
     let iter = lfs.iter()?;
 
     let lfs = iter
@@ -269,7 +273,15 @@ pub fn diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<Py
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let lf = dsl::functions::diag_concat_lf(lfs, rechunk, parallel).map_err(PyPolarsErr::from)?;
+    let lf = dsl::functions::concat_lf_diagonal(
+        lfs,
+        UnionArgs {
+            rechunk,
+            parallel,
+            to_supertypes,
+        },
+    )
+    .map_err(PyPolarsErr::from)?;
     Ok(lf.into())
 }
 
@@ -286,8 +298,8 @@ pub fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<PyExpr> {
     Ok(dsl::dtype_cols(dtypes).into())
 }
 
-#[allow(clippy::too_many_arguments)]
 #[pyfunction]
+#[pyo3(signature = (days, seconds, nanoseconds, microseconds, milliseconds, minutes, hours, weeks, time_unit))]
 pub fn duration(
     days: Option<PyExpr>,
     seconds: Option<PyExpr>,
@@ -297,6 +309,7 @@ pub fn duration(
     minutes: Option<PyExpr>,
     hours: Option<PyExpr>,
     weeks: Option<PyExpr>,
+    time_unit: Wrap<TimeUnit>,
 ) -> PyExpr {
     set_unwrapped_or_0!(
         days,
@@ -317,6 +330,7 @@ pub fn duration(
         minutes,
         hours,
         weeks,
+        time_unit: time_unit.0,
     };
     dsl::duration(args).into()
 }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import warnings
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -44,19 +45,20 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import dataframe_api_compat, subprocess
-from polars.io._utils import _is_local_file
+from polars.io._utils import _is_local_file, _is_supported_cloud
+from polars.io.csv._utils import _check_arg_is_1byte
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.selectors import _expand_selectors, expand_selector
 from polars.slice import LazyPolarsSlice
-from polars.utils._async import _AsyncDataFrameResult
+from polars.utils._async import _AioDataFrameResult, _GeventDataFrameResult
 from polars.utils._parse_expr_input import (
     parse_as_expression,
     parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_df, wrap_expr
-from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.convert import _negate_duration, _timedelta_to_pl_duration
 from polars.utils.deprecation import (
     deprecate_function,
     deprecate_renamed_function,
@@ -66,7 +68,8 @@ from polars.utils.various import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
-    normalise_filepath,
+    find_stacklevel,
+    normalize_filepath,
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -75,8 +78,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from io import IOBase
-    from queue import Queue
-    from typing import Literal
+    from typing import Awaitable, Literal
 
     import pyarrow as pa
 
@@ -92,6 +94,7 @@ if TYPE_CHECKING:
         IntoExpr,
         JoinStrategy,
         JoinValidation,
+        Label,
         Orientation,
         ParallelStrategy,
         PolarsDataType,
@@ -299,22 +302,22 @@ class LazyFrame:
         self._ldf = ldf
         return self
 
-    def __getstate__(self) -> Any:
+    def __getstate__(self) -> bytes:
         return self._ldf.__getstate__()
 
-    def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
-        self._ldf = LazyFrame("", [])._ldf
+    def __setstate__(self, state: bytes) -> None:
+        self._ldf = LazyFrame()._ldf  # Initialize with a dummy
         self._ldf.__setstate__(state)
 
     @classmethod
     def _scan_csv(
         cls,
-        source: str,
+        source: str | list[str] | list[Path],
         *,
         has_header: bool = True,
         separator: str = ",",
         comment_char: str | None = None,
-        quote_char: str | None = r'"',
+        quote_char: str | None = '"',
         skip_rows: int = 0,
         dtypes: SchemaDict | None = None,
         schema: SchemaDict | None = None,
@@ -353,9 +356,16 @@ class LazyFrame:
                 dtype_list.append((k, py_type_to_dtype(v)))
         processed_null_values = _process_null_values(null_values)
 
+        if isinstance(source, list):
+            sources = source
+            source = None  # type: ignore[assignment]
+        else:
+            sources = []  # type: ignore[assignment]
+
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_csv(
             source,
+            sources,
             separator,
             has_header,
             ignore_errors,
@@ -385,7 +395,7 @@ class LazyFrame:
     @classmethod
     def _scan_parquet(
         cls,
-        source: str,
+        source: str | list[str] | list[Path],
         *,
         n_rows: int | None = None,
         cache: bool = True,
@@ -396,6 +406,8 @@ class LazyFrame:
         storage_options: dict[str, object] | None = None,
         low_memory: bool = False,
         use_statistics: bool = True,
+        hive_partitioning: bool = True,
+        retries: int = 0,
     ) -> Self:
         """
         Lazily read from a parquet file or multiple files via glob patterns.
@@ -407,18 +419,34 @@ class LazyFrame:
         polars.io.scan_parquet
 
         """
+        if isinstance(source, list):
+            sources = source
+            source = None  # type: ignore[assignment]
+            can_use_fsspec = False
+        else:
+            can_use_fsspec = True
+            sources = []  # type: ignore[assignment]
+
         # try fsspec scanner
-        if not _is_local_file(source):
-            scan = _scan_parquet_fsspec(source, storage_options)
+        if (
+            can_use_fsspec
+            and not _is_local_file(source)  # type: ignore[arg-type]
+            and not _is_supported_cloud(source)  # type: ignore[arg-type]
+        ):
+            scan = _scan_parquet_fsspec(source, storage_options)  # type: ignore[arg-type]
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
                 scan = scan.with_row_count(row_count_name, row_count_offset)
             return scan  # type: ignore[return-value]
 
+        if storage_options is not None:
+            storage_options = list(storage_options.items())  #  type: ignore[assignment]
+
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(
             source,
+            sources,
             n_rows,
             cache,
             parallel,
@@ -427,13 +455,15 @@ class LazyFrame:
             low_memory,
             cloud_options=storage_options,
             use_statistics=use_statistics,
+            hive_partitioning=hive_partitioning,
+            retries=retries,
         )
         return self
 
     @classmethod
     def _scan_ipc(
         cls,
-        source: str | Path,
+        source: str | Path | list[str] | list[Path],
         *,
         n_rows: int | None = None,
         cache: bool = True,
@@ -454,11 +484,17 @@ class LazyFrame:
 
         """
         if isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            can_use_fsspec = True
+            source = normalize_filepath(source)
+            sources = []
+        else:
+            can_use_fsspec = False
+            sources = [normalize_filepath(source) for source in source]
+            source = None  # type: ignore[assignment]
 
         # try fsspec scanner
-        if not _is_local_file(source):
-            scan = _scan_ipc_fsspec(source, storage_options)
+        if can_use_fsspec and not _is_local_file(source):  # type: ignore[arg-type]
+            scan = _scan_ipc_fsspec(source, storage_options)  # type: ignore[arg-type]
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
@@ -468,6 +504,7 @@ class LazyFrame:
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_ipc(
             source,
+            sources,
             n_rows,
             cache,
             rechunk,
@@ -479,9 +516,10 @@ class LazyFrame:
     @classmethod
     def _scan_ndjson(
         cls,
-        source: str,
+        source: str | Path | list[str] | list[Path],
         *,
         infer_schema_length: int | None = None,
+        schema: SchemaDefinition | None = None,
         batch_size: int | None = None,
         n_rows: int | None = None,
         low_memory: bool = False,
@@ -499,10 +537,18 @@ class LazyFrame:
         polars.io.scan_ndjson
 
         """
+        if isinstance(source, (str, Path)):
+            source = normalize_filepath(source)
+            sources = []
+        else:
+            sources = [normalize_filepath(source) for source in source]
+            source = None  # type: ignore[assignment]
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_ndjson(
             source,
+            sources,
             infer_schema_length,
+            schema,
             batch_size,
             n_rows,
             low_memory,
@@ -516,6 +562,7 @@ class LazyFrame:
         cls,
         schema: pa.schema | dict[str, PolarsDataType],
         scan_fn: Any,
+        *,
         pyarrow: bool = False,
     ) -> Self:
         self = cls.__new__(cls)
@@ -613,7 +660,7 @@ class LazyFrame:
         if isinstance(source, StringIO):
             source = BytesIO(source.getvalue().encode())
         elif isinstance(source, (str, Path)):
-            source = normalise_filepath(source)
+            source = normalize_filepath(source)
 
         return cls._from_pyldf(PyLazyFrame.deserialize(source))
 
@@ -826,7 +873,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.LazyFrame({"a": [1, 2, 3]}).sum()
         >>> json = lf.serialize()
         >>> json
-        '{"LocalProjection":{"expr":[{"Agg":{"Sum":{"Column":"a"}}}],"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"projection":null,"selection":null}},"schema":{"inner":{"a":"Int64"}}}}'
+        '{"Projection":{"expr":[{"Agg":{"Sum":{"Column":"a"}}}],"input":{"DataFrameScan":{"df":{"columns":[{"name":"a","datatype":"Int64","bit_settings":"","values":[1,2,3]}]},"schema":{"inner":{"a":"Int64"}},"output_schema":null,"projection":null,"selection":null}},"schema":{"inner":{"a":"Int64"}},"options":{"run_parallel":true,"duplicate_check":true}}}'
 
         The logical plan can later be deserialized back into a LazyFrame.
 
@@ -843,7 +890,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+            file = normalize_filepath(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if file is None or to_string_io:
             with BytesIO() as buf:
@@ -1024,6 +1071,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 comm_subplan_elim,
                 comm_subexpr_elim,
                 streaming,
+                _eager=False,
             )
             return ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
@@ -1103,6 +1151,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
+            _eager=False,
         )
 
         dot = _ldf.to_dot(optimized)
@@ -1180,7 +1229,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order: bool = False,
     ) -> Self:
         """
-        Sort the dataframe by the given columns.
+        Sort the DataFrame by the given columns.
 
         Parameters
         ----------
@@ -1556,6 +1605,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
+            _eager=False,
         )
         df, timings = ldf.profile()
         (df, timings) = wrap_df(df), wrap_df(timings)
@@ -1613,20 +1663,184 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        no_optimization: bool = False,
+        streaming: bool = False,
+        _eager: bool = False,
+    ) -> DataFrame:
+        """
+        Materialize this LazyFrame into a DataFrame.
+
+        By default, all query optimizations are enabled. Individual optimizations may
+        be disabled by setting the corresponding parameter to ``False``.
+
+        Parameters
+        ----------
+        type_coercion
+            Do type coercion optimization.
+        predicate_pushdown
+            Do predicate pushdown optimization.
+        projection_pushdown
+            Do projection pushdown optimization.
+        simplify_expression
+            Run simplify expressions optimization.
+        slice_pushdown
+            Slice pushdown optimization.
+        comm_subplan_elim
+            Will try to cache branching subplans that occur on self-joins or unions.
+        comm_subexpr_elim
+            Common subexpressions will be cached and reused.
+        no_optimization
+            Turn off (certain) optimizations.
+        streaming
+            Process the query in batches to handle larger-than-memory data.
+            If set to ``False`` (default), the entire query is processed in a single
+            batch.
+
+            .. warning::
+                This functionality is currently in an alpha state.
+
+            .. note::
+                Use :func:`explain` to see if Polars can process the query in streaming
+                mode.
+
+        Returns
+        -------
+        DataFrame
+
+        See Also
+        --------
+        fetch: Run the query on the first `n` rows only for debugging purposes.
+        explain : Print the query plan that is evaluated with collect.
+        profile : Collect the LazyFrame and time each node in the computation graph.
+        polars.collect_all : Collect multiple LazyFrames at the same time.
+        polars.Config.set_streaming_chunk_size : Set the size of streaming batches.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "b", "c"],
+        ...         "b": [1, 2, 3, 4, 5, 6],
+        ...         "c": [6, 5, 4, 3, 2, 1],
+        ...     }
+        ... )
+        >>> lf.group_by("a").agg(pl.all().sum()).collect()  # doctest: +SKIP
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 4   ┆ 10  │
+        │ b   ┆ 11  ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
+
+        Collect in streaming mode
+
+        >>> lf.group_by("a").agg(pl.all().sum()).collect(
+        ...     streaming=True
+        ... )  # doctest: +SKIP
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 4   ┆ 10  │
+        │ b   ┆ 11  ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
+
+        """
+        if no_optimization or _eager:
+            predicate_pushdown = False
+            projection_pushdown = False
+            slice_pushdown = False
+            comm_subplan_elim = False
+            comm_subexpr_elim = False
+
+        if streaming:
+            comm_subplan_elim = False
+
+        ldf = self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            comm_subplan_elim,
+            comm_subexpr_elim,
+            streaming,
+            _eager,
+        )
+        return wrap_df(ldf.collect())
+
+    @overload
+    def collect_async(
+        self,
+        *,
+        gevent: Literal[True],
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = True,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        streaming: bool = True,
+    ) -> _GeventDataFrameResult[DataFrame]:
+        ...
+
+    @overload
+    def collect_async(
+        self,
+        *,
+        gevent: Literal[False] = False,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        no_optimization: bool = True,
+        slice_pushdown: bool = True,
+        comm_subplan_elim: bool = True,
+        comm_subexpr_elim: bool = True,
+        streaming: bool = True,
+    ) -> Awaitable[DataFrame]:
+        ...
+
+    def collect_async(
+        self,
+        *,
+        gevent: bool = False,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
         comm_subplan_elim: bool = True,
         comm_subexpr_elim: bool = True,
         streaming: bool = False,
-    ) -> DataFrame:
+    ) -> Awaitable[DataFrame] | _GeventDataFrameResult[DataFrame]:
         """
-        Collect into a DataFrame.
+        Collect DataFrame asynchronously in thread pool.
 
-        Note: use :func:`fetch` if you want to run your query on the first `n` rows
-        only. This can be a huge time saver in debugging queries.
+        Collects into a DataFrame (like :func:`collect`), but instead of returning
+        dataframe directly, they are scheduled to be collected inside thread pool,
+        while this method returns almost instantly.
+
+        May be useful if you use gevent or asyncio and want to release control to other
+        greenlets/tasks while LazyFrames are being collected.
 
         Parameters
         ----------
+        gevent
+            Return wrapper to `gevent.event.AsyncResult` instead of Awaitable
         type_coercion
             Do type coercion optimization.
         predicate_pushdown
@@ -1646,94 +1860,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
-        Returns
-        -------
-        DataFrame
-
-        Examples
-        --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": ["a", "b", "a", "b", "b", "c"],
-        ...         "b": [1, 2, 3, 4, 5, 6],
-        ...         "c": [6, 5, 4, 3, 2, 1],
-        ...     }
-        ... )
-        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).collect()
-        shape: (3, 3)
-        ┌─────┬─────┬─────┐
-        │ a   ┆ b   ┆ c   │
-        │ --- ┆ --- ┆ --- │
-        │ str ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╡
-        │ a   ┆ 4   ┆ 10  │
-        │ b   ┆ 11  ┆ 10  │
-        │ c   ┆ 6   ┆ 1   │
-        └─────┴─────┴─────┘
-
-        """
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
-            comm_subplan_elim = False
-            comm_subexpr_elim = False
-
-        if streaming:
-            comm_subplan_elim = False
-
-        ldf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim,
-            comm_subexpr_elim,
-            streaming,
-        )
-        return wrap_df(ldf.collect())
-
-    def collect_async(
-        self,
-        queue: Queue[DataFrame | Exception],
-        *,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        no_optimization: bool = False,
-        slice_pushdown: bool = True,
-        comm_subplan_elim: bool = True,
-        comm_subexpr_elim: bool = True,
-        streaming: bool = False,
-    ) -> _AsyncDataFrameResult[DataFrame]:
-        """
-        Collect dataframe asynchronously in thread pool.
-
-        Collects into a DataFrame, like :func:`collect`
-        but instead of returning dataframe directly its collected inside thread pool
-        and gets put into `queue` with `put_nowait` method,
-        while this method returns almost instantly.
-
-        May be useful if you use gevent or asyncio and want to release control to other
-        greenlets/tasks while LazyFrames are being collected.
-        You must use correct queue in that case.
-        Given `queue` must be thread safe!
-
-        For gevent use
-        [`gevent.queue.Queue`](https://www.gevent.org/api/gevent.queue.html#gevent.queue.Queue).
-
-        For asyncio
-        [`asyncio.queues.Queue`](https://docs.python.org/3/library/asyncio-queue.html#queue)
-        can not be used, since it's not thread safe!
-        For that purpose use [janus](https://github.com/aio-libs/janus) library.
-
         Notes
         -----
-        Results are put in queue exactly once using `put_nowait`.
-        If error occurred then Exception will be put in the queue instead of result
-        which is then raised by returned wrapper `get` method.
+        In case of error `set_exception` is used on
+        `asyncio.Future`/`gevent.event.AsyncResult` and will be reraised by them.
 
         Warnings
         --------
@@ -1747,12 +1877,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Returns
         -------
-        Wrapper that has `get` method and `queue` attribute with given queue.
-        `get` accepts kwargs that are passed down to `queue.get`.
+        If `gevent=False` (default) then returns awaitable.
+
+        If `gevent=True` then returns wrapper that has
+        `.get(block=True, timeout=None)` method.
 
         Examples
         --------
-        >>> import queue
+        >>> import asyncio
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": ["a", "b", "a", "b", "b", "c"],
@@ -1760,12 +1892,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
         ... )
-        >>> a = (
-        ...     lf.group_by("a", maintain_order=True)
-        ...     .agg(pl.all().sum())
-        ...     .collect_async(queue.Queue())
-        ... )
-        >>> a.get()
+        >>> async def main():
+        ...     return await (
+        ...         lf.group_by("a", maintain_order=True)
+        ...         .agg(pl.all().sum())
+        ...         .collect_async()
+        ...     )
+        ...
+        >>> asyncio.run(main())
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -1776,7 +1910,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b   ┆ 11  ┆ 10  │
         │ c   ┆ 6   ┆ 1   │
         └─────┴─────┴─────┘
-
         """
         if no_optimization:
             predicate_pushdown = False
@@ -1797,11 +1930,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
+            _eager=False,
         )
 
-        result = _AsyncDataFrameResult(queue)
-        ldf.collect_with_callback(result._callback)
-        return result
+        result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+        ldf.collect_with_callback(result._callback)  # type: ignore[attr-defined]
+        return result  # type: ignore[return-value]
 
     def sink_parquet(
         self,
@@ -1817,11 +1951,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
-        no_optimization: bool = False,
         slice_pushdown: bool = True,
+        no_optimization: bool = False,
     ) -> DataFrame:
         """
-        Persists a LazyFrame at the provided path.
+        Evaluate the query in streaming mode and write to a Parquet file.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -1862,10 +1996,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Do projection pushdown optimization.
         simplify_expression
             Run simplify expressions optimization.
-        no_optimization
-            Turn off (certain) optimizations.
         slice_pushdown
             Slice pushdown optimization.
+        no_optimization
+            Turn off (certain) optimizations.
 
         Returns
         -------
@@ -1877,23 +2011,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_parquet("out.parquet")  # doctest: +SKIP
 
         """
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
-
-        lf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim=False,
-            comm_subexpr_elim=False,
-            streaming=True,
+        lf = self._set_sink_optimizations(
+            type_coercion=type_coercion,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            no_optimization=no_optimization,
         )
+
         return lf.sink_parquet(
-            path=path,
+            path=normalize_filepath(path),
             compression=compression,
             compression_level=compression_level,
             statistics=statistics,
@@ -1912,11 +2040,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
-        no_optimization: bool = False,
         slice_pushdown: bool = True,
+        no_optimization: bool = False,
     ) -> DataFrame:
         """
-        Persists a LazyFrame at the provided path.
+        Evaluate the query in streaming mode and write to an IPC file.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -1938,10 +2066,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Do projection pushdown optimization.
         simplify_expression
             Run simplify expressions optimization.
-        no_optimization
-            Turn off (certain) optimizations.
         slice_pushdown
             Slice pushdown optimization.
+        no_optimization
+            Turn off (certain) optimizations.
 
         Returns
         -------
@@ -1953,27 +2081,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_ipc("out.arrow")  # doctest: +SKIP
 
         """
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
-
-        lf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim=False,
-            comm_subexpr_elim=False,
-            streaming=True,
+        lf = self._set_sink_optimizations(
+            type_coercion=type_coercion,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            no_optimization=no_optimization,
         )
+
         return lf.sink_ipc(
             path=path,
             compression=compression,
             maintain_order=maintain_order,
         )
 
+    @deprecate_renamed_parameter("quote", "quote_char", version="0.19.8")
     def sink_csv(
         self,
         path: str | Path,
@@ -1981,7 +2104,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         has_header: bool = True,
         separator: str = ",",
         line_terminator: str = "\n",
-        quote: str = '"',
+        quote_char: str = '"',
         batch_size: int = 1024,
         datetime_format: str | None = None,
         date_format: str | None = None,
@@ -1994,11 +2117,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
-        no_optimization: bool = False,
         slice_pushdown: bool = True,
+        no_optimization: bool = False,
     ) -> DataFrame:
         """
-        Persists a LazyFrame at the provided path.
+        Evaluate the query in streaming mode and write to a CSV file.
 
         This allows streaming results that are larger than RAM to be written to disk.
 
@@ -2012,7 +2135,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Separate CSV fields with this symbol.
         line_terminator
             String used to end each row.
-        quote
+        quote_char
             Byte to use as quoting character.
         batch_size
             Number of rows that will be processed per thread.
@@ -2035,7 +2158,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ``Float64`` datatypes.
         null_value
             A string representing null values (defaulting to the empty string).
-        quote_style : {'necessary', 'always', 'non_numeric'}
+        quote_style : {'necessary', 'always', 'non_numeric', 'never'}
             Determines the quoting strategy used.
             - necessary (default): This puts quotes around fields only when necessary.
             They are necessary when fields contain a quote,
@@ -2044,6 +2167,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             (which is indistinguishable from a record with one empty field).
             This is the default.
             - always: This puts quotes around every field. Always.
+            - never: This never puts quotes around fields, even if that results in
+            invalid CSV data (e.g.: by not quoting strings containing the
+            separator).
             - non_numeric: This puts quotes around all fields that are non-numeric.
             Namely, when writing a field that does not parse as a valid float
             or integer, then quotes will be used even if they aren`t strictly
@@ -2059,10 +2185,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Do projection pushdown optimization.
         simplify_expression
             Run simplify expressions optimization.
-        no_optimization
-            Turn off (certain) optimizations.
         slice_pushdown
             Slice pushdown optimization.
+        no_optimization
+            Turn off (certain) optimizations.
 
         Returns
         -------
@@ -2074,27 +2200,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_csv("out.csv")  # doctest: +SKIP
 
         """
-        if len(separator) != 1:
-            raise ValueError("only single byte separator is allowed")
-        if len(quote) != 1:
-            raise ValueError("only single byte quote char is allowed")
+        _check_arg_is_1byte("separator", separator, can_be_empty=False)
+        _check_arg_is_1byte("quote_char", quote_char, can_be_empty=False)
         if not null_value:
             null_value = None
 
-        if no_optimization:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
-
-        lf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim=False,
-            comm_subexpr_elim=False,
-            streaming=True,
+        lf = self._set_sink_optimizations(
+            type_coercion=type_coercion,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            no_optimization=no_optimization,
         )
 
         return lf.sink_csv(
@@ -2102,7 +2219,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             has_header=has_header,
             separator=ord(separator),
             line_terminator=line_terminator,
-            quote=ord(quote),
+            quote_char=ord(quote_char),
             batch_size=batch_size,
             datetime_format=datetime_format,
             date_format=date_format,
@@ -2111,6 +2228,33 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             null_value=null_value,
             quote_style=quote_style,
             maintain_order=maintain_order,
+        )
+
+    def _set_sink_optimizations(
+        self,
+        *,
+        type_coercion: bool = True,
+        predicate_pushdown: bool = True,
+        projection_pushdown: bool = True,
+        simplify_expression: bool = True,
+        slice_pushdown: bool = True,
+        no_optimization: bool = False,
+    ) -> PyLazyFrame:
+        if no_optimization:
+            predicate_pushdown = False
+            projection_pushdown = False
+            slice_pushdown = False
+
+        return self._ldf.optimization_toggle(
+            type_coercion,
+            predicate_pushdown,
+            projection_pushdown,
+            simplify_expression,
+            slice_pushdown,
+            comm_subplan_elim=False,
+            comm_subexpr_elim=False,
+            streaming=True,
+            _eager=False,
         )
 
     @deprecate_renamed_parameter(
@@ -2132,14 +2276,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> DataFrame:
         """
         Collect a small number of rows for debugging purposes.
-
-        Fetch is like a :func:`collect` operation, but it overwrites the number of rows
-        read by every scan operation. This is a utility that helps debug a query on a
-        smaller number of rows.
-
-        Note that the fetch does not guarantee the final number of rows in the
-        DataFrame. Filter, join operations and a lower number of rows available in the
-        scanned file influence the final number of rows.
 
         Parameters
         ----------
@@ -2163,6 +2299,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Common subexpressions will be cached and reused.
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
+
+        Notes
+        -----
+        This is similar to a :func:`collect` operation, but it overwrites the number of
+        rows read by *every* scan operation. Be aware that ``fetch`` does not guarantee
+        the final number of rows in the DataFrame. Filters, join operations and fewer
+        rows being available in the scanned data will all influence the final number
+        of rows (joins are especially susceptible to this, and may return no data
+        at all if ``n_rows`` is too small as the join keys may not be present).
+
+        Warnings
+        --------
+        This is strictly a utility function that can help to debug queries using a
+        smaller number of rows, and should *not* be used in production code.
 
         Returns
         -------
@@ -2205,6 +2355,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subplan_elim,
             comm_subexpr_elim,
             streaming,
+            _eager=False,
         )
         return wrap_df(lf.fetch(n_rows))
 
@@ -2367,7 +2518,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def clone(self) -> Self:
         """
-        Very cheap deepcopy/clone.
+        Create a copy of this LazyFrame.
+
+        This is a cheap operation that does not copy data.
 
         See Also
         --------
@@ -2392,6 +2545,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def filter(self, predicate: IntoExpr) -> Self:
         """
         Filter the rows in the LazyFrame based on a predicate expression.
+
+        The original order of the remaining rows is preserved.
 
         Parameters
         ----------
@@ -2614,7 +2769,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default group by.
-            Settings this to ``True`` blocks the possibility
+            Setting this to ``True`` blocks the possibility
             to run on the streaming engine.
 
         Examples
@@ -2832,7 +2987,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         index_column = parse_as_expression(index_column)
         if offset is None:
-            offset = f"-{_timedelta_to_pl_duration(period)}"
+            offset = _negate_duration(_timedelta_to_pl_duration(period))
 
         pyexprs_by = parse_as_list_of_expressions(by) if by is not None else []
         period = _timedelta_to_pl_duration(period)
@@ -2850,9 +3005,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every: str | timedelta,
         period: str | timedelta | None = None,
         offset: str | timedelta | None = None,
-        truncate: bool = True,
+        truncate: bool | None = None,
         include_boundaries: bool = False,
         closed: ClosedInterval = "left",
+        label: Label = "left",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
         check_sorted: bool = True,
@@ -2861,47 +3017,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Group based on a time value (or index value of type Int32, Int64).
 
         Time windows are calculated and rows are assigned to windows. Different from a
-        normal group by is that a row can be member of multiple groups. The time/index
-        window could be seen as a rolling window, with a window size determined by
-        dates/times/values instead of slots in the DataFrame.
+        normal group by is that a row can be member of multiple groups.
+        By default, the windows look like:
 
-        A window is defined by:
+        - [start, start + period)
+        - [start + every, start + every + period)
+        - [start + 2*every, start + 2*every + period)
+        - ...
 
-        - every: interval of the window
-        - period: length of the window
-        - offset: offset of the window
-
-        The `every`, `period` and `offset` arguments are created with
-        the following string language:
-
-        - 1ns   (1 nanosecond)
-        - 1us   (1 microsecond)
-        - 1ms   (1 millisecond)
-        - 1s    (1 second)
-        - 1m    (1 minute)
-        - 1h    (1 hour)
-        - 1d    (1 calendar day)
-        - 1w    (1 calendar week)
-        - 1mo   (1 calendar month)
-        - 1q    (1 calendar quarter)
-        - 1y    (1 calendar year)
-        - 1i    (1 index count)
-
-        Or combine them:
-        "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
-
-        Suffix with `"_saturating"` to indicate that dates too large for
-        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-        instead of erroring.
-
-        By "calendar day", we mean the corresponding time on the next day (which may
-        not be 24 hours, due to daylight savings). Similarly for "calendar week",
-        "calendar month", "calendar quarter", and "calendar year".
-
-        In case of a group_by_dynamic on an integer column, the windows are defined by:
-
-        - "1i"      # length 1
-        - "10i"     # length 10
+        where `start` is determined by `start_by`, `offset`, and `every` (see parameter
+        descriptions below).
 
         .. warning::
             The index column must be sorted in ascending order. If `by` is passed, then
@@ -2921,24 +3046,36 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every
             interval of the window
         period
-            length of the window, if None it is equal to 'every'
+            length of the window, if None it will equal 'every'
         offset
-            offset of the window if None and period is None it will be equal to negative
-            `every`
+            offset of the window, only takes effect if `start_by` is `'window'`.
+            Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
+
+            .. deprecated:: 0.19.4
+                Use `label` instead.
         include_boundaries
             Add the lower and upper bound of the window to the "_lower_bound" and
             "_upper_bound" columns. This will impact performance because it's harder to
             parallelize
-        closed : {'right', 'left', 'both', 'none'}
+        closed : {'left', 'right', 'both', 'none'}
             Define which sides of the temporal interval are closed (inclusive).
+        label : {'left', 'right', 'datapoint'}
+            Define which label to use for the window:
+
+            - 'left': lower boundary of the window
+            - 'right': upper boundary of the window
+            - 'datapoint': the first value of the index column in the given window.
+              If you don't need the label to be at one of the boundaries, choose this
+              option for maximum performance
         by
             Also group by this column/these columns
         start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
 
-            * 'window': Truncate the start of the window with the 'every' argument.
+            * 'window': Start by taking the earliest timestamp, truncating it with
+              `every`, and then adding `offset`.
               Note that weekly windows start on Monday.
             * 'datapoint': Start from the first encountered data point.
             * a day of the week (only takes effect if `every` contains ``'w'``):
@@ -2967,31 +3104,62 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        If you're coming from pandas, then
+        1) If you're coming from pandas, then
 
-        .. code-block:: python
+           .. code-block:: python
 
-            # polars
-            df.group_by_dynamic("ts", every="1d").agg(pl.col("value").sum())
+               # polars
+               df.group_by_dynamic("ts", every="1d").agg(pl.col("value").sum())
 
-        is equivalent to
+           is equivalent to
 
-        .. code-block:: python
+           .. code-block:: python
 
-            # pandas
-            df.set_index("ts").resample("D")["value"].sum().reset_index()
+               # pandas
+               df.set_index("ts").resample("D")["value"].sum().reset_index()
 
-        though note that, unlike pandas, polars doesn't add extra rows for empty
-        windows. If you need `index_column` to be evenly spaced, then please combine
-        with :func:`DataFrame.upsample`.
+           though note that, unlike pandas, polars doesn't add extra rows for empty
+           windows. If you need `index_column` to be evenly spaced, then please combine
+           with :func:`DataFrame.upsample`.
+
+        2) The `every`, `period` and `offset` arguments are created with
+           the following string language:
+
+           - 1ns   (1 nanosecond)
+           - 1us   (1 microsecond)
+           - 1ms   (1 millisecond)
+           - 1s    (1 second)
+           - 1m    (1 minute)
+           - 1h    (1 hour)
+           - 1d    (1 calendar day)
+           - 1w    (1 calendar week)
+           - 1mo   (1 calendar month)
+           - 1q    (1 calendar quarter)
+           - 1y    (1 calendar year)
+           - 1i    (1 index count)
+
+           Or combine them:
+           "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+           Suffix with `"_saturating"` to indicate that dates too large for
+           their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+           instead of erroring.
+
+           By "calendar day", we mean the corresponding time on the next day (which may
+           not be 24 hours, due to daylight savings). Similarly for "calendar week",
+           "calendar month", "calendar quarter", and "calendar year".
+
+           In case of a group_by_dynamic on an integer column, the windows are defined by:
+
+           - "1i"      # length 1
+           - "10i"     # length 10
 
         Examples
         --------
         >>> from datetime import datetime
-        >>> # create an example dataframe
         >>> lf = pl.LazyFrame(
         ...     {
-        ...         "time": pl.date_range(
+        ...         "time": pl.datetime_range(
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
@@ -3019,130 +3187,112 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Group by windows of 1 hour starting at 2021-12-16 00:00:00.
 
         >>> lf.group_by_dynamic("time", every="1h", closed="right").agg(
-        ...     [
-        ...         pl.col("time").min().alias("time_min"),
-        ...         pl.col("time").max().alias("time_max"),
-        ...     ]
+        ...     pl.col("n")
         ... ).collect()
-        shape: (4, 3)
-        ┌─────────────────────┬─────────────────────┬─────────────────────┐
-        │ time                ┆ time_min            ┆ time_max            │
-        │ ---                 ┆ ---                 ┆ ---                 │
-        │ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        │
-        ╞═════════════════════╪═════════════════════╪═════════════════════╡
-        │ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 00:00:00 │
-        │ 2021-12-16 00:00:00 ┆ 2021-12-16 00:30:00 ┆ 2021-12-16 01:00:00 │
-        │ 2021-12-16 01:00:00 ┆ 2021-12-16 01:30:00 ┆ 2021-12-16 02:00:00 │
-        │ 2021-12-16 02:00:00 ┆ 2021-12-16 02:30:00 ┆ 2021-12-16 03:00:00 │
-        └─────────────────────┴─────────────────────┴─────────────────────┘
+        shape: (4, 2)
+        ┌─────────────────────┬───────────┐
+        │ time                ┆ n         │
+        │ ---                 ┆ ---       │
+        │ datetime[μs]        ┆ list[i64] │
+        ╞═════════════════════╪═══════════╡
+        │ 2021-12-15 23:00:00 ┆ [0]       │
+        │ 2021-12-16 00:00:00 ┆ [1, 2]    │
+        │ 2021-12-16 01:00:00 ┆ [3, 4]    │
+        │ 2021-12-16 02:00:00 ┆ [5, 6]    │
+        └─────────────────────┴───────────┘
 
         The window boundaries can also be added to the aggregation result
 
         >>> lf.group_by_dynamic(
         ...     "time", every="1h", include_boundaries=True, closed="right"
-        ... ).agg([pl.col("time").count().alias("time_count")]).collect()
+        ... ).agg(pl.col("n").mean()).collect()
         shape: (4, 4)
-        ┌─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
-        │ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
-        │ ---                 ┆ ---                 ┆ ---                 ┆ ---        │
-        │ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ u32        │
-        ╞═════════════════════╪═════════════════════╪═════════════════════╪════════════╡
-        │ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-15 23:00:00 ┆ 1          │
-        │ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ 2          │
-        │ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ 2          │
-        │ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 2          │
-        └─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
+        ┌─────────────────────┬─────────────────────┬─────────────────────┬─────┐
+        │ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ n   │
+        │ ---                 ┆ ---                 ┆ ---                 ┆ --- │
+        │ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ f64 │
+        ╞═════════════════════╪═════════════════════╪═════════════════════╪═════╡
+        │ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-15 23:00:00 ┆ 0.0 │
+        │ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ 1.5 │
+        │ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ 3.5 │
+        │ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 5.5 │
+        └─────────────────────┴─────────────────────┴─────────────────────┴─────┘
 
-        When closed="left", should not include right end of interval
+        When closed="left", the window excludes the right end of interval:
         [lower_bound, upper_bound)
 
         >>> lf.group_by_dynamic("time", every="1h", closed="left").agg(
-        ...     [
-        ...         pl.col("time").count().alias("time_count"),
-        ...         pl.col("time").alias("time_agg_list"),
-        ...     ]
+        ...     pl.col("n")
         ... ).collect()
-        shape: (4, 3)
-        ┌─────────────────────┬────────────┬───────────────────────────────────┐
-        │ time                ┆ time_count ┆ time_agg_list                     │
-        │ ---                 ┆ ---        ┆ ---                               │
-        │ datetime[μs]        ┆ u32        ┆ list[datetime[μs]]                │
-        ╞═════════════════════╪════════════╪═══════════════════════════════════╡
-        │ 2021-12-16 00:00:00 ┆ 2          ┆ [2021-12-16 00:00:00, 2021-12-16… │
-        │ 2021-12-16 01:00:00 ┆ 2          ┆ [2021-12-16 01:00:00, 2021-12-16… │
-        │ 2021-12-16 02:00:00 ┆ 2          ┆ [2021-12-16 02:00:00, 2021-12-16… │
-        │ 2021-12-16 03:00:00 ┆ 1          ┆ [2021-12-16 03:00:00]             │
-        └─────────────────────┴────────────┴───────────────────────────────────┘
+        shape: (4, 2)
+        ┌─────────────────────┬───────────┐
+        │ time                ┆ n         │
+        │ ---                 ┆ ---       │
+        │ datetime[μs]        ┆ list[i64] │
+        ╞═════════════════════╪═══════════╡
+        │ 2021-12-16 00:00:00 ┆ [0, 1]    │
+        │ 2021-12-16 01:00:00 ┆ [2, 3]    │
+        │ 2021-12-16 02:00:00 ┆ [4, 5]    │
+        │ 2021-12-16 03:00:00 ┆ [6]       │
+        └─────────────────────┴───────────┘
 
         When closed="both" the time values at the window boundaries belong to 2 groups.
 
         >>> lf.group_by_dynamic("time", every="1h", closed="both").agg(
-        ...     pl.col("time").count().alias("time_count")
+        ...     pl.col("n")
         ... ).collect()
         shape: (5, 2)
-        ┌─────────────────────┬────────────┐
-        │ time                ┆ time_count │
-        │ ---                 ┆ ---        │
-        │ datetime[μs]        ┆ u32        │
-        ╞═════════════════════╪════════════╡
-        │ 2021-12-15 23:00:00 ┆ 1          │
-        │ 2021-12-16 00:00:00 ┆ 3          │
-        │ 2021-12-16 01:00:00 ┆ 3          │
-        │ 2021-12-16 02:00:00 ┆ 3          │
-        │ 2021-12-16 03:00:00 ┆ 1          │
-        └─────────────────────┴────────────┘
+        ┌─────────────────────┬───────────┐
+        │ time                ┆ n         │
+        │ ---                 ┆ ---       │
+        │ datetime[μs]        ┆ list[i64] │
+        ╞═════════════════════╪═══════════╡
+        │ 2021-12-15 23:00:00 ┆ [0]       │
+        │ 2021-12-16 00:00:00 ┆ [0, 1, 2] │
+        │ 2021-12-16 01:00:00 ┆ [2, 3, 4] │
+        │ 2021-12-16 02:00:00 ┆ [4, 5, 6] │
+        │ 2021-12-16 03:00:00 ┆ [6]       │
+        └─────────────────────┴───────────┘
 
         Dynamic group bys can also be combined with grouping on normal keys
 
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "time": pl.date_range(
-        ...             start=datetime(2021, 12, 16),
-        ...             end=datetime(2021, 12, 16, 3),
-        ...             interval="30m",
-        ...             eager=True,
-        ...         ),
-        ...         "groups": ["a", "a", "a", "b", "b", "a", "a"],
-        ...     }
-        ... )
+        >>> lf = lf.with_columns(groups=pl.Series(["a", "a", "a", "b", "b", "a", "a"]))
         >>> lf.collect()
-        shape: (7, 2)
-        ┌─────────────────────┬────────┐
-        │ time                ┆ groups │
-        │ ---                 ┆ ---    │
-        │ datetime[μs]        ┆ str    │
-        ╞═════════════════════╪════════╡
-        │ 2021-12-16 00:00:00 ┆ a      │
-        │ 2021-12-16 00:30:00 ┆ a      │
-        │ 2021-12-16 01:00:00 ┆ a      │
-        │ 2021-12-16 01:30:00 ┆ b      │
-        │ 2021-12-16 02:00:00 ┆ b      │
-        │ 2021-12-16 02:30:00 ┆ a      │
-        │ 2021-12-16 03:00:00 ┆ a      │
-        └─────────────────────┴────────┘
-        >>> (
-        ...     lf.group_by_dynamic(
-        ...         "time",
-        ...         every="1h",
-        ...         closed="both",
-        ...         by="groups",
-        ...         include_boundaries=True,
-        ...     )
-        ... ).agg([pl.col("time").count().alias("time_count")]).collect()
+        shape: (7, 3)
+        ┌─────────────────────┬─────┬────────┐
+        │ time                ┆ n   ┆ groups │
+        │ ---                 ┆ --- ┆ ---    │
+        │ datetime[μs]        ┆ i64 ┆ str    │
+        ╞═════════════════════╪═════╪════════╡
+        │ 2021-12-16 00:00:00 ┆ 0   ┆ a      │
+        │ 2021-12-16 00:30:00 ┆ 1   ┆ a      │
+        │ 2021-12-16 01:00:00 ┆ 2   ┆ a      │
+        │ 2021-12-16 01:30:00 ┆ 3   ┆ b      │
+        │ 2021-12-16 02:00:00 ┆ 4   ┆ b      │
+        │ 2021-12-16 02:30:00 ┆ 5   ┆ a      │
+        │ 2021-12-16 03:00:00 ┆ 6   ┆ a      │
+        └─────────────────────┴─────┴────────┘
+        >>> lf.group_by_dynamic(
+        ...     "time",
+        ...     every="1h",
+        ...     closed="both",
+        ...     by="groups",
+        ...     include_boundaries=True,
+        ... ).agg(pl.col("n")).collect()
         shape: (7, 5)
-        ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
-        │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
-        │ ---    ┆ ---                 ┆ ---                 ┆ ---                 ┆ ---        │
-        │ str    ┆ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ u32        │
-        ╞════════╪═════════════════════╪═════════════════════╪═════════════════════╪════════════╡
-        │ a      ┆ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-15 23:00:00 ┆ 1          │
-        │ a      ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ 3          │
-        │ a      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ 1          │
-        │ a      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 2          │
-        │ a      ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 04:00:00 ┆ 2021-12-16 03:00:00 ┆ 1          │
-        │ b      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ 2          │
-        │ b      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 1          │
-        └────────┴─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
+        ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬───────────┐
+        │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ n         │
+        │ ---    ┆ ---                 ┆ ---                 ┆ ---                 ┆ ---       │
+        │ str    ┆ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ list[i64] │
+        ╞════════╪═════════════════════╪═════════════════════╪═════════════════════╪═══════════╡
+        │ a      ┆ 2021-12-15 23:00:00 ┆ 2021-12-16 00:00:00 ┆ 2021-12-15 23:00:00 ┆ [0]       │
+        │ a      ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ [0, 1, 2] │
+        │ a      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ [2]       │
+        │ a      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ [5, 6]    │
+        │ a      ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 04:00:00 ┆ 2021-12-16 03:00:00 ┆ [6]       │
+        │ b      ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 01:00:00 ┆ [3, 4]    │
+        │ b      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ [4]       │
+        └────────┴─────────────────────┴─────────────────────┴─────────────────────┴───────────┘
 
         Dynamic group by on an index column
 
@@ -3159,21 +3309,35 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     include_boundaries=True,
         ...     closed="right",
         ... ).agg(pl.col("A").alias("A_agg_list")).collect()
-        shape: (3, 4)
+        shape: (4, 4)
         ┌─────────────────┬─────────────────┬─────┬─────────────────┐
         │ _lower_boundary ┆ _upper_boundary ┆ idx ┆ A_agg_list      │
         │ ---             ┆ ---             ┆ --- ┆ ---             │
         │ i64             ┆ i64             ┆ i64 ┆ list[str]       │
         ╞═════════════════╪═════════════════╪═════╪═════════════════╡
+        │ -2              ┆ 1               ┆ -2  ┆ ["A", "A"]      │
         │ 0               ┆ 3               ┆ 0   ┆ ["A", "B", "B"] │
         │ 2               ┆ 5               ┆ 2   ┆ ["B", "B", "C"] │
         │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
         """  # noqa: W505
+        if truncate is not None:
+            if truncate:
+                label = "left"
+            else:
+                label = "datapoint"
+            warnings.warn(
+                f"`truncate` is deprecated and will be removed in a future version. "
+                f"Please replace `truncate={truncate}` with `label='{label}'` to "
+                "silence this warning.",
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
+
         index_column = parse_as_expression(index_column)
         if offset is None:
-            offset = f"-{_timedelta_to_pl_duration(every)}" if period is None else "0ns"
+            offset = _negate_duration(_timedelta_to_pl_duration(every))
 
         if period is None:
             period = every
@@ -3188,7 +3352,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             every,
             period,
             offset,
-            truncate,
+            label,
             include_boundaries,
             closed,
             pyexprs_by,
@@ -3411,6 +3575,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             None.
         how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
             Join strategy.
+
+            .. note::
+                A left join preserves the row order of the left DataFrame.
         left_on
             Join column of the left DataFrame.
         right_on
@@ -3630,7 +3797,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     [
         ...         (pl.col("a") ** 2).alias("a^2"),
         ...         (pl.col("b") / 2).alias("b/2"),
-        ...         (pl.col("c").is_not()).alias("not c"),
+        ...         (pl.col("c").not_()).alias("not c"),
         ...     ]
         ... ).collect()
         shape: (4, 6)
@@ -3650,7 +3817,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.with_columns(
         ...     (pl.col("a") ** 2).alias("a^2"),
         ...     (pl.col("b") / 2).alias("b/2"),
-        ...     (pl.col("c").is_not()).alias("not c"),
+        ...     (pl.col("c").not_()).alias("not c"),
         ... ).collect()
         shape: (4, 6)
         ┌─────┬──────┬───────┬──────┬──────┬───────┐
@@ -3668,7 +3835,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> lf.with_columns(
         ...     ab=pl.col("a") * pl.col("b"),
-        ...     not_c=pl.col("c").is_not(),
+        ...     not_c=pl.col("c").not_(),
         ... ).collect()
         shape: (4, 5)
         ┌─────┬──────┬───────┬──────┬───────┐
@@ -4957,7 +5124,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Drop all rows that contain null values.
 
-        Returns a new LazyFrame.
+        The original order of the remaining rows is preserved.
 
         Parameters
         ----------
@@ -5170,22 +5337,32 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": [1, 2],
-        ...         "b": [3, 4],
-        ...     }
+        >>> lf = (  # doctest: +SKIP
+        ...     pl.LazyFrame(
+        ...         {
+        ...             "a": pl.int_range(-100_000, 0, eager=True),
+        ...             "b": pl.int_range(0, 100_000, eager=True),
+        ...         }
+        ...     )
+        ...     .map_batches(lambda x: 2 * x, streamable=True)
+        ...     .collect(streaming=True)
         ... )
-        >>> lf.map_batches(lambda x: 2 * x).collect()
-        shape: (2, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 2   ┆ 6   │
-        │ 4   ┆ 8   │
-        └─────┴─────┘
+        shape: (100_000, 2)
+        ┌─────────┬────────┐
+        │ a       ┆ b      │
+        │ ---     ┆ ---    │
+        │ i64     ┆ i64    │
+        ╞═════════╪════════╡
+        │ -200000 ┆ 0      │
+        │ -199998 ┆ 2      │
+        │ -199996 ┆ 4      │
+        │ -199994 ┆ 6      │
+        │ …       ┆ …      │
+        │ -8      ┆ 199992 │
+        │ -6      ┆ 199994 │
+        │ -4      ┆ 199996 │
+        │ -2      ┆ 199998 │
+        └─────────┴────────┘
 
         """
         if no_optimizations:
@@ -5220,21 +5397,25 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... )
         >>> lf.interpolate().collect()
         shape: (4, 3)
-        ┌─────┬──────┬─────┐
-        │ foo ┆ bar  ┆ baz │
-        │ --- ┆ ---  ┆ --- │
-        │ i64 ┆ i64  ┆ i64 │
-        ╞═════╪══════╪═════╡
-        │ 1   ┆ 6    ┆ 1   │
-        │ 5   ┆ 7    ┆ 3   │
-        │ 9   ┆ 9    ┆ 6   │
-        │ 10  ┆ null ┆ 9   │
-        └─────┴──────┴─────┘
+        ┌──────┬──────┬──────────┐
+        │ foo  ┆ bar  ┆ baz      │
+        │ ---  ┆ ---  ┆ ---      │
+        │ f64  ┆ f64  ┆ f64      │
+        ╞══════╪══════╪══════════╡
+        │ 1.0  ┆ 6.0  ┆ 1.0      │
+        │ 5.0  ┆ 7.0  ┆ 3.666667 │
+        │ 9.0  ┆ 9.0  ┆ 6.333333 │
+        │ 10.0 ┆ null ┆ 9.0      │
+        └──────┴──────┴──────────┘
 
         """
         return self.select(F.col("*").interpolate())
 
-    def unnest(self, columns: str | Sequence[str], *more_columns: str) -> Self:
+    def unnest(
+        self,
+        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
+        *more_columns: ColumnNameOrSelector,
+    ) -> Self:
         """
         Decompose struct columns into separate columns for each of their fields.
 
@@ -5282,11 +5463,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └────────┴─────┴─────┴──────┴───────────┴───────┘
 
         """
-        if isinstance(columns, str):
-            columns = [columns]
-        if more_columns:
-            columns = list(columns)
-            columns.extend(more_columns)
+        columns = _expand_selectors(self, columns, *more_columns)
         return self._from_pyldf(self._ldf.unnest(columns))
 
     def merge_sorted(self, other: LazyFrame, key: str) -> Self:
@@ -5383,40 +5560,44 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         other: LazyFrame,
         on: str | Sequence[str] | None = None,
-        how: Literal["left", "inner"] = "left",
+        left_on: str | Sequence[str] | None = None,
+        right_on: str | Sequence[str] | None = None,
+        how: Literal["left", "inner", "outer"] = "left",
     ) -> Self:
         """
         Update the values in this `LazyFrame` with the non-null values in `other`.
-
-        Notes
-        -----
-        This is syntactic sugar for a left/inner join + coalesce
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Parameters
         ----------
         other
             LazyFrame that will be used to update the values
         on
-            Column names that will be joined on.
-            If none given the row count is used.
-        how : {'left', 'inner'}
-            'left' will keep the left table rows as is.
-            'inner' will remove rows that are not found in other
+            Column names that will be joined on; if given ``None`` the implicit row
+            index is used as a join key instead.
+        left_on
+           Join column(s) of the left DataFrame.
+        right_on
+           Join column(s) of the right DataFrame.
+        how : {'left', 'inner', 'outer'}
+            * 'left' will keep all rows from the left table; rows may be duplicated
+              if multiple rows in the right frame match the left row's key.
+            * 'inner' keeps only those rows where the key exists in both frames.
+            * 'outer' will update existing rows where the key matches while also
+              adding any new rows contained in the given frame.
+
+        Notes
+        -----
+        This is syntactic sugar for a join + coalesce (upsert) operation.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "A": [1, 2, 3, 4],
         ...         "B": [400, 500, 600, 700],
         ...     }
         ... )
-        >>> df
+        >>> lf.collect()
         shape: (4, 2)
         ┌─────┬─────┐
         │ A   ┆ B   │
@@ -5428,74 +5609,126 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ 600 │
         │ 4   ┆ 700 │
         └─────┴─────┘
-        >>> new_df = pl.DataFrame(
+        >>> new_lf = pl.LazyFrame(
         ...     {
-        ...         "B": [4, None, 6],
-        ...         "C": [7, 8, 9],
+        ...         "B": [-66, None, -99],
+        ...         "C": [5, 3, 1],
         ...     }
         ... )
-        >>> new_df
-        shape: (3, 2)
-        ┌──────┬─────┐
-        │ B    ┆ C   │
-        │ ---  ┆ --- │
-        │ i64  ┆ i64 │
-        ╞══════╪═════╡
-        │ 4    ┆ 7   │
-        │ null ┆ 8   │
-        │ 6    ┆ 9   │
-        └──────┴─────┘
-        >>> df.update(new_df)
+
+        Update `df` values with the non-null values in `new_df`, by row index:
+
+        >>> lf.update(new_lf).collect()
         shape: (4, 2)
         ┌─────┬─────┐
         │ A   ┆ B   │
         │ --- ┆ --- │
         │ i64 ┆ i64 │
         ╞═════╪═════╡
-        │ 1   ┆ 4   │
+        │ 1   ┆ -66 │
         │ 2   ┆ 500 │
-        │ 3   ┆ 6   │
+        │ 3   ┆ -99 │
         │ 4   ┆ 700 │
         └─────┴─────┘
 
+        Update `df` values with the non-null values in `new_df`, by row index,
+        but only keeping those rows that are common to both frames:
+
+        >>> lf.update(new_lf, how="inner").collect()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ A   ┆ B   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ -66 │
+        │ 2   ┆ 500 │
+        │ 3   ┆ -99 │
+        └─────┴─────┘
+
+        Update `df` values with the non-null values in `new_df`, using an outer join
+        strategy that defines explicit join columns in each frame:
+
+        >>> lf.update(new_lf, left_on=["A"], right_on=["C"], how="outer").collect()
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ A   ┆ B   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ -99 │
+        │ 2   ┆ 500 │
+        │ 3   ┆ 600 │
+        │ 4   ┆ 700 │
+        │ 5   ┆ -66 │
+        └─────┴─────┘
+
         """
+        if how not in ("left", "inner", "outer"):
+            raise ValueError(
+                f"`how` must be one of {{'left', 'inner', 'outer'}}; found {how!r}"
+            )
+
         row_count_used = False
         if on is None:
-            row_count_used = True
-            row_count_name = "__POLARS_ROW_COUNT"
-            self = self.with_row_count(row_count_name)
-            other = other.with_row_count(row_count_name)
-            on = row_count_name
+            if left_on is None and right_on is None:
+                # no keys provided--use row count
+                row_count_used = True
+                row_count_name = "__POLARS_ROW_COUNT"
+                self = self.with_row_count(row_count_name)
+                other = other.with_row_count(row_count_name)
+                left_on = right_on = [row_count_name]
+            else:
+                # one of left or right is missing, raise error
+                if left_on is None:
+                    raise ValueError("missing join columns for left frame")
+                if right_on is None:
+                    raise ValueError("missing join columns for right frame")
+        else:
+            # move on into left/right_on to simplify logic
+            left_on = right_on = on
 
-        if isinstance(on, str):
-            on = [on]
+        if isinstance(left_on, str):
+            left_on = [left_on]
+        if isinstance(right_on, str):
+            right_on = [right_on]
 
-        union_names = set(self.columns) & set(other.columns)
+        left_names = self.columns
+        for name in left_on:
+            if name not in left_names:
+                raise ValueError(f"left join column {name!r} not found")
+        right_names = other.columns
+        for name in right_on:
+            if name not in right_names:
+                raise ValueError(f"right join column {name!r} not found")
 
-        for name in on:
-            if name not in union_names:
-                raise ValueError(f"join column {name!r} not found")
-
-        right_added_names = union_names - set(on)
-
-        # no need to join if only join columns are in other
-        if len(right_added_names) == 0:
+        # no need to join if *only* join columns are in other (inner/left update only)
+        if how != "outer" and len(other.columns) == len(right_on):
             if row_count_used:
                 return self.drop(row_count_name)
             return self
 
+        # only use non-idx right columns present in left frame
+        right_other = set(other.columns).intersection(self.columns) - set(right_on)
+
         tmp_name = "__POLARS_RIGHT"
         result = (
-            self.join(other.select(list(union_names)), on=on, how=how, suffix=tmp_name)
+            self.join(
+                other.select(*right_on, *right_other),
+                left_on=left_on,
+                right_on=right_on,
+                how=how,
+                suffix=tmp_name,
+            )
             .with_columns(
                 [
-                    F.coalesce([column_name + tmp_name, F.col(column_name)]).alias(
+                    F.coalesce([f"{column_name}{tmp_name}", F.col(column_name)]).alias(
                         column_name
                     )
-                    for column_name in right_added_names
+                    for column_name in right_other
                 ]
             )
-            .drop([name + tmp_name for name in right_added_names])
+            .drop([f"{name}{tmp_name}" for name in right_other])
         )
         if row_count_used:
             result = result.drop(row_count_name)
@@ -5626,10 +5859,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         every
             interval of the window
         period
-            length of the window, if None it is equal to 'every'
+            length of the window, if None it will equal 'every'
         offset
-            offset of the window if None and period is None it will be equal to negative
-            `every`
+            offset of the window, only takes effect if `start_by` is ``'window'``.
+            Defaults to negative `every`.
         truncate
             truncate the time value to the window lower bound
         include_boundaries
@@ -5643,7 +5876,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
 
-            * 'window': Truncate the start of the window with the 'every' argument.
+            * 'window': Start by taking the earliest timestamp, truncating it with
+              `every`, and then adding `offset`.
               Note that weekly windows start on Monday.
             * 'datapoint': Start from the first encountered data point.
             * a day of the week (only takes effect if `every` contains ``'w'``):

@@ -68,14 +68,10 @@ macro_rules! push_expr {
             Window {
                 function,
                 partition_by,
-                order_by,
                 ..
             } => {
                 for e in partition_by.into_iter().rev() {
                     $push(e)
-                }
-                if let Some(e) = order_by {
-                    $push(e);
                 }
                 // latest so that it is popped first
                 $push(function);
@@ -93,6 +89,7 @@ macro_rules! push_expr {
             Exclude(e, _) => $push(e),
             KeepName(e) => $push(e),
             RenameAlias { expr, .. } => $push(expr),
+            SubPlan { .. } => {},
             // pass
             Selector(_) => {},
         }

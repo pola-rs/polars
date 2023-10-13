@@ -2,9 +2,9 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-#[cfg(feature = "parquet")]
-use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
+#[cfg(any(feature = "cloud", feature = "parquet"))]
+use polars_io::cloud::CloudOptions;
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
 use crate::prelude::*;
@@ -24,6 +24,7 @@ pub(crate) mod debug;
 mod file_scan;
 mod format;
 mod functions;
+pub(super) mod hive;
 pub(crate) mod iterator;
 mod lit;
 pub(crate) mod optimizer;
@@ -141,13 +142,6 @@ impl From<PolarsError> for ErrorStateSync {
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum LogicalPlan {
-    #[cfg_attr(feature = "serde", serde(skip))]
-    AnonymousScan {
-        function: Arc<dyn AnonymousScan>,
-        file_info: FileInfo,
-        predicate: Option<Expr>,
-        options: Arc<AnonymousScanOptions>,
-    },
     #[cfg(feature = "python")]
     PythonScan { options: PythonOptions },
     /// Filter on a boolean mask
@@ -177,13 +171,6 @@ pub enum LogicalPlan {
         output_schema: Option<SchemaRef>,
         projection: Option<Arc<Vec<String>>>,
         selection: Option<Expr>,
-    },
-    // a projection that doesn't have to be optimized
-    // or may drop projected columns if they aren't in current schema (after optimization)
-    LocalProjection {
-        expr: Vec<Expr>,
-        input: Box<LogicalPlan>,
-        schema: SchemaRef,
     },
     /// Column selection
     Projection {
@@ -257,9 +244,9 @@ pub enum LogicalPlan {
         contexts: Vec<LogicalPlan>,
         schema: SchemaRef,
     },
-    FileSink {
+    Sink {
         input: Box<LogicalPlan>,
-        payload: FileSinkOptions,
+        payload: SinkType,
     },
 }
 

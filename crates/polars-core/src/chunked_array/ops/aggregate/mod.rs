@@ -8,7 +8,7 @@ use std::ops::Add;
 use arrow::compute;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
-use num_traits::{Float, ToPrimitive, Zero};
+use num_traits::{Float, One, ToPrimitive, Zero};
 use polars_arrow::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 pub use quantile::*;
 pub use var::*;
@@ -16,26 +16,26 @@ pub use var::*;
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
+use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
-use crate::utils::CustomIterTools;
 
 mod float_sum;
 
-/// Aggregations that return Series of unit length. Those can be used in broadcasting operations.
+/// Aggregations that return [`Series`] of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
-    /// Get the sum of the ChunkedArray as a new Series of length 1.
+    /// Get the sum of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn sum_as_series(&self) -> Series {
         unimplemented!()
     }
-    /// Get the max of the ChunkedArray as a new Series of length 1.
+    /// Get the max of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn max_as_series(&self) -> Series {
         unimplemented!()
     }
-    /// Get the min of the ChunkedArray as a new Series of length 1.
+    /// Get the min of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn min_as_series(&self) -> Series {
         unimplemented!()
     }
-    /// Get the product of the ChunkedArray as a new Series of length 1.
+    /// Get the product of the [`ChunkedArray`] as a new [`Series`] of length 1.
     fn prod_as_series(&self) -> Series {
         unimplemented!()
     }
@@ -116,7 +116,7 @@ where
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::min_primitive)
-                .fold_first_(|acc, v| {
+                .reduce(|acc, v| {
                     if matches!(compare_fn_nan_max(&acc, &v), Ordering::Less) {
                         acc
                     } else {
@@ -148,7 +148,7 @@ where
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::max_primitive)
-                .fold_first_(|acc, v| {
+                .reduce(|acc, v| {
                     if matches!(compare_fn_nan_min(&acc, &v), Ordering::Greater) {
                         acc
                     } else {
@@ -275,7 +275,7 @@ impl BooleanChunked {
     }
 }
 
-// Needs the same trait bounds as the implementation of ChunkedArray<T> of dyn Series
+// Needs the same trait bounds as the implementation of ChunkedArray<T> of dyn Series.
 impl<T> ChunkAggSeries for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -290,45 +290,38 @@ where
         ca.rename(self.name());
         ca.into_series()
     }
+
     fn max_as_series(&self) -> Series {
-        let v = self.max();
+        let v = ChunkAgg::max(self);
         let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
         ca.rename(self.name());
         ca.into_series()
     }
+
     fn min_as_series(&self) -> Series {
-        let v = self.min();
+        let v = ChunkAgg::min(self);
         let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
         ca.rename(self.name());
         ca.into_series()
     }
 
     fn prod_as_series(&self) -> Series {
-        let mut prod = None;
-        for opt_v in self.into_iter() {
-            match (prod, opt_v) {
-                (_, None) => return Self::full_null(self.name(), 1).into_series(),
-                (None, Some(v)) => prod = Some(v),
-                (Some(p), Some(v)) => prod = Some(p * v),
-            }
+        let mut prod = T::Native::one();
+        for opt_v in self.into_iter().flatten() {
+            prod = prod * opt_v;
         }
-        Self::from_slice_options(self.name(), &[prod]).into_series()
+        Self::from_slice_options(self.name(), &[Some(prod)]).into_series()
     }
 }
 
-macro_rules! impl_as_series {
-    ($self:expr, $agg:ident, $ty: ty) => {{
-        let v = $self.$agg();
-        let mut ca: $ty = [v].iter().copied().collect();
-        ca.rename($self.name());
-        ca.into_series()
-    }};
-    ($self:expr, $agg:ident, $arg:expr, $ty: ty) => {{
-        let v = $self.$agg($arg);
-        let mut ca: $ty = [v].iter().copied().collect();
-        ca.rename($self.name());
-        ca.into_series()
-    }};
+fn as_series<T>(name: &str, v: Option<T::Native>) -> Series
+where
+    T: PolarsNumericType,
+    SeriesWrap<ChunkedArray<T>>: SeriesTrait,
+{
+    let mut ca: ChunkedArray<T> = [v].into_iter().collect();
+    ca.rename(name);
+    ca.into_series()
 }
 
 impl<T> VarAggSeries for ChunkedArray<T>
@@ -339,41 +332,32 @@ where
         + compute::aggregate::SimdOrd<T::Native>,
 {
     fn var_as_series(&self, ddof: u8) -> Series {
-        impl_as_series!(self, var, ddof, Float64Chunked)
+        as_series::<Float64Type>(self.name(), self.var(ddof))
     }
 
     fn std_as_series(&self, ddof: u8) -> Series {
-        impl_as_series!(self, std, ddof, Float64Chunked)
+        as_series::<Float64Type>(self.name(), self.std(ddof))
     }
 }
 
 impl VarAggSeries for Float32Chunked {
     fn var_as_series(&self, ddof: u8) -> Series {
-        impl_as_series!(self, var, ddof, Float32Chunked)
+        as_series::<Float32Type>(self.name(), self.var(ddof).map(|x| x as f32))
     }
 
     fn std_as_series(&self, ddof: u8) -> Series {
-        impl_as_series!(self, std, ddof, Float32Chunked)
+        as_series::<Float32Type>(self.name(), self.std(ddof).map(|x| x as f32))
     }
 }
 
 impl VarAggSeries for Float64Chunked {
     fn var_as_series(&self, ddof: u8) -> Series {
-        impl_as_series!(self, var, ddof, Float64Chunked)
+        as_series::<Float64Type>(self.name(), self.var(ddof))
     }
 
     fn std_as_series(&self, ddof: u8) -> Series {
-        impl_as_series!(self, std, ddof, Float64Chunked)
+        as_series::<Float64Type>(self.name(), self.std(ddof))
     }
-}
-
-macro_rules! impl_quantile_as_series {
-    ($self:expr, $agg:ident, $ty: ty, $qtl:expr, $opt:expr) => {{
-        let v = $self.$agg($qtl, $opt)?;
-        let mut ca: $ty = [v].iter().copied().collect();
-        ca.rename($self.name());
-        Ok(ca.into_series())
-    }};
 }
 
 impl<T> QuantileAggSeries for ChunkedArray<T>
@@ -389,11 +373,14 @@ where
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Series> {
-        impl_quantile_as_series!(self, quantile, Float64Chunked, quantile, interpol)
+        Ok(as_series::<Float64Type>(
+            self.name(),
+            self.quantile(quantile, interpol)?,
+        ))
     }
 
     fn median_as_series(&self) -> Series {
-        impl_as_series!(self, median, Float64Chunked)
+        as_series::<Float64Type>(self.name(), self.median())
     }
 }
 
@@ -403,11 +390,14 @@ impl QuantileAggSeries for Float32Chunked {
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Series> {
-        impl_quantile_as_series!(self, quantile, Float32Chunked, quantile, interpol)
+        Ok(as_series::<Float32Type>(
+            self.name(),
+            self.quantile(quantile, interpol)?,
+        ))
     }
 
     fn median_as_series(&self) -> Series {
-        impl_as_series!(self, median, Float32Chunked)
+        as_series::<Float32Type>(self.name(), self.median())
     }
 }
 
@@ -417,11 +407,14 @@ impl QuantileAggSeries for Float64Chunked {
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Series> {
-        impl_quantile_as_series!(self, quantile, Float64Chunked, quantile, interpol)
+        Ok(as_series::<Float64Type>(
+            self.name(),
+            self.quantile(quantile, interpol)?,
+        ))
     }
 
     fn median_as_series(&self) -> Series {
-        impl_as_series!(self, median, Float64Chunked)
+        as_series::<Float64Type>(self.name(), self.median())
     }
 }
 
@@ -463,7 +456,7 @@ impl Utf8Chunked {
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::max_string)
-                .fold_first_(|acc, v| if acc > v { acc } else { v }),
+                .reduce(|acc, v| if acc > v { acc } else { v }),
         }
     }
     pub(crate) fn min_str(&self) -> Option<&str> {
@@ -488,7 +481,7 @@ impl Utf8Chunked {
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::min_string)
-                .fold_first_(|acc, v| if acc < v { acc } else { v }),
+                .reduce(|acc, v| if acc < v { acc } else { v }),
         }
     }
 }
@@ -513,22 +506,20 @@ impl BinaryChunked {
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 self.last_non_null().and_then(|idx| {
-                    // Safety:
-                    // last_non_null returns in bound index
+                    // SAFETY: last_non_null returns in bound index.
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Descending => {
                 self.first_non_null().and_then(|idx| {
-                    // Safety:
-                    // first_non_null returns in bound index
+                    // SAFETY: first_non_null returns in bound index.
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::max_binary)
-                .fold_first_(|acc, v| if acc > v { acc } else { v }),
+                .reduce(|acc, v| if acc > v { acc } else { v }),
         }
     }
 
@@ -539,22 +530,20 @@ impl BinaryChunked {
         match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 self.first_non_null().and_then(|idx| {
-                    // Safety:
-                    // first_non_null returns in bound index
+                    // SAFETY: first_non_null returns in bound index.
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Descending => {
                 self.last_non_null().and_then(|idx| {
-                    // Safety:
-                    // last_non_null returns in bound index
+                    // SAFETY: last_non_null returns in bound index.
                     unsafe { self.get_unchecked(idx) }
                 })
             },
             IsSorted::Not => self
                 .downcast_iter()
                 .filter_map(compute::aggregate::min_binary)
-                .fold_first_(|acc, v| if acc < v { acc } else { v }),
+                .reduce(|acc, v| if acc < v { acc } else { v }),
         }
     }
 }
@@ -610,9 +599,9 @@ mod test {
 
     #[test]
     fn test_var() {
-        // validated with numpy
-        // Note that numpy as an argument ddof which influences results. The default is ddof=0
-        // we chose ddof=1, which is standard in statistics
+        // Validated with numpy. Note that numpy uses ddof as an argument which
+        // influences results. The default ddof=0, we chose ddof=1, which is
+        // standard in statistics.
         let ca1 = Int32Chunked::new("", &[5, 8, 9, 5, 0]);
         let ca2 = Int32Chunked::new(
             "",

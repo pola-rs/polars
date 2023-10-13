@@ -2,6 +2,7 @@ use std::any::Any;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
+use arrow::bitmap::utils::{BitmapIter, ZipValidity};
 use arrow::bitmap::Bitmap;
 
 use crate::prelude::*;
@@ -35,7 +36,7 @@ pub trait PolarsObjectSafe: Any + Debug + Send + Sync + Display {
 
 /// Values need to implement this so that they can be stored into a Series and DataFrame
 pub trait PolarsObject:
-    Any + Debug + Clone + Send + Sync + Default + Display + Hash + PartialEq + Eq
+    Any + Debug + Clone + Send + Sync + Default + Display + Hash + PartialEq + Eq + TotalEq
 {
     /// This should be used as type information. Consider this a part of the type system.
     fn type_name() -> &'static str;
@@ -55,6 +56,8 @@ impl<T: PolarsObject> PolarsObjectSafe for T {
     }
 }
 
+pub type ObjectValueIter<'a, T> = std::slice::Iter<'a, T>;
+
 impl<T> ObjectArray<T>
 where
     T: PolarsObject,
@@ -62,6 +65,15 @@ where
     /// Get a reference to the underlying data
     pub fn values(&self) -> &Arc<Vec<T>> {
         &self.values
+    }
+
+    pub fn values_iter(&self) -> ObjectValueIter<'_, T> {
+        self.values.iter()
+    }
+
+    /// Returns an iterator of `Option<&T>` over every element of this array.
+    pub fn iter(&self) -> ZipValidity<&T, ObjectValueIter<'_, T>, BitmapIter> {
+        ZipValidity::new_with_validity(self.values_iter(), self.null_bitmap.as_ref())
     }
 
     /// Get a value at a certain index location
@@ -117,6 +129,27 @@ where
             Some(self.value_unchecked(item))
         }
     }
+
+    /// Returns this array with a new validity.
+    /// # Panic
+    /// Panics iff `validity.len() != self.len()`.
+    #[must_use]
+    #[inline]
+    pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
+        self.set_validity(validity);
+        self
+    }
+
+    /// Sets the validity of this array.
+    /// # Panics
+    /// This function panics iff `values.len() != self.len()`.
+    #[inline]
+    pub fn set_validity(&mut self, validity: Option<Bitmap>) {
+        if matches!(&validity, Some(bitmap) if bitmap.len() != self.len()) {
+            panic!("validity must be equal to the array's length")
+        }
+        self.null_bitmap = validity;
+    }
 }
 
 impl<T> Array for ObjectArray<T>
@@ -153,11 +186,11 @@ where
     fn validity(&self) -> Option<&Bitmap> {
         self.null_bitmap.as_ref()
     }
+
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
-        let mut arr = self.clone();
-        arr.null_bitmap = validity;
-        Box::new(arr)
+        Box::new(self.clone().with_validity(validity))
     }
+
     fn to_boxed(&self) -> Box<dyn Array> {
         Box::new(self.clone())
     }

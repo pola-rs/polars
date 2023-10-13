@@ -5,6 +5,7 @@ from itertools import accumulate
 from typing import TYPE_CHECKING
 
 from polars.interchange.column import PolarsColumn
+from polars.interchange.protocol import CopyNotAllowedError
 from polars.interchange.protocol import DataFrame as InterchangeDataFrame
 
 if TYPE_CHECKING:
@@ -35,7 +36,7 @@ class PolarsDataFrame(InterchangeDataFrame):
         self._allow_copy = allow_copy
 
     def __dataframe__(
-        self, nan_as_null: bool = False, allow_copy: bool = True
+        self, nan_as_null: bool = False, allow_copy: bool = True  # noqa: FBT001
     ) -> PolarsDataFrame:
         """
         Construct a new dataframe object, potentially changing the parameters.
@@ -225,8 +226,8 @@ class PolarsDataFrame(InterchangeDataFrame):
 
             if not all(x == 1 for x in chunk.n_chunks("all")):
                 if not self._allow_copy:
-                    raise RuntimeError(
-                        "unevenly chunked columns must be rechunked, which is not zero-copy"
+                    raise CopyNotAllowedError(
+                        "unevenly chunked columns must be rechunked"
                     )
                 chunk = chunk.rechunk()
 

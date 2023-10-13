@@ -154,6 +154,7 @@ impl AexprNode {
                 | (Filter { .. }, Filter { .. })
                 | (Ternary { .. }, Ternary { .. })
                 | (Count, Count)
+                | (Slice { .. }, Slice { .. })
                 | (Explode(_), Explode(_)) => true,
                 (SortBy { descending: l, .. }, SortBy { descending: r, .. }) => l == r,
                 (Agg(l), Agg(r)) => l.equal_nodes(r),
@@ -169,12 +170,7 @@ impl AexprNode {
                         ..
                     },
                 ) => fl == fr && ol == or,
-                (AnonymousFunction { function: l, .. }, AnonymousFunction { function: r, .. }) => {
-                    // check only data pointer as location
-                    let l = l.as_ref() as *const _ as *const () as usize;
-                    let r = r.as_ref() as *const _ as *const () as usize;
-                    l == r
-                },
+                (AnonymousFunction { .. }, AnonymousFunction { .. }) => false,
                 (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
                 _ => false,
             };

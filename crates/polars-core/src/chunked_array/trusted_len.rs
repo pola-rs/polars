@@ -1,7 +1,5 @@
 use std::borrow::Borrow;
 
-use arrow::bitmap::MutableBitmap;
-use polars_arrow::bit_util::{set_bit_raw, unset_bit_raw};
 use polars_arrow::trusted_len::{FromIteratorReversed, TrustedLenPush};
 
 use crate::chunked_array::upstream_traits::PolarsAsRef;
@@ -49,70 +47,7 @@ where
     T: PolarsNumericType,
 {
     fn from_trusted_len_iter_rev<I: TrustedLen<Item = Option<T::Native>>>(iter: I) -> Self {
-        let size = iter.size_hint().1.unwrap();
-
-        let mut vals: Vec<T::Native> = Vec::with_capacity(size);
-        let mut validity = MutableBitmap::with_capacity(size);
-        validity.extend_constant(size, true);
-        let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
-        unsafe {
-            // Set to end of buffer.
-            let mut ptr = vals.as_mut_ptr().add(size);
-            let mut offset = size;
-
-            iter.for_each(|opt_item| {
-                offset -= 1;
-                ptr = ptr.sub(1);
-                match opt_item {
-                    Some(item) => {
-                        std::ptr::write(ptr, item);
-                    },
-                    None => {
-                        std::ptr::write(ptr, T::Native::default());
-                        unset_bit_raw(validity_ptr, offset)
-                    },
-                }
-            });
-            vals.set_len(size)
-        }
-        let arr = PrimitiveArray::new(
-            T::get_dtype().to_arrow(),
-            vals.into(),
-            Some(validity.into()),
-        );
-        arr.into()
-    }
-}
-
-impl FromIteratorReversed<Option<bool>> for BooleanChunked {
-    fn from_trusted_len_iter_rev<I: TrustedLen<Item = Option<bool>>>(iter: I) -> Self {
-        let size = iter.size_hint().1.unwrap();
-
-        let vals = MutableBitmap::from_len_zeroed(size);
-        let mut validity = MutableBitmap::with_capacity(size);
-        validity.extend_constant(size, true);
-        let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
-        let vals_ptr = vals.as_slice().as_ptr() as *mut u8;
-        unsafe {
-            let mut offset = size;
-
-            iter.for_each(|opt_item| {
-                offset -= 1;
-                match opt_item {
-                    Some(item) => {
-                        if item {
-                            // Set value (validity bit is already true).
-                            set_bit_raw(vals_ptr, offset);
-                        }
-                    },
-                    None => {
-                        // Unset validity bit.
-                        unset_bit_raw(validity_ptr, offset)
-                    },
-                }
-            });
-        }
-        let arr = BooleanArray::new(ArrowDataType::Boolean, vals.into(), Some(validity.into()));
+        let arr: PrimitiveArray<T::Native> = iter.collect_reversed();
         arr.into()
     }
 }
@@ -122,20 +57,21 @@ where
     T: PolarsNumericType,
 {
     fn from_trusted_len_iter_rev<I: TrustedLen<Item = T::Native>>(iter: I) -> Self {
-        let size = iter.size_hint().1.unwrap();
+        let arr: PrimitiveArray<T::Native> = iter.collect_reversed();
+        NoNull::new(arr.into())
+    }
+}
 
-        let mut vals: Vec<T::Native> = Vec::with_capacity(size);
-        unsafe {
-            // Set to end of buffer.
-            let mut ptr = vals.as_mut_ptr().add(size);
+impl FromIteratorReversed<Option<bool>> for BooleanChunked {
+    fn from_trusted_len_iter_rev<I: TrustedLen<Item = Option<bool>>>(iter: I) -> Self {
+        let arr: BooleanArray = iter.collect_reversed();
+        arr.into()
+    }
+}
 
-            iter.for_each(|item| {
-                ptr = ptr.sub(1);
-                std::ptr::write(ptr, item);
-            });
-            vals.set_len(size)
-        }
-        let arr = PrimitiveArray::new(T::get_dtype().to_arrow(), vals.into(), None);
+impl FromIteratorReversed<bool> for NoNull<BooleanChunked> {
+    fn from_trusted_len_iter_rev<I: TrustedLen<Item = bool>>(iter: I) -> Self {
+        let arr: BooleanArray = iter.collect_reversed();
         NoNull::new(arr.into())
     }
 }

@@ -47,10 +47,14 @@ if TYPE_CHECKING:
 _time_units = list(DTYPE_TEMPORAL_UNITS)
 
 
-def empty_list(value: Any, nested: bool) -> bool:
+def empty_list(value: Any, *, nested: bool) -> bool:
     """Check if value is an empty list, or a list that contains only empty lists."""
     if isinstance(value, list):
-        return True if value and not nested else all(empty_list(v, True) for v in value)
+        return (
+            True
+            if value and not nested
+            else all(empty_list(v, nested=True) for v in value)
+        )
     return False
 
 
@@ -111,8 +115,7 @@ class column:
             self.null_probability < 0 or self.null_probability > 1
         ):
             raise InvalidArgument(
-                "null_probability should be between 0.0 and 1.0, or None; found"
-                f" {self.null_probability!r}"
+                f"`null_probability` should be between 0.0 and 1.0, or None; found {self.null_probability!r}"
             )
 
         if self.dtype is None:
@@ -361,8 +364,7 @@ def series(
     ]
     if null_probability and not (0 <= null_probability <= 1):
         raise InvalidArgument(
-            "null_probability should be between 0.0 and 1.0; found"
-            f" {null_probability}"
+            f"`null_probability` should be between 0.0 and 1.0, or None; found {null_probability}"
         )
     null_probability = float(null_probability or 0.0)
 

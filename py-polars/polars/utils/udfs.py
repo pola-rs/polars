@@ -511,8 +511,9 @@ class InstructionTranslator:
             return "map_dict"
         else:
             raise AssertionError(
-                "unrecognized opname; please report a bug to https://github.com/pola-rs/polars/issues"
-                " with the content of function you were passing to `apply` and the"
+                "unrecognized opname"
+                "\n\nPlease report a bug to https://github.com/pola-rs/polars/issues"
+                " with the content of function you were passing to `map` and the"
                 f" following instruction object:\n{inst!r}"
             )
 
@@ -845,7 +846,7 @@ def warn_on_inefficient_map(
         or ``"series"``.
     """
     if map_target == "frame":
-        raise NotImplementedError("TODO: 'frame' and 'series' map-function parsing")
+        raise NotImplementedError("TODO: 'frame' map-function parsing")
 
     # note: we only consider simple functions with a single col/param
     if not (col := columns and columns[0]):
@@ -868,7 +869,17 @@ def warn_on_inefficient_map(
             )
 
 
-__all__ = [
-    "BytecodeParser",
-    "warn_on_inefficient_map",
-]
+def is_shared_lib(file: str) -> bool:
+    return file.endswith((".so", ".dll"))
+
+
+def _get_shared_lib_location(main_file: Any) -> str:
+    import os
+
+    directory = os.path.dirname(main_file)  # noqa: PTH120
+    return os.path.join(  # noqa: PTH118
+        directory, next(filter(is_shared_lib, os.listdir(directory)))
+    )
+
+
+__all__ = ["BytecodeParser", "warn_on_inefficient_map", "_get_shared_lib_location"]

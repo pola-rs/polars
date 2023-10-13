@@ -4,7 +4,13 @@ from typing import TYPE_CHECKING
 
 from polars.datatypes import Categorical
 from polars.interchange.buffer import PolarsBuffer
-from polars.interchange.protocol import Column, ColumnNullType, DtypeKind, Endianness
+from polars.interchange.protocol import (
+    Column,
+    ColumnNullType,
+    CopyNotAllowedError,
+    DtypeKind,
+    Endianness,
+)
 from polars.interchange.utils import polars_dtype_to_dtype
 from polars.utils._wrap import wrap_s
 
@@ -33,9 +39,8 @@ class PolarsColumn(Column):
     def __init__(self, column: Series, *, allow_copy: bool = True):
         if column.dtype == Categorical and not column.cat.is_local():
             if not allow_copy:
-                raise RuntimeError(
-                    f"column {column.name!r} must be converted to a local categorical,"
-                    " which is not zero-copy"
+                raise CopyNotAllowedError(
+                    f"column {column.name!r} must be converted to a local categorical"
                 )
             column = column.cat.to_local()
 

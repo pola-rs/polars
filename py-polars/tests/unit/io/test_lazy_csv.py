@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import PolarsPanicError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -150,12 +149,21 @@ def test_scan_csv_schema_new_columns_dtypes(
         == df1.select(["sugars", pl.col("calories").cast(pl.Int64)]).rows()
     )
 
-    # expect same number of column names as there are columns in the file
-    with pytest.raises(PolarsPanicError, match="should be equal"):
+    # partially rename columns / overwrite dtypes
+    df4 = pl.scan_csv(
+        file_path,
+        dtypes=[pl.Utf8, pl.Utf8],
+        new_columns=["category", "calories"],
+    ).collect()
+    assert df4.dtypes == [pl.Utf8, pl.Utf8, pl.Float64, pl.Int64]
+    assert df4.columns == ["category", "calories", "fats_g", "sugars_g"]
+
+    # cannot have len(new_columns) > len(actual columns)
+    with pytest.raises(pl.ShapeError):
         pl.scan_csv(
             file_path,
             dtypes=[pl.Utf8, pl.Utf8],
-            new_columns=["category", "calories"],
+            new_columns=["category", "calories", "c3", "c4", "c5"],
         ).collect()
 
     # cannot set both 'new_columns' and 'with_column_names'
@@ -234,3 +242,13 @@ def test_scan_csv_schema_overwrite_not_projected_8483(foods_file_path: Path) -> 
     )
     expected = pl.DataFrame({"count": 27}, schema={"count": pl.UInt32})
     assert_frame_equal(df, expected)
+
+
+def test_csv_list_arg(io_files_path: Path) -> None:
+    first = io_files_path / "foods1.csv"
+    second = io_files_path / "foods2.csv"
+
+    df = pl.scan_csv(source=[first, second]).collect()
+    assert df.shape == (54, 4)
+    assert df.row(-1) == ("seafood", 194, 12.0, 1)
+    assert df.row(0) == ("vegetables", 45, 0.5, 2)
