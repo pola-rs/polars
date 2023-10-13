@@ -473,7 +473,9 @@ def in_terminal_that_supports_colour() -> bool:
     return False
 
 
-def parse_percentiles(percentiles: Sequence[float] | float | None) -> Sequence[float]:
+def parse_percentiles(
+    percentiles: Sequence[float] | float | None, *, inject_median: bool = False
+) -> Sequence[float]:
     """
     Transforms raw percentiles into our preferred format, adding the 50th percentile.
 
@@ -490,7 +492,9 @@ def parse_percentiles(percentiles: Sequence[float] | float | None) -> Sequence[f
     sub_50_percentiles = sorted(p for p in percentiles if p < 0.5)
     at_or_above_50_percentiles = sorted(p for p in percentiles if p >= 0.5)
 
-    if not at_or_above_50_percentiles or at_or_above_50_percentiles[0] != 0.5:
+    if inject_median and (
+        not at_or_above_50_percentiles or at_or_above_50_percentiles[0] != 0.5
+    ):
         at_or_above_50_percentiles = [0.5, *at_or_above_50_percentiles]
 
     return [*sub_50_percentiles, *at_or_above_50_percentiles]
