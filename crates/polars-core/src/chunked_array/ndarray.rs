@@ -19,7 +19,7 @@ where
     T: PolarsNumericType,
 {
     /// If data is aligned in a single chunk and has no Null values a zero copy view is returned
-    /// as an `ndarray`
+    /// as an [ndarray]
     pub fn to_ndarray(&self) -> PolarsResult<ArrayView1<T::Native>> {
         let slice = self.cont_slice()?;
         Ok(aview1(slice))
@@ -27,7 +27,7 @@ where
 }
 
 impl ListChunked {
-    /// If all nested `Series` have the same length, a 2 dimensional `ndarray::Array` is returned.
+    /// If all nested [`Series`] have the same length, a 2 dimensional [`ndarray::Array`] is returned.
     pub fn to_ndarray<N>(&self) -> PolarsResult<Array2<N::Native>>
     where
         N: PolarsNumericType,
@@ -75,8 +75,8 @@ impl ListChunked {
 }
 
 impl DataFrame {
-    /// Create a 2D `ndarray::Array` from this `DataFrame`. This requires all columns in the
-    /// `DataFrame` to be non-null and numeric. They will be casted to the same data type
+    /// Create a 2D [`ndarray::Array`] from this [`DataFrame`]. This requires all columns in the
+    /// [`DataFrame`] to be non-null and numeric. They will be casted to the same data type
     /// (if they aren't already).
     ///
     /// For floating point data we implicitly convert `None` to `NaN` without failure.
@@ -109,11 +109,11 @@ impl DataFrame {
                         DataType::Float32 => {
                             let ca = s.f32().unwrap();
                             ca.none_to_nan().into_series()
-                        }
+                        },
                         DataType::Float64 => {
                             let ca = s.f64().unwrap();
                             ca.none_to_nan().into_series()
-                        }
+                        },
                         _ => s,
                     };
                     Ok(s.rechunk())
@@ -182,7 +182,7 @@ impl DataFrame {
             IndexOrder::Fortran => {
                 let ndarr = Array2::from_shape_vec((shape.1, shape.0), membuf).unwrap();
                 Ok(ndarr.reversed_axes())
-            }
+            },
         }
     }
 }

@@ -9,7 +9,7 @@
 //! * [Start a lazy computation](#start-a-lazy-computation)
 //! * [Filter](#filter)
 //! * [Sort](#sort)
-//! * [GroupBy](#groupby)
+//! * [GroupBy](#group_by)
 //! * [Joins](#joins)
 //! * [Conditionally apply](#conditionally-apply)
 //! * [Black box function](#black-box-function)
@@ -106,7 +106,7 @@
 //!
 //! ## Groupby
 //!
-//! This example is from the polars [user guide](https://pola-rs.github.io/polars-book/user-guide/concepts/contexts/#groupby-aggregation).
+//! This example is from the polars [user guide](https://pola-rs.github.io/polars/user-guide/concepts/contexts/#group_by-aggregation).
 //!
 //! ```
 //! use polars::prelude::*;
@@ -114,9 +114,9 @@
 //!
 //!  let df = LazyCsvReader::new("reddit.csv")
 //!     .has_header(true)
-//!     .with_delimiter(b',')
+//!     .with_separator(b',')
 //!     .finish()?
-//!     .groupby([col("comment_karma")])
+//!     .group_by([col("comment_karma")])
 //!     .agg([col("name").n_unique().alias("unique_names"), col("link_karma").max()])
 //!     // take only 100 rows.
 //!     .fetch(100)?;
@@ -190,11 +190,15 @@
 //! ```
 //!
 //! ## Conditionally apply
-//! If we want to create a new column based on some condition, we can use the `.when()/.then()/.otherwise()` expressions.
+//! If we want to create a new column based on some condition, we can use the [`when`]/[`then`]/[`otherwise`] expressions.
 //!
-//! * `when` - accepts a predicate expression
-//! * `then` - expression to use when `predicate == true`
-//! * `otherwise` - expression to use when `predicate == false`
+//! * [`when`] - accepts a predicate expression
+//! * [`then`] - expression to use when `predicate == true`
+//! * [`otherwise`] - expression to use when `predicate == false`
+//!
+//! [`when`]: polars_lazy::dsl::Then::when
+//! [`then`]: polars_lazy::dsl::When::then
+//! [`otherwise`]: polars_lazy::dsl::Then::otherwise
 //!
 //! ```
 //! use polars::prelude::*;
@@ -239,7 +243,9 @@
 //!
 //! The expression API should be expressive enough for most of what you want to achieve, but it can happen
 //! that you need to pass the values to an external function you do not control. The snippet below
-//! shows how we use the `Struct` datatype to be able to apply a function over multiple inputs.
+//! shows how we use the [`Struct`] datatype to be able to apply a function over multiple inputs.
+//!
+//! [`Struct`]: crate::datatypes::DataType::Struct
 //!
 //! ```ignore
 //! use polars::prelude::*;
@@ -248,31 +254,31 @@
 //!     a
 //! }
 //!
-//! fn apply_multiples(lf: LazyFrame) -> PolarsResult<DataFrame> {
+//! fn apply_multiples() -> PolarsResult<DataFrame> {
 //!     df![
-//!         "a" => [1.0, 2.0, 3.0],
-//!         "b" => [3.0, 5.1, 0.3]
+//!         "a" => [1.0f32, 2.0, 3.0],
+//!         "b" => [3.0f32, 5.1, 0.3]
 //!     ]?
 //!     .lazy()
-//!     .select([concat_list(["col_a", "col_b"]).map(
+//!     .select([as_struct(&[col("a"), col("b")]).map(
 //!         |s| {
 //!             let ca = s.struct_()?;
 //!
-//!             let b = ca.field_by_name("col_a")?;
-//!             let a = ca.field_by_name("col_b")?;
-//!             let a = a.f32()?;
-//!             let b = b.f32()?;
+//!             let series_a = ca.field_by_name("a")?;
+//!             let series_b = ca.field_by_name("b")?;
+//!             let chunked_a = series_a.f32()?;
+//!             let chunked_b = series_b.f32()?;
 //!
-//!             let out: Float32Chunked = a
+//!             let out: Float32Chunked = chunked_a
 //!                 .into_iter()
-//!                 .zip(b.into_iter())
+//!                 .zip(chunked_b.into_iter())
 //!                 .map(|(opt_a, opt_b)| match (opt_a, opt_b) {
 //!                     (Some(a), Some(b)) => Some(my_black_box_function(a, b)),
 //!                     _ => None,
 //!                 })
 //!                 .collect();
 //!
-//!             Ok(out.into_series())
+//!             Ok(Some(out.into_series()))
 //!         },
 //!         GetOutput::from_type(DataType::Float32),
 //!     )])

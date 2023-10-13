@@ -31,88 +31,73 @@ impl Window {
     }
 
     /// Truncate the given ns timestamp by the window boundary.
-    pub fn truncate_ns(
-        &self,
-        t: i64,
-        tz: Option<&Tz>,
-        use_earliest: Option<bool>,
-    ) -> PolarsResult<i64> {
-        let t = self.every.truncate_ns(t, tz, use_earliest)?;
+    pub fn truncate_ns(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
+        let t = self.every.truncate_ns(t, tz, ambiguous)?;
         self.offset.add_ns(t, tz)
     }
 
     pub fn truncate_no_offset_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        self.every.truncate_ns(t, tz, None)
+        self.every.truncate_ns(t, tz, "raise")
     }
 
     /// Truncate the given us timestamp by the window boundary.
-    pub fn truncate_us(
-        &self,
-        t: i64,
-        tz: Option<&Tz>,
-        use_earliest: Option<bool>,
-    ) -> PolarsResult<i64> {
-        let t = self.every.truncate_us(t, tz, use_earliest)?;
+    pub fn truncate_us(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
+        let t = self.every.truncate_us(t, tz, ambiguous)?;
         self.offset.add_us(t, tz)
     }
 
     pub fn truncate_no_offset_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        self.every.truncate_us(t, tz, None)
+        self.every.truncate_us(t, tz, "raise")
     }
 
-    pub fn truncate_ms(
-        &self,
-        t: i64,
-        tz: Option<&Tz>,
-        use_earliest: Option<bool>,
-    ) -> PolarsResult<i64> {
-        let t = self.every.truncate_ms(t, tz, use_earliest)?;
+    pub fn truncate_ms(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
+        let t = self.every.truncate_ms(t, tz, ambiguous)?;
         self.offset.add_ms(t, tz)
     }
 
     #[inline]
     pub fn truncate_no_offset_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
-        self.every.truncate_ms(t, tz, None)
+        self.every.truncate_ms(t, tz, "raise")
     }
 
     /// Round the given ns timestamp by the window boundary.
-    pub fn round_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    pub fn round_ns(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
         let t = t + self.every.duration_ns() / 2_i64;
-        self.truncate_ns(t, tz, None)
+        self.truncate_ns(t, tz, ambiguous)
     }
 
     /// Round the given us timestamp by the window boundary.
-    pub fn round_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    pub fn round_us(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
         let t = t + self.every.duration_ns()
             / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Microsecond) as i64);
-        self.truncate_us(t, tz, None)
+        self.truncate_us(t, tz, ambiguous)
     }
 
     /// Round the given ms timestamp by the window boundary.
-    pub fn round_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
+    pub fn round_ms(&self, t: i64, tz: Option<&Tz>, ambiguous: &str) -> PolarsResult<i64> {
         let t = t + self.every.duration_ns()
             / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Millisecond) as i64);
-        self.truncate_ms(t, tz, None)
+        self.truncate_ms(t, tz, ambiguous)
     }
 
     /// returns the bounds for the earliest window bounds
     /// that contains the given time t.  For underlapping windows that
     /// do not contain time t, the window directly after time t will be returned.
     pub fn get_earliest_bounds_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<Bounds> {
-        let start = self.truncate_ns(t, tz, None)?;
+        let start = self.truncate_ns(t, tz, "raise")?;
         let stop = self.period.add_ns(start, tz)?;
 
         Ok(Bounds::new_checked(start, stop))
     }
 
     pub fn get_earliest_bounds_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<Bounds> {
-        let start = self.truncate_us(t, tz, None)?;
+        let start = self.truncate_us(t, tz, "raise")?;
         let stop = self.period.add_us(start, tz)?;
         Ok(Bounds::new_checked(start, stop))
     }
 
     pub fn get_earliest_bounds_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<Bounds> {
-        let start = self.truncate_ms(t, tz, None)?;
+        let start = self.truncate_ms(t, tz, "raise")?;
         let stop = self.period.add_ms(start, tz)?;
 
         Ok(Bounds::new_checked(start, stop))
@@ -171,7 +156,7 @@ impl<'a> BoundsIter<'a> {
                 };
                 boundary.stop = offset_fn(&window.period, boundary.start, tz)?;
                 boundary
-            }
+            },
             StartBy::WindowBound => match tu {
                 TimeUnit::Nanoseconds => window.get_earliest_bounds_ns(boundary.start, tz)?,
                 TimeUnit::Microseconds => window.get_earliest_bounds_us(boundary.start, tz)?,
@@ -222,7 +207,7 @@ impl<'a> BoundsIter<'a> {
                             // and compute the end of the window defined by the 'period'
                             let stop = offset(&window.period, start, Some(tz))?;
                             (start, stop)
-                        }
+                        },
                         _ => {
                             let tz = chrono::Utc;
                             let dt = dt.and_local_timezone(tz).unwrap();
@@ -241,11 +226,11 @@ impl<'a> BoundsIter<'a> {
                             // and compute the end of the window defined by the 'period'
                             let stop = offset(&window.period, start, None).unwrap();
                             (start, stop)
-                        }
+                        },
                     };
                     boundary
                 }
-            }
+            },
         };
         Ok(Self {
             window,
@@ -269,15 +254,15 @@ impl<'a> Iterator for BoundsIter<'a> {
                 TimeUnit::Nanoseconds => {
                     self.bi.start = self.window.every.add_ns(self.bi.start, self.tz).unwrap();
                     self.bi.stop = self.window.every.add_ns(self.bi.stop, self.tz).unwrap();
-                }
+                },
                 TimeUnit::Microseconds => {
                     self.bi.start = self.window.every.add_us(self.bi.start, self.tz).unwrap();
                     self.bi.stop = self.window.every.add_us(self.bi.stop, self.tz).unwrap();
-                }
+                },
                 TimeUnit::Milliseconds => {
                     self.bi.start = self.window.every.add_ms(self.bi.start, self.tz).unwrap();
                     self.bi.stop = self.window.every.add_ms(self.bi.stop, self.tz).unwrap();
-                }
+                },
             }
             Some(out)
         } else {

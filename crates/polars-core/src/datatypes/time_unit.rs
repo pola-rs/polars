@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
 #[cfg_attr(
     any(feature = "serde-lazy", feature = "serde"),
     derive(Serialize, Deserialize)
@@ -28,13 +28,13 @@ impl Display for TimeUnit {
         match self {
             TimeUnit::Nanoseconds => {
                 write!(f, "ns")
-            }
+            },
             TimeUnit::Microseconds => {
                 write!(f, "μs")
-            }
+            },
             TimeUnit::Milliseconds => {
                 write!(f, "ms")
-            }
+            },
         }
     }
 }

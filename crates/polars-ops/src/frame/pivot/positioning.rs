@@ -85,7 +85,7 @@ pub(super) fn position_aggregates(
                         let mut out = buf.into_series();
                         out.rename(name);
                         out
-                    }
+                    },
                     _ => Series::from_any_values_and_dtype(name, avs, &phys_type, false).unwrap(),
                 };
                 unsafe { out.cast_unchecked(logical_type).unwrap() }
@@ -205,11 +205,11 @@ pub(super) fn compute_col_idx(
         Int32 | UInt32 | Float32 => {
             let ca = column_agg_physical.bit_repr_small();
             compute_col_idx_numeric(&ca)
-        }
+        },
         Int64 | UInt64 | Float64 => {
             let ca = column_agg_physical.bit_repr_large();
             compute_col_idx_numeric(&ca)
-        }
+        },
         _ => {
             let mut col_to_idx = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
             let mut idx = 0 as IdxSize;
@@ -224,7 +224,7 @@ pub(super) fn compute_col_idx(
                     idx
                 })
                 .collect()
-        }
+        },
     };
 
     Ok((col_locations, column_agg))
@@ -266,7 +266,7 @@ where
             s.rename(&index[0]);
             let s = restore_logical_type(&s, logical_type);
             Some(vec![s])
-        }
+        },
         _ => None,
     };
 
@@ -290,11 +290,11 @@ pub(super) fn compute_row_idx(
             Int32 | UInt32 | Float32 => {
                 let ca = index_agg_physical.bit_repr_small();
                 compute_row_idx_numeric(index, &ca, count, index_s.dtype())
-            }
+            },
             Int64 | UInt64 | Float64 => {
                 let ca = index_agg_physical.bit_repr_large();
                 compute_row_idx_numeric(index, &ca, count, index_s.dtype())
-            }
+            },
             _ => {
                 let mut row_to_idx =
                     PlIndexMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
@@ -319,12 +319,12 @@ pub(super) fn compute_row_idx(
                         );
                         let s = restore_logical_type(&s, index_s.dtype());
                         Some(vec![s])
-                    }
+                    },
                     _ => None,
                 };
 
                 (row_locations, idx as usize, row_index)
-            }
+            },
         }
     } else {
         let index_s = pivot_df.columns(index)?;
@@ -355,7 +355,7 @@ pub(super) fn compute_row_idx(
                         old_idx
                     });
                     row_locations.push(idx)
-                }
+                },
             }
         }
         let row_index = match count {

@@ -12,11 +12,11 @@ pub(super) fn replace_wildcard_with_column(mut expr: Expr, column_name: Arc<str>
         match e {
             Expr::Wildcard => {
                 *e = Expr::Column(column_name.clone());
-            }
+            },
             Expr::Exclude(input, _) => {
                 *e = replace_wildcard_with_column(std::mem::take(input), column_name.clone());
-            }
-            _ => {}
+            },
+            _ => {},
         }
         // always keep iterating all inputs
         true
@@ -48,12 +48,12 @@ fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
                     .get(0)
                     .expect("expected root column to keep expression name");
                 Ok(Expr::Alias(expr, name.clone()))
-            }
+            },
             Expr::RenameAlias { expr, function } => {
                 let name = get_single_leaf(&expr).unwrap();
                 let name = function.call(&name)?;
                 Ok(Expr::Alias(expr, Arc::from(name)))
-            }
+            },
             _ => panic!("`keep_name`, `suffix`, `prefix` should be last expression"),
         }
     } else {
@@ -87,14 +87,14 @@ fn replace_nth(expr: &mut Expr, schema: &Schema) {
                 None => {
                     let name = if *i == 0 { "first" } else { "last" };
                     *e = Expr::Column(Arc::from(name));
-                }
+                },
                 Some(idx) => {
                     let (name, _dtype) = schema.get_at_index(idx).unwrap();
                     *e = Expr::Column(Arc::from(&**name))
-                }
+                },
             }
             true
-        }
+        },
         _ => true,
     })
 }
@@ -119,7 +119,7 @@ fn expand_regex(
                 Expr::Column(pat) if pat.as_ref() == pattern => {
                     *e = Expr::Column(Arc::from(name.as_str()));
                     true
-                }
+                },
                 _ => true,
             });
 
@@ -151,14 +151,14 @@ fn replace_regex(
                 None => {
                     regex = Some(name);
                     expand_regex(expr, result, schema, name, exclude)?;
-                }
+                },
                 Some(r) => {
                     polars_ensure!(
                         r == name,
                         ComputeError:
                         "an expression is not allowed to have different regexes"
                     )
-                }
+                },
             }
         }
     }
@@ -170,25 +170,32 @@ fn replace_regex(
 }
 
 /// replace `columns(["A", "B"])..` with `col("A")..`, `col("B")..`
-fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) -> PolarsResult<()> {
+fn expand_columns(
+    expr: &Expr,
+    result: &mut Vec<Expr>,
+    names: &[String],
+    schema: &Schema,
+    exclude: &PlHashSet<Arc<str>>,
+) -> PolarsResult<()> {
     let mut is_valid = true;
     for name in names {
-        let mut new_expr = expr.clone();
-        new_expr.mutate().apply(|e| {
-            if let Expr::Columns(members) = &e {
-                // `col([a, b]) + col([c, d])`
-                if members == names {
-                    *e = Expr::Column(Arc::from(name.as_str()));
-                } else {
-                    is_valid = false;
-                }
+        if !exclude.contains(name.as_str()) {
+            let new_expr = expr.clone();
+            let (new_expr, new_expr_valid) =
+                replace_columns_with_column(new_expr, names, name.as_str());
+            is_valid &= new_expr_valid;
+            // we may have regex col in columns.
+            #[allow(clippy::collapsible_else_if)]
+            #[cfg(feature = "regex")]
+            {
+                replace_regex(&new_expr, result, schema, exclude)?;
             }
-            // always keep iterating all inputs
-            true
-        });
-
-        let new_expr = rewrite_special_aliases(new_expr)?;
-        result.push(new_expr)
+            #[cfg(not(feature = "regex"))]
+            {
+                let new_expr = rewrite_special_aliases(new_expr)?;
+                result.push(new_expr)
+            }
+        }
     }
     polars_ensure!(is_valid, ComputeError: "expanding more than one `col` is not allowed");
     Ok(())
@@ -201,16 +208,48 @@ pub(super) fn replace_dtype_with_column(mut expr: Expr, column_name: Arc<str>) -
         match e {
             Expr::DtypeColumn(_) => {
                 *e = Expr::Column(column_name.clone());
-            }
+            },
             Expr::Exclude(input, _) => {
                 *e = replace_dtype_with_column(std::mem::take(input), column_name.clone());
-            }
-            _ => {}
+            },
+            _ => {},
         }
         // always keep iterating all inputs
         true
     });
     expr
+}
+
+/// This replaces the columns Expr with a Column Expr. It also removes the Exclude Expr from the
+/// expression chain.
+pub(super) fn replace_columns_with_column(
+    mut expr: Expr,
+    names: &[String],
+    column_name: &str,
+) -> (Expr, bool) {
+    let mut is_valid = true;
+    expr.mutate().apply(|e| {
+        match e {
+            Expr::Columns(members) => {
+                // `col([a, b]) + col([c, d])`
+                if members == names {
+                    *e = Expr::Column(Arc::from(column_name));
+                } else {
+                    is_valid = false;
+                }
+            },
+            Expr::Exclude(input, _) => {
+                let (new_expr, new_expr_valid) =
+                    replace_columns_with_column(std::mem::take(input), names, column_name);
+                *e = new_expr;
+                is_valid &= new_expr_valid;
+            },
+            _ => {},
+        }
+        // always keep iterating all inputs
+        true
+    });
+    (expr, is_valid)
 }
 
 fn dtypes_match(d1: &DataType, d2: &DataType) -> bool {
@@ -221,7 +260,7 @@ fn dtypes_match(d1: &DataType, d2: &DataType) -> bool {
                 && (tz_l == tz_r
                     || tz_r.is_some() && (tz_l.as_deref().unwrap_or("") == "*")
                     || tz_l.is_some() && (tz_r.as_deref().unwrap_or("") == "*"))
-        }
+        },
         // ...but otherwise require exact match
         _ => d1 == d2,
     }
@@ -281,14 +320,14 @@ fn prepare_excluded(
                                         exclude.insert(name);
                                     }
                                 }
-                            }
+                            },
                             Excluded::Dtype(dt) => {
                                 for fld in schema.iter_fields() {
                                     if dtypes_match(fld.data_type(), dt) {
                                         exclude.insert(Arc::from(fld.name().as_ref()));
                                     }
                                 }
-                            }
+                            },
                         }
                     }
                 }
@@ -299,14 +338,14 @@ fn prepare_excluded(
                         match to_exclude_single {
                             Excluded::Name(name) => {
                                 exclude.insert(name.clone());
-                            }
+                            },
                             Excluded::Dtype(dt) => {
                                 for (name, dtype) in schema.iter() {
                                     if matches!(dtype, dt) {
                                         exclude.insert(Arc::from(name.as_str()));
                                     }
                                 }
-                            }
+                            },
                         }
                     }
                 }
@@ -314,7 +353,7 @@ fn prepare_excluded(
         }
     }
 
-    // exclude groupby keys
+    // exclude group_by keys
     for mut expr in keys.iter() {
         // Allow a number of aliases of a column expression, still exclude column from aggregation
         loop {
@@ -322,13 +361,13 @@ fn prepare_excluded(
                 Expr::Column(name) => {
                     exclude.insert(name.clone());
                     break;
-                }
+                },
                 Expr::Alias(e, _) => {
                     expr = e;
-                }
+                },
                 _ => {
                     break;
-                }
+                },
             }
         }
     }
@@ -344,7 +383,7 @@ fn expand_function_inputs(mut expr: Expr, schema: &Schema) -> Expr {
             *input = rewrite_projections(input.clone(), schema, &[]).unwrap();
             // continue iteration, there might be more functions.
             true
-        }
+        },
         _ => true,
     });
     expr
@@ -365,7 +404,7 @@ fn early_supertype(inputs: &[Expr], schema: &Schema) -> Option<DataType> {
         match st {
             None => {
                 st = Some(dtype);
-            }
+            },
             Some(st_val) => st = get_supertype(&st_val, &dtype),
         }
     }
@@ -403,7 +442,7 @@ fn find_flags(expr: &Expr) -> ExpansionFlags {
                 ..
             } => replace_fill_null_type = true,
             Expr::Exclude(_, _) => has_exclude = true,
-            _ => {}
+            _ => {},
         }
     }
     ExpansionFlags {
@@ -488,13 +527,16 @@ fn replace_and_add_to_results(
             .find(|e| matches!(e, Expr::Columns(_) | Expr::DtypeColumn(_)))
         {
             match &e {
-                Expr::Columns(names) => expand_columns(&expr, result, names)?,
+                Expr::Columns(names) => {
+                    let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
+                    expand_columns(&expr, result, names, schema, &exclude)?;
+                },
                 Expr::DtypeColumn(dtypes) => {
                     // keep track of column excluded from the dtypes
                     let exclude = prepare_excluded(&expr, schema, keys, flags.has_exclude)?;
                     expand_dtypes(&expr, result, schema, dtypes, &exclude)?
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
     }
@@ -535,11 +577,13 @@ fn replace_selector_inner(
             let local_flags = find_flags(&expr);
             replace_and_add_to_results(*expr, local_flags, scratch, schema, keys)?;
             members.extend(scratch.drain(..))
-        }
+        },
         Selector::Add(lhs, rhs) => {
             replace_selector_inner(*lhs, members, scratch, schema, keys)?;
-            replace_selector_inner(*rhs, members, scratch, schema, keys)?;
-        }
+            let mut rhs_members: PlIndexSet<Expr> = Default::default();
+            replace_selector_inner(*rhs, &mut rhs_members, scratch, schema, keys)?;
+            members.extend(rhs_members)
+        },
         Selector::Sub(lhs, rhs) => {
             // fill lhs
             replace_selector_inner(*lhs, members, scratch, schema, keys)?;
@@ -556,7 +600,7 @@ fn replace_selector_inner(
             }
 
             *members = new_members;
-        }
+        },
         Selector::InterSect(lhs, rhs) => {
             // fill lhs
             replace_selector_inner(*lhs, members, scratch, schema, keys)?;
@@ -566,7 +610,7 @@ fn replace_selector_inner(
             replace_selector_inner(*rhs, &mut rhs_members, scratch, schema, keys)?;
 
             *members = members.intersection(&rhs_members).cloned().collect()
-        }
+        },
     }
     Ok(())
 }
@@ -597,7 +641,7 @@ fn replace_selector(expr: &mut Expr, schema: &Schema, keys: &[Expr]) -> PolarsRe
             );
 
             Ok(true)
-        }
+        },
         _ => Ok(true),
     })?;
     Ok(())

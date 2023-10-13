@@ -82,7 +82,7 @@ impl PartialEq for DataType {
                 #[cfg(feature = "dtype-array")]
                 (Array(left_inner, left_width), Array(right_inner, right_width)) => {
                     left_width == right_width && left_inner == right_inner
-                }
+                },
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
             }
         }
@@ -110,6 +110,7 @@ impl DataType {
         }
     }
 
+    /// Get the inner data type of a nested type.
     pub fn inner_dtype(&self) -> Option<&DataType> {
         match self {
             DataType::List(inner) => Some(inner),
@@ -138,7 +139,7 @@ impl DataType {
                     .map(|s| Field::new(s.name(), s.data_type().to_physical()))
                     .collect();
                 Struct(new_fields)
-            }
+            },
             _ => self.clone(),
         }
     }
@@ -160,39 +161,29 @@ impl DataType {
         self.is_numeric() | matches!(self, DataType::Boolean | DataType::Utf8 | DataType::Binary)
     }
 
-    /// Check if this [`DataType`] is a numeric type.
+    /// Check if this [`DataType`] is a basic numeric type (excludes Decimal).
     pub fn is_numeric(&self) -> bool {
-        // allow because it cannot be replaced when object feature is activated
-        #[allow(clippy::match_like_matches_macro)]
-        match self {
-            DataType::Utf8
-            | DataType::List(_)
-            | DataType::Date
-            | DataType::Datetime(_, _)
-            | DataType::Duration(_)
-            | DataType::Time
-            | DataType::Boolean
-            | DataType::Unknown
-            | DataType::Null => false,
-            DataType::Binary => false,
-            #[cfg(feature = "object")]
-            DataType::Object(_) => false,
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => false,
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => false,
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(_, _) => false,
-            _ => true,
-        }
+        self.is_float() || self.is_integer()
     }
 
+    /// Check if this [`DataType`] is a basic floating point type (excludes Decimal).
     pub fn is_float(&self) -> bool {
         matches!(self, DataType::Float32 | DataType::Float64)
     }
 
+    /// Check if this [`DataType`] is an integer.
     pub fn is_integer(&self) -> bool {
-        self.is_numeric() && !matches!(self, DataType::Float32 | DataType::Float64)
+        matches!(
+            self,
+            DataType::Int8
+                | DataType::Int16
+                | DataType::Int32
+                | DataType::Int64
+                | DataType::UInt8
+                | DataType::UInt16
+                | DataType::UInt32
+                | DataType::UInt64
+        )
     }
 
     pub fn is_signed(&self) -> bool {
@@ -262,7 +253,7 @@ impl DataType {
             Struct(fields) => {
                 let fields = fields.iter().map(|fld| fld.to_arrow()).collect();
                 ArrowDataType::Struct(fields)
-            }
+            },
             Unknown => unreachable!(),
         }
     }
@@ -308,9 +299,9 @@ impl Display for DataType {
                     (None, Some(scale)) => f.write_str(&format!("decimal[{scale}]")),
                     (Some(precision), Some(scale)) => {
                         f.write_str(&format!("decimal[{precision},{scale}]"))
-                    }
+                    },
                 };
-            }
+            },
             DataType::Utf8 => "str",
             DataType::Binary => "binary",
             DataType::Date => "date",
@@ -320,7 +311,7 @@ impl Display for DataType {
                     Some(tz) => format!("datetime[{tu}, {tz}]"),
                 };
                 return f.write_str(&s);
-            }
+            },
             DataType::Duration(tu) => return write!(f, "duration[{tu}]"),
             DataType::Time => "time",
             #[cfg(feature = "dtype-array")]
@@ -346,17 +337,17 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
         (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r))) => {
             let rev_map = merge_rev_map(rev_map_l, rev_map_r)?;
             Categorical(Some(rev_map))
-        }
+        },
         (List(inner_l), List(inner_r)) => {
             let merged = merge_dtypes(inner_l, inner_r)?;
             List(Box::new(merged))
-        }
+        },
         #[cfg(feature = "dtype-array")]
         (Array(inner_l, width_l), Array(inner_r, width_r)) => {
             polars_ensure!(width_l == width_r, ComputeError: "widths of FixedSizeWidth Series are not equal");
             let merged = merge_dtypes(inner_l, inner_r)?;
             Array(Box::new(merged), *width_l)
-        }
+        },
         (left, right) if left == right => left.clone(),
         _ => polars_bail!(ComputeError: "unable to merge datatypes"),
     })

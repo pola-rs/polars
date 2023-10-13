@@ -30,124 +30,124 @@ fn shrink_literal(dtype_other: &DataType, literal: &LiteralValue) -> Option<Data
             if *v > 0 {
                 return Some(DataType::UInt64);
             }
-        }
+        },
         (DataType::UInt64, LiteralValue::Int32(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt64);
             }
-        }
+        },
         #[cfg(feature = "dtype-i16")]
         (DataType::UInt64, LiteralValue::Int16(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt64);
             }
-        }
+        },
         #[cfg(feature = "dtype-i8")]
         (DataType::UInt64, LiteralValue::Int8(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt64);
             }
-        }
+        },
         (DataType::UInt32, LiteralValue::Int64(v)) => {
             if *v > 0 && *v < u32::MAX as i64 {
                 return Some(DataType::UInt32);
             }
-        }
+        },
         (DataType::UInt32, LiteralValue::Int32(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt32);
             }
-        }
+        },
         #[cfg(feature = "dtype-i16")]
         (DataType::UInt32, LiteralValue::Int16(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt32);
             }
-        }
+        },
         #[cfg(feature = "dtype-i8")]
         (DataType::UInt32, LiteralValue::Int8(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt32);
             }
-        }
+        },
         (DataType::UInt16, LiteralValue::Int64(v)) => {
             if *v > 0 && *v < u16::MAX as i64 {
                 return Some(DataType::UInt16);
             }
-        }
+        },
         (DataType::UInt16, LiteralValue::Int32(v)) => {
             if *v > 0 && *v < u16::MAX as i32 {
                 return Some(DataType::UInt16);
             }
-        }
+        },
         #[cfg(feature = "dtype-i16")]
         (DataType::UInt16, LiteralValue::Int16(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt16);
             }
-        }
+        },
         #[cfg(feature = "dtype-i8")]
         (DataType::UInt16, LiteralValue::Int8(v)) => {
             if *v > 0 {
                 return Some(DataType::UInt16);
             }
-        }
+        },
         (DataType::UInt8, LiteralValue::Int64(v)) => {
             if *v > 0 && *v < u8::MAX as i64 {
                 return Some(DataType::UInt8);
             }
-        }
+        },
         (DataType::UInt8, LiteralValue::Int32(v)) => {
             if *v > 0 && *v < u8::MAX as i32 {
                 return Some(DataType::UInt8);
             }
-        }
+        },
         #[cfg(feature = "dtype-i16")]
         (DataType::UInt8, LiteralValue::Int16(v)) => {
             if *v > 0 && *v < u8::MAX as i16 {
                 return Some(DataType::UInt8);
             }
-        }
+        },
         #[cfg(feature = "dtype-i8")]
         (DataType::UInt8, LiteralValue::Int8(v)) => {
             if *v > 0 && *v < u8::MAX as i8 {
                 return Some(DataType::UInt8);
             }
-        }
+        },
         (DataType::Int32, LiteralValue::Int64(v)) => {
             if *v <= i32::MAX as i64 {
                 return Some(DataType::Int32);
             }
-        }
+        },
         (DataType::Int16, LiteralValue::Int64(v)) => {
             if *v <= i16::MAX as i64 {
                 return Some(DataType::Int16);
             }
-        }
+        },
         (DataType::Int16, LiteralValue::Int32(v)) => {
             if *v <= i16::MAX as i32 {
                 return Some(DataType::Int16);
             }
-        }
+        },
         (DataType::Int8, LiteralValue::Int64(v)) => {
             if *v <= i8::MAX as i64 {
                 return Some(DataType::Int8);
             }
-        }
+        },
         (DataType::Int8, LiteralValue::Int32(v)) => {
             if *v <= i8::MAX as i32 {
                 return Some(DataType::Int8);
             }
-        }
+        },
         #[cfg(feature = "dtype-i16")]
         (DataType::Int8, LiteralValue::Int16(v)) => {
             if *v <= i8::MAX as i16 {
                 return Some(DataType::Int8);
             }
-        }
+        },
         _ => {
             // the rest is done by supertypes.
-        }
+        },
     }
     None
 }
@@ -176,7 +176,7 @@ fn modify_supertype(
                 Literal(LiteralValue::Float64(_) | LiteralValue::Int32(_) | LiteralValue::Int64(_)),
             ) if matches!(type_left, DataType::Float32) => st = DataType::Float32,
             // always make sure that we cast to floats if one of the operands is float
-            (Literal(lv), _) | (_, Literal(lv)) if lv.is_float() => {}
+            (Literal(lv), _) | (_, Literal(lv)) if lv.is_float() => {},
 
             // TODO: see if we can activate this for columns as well.
             // shrink the literal value if it fits in the column dtype
@@ -184,15 +184,15 @@ fn modify_supertype(
                 if let Some(dtype) = shrink_literal(type_left, lv) {
                     st = dtype;
                 }
-            }
+            },
             // shrink the literal value if it fits in the column dtype
             (Literal(lv), Literal(LiteralValue::Series(_))) => {
                 if let Some(dtype) = shrink_literal(type_right, lv) {
                     st = dtype;
                 }
-            }
+            },
             // do nothing and use supertype
-            (Literal(_), Literal(_)) => {}
+            (Literal(_), Literal(_)) => {},
 
             // cast literal to right type if they fit in the range
             (Literal(value), _) => {
@@ -201,7 +201,7 @@ fn modify_supertype(
                         st = type_right.clone();
                     }
                 }
-            }
+            },
             // cast literal to left type
             (_, Literal(value)) => {
                 if let Some(lit_val) = value.to_anyvalue() {
@@ -209,9 +209,9 @@ fn modify_supertype(
                         st = type_left.clone();
                     }
                 }
-            }
+            },
             // do nothing
-            _ => {}
+            _ => {},
         }
     } else {
         use DataType::*;
@@ -221,7 +221,7 @@ fn modify_supertype(
             (Categorical(_), Utf8, _, AExpr::Literal(_))
             | (Utf8, Categorical(_), AExpr::Literal(_), _) => {
                 st = Categorical(None);
-            }
+            },
             // when then expression literals can have a different list type.
             // so we cast the literal to the other hand side.
             (List(inner), List(other), _, AExpr::Literal(_))
@@ -229,9 +229,9 @@ fn modify_supertype(
                 if inner != other =>
             {
                 st = DataType::List(inner.clone())
-            }
+            },
             // do nothing
-            _ => {}
+            _ => {},
         }
     }
     st
@@ -298,7 +298,7 @@ impl OptimizationRule for TypeCoercionRule {
 
                 // only cast if the type is not already the super type.
                 // this can prevent an expensive flattening and subsequent aggregation
-                // in a groupby context. To be able to cast the groups need to be
+                // in a group_by context. To be able to cast the groups need to be
                 // flattened
                 let new_node_truthy = if type_true != st {
                     expr_arena.add(AExpr::Cast {
@@ -325,12 +325,13 @@ impl OptimizationRule for TypeCoercionRule {
                     falsy: new_node_falsy,
                     predicate,
                 })
-            }
+            },
             AExpr::BinaryExpr {
                 left: node_left,
                 op,
                 right: node_right,
             } => return process_binary(expr_arena, lp_arena, lp_node, node_left, op, node_right),
+
             #[cfg(feature = "is_in")]
             AExpr::Function {
                 function: FunctionExpr::Boolean(BooleanFunction::IsIn),
@@ -349,38 +350,62 @@ impl OptimizationRule for TypeCoercionRule {
                 let casted_expr = match (&type_left, &type_other) {
                     // types are equal, do nothing
                     (a, b) if a == b => return Ok(None),
+                    // all-null can represent anything (and/or empty list), so cast to target dtype
+                    (_, DataType::Null) => AExpr::Cast {
+                        expr: other_node,
+                        data_type: type_left,
+                        strict: false,
+                    },
                     // cast both local and global string cache
                     // note that there might not yet be a rev
                     #[cfg(feature = "dtype-categorical")]
-                    (DataType::Categorical(_), DataType::Utf8) => {
-                        AExpr::Cast {
-                            expr: other_node,
-                            data_type: DataType::Categorical(None),
-                            // does not matter
-                            strict: false,
+                    (DataType::Categorical(_), DataType::Utf8) => AExpr::Cast {
+                        expr: other_node,
+                        data_type: DataType::Categorical(None),
+                        strict: false,
+                    },
+                    #[cfg(feature = "dtype-decimal")]
+                    (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
+                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
+                    },
+                    // can't check for more granular time_unit in less-granular time_unit data,
+                    // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
+                    (DataType::Datetime(lhs_unit, _), DataType::Datetime(rhs_unit, _)) => {
+                        if lhs_unit <= rhs_unit {
+                            return Ok(None);
+                        } else {
+                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Datetime data", &rhs_unit, &lhs_unit)
                         }
-                    }
-                    (dt, DataType::Utf8) => {
-                        polars_bail!(ComputeError: "cannot compare {:?} to {:?} type in 'is_in' operation", dt, type_other)
-                    }
-                    (DataType::List(_), _) | (_, DataType::List(_)) => return Ok(None),
+                    },
+                    (DataType::Duration(lhs_unit), DataType::Duration(rhs_unit)) => {
+                        if lhs_unit <= rhs_unit {
+                            return Ok(None);
+                        } else {
+                            polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} precision values in {:?} Duration data", &rhs_unit, &lhs_unit)
+                        }
+                    },
+                    (_, DataType::List(other_inner)) => {
+                        if other_inner.as_ref() == &type_left
+                            || (type_left == DataType::Null)
+                            || (other_inner.as_ref() == &DataType::Null)
+                            || (other_inner.as_ref().is_numeric() && type_left.is_numeric())
+                        {
+                            return Ok(None);
+                        }
+                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_left, &type_other)
+                    },
                     #[cfg(feature = "dtype-struct")]
                     (DataType::Struct(_), _) | (_, DataType::Struct(_)) => return Ok(None),
-                    // if right is another type, we cast it to left
-                    // we do not use super-type as an `is_in` operation should not
-                    // cast the whole column implicitly.
-                    (a, b) if a != b => {
-                        AExpr::Cast {
-                            expr: other_node,
-                            data_type: type_left,
-                            // does not matter
-                            strict: false,
-                        }
-                    }
-                    // do nothing
-                    _ => return Ok(None),
-                };
 
+                    // don't attempt to cast between obviously mismatched types, but
+                    // allow integer/float comparison (will use their supertypes).
+                    (a, b) => {
+                        if (a.is_numeric() && b.is_numeric()) || (a == &DataType::Null) {
+                            return Ok(None);
+                        }
+                        polars_bail!(InvalidOperation: "`is_in` cannot check for {:?} values in {:?} data", &type_other, &type_left)
+                    },
+                };
                 let mut input = input.clone();
                 let other_input = expr_arena.add(casted_expr);
                 input[1] = other_input;
@@ -390,7 +415,7 @@ impl OptimizationRule for TypeCoercionRule {
                     input,
                     options,
                 })
-            }
+            },
             // fill null has a supertype set during projection
             // to make the schema known before the optimization phase
             AExpr::Function {
@@ -417,7 +442,7 @@ impl OptimizationRule for TypeCoercionRule {
                 } else {
                     None
                 }
-            }
+            },
             // generic type coercion of any function.
             AExpr::Function {
                 // only for `DataType::Unknown` as it still has to be set.
@@ -458,7 +483,7 @@ impl OptimizationRule for TypeCoercionRule {
                 }
                 // only cast if the type is not already the super type.
                 // this can prevent an expensive flattening and subsequent aggregation
-                // in a groupby context. To be able to cast the groups need to be
+                // in a group_by context. To be able to cast the groups need to be
                 // flattened
                 let new_node_self = if type_self != super_type {
                     expr_arena.add(AExpr::Cast {
@@ -497,7 +522,7 @@ impl OptimizationRule for TypeCoercionRule {
                     input: new_nodes,
                     options,
                 })
-            }
+            },
             _ => None,
         };
         Ok(out)
@@ -515,28 +540,56 @@ fn early_escape(type_self: &DataType, type_other: &DataType) -> Option<()> {
     }
 }
 
-// TODO: Fix this test and re-enable it (currently does not compile)
-// #[cfg(test)]
-// #[cfg(feature = "dtype-categorical")]
-// mod test {
-//     use polars_core::prelude::*;
+#[cfg(test)]
+#[cfg(feature = "dtype-categorical")]
+mod test {
+    use polars_core::prelude::*;
 
-//     use super::*;
-//     use crate::prelude::*;
+    use super::*;
 
-//     #[test]
-//     fn test_categorical_utf8() {
-//         let mut rules: Vec<Box<dyn OptimizationRule>> = vec![Box::new(TypeCoercionRule {})];
-//         let schema = Schema::from_iter([Field::new("fruits", DataType::Categorical(None))]);
+    #[test]
+    fn test_categorical_utf8() {
+        let mut expr_arena = Arena::new();
+        let mut lp_arena = Arena::new();
+        let optimizer = StackOptimizer {};
+        let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(TypeCoercionRule {})];
 
-//         let expr = col("fruits").eq(lit("somestr"));
-//         let out = optimize_expr(expr.clone(), schema.clone(), &mut rules);
-//         // we test that the fruits column is not casted to utf8 for the comparison
-//         assert_eq!(out, expr);
+        let df = DataFrame::new(Vec::from([Series::new_empty(
+            "fruits",
+            &DataType::Categorical(None),
+        )]))
+        .unwrap();
 
-//         let expr = col("fruits") + (lit("somestr"));
-//         let out = optimize_expr(expr, schema, &mut rules);
-//         let expected = col("fruits").cast(DataType::Utf8) + lit("somestr");
-//         assert_eq!(out, expected);
-//     }
-// }
+        let expr_in = vec![col("fruits").eq(lit("somestr"))];
+        let lp = LogicalPlanBuilder::from_existing_df(df.clone())
+            .project(expr_in.clone(), Default::default())
+            .build();
+
+        let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
+        lp_top = optimizer
+            .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
+            .unwrap();
+        let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
+
+        // we test that the fruits column is not casted to utf8 for the comparison
+        if let LogicalPlan::Projection { expr, .. } = lp {
+            assert_eq!(expr, expr_in);
+        };
+
+        let expr_in = vec![col("fruits") + (lit("somestr"))];
+        let lp = LogicalPlanBuilder::from_existing_df(df)
+            .project(expr_in, Default::default())
+            .build();
+        let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
+        lp_top = optimizer
+            .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
+            .unwrap();
+        let lp = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
+
+        // we test that the fruits column is casted to utf8 for the addition
+        let expected = vec![col("fruits").cast(DataType::Utf8) + lit("somestr")];
+        if let LogicalPlan::Projection { expr, .. } = lp {
+            assert_eq!(expr, expected);
+        };
+    }
+}

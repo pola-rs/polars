@@ -81,7 +81,7 @@ impl OptimizationRule for ReplaceDropNulls {
                 } else {
                     None
                 }
-            }
+            },
             _ => None,
         }
     }

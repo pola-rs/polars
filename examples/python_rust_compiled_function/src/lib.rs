@@ -39,7 +39,7 @@ fn hamming_distance_strs(a: Option<&str>, b: Option<&str>) -> Option<u32> {
                         .sum::<u32>(),
                 )
             }
-        }
+        },
     }
 }
 

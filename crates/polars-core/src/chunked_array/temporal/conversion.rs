@@ -12,7 +12,7 @@ impl From<&AnyValue<'_>> for NaiveDateTime {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => {
                 NaiveDateTime::from_timestamp_opt(*v as i64 * SECONDS_IN_DAY, 0).unwrap()
-            }
+            },
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(v, tu, _) => match tu {
                 TimeUnit::Nanoseconds => timestamp_ns_to_datetime(*v),
@@ -36,7 +36,7 @@ impl From<&AnyValue<'_>> for NaiveTime {
 
 // Used by lazy for literal conversion
 pub fn datetime_to_timestamp_ns(v: NaiveDateTime) -> i64 {
-    v.timestamp_nanos()
+    v.timestamp_nanos_opt().unwrap()
 }
 
 // Used by lazy for literal conversion

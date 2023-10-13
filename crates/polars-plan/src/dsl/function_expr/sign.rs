@@ -8,15 +8,15 @@ pub(super) fn sign(s: &Series) -> PolarsResult<Series> {
         Float32 => {
             let ca = s.f32().unwrap();
             sign_float(ca)
-        }
+        },
         Float64 => {
             let ca = s.f64().unwrap();
             sign_float(ca)
-        }
+        },
         dt if dt.is_numeric() => {
             let s = s.cast(&Float64)?;
             sign(&s)
-        }
+        },
         dt => polars_bail!(opq = sign, dt),
     }
 }
@@ -27,7 +27,7 @@ where
     T::Native: num::Float,
     ChunkedArray<T>: IntoSeries,
 {
-    ca.apply(signum_improved).into_series().cast(&Int64)
+    ca.apply_values(signum_improved).into_series().cast(&Int64)
 }
 
 // Wrapper for the signum function that handles +/-0.0 inputs differently

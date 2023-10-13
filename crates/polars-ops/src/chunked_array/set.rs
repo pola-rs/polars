@@ -4,6 +4,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_core::utils::arrow::types::NativeType;
+use polars_utils::index::check_bounds;
 
 pub trait ChunkedSet<T: Copy> {
     fn set_at_idx2<V>(self, idx: &[IdxSize], values: V) -> PolarsResult<Series>
@@ -24,19 +25,6 @@ fn check_sorted(idx: &[IdxSize]) -> PolarsResult<()> {
         previous = i;
     }
     polars_ensure!(sorted, ComputeError: "set indices must be sorted");
-    Ok(())
-}
-
-fn check_bounds(idx: &[IdxSize], len: IdxSize) -> PolarsResult<()> {
-    let mut inbounds = true;
-
-    for &i in idx {
-        if i >= len {
-            // we will not break here as that prevents SIMD
-            inbounds = false;
-        }
-    }
-    polars_ensure!(inbounds, ComputeError: "set indices are out of bounds");
     Ok(())
 }
 
@@ -73,7 +61,7 @@ unsafe fn set_at_idx_impl<V, T: NativeType>(
                     Some(value) => {
                         mut_validity.set_unchecked(*idx as usize, true);
                         *new_values_slice.get_unchecked_mut(*idx as usize) = value
-                    }
+                    },
                     None => mut_validity.set_unchecked(*idx as usize, false),
                 }
             }
@@ -86,7 +74,7 @@ unsafe fn set_at_idx_impl<V, T: NativeType>(
                 Some(value) => *new_values_slice.get_unchecked_mut(*idx as usize) = value,
                 None => {
                     null_idx.push(*idx);
-                }
+                },
             }
         }
         // only make a validity bitmap when null values are set
@@ -129,14 +117,14 @@ where
                 // Safety:
                 // we checked bounds
                 unsafe { set_at_idx_impl(current_values, values, arr, idx, len) };
-            }
+            },
             None => {
                 let mut new_values = arr.values().as_slice().to_vec();
                 // Safety:
                 // we checked bounds
                 unsafe { set_at_idx_impl(&mut new_values, values, arr, idx, len) };
                 arr.set_values(new_values.into());
-            }
+            },
         };
         Ok(ca.into_series())
     }

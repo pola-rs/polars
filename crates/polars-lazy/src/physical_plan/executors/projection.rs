@@ -10,6 +10,7 @@ pub struct ProjectionExec {
     pub(crate) input_schema: SchemaRef,
     #[cfg(test)]
     pub(crate) schema: SchemaRef,
+    pub(crate) options: ProjectionOptions,
 }
 
 impl ProjectionExec {
@@ -25,6 +26,7 @@ impl ProjectionExec {
             &self.expr,
             state,
             self.has_windows,
+            self.options.run_parallel,
         )?;
         #[allow(unused_mut)]
         let mut df = check_expand_literals(selected_cols, df.height() == 0)?;

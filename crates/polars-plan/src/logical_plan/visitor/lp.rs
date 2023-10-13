@@ -81,8 +81,8 @@ impl ALogicalPlanNode {
         self.with_arena(|arena| arena.get(self.node).schema(arena))
     }
 
-    /// Take a `Node` and convert it an `ALogicalPlanNode` and call
-    /// `F` with `self` and the new created `ALogicalPlanNode`
+    /// Take a [`Node`] and convert it an [`ALogicalPlanNode`] and call
+    /// `F` with `self` and the new created [`ALogicalPlanNode`]
     pub fn binary<F, T>(&self, other: Node, op: F) -> T
     where
         F: FnOnce(&ALogicalPlanNode, &ALogicalPlanNode) -> T,
@@ -107,9 +107,9 @@ impl TreeWalker for ALogicalPlanNode {
                 arena: self.arena,
             };
             match op(&lp_node)? {
-                VisitRecursion::Continue => {}
+                // let the recursion continue
+                VisitRecursion::Continue | VisitRecursion::Skip => {},
                 // early stop
-                VisitRecursion::Skip => return Ok(VisitRecursion::Continue),
                 VisitRecursion::Stop => return Ok(VisitRecursion::Stop),
             }
         }

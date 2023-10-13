@@ -87,8 +87,8 @@ def test_categorical_describe_3487() -> None:
 @StringCache()
 def test_categorical_is_in_list() -> None:
     # this requires type coercion to cast.
-    # we should not cast within the function as this would be expensive within a groupby
-    # context that would be a cast per group
+    # we should not cast within the function as this would be expensive within a
+    # group by context that would be a cast per group
     df = pl.DataFrame(
         {"a": [1, 2, 3, 1, 2], "b": ["a", "b", "c", "d", "e"]}
     ).with_columns(pl.col("b").cast(pl.Categorical))
@@ -115,7 +115,7 @@ def test_unset_sorted_on_append() -> None:
         ]
     ).sort("key")
     df = pl.concat([df1, df2], rechunk=False)
-    assert df.groupby("key").count()["count"].to_list() == [4, 4]
+    assert df.group_by("key").count()["count"].to_list() == [4, 4]
 
 
 def test_categorical_error_on_local_cmp() -> None:
@@ -307,11 +307,11 @@ def test_nested_categorical_aggregation_7848() -> None:
             "group": [1, 1, 2, 2, 2, 3, 3],
             "letter": ["a", "b", "c", "d", "e", "f", "g"],
         }
-    ).with_columns([pl.col("letter").cast(pl.Categorical)]).groupby(
+    ).with_columns([pl.col("letter").cast(pl.Categorical)]).group_by(
         maintain_order=True, by=["group"]
     ).all().with_columns(
-        [pl.col("letter").list.lengths().alias("c_group")]
-    ).groupby(
+        [pl.col("letter").list.len().alias("c_group")]
+    ).group_by(
         by=["c_group"], maintain_order=True
     ).agg(
         pl.col("letter")
@@ -407,4 +407,18 @@ def test_list_builder_different_categorical_rev_maps() -> None:
 
     assert pl.DataFrame({"c": [s1, s2]}).to_dict(False) == {
         "c": [["a", "b"], ["c", "d"]]
+    }
+
+
+def test_categorical_collect_11408() -> None:
+    df = pl.DataFrame(
+        data={"groups": ["a", "b", "c"], "cats": ["a", "b", "c"], "amount": [1, 2, 3]},
+        schema={"groups": pl.Utf8, "cats": pl.Categorical, "amount": pl.Int8},
+    )
+
+    assert df.group_by("groups").agg(
+        pl.col("cats").filter(pl.col("amount") == pl.col("amount").min()).first()
+    ).sort("groups").to_dict(False) == {
+        "groups": ["a", "b", "c"],
+        "cats": ["a", "b", "c"],
     }

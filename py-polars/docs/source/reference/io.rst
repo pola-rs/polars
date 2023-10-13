@@ -1,9 +1,7 @@
-
 ============
 Input/output
 ============
 .. currentmodule:: polars
-
 
 CSV
 ~~~
@@ -14,6 +12,7 @@ CSV
    read_csv_batched
    scan_csv
    DataFrame.write_csv
+   LazyFrame.sink_csv
 
 Feather/ IPC
 ~~~~~~~~~~~~
@@ -21,9 +20,11 @@ Feather/ IPC
    :toctree: api/
 
    read_ipc
+   read_ipc_stream
    scan_ipc
    read_ipc_schema
    DataFrame.write_ipc
+   DataFrame.write_ipc_stream
    LazyFrame.sink_ipc
 
 Parquet
@@ -43,6 +44,7 @@ Database
    :toctree: api/
 
    read_database
+   read_database_uri
    DataFrame.write_database
 
 JSON
@@ -64,13 +66,21 @@ AVRO
    read_avro
    DataFrame.write_avro
 
-Excel
-~~~~~
+Spreadsheet
+~~~~~~~~~~~
 .. autosummary::
    :toctree: api/
 
    read_excel
+   read_ods
    DataFrame.write_excel
+
+Apache Iceberg
+~~~~~~~~~~~~~~
+.. autosummary::
+   :toctree: api/
+
+   scan_iceberg
 
 Delta Lake
 ~~~~~~~~~~

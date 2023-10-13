@@ -1,29 +1,29 @@
 use std::borrow::Cow;
+#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use std::io::Read;
 use std::mem::MaybeUninit;
 
-use once_cell::sync::Lazy;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 #[cfg(feature = "polars-time")]
 use polars_time::chunkedarray::utf8::infer as date_infer;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::utf8::Pattern;
-use regex::{Regex, RegexBuilder};
 
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use crate::csv::parser::next_line_position_naive;
 use crate::csv::parser::{next_line_position, skip_bom, skip_line_ending, SplitLines};
 use crate::csv::splitfields::SplitFields;
 use crate::csv::CsvEncoding;
-use crate::mmap::{MmapBytesReader, ReaderBytes};
+use crate::mmap::ReaderBytes;
 use crate::prelude::NullValues;
+use crate::utils::{BOOLEAN_RE, FLOAT_RE, INTEGER_RE};
 
 pub(crate) fn get_file_chunks(
     bytes: &[u8],
     n_chunks: usize,
     expected_fields: usize,
-    delimiter: u8,
+    separator: u8,
     quote_char: Option<u8>,
     eol_char: u8,
 ) -> Vec<(usize, usize)> {
@@ -41,14 +41,14 @@ pub(crate) fn get_file_chunks(
         let end_pos = match next_line_position(
             &bytes[search_pos..],
             Some(expected_fields),
-            delimiter,
+            separator,
             quote_char,
             eol_char,
         ) {
             Some(pos) => search_pos + pos,
             None => {
                 break;
-            }
+            },
         };
         offsets.push((last_pos, end_pos));
         last_pos = end_pos;
@@ -56,50 +56,6 @@ pub(crate) fn get_file_chunks(
     offsets.push((last_pos, total_len));
     offsets
 }
-
-pub fn get_reader_bytes<'a, R: Read + MmapBytesReader + ?Sized>(
-    reader: &'a mut R,
-) -> PolarsResult<ReaderBytes<'a>> {
-    // we have a file so we can mmap
-    if let Some(file) = reader.to_file() {
-        let mmap = unsafe { memmap::Mmap::map(file)? };
-
-        // somehow bck thinks borrows alias
-        // this is sound as file was already bound to 'a
-        use std::fs::File;
-        let file = unsafe { std::mem::transmute::<&File, &'a File>(file) };
-        Ok(ReaderBytes::Mapped(mmap, file))
-    } else {
-        // we can get the bytes for free
-        if reader.to_bytes().is_some() {
-            // duplicate .to_bytes() is necessary to satisfy the borrow checker
-            Ok(ReaderBytes::Borrowed((*reader).to_bytes().unwrap()))
-        } else {
-            // we have to read to an owned buffer to get the bytes.
-            let mut bytes = Vec::with_capacity(1024 * 128);
-            reader.read_to_end(&mut bytes)?;
-            if !bytes.is_empty()
-                && (bytes[bytes.len() - 1] != b'\n' || bytes[bytes.len() - 1] != b'\r')
-            {
-                bytes.push(b'\n')
-            }
-            Ok(ReaderBytes::Owned(bytes))
-        }
-    }
-}
-
-static FLOAT_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^\s*[-+]?((\d*\.\d+)([eE][-+]?\d+)?|inf|NaN|(\d+)[eE][-+]?\d+|\d+\.)$").unwrap()
-});
-
-static INTEGER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*-?(\d+)$").unwrap());
-
-static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
-    RegexBuilder::new(r"^\s*(true)$|^(false)$")
-        .case_insensitive(true)
-        .build()
-        .unwrap()
-});
 
 /// Infer the data type of a record
 fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
@@ -113,11 +69,11 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
                     Some(pattern_with_offset) => match pattern_with_offset {
                         Pattern::DatetimeYMD | Pattern::DatetimeDMY => {
                             DataType::Datetime(TimeUnit::Microseconds, None)
-                        }
+                        },
                         Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
                         Pattern::DatetimeYMDZ => {
                             DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
-                        }
+                        },
                     },
                     None => DataType::Utf8,
                 }
@@ -144,11 +100,11 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
                 Some(pattern_with_offset) => match pattern_with_offset {
                     Pattern::DatetimeYMD | Pattern::DatetimeDMY => {
                         DataType::Datetime(TimeUnit::Microseconds, None)
-                    }
+                    },
                     Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
                     Pattern::DatetimeYMDZ => {
                         DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
-                    }
+                    },
                 },
                 None => DataType::Utf8,
             }
@@ -178,7 +134,7 @@ pub(crate) fn parse_bytes_with_encoding(
 #[allow(clippy::too_many_arguments)]
 pub fn infer_file_schema_inner(
     reader_bytes: &ReaderBytes,
-    delimiter: u8,
+    separator: u8,
     max_read_rows: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
@@ -192,6 +148,7 @@ pub fn infer_file_schema_inner(
     null_values: Option<&NullValues>,
     try_parse_dates: bool,
     recursion_count: u8,
+    raise_if_empty: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
     // keep track so that we can determine the amount of bytes read
     let start_ptr = reader_bytes.as_ptr() as usize;
@@ -201,7 +158,9 @@ pub fn infer_file_schema_inner(
     let encoding = CsvEncoding::LossyUtf8;
 
     let bytes = skip_line_ending(skip_bom(reader_bytes), eol_char);
-    polars_ensure!(!bytes.is_empty(), NoData: "empty CSV");
+    if raise_if_empty {
+        polars_ensure!(!bytes.is_empty(), NoData: "empty CSV");
+    };
     let mut lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
     // it can be that we have a single line without eol char
     let has_eol = bytes.contains(&eol_char);
@@ -240,7 +199,7 @@ pub fn infer_file_schema_inner(
             }
         }
 
-        let byterecord = SplitFields::new(header_line, delimiter, quote_char, eol_char);
+        let byterecord = SplitFields::new(header_line, separator, quote_char, eol_char);
         if has_header {
             let headers = byterecord
                 .map(|(slice, needs_escaping)| {
@@ -274,8 +233,8 @@ pub fn infer_file_schema_inner(
                 .map(|(i, _s)| format!("column_{}", i + 1))
                 .collect();
             // needed because SplitLines does not return the \n char, so SplitFields does not catch
-            // the latest value if ending with a delimiter.
-            if header_line.ends_with(&[delimiter]) {
+            // the latest value if ending with a separator.
+            if header_line.ends_with(&[separator]) {
                 column_names.push(format!("column_{}", column_names.len() + 1))
             }
             column_names
@@ -289,7 +248,7 @@ pub fn infer_file_schema_inner(
 
         return infer_file_schema_inner(
             &ReaderBytes::Owned(buf),
-            delimiter,
+            separator,
             max_read_rows,
             has_header,
             schema_overwrite,
@@ -301,7 +260,10 @@ pub fn infer_file_schema_inner(
             null_values,
             try_parse_dates,
             recursion_count + 1,
+            raise_if_empty,
         );
+    } else if !raise_if_empty {
+        return Ok((Schema::new(), 0, 0));
     } else {
         polars_bail!(NoData: "empty CSV");
     };
@@ -335,7 +297,7 @@ pub fn infer_file_schema_inner(
                 } else {
                     max_read_rows
                 }
-            }
+            },
             None => usize::MAX,
         })
         .skip(skip_rows_after_header)
@@ -360,7 +322,7 @@ pub fn infer_file_schema_inner(
             }
         }
 
-        let mut record = SplitFields::new(line, delimiter, quote_char, eol_char);
+        let mut record = SplitFields::new(line, separator, quote_char, eol_char);
 
         for i in 0..header_length {
             if let Some((slice, needs_escaping)) = record.next() {
@@ -376,17 +338,17 @@ pub fn infer_file_schema_inner(
                     match &null_values {
                         None => {
                             column_types[i].insert(infer_field_schema(&s, try_parse_dates));
-                        }
+                        },
                         Some(NullValues::AllColumns(names)) => {
                             if !names.iter().any(|nv| nv == s.as_ref()) {
                                 column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                             }
-                        }
+                        },
                         Some(NullValues::AllColumnsSingle(name)) => {
                             if s.as_ref() != name {
                                 column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                             }
-                        }
+                        },
                         Some(NullValues::Named(names)) => {
                             let current_name = &headers[i];
                             let null_name = &names.iter().find(|name| &name.0 == current_name);
@@ -398,7 +360,7 @@ pub fn infer_file_schema_inner(
                             } else {
                                 column_types[i].insert(infer_field_schema(&s, try_parse_dates));
                             }
-                        }
+                        },
                     }
                 }
             }
@@ -433,7 +395,7 @@ pub fn infer_file_schema_inner(
                 for dtype in possibilities.iter() {
                     fields.push(Field::new(field_name, dtype.clone()));
                 }
-            }
+            },
             2 => {
                 if possibilities.contains(&DataType::Int64)
                     && possibilities.contains(&DataType::Float64)
@@ -459,7 +421,7 @@ pub fn infer_file_schema_inner(
                     // default to Utf8 for conflicting datatypes (e.g bool and int)
                     fields.push(Field::new(field_name, DataType::Utf8));
                 }
-            }
+            },
             _ => fields.push(Field::new(field_name, DataType::Utf8)),
         }
     }
@@ -472,7 +434,7 @@ pub fn infer_file_schema_inner(
         rb.push(eol_char);
         return infer_file_schema_inner(
             &ReaderBytes::Owned(rb),
-            delimiter,
+            separator,
             max_read_rows,
             has_header,
             schema_overwrite,
@@ -484,6 +446,7 @@ pub fn infer_file_schema_inner(
             null_values,
             try_parse_dates,
             recursion_count + 1,
+            raise_if_empty,
         );
     }
 
@@ -502,7 +465,7 @@ pub fn infer_file_schema_inner(
 #[allow(clippy::too_many_arguments)]
 pub fn infer_file_schema(
     reader_bytes: &ReaderBytes,
-    delimiter: u8,
+    separator: u8,
     max_read_rows: Option<usize>,
     has_header: bool,
     schema_overwrite: Option<&Schema>,
@@ -515,10 +478,11 @@ pub fn infer_file_schema(
     eol_char: u8,
     null_values: Option<&NullValues>,
     try_parse_dates: bool,
+    raise_if_empty: bool,
 ) -> PolarsResult<(Schema, usize, usize)> {
     infer_file_schema_inner(
         reader_bytes,
-        delimiter,
+        separator,
         max_read_rows,
         has_header,
         schema_overwrite,
@@ -530,6 +494,7 @@ pub fn infer_file_schema(
         null_values,
         try_parse_dates,
         0,
+        raise_if_empty,
     )
 }
 
@@ -551,7 +516,7 @@ pub fn is_compressed(bytes: &[u8]) -> bool {
 fn decompress_impl<R: Read>(
     decoder: &mut R,
     n_rows: Option<usize>,
-    delimiter: u8,
+    separator: u8,
     quote_char: Option<u8>,
     eol_char: u8,
 ) -> Option<Vec<u8>> {
@@ -563,7 +528,7 @@ fn decompress_impl<R: Read>(
             let mut out = Vec::new();
             decoder.read_to_end(&mut out).ok()?;
             out
-        }
+        },
         Some(n_rows) => {
             // we take the first rows first '\n\
             let mut out = vec![];
@@ -583,7 +548,7 @@ fn decompress_impl<R: Read>(
                     }
                     // now that we have enough, we compute the number of fields (also takes embedding into account)
                     expected_fields =
-                        SplitFields::new(&out, delimiter, quote_char, eol_char).count();
+                        SplitFields::new(&out, separator, quote_char, eol_char).count();
                     break;
                 }
             }
@@ -596,14 +561,14 @@ fn decompress_impl<R: Read>(
                 match next_line_position(
                     &out[buf_pos + 1..],
                     Some(expected_fields),
-                    delimiter,
+                    separator,
                     quote_char,
                     eol_char,
                 ) {
                     Some(pos) => {
                         line_count += 1;
                         buf_pos += pos;
-                    }
+                    },
                     None => {
                         // take more bytes so that we might find a new line the next iteration
                         let read = decoder.take(chunk_size).read_to_end(&mut out).ok()?;
@@ -612,11 +577,11 @@ fn decompress_impl<R: Read>(
                             break;
                         }
                         continue;
-                    }
+                    },
                 };
             }
             out
-        }
+        },
     })
 }
 
@@ -624,16 +589,16 @@ fn decompress_impl<R: Read>(
 pub(crate) fn decompress(
     bytes: &[u8],
     n_rows: Option<usize>,
-    delimiter: u8,
+    separator: u8,
     quote_char: Option<u8>,
     eol_char: u8,
 ) -> Option<Vec<u8>> {
     if bytes.starts_with(&GZIP) {
         let mut decoder = flate2::read::MultiGzDecoder::new(bytes);
-        decompress_impl(&mut decoder, n_rows, delimiter, quote_char, eol_char)
+        decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
     } else if bytes.starts_with(&ZLIB0) || bytes.starts_with(&ZLIB1) || bytes.starts_with(&ZLIB2) {
         let mut decoder = flate2::read::ZlibDecoder::new(bytes);
-        decompress_impl(&mut decoder, n_rows, delimiter, quote_char, eol_char)
+        decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
     } else {
         None
     }

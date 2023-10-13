@@ -3,14 +3,12 @@ use std::io::Cursor;
 use std::path::PathBuf;
 
 pub use arrow::array::StructArray;
-pub use arrow::io::ndjson as arrow_ndjson;
 use num_traits::pow::Pow;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::POOL;
 use rayon::prelude::*;
 
-use crate::csv::utils::*;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::ndjson::buffer::*;
 use crate::prelude::*;
@@ -176,7 +174,7 @@ impl<'a> CoreJsonReader<'a> {
                 let schema = StructArray::get_fields(&data_type).iter().collect();
 
                 Arc::new(schema)
-            }
+            },
         };
         if let Some(overwriting_schema) = schema_overwrite {
             let schema = Arc::make_mut(&mut schema);
@@ -288,13 +286,13 @@ fn parse_impl(
                         }
                         PolarsResult::Ok(())
                     })?;
-                }
+                },
                 _ => {
                     buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
-                }
+                },
             };
             true
-        }
+        },
     };
     polars_ensure!(all_good, ComputeError: "invalid JSON: unexpected end of file");
     Ok(n)
@@ -312,10 +310,10 @@ fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> Pol
             Ok(value) => {
                 let bytes = value.get().as_bytes();
                 parse_impl(bytes, buffers, &mut buf)?;
-            }
+            },
             Err(e) => {
                 polars_bail!(ComputeError: "error parsing ndjson {}", e)
-            }
+            },
         }
     }
     Ok(())
@@ -400,7 +398,7 @@ pub(crate) fn get_file_chunks_json(bytes: &[u8], n_threads: usize) -> Vec<(usize
             Some(pos) => search_pos + pos,
             None => {
                 break;
-            }
+            },
         };
         offsets.push((last_pos, end_pos));
         last_pos = end_pos;

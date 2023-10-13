@@ -4,6 +4,7 @@ use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
 use chrono::format::{DelayedFormat, StrftimeItems};
+use chrono::NaiveDate;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "timezones")]
@@ -33,7 +34,7 @@ fn apply_datefmt_f<'a>(
                 let datefmt = datefmt_f(converted);
                 write!(buf, "{datefmt}").unwrap();
                 mutarr.push(Some(&buf))
-            }
+            },
         }
     }
     let arr: Utf8Array<i64> = mutarr.into();
@@ -191,32 +192,32 @@ impl DatetimeChunked {
                 let ca = &self.0 / 1_000;
                 out.0 = ca;
                 out
-            }
+            },
             (Nanoseconds, Milliseconds) => {
                 let ca = &self.0 / 1_000_000;
                 out.0 = ca;
                 out
-            }
+            },
             (Microseconds, Nanoseconds) => {
                 let ca = &self.0 * 1_000;
                 out.0 = ca;
                 out
-            }
+            },
             (Microseconds, Milliseconds) => {
                 let ca = &self.0 / 1_000;
                 out.0 = ca;
                 out
-            }
+            },
             (Milliseconds, Nanoseconds) => {
                 let ca = &self.0 * 1_000_000;
                 out.0 = ca;
                 out
-            }
+            },
             (Milliseconds, Microseconds) => {
                 let ca = &self.0 * 1_000;
                 out.0 = ca;
                 out
-            }
+            },
             (Nanoseconds, Nanoseconds)
             | (Microseconds, Microseconds)
             | (Milliseconds, Milliseconds) => out,

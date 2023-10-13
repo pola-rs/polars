@@ -168,7 +168,7 @@ macro_rules! minmax_window {
                 };
                 let empty_overlap = old_last_end <= start;
 
-                if entering.is_some_and(|em| $new_is_m(&self.m, em.1) || empty_overlap) {
+                if entering.map(|em| $new_is_m(&self.m, em.1) || empty_overlap) == Some(true) {
                     // The entering extremum "beats" the previous extremum so we can ignore the overlap
                     self.update_m_and_m_idx(entering.unwrap());
                     return self.m;
@@ -187,7 +187,7 @@ macro_rules! minmax_window {
                         } else {
                             self.update_m_and_m_idx(pm);
                         }
-                    }
+                    },
                     (Some(pm), None) => self.update_m_and_m_idx(pm),
                     (None, Some(em)) => self.update_m_and_m_idx(em),
                     // This would mean both the entering and previous windows are empty
@@ -275,7 +275,7 @@ macro_rules! rolling_minmax_func {
                         $wtd_f,
                         &weights,
                     )
-                }
+                },
             }
         }
     };

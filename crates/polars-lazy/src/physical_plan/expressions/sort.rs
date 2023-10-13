@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_arrow::utils::CustomIterTools;
-use polars_core::frame::groupby::GroupsProxy;
+use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 use rayon::prelude::*;
@@ -72,7 +72,7 @@ impl PhysicalExpr for SortExpr {
                 let ca = s.list().unwrap();
                 let out = ca.lst_sort(self.options);
                 ac.with_series(out.into_series(), true, Some(&self.expr))?;
-            }
+            },
             _ => {
                 let series = ac.flat_naive().into_owned();
 
@@ -84,20 +84,15 @@ impl PhysicalExpr for SortExpr {
                             groups
                                 .par_iter()
                                 .map(|(first, idx)| {
-                                    // Safety:
-                                    // Group tuples are always in bounds
-                                    let group = unsafe {
-                                        series.take_iter_unchecked(
-                                            &mut idx.iter().map(|i| *i as usize),
-                                        )
-                                    };
+                                    // SAFETY: group tuples are always in bounds.
+                                    let group = unsafe { series.take_slice_unchecked(idx) };
 
                                     let sorted_idx = group.arg_sort(sort_options);
                                     let new_idx = map_sorted_indices_to_group_idx(&sorted_idx, idx);
                                     (new_idx.first().copied().unwrap_or(first), new_idx)
                                 })
                                 .collect()
-                        }
+                        },
                         GroupsProxy::Slice { groups, .. } => groups
                             .par_iter()
                             .map(|&[first, len]| {
@@ -111,7 +106,7 @@ impl PhysicalExpr for SortExpr {
                 });
                 let groups = GroupsProxy::Idx(groups);
                 ac.with_groups(groups);
-            }
+            },
         }
 
         Ok(ac)

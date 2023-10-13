@@ -10,9 +10,9 @@ macro_rules! impl_unit_setter {
     };
 }
 
-/// Arguments used by `datetime` in order to produce an `Expr` of `Datetime`
+/// Arguments used by `datetime` in order to produce an [`Expr`] of Datetime
 ///
-/// Construct a `DatetimeArgs` with `DatetimeArgs::new(y, m, d)`. This will set the other time units to `lit(0)`. You
+/// Construct a [`DatetimeArgs`] with `DatetimeArgs::new(y, m, d)`. This will set the other time units to `lit(0)`. You
 /// can then set the other fields with the `with_*` methods, or use `with_hms` to set `hour`, `minute`, and `second` all
 /// at once.
 ///
@@ -36,6 +36,26 @@ pub struct DatetimeArgs {
     pub minute: Expr,
     pub second: Expr,
     pub microsecond: Expr,
+    pub time_unit: TimeUnit,
+    pub time_zone: Option<TimeZone>,
+    pub ambiguous: Expr,
+}
+
+impl Default for DatetimeArgs {
+    fn default() -> Self {
+        Self {
+            year: lit(1970),
+            month: lit(1),
+            day: lit(1),
+            hour: lit(0),
+            minute: lit(0),
+            second: lit(0),
+            microsecond: lit(0),
+            time_unit: TimeUnit::Microseconds,
+            time_zone: None,
+            ambiguous: lit(String::from("raise")),
+        }
+    }
 }
 
 impl DatetimeArgs {
@@ -47,10 +67,7 @@ impl DatetimeArgs {
             year,
             month,
             day,
-            hour: lit(0),
-            minute: lit(0),
-            second: lit(0),
-            microsecond: lit(0),
+            ..Default::default()
         }
     }
 
@@ -78,14 +95,23 @@ impl DatetimeArgs {
     impl_unit_setter!(with_minute(minute));
     impl_unit_setter!(with_second(second));
     impl_unit_setter!(with_microsecond(microsecond));
+
+    pub fn with_time_unit(self, time_unit: TimeUnit) -> Self {
+        Self { time_unit, ..self }
+    }
+    #[cfg(feature = "timezones")]
+    pub fn with_time_zone(self, time_zone: Option<TimeZone>) -> Self {
+        Self { time_zone, ..self }
+    }
+    #[cfg(feature = "timezones")]
+    pub fn with_ambiguous(self, ambiguous: Expr) -> Self {
+        Self { ambiguous, ..self }
+    }
 }
 
 /// Construct a column of `Datetime` from the provided [`DatetimeArgs`].
 #[cfg(feature = "temporal")]
 pub fn datetime(args: DatetimeArgs) -> Expr {
-    use polars_core::export::chrono::NaiveDate;
-    use polars_core::utils::CustomIterTools;
-
     let year = args.year;
     let month = args.month;
     let day = args.day;
@@ -93,92 +119,40 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
     let minute = args.minute;
     let second = args.second;
     let microsecond = args.microsecond;
+    let time_unit = args.time_unit;
+    let time_zone = args.time_zone;
+    let ambiguous = args.ambiguous;
 
-    let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-        assert_eq!(s.len(), 7);
-        let max_len = s.iter().map(|s| s.len()).max().unwrap();
-        let mut year = s[0].cast(&DataType::Int32)?;
-        if year.len() < max_len {
-            year = year.new_from_index(0, max_len)
-        }
-        let year = year.i32()?;
-        let mut month = s[1].cast(&DataType::UInt32)?;
-        if month.len() < max_len {
-            month = month.new_from_index(0, max_len);
-        }
-        let month = month.u32()?;
-        let mut day = s[2].cast(&DataType::UInt32)?;
-        if day.len() < max_len {
-            day = day.new_from_index(0, max_len);
-        }
-        let day = day.u32()?;
-        let mut hour = s[3].cast(&DataType::UInt32)?;
-        if hour.len() < max_len {
-            hour = hour.new_from_index(0, max_len);
-        }
-        let hour = hour.u32()?;
+    let input = vec![
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        microsecond,
+        ambiguous,
+    ];
 
-        let mut minute = s[4].cast(&DataType::UInt32)?;
-        if minute.len() < max_len {
-            minute = minute.new_from_index(0, max_len);
-        }
-        let minute = minute.u32()?;
-
-        let mut second = s[5].cast(&DataType::UInt32)?;
-        if second.len() < max_len {
-            second = second.new_from_index(0, max_len);
-        }
-        let second = second.u32()?;
-
-        let mut microsecond = s[6].cast(&DataType::UInt32)?;
-        if microsecond.len() < max_len {
-            microsecond = microsecond.new_from_index(0, max_len);
-        }
-        let microsecond = microsecond.u32()?;
-
-        let ca: Int64Chunked = year
-            .into_iter()
-            .zip(month)
-            .zip(day)
-            .zip(hour)
-            .zip(minute)
-            .zip(second)
-            .zip(microsecond)
-            .map(|((((((y, m), d), h), mnt), s), us)| {
-                if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(us)) =
-                    (y, m, d, h, mnt, s, us)
-                {
-                    NaiveDate::from_ymd_opt(y, m, d)
-                        .and_then(|nd| nd.and_hms_micro_opt(h, mnt, s, us))
-                        .map(|ndt| ndt.timestamp_micros())
-                } else {
-                    None
-                }
-            })
-            .collect_trusted();
-
-        Ok(Some(
-            ca.into_datetime(TimeUnit::Microseconds, None).into_series(),
-        ))
-    }) as Arc<dyn SeriesUdf>);
-
-    Expr::AnonymousFunction {
-        input: vec![year, month, day, hour, minute, second, microsecond],
-        function,
-        output_type: GetOutput::from_type(DataType::Datetime(TimeUnit::Microseconds, None)),
+    Expr::Function {
+        input,
+        function: FunctionExpr::TemporalExpr(TemporalFunction::DatetimeFunction {
+            time_unit,
+            time_zone,
+        }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
+            allow_rename: true,
             input_wildcard_expansion: true,
             fmt_str: "datetime",
             ..Default::default()
         },
     }
-    .alias("datetime")
 }
 
-/// Arguments used by `duration` in order to produce an `Expr` of `Duration`
+/// Arguments used by `duration` in order to produce an [`Expr`] of [`Duration`]
 ///
-/// To construct a `DurationArgs`, use struct literal syntax with `..Default::default()` to leave unspecified fields at
+/// To construct a [`DurationArgs`], use struct literal syntax with `..Default::default()` to leave unspecified fields at
 /// their default value of `lit(0)`, as demonstrated below.
 ///
 /// ```
@@ -203,6 +177,7 @@ pub struct DurationArgs {
     pub milliseconds: Expr,
     pub microseconds: Expr,
     pub nanoseconds: Expr,
+    pub time_unit: TimeUnit,
 }
 
 impl Default for DurationArgs {
@@ -216,12 +191,13 @@ impl Default for DurationArgs {
             milliseconds: lit(0),
             microseconds: lit(0),
             nanoseconds: lit(0),
+            time_unit: TimeUnit::Microseconds,
         }
     }
 }
 
 impl DurationArgs {
-    /// Create a new `DurationArgs` with all fields set to `lit(0)`. Use the `with_*` methods to set the fields.
+    /// Create a new [`DurationArgs`] with all fields set to `lit(0)`. Use the `with_*` methods to set the fields.
     pub fn new() -> Self {
         Self::default()
     }
@@ -276,7 +252,7 @@ impl DurationArgs {
     impl_unit_setter!(with_nanoseconds(nanoseconds));
 }
 
-/// Construct a column of `Duration` from the provided [`DurationArgs`]
+/// Construct a column of [`Duration`] from the provided [`DurationArgs`]
 #[cfg(feature = "temporal")]
 pub fn duration(args: DurationArgs) -> Expr {
     let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
@@ -284,15 +260,15 @@ pub fn duration(args: DurationArgs) -> Expr {
         if s.iter().any(|s| s.is_empty()) {
             return Ok(Some(Series::new_empty(
                 s[0].name(),
-                &DataType::Duration(TimeUnit::Nanoseconds),
+                &DataType::Duration(args.time_unit),
             )));
         }
 
         let days = s[0].cast(&DataType::Int64).unwrap();
         let seconds = s[1].cast(&DataType::Int64).unwrap();
         let mut nanoseconds = s[2].cast(&DataType::Int64).unwrap();
-        let microseconds = s[3].cast(&DataType::Int64).unwrap();
-        let milliseconds = s[4].cast(&DataType::Int64).unwrap();
+        let mut microseconds = s[3].cast(&DataType::Int64).unwrap();
+        let mut milliseconds = s[4].cast(&DataType::Int64).unwrap();
         let minutes = s[5].cast(&DataType::Int64).unwrap();
         let hours = s[6].cast(&DataType::Int64).unwrap();
         let weeks = s[7].cast(&DataType::Int64).unwrap();
@@ -304,34 +280,59 @@ pub fn duration(args: DurationArgs) -> Expr {
             (s.len() != max_len && s.get(0).unwrap() != AnyValue::Int64(0)) || s.len() == max_len
         };
 
-        if nanoseconds.len() != max_len {
-            nanoseconds = nanoseconds.new_from_index(0, max_len);
-        }
-        if condition(&microseconds) {
-            nanoseconds = nanoseconds + (microseconds * 1_000);
-        }
-        if condition(&milliseconds) {
-            nanoseconds = nanoseconds + (milliseconds * 1_000_000);
-        }
+        let multiplier = match args.time_unit {
+            TimeUnit::Nanoseconds => NANOSECONDS,
+            TimeUnit::Microseconds => MICROSECONDS,
+            TimeUnit::Milliseconds => MILLISECONDS,
+        };
+
+        let mut duration = match args.time_unit {
+            TimeUnit::Nanoseconds => {
+                if nanoseconds.len() != max_len {
+                    nanoseconds = nanoseconds.new_from_index(0, max_len);
+                }
+                if condition(&microseconds) {
+                    nanoseconds = nanoseconds + (microseconds * 1_000);
+                }
+                if condition(&milliseconds) {
+                    nanoseconds = nanoseconds + (milliseconds * 1_000_000);
+                }
+                nanoseconds
+            },
+            TimeUnit::Microseconds => {
+                if microseconds.len() != max_len {
+                    microseconds = microseconds.new_from_index(0, max_len);
+                }
+                if condition(&milliseconds) {
+                    microseconds = microseconds + (milliseconds * 1_000);
+                }
+                microseconds
+            },
+            TimeUnit::Milliseconds => {
+                if milliseconds.len() != max_len {
+                    milliseconds = milliseconds.new_from_index(0, max_len);
+                }
+                milliseconds
+            },
+        };
+
         if condition(&seconds) {
-            nanoseconds = nanoseconds + (seconds * NANOSECONDS);
+            duration = duration + (seconds * multiplier);
         }
         if condition(&days) {
-            nanoseconds = nanoseconds + (days * NANOSECONDS * SECONDS_IN_DAY);
+            duration = duration + (days * multiplier * SECONDS_IN_DAY);
         }
         if condition(&minutes) {
-            nanoseconds = nanoseconds + minutes * NANOSECONDS * 60;
+            duration = duration + minutes * multiplier * 60;
         }
         if condition(&hours) {
-            nanoseconds = nanoseconds + hours * NANOSECONDS * 60 * 60;
+            duration = duration + hours * multiplier * 60 * 60;
         }
         if condition(&weeks) {
-            nanoseconds = nanoseconds + weeks * NANOSECONDS * SECONDS_IN_DAY * 7;
+            duration = duration + weeks * multiplier * SECONDS_IN_DAY * 7;
         }
 
-        nanoseconds
-            .cast(&DataType::Duration(TimeUnit::Nanoseconds))
-            .map(Some)
+        duration.cast(&DataType::Duration(args.time_unit)).map(Some)
     }) as Arc<dyn SeriesUdf>);
 
     Expr::AnonymousFunction {
@@ -346,7 +347,7 @@ pub fn duration(args: DurationArgs) -> Expr {
             args.weeks,
         ],
         function,
-        output_type: GetOutput::from_type(DataType::Duration(TimeUnit::Nanoseconds)),
+        output_type: GetOutput::from_type(DataType::Duration(args.time_unit)),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,

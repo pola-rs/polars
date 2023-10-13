@@ -112,7 +112,7 @@ where
                         ComputeError: "remaining bytes non-empty",
                     );
                     self.append_null()
-                }
+                },
             };
         }
         Ok(())
@@ -216,7 +216,7 @@ impl ParsedBuffer for Utf8Field {
                 unsafe { self.data.set_len(data_len + n_written) }
                 self.offsets.push(self.data.len() as i64);
                 self.validity.push(true);
-            }
+            },
             false => {
                 if matches!(self.encoding, CsvEncoding::LossyUtf8) {
                     // Safety:
@@ -243,7 +243,7 @@ impl ParsedBuffer for Utf8Field {
                 } else {
                     polars_bail!(ComputeError: "invalid utf-8 sequence");
                 }
-            }
+            },
         }
 
         Ok(())
@@ -392,7 +392,7 @@ impl ParsedBuffer for BooleanChunkedBuilder {
 
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 pub(crate) struct DatetimeField<T: PolarsNumericType> {
-    compiled: Option<DatetimeInfer<T::Native>>,
+    compiled: Option<DatetimeInfer<T>>,
     builder: PrimitiveChunkedBuilder<T>,
 }
 
@@ -416,20 +416,24 @@ fn slow_datetime_parser<T>(
 ) -> PolarsResult<()>
 where
     T: PolarsNumericType,
-    DatetimeInfer<T::Native>: TryFromWithUnit<Pattern>,
+    DatetimeInfer<T>: TryFromWithUnit<Pattern>,
 {
     let val = if bytes.is_ascii() {
         // Safety:
         // we just checked it is ascii
         unsafe { std::str::from_utf8_unchecked(bytes) }
-    } else if ignore_errors {
-        buf.builder.append_null();
-        return Ok(());
-    } else if !ignore_errors && std::str::from_utf8(bytes).is_err() {
-        polars_bail!(ComputeError: "invalid utf-8 sequence");
     } else {
-        buf.builder.append_null();
-        return Ok(());
+        match std::str::from_utf8(bytes) {
+            Ok(val) => val,
+            Err(_) => {
+                if ignore_errors {
+                    buf.builder.append_null();
+                    return Ok(());
+                } else {
+                    polars_bail!(ComputeError: "invalid utf-8 sequence");
+                }
+            },
+        }
     };
 
     let pattern = match &buf.compiled {
@@ -437,22 +441,30 @@ where
         None => match infer_pattern_single(val) {
             Some(pattern) => pattern,
             None => {
-                buf.builder.append_null();
-                return Ok(());
-            }
+                if ignore_errors {
+                    buf.builder.append_null();
+                    return Ok(());
+                } else {
+                    polars_bail!(ComputeError: "could not find a 'date/datetime' pattern for {}", val)
+                }
+            },
         },
     };
-    match DatetimeInfer::<T::Native>::try_from_with_unit(pattern, time_unit) {
+    match DatetimeInfer::try_from_with_unit(pattern, time_unit) {
         Ok(mut infer) => {
             let parsed = infer.parse(val);
             buf.compiled = Some(infer);
             buf.builder.append_option(parsed);
             Ok(())
-        }
-        Err(_) => {
-            buf.builder.append_null();
-            Ok(())
-        }
+        },
+        Err(err) => {
+            if ignore_errors {
+                buf.builder.append_null();
+                Ok(())
+            } else {
+                Err(err)
+            }
+        },
     }
 }
 
@@ -460,7 +472,7 @@ where
 impl<T> ParsedBuffer for DatetimeField<T>
 where
     T: PolarsNumericType,
-    DatetimeInfer<T::Native>: TryFromWithUnit<Pattern> + StrpTimeParser<T::Native>,
+    DatetimeInfer<T>: TryFromWithUnit<Pattern> + StrpTimeParser<T::Native>,
 {
     #[inline]
     fn parse_bytes(
@@ -482,13 +494,13 @@ where
                     Some(parsed) => {
                         self.builder.append_value(parsed);
                         Ok(())
-                    }
+                    },
                     // fall back on chrono parser
                     // this is a lot slower, we need to do utf8 checking and use
                     // the slower parser
                     None => slow_datetime_parser(self, bytes, time_unit, ignore_errors),
                 }
-            }
+            },
         }
     }
 }
@@ -544,7 +556,7 @@ pub(crate) fn init_buffers<'a>(
                 #[cfg(feature = "dtype-categorical")]
                 &DataType::Categorical(_) => {
                     Buffer::Categorical(CategoricalField::new(name, capacity, quote_char))
-                }
+                },
                 dt => polars_bail!(
                     ComputeError: "unsupported data type when reading CSV: {} when reading CSV", dt,
                 ),
@@ -605,26 +617,21 @@ impl<'a> Buffer<'a> {
                 .into_series()
                 .cast(&DataType::Date)
                 .unwrap(),
-            // Safety:
-            // We already checked utf8 validity during parsing
-            Buffer::Utf8(mut v) => unsafe {
+
+            Buffer::Utf8(mut v) => {
                 v.offsets.shrink_to_fit();
                 v.data.shrink_to_fit();
 
                 let mut valid_utf8 = true;
                 if delay_utf8_validation(v.encoding, v.ignore_errors) {
-                    // check whole buffer for utf8
-                    // this alone is not enough
-                    // we must also check byte starts
-                    // see: https://github.com/jorgecarleitao/arrow2/pull/823
+                    // Check if the whole buffer is utf8. This alone is not enough,
+                    // we must also check byte starts, see: https://github.com/jorgecarleitao/arrow2/pull/823
                     simdutf8::basic::from_utf8(&v.data)
                         .map_err(|_| polars_err!(ComputeError: "invalid utf-8 sequence in csv"))?;
 
                     for i in (0..v.offsets.len() - 1).step_by(2) {
-                        // Safety:
-                        // we iterate over offsets.len()
-                        let start = *v.offsets.get_unchecked(i) as usize;
-
+                        // SAFETY: we iterate over offsets.len().
+                        let start = unsafe { *v.offsets.get_unchecked(i) as usize };
                         let first = v.data.get(start);
 
                         // A valid code-point iff it does not start with 0b10xxxxxx
@@ -639,13 +646,15 @@ impl<'a> Buffer<'a> {
                     polars_ensure!(valid_utf8, ComputeError: "invalid utf-8 sequence in CSV");
                 }
 
-                let arr = Utf8Array::<i64>::from_data_unchecked_default(
-                    v.offsets.into(),
-                    v.data.into(),
-                    Some(v.validity.into()),
-                );
-                let ca = Utf8Chunked::from_chunks(&v.name, vec![Box::new(arr)]);
-                ca.into_series()
+                // SAFETY: we already checked utf8 validity during parsing, or just now.
+                let arr = unsafe {
+                    Utf8Array::<i64>::from_data_unchecked_default(
+                        v.offsets.into(),
+                        v.data.into(),
+                        Some(v.validity.into()),
+                    )
+                };
+                Utf8Chunked::with_chunk(v.name.as_str(), arr).into_series()
             },
             #[allow(unused_variables)]
             Buffer::Categorical(buf) => {
@@ -657,7 +666,7 @@ impl<'a> Buffer<'a> {
                 {
                     panic!("activate 'dtype-categorical' feature")
                 }
-            }
+            },
         };
         Ok(s)
     }
@@ -674,7 +683,7 @@ impl<'a> Buffer<'a> {
             Buffer::Utf8(v) => {
                 v.offsets.push(v.data.len() as i64);
                 v.validity.push(valid);
-            }
+            },
             #[cfg(feature = "dtype-datetime")]
             Buffer::Datetime { buf, .. } => buf.builder.append_null(),
             #[cfg(feature = "dtype-date")]
@@ -689,7 +698,7 @@ impl<'a> Buffer<'a> {
                 {
                     panic!("activate 'dtype-categorical' feature")
                 }
-            }
+            },
         };
     }
 
@@ -717,7 +726,7 @@ impl<'a> Buffer<'a> {
                 {
                     panic!("activate 'dtype-categorical' feature")
                 }
-            }
+            },
         }
     }
 
@@ -805,7 +814,7 @@ impl<'a> Buffer<'a> {
                     missing_is_null,
                     Some(*time_unit),
                 )
-            }
+            },
             #[cfg(feature = "dtype-date")]
             Date(buf) => <DatetimeField<Int32Type> as ParsedBuffer>::parse_bytes(
                 buf,
@@ -826,7 +835,7 @@ impl<'a> Buffer<'a> {
                 {
                     panic!("activate 'dtype-categorical' feature")
                 }
-            }
+            },
         }
     }
 }

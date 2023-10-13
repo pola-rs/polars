@@ -151,12 +151,12 @@ pub(crate) fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType
                 match acc.entry(field.name.as_str()) {
                     Entry::Occupied(mut v) => {
                         v.get_mut().insert(&field.data_type);
-                    }
+                    },
                     Entry::Vacant(v) => {
                         let mut a = PlHashSet::default();
                         a.insert(&field.data_type);
                         v.insert(a);
-                    }
+                    },
                 }
                 acc
             },
@@ -180,15 +180,15 @@ pub(crate) fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType
         (LargeList(lhs), LargeList(rhs)) => {
             let inner = coerce_data_type(&[lhs.data_type(), rhs.data_type()]);
             LargeList(Box::new(Field::new(ITEM_NAME, inner, true)))
-        }
+        },
         (scalar, List(list)) => {
             let inner = coerce_data_type(&[scalar, list.data_type()]);
             LargeList(Box::new(Field::new(ITEM_NAME, inner, true)))
-        }
+        },
         (LargeList(list), scalar) => {
             let inner = coerce_data_type(&[scalar, list.data_type()]);
             LargeList(Box::new(Field::new(ITEM_NAME, inner, true)))
-        }
+        },
         (Float64, Int64) => Float64,
         (Int64, Float64) => Float64,
         (Int64, Boolean) => Int64,

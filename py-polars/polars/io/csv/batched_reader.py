@@ -4,17 +4,14 @@ import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
-from polars.datatypes import (
-    N_INFER_DEFAULT,
-    py_type_to_dtype,
-)
+from polars.datatypes import N_INFER_DEFAULT, py_type_to_dtype
 from polars.io.csv._utils import _update_columns
 from polars.utils._wrap import wrap_df
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
     handle_projection_columns,
-    normalise_filepath,
+    normalize_filepath,
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -31,11 +28,12 @@ class BatchedCsvReader:
     def __init__(
         self,
         source: str | Path,
+        *,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
         separator: str = ",",
         comment_char: str | None = None,
-        quote_char: str | None = r'"',
+        quote_char: str | None = '"',
         skip_rows: int = 0,
         dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
         null_values: str | Sequence[str] | dict[str, str] | None = None,
@@ -55,10 +53,12 @@ class BatchedCsvReader:
         sample_size: int = 1024,
         eol_char: str = "\n",
         new_columns: Sequence[str] | None = None,
+        raise_if_empty: bool = True,
+        truncate_ragged_lines: bool = False,
     ):
         path: str | None
         if isinstance(source, (str, Path)):
-            path = normalise_filepath(source)
+            path = normalize_filepath(source)
 
         dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
         dtype_slice: Sequence[PolarsDataType] | None = None
@@ -70,7 +70,7 @@ class BatchedCsvReader:
             elif isinstance(dtypes, Sequence):
                 dtype_slice = dtypes
             else:
-                raise ValueError("dtype arg should be list or dict")
+                raise TypeError("`dtypes` arg should be list or dict")
 
         processed_null_values = _process_null_values(null_values)
         projection, columns = handle_projection_columns(columns)
@@ -101,6 +101,8 @@ class BatchedCsvReader:
             row_count=_prepare_row_count_args(row_count_name, row_count_offset),
             sample_size=sample_size,
             eol_char=eol_char,
+            raise_if_empty=raise_if_empty,
+            truncate_ragged_lines=truncate_ragged_lines,
         )
         self.new_columns = new_columns
 

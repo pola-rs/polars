@@ -98,7 +98,7 @@ pub(super) fn predicate_is_sort_boundary(node: Node, expr_arena: &Arena<AExpr>) 
             // like sum, min, etc).
             // function that match this are `cumsum`, `shift`, `sort`, etc.
             options.is_groups_sensitive() && !options.auto_explode
-        }
+        },
         _ => false,
     };
     has_aexpr(node, expr_arena, matches)
@@ -123,7 +123,7 @@ pub(super) fn predicate_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExp
             | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
             | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
             | AExpr::Explode {..}
-            // A groupby needs all rows for aggregation
+            // A group_by needs all rows for aggregation
             | AExpr::Window {..}
         )
     };
@@ -158,7 +158,7 @@ pub(super) fn projection_is_definite_pushdown_boundary(
              | Nth(_)
              | Slice {..}
              | Take {..}
-            // A groupby needs all rows for aggregation
+            // A group_by needs all rows for aggregation
             | Window {..}
             | Literal(LiteralValue::Range {..}) => true,
             // The series might be used in a comparison with exactly the right length
@@ -293,7 +293,7 @@ where
                 &mut local_predicates,
             ) {
                 LoopBehavior::Continue => continue,
-                LoopBehavior::Nothing => {}
+                LoopBehavior::Nothing => {},
             }
         }
         let input_schema = lp_arena.get(input).schema(lp_arena);
@@ -436,7 +436,7 @@ pub(super) fn partition_by_full_context(
             AExpr::BinaryExpr { left, right, .. } => {
                 expr_arena.get(*left).groups_sensitive()
                     || expr_arena.get(*right).groups_sensitive()
-            }
+            },
             ae => ae.groups_sensitive(),
         })
     })

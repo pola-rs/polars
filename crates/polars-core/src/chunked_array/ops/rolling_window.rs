@@ -71,7 +71,7 @@ mod inner_mod {
         Self: IntoSeries,
     {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
-        fn rolling_apply(
+        fn rolling_map(
             &self,
             f: &dyn Fn(&Series) -> Series,
             mut options: RollingOptionsFixedWindow,
@@ -83,18 +83,17 @@ mod inner_mod {
                 && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
             {
                 let s = self.cast(&DataType::Float64)?;
-                return s.rolling_apply(f, options);
+                return s.rolling_map(f, options);
             }
 
             options.window_size = std::cmp::min(self.len(), options.window_size);
 
             let len = self.len();
             let arr = ca.downcast_iter().next().unwrap();
-            let mut series_container =
-                ChunkedArray::<T>::from_slice("", &[T::Native::zero()]).into_series();
-            let array_ptr = series_container.array_ref(0);
-            let ptr = array_ptr.as_ref() as *const dyn Array as *mut dyn Array
-                as *mut PrimitiveArray<T::Native>;
+            let mut ca = ChunkedArray::<T>::from_slice("", &[T::Native::zero()]);
+            let ptr = ca.chunks[0].as_mut() as *mut dyn Array as *mut PrimitiveArray<T::Native>;
+            let mut series_container = ca.into_series();
+
             let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
 
             if let Some(weights) = options.weights {
@@ -119,9 +118,10 @@ mod inner_mod {
                         unsafe {
                             *ptr = arr_window;
                         }
+                        // reset flags as we reuse this container
+                        series_container.clear_settings();
                         // ensure the length is correct
                         series_container._get_inner_mut().compute_len();
-
                         let s = if size == options.window_size {
                             f(&series_container.multiply(&weights_series).unwrap())
                         } else {
@@ -166,9 +166,10 @@ mod inner_mod {
                         unsafe {
                             *ptr = arr_window;
                         }
+                        // reset flags as we reuse this container
+                        series_container.clear_settings();
                         // ensure the length is correct
                         series_container._get_inner_mut().compute_len();
-
                         let s = f(&series_container);
                         let out = self.unpack_series_matching_type(&s)?;
                         builder.append_option(out.get(0));
@@ -187,7 +188,7 @@ mod inner_mod {
         T::Native: Float + IsFloat + SubAssign + Pow<T::Native, Output = T::Native>,
     {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
-        pub fn rolling_apply_float<F>(&self, window_size: usize, mut f: F) -> PolarsResult<Self>
+        pub fn rolling_map_float<F>(&self, window_size: usize, mut f: F) -> PolarsResult<Self>
         where
             F: FnMut(&mut ChunkedArray<T>) -> Option<T::Native>,
         {
@@ -197,12 +198,11 @@ mod inner_mod {
             let ca = self.rechunk();
             let arr = ca.downcast_iter().next().unwrap();
 
-            // we create a temporary dummy ChunkedArray
-            // this will be a container where we swap the window contents every iteration
-            // doing so will save a lot of heap allocations.
+            // We create a temporary dummy ChunkedArray. This will be a
+            // container where we swap the window contents every iteration doing
+            // so will save a lot of heap allocations.
             let mut heap_container = ChunkedArray::<T>::from_slice("", &[T::Native::zero()]);
-            let array_ptr = &heap_container.chunks()[0];
-            let ptr = array_ptr.as_ref() as *const dyn Array as *mut dyn Array
+            let ptr = heap_container.chunks[0].as_mut() as *mut dyn Array
                 as *mut PrimitiveArray<T::Native>;
 
             let mut validity = MutableBitmap::with_capacity(ca.len());
@@ -216,13 +216,11 @@ mod inner_mod {
             for offset in 0..self.len() + 1 - window_size {
                 debug_assert!(offset + window_size <= arr.len());
                 let arr_window = unsafe { arr.slice_typed_unchecked(offset, window_size) };
-                // the lengths are cached, so we must update them
+                // The lengths are cached, so we must update them.
                 heap_container.length = arr_window.len() as IdxSize;
 
-                // Safety.
-                // ptr is not dropped as we are in scope
-                // We are also the only owner of the contents of the Arc
-                // we do this to reduce heap allocs.
+                // SAFETY: ptr is not dropped as we are in scope. We are also the only
+                // owner of the contents of the Arc (we do this to reduce heap allocs).
                 unsafe {
                     *ptr = arr_window;
                 }
@@ -230,17 +228,17 @@ mod inner_mod {
                 let out = f(&mut heap_container);
                 match out {
                     Some(v) => {
-                        // Safety: we have pre-allocated
+                        // SAFETY: we have pre-allocated.
                         unsafe { values.push_unchecked(v) }
-                    }
+                    },
                     None => {
-                        // safety: we allocated enough for both the `values` vec
-                        // and the `validity_ptr`
+                        // SAFETY: we allocated enough for both the `values` vec
+                        // and the `validity_ptr`.
                         unsafe {
                             values.push_unchecked(T::Native::default());
                             unset_bit_raw(validity_ptr, offset + window_size - 1);
                         }
-                    }
+                    },
                 }
             }
             let arr = PrimitiveArray::new(
@@ -248,7 +246,7 @@ mod inner_mod {
                 values.into(),
                 Some(validity.into()),
             );
-            unsafe { Ok(Self::from_chunks(self.name(), vec![Box::new(arr)])) }
+            Ok(Self::with_chunk(self.name(), arr))
         }
     }
 }

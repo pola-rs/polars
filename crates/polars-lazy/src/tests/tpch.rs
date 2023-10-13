@@ -58,7 +58,7 @@ fn test_q2() -> PolarsResult<()> {
         .filter(col("p_type").str().ends_with(lit("BRASS".to_string())));
     let q = q1
         .clone()
-        .groupby([col("p_partkey")])
+        .group_by([col("p_partkey")])
         .agg([col("ps_supplycost").min()])
         .join(
             q1,

@@ -7,7 +7,7 @@ pub use dispatcher::PipeLine;
 use polars_core::prelude::*;
 use polars_core::POOL;
 
-pub use crate::executors::sinks::groupby::aggregates::can_convert_to_hash_agg;
+pub use crate::executors::sinks::group_by::aggregates::can_convert_to_hash_agg;
 
 pub(crate) fn morsels_per_sink() -> usize {
     POOL.current_num_threads()
@@ -30,6 +30,6 @@ pub(crate) fn determine_chunk_size(n_cols: usize, n_threads: usize) -> PolarsRes
         )
     } else {
         let thread_factor = std::cmp::max(12 / n_threads, 1);
-        Ok(std::cmp::max(50_000 / n_cols * thread_factor, 1000))
+        Ok(std::cmp::max(50_000 / n_cols.max(1) * thread_factor, 1000))
     }
 }

@@ -2,20 +2,21 @@ use std::path::PathBuf;
 
 use polars_core::prelude::*;
 #[cfg(feature = "csv")]
+use polars_io::csv::SerializeOptions;
+#[cfg(feature = "csv")]
 use polars_io::csv::{CsvEncoding, NullValues};
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcCompression;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetCompression;
 use polars_io::RowCount;
-#[cfg(feature = "dynamic_groupby")]
+#[cfg(feature = "dynamic_group_by")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
-use crate::prelude::Expr;
 
 pub type FileCount = u32;
 
@@ -23,7 +24,7 @@ pub type FileCount = u32;
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {
-    pub delimiter: u8,
+    pub separator: u8,
     pub comment_char: Option<u8>,
     pub quote_char: Option<u8>,
     pub eol_char: u8,
@@ -34,6 +35,8 @@ pub struct CsvParserOptions {
     pub null_values: Option<NullValues>,
     pub encoding: CsvEncoding,
     pub try_parse_dates: bool,
+    pub raise_if_empty: bool,
+    pub truncate_ragged_lines: bool,
 }
 
 #[cfg(feature = "parquet")]
@@ -71,6 +74,16 @@ pub struct IpcWriterOptions {
     pub maintain_order: bool,
 }
 
+#[cfg(feature = "csv")]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct CsvWriterOptions {
+    pub has_header: bool,
+    pub batch_size: usize,
+    pub maintain_order: bool,
+    pub serialize_options: SerializeOptions,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptions {
@@ -87,6 +100,7 @@ pub struct FileScanOptions {
     pub row_count: Option<RowCount>,
     pub rechunk: bool,
     pub file_counter: FileCount,
+    pub hive_partitioning: bool,
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]
@@ -104,9 +118,9 @@ pub struct UnionOptions {
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {
-    #[cfg(feature = "dynamic_groupby")]
+    #[cfg(feature = "dynamic_group_by")]
     pub dynamic: Option<DynamicGroupOptions>,
-    #[cfg(feature = "dynamic_groupby")]
+    #[cfg(feature = "dynamic_group_by")]
     pub rolling: Option<RollingGroupOptions>,
     /// Take only a slice of the result
     pub slice: Option<(i64, usize)>,
@@ -133,7 +147,7 @@ pub struct DistinctOptions {
 pub enum ApplyOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
-    // e.g. [g1, g1, g2] -> [[g1, g2], g2]
+    // e.g. [g1, g1, g2] -> [[g1, g1], g2]
     ApplyGroups,
     // collect groups to a list and then apply
     // e.g. [g1, g1, g2] -> list([g1, g1, g2])
@@ -190,9 +204,11 @@ pub struct FunctionOptions {
     pub auto_explode: bool,
     // if the expression and its inputs should be cast to supertypes
     pub cast_to_supertypes: bool,
-    // apply physical expression may rename the output of this function
+    // The physical expression may rename the output of this function.
+    // If set to `false` the physical engine will ensure the left input
+    // expression is the output name.
     pub allow_rename: bool,
-    // if set, then the `Series` passed to the function in the groupby operation
+    // if set, then the `Series` passed to the function in the group_by operation
     // will ensure the name is set. This is an extra heap allocation per group.
     pub pass_name_to_apply: bool,
     // For example a `unique` or a `slice`
@@ -276,13 +292,24 @@ pub struct PythonOptions {
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct AnonymousScanOptions {
-    pub schema: SchemaRef,
-    pub output_schema: Option<SchemaRef>,
     pub skip_rows: Option<usize>,
-    pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<Vec<String>>>,
-    pub predicate: Option<Expr>,
     pub fmt_str: &'static str,
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug)]
+pub enum SinkType {
+    Memory,
+    File {
+        path: Arc<PathBuf>,
+        file_type: FileType,
+    },
+    #[cfg(feature = "cloud")]
+    Cloud {
+        uri: Arc<String>,
+        file_type: FileType,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    },
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -299,5 +326,22 @@ pub enum FileType {
     Parquet(ParquetWriteOptions),
     #[cfg(feature = "ipc")]
     Ipc(IpcWriterOptions),
-    Memory,
+    #[cfg(feature = "csv")]
+    Csv(CsvWriterOptions),
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, Debug)]
+pub struct ProjectionOptions {
+    pub run_parallel: bool,
+    pub duplicate_check: bool,
+}
+
+impl Default for ProjectionOptions {
+    fn default() -> Self {
+        Self {
+            run_parallel: true,
+            duplicate_check: true,
+        }
+    }
 }

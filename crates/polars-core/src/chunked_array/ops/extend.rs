@@ -37,7 +37,7 @@ where
     /// when you read in multiple files and when to store them in a single `DataFrame`.
     /// In the latter case finish the sequence of `append` operations with a [`rechunk`](Self::rechunk).
     pub fn extend(&mut self, other: &Self) {
-        update_sorted_flag_before_append(self, other);
+        update_sorted_flag_before_append::<T>(self, other);
         // all to a single chunk
         if self.chunks.len() > 1 {
             self.append(other);
@@ -70,7 +70,7 @@ where
             match arr.into_mut() {
                 Left(immutable) => {
                     extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-                }
+                },
                 Right(mut mutable) => {
                     for arr in other.downcast_iter() {
                         match arr.null_count() {
@@ -80,7 +80,7 @@ where
                     }
                     let arr: PrimitiveArray<T::Native> = mutable.into();
                     self.chunks.push(Box::new(arr) as ArrayRef)
-                }
+                },
             }
         }
         self.compute_len();
@@ -90,7 +90,7 @@ where
 #[doc(hidden)]
 impl Utf8Chunked {
     pub fn extend(&mut self, other: &Self) {
-        update_sorted_flag_before_append(self, other);
+        update_sorted_flag_before_append::<Utf8Type>(self, other);
         if self.chunks.len() > 1 {
             self.append(other);
             *self = self.rechunk();
@@ -112,14 +112,14 @@ impl Utf8Chunked {
         match arr.into_mut() {
             Left(immutable) => {
                 extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-            }
+            },
             Right(mut mutable) => {
                 for arr in other.downcast_iter() {
                     mutable.extend_trusted_len(arr.into_iter())
                 }
                 let arr: Utf8Array<i64> = mutable.into();
                 self.chunks.push(Box::new(arr) as ArrayRef)
-            }
+            },
         }
         self.compute_len();
         self.set_sorted_flag(IsSorted::Not);
@@ -129,7 +129,7 @@ impl Utf8Chunked {
 #[doc(hidden)]
 impl BinaryChunked {
     pub fn extend(&mut self, other: &Self) {
-        update_sorted_flag_before_append(self, other);
+        update_sorted_flag_before_append::<BinaryType>(self, other);
         if self.chunks.len() > 1 {
             self.append(other);
             *self = self.rechunk();
@@ -151,14 +151,14 @@ impl BinaryChunked {
         match arr.into_mut() {
             Left(immutable) => {
                 extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-            }
+            },
             Right(mut mutable) => {
                 for arr in other.downcast_iter() {
                     mutable.extend_trusted_len(arr.into_iter())
                 }
                 let arr: BinaryArray<i64> = mutable.into();
                 self.chunks.push(Box::new(arr) as ArrayRef)
-            }
+            },
         }
         self.compute_len();
     }
@@ -167,7 +167,7 @@ impl BinaryChunked {
 #[doc(hidden)]
 impl BooleanChunked {
     pub fn extend(&mut self, other: &Self) {
-        update_sorted_flag_before_append(self, other);
+        update_sorted_flag_before_append::<BooleanType>(self, other);
         // make sure that we are a single chunk already
         if self.chunks.len() > 1 {
             self.append(other);
@@ -190,14 +190,14 @@ impl BooleanChunked {
         match arr.into_mut() {
             Left(immutable) => {
                 extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-            }
+            },
             Right(mut mutable) => {
                 for arr in other.downcast_iter() {
                     mutable.extend_trusted_len(arr.into_iter())
                 }
                 let arr: BooleanArray = mutable.into();
                 self.chunks.push(Box::new(arr) as ArrayRef)
-            }
+            },
         }
         self.compute_len();
         self.set_sorted_flag(IsSorted::Not);

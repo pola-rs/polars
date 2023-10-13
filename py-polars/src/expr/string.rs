@@ -2,6 +2,7 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 
 use crate::conversion::Wrap;
+use crate::error::PyPolarsErr;
 use crate::PyExpr;
 
 #[pymethods]
@@ -21,8 +22,7 @@ impl PyExpr {
         self.inner.clone().str().to_date(options).into()
     }
 
-    #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache))]
-    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache, ambiguous))]
     fn str_to_datetime(
         &self,
         format: Option<String>,
@@ -31,6 +31,7 @@ impl PyExpr {
         strict: bool,
         exact: bool,
         cache: bool,
+        ambiguous: Self,
     ) -> Self {
         let options = StrptimeOptions {
             format,
@@ -41,7 +42,12 @@ impl PyExpr {
         self.inner
             .clone()
             .str()
-            .to_datetime(time_unit.map(|tu| tu.0), time_zone, options)
+            .to_datetime(
+                time_unit.map(|tu| tu.0),
+                time_zone,
+                options,
+                ambiguous.inner,
+            )
             .into()
     }
 
@@ -56,16 +62,32 @@ impl PyExpr {
         self.inner.clone().str().to_time(options).into()
     }
 
-    fn str_strip(&self, matches: Option<String>) -> Self {
-        self.inner.clone().str().strip(matches).into()
+    fn str_strip_chars(&self, matches: Self) -> Self {
+        self.inner.clone().str().strip_chars(matches.inner).into()
     }
 
-    fn str_rstrip(&self, matches: Option<String>) -> Self {
-        self.inner.clone().str().rstrip(matches).into()
+    fn str_strip_chars_start(&self, matches: Self) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .strip_chars_start(matches.inner)
+            .into()
     }
 
-    fn str_lstrip(&self, matches: Option<String>) -> Self {
-        self.inner.clone().str().lstrip(matches).into()
+    fn str_strip_chars_end(&self, matches: Self) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .strip_chars_end(matches.inner)
+            .into()
+    }
+
+    fn str_strip_prefix(&self, prefix: Self) -> Self {
+        self.inner.clone().str().strip_prefix(prefix.inner).into()
+    }
+
+    fn str_strip_suffix(&self, suffix: Self) -> Self {
+        self.inner.clone().str().strip_suffix(suffix.inner).into()
     }
 
     fn str_slice(&self, start: i64, length: Option<u64>) -> Self {
@@ -89,12 +111,12 @@ impl PyExpr {
         self.inner.clone().str().to_titlecase().into()
     }
 
-    fn str_lengths(&self) -> Self {
-        self.inner.clone().str().lengths().into()
+    fn str_len_bytes(&self) -> Self {
+        self.inner.clone().str().len_bytes().into()
     }
 
-    fn str_n_chars(&self) -> Self {
-        self.inner.clone().str().n_chars().into()
+    fn str_len_chars(&self) -> Self {
+        self.inner.clone().str().len_chars().into()
     }
 
     #[cfg(feature = "lazy_regex")]
@@ -241,28 +263,47 @@ impl PyExpr {
         self.inner.clone().str().extract_all(pat.inner).into()
     }
 
-    fn str_count_match(&self, pat: &str) -> Self {
-        self.inner.clone().str().count_match(pat).into()
+    #[cfg(feature = "extract_groups")]
+    fn str_extract_groups(&self, pat: &str) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .str()
+            .extract_groups(pat)
+            .map_err(PyPolarsErr::from)?
+            .into())
     }
 
-    fn str_split(&self, by: &str) -> Self {
-        self.inner.clone().str().split(by).into()
+    fn str_count_matches(&self, pat: Self, literal: bool) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .count_matches(pat.inner, literal)
+            .into()
     }
 
-    fn str_split_inclusive(&self, by: &str) -> Self {
-        self.inner.clone().str().split_inclusive(by).into()
+    fn str_split(&self, by: Self) -> Self {
+        self.inner.clone().str().split(by.inner).into()
     }
 
-    fn str_split_exact(&self, by: &str, n: usize) -> Self {
-        self.inner.clone().str().split_exact(by, n).into()
+    fn str_split_inclusive(&self, by: Self) -> Self {
+        self.inner.clone().str().split_inclusive(by.inner).into()
     }
 
-    fn str_split_exact_inclusive(&self, by: &str, n: usize) -> Self {
-        self.inner.clone().str().split_exact_inclusive(by, n).into()
+    fn str_split_exact(&self, by: Self, n: usize) -> Self {
+        self.inner.clone().str().split_exact(by.inner, n).into()
     }
 
-    fn str_splitn(&self, by: &str, n: usize) -> Self {
-        self.inner.clone().str().splitn(by, n).into()
+    fn str_split_exact_inclusive(&self, by: Self, n: usize) -> Self {
+        self.inner
+            .clone()
+            .str()
+            .split_exact_inclusive(by.inner, n)
+            .into()
+    }
+
+    fn str_splitn(&self, by: Self, n: usize) -> Self {
+        self.inner.clone().str().splitn(by.inner, n).into()
     }
 
     fn str_to_decimal(&self, infer_len: usize) -> Self {

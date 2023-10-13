@@ -10,22 +10,22 @@ fmt:  ## Run rustfmt and dprint
 
 .PHONY: check
 check:  ## Run cargo check with all features
-	cargo check --all-targets --all-features
+	cargo check --workspace --all-targets --exclude nano-arrow --all-features
 
 .PHONY: clippy
 clippy:  ## Run clippy with all features
-	cargo clippy --all-targets --all-features
+	cargo clippy -p polars --all-features
 
 .PHONY: clippy-default
 clippy-default:  ## Run clippy with default features
-	cargo clippy --all-targets
+	cargo clippy -p polars
 
 .PHONY: pre-commit
 pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
 
 .PHONY: check-features
 check-features:  ## Run cargo check for feature flag combinations (warning: slow)
-	cargo hack check --each-feature --no-dev-deps
+	cargo hack check -p polars --each-feature --no-dev-deps
 
 .PHONY: miri
 miri:  ## Run miri
@@ -35,7 +35,6 @@ miri:  ## Run miri
 	MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-ignore-leaks -Zmiri-disable-stacked-borrows" \
 	POLARS_ALLOW_EXTENSION=1 \
 	cargo miri test \
-	    --no-default-features \
 	    --features object \
 	    -p polars-core \
 	    -p polars-arrow
@@ -51,9 +50,24 @@ test:  ## Run tests
 		-p polars-utils \
 		-p polars-row \
 		-p polars-sql \
+		-p polars-ops \
 		-p polars-plan \
 		-- \
 		--test-threads=2
+
+.PHONY: nextest
+nextest:  ## Run tests with nextest
+	cargo nextest run --all-features \
+		-p polars-lazy \
+		-p polars-io \
+		-p polars-core \
+		-p polars-arrow \
+		-p polars-time \
+		-p polars-utils \
+		-p polars-row \
+		-p polars-sql \
+		-p polars-ops \
+		-p polars-plan \
 
 .PHONY: integration-tests
 integration-tests:  ## Run integration tests
@@ -68,11 +82,6 @@ test-doc:  ## Run doc examples
 	    -p polars-arrow \
 		-p polars-sql
 
-.PHONY: generate_test_files
-generate_test_files:  ## Generate some datasets
-	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o parquet > ../examples/datasets/foods1.parquet
-	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o arrow > ../examples/datasets/foods1.ipc
-
 .PHONY: bench-save
 bench-save:  ## Run benchmark and save
 	cargo bench --features=random --bench $(BENCH) -- --save-baseline $(SAVE)
@@ -83,15 +92,15 @@ bench-cmp:  ## Run benchmark and compare
 
 .PHONY: doctest
 doctest:  ## Check that documentation builds
-	cargo doc --all-features -p polars-arrow
-	cargo doc --all-features -p polars-utils
-	cargo doc --features=docs-selection -p polars-core
-	cargo doc -p polars-time
-	cargo doc -p polars-ops
-	cargo doc --all-features -p polars-io
-	cargo doc --all-features -p polars-lazy
-	cargo doc --features=docs-selection -p polars
-	cargo doc --all-features -p polars-sql
+	cargo doc --no-deps --all-features -p polars-arrow
+	cargo doc --no-deps --all-features -p polars-utils
+	cargo doc --no-deps --features=docs-selection -p polars-core
+	cargo doc --no-deps -p polars-time
+	cargo doc --no-deps -p polars-ops
+	cargo doc --no-deps --all-features -p polars-io
+	cargo doc --no-deps --all-features -p polars-lazy
+	cargo doc --no-deps --features=docs-selection -p polars
+	cargo doc --no-deps --all-features -p polars-sql
 
 .PHONY: publish
 publish:  ## Publish Polars crates
@@ -101,6 +110,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-arrow
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
+	cargo publish --allow-dirty -p polars-ffi
 	cargo publish --allow-dirty -p polars-ops
 	cargo publish --allow-dirty -p polars-time
 	cargo publish --allow-dirty -p polars-io
@@ -110,9 +120,33 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-algo
 	cargo publish --allow-dirty -p polars-sql
 	cargo publish --allow-dirty -p polars
-	cd .. && cargo publish --allow-dirty -p polars-cli
 
 .PHONY: help
 help:  ## Display this help screen
 	@echo -e "\033[1mAvailable commands:\033[0m"
 	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' | sort
+
+.PHONY: check-wasm
+check-wasm:  ## Check wasm build without supported features
+	cargo hack check --target wasm32-unknown-unknown -p polars --no-dev-deps  \
+		--each-feature                        \
+		--exclude-features async              \
+		--exclude-features aws                \
+		--exclude-features azure              \
+		--exclude-features cloud              \
+		--exclude-features cloud_write        \
+		--exclude-features decompress         \
+		--exclude-features decompress-fast    \
+		--exclude-features default            \
+		--exclude-features docs-selection     \
+		--exclude-features extract_jsonpath   \
+		--exclude-features fmt                \
+		--exclude-features gcp                \
+		--exclude-features ipc                \
+		--exclude-features ipc_streaming      \
+		--exclude-features json               \
+		--exclude-features nightly            \
+		--exclude-features parquet            \
+		--exclude-features performant         \
+		--exclude-features streaming          \
+		--exclude-features test

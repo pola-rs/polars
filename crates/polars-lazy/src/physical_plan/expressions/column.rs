@@ -1,8 +1,9 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use polars_core::frame::groupby::GroupsProxy;
+use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
+use polars_plan::constants::CSE_REPLACED;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
@@ -39,7 +40,7 @@ impl ColumnExpr {
                     }
                     Err(e)
                 }
-            }
+            },
         }
     }
 
@@ -116,6 +117,18 @@ impl ColumnExpr {
             },
         }
     }
+
+    fn process_cse(&self, df: &DataFrame, schema: &Schema) -> PolarsResult<Series> {
+        // The CSE columns are added on the rhs.
+        let offset = schema.len();
+        let columns = &df.get_columns()[offset..];
+        // Linear search will be relatively cheap as we only search the CSE columns.
+        Ok(columns
+            .iter()
+            .find(|s| s.name() == self.name.as_ref())
+            .unwrap()
+            .clone())
+    }
 }
 
 impl PhysicalExpr for ColumnExpr {
@@ -133,21 +146,26 @@ impl PhysicalExpr for ColumnExpr {
                         match df.get_columns().get(idx) {
                             Some(out) => self.process_by_idx(out, state, schema, df, true),
                             None => {
-                                // partitioned groupby special case
+                                // partitioned group_by special case
                                 if let Some(schema) = state.get_schema() {
                                     self.process_from_state_schema(df, state, &schema)
                                 } else {
                                     self.process_by_linear_search(df, state, true)
                                 }
-                            }
+                            },
                         }
-                    }
+                    },
                     // in the future we will throw an error here
                     // now we do a linear search first as the lazy reported schema may still be incorrect
                     // in debug builds we panic so that it can be fixed when occurring
-                    None => self.process_by_linear_search(df, state, true),
+                    None => {
+                        if self.name.starts_with(CSE_REPLACED) {
+                            return self.process_cse(df, schema);
+                        }
+                        self.process_by_linear_search(df, state, true)
+                    },
                 }
-            }
+            },
         };
         self.check_external_context(out, state)
     }

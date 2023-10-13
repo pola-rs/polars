@@ -6,7 +6,6 @@ use std::vec::IntoIter;
 use polars_core::prelude::*;
 use smartstring::alias::String as SmartString;
 
-use crate::constants::CSE_REPLACED;
 use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
 use crate::prelude::names::COUNT;
@@ -74,9 +73,7 @@ impl PushNode for [Option<Node>; 1] {
 pub(crate) fn is_scan(plan: &ALogicalPlan) -> bool {
     matches!(
         plan,
-        ALogicalPlan::Scan { .. }
-            | ALogicalPlan::DataFrameScan { .. }
-            | ALogicalPlan::AnonymousScan { .. }
+        ALogicalPlan::Scan { .. } | ALogicalPlan::DataFrameScan { .. }
     )
 }
 
@@ -103,7 +100,7 @@ pub(crate) fn aexpr_is_elementwise(current_node: Node, arena: &Arena<AExpr>) -> 
         match e {
             AnonymousFunction { options, .. } | Function { options, .. } => {
                 !matches!(options.collect_groups, ApplyOptions::ApplyGroups)
-            }
+            },
             Column(_)
             | Alias(_, _)
             | Literal(_)
@@ -147,7 +144,7 @@ pub(crate) fn has_leaf_literal(e: &Expr) -> bool {
         _ => {
             let roots = expr_to_root_column_exprs(e);
             roots.iter().any(|e| matches!(e, Expr::Literal(_)))
-        }
+        },
     }
 }
 
@@ -174,7 +171,7 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
                 "this expression may produce multiple output names"
             ),
             Expr::Count => return Ok(Arc::from(COUNT)),
-            _ => {}
+            _ => {},
         }
     }
     polars_bail!(
@@ -193,11 +190,12 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
             Expr::SortBy { expr, .. } => return get_single_leaf(expr),
             Expr::Window { function, .. } => return get_single_leaf(function),
             Expr::Column(name) => return Ok(name.clone()),
-            _ => {}
+            Expr::Count => return Ok(Arc::from(COUNT)),
+            _ => {},
         }
     }
     polars_bail!(
-        ComputeError: "unable to find a single leaf column in {expr:?}"
+        ComputeError: "unable to find a single leaf column in expr {:?}", expr
     );
 }
 
@@ -291,7 +289,7 @@ pub(crate) fn rename_matching_aexpr_leaf_names(
             Expr::Column(name) if &**name == current => {
                 *name = Arc::from(new_name);
                 true
-            }
+            },
             _ => true,
         });
         to_aexpr(new_expr, arena)
@@ -314,8 +312,8 @@ pub(crate) fn aexpr_assign_renamed_leaf(
         match arena.get(node) {
             AExpr::Column(name) if &**name == current => {
                 return arena.add(AExpr::Column(Arc::from(new_name)))
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
     panic!("should be a root column that is renamed");
@@ -327,8 +325,8 @@ pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
     expr.into_iter().for_each(|e| match e {
         Expr::Column(_) | Expr::Wildcard => {
             out.push(e.clone());
-        }
-        _ => {}
+        },
+        _ => {},
     });
     out
 }
@@ -354,7 +352,7 @@ pub fn aexpr_to_leaf_names_iter(
         AExpr::Column(name) => name.clone(),
         e => {
             panic!("{e:?} not expected")
-        }
+        },
     })
 }
 
@@ -416,16 +414,4 @@ pub fn expr_is_projected_upstream(
         .unwrap();
     let output_name = output_field.name();
     projected_names.contains(output_name.as_str())
-}
-
-pub fn rename_cse_tmp_series(s: &mut Series) {
-    if s.name().starts_with(CSE_REPLACED) {
-        let field = s.field().into_owned();
-        let name = &field.name;
-        let pat = r#"col("#;
-        let offset = name.rfind(pat).unwrap() + pat.len();
-        // -1 is `)` of `col(foo)`
-        let name = &name[offset..name.len() - 1];
-        s.rename(name);
-    }
 }

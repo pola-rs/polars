@@ -30,7 +30,8 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBuf<'a, T> {
         if start >= self.last_end {
             self.buf.clear();
             let new_window = self.slice.get_unchecked(start..end);
-            self.buf.extend_from_slice(new_window)
+            self.buf.extend_from_slice(new_window);
+            sort_buf(&mut self.buf);
         } else {
             // remove elements that should leave the window
             for idx in self.last_start..start {
@@ -82,7 +83,7 @@ where
                         (true, false) => Ordering::Greater,
                         (false, true) => Ordering::Less,
                     }
-                }
+                },
                 _ => a.partial_cmp(b).unwrap(),
             }
         });
@@ -107,7 +108,7 @@ where
                     (true, false) => Ordering::Greater,
                     (false, true) => Ordering::Less,
                 }
-            }
+            },
             _ => a.partial_cmp(&b).unwrap(),
         }
     } else {

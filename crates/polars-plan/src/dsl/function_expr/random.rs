@@ -1,5 +1,3 @@
-use std::sync::atomic::Ordering;
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -12,7 +10,6 @@ use super::*;
 pub enum RandomMethod {
     Shuffle,
     SampleN {
-        n: usize,
         with_replacement: bool,
         shuffle: bool,
     },
@@ -23,33 +20,45 @@ pub enum RandomMethod {
     },
 }
 
-pub(super) fn random(
+impl Hash for RandomMethod {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state)
+    }
+}
+
+pub(super) fn shuffle(s: &Series, seed: Option<u64>) -> PolarsResult<Series> {
+    Ok(s.shuffle(seed))
+}
+
+pub(super) fn sample_frac(
     s: &Series,
-    method: RandomMethod,
-    atomic_seed: Option<&Arc<AtomicU64>>,
+    frac: f64,
+    with_replacement: bool,
+    shuffle: bool,
     seed: Option<u64>,
-    fixed_seed: bool,
 ) -> PolarsResult<Series> {
-    let seed = if fixed_seed {
-        seed
-    } else {
-        // ensure seeds differ between groupby groups
-        // otherwise all groups would be sampled the same
-        atomic_seed
-            .as_ref()
-            .map(|atomic| atomic.fetch_add(1, Ordering::Relaxed))
-    };
-    match method {
-        RandomMethod::Shuffle => Ok(s.shuffle(seed)),
-        RandomMethod::SampleFrac {
-            frac,
-            with_replacement,
-            shuffle,
-        } => s.sample_frac(frac, with_replacement, shuffle, seed),
-        RandomMethod::SampleN {
-            n,
-            with_replacement,
-            shuffle,
-        } => s.sample_n(n, with_replacement, shuffle, seed),
+    s.sample_frac(frac, with_replacement, shuffle, seed)
+}
+
+pub(super) fn sample_n(
+    s: &[Series],
+    with_replacement: bool,
+    shuffle: bool,
+    seed: Option<u64>,
+) -> PolarsResult<Series> {
+    let src = &s[0];
+    let n_s = &s[1];
+
+    polars_ensure!(
+        n_s.len() == 1,
+        ComputeError: "Sample size must be a single value."
+    );
+
+    let n_s = n_s.cast(&IDX_DTYPE)?;
+    let n = n_s.idx()?;
+
+    match n.get(0) {
+        Some(n) => src.sample_n(n as usize, with_replacement, shuffle, seed),
+        None => Ok(Series::new_empty(src.name(), src.dtype())),
     }
 }

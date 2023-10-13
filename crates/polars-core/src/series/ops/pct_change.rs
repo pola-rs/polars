@@ -4,7 +4,7 @@ use crate::series::ops::NullBehavior;
 impl Series {
     pub fn pct_change(&self, n: i64) -> PolarsResult<Series> {
         match self.dtype() {
-            DataType::Float64 | DataType::Float32 => {}
+            DataType::Float64 | DataType::Float32 => {},
             _ => return self.cast(&DataType::Float64)?.pct_change(n),
         }
         let nn = self.fill_null(FillNullStrategy::Forward(None))?;

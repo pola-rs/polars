@@ -60,29 +60,44 @@ where
         Either::Left(mut v) => {
             let values = arg_partition(&mut v, k, descending);
             ChunkedArray::from_slice(ca.name(), values)
-        }
+        },
         Either::Right(mut v) => {
             let values = arg_partition(&mut v, k, descending);
             let mut out = ChunkedArray::from_iter(values.iter().copied());
             out.rename(ca.name());
             out
-        }
+        },
     }
 }
 
-pub fn top_k(s: &Series, k: usize, descending: bool) -> PolarsResult<Series> {
-    if s.is_empty() {
-        return Ok(s.clone());
-    }
-    let dtype = s.dtype();
+pub fn top_k(s: &[Series], descending: bool) -> PolarsResult<Series> {
+    let src = &s[0];
+    let k_s = &s[1];
 
-    let s = s.to_physical_repr();
-
-    macro_rules! dispatch {
-        ($ca:expr) => {{
-            top_k_impl($ca, k, descending).into_series()
-        }};
+    if src.is_empty() {
+        return Ok(src.clone());
     }
 
-    downcast_as_macro_arg_physical!(&s, dispatch).cast(dtype)
+    polars_ensure!(
+        k_s.len() == 1,
+        ComputeError: "k must be a single value."
+    );
+
+    let k_s = k_s.cast(&IDX_DTYPE)?;
+    let k = k_s.idx()?;
+
+    let dtype = src.dtype();
+
+    if let Some(k) = k.get(0) {
+        let s = src.to_physical_repr();
+        macro_rules! dispatch {
+            ($ca:expr) => {{
+                top_k_impl($ca, k as usize, descending).into_series()
+            }};
+        }
+
+        downcast_as_macro_arg_physical!(&s, dispatch).cast(dtype)
+    } else {
+        Ok(Series::full_null(src.name(), src.len(), dtype))
+    }
 }

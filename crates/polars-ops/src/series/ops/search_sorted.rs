@@ -53,7 +53,7 @@ fn finish_side<G, I>(
     match side {
         SearchSortedSide::Any => {
             out.push(mid);
-        }
+        },
         SearchSortedSide::Left => {
             if mid as usize == len {
                 mid -= 1;
@@ -71,7 +71,7 @@ fn finish_side<G, I>(
                     break;
                 }
             }
-        }
+        },
         SearchSortedSide::Right => {
             if mid as usize == len {
                 out.push(mid);
@@ -90,7 +90,7 @@ fn finish_side<G, I>(
                     break;
                 }
             }
-        }
+        },
     }
 }
 
@@ -123,7 +123,7 @@ fn binary_search_array<G, I>(
                 } else {
                     compare_fn_nan_max(&value, &search_value)
                 }
-            }
+            },
         };
 
         // The reason why we use if/else control flow rather than match
@@ -205,7 +205,7 @@ fn search_sorted_bin_array(
                     None => out.push(0),
                     Some(search_value) => {
                         binary_search_array(side, &mut out, arr, ca.len(), search_value, descending)
-                    }
+                    },
                 }
             }
         }
@@ -232,14 +232,14 @@ pub fn search_sorted(
             let idx = search_sorted_bin_array(&ca, &search_values, side, descending);
 
             Ok(IdxCa::new_vec(s.name(), idx))
-        }
+        },
         DataType::Binary => {
             let ca = s.binary().unwrap();
             let search_values = search_values.binary().unwrap();
             let idx = search_sorted_bin_array(ca, search_values, side, descending);
 
             Ok(IdxCa::new_vec(s.name(), idx))
-        }
+        },
         dt if dt.is_numeric() => {
             let search_values = search_values.to_physical_repr();
 
@@ -250,7 +250,7 @@ pub fn search_sorted(
                 search_sorted_ca_array(ca, search_values, side, descending)
             });
             Ok(IdxCa::new_vec(s.name(), idx))
-        }
+        },
         _ => polars_bail!(opq = search_sorted, original_dtype),
     }
 }

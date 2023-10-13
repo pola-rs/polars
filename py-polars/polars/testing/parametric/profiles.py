@@ -6,10 +6,13 @@ import re
 from hypothesis import settings
 
 from polars.type_aliases import ParametricProfileNames
+from polars.utils.deprecation import deprecate_nonkeyword_arguments
 
 
+@deprecate_nonkeyword_arguments(allowed_args=["profile"], version="0.19.3")
 def load_profile(
-    profile: ParametricProfileNames | int = "fast", set_environment: bool = False
+    profile: ParametricProfileNames | int = "fast",
+    set_environment: bool = False,  # noqa: FBT001
 ) -> None:
     """
     Load a named (or custom) hypothesis profile for use with the parametric tests.
@@ -96,7 +99,7 @@ def set_profile(profile: ParametricProfileNames | int) -> None:
         valid_profile_names = get_args(ParametricProfileNames)
         if profile_name not in valid_profile_names:
             raise ValueError(
-                f"Invalid profile name {profile_name!r}; expected one of {valid_profile_names}!r"
+                f"invalid profile name {profile_name!r}; expected one of {valid_profile_names!r}"
             )
 
     os.environ["POLARS_HYPOTHESIS_PROFILE"] = profile_name

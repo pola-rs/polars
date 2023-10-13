@@ -1,5 +1,5 @@
 # polars-utils
 
-`polars-utils` is a sub-crate that provides private utils for the Polars dataframe library.
+`polars-utils` is an **internal sub-crate** of the [Polars](https://crates.io/crates/polars) library, supplying private utility functions.
 
-Not intended for external usage
+**Important Note**: This crate is **not intended for external usage**. Please refer to the main [Polars crate](https://crates.io/crates/polars) for intended usage.

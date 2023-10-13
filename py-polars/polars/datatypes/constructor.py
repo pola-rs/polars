@@ -59,7 +59,7 @@ def polars_type_to_constructor(
 
         return _POLARS_TYPE_TO_CONSTRUCTOR[base_type]
     except KeyError:  # pragma: no cover
-        raise ValueError(f"Cannot construct PySeries for type {dtype}.") from None
+        raise ValueError(f"cannot construct PySeries for type {dtype!r}") from None
 
 
 _NUMPY_TYPE_TO_CONSTRUCTOR = None
@@ -82,6 +82,7 @@ def _set_numpy_to_constructor() -> None:
         np.bytes_: PySeries.new_binary,
         np.bool_: PySeries.new_bool,
         np.datetime64: PySeries.new_i64,
+        np.timedelta64: PySeries.new_i64,
     }
 
 
@@ -101,14 +102,17 @@ def numpy_values_and_dtype(
     if dtype == np.float16:
         values = values.astype(np.float32)
         dtype = values.dtype.type
-    elif dtype == np.datetime64:
+    elif dtype in [np.datetime64, np.timedelta64]:
         time_unit = np.datetime_data(values.dtype)[0]
-        if time_unit in dt.DTYPE_TEMPORAL_UNITS or time_unit == "D":
+        if time_unit in dt.DTYPE_TEMPORAL_UNITS or (
+            time_unit == "D" and dtype == np.datetime64
+        ):
             values = values.astype(np.int64)
         else:
             raise ValueError(
-                "Only 'D', 'ms', 'us', and 'ns' resolutions are supported when converting from numpy.datetime64. "
-                "Please cast to the closest supported unit before converting."
+                "incorrect NumPy datetime resolution"
+                "\n\n'D' (datetime only), 'ms', 'us', and 'ns' resolutions are supported when converting from numpy.{datetime64,timedelta64}."
+                " Please cast to the closest supported unit before converting."
             )
     return values, dtype
 
@@ -122,8 +126,8 @@ def numpy_type_to_constructor(dtype: type[np.dtype[Any]]) -> Callable[..., PySer
     except KeyError:
         return PySeries.new_object
     except NameError:  # pragma: no cover
-        raise ImportError(
-            f"'numpy' is required to convert numpy dtype {dtype}."
+        raise ModuleNotFoundError(
+            f"'numpy' is required to convert numpy dtype {dtype!r}"
         ) from None
 
 

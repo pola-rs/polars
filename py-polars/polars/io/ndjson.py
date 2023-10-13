@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars.datatypes import N_INFER_DEFAULT
-from polars.utils.various import normalise_filepath
+from polars.utils.various import normalize_filepath
 
 if TYPE_CHECKING:
     from io import IOBase
@@ -27,7 +27,9 @@ def read_ndjson(
     Parameters
     ----------
     source
-        Path to a file or a file-like object.
+        Path to a file or a file-like object (by file-like object, we refer to objects
+        that have a ``read()`` method, such as a file handler (e.g. via builtin ``open``
+        function) or ``BytesIO``).
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -93,7 +95,7 @@ def scan_ndjson(
 
     """
     if isinstance(source, (str, Path)):
-        source = normalise_filepath(source)
+        source = normalize_filepath(source)
 
     return pl.LazyFrame._scan_ndjson(
         source,

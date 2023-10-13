@@ -7,6 +7,7 @@ Manipulation/selection
    :toctree: api/
 
     DataFrame.bottom_k
+    DataFrame.cast
     DataFrame.clear
     DataFrame.clone
     DataFrame.drop
@@ -20,6 +21,9 @@ Manipulation/selection
     DataFrame.find_idx_by_name
     DataFrame.get_column
     DataFrame.get_columns
+    DataFrame.group_by
+    DataFrame.group_by_dynamic
+    DataFrame.group_by_rolling
     DataFrame.groupby
     DataFrame.groupby_dynamic
     DataFrame.groupby_rolling
@@ -48,6 +52,7 @@ Manipulation/selection
     DataFrame.rows_by_key
     DataFrame.sample
     DataFrame.select
+    DataFrame.select_seq
     DataFrame.set_sorted
     DataFrame.shift
     DataFrame.shift_and_fill
@@ -67,4 +72,5 @@ Manipulation/selection
     DataFrame.upsample
     DataFrame.vstack
     DataFrame.with_columns
+    DataFrame.with_columns_seq
     DataFrame.with_row_count

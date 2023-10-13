@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import PolarsPanicError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -31,7 +30,10 @@ def test_scan_csv_no_cse_deadlock(io_files_path: Path) -> None:
 def test_scan_empty_csv(io_files_path: Path) -> None:
     with pytest.raises(Exception) as excinfo:
         pl.scan_csv(io_files_path / "empty.csv").collect()
-    assert "empty csv" in str(excinfo.value)
+    assert "empty CSV" in str(excinfo.value)
+
+    lf = pl.scan_csv(io_files_path / "empty.csv", raise_if_empty=False)
+    assert_frame_equal(lf, pl.LazyFrame())
 
 
 @pytest.mark.write_disk()
@@ -147,12 +149,21 @@ def test_scan_csv_schema_new_columns_dtypes(
         == df1.select(["sugars", pl.col("calories").cast(pl.Int64)]).rows()
     )
 
-    # expect same number of column names as there are columns in the file
-    with pytest.raises(PolarsPanicError, match="should be equal"):
+    # partially rename columns / overwrite dtypes
+    df4 = pl.scan_csv(
+        file_path,
+        dtypes=[pl.Utf8, pl.Utf8],
+        new_columns=["category", "calories"],
+    ).collect()
+    assert df4.dtypes == [pl.Utf8, pl.Utf8, pl.Float64, pl.Int64]
+    assert df4.columns == ["category", "calories", "fats_g", "sugars_g"]
+
+    # cannot have len(new_columns) > len(actual columns)
+    with pytest.raises(pl.ShapeError):
         pl.scan_csv(
             file_path,
             dtypes=[pl.Utf8, pl.Utf8],
-            new_columns=["category", "calories"],
+            new_columns=["category", "calories", "c3", "c4", "c5"],
         ).collect()
 
     # cannot set both 'new_columns' and 'with_column_names'
@@ -178,11 +189,6 @@ def test_lazy_n_rows(foods_file_path: Path) -> None:
         "fats_g": [0.0],
         "sugars_g": [11],
     }
-
-
-def test_scan_slice_streaming(foods_file_path: Path) -> None:
-    df = pl.scan_csv(foods_file_path).head(5).collect(streaming=True)
-    assert df.shape == (5, 4)
 
 
 @pytest.mark.write_disk()

@@ -65,7 +65,7 @@ fn jit_insert_slice(
                 unreachable!()
             };
             (offset, len)
-        }
+        },
         Union {
             options:
                 UnionOptions {
@@ -122,7 +122,7 @@ pub(super) fn construct(
         // the file sink is always to the top of the tree
         // not every branch has a final sink. For instance rhs join branches
         if let Some(node) = branch.get_final_sink() {
-            if matches!(lp_arena.get(node), ALogicalPlan::FileSink { .. }) {
+            if matches!(lp_arena.get(node), ALogicalPlan::Sink { .. }) {
                 final_sink = Some(node)
             }
         }
@@ -146,24 +146,24 @@ pub(super) fn construct(
                         Rc::new(RefCell::new(1))
                     };
                     sink_nodes.push((operator_offset, node, shared_count))
-                }
+                },
                 PipelineNode::Operator(node) => {
                     operator_nodes.push(node);
                     let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
                     operators.push(op);
-                }
+                },
                 PipelineNode::Union(node) => {
                     operator_nodes.push(node);
                     jit_insert_slice(node, lp_arena, &mut sink_nodes, operator_offset);
                     let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
                     operators.push(op);
-                }
+                },
                 PipelineNode::RhsJoin(node) => {
                     operator_nodes.push(node);
                     jit_insert_slice(node, lp_arena, &mut sink_nodes, operator_offset);
                     let op = get_dummy_operator();
                     operators.push(op)
-                }
+                },
             }
         }
         let execution_id = branch.execution_id;
@@ -191,20 +191,16 @@ pub(super) fn construct(
         return Ok(None);
     };
     let insertion_location = match lp_arena.get(final_sink) {
-        FileSink {
+        // this was inserted only during conversion and does not exist
+        // in the original tree, so we take the input, as that's where
+        // we connect into the original tree.
+        Sink {
             input,
-            payload: FileSinkOptions { file_type, .. },
-        } => {
-            // this was inserted only during conversion and does not exist
-            // in the original tree, so we take the input, as that's where
-            // we connect into the original tree.
-            if matches!(file_type, FileType::Memory) {
-                *input
-            } else {
-                // default case if the tree ended with a file_sink
-                final_sink
-            }
-        }
+            payload: SinkType::Memory,
+        } => *input,
+        // Other sinks were not inserted during conversion,
+        // so they are returned as-is
+        Sink { .. } => final_sink,
         _ => unreachable!(),
     };
     // keep the original around for formatting purposes

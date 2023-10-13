@@ -73,24 +73,6 @@ def test_predicate_null_block_asof_join() -> None:
     }
 
 
-def test_streaming_empty_df() -> None:
-    df = pl.DataFrame(
-        [
-            pl.Series("a", ["a", "b", "c", "b", "a", "a"], dtype=pl.Categorical()),
-            pl.Series("b", ["b", "c", "c", "b", "a", "c"], dtype=pl.Categorical()),
-        ]
-    )
-
-    result = (
-        df.lazy()
-        .join(df.lazy(), on="a", how="inner")
-        .filter(False)
-        .collect(streaming=True)
-    )
-
-    assert result.to_dict(False) == {"a": [], "b": [], "b_right": []}
-
-
 def test_predicate_strptime_6558() -> None:
     assert (
         pl.DataFrame({"date": ["2022-01-03", "2020-01-04", "2021-02-03", "2019-01-04"]})
@@ -138,6 +120,30 @@ def test_predicate_pushdown_block_8661() -> None:
     assert df.lazy().sort(["g", "t"]).filter(
         (pl.col("x").shift() > 20).over("g")
     ).collect().to_dict(False) == {"g": [1, 2, 2], "t": [4, 2, 3], "x": [40, 30, 20]}
+
+
+def test_predicate_pushdown_with_context_11014() -> None:
+    df1 = pl.LazyFrame(
+        {
+            "df1_c1": [1, 2, 3],
+            "df1_c2": [2, 3, 4],
+        }
+    )
+
+    df2 = pl.LazyFrame(
+        {
+            "df2_c1": [2, 3, 4],
+            "df2_c2": [3, 4, 5],
+        }
+    )
+
+    out = (
+        df1.with_context(df2)
+        .filter(pl.col("df1_c1").is_in(pl.col("df2_c1")))
+        .collect(predicate_pushdown=True)
+    )
+
+    assert out.to_dict(False) == {"df1_c1": [2, 3], "df1_c2": [3, 4]}
 
 
 def test_predicate_pushdown_cumsum_9566() -> None:

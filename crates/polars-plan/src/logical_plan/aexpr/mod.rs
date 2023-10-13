@@ -1,9 +1,11 @@
+mod hash;
 mod schema;
 
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_core::frame::groupby::GroupByMethod;
+use polars_core::frame::group_by::GroupByMethod;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
@@ -13,7 +15,6 @@ use crate::dsl::function_expr::FunctionExpr;
 #[cfg(feature = "cse")]
 use crate::logical_plan::visitor::AexprNode;
 use crate::logical_plan::Context;
-use crate::prelude::aexpr::NodeInputs::Single;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
 
@@ -43,6 +44,20 @@ pub enum AAggExpr {
     Std(Node, u8),
     Var(Node, u8),
     AggGroups(Node),
+}
+
+impl Hash for AAggExpr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::Min { propagate_nans, .. } | Self::Max { propagate_nans, .. } => {
+                propagate_nans.hash(state)
+            },
+            Self::Quantile { interpol, .. } => interpol.hash(state),
+            Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
+            _ => {},
+        }
+    }
 }
 
 impl AAggExpr {
@@ -83,14 +98,14 @@ impl From<AAggExpr> for GroupByMethod {
                 } else {
                     GroupByMethod::Min
                 }
-            }
+            },
             Max { propagate_nans, .. } => {
                 if propagate_nans {
                     GroupByMethod::NanMax
                 } else {
                     GroupByMethod::Max
                 }
-            }
+            },
             Median(_) => GroupByMethod::Median,
             NUnique(_) => GroupByMethod::NUnique,
             First(_) => GroupByMethod::First,
@@ -163,8 +178,7 @@ pub enum AExpr {
     Window {
         function: Node,
         partition_by: Vec<Node>,
-        order_by: Option<Node>,
-        options: WindowOptions,
+        options: WindowType,
     },
     #[default]
     Wildcard,
@@ -244,36 +258,37 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Nth(_) | Column(_) | Literal(_) | Wildcard | Count => {}
+            Nth(_) | Column(_) | Literal(_) | Wildcard | Count => {},
             Alias(e, _) => container.push(*e),
             BinaryExpr { left, op: _, right } => {
                 // reverse order so that left is popped first
                 container.push(*right);
                 container.push(*left);
-            }
+            },
             Cast { expr, .. } => container.push(*expr),
             Sort { expr, .. } => container.push(*expr),
             Take { expr, idx } => {
                 container.push(*idx);
                 // latest, so that it is popped first
                 container.push(*expr);
-            }
+            },
             SortBy { expr, by, .. } => {
                 for node in by {
                     container.push(*node)
                 }
                 // latest, so that it is popped first
                 container.push(*expr);
-            }
+            },
             Filter { input, by } => {
                 container.push(*by);
                 // latest, so that it is popped first
                 container.push(*input);
-            }
-            Agg(agg_e) => {
-                let node = agg_e.get_input().first();
-                container.push(node);
-            }
+            },
+            Agg(agg_e) => match agg_e.get_input() {
+                NodeInputs::Single(node) => container.push(node),
+                NodeInputs::Many(nodes) => container.extend_from_slice(&nodes),
+                NodeInputs::Leaf => {},
+            },
             Ternary {
                 truthy,
                 falsy,
@@ -283,7 +298,7 @@ impl AExpr {
                 container.push(*falsy);
                 // latest, so that it is popped first
                 container.push(*truthy);
-            }
+            },
             AnonymousFunction { input, .. } | Function { input, .. } =>
             // we iterate in reverse order, so that the lhs is popped first and will be found
             // as the root columns/ input columns by `_suffix` and `_keep_name` etc.
@@ -293,23 +308,19 @@ impl AExpr {
                     .rev()
                     .copied()
                     .for_each(|node| container.push(node))
-            }
+            },
             Explode(e) => container.push(*e),
             Window {
                 function,
                 partition_by,
-                order_by,
                 options: _,
             } => {
                 for e in partition_by.iter().rev() {
                     container.push(*e);
                 }
-                if let Some(e) = order_by {
-                    container.push(*e);
-                }
                 // latest so that it is popped first
                 container.push(*function);
-            }
+            },
             Slice {
                 input,
                 offset,
@@ -319,7 +330,7 @@ impl AExpr {
                 container.push(*offset);
                 // latest so that it is popped first
                 container.push(*input);
-            }
+            },
         }
     }
 
@@ -329,33 +340,41 @@ impl AExpr {
             Column(_) | Literal(_) | Wildcard | Count | Nth(_) => return self,
             Alias(input, _) => input,
             Cast { expr, .. } => expr,
-            Explode(input) | Slice { input, .. } => input,
+            Explode(input) => input,
             BinaryExpr { left, right, .. } => {
                 *right = inputs[0];
                 *left = inputs[1];
                 return self;
-            }
+            },
             Take { expr, idx } => {
                 *idx = inputs[0];
                 *expr = inputs[1];
                 return self;
-            }
+            },
             Sort { expr, .. } => expr,
             SortBy { expr, by, .. } => {
                 *expr = *inputs.last().unwrap();
                 by.clear();
                 by.extend_from_slice(&inputs[..inputs.len() - 1]);
                 return self;
-            }
+            },
             Filter { input, by, .. } => {
                 *by = inputs[0];
                 *input = inputs[1];
                 return self;
-            }
+            },
             Agg(a) => {
-                a.set_input(inputs[0]);
+                match a {
+                    AAggExpr::Quantile { expr, quantile, .. } => {
+                        *expr = inputs[0];
+                        *quantile = inputs[1];
+                    },
+                    _ => {
+                        a.set_input(inputs[0]);
+                    },
+                }
                 return self;
-            }
+            },
             Ternary {
                 truthy,
                 falsy,
@@ -365,25 +384,33 @@ impl AExpr {
                 *falsy = inputs[1];
                 *truthy = inputs[2];
                 return self;
-            }
+            },
             AnonymousFunction { input, .. } | Function { input, .. } => {
                 input.clear();
                 input.extend(inputs.iter().rev().copied());
                 return self;
-            }
+            },
+            Slice {
+                input,
+                offset,
+                length,
+            } => {
+                *length = inputs[0];
+                *offset = inputs[1];
+                *input = inputs[2];
+                return self;
+            },
             Window {
                 function,
                 partition_by,
-                order_by,
                 ..
             } => {
                 *function = *inputs.last().unwrap();
                 partition_by.clear();
                 partition_by.extend_from_slice(&inputs[..inputs.len() - 1]);
 
-                assert!(order_by.is_none());
                 return self;
-            }
+            },
         };
         *input = inputs[0];
         self
@@ -400,6 +427,7 @@ impl AExpr {
 impl AAggExpr {
     pub fn get_input(&self) -> NodeInputs {
         use AAggExpr::*;
+        use NodeInputs::*;
         match self {
             Min { input, .. } => Single(*input),
             Max { input, .. } => Single(*input),
@@ -409,7 +437,7 @@ impl AAggExpr {
             Last(input) => Single(*input),
             Mean(input) => Single(*input),
             Implode(input) => Single(*input),
-            Quantile { expr, .. } => Single(*expr),
+            Quantile { expr, quantile, .. } => Many(vec![*expr, *quantile]),
             Sum(input) => Single(*input),
             Count(input) => Single(*input),
             Std(input, _) => Single(*input),
@@ -448,7 +476,7 @@ pub enum NodeInputs {
 impl NodeInputs {
     pub fn first(&self) -> Node {
         match self {
-            Single(node) => *node,
+            NodeInputs::Single(node) => *node,
             NodeInputs::Many(nodes) => nodes[0],
             NodeInputs::Leaf => panic!(),
         }

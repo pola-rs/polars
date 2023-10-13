@@ -1,34 +1,36 @@
-use std::cmp::Ordering;
-
 use polars_arrow::export::arrow::array::Array;
 use polars_arrow::kernels::rolling;
 use polars_arrow::kernels::rolling::no_nulls::{MaxWindow, MinWindow};
-use polars_arrow::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 use polars_arrow::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };
-use polars_arrow::utils::CustomIterTools;
 use polars_core::export::num::Bounded;
-use polars_core::frame::groupby::aggregations::{
+use polars_core::frame::group_by::aggregations::{
     _agg_helper_idx, _agg_helper_slice, _rolling_apply_agg_window_no_nulls,
     _rolling_apply_agg_window_nulls, _slice_from_offsets, _use_rolling_kernels,
 };
 use polars_core::prelude::*;
 
-#[inline]
-fn nan_min<T: IsFloat + PartialOrd>(a: T, b: T) -> T {
-    if let Ordering::Less = compare_fn_nan_min(&a, &b) {
+#[inline(always)]
+fn nan_min<T: IsFloat + PartialOrd + Copy>(a: T, b: T) -> T {
+    // If b is nan, min is nan, because the comparison failed. We have
+    // to poison the result if a is nan.
+    let min = if a < b { a } else { b };
+    if a.is_nan() {
         a
     } else {
-        b
+        min
     }
 }
-#[inline]
-fn nan_max<T: IsFloat + PartialOrd>(a: T, b: T) -> T {
-    if let Ordering::Greater = compare_fn_nan_max(&a, &b) {
+
+#[inline(always)]
+fn nan_max<T: IsFloat + PartialOrd + Copy>(a: T, b: T) -> T {
+    // See nan_min.
+    let max = if a > b { a } else { b };
+    if a.is_nan() {
         a
     } else {
-        b
+        max
     }
 }
 
@@ -40,18 +42,12 @@ where
     let mut cum_agg = None;
     ca.downcast_iter().for_each(|arr| {
         let agg = if arr.null_count() == 0 {
-            arr.values().iter().copied().fold_first_(min_or_max_fn)
+            arr.values().iter().copied().reduce(min_or_max_fn)
         } else {
             arr.iter()
                 .unwrap_optional()
-                .map(|opt| opt.copied())
-                .fold_first_(|a, b| match (a, b) {
-                    (Some(a), Some(b)) => Some(min_or_max_fn(a, b)),
-                    (None, Some(b)) => Some(b),
-                    (Some(a), None) => Some(a),
-                    (None, None) => None,
-                })
-                .flatten()
+                .filter_map(|opt| opt.copied())
+                .reduce(min_or_max_fn)
         };
         match cum_agg {
             None => cum_agg = agg,
@@ -66,11 +62,11 @@ pub fn nan_min_s(s: &Series, name: &str) -> Series {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             Series::new(name, [ca_nan_agg(ca, nan_min)])
-        }
+        },
         DataType::Float64 => {
             let ca = s.f64().unwrap();
             Series::new(name, [ca_nan_agg(ca, nan_min)])
-        }
+        },
         _ => panic!("expected float"),
     }
 }
@@ -79,11 +75,11 @@ pub fn nan_max_s(s: &Series, name: &str) -> Series {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             Series::new(name, [ca_nan_agg(ca, nan_max)])
-        }
+        },
         DataType::Float64 => {
             let ca = s.f64().unwrap();
             Series::new(name, [ca_nan_agg(ca, nan_max)])
-        }
+        },
         _ => panic!("expected float"),
     }
 }
@@ -118,9 +114,9 @@ where
                         idx.len() as IdxSize,
                     ),
                     _ => {
-                        let take = { ca.take_unchecked(idx.into()) };
+                        let take = { ca.take_unchecked(idx) };
                         ca_nan_agg(&take, nan_max)
-                    }
+                    },
                 }
             }
         }),
@@ -144,7 +140,7 @@ where
                         _,
                     >(values, validity, offset_iter, None),
                 };
-                ChunkedArray::from_chunks("", vec![arr]).into_series()
+                ChunkedArray::from(arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);
@@ -154,11 +150,11 @@ where
                         _ => {
                             let arr_group = _slice_from_offsets(ca, first, len);
                             ca_nan_agg(&arr_group, nan_max)
-                        }
+                        },
                     }
                 })
             }
-        }
+        },
     }
 }
 
@@ -190,9 +186,9 @@ where
                         idx.len() as IdxSize,
                     ),
                     _ => {
-                        let take = { ca.take_unchecked(idx.into()) };
+                        let take = { ca.take_unchecked(idx) };
                         ca_nan_agg(&take, nan_min)
-                    }
+                    },
                 }
             }
         }),
@@ -216,7 +212,7 @@ where
                         _,
                     >(values, validity, offset_iter, None),
                 };
-                ChunkedArray::from_chunks("", vec![arr]).into_series()
+                ChunkedArray::from(arr).into_series()
             } else {
                 _agg_helper_slice::<T, _>(groups_slice, |[first, len]| {
                     debug_assert!(len <= ca.len() as IdxSize);
@@ -226,42 +222,42 @@ where
                         _ => {
                             let arr_group = _slice_from_offsets(ca, first, len);
                             ca_nan_agg(&arr_group, nan_min)
-                        }
+                        },
                     }
                 })
             }
-        }
+        },
     }
 }
 
 /// # Safety
-/// `groups` must be in bounds
+/// `groups` must be in bounds.
 pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsProxy) -> Series {
     match s.dtype() {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             group_nan_min(ca, groups)
-        }
+        },
         DataType::Float64 => {
             let ca = s.f64().unwrap();
             group_nan_min(ca, groups)
-        }
+        },
         _ => panic!("expected float"),
     }
 }
 
 /// # Safety
-/// `groups` must be in bounds
+/// `groups` must be in bounds.
 pub unsafe fn group_agg_nan_max_s(s: &Series, groups: &GroupsProxy) -> Series {
     match s.dtype() {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             group_nan_max(ca, groups)
-        }
+        },
         DataType::Float64 => {
             let ca = s.f64().unwrap();
             group_nan_max(ca, groups)
-        }
+        },
         _ => panic!("expected float"),
     }
 }

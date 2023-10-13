@@ -1,22 +1,3 @@
-categories:
-  - title: 🏆 Highlights
-    labels: highlight
-  - title: 💥 Breaking changes
-    labels: breaking
-  - title: ⚠️ Deprecations
-    labels: deprecation
-  - title: 🚀 Performance improvements
-    labels: performance
-  - title: ✨ Enhancements
-    labels: enhancement
-  - title: 🐞 Bug fixes
-    labels: fix
-  - title: 🛠️ Other improvements
-    labels:
-      - build
-      - documentation
-      - internal
-
 exclude-labels:
   - skip changelog
   - release
@@ -37,10 +18,6 @@ autolabeler:
     title:
       # Example: feat(python): ...
       - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)(\(.*python.*\))?\!?\: /'
-  - label: cli
-    title:
-      # Example: feat(cli): ...
-      - '/^(build|chore|ci|depr|docs|feat|fix|perf|refactor|release|test)\(.*cli.*\)\!?\: /'  # CLI tag not in global scope
   - label: breaking
     title:
       # Example: feat!: ...

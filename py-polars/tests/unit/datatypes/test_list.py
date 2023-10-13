@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import pickle
 from datetime import date, datetime, time
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars import PolarsDataType
 
 
 def test_dtype() -> None:
@@ -60,7 +67,7 @@ def test_categorical() -> None:
         ]
     )
     out = (
-        df.groupby(["a", "b"])
+        df.group_by(["a", "b"])
         .agg(
             [
                 pl.col("c").count().alias("num_different_c"),
@@ -89,11 +96,18 @@ def test_cast_inner() -> None:
     )
 
 
-def test_list_empty_groupby_result_3521() -> None:
+def test_list_unique() -> None:
+    s = pl.Series("a", [[1, 2], [3], [1, 2], [4, 5], [2], [2]])
+    assert s.unique(maintain_order=True).to_list() == [[1, 2], [3], [4, 5], [2]]
+    assert s.arg_unique().to_list() == [0, 1, 3, 4]
+    assert s.n_unique() == 4
+
+
+def test_list_empty_group_by_result_3521() -> None:
     # Create a left relation where the join column contains a null value
     left = pl.DataFrame().with_columns(
         [
-            pl.lit(1).alias("groupby_column"),
+            pl.lit(1).alias("group_by_column"),
             pl.lit(None).cast(pl.Int32).alias("join_column"),
         ]
     )
@@ -110,16 +124,16 @@ def test_list_empty_groupby_result_3521() -> None:
     # This will panic on polars version 0.13.38 and 0.13.39
     assert (
         left.join(right, on="join_column", how="left")
-        .groupby("groupby_column")
+        .group_by("group_by_column")
         .agg(pl.col("n_unique_column").drop_nulls())
-    ).to_dict(False) == {"groupby_column": [1], "n_unique_column": [[]]}
+    ).to_dict(False) == {"group_by_column": [1], "n_unique_column": [[]]}
 
 
 def test_list_fill_null() -> None:
     df = pl.DataFrame({"C": [["a", "b", "c"], [], [], ["d", "e"]]})
     assert df.with_columns(
         [
-            pl.when(pl.col("C").list.lengths() == 0)
+            pl.when(pl.col("C").list.len() == 0)
             .then(None)
             .otherwise(pl.col("C"))
             .alias("C")
@@ -130,7 +144,7 @@ def test_list_fill_null() -> None:
 def test_list_fill_list() -> None:
     assert pl.DataFrame({"a": [[1, 2, 3], []]}).select(
         [
-            pl.when(pl.col("a").list.lengths() == 0)
+            pl.when(pl.col("a").list.len() == 0)
             .then([5])
             .otherwise(pl.col("a"))
             .alias("filled")
@@ -176,17 +190,36 @@ def test_inner_type_categorical_on_rechunk() -> None:
     assert pl.concat([df, df], rechunk=True).dtypes == [pl.List(pl.Categorical)]
 
 
-def test_groupby_list_column() -> None:
+def test_group_by_list_column() -> None:
     df = (
         pl.DataFrame({"a": ["a", "b", "a"]})
         .with_columns(pl.col("a").cast(pl.Categorical))
-        .groupby("a", maintain_order=True)
+        .group_by("a", maintain_order=True)
         .agg(pl.col("a").alias("a_list"))
     )
 
-    assert df.groupby("a_list", maintain_order=True).first().to_dict(False) == {
+    assert df.group_by("a_list", maintain_order=True).first().to_dict(False) == {
         "a_list": [["a", "a"], ["b"]],
         "a": ["a", "b"],
+    }
+
+
+def test_group_by_multiple_keys_contains_list_column() -> None:
+    df = (
+        pl.DataFrame(
+            {
+                "a": ["x", "x", "y", "y"],
+                "b": [[1, 2], [1, 2], [3, 4, 5], [6]],
+                "c": [3, 2, 1, 0],
+            }
+        )
+        .group_by(["a", "b"], maintain_order=True)
+        .agg(pl.all())
+    )
+    assert df.to_dict(False) == {
+        "a": ["x", "y", "y"],
+        "b": [[1, 2], [3, 4, 5], [6]],
+        "c": [[3, 2], [1], [0]],
     }
 
 
@@ -243,17 +276,29 @@ def test_fast_explode_on_list_struct_6208() -> None:
 def test_flat_aggregation_to_list_conversion_6918() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [[0, 1], [2, 3], [4, 5]]})
 
-    assert df.groupby("a", maintain_order=True).agg(
+    assert df.group_by("a", maintain_order=True).agg(
         pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
     ).to_dict(False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
 
 
-def test_list_count_match() -> None:
+def test_list_count_matches_deprecated() -> None:
+    with pytest.deprecated_call():
+        # Your test code here
+        assert pl.DataFrame(
+            {"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}
+        ).select(pl.col("listcol").list.count_match(2).alias("number_of_twos")).to_dict(
+            False
+        ) == {
+            "number_of_twos": [0, 0, 2, 1, 0]
+        }
+
+
+def test_list_count_matches() -> None:
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
-        pl.col("listcol").list.count_match(2).alias("number_of_twos")
+        pl.col("listcol").list.count_matches(2).alias("number_of_twos")
     ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
-        pl.col("listcol").list.count_match(2).alias("number_of_twos")
+        pl.col("listcol").list.count_matches(2).alias("number_of_twos")
     ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
 
 
@@ -311,7 +356,7 @@ def test_list_all() -> None:
             ]
         }
     ).select(pl.col("a").list.all()).to_dict(False) == {
-        "a": [True, False, True, False, False, False, True]
+        "a": [True, False, True, False, False, True, True]
     }
 
 
@@ -378,7 +423,7 @@ def test_logical_type_struct_agg_list() -> None:
         {"cats": ["Value1", "Value2", "Value1"]},
         schema_overrides={"cats": pl.Categorical},
     )
-    out = df.groupby(1).agg(pl.struct("cats"))
+    out = df.group_by(1).agg(pl.struct("cats"))
     assert out.dtypes == [
         pl.Int32,
         pl.List(pl.Struct([pl.Field("cats", pl.Categorical)])),
@@ -398,7 +443,7 @@ def test_logical_parallel_list_collect() -> None:
             },
             schema_overrides={"Values": pl.Categorical},
         )
-        .groupby("Group")
+        .group_by("Group")
         .agg(pl.col("Values").value_counts(sort=True))
         .explode("Values")
         .unnest("Values")
@@ -418,6 +463,24 @@ def test_list_recursive_categorical_cast() -> None:
     s = pl.Series(values).cast(dtype)
     assert s.dtype == dtype
     assert s.to_list() == values
+
+
+@pytest.mark.parametrize(
+    ("data", "expected_data", "dtype"),
+    [
+        ([1, 2], [[1], [2]], pl.Int64),
+        ([1.0, 2.0], [[1.0], [2.0]], pl.Float64),
+        (["x", "y"], [["x"], ["y"]], pl.Utf8),
+        ([True, False], [[True], [False]], pl.Boolean),
+    ],
+)
+def test_non_nested_cast_to_list(
+    data: list[Any], expected_data: list[Any], dtype: PolarsDataType
+) -> None:
+    s = pl.Series(data, dtype=dtype)
+    casted_s = s.cast(pl.List(dtype))
+    expected = pl.Series(expected_data, dtype=pl.List(dtype))
+    assert_series_equal(casted_s, expected)
 
 
 def test_list_new_from_index_logical() -> None:
@@ -453,6 +516,11 @@ def test_list_null_list_categorical_cast() -> None:
     assert s.to_list() == [[]]
 
 
+def test_list_null_pickle() -> None:
+    df = pl.DataFrame([{"a": None}], schema={"a": pl.List(pl.Int64)})
+    assert_frame_equal(df, pickle.loads(pickle.dumps(df)))
+
+
 def test_struct_with_nulls_as_list() -> None:
     df = pl.DataFrame([[{"a": 1, "b": 2}], [{"c": 3, "d": None}]])
     assert df.select(pl.concat_list(pl.all()).alias("as_list")).to_dict(False) == {
@@ -469,10 +537,31 @@ def test_list_amortized_iter_clear_settings_10126() -> None:
     out = (
         pl.DataFrame({"a": [[1], [1], [2]], "b": [[1, 2], [1, 3], [4]]})
         .explode("a")
-        .groupby("a")
+        .group_by("a")
         .agg(pl.col("b").flatten())
         .with_columns(pl.col("b").list.unique())
         .sort("a")
     )
 
     assert out.to_dict(False) == {"a": [1, 2], "b": [[1, 2, 3], [4]]}
+
+
+def test_list_inner_cast_physical_11513() -> None:
+    df = pl.DataFrame(
+        {
+            "date": ["foo"],
+            "struct": [[]],
+        },
+        schema_overrides={
+            "struct": pl.List(
+                pl.Struct(
+                    {
+                        "field": pl.Struct(
+                            {"subfield": pl.List(pl.Struct({"subsubfield": pl.Date}))}
+                        )
+                    }
+                )
+            )
+        },
+    )
+    assert df.select(pl.col("struct").take(0)).to_dict(False) == {"struct": [[]]}

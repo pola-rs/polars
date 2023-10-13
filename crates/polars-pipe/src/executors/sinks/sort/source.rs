@@ -103,13 +103,13 @@ impl Source for SortSource {
                             self.finished = true;
                         }
                         out
-                    }
+                    },
                 }?;
 
                 // convert to chunks
                 let dfs = split_df(&mut df, self.n_threads)?;
                 Ok(SourceResult::GotMoreData(self.finish_batch(dfs)))
-            }
+            },
         }
     }
 

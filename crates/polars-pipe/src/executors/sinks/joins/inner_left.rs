@@ -2,11 +2,13 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_arrow::export::arrow::array::BinaryArray;
+use polars_core::datatypes::ChunkId;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
-use polars_core::frame::hash_join::{ChunkId, _finish_join};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
+use polars_ops::frame::join::_finish_join;
+use polars_ops::prelude::JoinType;
 use polars_row::RowsEncoded;
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
@@ -162,7 +164,7 @@ impl GenericJoinProbe {
                 let out = _finish_join(left_df, right_df, Some(self.suffix.as_ref()))?;
                 self.output_names = Some(out.get_column_names_owned());
                 out
-            }
+            },
             Some(names) => unsafe {
                 // safety:
                 // if we have duplicate names, we overwrite
@@ -217,11 +219,11 @@ impl GenericJoinProbe {
                         .extend(indexes_right.iter().copied().map(Some));
                     self.join_tuples_b
                         .extend(std::iter::repeat(df_idx_left).take(indexes_right.len()));
-                }
+                },
                 None => {
                     self.join_tuples_b.push(df_idx_left);
                     self.join_tuples_a_left_join.push(None);
-                }
+                },
             }
         }
         let right_df = self.df_a.as_ref();

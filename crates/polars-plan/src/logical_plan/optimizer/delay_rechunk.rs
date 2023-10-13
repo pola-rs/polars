@@ -37,14 +37,14 @@ impl OptimizationRule for DelayRechunk {
                         Scan { .. } => {
                             input_node = Some(node);
                             break;
-                        }
+                        },
                         Union { .. } => {
                             input_node = Some(node);
                             break;
-                        }
+                        },
                         // don't delay rechunk if there is a join first
                         Join { .. } => break,
-                        _ => {}
+                        _ => {},
                     }
                 }
 
@@ -55,16 +55,16 @@ impl OptimizationRule for DelayRechunk {
                             ..
                         } => {
                             options.rechunk = false;
-                        }
+                        },
                         Union { options, .. } => {
                             options.rechunk = false;
-                        }
+                        },
                         _ => unreachable!(),
                     }
                 };
 
                 None
-            }
+            },
             _ => None,
         }
     }

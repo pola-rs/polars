@@ -3,11 +3,11 @@ from __future__ import annotations
 import contextlib
 from functools import reduce
 from itertools import chain
-from typing import TYPE_CHECKING, Iterable, List, Sequence, cast
+from typing import TYPE_CHECKING, Iterable, List, Sequence, cast, get_args
 
 import polars._reexport as pl
 from polars import functions as F
-from polars.type_aliases import FrameType
+from polars.type_aliases import ConcatMethod, FrameType
 from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.utils.various import ordered_unique
 
@@ -16,7 +16,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars import DataFrame, Expr, LazyFrame, Series
-    from polars.type_aliases import ConcatMethod, JoinStrategy, PolarsType
+    from polars.type_aliases import JoinStrategy, PolarsType
 
 
 def concat(
@@ -33,15 +33,17 @@ def concat(
     ----------
     items
         DataFrames, LazyFrames, or Series to concatenate.
-    how : {'vertical', 'diagonal', 'horizontal', 'align'}
+    how : {'vertical', 'vertical_relaxed', 'diagonal', 'horizontal', 'align'}
         Series only support the `vertical` strategy.
         LazyFrames do not support the `horizontal` strategy.
 
         * vertical: Applies multiple `vstack` operations.
-        * vertical_relaxed: Applies multiple `vstack` operations and coerces column
-          dtypes that are not equal to their supertypes.
+        * vertical_relaxed: Same as `vertical`, but additionally coerces columns to
+          their common supertype *if* they are mismatched (eg: Int32 → Int64).
         * diagonal: Finds a union between the column schemas and fills missing column
           values with ``null``.
+        * diagonal_relaxed: Same as `diagonal`, but additionally coerces columns to
+          their common supertype *if* they are mismatched (eg: Int32 → Int64).
         * horizontal: Stacks Series from DataFrames horizontally and fills with ``null``
           if the lengths don't match.
         * align: Combines frames horizontally, auto-determining the common key columns
@@ -67,6 +69,19 @@ def concat(
     ╞═════╪═════╡
     │ 1   ┆ 3   │
     │ 2   ┆ 4   │
+    └─────┴─────┘
+
+    >>> df1 = pl.DataFrame({"a": [1], "b": [3]})
+    >>> df2 = pl.DataFrame({"a": [2.5], "b": [4]})
+    >>> pl.concat([df1, df2], how="vertical_relaxed")  # 'a' coerced into f64
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ f64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1.0 ┆ 3   │
+    │ 2.5 ┆ 4   │
     └─────┴─────┘
 
     >>> df_h1 = pl.DataFrame({"l1": [1, 2], "l2": [3, 4]})
@@ -123,8 +138,8 @@ def concat(
 
     if how == "align":
         if not isinstance(elems[0], (pl.DataFrame, pl.LazyFrame)):
-            raise RuntimeError(
-                f"'align' strategy is not supported for {type(elems[0]).__name__}"
+            raise TypeError(
+                f"'align' strategy is not supported for {type(elems[0]).__name__!r}"
             )
 
         # establish common columns, maintaining the order in which they appear
@@ -155,38 +170,70 @@ def concat(
             out = wrap_df(plr.concat_df(elems))
         elif how == "vertical_relaxed":
             out = wrap_ldf(
-                plr.concat_lf([df.lazy() for df in elems], rechunk, parallel, True)
+                plr.concat_lf(
+                    [df.lazy() for df in elems],
+                    rechunk=rechunk,
+                    parallel=parallel,
+                    to_supertypes=True,
+                )
             ).collect(no_optimization=True)
+
         elif how == "diagonal":
-            out = wrap_df(plr.diag_concat_df(elems))
+            out = wrap_df(plr.concat_df_diagonal(elems))
+        elif how == "diagonal_relaxed":
+            out = wrap_ldf(
+                plr.concat_lf_diagonal(
+                    [df.lazy() for df in elems],
+                    rechunk=rechunk,
+                    parallel=parallel,
+                    to_supertypes=True,
+                )
+            ).collect(no_optimization=True)
         elif how == "horizontal":
-            out = wrap_df(plr.hor_concat_df(elems))
+            out = wrap_df(plr.concat_df_horizontal(elems))
         else:
+            allowed = ", ".join(repr(m) for m in get_args(ConcatMethod))
             raise ValueError(
-                f"`how` must be one of {{'vertical','vertical_relaxed','diagonal','horizontal','align'}}, "
-                f"got {how!r}"
+                f"DataFrame `how` must be one of {{{allowed}}}, got {how!r}"
             )
+
     elif isinstance(first, pl.LazyFrame):
-        if how == "vertical":
-            return wrap_ldf(plr.concat_lf(elems, rechunk, parallel, False))
-        if how == "vertical_relaxed":
-            return wrap_ldf(plr.concat_lf(elems, rechunk, parallel, True))
-        if how == "diagonal":
-            return wrap_ldf(plr.diag_concat_lf(elems, rechunk, parallel))
-        else:
-            raise ValueError(
-                "'LazyFrame' only allows {'vertical','vertical_relaxed','diagonal','align'} concat strategies."
+        if how in ("vertical", "vertical_relaxed"):
+            return wrap_ldf(
+                plr.concat_lf(
+                    elems,
+                    rechunk=rechunk,
+                    parallel=parallel,
+                    to_supertypes=how.endswith("relaxed"),
+                )
             )
+        elif how in ("diagonal", "diagonal_relaxed"):
+            return wrap_ldf(
+                plr.concat_lf_diagonal(
+                    elems,
+                    rechunk=rechunk,
+                    parallel=parallel,
+                    to_supertypes=how.endswith("relaxed"),
+                )
+            )
+        else:
+            allowed = ", ".join(
+                repr(m) for m in get_args(ConcatMethod) if m != "horizontal"
+            )
+            raise ValueError(
+                f"LazyFrame `how` must be one of {{{allowed}}}, got {how!r}"
+            )
+
     elif isinstance(first, pl.Series):
         if how == "vertical":
             out = wrap_s(plr.concat_series(elems))
         else:
-            raise ValueError("'Series' only allows {'vertical'} concat strategy.")
+            raise ValueError("Series only supports 'vertical' concat strategy")
 
     elif isinstance(first, pl.Expr):
         return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], rechunk))
     else:
-        raise ValueError(f"did not expect type: {type(first)} in 'pl.concat'.")
+        raise TypeError(f"did not expect type: {type(first).__name__!r} in `concat`")
 
     if rechunk:
         return out.rechunk()
@@ -338,7 +385,7 @@ def align_frames(
         return []
     elif len({type(f) for f in frames}) != 1:
         raise TypeError(
-            "Input frames must be of a consistent type (all LazyFrame or all DataFrame)"
+            "input frames must be of a consistent type (all LazyFrame or all DataFrame)"
         )
 
     on = [on] if (isinstance(on, str) or not isinstance(on, Sequence)) else on

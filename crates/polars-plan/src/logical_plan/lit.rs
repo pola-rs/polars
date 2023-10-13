@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 #[cfg(feature = "temporal")]
 use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
@@ -201,7 +203,7 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
                         ))
                     }
                 }
-            }
+            },
             v => polars_bail!(
                 ComputeError: "cannot convert any-value {:?} to literal", v
             ),
@@ -250,7 +252,7 @@ impl Literal for NaiveDateTime {
     fn lit(self) -> Expr {
         if in_nanoseconds_window(&self) {
             Expr::Literal(LiteralValue::DateTime(
-                self.timestamp_nanos(),
+                self.timestamp_nanos_opt().unwrap(),
                 TimeUnit::Nanoseconds,
                 None,
             ))
@@ -306,4 +308,30 @@ impl Literal for LiteralValue {
 /// the column is `5`.
 pub fn lit<L: Literal>(t: L) -> Expr {
     t.lit()
+}
+
+impl Hash for LiteralValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            LiteralValue::Series(s) => {
+                s.dtype().hash(state);
+                s.len().hash(state);
+            },
+            LiteralValue::Range {
+                low,
+                high,
+                data_type,
+            } => {
+                low.hash(state);
+                high.hash(state);
+                data_type.hash(state)
+            },
+            _ => {
+                if let Some(v) = self.to_anyvalue() {
+                    v.hash_impl(state, true)
+                }
+            },
+        }
+    }
 }

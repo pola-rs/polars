@@ -80,7 +80,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
                     validity.push_unchecked(true)
                 }
                 mem::forget(t);
-            }
+            },
             None => {
                 null_count += 1;
                 unsafe {
@@ -88,7 +88,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
                     // Safety: we allocated upfront
                     validity.push_unchecked(false)
                 }
-            }
+            },
         }
     }
 
@@ -141,6 +141,12 @@ mod test {
         pub a: i32,
         pub b: u8,
         pub other_heap: String,
+    }
+
+    impl TotalEq for Foo {
+        fn tot_eq(&self, other: &Self) -> bool {
+            self == other
+        }
     }
 
     impl Display for Foo {

@@ -8,7 +8,7 @@ import polars._reexport as pl
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _prepare_file_arg
-from polars.utils.various import normalise_filepath
+from polars.utils.various import normalize_filepath
 
 with contextlib.suppress(ImportError):
     from polars.polars import read_parquet_schema as _read_parquet_schema
@@ -41,17 +41,21 @@ def read_parquet(
 
     Notes
     -----
-    This operation defaults to a `rechunk` operation at the end, meaning that
-    all data will be stored continuously in memory.
-    Set `rechunk=False` if you are benchmarking the parquet-reader. A `rechunk` is
-    an expensive operation.
+    * Partitioned files:
+        If you have a directory-nested (hive-style) partitioned dataset, you should
+        use the :func:`scan_pyarrow_dataset` method instead.
+    * When benchmarking:
+        This operation defaults to a `rechunk` operation at the end, meaning that all
+        data will be stored continuously in memory. Set `rechunk=False` if you are
+        benchmarking the parquet-reader as `rechunk` can be an expensive operation
+        that should not contribute to the timings.
 
     Parameters
     ----------
     source
-        Path to a file, or a file-like object. If the path is a directory, that
-        directory will be used as partition aware scan.
-        If ``fsspec`` is installed, it will be used to open remote files.
+        Path to a file, or a file-like object. If the path is a directory, files in that
+        directory will all be read. If ``fsspec`` is installed, it will be used to open
+        remote files.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
         of column names.
@@ -87,13 +91,18 @@ def read_parquet(
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
 
+    See Also
+    --------
+    scan_parquet
+    scan_pyarrow_dataset
+
     Returns
     -------
     DataFrame
 
     """
     if use_pyarrow and n_rows:
-        raise ValueError("``n_rows`` cannot be used with ``use_pyarrow=True``.")
+        raise ValueError("`n_rows` cannot be used with `use_pyarrow=True`")
 
     storage_options = storage_options or {}
     pyarrow_options = pyarrow_options or {}
@@ -103,9 +112,8 @@ def read_parquet(
     ) as source_prep:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
-                raise ImportError(
-                    "'pyarrow' is required when using"
-                    " 'read_parquet(..., use_pyarrow=True)'."
+                raise ModuleNotFoundError(
+                    "'pyarrow' is required when using `read_parquet(..., use_pyarrow=True)`"
                 )
 
             import pyarrow as pa
@@ -142,7 +150,9 @@ def read_parquet_schema(
     Parameters
     ----------
     source
-        Path to a file or a file-like object.
+        Path to a file or a file-like object (by file-like object, we refer to objects
+        that have a ``read()`` method, such as a file handler (e.g. via builtin ``open``
+        function) or ``BytesIO``).
 
     Returns
     -------
@@ -151,7 +161,7 @@ def read_parquet_schema(
 
     """
     if isinstance(source, (str, Path)):
-        source = normalise_filepath(source)
+        source = normalize_filepath(source)
 
     return _read_parquet_schema(source)
 
@@ -168,12 +178,20 @@ def scan_parquet(
     storage_options: dict[str, Any] | None = None,
     low_memory: bool = False,
     use_statistics: bool = True,
+    hive_partitioning: bool = True,
+    retries: int = 0,
 ) -> LazyFrame:
     """
     Lazily read from a parquet file or multiple files via glob patterns.
 
     This allows the query optimizer to push down predicates and projections to the scan
     level, thereby potentially reducing memory overhead.
+
+    Notes
+    -----
+    * Partitioned files:
+        If you have a directory-nested (hive-style) partitioned dataset, you should
+        use the :func:`scan_pyarrow_dataset` method to read that data instead.
 
     Parameters
     ----------
@@ -195,18 +213,54 @@ def scan_parquet(
     row_count_offset
         Offset to start the row_count column (only use if the name is set)
     storage_options
-        Extra options that make sense for ``fsspec.open()`` or a
-        particular storage connection.
-        e.g. host, port, username, password, etc.
+        Options that inform use how to connect to the cloud provider.
+        If the cloud provider is not supported by us, the storage options
+        are passed to ``fsspec.open()``.
+        Currently supported providers are: {'aws', 'gcp', 'azure' }.
+        See supported keys here:
+
+        * `aws <https://docs.rs/object_store/0.7.0/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+        * `gcp <https://docs.rs/object_store/0.7.0/object_store/gcp/enum.GoogleConfigKey.html>`_
+        * `azure <https://docs.rs/object_store/0.7.0/object_store/azure/enum.AzureConfigKey.html>`_
+
+        If ``storage_options`` are not provided we will try to infer them from the
+        environment variables.
     low_memory
         Reduce memory pressure at the expense of performance.
     use_statistics
         Use statistics in the parquet to determine if pages
         can be skipped from reading.
+    hive_partitioning
+        Infer statistics and schema from hive partitioned URL and use them
+        to prune reads.
+    retries
+        Number of retries if accessing a cloud instance fails.
+
+    See Also
+    --------
+    read_parquet
+    scan_pyarrow_dataset
+
+    Examples
+    --------
+    Scan a local Parquet file.
+
+    >>> pl.scan_parquet("path/to/file.parquet")  # doctest: +SKIP
+
+    Scan a file on AWS S3.
+
+    >>> source = "s3://bucket/*.parquet"
+    >>> pl.scan_parquet(source)  # doctest: +SKIP
+    >>> storage_options = {
+    ...     "aws_access_key_id": "<secret>",
+    ...     "aws_secret_access_key": "<secret>",
+    ...     "aws_region": "us-east-1",
+    ... }
+    >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
 
     """
     if isinstance(source, (str, Path)):
-        source = normalise_filepath(source)
+        source = normalize_filepath(source)
 
     return pl.LazyFrame._scan_parquet(
         source,
@@ -219,4 +273,6 @@ def scan_parquet(
         storage_options=storage_options,
         low_memory=low_memory,
         use_statistics=use_statistics,
+        hive_partitioning=hive_partitioning,
+        retries=retries,
     )

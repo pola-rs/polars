@@ -10,7 +10,7 @@ from polars.utils._parse_expr_input import (
     parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_expr
-from polars.utils.deprecation import issue_deprecation_warning
+from polars.utils.deprecation import rename_use_earliest_to_ambiguous
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -20,17 +20,22 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars.type_aliases import IntoExpr, SchemaDict
+    from polars.type_aliases import Ambiguous, IntoExpr, SchemaDict, TimeUnit
 
 
 def datetime_(
-    year: Expr | str | int,
-    month: Expr | str | int,
-    day: Expr | str | int,
-    hour: Expr | str | int | None = None,
-    minute: Expr | str | int | None = None,
-    second: Expr | str | int | None = None,
-    microsecond: Expr | str | int | None = None,
+    year: int | IntoExpr,
+    month: int | IntoExpr,
+    day: int | IntoExpr,
+    hour: int | IntoExpr | None = None,
+    minute: int | IntoExpr | None = None,
+    second: int | IntoExpr | None = None,
+    microsecond: int | IntoExpr | None = None,
+    *,
+    time_unit: TimeUnit = "us",
+    time_zone: str | None = None,
+    use_earliest: bool | None = None,
+    ambiguous: Ambiguous | Expr = "raise",
 ) -> Expr:
     """
     Create a Polars literal expression of type Datetime.
@@ -38,19 +43,39 @@ def datetime_(
     Parameters
     ----------
     year
-        column or literal.
+        Column or literal.
     month
-        column or literal, ranging from 1-12.
+        Column or literal, ranging from 1-12.
     day
-        column or literal, ranging from 1-31.
+        Column or literal, ranging from 1-31.
     hour
-        column or literal, ranging from 0-23.
+        Column or literal, ranging from 0-23.
     minute
-        column or literal, ranging from 0-59.
+        Column or literal, ranging from 0-59.
     second
-        column or literal, ranging from 0-59.
+        Column or literal, ranging from 0-59.
     microsecond
-        column or literal, ranging from 0-999999.
+        Column or literal, ranging from 0-999999.
+    time_unit : {'us', 'ms', 'ns'}
+        Time unit of the resulting expression.
+    time_zone
+        Time zone of the resulting expression.
+    use_earliest
+        Determine how to deal with ambiguous datetimes:
+
+        - ``None`` (default): raise
+        - ``True``: use the earliest datetime
+        - ``False``: use the latest datetime
+
+        .. deprecated:: 0.19.0
+            Use `ambiguous` instead
+    ambiguous
+        Determine how to deal with ambiguous datetimes:
+
+        - ``'raise'`` (default): raise
+        - ``'earliest'``: use the earliest datetime
+        - ``'latest'``: use the latest datetime
+
 
     Returns
     -------
@@ -58,6 +83,9 @@ def datetime_(
         Expression of data type :class:`Datetime`.
 
     """
+    ambiguous = parse_as_expression(
+        rename_use_earliest_to_ambiguous(use_earliest, ambiguous), str_as_lit=True
+    )
     year_expr = parse_as_expression(year)
     month_expr = parse_as_expression(month)
     day_expr = parse_as_expression(day)
@@ -80,6 +108,9 @@ def datetime_(
             minute,
             second,
             microsecond,
+            time_unit,
+            time_zone,
+            ambiguous,
         )
     )
 
@@ -154,6 +185,7 @@ def duration(
     minutes: Expr | str | int | None = None,
     hours: Expr | str | int | None = None,
     weeks: Expr | str | int | None = None,
+    time_unit: TimeUnit = "us",
 ) -> Expr:
     """
     Create polars `Duration` from distinct time components.
@@ -162,6 +194,15 @@ def duration(
     -------
     Expr
         Expression of data type :class:`Duration`.
+
+    Notes
+    -----
+    A `duration` represents a fixed amount of time. For example,
+    ``pl.duration(days=1)`` means "exactly 24 hours". By contrast,
+    ``Expr.dt.offset_by('1d')`` means "1 calendar day", which could sometimes be
+    23 hours or 25 hours depending on Daylight Savings Time.
+    For non-fixed durations such as "calendar month" or "calendar day",
+    please use :meth:`polars.Expr.dt.offset_by` instead.
 
     Examples
     --------
@@ -172,7 +213,7 @@ def duration(
     ...         "add": [1, 2],
     ...     }
     ... )
-    >>> print(df)
+    >>> df
     shape: (2, 2)
     ┌─────────────────────┬─────┐
     │ dt                  ┆ add │
@@ -200,6 +241,31 @@ def duration(
     │ 2022-01-08 00:00:00 ┆ 2022-01-02 00:00:00 ┆ 2022-01-01 00:00:01 ┆ 2022-01-01 00:00:00.001 ┆ 2022-01-01 01:00:00 │
     │ 2022-01-16 00:00:00 ┆ 2022-01-04 00:00:00 ┆ 2022-01-02 00:00:02 ┆ 2022-01-02 00:00:00.002 ┆ 2022-01-02 02:00:00 │
     └─────────────────────┴─────────────────────┴─────────────────────┴─────────────────────────┴─────────────────────┘
+
+    If you need to add non-fixed durations, you should use :meth:`polars.Expr.dt.offset_by` instead:
+
+    >>> with pl.Config(tbl_width_chars=120):
+    ...     df.select(
+    ...         add_calendar_days=pl.col("dt").dt.offset_by(
+    ...             pl.format("{}d", pl.col("add"))
+    ...         ),
+    ...         add_calendar_months=pl.col("dt").dt.offset_by(
+    ...             pl.format("{}mo", pl.col("add"))
+    ...         ),
+    ...         add_calendar_years=pl.col("dt").dt.offset_by(
+    ...             pl.format("{}y", pl.col("add"))
+    ...         ),
+    ...     )
+    ...
+    shape: (2, 3)
+    ┌─────────────────────┬─────────────────────┬─────────────────────┐
+    │ add_calendar_days   ┆ add_calendar_months ┆ add_calendar_years  │
+    │ ---                 ┆ ---                 ┆ ---                 │
+    │ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        │
+    ╞═════════════════════╪═════════════════════╪═════════════════════╡
+    │ 2022-01-02 00:00:00 ┆ 2022-02-01 00:00:00 ┆ 2023-01-01 00:00:00 │
+    │ 2022-01-04 00:00:00 ┆ 2022-03-02 00:00:00 ┆ 2024-01-02 00:00:00 │
+    └─────────────────────┴─────────────────────┴─────────────────────┘
 
     """  # noqa: W505
     if hours is not None:
@@ -229,6 +295,7 @@ def duration(
             minutes,
             hours,
             weeks,
+            time_unit,
         )
     )
 
@@ -374,17 +441,7 @@ def struct(
     {'my_struct': Struct([Field('p', Int64), Field('q', Boolean)])}
 
     """
-    if "exprs" in named_exprs:
-        issue_deprecation_warning(
-            "passing expressions to `struct` using the keyword argument `exprs` is"
-            " deprecated. Use positional syntax instead.",
-            version="0.18.1",
-        )
-        first_input = named_exprs.pop("exprs")
-        pyexprs = parse_as_list_of_expressions(first_input, *exprs, **named_exprs)
-    else:
-        pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs)
-
+    pyexprs = parse_as_list_of_expressions(*exprs, **named_exprs)
     expr = wrap_expr(plr.as_struct(pyexprs))
 
     if schema:

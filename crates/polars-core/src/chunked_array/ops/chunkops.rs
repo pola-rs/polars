@@ -1,6 +1,7 @@
 #[cfg(feature = "object")]
 use arrow::array::Array;
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
+use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
 #[cfg(feature = "object")]
@@ -72,22 +73,11 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 _ => chunks.iter().fold(0, |acc, arr| acc + arr.len()),
             }
         }
-        self.length = inner(&self.chunks) as IdxSize;
+        self.length = IdxSize::try_from(inner(&self.chunks)).expect(LENGTH_LIMIT_MSG);
 
         if self.length <= 1 {
             self.set_sorted_flag(IsSorted::Ascending)
         }
-
-        #[cfg(feature = "python")]
-        assert!(
-            self.length < IdxSize::MAX,
-            "Polars' maximum length reached. Consider installing 'polars-u64-idx'."
-        );
-        #[cfg(not(feature = "python"))]
-        assert!(
-            self.length < IdxSize::MAX,
-            "Polars' maximum length reached. Consider compiling with 'bigidx' feature."
-        );
     }
 
     pub fn rechunk(&self) -> Self {
@@ -95,7 +85,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 panic!("implementation error")
-            }
+            },
             _ => {
                 fn inner_rechunk(chunks: &[ArrayRef]) -> Vec<ArrayRef> {
                     vec![concatenate_owned_unchecked(chunks).unwrap()]
@@ -107,7 +97,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                     let chunks = inner_rechunk(&self.chunks);
                     unsafe { self.copy_with_chunks(chunks, true, true) }
                 }
-            }
+            },
         }
     }
 
@@ -133,7 +123,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.slice(0, num_elements)
     }
 
-    /// Get the head of the ChunkedArray
+    /// Get the head of the [`ChunkedArray`]
     #[must_use]
     pub fn head(&self, length: Option<usize>) -> Self
     where
@@ -145,7 +135,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         }
     }
 
-    /// Get the tail of the ChunkedArray
+    /// Get the tail of the [`ChunkedArray`]
     #[must_use]
     pub fn tail(&self, length: Option<usize>) -> Self
     where

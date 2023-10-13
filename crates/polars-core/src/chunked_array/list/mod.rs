@@ -29,26 +29,20 @@ impl ListChunked {
         self.bit_settings.contains(Settings::FAST_EXPLODE_LIST)
     }
 
-    pub(crate) fn is_nested(&self) -> bool {
-        match self.dtype() {
-            DataType::List(inner) => matches!(&**inner, DataType::List(_)),
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn to_physical(&mut self, inner_dtype: DataType) {
+    /// Set the logical type of the [`ListChunked`].
+    pub fn to_logical(&mut self, inner_dtype: DataType) {
         debug_assert_eq!(inner_dtype.to_physical(), self.inner_dtype());
         let fld = Arc::make_mut(&mut self.field);
         fld.coerce(DataType::List(Box::new(inner_dtype)))
     }
 
-    /// Get the inner values as `Series`, ignoring the list offsets.
+    /// Get the inner values as [`Series`], ignoring the list offsets.
     pub fn get_inner(&self) -> Series {
         let ca = self.rechunk();
         let inner_dtype = self.inner_dtype().to_arrow();
         let arr = ca.downcast_iter().next().unwrap();
         unsafe {
-            Series::try_from_arrow_unchecked(
+            Series::_try_from_arrow_unchecked(
                 self.name(),
                 vec![(*arr.values()).clone()],
                 &inner_dtype,
@@ -57,7 +51,7 @@ impl ListChunked {
         }
     }
 
-    /// Ignore the list indices and apply `func` to the inner type as `Series`.
+    /// Ignore the list indices and apply `func` to the inner type as [`Series`].
     pub fn apply_to_inner(
         &self,
         func: &dyn Fn(Series) -> PolarsResult<Series>,
@@ -67,7 +61,14 @@ impl ListChunked {
         let inner_dtype = self.inner_dtype().to_arrow();
 
         let chunks = ca.downcast_iter().map(|arr| {
-            let elements = unsafe { Series::try_from_arrow_unchecked(self.name(), vec![(*arr.values()).clone()], &inner_dtype).unwrap() } ;
+            let elements = unsafe {
+                Series::_try_from_arrow_unchecked(
+                    self.name(),
+                    vec![(*arr.values()).clone()],
+                    &inner_dtype,
+                )
+                .unwrap()
+            };
 
             let expected_len = elements.len();
             let out: Series = func(elements)?;
@@ -85,9 +86,9 @@ impl ListChunked {
                 values,
                 arr.validity().cloned(),
             );
-            Ok(Box::new(arr) as ArrayRef)
-        }).collect::<PolarsResult<Vec<_>>>()?;
+            Ok(arr)
+        });
 
-        unsafe { Ok(ListChunked::from_chunks(self.name(), chunks)) }
+        ListChunked::try_from_chunk_iter(self.name(), chunks)
     }
 }

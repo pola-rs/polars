@@ -9,6 +9,6 @@ where
     /// Convert all values to their absolute/positive value.
     #[must_use]
     pub fn abs(&self) -> Self {
-        self.apply(|v| v.abs())
+        self.apply_values(|v| v.abs())
     }
 }

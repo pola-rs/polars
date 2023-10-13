@@ -29,7 +29,7 @@ impl Source for ReProjectSource {
                     reproject_chunk(chunk, &mut self.positions, self.schema.as_ref())?;
                 }
                 SourceResult::GotMoreData(chunks)
-            }
+            },
         })
     }
 

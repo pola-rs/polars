@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Hash)]
 pub enum FusedOperator {
     MultiplyAdd,
     SubMultiply,

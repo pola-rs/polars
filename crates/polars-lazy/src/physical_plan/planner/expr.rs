@@ -1,4 +1,4 @@
-use polars_core::frame::groupby::GroupByMethod;
+use polars_core::frame::group_by::GroupByMethod;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
@@ -57,6 +57,7 @@ pub(crate) struct ExpressionConversionState {
 struct LocalConversionState {
     has_implode: bool,
     has_window: bool,
+    has_lit: bool,
 }
 
 impl ExpressionConversionState {
@@ -94,64 +95,79 @@ pub(crate) fn create_physical_expr(
         Window {
             mut function,
             partition_by,
-            order_by: _,
             options,
         } => {
             state.set_window();
-            // TODO! Order by
-            let group_by = create_physical_expressions(
-                &partition_by,
-                Context::Default,
-                expr_arena,
-                schema,
-                state,
-            )?;
-
-            // set again as the state can be reset
-            state.set_window();
             let phys_function =
                 create_physical_expr(function, Context::Aggregation, expr_arena, schema, state)?;
+
             let mut out_name = None;
-            let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
-            // sort and then dedup removes consecutive duplicates == all duplicates
-            apply_columns.sort();
-            apply_columns.dedup();
-
-            if apply_columns.is_empty() {
-                if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
-                    apply_columns.push(Arc::from("literal"))
-                } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Count)) {
-                    apply_columns.push(Arc::from("count"))
-                } else {
-                    let e = node_to_expr(function, expr_arena);
-                    polars_bail!(
-                        ComputeError:
-                        "cannot apply a window function, did not find a root column; \
-                        this is likely due to a syntax error in this expression: {:?}", e
-                    );
-                }
-            }
-
             if let Alias(expr, name) = expr_arena.get(function) {
                 function = *expr;
                 out_name = Some(name.clone());
             };
-            let function = node_to_expr(function, expr_arena);
+            let function_expr = node_to_expr(function, expr_arena);
+            let expr = node_to_expr(expression, expr_arena);
 
-            Ok(Arc::new(WindowExpr {
-                group_by,
-                apply_columns,
-                out_name,
-                function,
-                phys_function,
-                options,
-                expr: node_to_expr(expression, expr_arena),
-            }))
-        }
-        Literal(value) => Ok(Arc::new(LiteralExpr::new(
-            value,
-            node_to_expr(expression, expr_arena),
-        ))),
+            match options {
+                WindowType::Over(mapping) => {
+                    // set again as the state can be reset
+                    state.set_window();
+                    // TODO! Order by
+                    let group_by = create_physical_expressions(
+                        &partition_by,
+                        Context::Default,
+                        expr_arena,
+                        schema,
+                        state,
+                    )?;
+                    let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
+                    // sort and then dedup removes consecutive duplicates == all duplicates
+                    apply_columns.sort();
+                    apply_columns.dedup();
+
+                    if apply_columns.is_empty() {
+                        if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
+                            apply_columns.push(Arc::from("literal"))
+                        } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Count)) {
+                            apply_columns.push(Arc::from("count"))
+                        } else {
+                            let e = node_to_expr(function, expr_arena);
+                            polars_bail!(
+                                ComputeError:
+                                "cannot apply a window function, did not find a root column; \
+                                this is likely due to a syntax error in this expression: {:?}", e
+                            );
+                        }
+                    }
+
+                    Ok(Arc::new(WindowExpr {
+                        group_by,
+                        apply_columns,
+                        out_name,
+                        function: function_expr,
+                        phys_function,
+                        mapping,
+                        expr,
+                    }))
+                },
+                #[cfg(feature = "dynamic_group_by")]
+                WindowType::Rolling(options) => Ok(Arc::new(RollingExpr {
+                    function: function_expr,
+                    phys_function,
+                    out_name,
+                    options,
+                    expr,
+                })),
+            }
+        },
+        Literal(value) => {
+            state.local.has_lit = true;
+            Ok(Arc::new(LiteralExpr::new(
+                value,
+                node_to_expr(expression, expr_arena),
+            )))
+        },
         BinaryExpr { left, op, right } => {
             let lhs = create_physical_expr(left, ctxt, expr_arena, schema, state)?;
             let rhs = create_physical_expr(right, ctxt, expr_arena, schema, state)?;
@@ -160,8 +176,9 @@ pub(crate) fn create_physical_expr(
                 op,
                 rhs,
                 node_to_expr(expression, expr_arena),
+                state.local.has_lit,
             )))
-        }
+        },
         Column(column) => Ok(Arc::new(ColumnExpr::new(
             column,
             node_to_expr(expression, expr_arena),
@@ -174,7 +191,7 @@ pub(crate) fn create_physical_expr(
                 options,
                 node_to_expr(expression, expr_arena),
             )))
-        }
+        },
         Take { expr, idx } => {
             let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
             let phys_idx = create_physical_expr(idx, ctxt, expr_arena, schema, state)?;
@@ -183,7 +200,7 @@ pub(crate) fn create_physical_expr(
                 idx: phys_idx,
                 expr: node_to_expr(expression, expr_arena),
             }))
-        }
+        },
         SortBy {
             expr,
             by,
@@ -198,7 +215,7 @@ pub(crate) fn create_physical_expr(
                 descending,
                 node_to_expr(expression, expr_arena),
             )))
-        }
+        },
         Filter { input, by } => {
             let phys_input = create_physical_expr(input, ctxt, expr_arena, schema, state)?;
             let phys_by = create_physical_expr(by, ctxt, expr_arena, schema, state)?;
@@ -207,7 +224,7 @@ pub(crate) fn create_physical_expr(
                 phys_by,
                 node_to_expr(expression, expr_arena),
             )))
-        }
+        },
         Alias(expr, name) => {
             let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(AliasExpr::new(
@@ -215,7 +232,7 @@ pub(crate) fn create_physical_expr(
                 name,
                 node_to_expr(expression, expr_arena),
             )))
-        }
+        },
         Agg(agg) => {
             let expr = agg.get_input().first();
             let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
@@ -253,7 +270,7 @@ pub(crate) fn create_physical_expr(
                                 match s.is_sorted_flag() {
                                     IsSorted::Ascending | IsSorted::Descending => {
                                         Ok(Some(s.min_as_series()))
-                                    }
+                                    },
                                     IsSorted::Not => parallel_op_series(
                                         |s| Ok(s.min_as_series()),
                                         s,
@@ -262,7 +279,7 @@ pub(crate) fn create_physical_expr(
                                     ),
                                 }
                             }) as Arc<dyn SeriesUdf>)
-                        }
+                        },
                         AAggExpr::Max { propagate_nans, .. } => {
                             let state = *state;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
@@ -289,7 +306,7 @@ pub(crate) fn create_physical_expr(
                                 match s.is_sorted_flag() {
                                     IsSorted::Ascending | IsSorted::Descending => {
                                         Ok(Some(s.max_as_series()))
-                                    }
+                                    },
                                     IsSorted::Not => parallel_op_series(
                                         |s| Ok(s.max_as_series()),
                                         s,
@@ -298,7 +315,7 @@ pub(crate) fn create_physical_expr(
                                     ),
                                 }
                             }) as Arc<dyn SeriesUdf>)
-                        }
+                        },
                         AAggExpr::Median(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
                             Ok(Some(s.median_as_series()))
@@ -314,7 +331,7 @@ pub(crate) fn create_physical_expr(
                                     )
                                 })
                             }) as Arc<dyn SeriesUdf>)
-                        }
+                        },
                         AAggExpr::First(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
                             Ok(Some(s.head(Some(1))))
@@ -335,17 +352,17 @@ pub(crate) fn create_physical_expr(
                                 let s = &s[0];
                                 s.implode().map(|ca| Some(ca.into_series()))
                             }) as Arc<dyn SeriesUdf>)
-                        }
+                        },
                         AAggExpr::Quantile { .. } => {
                             unreachable!()
-                        }
+                        },
                         AAggExpr::Sum(_) => {
                             let state = *state;
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
                                 parallel_op_series(|s| Ok(s.sum_as_series()), s, None, state)
                             }) as Arc<dyn SeriesUdf>)
-                        }
+                        },
                         AAggExpr::Count(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                             let s = std::mem::take(&mut s[0]);
                             let count = s.len();
@@ -359,16 +376,16 @@ pub(crate) fn create_physical_expr(
                                 let s = std::mem::take(&mut s[0]);
                                 Ok(Some(s.std_as_series(ddof)))
                             }) as Arc<dyn SeriesUdf>)
-                        }
+                        },
                         AAggExpr::Var(_, ddof) => {
                             SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
                                 Ok(Some(s.var_as_series(ddof)))
                             }) as Arc<dyn SeriesUdf>)
-                        }
+                        },
                         AAggExpr::AggGroups(_) => {
                             panic!("agg groups expression only supported in aggregation context")
-                        }
+                        },
                     };
                     Ok(Arc::new(ApplyExpr::new_minimal(
                         vec![input],
@@ -376,7 +393,7 @@ pub(crate) fn create_physical_expr(
                         node_to_expr(expression, expr_arena),
                         ApplyOptions::ApplyFlat,
                     )))
-                }
+                },
                 _ => {
                     if let AAggExpr::Quantile {
                         expr,
@@ -400,9 +417,9 @@ pub(crate) fn create_physical_expr(
                         .transpose()?;
                     let agg_method: GroupByMethod = agg.into();
                     Ok(Arc::new(AggregationExpr::new(input, agg_method, field)))
-                }
+                },
             }
-        }
+        },
         Cast {
             expr,
             data_type,
@@ -415,22 +432,30 @@ pub(crate) fn create_physical_expr(
                 expr: node_to_expr(expression, expr_arena),
                 strict,
             }))
-        }
+        },
         Ternary {
             predicate,
             truthy,
             falsy,
         } => {
+            let mut lit_count = 0u8;
+            state.reset();
             let predicate = create_physical_expr(predicate, ctxt, expr_arena, schema, state)?;
+            lit_count += state.local.has_lit as u8;
+            state.reset();
             let truthy = create_physical_expr(truthy, ctxt, expr_arena, schema, state)?;
+            lit_count += state.local.has_lit as u8;
+            state.reset();
             let falsy = create_physical_expr(falsy, ctxt, expr_arena, schema, state)?;
+            lit_count += state.local.has_lit as u8;
             Ok(Arc::new(TernaryExpr::new(
                 predicate,
                 truthy,
                 falsy,
                 node_to_expr(expression, expr_arena),
+                lit_count < 2,
             )))
-        }
+        },
         AnonymousFunction {
             input,
             function,
@@ -466,7 +491,7 @@ pub(crate) fn create_physical_expr(
                 check_lengths: options.check_lengths(),
                 allow_group_aware: options.allow_group_aware,
             }))
-        }
+        },
         Function {
             input,
             function,
@@ -502,7 +527,7 @@ pub(crate) fn create_physical_expr(
                 check_lengths: options.check_lengths(),
                 allow_group_aware: options.allow_group_aware,
             }))
-        }
+        },
         Slice {
             input,
             offset,
@@ -518,7 +543,7 @@ pub(crate) fn create_physical_expr(
                 length,
                 expr: node_to_expr(expression, expr_arena),
             }))
-        }
+        },
         Explode(expr) => {
             let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
             let function =
@@ -530,7 +555,7 @@ pub(crate) fn create_physical_expr(
                 node_to_expr(expression, expr_arena),
                 ApplyOptions::ApplyGroups,
             )))
-        }
+        },
         Wildcard => panic!("should be no wildcard at this point"),
         Nth(_) => panic!("should be no nth at this point"),
     }

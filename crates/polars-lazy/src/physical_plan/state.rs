@@ -5,9 +5,9 @@ use std::sync::{Mutex, RwLock};
 use bitflags::bitflags;
 use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
-use polars_core::frame::groupby::GroupsProxy;
-use polars_core::frame::hash_join::ChunkJoinOptIds;
+use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
+use polars_ops::prelude::ChunkJoinOptIds;
 #[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
 use polars_plan::logical_plan::FileFingerPrint;
 
@@ -16,10 +16,11 @@ use super::file_cache::FileCache;
 use crate::physical_plan::node_timer::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
-pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;
+pub type GroupsProxyCache = Arc<RwLock<PlHashMap<String, GroupsProxy>>>;
 
 bitflags! {
     #[repr(transparent)]
+    #[derive(Copy, Clone)]
     pub(super) struct StateFlags: u8 {
         /// More verbose logging
         const VERBOSE = 0x01;
@@ -101,7 +102,7 @@ impl ExecutionState {
 
                 timer.store(start, end, name.as_ref().to_string());
                 out
-            }
+            },
         }
     }
 
@@ -148,7 +149,7 @@ impl ExecutionState {
             schema_cache: Default::default(),
             #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
             file_cache: FileCache::new(finger_prints),
-            group_tuples: Arc::new(Mutex::new(PlHashMap::default())),
+            group_tuples: Arc::new(RwLock::new(PlHashMap::default())),
             join_tuples: Arc::new(Mutex::new(PlHashMap::default())),
             branch_idx: 0,
             flags: AtomicU8::new(StateFlags::init().as_u8()),
@@ -203,7 +204,7 @@ impl ExecutionState {
     /// Clear the cache used by the Window expressions
     pub(crate) fn clear_window_expr_cache(&self) {
         {
-            let mut lock = self.group_tuples.lock().unwrap();
+            let mut lock = self.group_tuples.write().unwrap();
             lock.clear();
         }
         let mut lock = self.join_tuples.lock().unwrap();

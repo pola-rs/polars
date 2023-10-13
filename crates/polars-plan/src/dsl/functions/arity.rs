@@ -11,9 +11,9 @@ macro_rules! prepare_binary_function {
     };
 }
 
-/// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.
+/// Apply a closure on the two columns that are evaluated from [`Expr`] a and [`Expr`] b.
 ///
-/// The closure takes two arguments, each a `Series`. `output_type` must be the output dtype of the resulting `Series`.
+/// The closure takes two arguments, each a [`Series`]. `output_type` must be the output dtype of the resulting [`Series`].
 pub fn map_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
 where
     F: Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync,
@@ -22,7 +22,7 @@ where
     a.map_many(function, &[b], output_type)
 }
 
-/// Like [`map_binary`], but used in a groupby-aggregation context.
+/// Like [`map_binary`], but used in a group_by-aggregation context.
 ///
 /// See [`Expr::apply`] for the difference between [`map`](Expr::map) and [`apply`](Expr::apply).
 pub fn apply_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr

@@ -1,5 +1,6 @@
 use polars_core::prelude::*;
 
+/// Get the lengths of runs of identical values.
 pub fn rle(s: &Series) -> PolarsResult<Series> {
     let (s1, s2) = (s.slice(0, s.len() - 1), s.slice(1, s.len()));
     let s_neq = s1.not_equal_missing(&s2)?;
@@ -22,6 +23,7 @@ pub fn rle(s: &Series) -> PolarsResult<Series> {
     Ok(StructChunked::new("rle", &outvals)?.into_series())
 }
 
+/// Similar to `rle`, but maps values to run IDs.
 pub fn rle_id(s: &Series) -> PolarsResult<Series> {
     if s.len() == 0 {
         return Ok(Series::new_empty("id", &DataType::UInt32));

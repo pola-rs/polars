@@ -9,8 +9,8 @@ use crate::chunked_array::ops::compare_inner::{
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::frame::groupby::*;
-use crate::frame::hash_join::ZipOuterJoinColumn;
+#[cfg(feature = "algorithm_group_by")]
+use crate::frame::group_by::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 
@@ -24,15 +24,14 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.ref_field().data_type()
     }
-    fn _clear_settings(&mut self) {
-        self.0.clear_settings()
+    fn _get_flags(&self) -> Settings {
+        self.0.get_flags()
+    }
+    fn _set_flags(&mut self, flags: Settings) {
+        self.0.set_flags(flags)
     }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0.explode_by_offsets(offsets)
-    }
-
-    fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
-        self.0.set_sorted_flag(is_sorted)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -51,26 +50,20 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
     }
 
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
-        self.0.vec_hash(random_state, buf);
+        self.0.vec_hash(random_state, buf)?;
         Ok(())
     }
 
     fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
-        self.0.vec_hash_combine(build_hasher, hashes);
+        self.0.vec_hash_combine(build_hasher, hashes)?;
         Ok(())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
 
-    fn zip_outer_join_column(
-        &self,
-        right_column: &Series,
-        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-    ) -> Series {
-        ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
-    }
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         NumOpsDispatch::subtract(&self.0, rhs)
     }
@@ -86,6 +79,7 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         NumOpsDispatch::remainder(&self.0, rhs)
     }
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
@@ -96,16 +90,6 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<BinaryChunked> {
-    fn is_sorted_flag(&self) -> IsSorted {
-        if self.0.is_sorted_ascending_flag() {
-            IsSorted::Ascending
-        } else if self.0.is_sorted_descending_flag() {
-            IsSorted::Descending
-        } else {
-            IsSorted::Not
-        }
-    }
-
     fn rename(&mut self, name: &str) {
         self.0.rename(name);
     }
@@ -119,6 +103,9 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
 
     fn chunks(&self) -> &Vec<ArrayRef> {
         self.0.chunks()
+    }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.chunks_mut()
     }
     fn shrink_to_fit(&mut self) {
         self.0.shrink_to_fit()
@@ -156,47 +143,19 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        let indices = if indices.chunks.len() > 1 {
-            Cow::Owned(indices.rechunk())
-        } else {
-            Cow::Borrowed(indices)
-        };
-        Ok(ChunkTake::take(&self.0, (&*indices).into())?.into_series())
+        Ok(self.0.take(indices)?.into_series())
     }
 
-    fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
+    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+        self.0.take_unchecked(indices).into_series()
     }
 
-    unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
+    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+        Ok(self.0.take(indices)?.into_series())
     }
 
-    unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-        let idx = if idx.chunks.len() > 1 {
-            Cow::Owned(idx.rechunk())
-        } else {
-            Cow::Borrowed(idx)
-        };
-
-        let mut out = ChunkTake::take_unchecked(&self.0, (&*idx).into());
-
-        if self.0.is_sorted_ascending_flag()
-            && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
-        {
-            out.set_sorted_flag(idx.is_sorted_flag())
-        }
-
-        Ok(out.into_series())
-    }
-
-    unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
-    }
-
-    #[cfg(feature = "take_opt_iter")]
-    fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-        Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
+    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+        self.0.take_unchecked(indices).into_series()
     }
 
     fn len(&self) -> usize {
@@ -240,14 +199,17 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         self.0.has_validity()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
         ChunkUnique::unique(&self.0).map(|ca| ca.into_series())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
         ChunkUnique::n_unique(&self.0)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         ChunkUnique::arg_unique(&self.0)
     }
@@ -283,19 +245,5 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
     }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
-    }
-
-    #[cfg(feature = "is_in")]
-    fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
-        IsIn::is_in(&self.0, other)
-    }
-    #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
-        RepeatBy::repeat_by(&self.0, by)
-    }
-
-    #[cfg(feature = "mode")]
-    fn mode(&self) -> PolarsResult<Series> {
-        Ok(self.0.mode()?.into_series())
     }
 }

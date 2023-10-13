@@ -55,18 +55,18 @@ unsafe fn decode(rows: &mut [&[u8]], field: &SortField, data_type: &DataType) ->
                 arr.validity().cloned(),
             )
             .to_boxed()
-        }
+        },
         DataType::Struct(fields) => {
             let values = fields
                 .iter()
                 .map(|struct_fld| decode(rows, field, struct_fld.data_type()))
                 .collect();
             StructArray::new(data_type.clone(), values, None).to_boxed()
-        }
+        },
         dt => {
             with_match_arrow_primitive_type!(dt, |$T| {
                 decode_primitive::<$T>(rows, field).to_boxed()
             })
-        }
+        },
     }
 }

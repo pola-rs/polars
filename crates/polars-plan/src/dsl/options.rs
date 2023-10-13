@@ -1,4 +1,6 @@
-use polars_core::prelude::{JoinArgs, JoinType};
+use polars_ops::prelude::{JoinArgs, JoinType};
+#[cfg(feature = "dynamic_group_by")]
+use polars_time::RollingGroupOptions;
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -60,15 +62,29 @@ impl Default for JoinOptions {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct WindowOptions {
+pub enum WindowType {
     /// Explode the aggregated list and just do a hstack instead of a join
     /// this requires the groups to be sorted to make any sense
-    pub mapping: WindowMapping,
+    Over(WindowMapping),
+    #[cfg(feature = "dynamic_group_by")]
+    Rolling(RollingGroupOptions),
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+impl From<WindowMapping> for WindowType {
+    fn from(value: WindowMapping) -> Self {
+        Self::Over(value)
+    }
+}
+
+impl Default for WindowType {
+    fn default() -> Self {
+        Self::Over(WindowMapping::default())
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum WindowMapping {
     /// Map the group values to the position

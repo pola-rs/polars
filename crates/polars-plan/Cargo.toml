@@ -1,36 +1,40 @@
 [package]
 name = "polars-plan"
-version.workspace = true
-edition = "2021"
-license = "MIT"
-repository = "https://github.com/pola-rs/polars"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
 description = "Lazy query engine for the Polars DataFrame library"
 
 [lib]
 doctest = false
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-ahash.workspace = true
-arrow.workspace = true
-chrono = { version = "0.4", optional = true }
-chrono-tz = { version = "0.8", optional = true }
-ciborium = { version = "0.2", optional = true }
-futures = { version = "0.3.25", optional = true }
-once_cell.workspace = true
-polars-arrow = { version = "0.31.1", path = "../polars-arrow" }
-polars-core = { version = "0.31.1", path = "../polars-core", features = ["lazy", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.31.1", path = "../polars-io", features = ["lazy", "csv"], default-features = false }
-polars-ops = { version = "0.31.1", path = "../polars-ops", default-features = false }
-polars-time = { version = "0.31.1", path = "../polars-time", optional = true }
-polars-utils = { version = "0.31.1", path = "../polars-utils" }
-pyo3 = { version = "0.19", optional = true }
-rayon.workspace = true
-regex = { version = "1.6", optional = true }
-serde = { version = "1", features = ["derive", "rc"], optional = true }
-smartstring.workspace = true
-strum_macros.workspace = true
+libloading = { version = "0.8.0", optional = true }
+polars-arrow = { workspace = true }
+polars-core = { workspace = true, features = ["lazy", "zip_with", "random"], default-features = false }
+polars-ffi = { workspace = true, optional = true }
+polars-io = { workspace = true, features = ["lazy"], default-features = false }
+polars-ops = { workspace = true, default-features = false }
+polars-time = { workspace = true, optional = true }
+polars-utils = { workspace = true }
+
+ahash = { workspace = true }
+arrow = { workspace = true }
+chrono = { workspace = true, optional = true }
+chrono-tz = { workspace = true, optional = true }
+ciborium = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+once_cell = { workspace = true }
+percent-encoding = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+rayon = { workspace = true }
+regex = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive", "rc"], optional = true }
+smartstring = { workspace = true }
+strum_macros = { workspace = true }
 
 [build-dependencies]
 version_check = { workspace = true }
@@ -38,14 +42,18 @@ version_check = { workspace = true }
 [features]
 # debugging utility
 debugging = []
-python = ["pyo3", "ciborium"]
-# make sure we don't compile unneeded things even though
-# this dependency gets activated
-compile = []
-default = ["compile"]
+python = ["dep:pyo3", "ciborium"]
+serde = [
+  "dep:serde",
+  "polars-core/serde-lazy",
+  "polars-time/serde",
+  "polars-io/serde",
+  "polars-ops/serde",
+]
 streaming = []
 parquet = ["polars-core/parquet", "polars-io/parquet"]
-async = []
+async = ["polars-io/async"]
+cloud = ["async", "polars-io/cloud"]
 ipc = ["polars-io/ipc"]
 json = ["polars-io/json"]
 csv = ["polars-io/csv"]
@@ -63,7 +71,7 @@ dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-core/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
 dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "temporal"]
 dtype-time = ["polars-core/dtype-time", "polars-time/dtype-time"]
-dtype-array = ["polars-core/dtype-array"]
+dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object"]
@@ -76,20 +84,21 @@ timezones = ["chrono-tz", "polars-time/timezones", "polars-core/timezones", "reg
 binary_encoding = ["polars-ops/binary_encoding"]
 true_div = []
 nightly = ["polars-utils/nightly", "polars-ops/nightly"]
-extract_jsonpath = []
+extract_jsonpath = ["polars-ops/extract_jsonpath"]
 
 # operations
 approx_unique = ["polars-ops/approx_unique"]
-is_in = ["polars-core/is_in"]
-repeat_by = ["polars-core/repeat_by"]
+is_in = ["polars-ops/is_in"]
+repeat_by = ["polars-ops/repeat_by"]
 round_series = ["polars-core/round_series"]
-is_first = ["polars-core/is_first", "polars-ops/is_first"]
+is_first_distinct = ["polars-core/is_first_distinct", "polars-ops/is_first_distinct"]
+is_last_distinct = ["polars-core/is_last_distinct", "polars-ops/is_last_distinct"]
 is_unique = ["polars-ops/is_unique"]
-cross_join = ["polars-core/cross_join"]
+cross_join = ["polars-ops/cross_join"]
 asof_join = ["polars-core/asof_join", "polars-time", "polars-ops/asof_join"]
-concat_str = ["polars-core/concat_str"]
+concat_str = []
 range = []
-mode = ["polars-core/mode"]
+mode = ["polars-ops/mode"]
 cum_agg = ["polars-core/cum_agg"]
 interpolate = ["polars-ops/interpolate"]
 rolling_window = [
@@ -98,13 +107,13 @@ rolling_window = [
   "polars-ops/rolling_window",
   "polars-time/rolling_window",
 ]
-rank = ["polars-core/rank"]
+rank = ["polars-ops/rank"]
 diff = ["polars-core/diff", "polars-ops/diff"]
 pct_change = ["polars-core/pct_change"]
-moment = ["polars-core/moment"]
+moment = ["polars-core/moment", "polars-ops/moment"]
 abs = ["polars-core/abs"]
 random = ["polars-core/random"]
-dynamic_groupby = ["polars-core/dynamic_groupby"]
+dynamic_group_by = ["polars-core/dynamic_group_by"]
 ewma = ["polars-core/ewma"]
 dot_diagram = []
 unique_counts = ["polars-core/unique_counts"]
@@ -120,17 +129,22 @@ merge_sorted = ["polars-ops/merge_sorted"]
 meta = []
 pivot = ["polars-core/rows", "polars-ops/pivot"]
 top_k = ["polars-ops/top_k"]
-semi_anti_join = ["polars-core/semi_anti_join", "polars-ops/semi_anti_join"]
+semi_anti_join = ["polars-ops/semi_anti_join"]
 cse = []
 propagate_nans = ["polars-ops/propagate_nans"]
 coalesce = []
-fused = []
+fused = ["polars-ops/fused"]
 list_sets = ["polars-ops/list_sets"]
 list_any_all = ["polars-ops/list_any_all"]
+list_drop_nulls = ["polars-ops/list_drop_nulls"]
 cutqcut = ["polars-ops/cutqcut"]
 rle = ["polars-ops/rle"]
+extract_groups = ["regex", "dtype-struct", "polars-ops/extract_groups"]
+ffi_plugin = ["libloading", "polars-ffi"]
+hive_partitions = []
+peaks = ["polars-ops/peaks"]
 
-bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
+bigidx = ["polars-core/bigidx"]
 
 panic_on_schema = []
 

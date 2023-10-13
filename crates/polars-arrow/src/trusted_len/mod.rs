@@ -5,6 +5,7 @@ mod rev;
 use std::iter::Scan;
 use std::slice::Iter;
 
+use arrow::array::FixedSizeListArray;
 use arrow::bitmap::utils::{BitmapIter, ZipValidity, ZipValidityIter};
 pub use push_unchecked::*;
 pub use rev::FromIteratorReversed;
@@ -68,6 +69,8 @@ unsafe impl<T> TrustedLen for std::ops::RangeInclusive<T> where std::ops::RangeI
 {}
 unsafe impl TrustedLen for arrow::array::Utf8ValuesIter<'_, i64> {}
 unsafe impl TrustedLen for arrow::array::BinaryValueIter<'_, i64> {}
+unsafe impl TrustedLen for arrow::array::ListValuesIter<'_, i64> {}
+unsafe impl TrustedLen for arrow::array::ArrayValuesIter<'_, FixedSizeListArray> {}
 unsafe impl<T, I: TrustedLen + Iterator<Item = T>, V: TrustedLen + Iterator<Item = bool>> TrustedLen
     for ZipValidityIter<T, I, V>
 {

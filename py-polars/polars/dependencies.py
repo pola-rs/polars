@@ -8,13 +8,16 @@ from importlib.util import find_spec
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, ClassVar, Hashable, cast
 
+_DATAFRAME_API_COMPAT_AVAILABLE = True
 _DELTALAKE_AVAILABLE = True
 _FSSPEC_AVAILABLE = True
+_GEVENT_AVAILABLE = True
 _HYPOTHESIS_AVAILABLE = True
 _NUMPY_AVAILABLE = True
 _PANDAS_AVAILABLE = True
 _PYARROW_AVAILABLE = True
 _PYDANTIC_AVAILABLE = True
+_PYICEBERG_AVAILABLE = True
 _ZONEINFO_AVAILABLE = True
 
 
@@ -41,6 +44,7 @@ class _LazyModule(ModuleType):
     def __init__(
         self,
         module_name: str,
+        *,
         module_available: bool,
     ) -> None:
         """
@@ -93,7 +97,7 @@ class _LazyModule(ModuleType):
             # all other attribute access raises a helpful exception
             pfx = self._mod_pfx.get(self._module_name, "")
             raise ModuleNotFoundError(
-                f"{pfx}{attr} requires '{self._module_name}' module to be installed"
+                f"{pfx}{attr} requires {self._module_name!r} module to be installed"
             ) from None
 
 
@@ -150,13 +154,16 @@ if TYPE_CHECKING:
     import pickle
     import subprocess
 
+    import dataframe_api_compat
     import deltalake
     import fsspec
+    import gevent
     import hypothesis
     import numpy
     import pandas
     import pyarrow
     import pydantic
+    import pyiceberg
 
     if sys.version_info >= (3, 9):
         import zoneinfo
@@ -171,6 +178,9 @@ else:
     subprocess, _ = _lazy_import("subprocess")
 
     # heavy/optional third party libs
+    dataframe_api_compat, _DATAFRAME_API_COMPAT_AVAILABLE = _lazy_import(
+        "dataframe_api_compat"
+    )
     deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
@@ -178,11 +188,13 @@ else:
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
     pydantic, _PYDANTIC_AVAILABLE = _lazy_import("pydantic")
+    pyiceberg, _PYICEBERG_AVAILABLE = _lazy_import("pyiceberg")
     zoneinfo, _ZONEINFO_AVAILABLE = (
         _lazy_import("zoneinfo")
         if sys.version_info >= (3, 9)
         else _lazy_import("backports.zoneinfo")
     )
+    gevent, _GEVENT_AVAILABLE = _lazy_import("gevent")
 
 
 @lru_cache(maxsize=None)
@@ -219,11 +231,14 @@ __all__ = [
     "pickle",
     "subprocess",
     # lazy-load third party libs
+    "dataframe_api_compat",
     "deltalake",
     "fsspec",
+    "gevent",
     "numpy",
     "pandas",
     "pydantic",
+    "pyiceberg",
     "pyarrow",
     "zoneinfo",
     # lazy utilities
@@ -234,7 +249,9 @@ __all__ = [
     "_LazyModule",
     # exported flags/guards
     "_DELTALAKE_AVAILABLE",
+    "_PYICEBERG_AVAILABLE",
     "_FSSPEC_AVAILABLE",
+    "_GEVENT_AVAILABLE",
     "_HYPOTHESIS_AVAILABLE",
     "_NUMPY_AVAILABLE",
     "_PANDAS_AVAILABLE",

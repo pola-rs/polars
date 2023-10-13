@@ -19,7 +19,7 @@ jobs:
   build-rust-docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Rust
         run: rustup component add rust-docs
@@ -31,7 +31,7 @@ jobs:
 
       - name: Build Rust documentation
         env:
-          RUSTDOCFLAGS: --cfg docsrs -D warnings
+          RUSTDOCFLAGS: --cfg docsrs -D warnings --allow=rustdoc::redundant-explicit-links
         working-directory: crates
         run: make doctest
 
@@ -46,7 +46,8 @@ jobs:
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: target/doc
-          clean-exclude: py-polars/**
+          target-folder: docs/rust/dev
+          single-commit: true
 
       # Make sure documentation artifacts are not cached
       - name: Clean up documentation artifacts

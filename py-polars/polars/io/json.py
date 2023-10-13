@@ -24,7 +24,9 @@ def read_json(
     Parameters
     ----------
     source
-        Path to a file or a file-like object.
+        Path to a file or a file-like object (by file-like object, we refer to objects
+        that have a ``read()`` method, such as a file handler (e.g. via builtin ``open``
+        function) or ``BytesIO``).
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 

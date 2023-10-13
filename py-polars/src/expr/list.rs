@@ -33,8 +33,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "list_count")]
-    fn list_count_match(&self, expr: PyExpr) -> Self {
-        self.inner.clone().list().count_match(expr.inner).into()
+    fn list_count_matches(&self, expr: PyExpr) -> Self {
+        self.inner.clone().list().count_matches(expr.inner).into()
     }
 
     fn list_diff(&self, n: i64, null_behavior: Wrap<NullBehavior>) -> PyResult<Self> {
@@ -49,12 +49,12 @@ impl PyExpr {
         self.inner.clone().list().get(index.inner).into()
     }
 
-    fn list_join(&self, separator: &str) -> Self {
-        self.inner.clone().list().join(separator).into()
+    fn list_join(&self, separator: PyExpr) -> Self {
+        self.inner.clone().list().join(separator.inner).into()
     }
 
-    fn list_lengths(&self) -> Self {
-        self.inner.clone().list().lengths().into()
+    fn list_len(&self) -> Self {
+        self.inner.clone().list().len().into()
     }
 
     fn list_max(&self) -> Self {
@@ -78,8 +78,8 @@ impl PyExpr {
         self.inner.clone().list().reverse().into()
     }
 
-    fn list_shift(&self, periods: i64) -> Self {
-        self.inner.clone().list().shift(periods).into()
+    fn list_shift(&self, periods: PyExpr) -> Self {
+        self.inner.clone().list().shift(periods.inner).into()
     }
 
     fn list_slice(&self, offset: PyExpr, length: Option<PyExpr>) -> Self {
@@ -108,6 +108,11 @@ impl PyExpr {
 
     fn list_sum(&self) -> Self {
         self.inner.clone().list().sum().with_fmt("list.sum").into()
+    }
+
+    #[cfg(feature = "list_drop_nulls")]
+    fn list_drop_nulls(&self) -> Self {
+        self.inner.clone().list().drop_nulls().into()
     }
 
     #[cfg(feature = "list_take")]
@@ -158,10 +163,10 @@ impl PyExpr {
     fn list_set_operation(&self, other: PyExpr, operation: Wrap<SetOperation>) -> Self {
         let e = self.inner.clone().list();
         match operation.0 {
-            SetOperation::Intersection => e.intersection(other.inner),
-            SetOperation::Difference => e.difference(other.inner),
+            SetOperation::Intersection => e.set_intersection(other.inner),
+            SetOperation::Difference => e.set_difference(other.inner),
             SetOperation::Union => e.union(other.inner),
-            SetOperation::SymmetricDifference => e.symmetric_difference(other.inner),
+            SetOperation::SymmetricDifference => e.set_symmetric_difference(other.inner),
         }
         .into()
     }

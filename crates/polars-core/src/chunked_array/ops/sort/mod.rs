@@ -212,44 +212,29 @@ where
             options.multithreaded,
         );
 
-        let mut ca: ChunkedArray<T> = if options.nulls_last {
+        let mut validity = MutableBitmap::with_capacity(len);
+        if options.nulls_last {
             vals.extend(std::iter::repeat(T::Native::default()).take(ca.null_count()));
-            let mut validity = MutableBitmap::with_capacity(len);
             validity.extend_constant(len - null_count, true);
             validity.extend_constant(null_count, false);
-
-            (
-                ca.name(),
-                PrimitiveArray::new(
-                    T::get_dtype().to_arrow(),
-                    vals.into(),
-                    Some(validity.into()),
-                ),
-            )
-                .into()
         } else {
-            let mut validity = MutableBitmap::with_capacity(len);
             validity.extend_constant(null_count, false);
             validity.extend_constant(len - null_count, true);
-
-            (
-                ca.name(),
-                PrimitiveArray::new(
-                    T::get_dtype().to_arrow(),
-                    vals.into(),
-                    Some(validity.into()),
-                ),
-            )
-                .into()
         };
 
+        let arr = PrimitiveArray::new(
+            T::get_dtype().to_arrow(),
+            vals.into(),
+            Some(validity.into()),
+        );
+        let mut new_ca = ChunkedArray::with_chunk(ca.name(), arr);
         let s = if options.descending {
             IsSorted::Descending
         } else {
             IsSorted::Ascending
         };
-        ca.set_sorted_flag(s);
-        ca
+        new_ca.set_sorted_flag(s);
+        new_ca
     }
 }
 
@@ -478,13 +463,12 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                     length_so_far = values.len() as i64;
                     offsets.push(length_so_far);
                 }
-                // Safety:
-                // offsets are correctly created
-                let ar = unsafe {
+                // SAFETY: offsets are correctly created.
+                let arr = unsafe {
                     BinaryArray::from_data_unchecked_default(offsets.into(), values.into(), None)
                 };
-                (self.name(), ar).into()
-            }
+                ChunkedArray::with_chunk(self.name(), arr)
+            },
             (_, true) => {
                 for val in v {
                     values.extend_from_slice(val);
@@ -496,17 +480,16 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                 validity.extend_constant(null_count, false);
                 offsets.extend(std::iter::repeat(length_so_far).take(null_count));
 
-                // Safety:
-                // offsets are correctly created
-                let ar = unsafe {
+                // SAFETY: offsets are correctly created.
+                let arr = unsafe {
                     BinaryArray::from_data_unchecked_default(
                         offsets.into(),
                         values.into(),
                         Some(validity.into()),
                     )
                 };
-                (self.name(), ar).into()
-            }
+                ChunkedArray::with_chunk(self.name(), arr)
+            },
             (_, false) => {
                 let mut validity = MutableBitmap::with_capacity(len);
                 validity.extend_constant(null_count, false);
@@ -519,17 +502,16 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                     offsets.push(length_so_far);
                 }
 
-                // Safety:
-                // we pass valid utf8
-                let ar = unsafe {
+                // SAFETY: we pass valid UTF-8.
+                let arr = unsafe {
                     BinaryArray::from_data_unchecked_default(
                         offsets.into(),
                         values.into(),
                         Some(validity.into()),
                     )
                 };
-                (self.name(), ar).into()
-            }
+                ChunkedArray::with_chunk(self.name(), arr)
+            },
         };
 
         let s = if options.descending {
@@ -567,7 +549,6 @@ impl ChunkSort<BinaryType> for BinaryChunked {
     ///
     /// In this case we assume that all numeric `Series` are `f64` types. The caller needs to
     /// uphold this contract. If not, it will panic.
-    ///
     fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
         args_validate(self, &options.other, &options.descending)?;
 
@@ -682,7 +663,7 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
                 .map(convert_sort_column_multi_sort)
                 .collect::<PolarsResult<Vec<_>>>()?;
             return StructChunked::new(ca.name(), &new_fields).map(|ca| ca.into_series());
-        }
+        },
         _ => {
             let phys = s.to_physical_repr().into_owned();
             polars_ensure!(
@@ -690,7 +671,7 @@ pub(crate) fn convert_sort_column_multi_sort(s: &Series) -> PolarsResult<Series>
                 ComputeError: "cannot sort column of dtype `{}`", s.dtype()
             );
             phys
-        }
+        },
     };
     Ok(out)
 }

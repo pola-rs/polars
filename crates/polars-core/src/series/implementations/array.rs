@@ -4,10 +4,14 @@ use std::borrow::Cow;
 use super::{private, IntoSeries, SeriesTrait};
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
-use crate::chunked_array::AsSinglePtr;
-use crate::frame::groupby::*;
+#[cfg(feature = "chunked_ids")]
+use crate::chunked_array::ops::take::TakeChunked;
+use crate::chunked_array::{AsSinglePtr, Settings};
+#[cfg(feature = "algorithm_group_by")]
+use crate::frame::group_by::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
+#[cfg(feature = "chunked_ids")]
 use crate::series::IsSorted;
 
 impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
@@ -20,15 +24,17 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.ref_field().data_type()
     }
-    fn _clear_settings(&mut self) {
-        self.0.clear_settings()
-    }
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0.explode_by_offsets(offsets)
+
+    fn _get_flags(&self) -> Settings {
+        self.0.get_flags()
     }
 
-    fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
-        self.0.set_sorted_flag(is_sorted)
+    fn _set_flags(&mut self, flags: Settings) {
+        self.0.set_flags(flags)
+    }
+
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        self.0.explode_by_offsets(offsets)
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -40,10 +46,12 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
         ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
@@ -63,6 +71,9 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
 
     fn chunks(&self) -> &Vec<ArrayRef> {
         self.0.chunks()
+    }
+    unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+        self.0.chunks_mut()
     }
     fn shrink_to_fit(&mut self) {
         self.0.shrink_to_fit()
@@ -98,38 +109,19 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
-        let indices = if indices.chunks.len() > 1 {
-            Cow::Owned(indices.rechunk())
-        } else {
-            Cow::Borrowed(indices)
-        };
-        Ok(ChunkTake::take(&self.0, (&*indices).into())?.into_series())
+        Ok(self.0.take(indices)?.into_series())
     }
 
-    fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
+    unsafe fn take_unchecked(&self, indices: &IdxCa) -> Series {
+        self.0.take_unchecked(indices).into_series()
     }
 
-    unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
+    fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
+        Ok(self.0.take(indices)?.into_series())
     }
 
-    unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
-        let idx = if idx.chunks.len() > 1 {
-            Cow::Owned(idx.rechunk())
-        } else {
-            Cow::Borrowed(idx)
-        };
-        Ok(ChunkTake::take_unchecked(&self.0, (&*idx).into()).into_series())
-    }
-
-    unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
-    }
-
-    #[cfg(feature = "take_opt_iter")]
-    fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> PolarsResult<Series> {
-        Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
+    unsafe fn take_slice_unchecked(&self, indices: &[IdxSize]) -> Series {
+        self.0.take_unchecked(indices).into_series()
     }
 
     fn len(&self) -> usize {

@@ -1,6 +1,6 @@
 //! # Performance
 //!
-//! Understanding the memory format used by Arrow/ Polars can really increase performance of your
+//! Understanding the memory format used by Arrow/Polars can really increase performance of your
 //! queries. This is especially true for large string data. The figure below shows how an Arrow UTF8
 //! array is laid out in memory.
 //!
@@ -13,27 +13,32 @@
 //! ![](https://raw.githubusercontent.com/pola-rs/polars-static/master/docs/arrow-string.svg)
 //!
 //! This memory structure is very cache efficient if we are to read the string values. Especially if
-//! we compare it to a `Vec<String>`.
+//! we compare it to a [`Vec<String>`].
 //!
 //! ![](https://raw.githubusercontent.com/pola-rs/polars-static/master/docs/pandas-string.svg)
 //!
 //! However, if we need to reorder the Arrow UTF8 array, we need to swap around all the bytes of the
 //! string values, which can become very expensive when we're dealing with large strings. On the
-//! other hand, for the `Vec<String>`, we only need to swap pointers around which is only 8 bytes data
+//! other hand, for the [`Vec<String>`], we only need to swap pointers around which is only 8 bytes data
 //! that have to be moved.
 //!
-//! If you have a [DataFrame](crate::frame::DataFrame) with a large number of
-//! [Utf8Chunked](crate::datatypes::Utf8Chunked) columns and you need to reorder them due to an
+//! If you have a [`DataFrame`] with a large number of
+//! [`Utf8Chunked`] columns and you need to reorder them due to an
 //! operation like a FILTER, JOIN, GROUPBY, etc. than this can become quite expensive.
 //!
 //! ## Categorical type
-//! For this reason Polars has a [CategoricalType](https://pola-rs.github.io/polars/polars/datatypes/struct.CategoricalType.html).
-//! A `CategoricalChunked` is an array filled with `u32` values that each represent a unique string value.
+//! For this reason Polars has a [`CategoricalType`].
+//! A [`CategoricalChunked`] is an array filled with `u32` values that each represent a unique string value.
 //! Thereby maintaining cache-efficiency, whilst also making it cheap to move values around.
+//!
+//! [`DataFrame`]: crate::frame::DataFrame
+//! [`Utf8Chunked`]: crate::datatypes::Utf8Chunked
+//! [`CategoricalType`]: crate::datatypes::CategoricalType
+//! [`CategoricalChunked`]: crate::datatypes::CategoricalChunked
 //!
 //! ### Example: Single DataFrame
 //!
-//! In the example below we show how you can cast a `Utf8Chunked` column to a `CategoricalChunked`.
+//! In the example below we show how you can cast a [`Utf8Chunked`] column to a [`CategoricalChunked`].
 //!
 //! ```rust
 //! use polars::prelude::*;
@@ -49,10 +54,12 @@
 //! ```
 //!
 //! ### Example: Eager join multiple DataFrames on a Categorical
-//! When the strings of one column need to be joined with the string data from another `DataFrame`.
-//! The `Categorical` data needs to be synchronized (Categories in df A need to point to the same
+//! When the strings of one column need to be joined with the string data from another [`DataFrame`].
+//! The [`Categorical`] data needs to be synchronized (Categories in df A need to point to the same
 //! underlying string data as Categories in df B). You can do that by turning the global string cache
 //! on.
+//!
+//! [`Categorical`]: crate::datatypes::CategoricalChunked
 //!
 //! ```rust
 //! use polars::prelude::*;
@@ -60,7 +67,7 @@
 //!
 //! fn example(mut df_a: DataFrame, mut df_b: DataFrame) -> PolarsResult<DataFrame> {
 //!     // Set a global string cache
-//!     enable_string_cache(true);
+//!     enable_string_cache();
 //!
 //!     df_a.try_apply("a", |s| s.categorical().cloned())?;
 //!     df_b.try_apply("b", |s| s.categorical().cloned())?;
@@ -69,8 +76,10 @@
 //! ```
 //!
 //! ### Example: Lazy join multiple DataFrames on a Categorical
-//! A lazy Query always has a global string cache (unless you opt-out) for the duration of that query (until `collect` is called).
-//! The example below shows how you could join two DataFrames with Categorical types.
+//! A lazy Query always has a global string cache (unless you opt-out) for the duration of that query (until [`collect`] is called).
+//! The example below shows how you could join two [`DataFrame`]s with [`Categorical`] types.
+//!
+//! [`collect`]: polars_lazy::frame::LazyFrame::collect
 //!
 //! ```rust
 //! # #[cfg(feature = "lazy")]

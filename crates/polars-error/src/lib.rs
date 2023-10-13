@@ -1,3 +1,4 @@
+pub mod constants;
 mod warning;
 
 use std::borrow::Cow;
@@ -54,6 +55,8 @@ pub enum PolarsError {
     Io(#[from] io::Error),
     #[error("no data: {0}")]
     NoData(ErrString),
+    #[error("{0}")]
+    OutOfBounds(ErrString),
     #[error("field not found: {0}")]
     SchemaFieldNotFound(ErrString),
     #[error("data types don't match: {0}")]
@@ -79,6 +82,16 @@ impl From<regex::Error> for PolarsError {
     }
 }
 
+#[cfg(feature = "object_store")]
+impl From<object_store::Error> for PolarsError {
+    fn from(err: object_store::Error) -> Self {
+        PolarsError::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("object store error {err:?}"),
+        ))
+    }
+}
+
 pub type PolarsResult<T> = Result<T, PolarsError>;
 
 pub use arrow::error::Error as ArrowError;
@@ -94,6 +107,7 @@ impl PolarsError {
             InvalidOperation(msg) => InvalidOperation(func(msg).into()),
             Io(err) => ComputeError(func(&format!("IO: {err}")).into()),
             NoData(msg) => NoData(func(msg).into()),
+            OutOfBounds(msg) => OutOfBounds(func(msg).into()),
             SchemaFieldNotFound(msg) => SchemaFieldNotFound(func(msg).into()),
             SchemaMismatch(msg) => SchemaMismatch(func(msg).into()),
             ShapeMismatch(msg) => ShapeMismatch(func(msg).into()),
@@ -109,14 +123,14 @@ pub fn map_err<E: Error>(error: E) -> PolarsError {
 
 #[macro_export]
 macro_rules! polars_err {
+    ($variant:ident: $fmt:literal $(, $arg:expr)* $(,)?) => {
+        $crate::__private::must_use(
+            $crate::PolarsError::$variant(format!($fmt, $($arg),*).into())
+        )
+    };
     ($variant:ident: $err:expr $(,)?) => {
         $crate::__private::must_use(
             $crate::PolarsError::$variant($err.into())
-        )
-    };
-    ($variant:ident: $fmt:literal, $($arg:tt)+) => {
-        $crate::__private::must_use(
-            $crate::PolarsError::$variant(format!($fmt, $($arg)+).into())
         )
     };
     (expr = $expr:expr, $variant:ident: $err:expr $(,)?) => {
@@ -138,6 +152,11 @@ macro_rules! polars_err {
     (opq = $op:ident, got = $arg:expr, expected = $expected:expr) => {
         $crate::polars_err!(
             op = concat!("`", stringify!($op), "`"), got = $arg, expected = $expected
+        )
+    };
+    (un_impl = $op:ident) => {
+        $crate::polars_err!(
+            InvalidOperation: "{} operation is not implemented.", concat!("`", stringify!($op), "`")
         )
     };
     (op = $op:expr, $arg:expr) => {
@@ -181,7 +200,7 @@ Help: if you're using Python, this may look something like:
 Alternatively, if the performance cost is acceptable, you could just set:
 
     import polars as pl
-    pl.enable_string_cache(True)
+    pl.enable_string_cache()
 
 on startup."#.trim_start())
     };
@@ -189,7 +208,7 @@ on startup."#.trim_start())
         polars_err!(Duplicate: "column with name '{}' has more than one occurrences", $name)
     };
     (oob = $idx:expr, $len:expr) => {
-        polars_err!(ComputeError: "index {} is out of bounds for sequence of size {}", $idx, $len)
+        polars_err!(OutOfBounds: "index {} is out of bounds for sequence of length {}", $idx, $len)
     };
     (agg_len = $agg_len:expr, $groups_len:expr) => {
         polars_err!(
@@ -200,7 +219,7 @@ on startup."#.trim_start())
     };
     (parse_fmt_idk = $dtype:expr) => {
         polars_err!(
-            ComputeError: "could not find an appropriate format to parse {}s, please define a fmt",
+            ComputeError: "could not find an appropriate format to parse {}s, please define a format",
             $dtype,
         )
     };

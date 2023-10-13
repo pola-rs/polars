@@ -18,7 +18,7 @@
 //!
 //!     CsvWriter::new(&mut file)
 //!     .has_header(true)
-//!     .with_delimiter(b',')
+//!     .with_separator(b',')
 //!     .finish(df)
 //! }
 //! ```
@@ -62,11 +62,11 @@ use rayon::prelude::*;
 pub use read::{CsvEncoding, CsvReader, NullValues};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-pub use write::CsvWriter;
+pub use write::{BatchedWriter, CsvWriter, QuoteStyle};
+pub use write_impl::SerializeOptions;
 
 use crate::csv::read_impl::CoreReader;
-use crate::csv::utils::get_reader_bytes;
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
-use crate::utils::resolve_homedir;
+use crate::utils::{get_reader_bytes, resolve_homedir};
 use crate::{RowCount, SerReader, SerWriter};

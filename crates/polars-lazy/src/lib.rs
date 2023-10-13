@@ -1,6 +1,6 @@
 //! Lazy API of Polars
 //!
-//! The lazy api of Polars supports a subset of the eager api. Apart from the distributed compute,
+//! The lazy API of Polars supports a subset of the eager API. Apart from the distributed compute,
 //! it is very similar to [Apache Spark](https://spark.apache.org/). You write queries in a
 //! domain specific language. These queries translate to a logical plan, which represent your query steps.
 //! Before execution this logical plan is optimized and may change the order of operations if this will increase performance.
@@ -8,16 +8,31 @@
 //!
 //! # Lazy DSL
 //!
-//! The lazy API of polars can be used as long we operate on one or multiple DataFrame(s) and
-//! Series of the same length as the DataFrame. To get started we call the [lazy](crate::frame::IntoLazy::lazy)
-//! method. This returns a [LazyFrame](crate::frame::LazyFrame) exposing the lazy API.
+//! The lazy API of polars replaces the eager [`DataFrame`] with the [`LazyFrame`], through which
+//! the lazy API is exposed.
+//! The [`LazyFrame`] represents a logical execution plan: a sequence of operations to perform on a concrete data source.
+//! These operations are not executed until we call [`collect`].
+//! This allows polars to optimize/reorder the query which may lead to faster queries or fewer type errors.
 //!
-//! Lazy operations don't execute until we call [collect](crate::frame::LazyFrame::collect).
-//! This allows polars to optimize/reorder the query which may lead to faster queries or less type errors.
+//! [`DataFrame`]: polars_core::frame::DataFrame
+//! [`LazyFrame`]: crate::frame::LazyFrame
+//! [`collect`]: crate::frame::LazyFrame::collect
 //!
-//! The DSL is mostly defined by [LazyFrame](crate::frame::LazyFrame) for operations on DataFrames and
-//! the [Expr](crate::dsl::Expr) and functions in the [dsl modules](crate::dsl) that operate
-//! on expressions.
+//! In general, a [`LazyFrame`] requires a concrete data source — a [`DataFrame`], a file on disk, etc. — which polars-lazy
+//! then applies the user-specified sequence of operations to.
+//! To obtain a [`LazyFrame`] from an existing [`DataFrame`], we call the [`lazy`](crate::frame::IntoLazy::lazy) method on
+//! the [`DataFrame`].
+//! A [`LazyFrame`] can also be obtained through the lazy versions of file readers, such as [`LazyCsvReader`](crate::frame::LazyCsvReader).
+//!
+//! The other major component of the polars lazy API is [`Expr`](crate::dsl::Expr), which represents an operation to be
+//! performed on a [`LazyFrame`], such as mapping over a column, filtering, or groupby-aggregation.
+//! [`Expr`] and the functions that produce them can be found in the [dsl module](crate::dsl).
+//!
+//! [`Expr`]: crate::dsl::Expr
+//!
+//! Most operations on a [`LazyFrame`] consume the [`LazyFrame`] and return a new [`LazyFrame`] with the updated plan.
+//! If you need to use the same [`LazyFrame`] multiple times, you should [`clone`](crate::frame::LazyFrame::clone) it, and optionally
+//! [`cache`](crate::frame::LazyFrame::cache) it beforehand.
 //!
 //! ## Examples
 //!
@@ -93,13 +108,13 @@
 //!
 //! fn example() -> PolarsResult<DataFrame> {
 //!     let df = df!(
-//!     "date" => ["2020-08-21", "2020-08-21", "2020-08-22", "2020-08-23", "2020-08-22"],
-//!     "temp" => [20, 10, 7, 9, 1],
-//!     "rain" => [0.2, 0.1, 0.3, 0.1, 0.01]
+//!         "date" => ["2020-08-21", "2020-08-21", "2020-08-22", "2020-08-23", "2020-08-22"],
+//!         "temp" => [20, 10, 7, 9, 1],
+//!         "rain" => [0.2, 0.1, 0.3, 0.1, 0.01]
 //!     )?;
 //!
 //!     df.lazy()
-//!     .groupby([col("date")])
+//!     .group_by([col("date")])
 //!     .agg([
 //!         col("rain").min().alias("min_rain"),
 //!         col("rain").sum().alias("sum_rain"),
@@ -107,7 +122,6 @@
 //!     ])
 //!     .sort("date", Default::default())
 //!     .collect()
-//!
 //! }
 //! ```
 //!
@@ -160,9 +174,9 @@
 //!     .filter(
 //!         col("a").lt(lit(2))
 //!     )
-//!     .groupby([col("b")])
+//!     .group_by([col("b")])
 //!     .agg(
-//!         vec![col("b").first(), col("c").first()]
+//!         vec![col("b").first().alias("first_b"), col("c").first().alias("first_c")]
 //!      )
 //!     .select(&[col("b"), col("c_first")])
 //! }
@@ -176,7 +190,7 @@
 //!
 //! fn aggregate_all_columns(df_a: DataFrame) -> LazyFrame {
 //!     df_a.lazy()
-//!     .groupby([col("b")])
+//!     .group_by([col("b")])
 //!     .agg(
 //!         vec![col("*").first()]
 //!      )
@@ -192,6 +206,7 @@ pub mod dsl;
 pub mod frame;
 pub mod physical_plan;
 pub mod prelude;
+mod scan;
 #[cfg(test)]
 mod tests;
 pub mod utils;

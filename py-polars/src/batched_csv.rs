@@ -25,13 +25,12 @@ pub struct PyBatchedCsv {
 #[allow(clippy::wrong_self_convention, clippy::should_implement_trait)]
 impl PyBatchedCsv {
     #[staticmethod]
-    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         infer_schema_length, chunk_size, has_header, ignore_errors, n_rows, skip_rows,
         projection, separator, rechunk, columns, encoding, n_threads, path, overwrite_dtype,
         overwrite_dtype_slice, low_memory, comment_char, quote_char, null_values,
         missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header, row_count,
-        sample_size, eol_char)
+        sample_size, eol_char, raise_if_empty, truncate_ragged_lines)
     )]
     fn new(
         infer_schema_length: Option<usize>,
@@ -59,6 +58,8 @@ impl PyBatchedCsv {
         row_count: Option<(String, IdxSize)>,
         sample_size: usize,
         eol_char: &str,
+        raise_if_empty: bool,
+        truncate_ragged_lines: bool,
     ) -> PyResult<PyBatchedCsv> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -97,7 +98,7 @@ impl PyBatchedCsv {
             .infer_schema(infer_schema_length)
             .has_header(has_header)
             .with_n_rows(n_rows)
-            .with_delimiter(separator.as_bytes()[0])
+            .with_separator(separator.as_bytes()[0])
             .with_skip_rows(skip_rows)
             .with_ignore_errors(ignore_errors)
             .with_projection(projection)
@@ -116,7 +117,9 @@ impl PyBatchedCsv {
             .with_end_of_line_char(eol_char)
             .with_skip_rows_after_header(skip_rows_after_header)
             .with_row_count(row_count)
-            .sample_size(sample_size);
+            .sample_size(sample_size)
+            .truncate_ragged_lines(truncate_ragged_lines)
+            .raise_if_empty(raise_if_empty);
 
         let reader = if low_memory {
             let reader = reader
