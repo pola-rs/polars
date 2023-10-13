@@ -1,3 +1,4 @@
+use polars_error::PolarsResult;
 use super::super::ffi::ToFfi;
 use super::super::Array;
 use super::UnionArray;
@@ -31,7 +32,7 @@ unsafe impl ToFfi for UnionArray {
 }
 
 impl<A: ffi::ArrowArrayRef> FromFfi<A> for UnionArray {
-    unsafe fn try_from_ffi(array: A) -> Result<Self> {
+    unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
         let data_type = array.data_type().clone();
         let fields = Self::get_fields(&data_type);
 

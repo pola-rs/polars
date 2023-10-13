@@ -1,5 +1,6 @@
 use std::iter::FromIterator;
 use std::sync::Arc;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::{BinaryArray, MutableBinaryValuesArray, MutableBinaryValuesIter};
 use crate::array::physical_binary::*;
@@ -67,9 +68,7 @@ impl<O: Offset> MutableBinaryArray<O> {
             .as_ref()
             .map_or(false, |validity| validity.len() != values.len())
         {
-            return Err(Error::oos(
-                "validity's length must be equal to the number of values",
-            ));
+            polars_bail!(ComputeError: "validity's length must be equal to the number of values")
         }
 
         Ok(Self { values, validity })
@@ -424,7 +423,7 @@ impl<O: Offset, T: AsRef<[u8]>> Extend<Option<T>> for MutableBinaryArray<O> {
 }
 
 impl<O: Offset, T: AsRef<[u8]>> TryExtend<Option<T>> for MutableBinaryArray<O> {
-    fn try_extend<I: IntoIterator<Item = Option<T>>>(&mut self, iter: I) -> Result<()> {
+    fn try_extend<I: IntoIterator<Item = Option<T>>>(&mut self, iter: I) -> PolarsResult<()> {
         let mut iter = iter.into_iter();
         self.reserve(iter.size_hint().0, 0);
         iter.try_for_each(|x| self.try_push(x))
@@ -461,7 +460,7 @@ impl<O: Offset> PartialEq for MutableBinaryArray<O> {
 }
 
 impl<O: Offset> TryExtendFromSelf for MutableBinaryArray<O> {
-    fn try_extend_from_self(&mut self, other: &Self) -> Result<()> {
+    fn try_extend_from_self(&mut self, other: &Self) -> PolarsResult<()> {
         extend_validity(self.len(), &mut self.validity, &other.validity);
 
         self.values.try_extend_from_self(&other.values)

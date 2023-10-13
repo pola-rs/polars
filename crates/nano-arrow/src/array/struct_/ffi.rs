@@ -1,7 +1,7 @@
+use polars_error::PolarsResult;
 use super::super::ffi::ToFfi;
 use super::super::{Array, FromFfi};
 use super::StructArray;
-use crate::error::Result;
 use crate::ffi;
 
 unsafe impl ToFfi for StructArray {
@@ -28,7 +28,7 @@ unsafe impl ToFfi for StructArray {
 }
 
 impl<A: ffi::ArrowArrayRef> FromFfi<A> for StructArray {
-    unsafe fn try_from_ffi(array: A) -> Result<Self> {
+    unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
         let data_type = array.data_type().clone();
         let fields = Self::get_fields(&data_type);
 
@@ -65,7 +65,7 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for StructArray {
                     }
                 })
             })
-            .collect::<Result<Vec<Box<dyn Array>>>>()?;
+            .collect::<PolarsResult<Vec<Box<dyn Array>>>>()?;
 
         Self::try_new(data_type, values, validity)
     }

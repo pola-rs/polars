@@ -1,4 +1,5 @@
 use std::any::Any;
+use polars_error::{polars_bail, PolarsResult};
 
 use crate::array::{Array, FromFfi, MutableArray, ToFfi};
 use crate::bitmap::{Bitmap, MutableBitmap};
@@ -18,11 +19,9 @@ impl NullArray {
     /// # Errors
     /// This function errors iff:
     /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to [`crate::datatypes::PhysicalType::Null`].
-    pub fn try_new(data_type: DataType, length: usize) -> Result<Self, Error> {
+    pub fn try_new(data_type: DataType, length: usize) -> PolarsResult<Self> {
         if data_type.to_physical_type() != PhysicalType::Null {
-            return Err(Error::oos(
-                "NullArray can only be initialized with a DataType whose physical type is Boolean",
-            ));
+            polars_bail!(ComputeError: "NullArray can only be initialized with a DataType whose physical type is Boolean");
         }
 
         Ok(Self { data_type, length })
@@ -172,7 +171,7 @@ unsafe impl ToFfi for NullArray {
 }
 
 impl<A: ffi::ArrowArrayRef> FromFfi<A> for NullArray {
-    unsafe fn try_from_ffi(array: A) -> Result<Self, Error> {
+    unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
         let data_type = array.data_type().clone();
         Self::try_new(data_type, array.array().len())
     }

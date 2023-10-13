@@ -2,7 +2,6 @@ use super::specification::try_check_offsets_bounds;
 use super::{new_empty_array, Array};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{DataType, Field};
-use crate::error::Error;
 use crate::offset::OffsetsBuffer;
 
 #[cfg(feature = "arrow_rs")]
@@ -11,6 +10,7 @@ mod ffi;
 pub(super) mod fmt;
 mod iterator;
 pub use iterator::*;
+use polars_error::{polars_bail, PolarsResult};
 
 /// An array representing a (key, value), both of arbitrary logical types.
 #[derive(Clone)]
@@ -36,34 +36,26 @@ impl MapArray {
         offsets: OffsetsBuffer<i32>,
         field: Box<dyn Array>,
         validity: Option<Bitmap>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         try_check_offsets_bounds(&offsets, field.len())?;
 
         let inner_field = Self::try_get_field(&data_type)?;
         if let DataType::Struct(inner) = inner_field.data_type() {
             if inner.len() != 2 {
-                return Err(Error::InvalidArgumentError(
-                    "MapArray's inner `Struct` must have 2 fields (keys and maps)".to_string(),
-                ));
+                polars_bail!(ComputeError: "MapArray's inner `Struct` must have 2 fields (keys and maps)")
             }
         } else {
-            return Err(Error::InvalidArgumentError(
-                "MapArray expects `DataType::Struct` as its inner logical type".to_string(),
-            ));
+            polars_bail!(ComputeError: "MapArray expects `DataType::Struct` as its inner logical type")
         }
         if field.data_type() != inner_field.data_type() {
-            return Err(Error::InvalidArgumentError(
-                "MapArray expects `field.data_type` to match its inner DataType".to_string(),
-            ));
+            polars_bail!(ComputeError: "MapArray expects `field.data_type` to match its inner DataType")
         }
 
         if validity
             .as_ref()
             .map_or(false, |validity| validity.len() != offsets.len_proxy())
         {
-            return Err(Error::oos(
-                "validity mask length must match the number of values",
-            ));
+            polars_bail!(ComputeError: "validity mask length must match the number of values")
         }
 
         Ok(Self {
@@ -135,13 +127,11 @@ impl MapArray {
     impl_mut_validity!();
     impl_into_array!();
 
-    pub(crate) fn try_get_field(data_type: &DataType) -> Result<&Field, Error> {
+    pub(crate) fn try_get_field(data_type: &DataType) -> PolarsResult<&Field> {
         if let DataType::Map(field, _) = data_type.to_logical_type() {
             Ok(field.as_ref())
         } else {
-            Err(Error::oos(
-                "The data_type's logical type must be DataType::Map",
-            ))
+            polars_bail!(ComputeError: "The data_type's logical type must be DataType::Map")
         }
     }
 

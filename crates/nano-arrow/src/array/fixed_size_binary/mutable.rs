@@ -1,11 +1,11 @@
 use std::sync::Arc;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::{FixedSizeBinaryArray, FixedSizeBinaryValues};
 use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, TryExtendFromSelf};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::error::Error;
 
 /// The Arrow's equivalent to a mutable `Vec<Option<[u8; size]>>`.
 /// Converting a [`MutableFixedSizeBinaryArray`] into a [`FixedSizeBinaryArray`] is `O(1)`.
@@ -41,15 +41,15 @@ impl MutableFixedSizeBinaryArray {
         data_type: DataType,
         values: Vec<u8>,
         validity: Option<MutableBitmap>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         let size = FixedSizeBinaryArray::maybe_get_size(&data_type)?;
 
         if values.len() % size != 0 {
-            return Err(Error::oos(format!(
+            polars_bail!(ComputeError:
                 "values (of len {}) must be a multiple of size ({}) in FixedSizeBinaryArray.",
                 values.len(),
                 size
-            )));
+            )
         }
         let len = values.len() / size;
 
@@ -57,9 +57,7 @@ impl MutableFixedSizeBinaryArray {
             .as_ref()
             .map_or(false, |validity| validity.len() != len)
         {
-            return Err(Error::oos(
-                "validity mask length must be equal to the number of values divided by size",
-            ));
+            polars_bail!(ComputeError: "validity mask length must be equal to the number of values divided by size")
         }
 
         Ok(Self {
@@ -106,14 +104,12 @@ impl MutableFixedSizeBinaryArray {
     /// # Error
     /// Errors iff the size of `value` is not equal to its own size.
     #[inline]
-    pub fn try_push<P: AsRef<[u8]>>(&mut self, value: Option<P>) -> Result<(), Error> {
+    pub fn try_push<P: AsRef<[u8]>>(&mut self, value: Option<P>) -> PolarsResult<()> {
         match value {
             Some(bytes) => {
                 let bytes = bytes.as_ref();
                 if self.size != bytes.len() {
-                    return Err(Error::InvalidArgumentError(
-                        "FixedSizeBinaryArray requires every item to be of its length".to_string(),
-                    ));
+                    polars_bail!(ComputeError: "FixedSizeBinaryArray requires every item to be of its length")
                 }
                 self.values.extend_from_slice(bytes);
 
@@ -168,7 +164,7 @@ impl MutableFixedSizeBinaryArray {
     pub fn try_from_iter<P: AsRef<[u8]>, I: IntoIterator<Item = Option<P>>>(
         iter: I,
         size: usize,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();
         let mut primitive = Self::with_capacity(size, lower);
@@ -311,7 +307,7 @@ impl PartialEq for MutableFixedSizeBinaryArray {
 }
 
 impl TryExtendFromSelf for MutableFixedSizeBinaryArray {
-    fn try_extend_from_self(&mut self, other: &Self) -> Result<(), Error> {
+    fn try_extend_from_self(&mut self, other: &Self) -> PolarsResult<()> {
         extend_validity(self.len(), &mut self.validity, &other.validity);
 
         let slice = other.values.as_slice();

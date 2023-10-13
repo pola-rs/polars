@@ -17,6 +17,7 @@ mod mutable;
 
 pub use iterator::*;
 pub use mutable::*;
+use polars_error::{polars_bail, PolarsResult};
 
 /// A [`BooleanArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<bool>>`.
 /// It implements [`Array`].
@@ -60,20 +61,16 @@ impl BooleanArray {
         data_type: DataType,
         values: Bitmap,
         validity: Option<Bitmap>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         if validity
             .as_ref()
             .map_or(false, |validity| validity.len() != values.len())
         {
-            return Err(Error::oos(
-                "validity mask length must match the number of values",
-            ));
+            polars_bail!(ComputeError: "validity mask length must match the number of values")
         }
 
         if data_type.to_physical_type() != PhysicalType::Boolean {
-            return Err(Error::oos(
-                "BooleanArray can only be initialized with a DataType whose physical type is Boolean",
-            ));
+            polars_bail!(ComputeError: "BooleanArray can only be initialized with a DataType whose physical type is Boolean")
         }
 
         Ok(Self {

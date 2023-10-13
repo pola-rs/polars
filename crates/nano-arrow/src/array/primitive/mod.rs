@@ -18,6 +18,7 @@ mod iterator;
 pub use iterator::*;
 mod mutable;
 pub use mutable::*;
+use polars_error::{polars_bail, PolarsResult};
 
 /// A [`PrimitiveArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<T>>` where
 /// T is [`NativeType`] (e.g. [`i32`]). It implements [`Array`].
@@ -55,17 +56,13 @@ pub(super) fn check<T: NativeType>(
     data_type: &DataType,
     values: &[T],
     validity_len: Option<usize>,
-) -> Result<(), Error> {
+) -> PolarsResult<()> {
     if validity_len.map_or(false, |len| len != values.len()) {
-        return Err(Error::oos(
-            "validity mask length must match the number of values",
-        ));
+        polars_bail!(ComputeError: "validity mask length must match the number of values")
     }
 
     if data_type.to_physical_type() != PhysicalType::Primitive(T::PRIMITIVE) {
-        return Err(Error::oos(
-            "PrimitiveArray can only be initialized with a DataType whose physical type is Primitive",
-        ));
+        polars_bail!(ComputeError: "PrimitiveArray can only be initialized with a DataType whose physical type is Primitive")
     }
     Ok(())
 }
@@ -83,7 +80,7 @@ impl<T: NativeType> PrimitiveArray<T> {
         data_type: DataType,
         values: Buffer<T>,
         validity: Option<Bitmap>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         check(&data_type, &values, validity.as_ref().map(|v| v.len()))?;
         Ok(Self {
             data_type,
@@ -292,7 +289,7 @@ impl<T: NativeType> PrimitiveArray<T> {
         data_type: DataType,
         values: Buffer<T>,
         validity: Option<Bitmap>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         check(&data_type, &values, validity.as_ref().map(|v| v.len()))?;
         Ok(unsafe { Self::from_inner_unchecked(data_type, values, validity) })
     }

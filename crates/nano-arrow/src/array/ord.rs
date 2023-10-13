@@ -1,9 +1,9 @@
 //! Contains functions and function factories to order values within arrays.
 use std::cmp::Ordering;
+use polars_error::polars_bail;
 
 use crate::array::*;
 use crate::datatypes::*;
-use crate::error::{Error, Result};
 use crate::offset::Offset;
 use crate::types::NativeType;
 use crate::util::total_ord::TotalOrd;
@@ -121,9 +121,9 @@ pub fn build_compare(left: &dyn Array, right: &dyn Array) -> Result<DynComparato
     use TimeUnit::*;
     Ok(match (left.data_type(), right.data_type()) {
         (a, b) if a != b => {
-            return Err(Error::InvalidArgumentError(
+            polars_bail!(ComputeError:
                 "Can't compare arrays of different types".to_string(),
-            ));
+            );
         },
         (Boolean, Boolean) => compare_boolean(left, right),
         (UInt8, UInt8) => compare_primitives::<u8>(left, right),
@@ -173,10 +173,8 @@ pub fn build_compare(left: &dyn Array, right: &dyn Array) -> Result<DynComparato
                 },
             }
         },
-        (lhs, _) => {
-            return Err(Error::InvalidArgumentError(format!(
-                "The data type type {lhs:?} has no natural order"
-            )))
+        _ => {
+            unimplemented!()
         },
     })
 }

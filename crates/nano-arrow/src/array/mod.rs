@@ -681,7 +681,6 @@ pub mod indexable;
 mod iterator;
 
 pub mod growable;
-pub mod ord;
 
 pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
 pub use boolean::{BooleanArray, MutableBooleanArray};
@@ -695,6 +694,7 @@ pub use iterator::ArrayValuesIter;
 pub use list::{ListArray, ListValuesIter, MutableListArray};
 pub use map::MapArray;
 pub use null::{MutableNullArray, NullArray};
+use polars_error::PolarsResult;
 pub use primitive::*;
 pub use struct_::{MutableStructArray, StructArray};
 pub use union::UnionArray;
@@ -707,13 +707,13 @@ pub(crate) use self::ffi::{offset_buffers_children_dictionary, FromFfi, ToFfi};
 /// This is similar to [`Extend`], but accepted the creation to error.
 pub trait TryExtend<A> {
     /// Fallible version of [`Extend::extend`].
-    fn try_extend<I: IntoIterator<Item = A>>(&mut self, iter: I) -> Result<()>;
+    fn try_extend<I: IntoIterator<Item = A>>(&mut self, iter: I) -> PolarsResult<()>;
 }
 
 /// A trait describing the ability of a struct to receive new items.
 pub trait TryPush<A> {
     /// Tries to push a new element.
-    fn try_push(&mut self, item: A) -> Result<()>;
+    fn try_push(&mut self, item: A) -> PolarsResult<()>;
 }
 
 /// A trait describing the ability of a struct to receive new items.
@@ -729,7 +729,7 @@ pub trait PushUnchecked<A> {
 /// Specialization of [`TryExtend`].
 pub trait TryExtendFromSelf {
     /// Tries to extend itself with elements from `other`, failing only on overflow.
-    fn try_extend_from_self(&mut self, other: &Self) -> Result<()>;
+    fn try_extend_from_self(&mut self, other: &Self) -> PolarsResult<()>;
 }
 
 /// Trait that [`BinaryArray`] and [`Utf8Array`] implement for the purposes of DRY.

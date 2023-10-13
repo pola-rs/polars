@@ -2,7 +2,6 @@ use super::specification::try_check_offsets_bounds;
 use super::{new_empty_array, Array};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{DataType, Field};
-use crate::error::Error;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 
 #[cfg(feature = "arrow_rs")]
@@ -13,6 +12,7 @@ mod iterator;
 pub use iterator::*;
 mod mutable;
 pub use mutable::*;
+use polars_error::{polars_bail, PolarsResult};
 
 /// An [`Array`] semantically equivalent to `Vec<Option<Vec<Option<T>>>>` with Arrow's in-memory.
 #[derive(Clone)]
@@ -39,24 +39,20 @@ impl<O: Offset> ListArray<O> {
         offsets: OffsetsBuffer<O>,
         values: Box<dyn Array>,
         validity: Option<Bitmap>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         try_check_offsets_bounds(&offsets, values.len())?;
 
         if validity
             .as_ref()
             .map_or(false, |validity| validity.len() != offsets.len_proxy())
         {
-            return Err(Error::oos(
-                "validity mask length must match the number of values",
-            ));
+            polars_bail!(ComputeError: "validity mask length must match the number of values")
         }
 
         let child_data_type = Self::try_get_child(&data_type)?.data_type();
         let values_data_type = values.data_type();
         if child_data_type != values_data_type {
-            return Err(Error::oos(
-                format!("ListArray's child's DataType must match. However, the expected DataType is {child_data_type:?} while it got {values_data_type:?}."),
-            ));
+            polars_bail!(ComputeError: "ListArray's child's DataType must match. However, the expected DataType is {child_data_type:?} while it got {values_data_type:?}.");
         }
 
         Ok(Self {
@@ -205,16 +201,16 @@ impl<O: Offset> ListArray<O> {
     /// Returns a the inner [`Field`]
     /// # Errors
     /// Panics iff the logical type is not consistent with this struct.
-    pub fn try_get_child(data_type: &DataType) -> Result<&Field, Error> {
+    pub fn try_get_child(data_type: &DataType) -> PolarsResult<&Field> {
         if O::IS_LARGE {
             match data_type.to_logical_type() {
                 DataType::LargeList(child) => Ok(child.as_ref()),
-                _ => Err(Error::oos("ListArray<i64> expects DataType::LargeList")),
+                _ => polars_bail!(ComputeError: "ListArray<i64> expects DataType::LargeList"),
             }
         } else {
             match data_type.to_logical_type() {
                 DataType::List(child) => Ok(child.as_ref()),
-                _ => Err(Error::oos("ListArray<i32> expects DataType::List")),
+                _ => polars_bail!(ComputeError: "ListArray<i32> expects DataType::List"),
             }
         }
     }

@@ -1,5 +1,6 @@
 //! Defines [`Error`], representing all errors returned by this crate.
 use std::fmt::{Debug, Display, Formatter};
+use polars_error::PolarsResult;
 
 /// Enum with all errors in this crate.
 #[derive(Debug)]
@@ -97,4 +98,4 @@ impl Display for Error {
 impl std::error::Error for Error {}
 
 /// Typedef for a [`std::result::Result`] of an [`Error`].
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = PolarsResult<T>;

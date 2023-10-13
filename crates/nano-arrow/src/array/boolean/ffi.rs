@@ -1,7 +1,7 @@
+use polars_error::PolarsResult;
 use super::BooleanArray;
 use crate::array::{FromFfi, ToFfi};
 use crate::bitmap::align;
-use crate::error::Result;
 use crate::ffi;
 
 unsafe impl ToFfi for BooleanArray {
@@ -45,7 +45,7 @@ unsafe impl ToFfi for BooleanArray {
 }
 
 impl<A: ffi::ArrowArrayRef> FromFfi<A> for BooleanArray {
-    unsafe fn try_from_ffi(array: A) -> Result<Self> {
+    unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
         let data_type = array.data_type().clone();
         let validity = unsafe { array.validity() }?;
         let values = unsafe { array.bitmap(1) }?;

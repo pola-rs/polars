@@ -2,7 +2,6 @@ use super::Array;
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::DataType;
-use crate::error::Error;
 
 #[cfg(feature = "arrow_rs")]
 mod data;
@@ -11,6 +10,7 @@ pub(super) mod fmt;
 mod iterator;
 mod mutable;
 pub use mutable::*;
+use polars_error::{polars_bail, polars_ensure, PolarsResult};
 
 /// The Arrow's equivalent to an immutable `Vec<Option<[u8; size]>>`.
 /// Cloning and slicing this struct is `O(1)`.
@@ -34,15 +34,15 @@ impl FixedSizeBinaryArray {
         data_type: DataType,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         let size = Self::maybe_get_size(&data_type)?;
 
         if values.len() % size != 0 {
-            return Err(Error::oos(format!(
+            polars_bail!(ComputeError:
                 "values (of len {}) must be a multiple of size ({}) in FixedSizeBinaryArray.",
                 values.len(),
                 size
-            )));
+            )
         }
         let len = values.len() / size;
 
@@ -50,9 +50,7 @@ impl FixedSizeBinaryArray {
             .as_ref()
             .map_or(false, |validity| validity.len() != len)
         {
-            return Err(Error::oos(
-                "validity mask length must be equal to the number of values divided by size",
-            ));
+            polars_bail!(ComputeError: "validity mask length must be equal to the number of values divided by size")
         }
 
         Ok(Self {
@@ -205,17 +203,13 @@ impl FixedSizeBinaryArray {
 }
 
 impl FixedSizeBinaryArray {
-    pub(crate) fn maybe_get_size(data_type: &DataType) -> Result<usize, Error> {
+    pub(crate) fn maybe_get_size(data_type: &DataType) -> PolarsResult<usize> {
         match data_type.to_logical_type() {
             DataType::FixedSizeBinary(size) => {
-                if *size == 0 {
-                    return Err(Error::oos("FixedSizeBinaryArray expects a positive size"));
-                }
+                polars_ensure!(*size == 0, ComputeError: "FixedSizeBinaryArray expects a positive size");
                 Ok(*size)
             },
-            _ => Err(Error::oos(
-                "FixedSizeBinaryArray expects DataType::FixedSizeBinary",
-            )),
+            _ => polars_bail!(ComputeError: "FixedSizeBinaryArray expects DataType::FixedSizeBinary")
         }
     }
 
@@ -242,7 +236,7 @@ impl FixedSizeBinaryArray {
     pub fn try_from_iter<P: AsRef<[u8]>, I: IntoIterator<Item = Option<P>>>(
         iter: I,
         size: usize,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         MutableFixedSizeBinaryArray::try_from_iter(iter, size).map(|x| x.into())
     }
 

@@ -11,6 +11,7 @@ mod iterator;
 pub use iterator::*;
 mod mutable;
 pub use mutable::*;
+use polars_error::{polars_bail, PolarsResult};
 
 /// The Arrow's equivalent to an immutable `Vec<Option<[T; size]>>` where `T` is an Arrow type.
 /// Cloning and slicing this struct is `O(1)`.
@@ -35,23 +36,21 @@ impl FixedSizeListArray {
         data_type: DataType,
         values: Box<dyn Array>,
         validity: Option<Bitmap>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         let (child, size) = Self::try_child_and_size(&data_type)?;
 
         let child_data_type = &child.data_type;
         let values_data_type = values.data_type();
         if child_data_type != values_data_type {
-            return Err(Error::oos(
-                format!("FixedSizeListArray's child's DataType must match. However, the expected DataType is {child_data_type:?} while it got {values_data_type:?}."),
-            ));
+            polars_bail!(ComputeError: "FixedSizeListArray's child's DataType must match. However, the expected DataType is {child_data_type:?} while it got {values_data_type:?}.")
         }
 
         if values.len() % size != 0 {
-            return Err(Error::oos(format!(
+            polars_bail!(ComputeError:
                 "values (of len {}) must be a multiple of size ({}) in FixedSizeListArray.",
                 values.len(),
                 size
-            )));
+            )
         }
         let len = values.len() / size;
 
@@ -59,9 +58,7 @@ impl FixedSizeListArray {
             .as_ref()
             .map_or(false, |validity| validity.len() != len)
         {
-            return Err(Error::oos(
-                "validity mask length must be equal to the number of values divided by size",
-            ));
+            polars_bail!(ComputeError: "validity mask length must be equal to the number of values divided by size")
         }
 
         Ok(Self {
@@ -182,17 +179,15 @@ impl FixedSizeListArray {
 }
 
 impl FixedSizeListArray {
-    pub(crate) fn try_child_and_size(data_type: &DataType) -> Result<(&Field, usize), Error> {
+    pub(crate) fn try_child_and_size(data_type: &DataType) -> PolarsResult<(&Field, usize)> {
         match data_type.to_logical_type() {
             DataType::FixedSizeList(child, size) => {
                 if *size == 0 {
-                    return Err(Error::oos("FixedSizeBinaryArray expects a positive size"));
+                    polars_bail!(ComputeError: "FixedSizeBinaryArray expects a positive size")
                 }
                 Ok((child.as_ref(), *size))
             },
-            _ => Err(Error::oos(
-                "FixedSizeListArray expects DataType::FixedSizeList",
-            )),
+            _ => polars_bail!(ComputeError: "FixedSizeListArray expects DataType::FixedSizeList")
         }
     }
 

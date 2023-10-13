@@ -1,5 +1,6 @@
 //! Contains functionality to load an ArrayData from the C Data Interface
 use std::sync::Arc;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::ArrowArray;
 use crate::array::*;
@@ -7,7 +8,6 @@ use crate::bitmap::utils::{bytes_for, count_zeros};
 use crate::bitmap::Bitmap;
 use crate::buffer::{Buffer, Bytes, BytesAllocator};
 use crate::datatypes::{DataType, PhysicalType};
-use crate::error::{Error, Result};
 use crate::ffi::schema::get_child;
 use crate::types::NativeType;
 use crate::{match_integer_type, with_match_primitive_type};
@@ -16,7 +16,7 @@ use crate::{match_integer_type, with_match_primitive_type};
 /// # Errors
 /// If and only if:
 /// * the interface is not valid (e.g. a null pointer)
-pub unsafe fn try_from<A: ArrowArrayRef>(array: A) -> Result<Box<dyn Array>> {
+pub unsafe fn try_from<A: ArrowArrayRef>(array: A) -> PolarsResult<Box<dyn Array>> {
     use PhysicalType::*;
     Ok(match array.data_type().to_physical_type() {
         Null => Box::new(NullArray::try_from_ffi(array)?),
@@ -176,11 +176,11 @@ unsafe fn get_buffer_ptr<T: NativeType>(
     array: &ArrowArray,
     data_type: &DataType,
     index: usize,
-) -> Result<*mut T> {
+) -> PolarsResult<*mut T> {
     if array.buffers.is_null() {
-        return Err(Error::oos(format!(
-            "An ArrowArray of type {data_type:?} must have non-null buffers"
-        )));
+        polars_bail!( ComputeError:
+            "an ArrowArray of type {data_type:?} must have non-null buffers"
+        );
     }
 
     if array
@@ -188,27 +188,27 @@ unsafe fn get_buffer_ptr<T: NativeType>(
         .align_offset(std::mem::align_of::<*mut *const u8>())
         != 0
     {
-        return Err(Error::oos(format!(
-            "An ArrowArray of type {data_type:?}
+        polars_bail!( ComputeError:
+            "an ArrowArray of type {data_type:?}
             must have buffer {index} aligned to type {}",
             std::any::type_name::<*mut *const u8>()
-        )));
+        );
     }
     let buffers = array.buffers as *mut *const u8;
 
     if index >= array.n_buffers as usize {
-        return Err(Error::oos(format!(
-            "An ArrowArray of type {data_type:?} 
+        polars_bail!(ComputeError:
+            "An ArrowArray of type {data_type:?}
              must have buffer {index}."
-        )));
+        )
     }
 
     let ptr = *buffers.add(index);
     if ptr.is_null() {
-        return Err(Error::oos(format!(
-            "An array of type {data_type:?} 
+        polars_bail!(ComputeError:
+            "An array of type {data_type:?}
             must have a non-null buffer {index}"
-        )));
+        )
     }
 
     // note: we can't prove that this pointer is not mutably shared - part of the safety invariant
@@ -225,7 +225,7 @@ unsafe fn create_buffer<T: NativeType>(
     data_type: &DataType,
     owner: InternalArrowArray,
     index: usize,
-) -> Result<Buffer<T>> {
+) -> PolarsResult<Buffer<T>> {
     let len = buffer_len(array, data_type, index)?;
 
     if len == 0 {
@@ -262,7 +262,7 @@ unsafe fn create_bitmap(
     // if this is the validity bitmap
     // we can use the null count directly
     is_validity: bool,
-) -> Result<Bitmap> {
+) -> PolarsResult<Bitmap> {
     let len: usize = array.length.try_into().expect("length to fit in `usize`");
     if len == 0 {
         return Ok(Bitmap::new());
@@ -300,7 +300,7 @@ fn buffer_offset(array: &ArrowArray, data_type: &DataType, i: usize) -> usize {
 }
 
 /// Returns the length, in slots, of the buffer `i` (indexed according to the C data interface)
-unsafe fn buffer_len(array: &ArrowArray, data_type: &DataType, i: usize) -> Result<usize> {
+unsafe fn buffer_len(array: &ArrowArray, data_type: &DataType, i: usize) -> PolarsResult<usize> {
     Ok(match (data_type.to_physical_type(), i) {
         (PhysicalType::FixedSizeBinary, 1) => {
             if let DataType::FixedSizeBinary(size) = data_type.to_logical_type() {
@@ -363,21 +363,19 @@ unsafe fn create_child(
     data_type: &DataType,
     parent: InternalArrowArray,
     index: usize,
-) -> Result<ArrowArrayChild<'static>> {
+) -> PolarsResult<ArrowArrayChild<'static>> {
     let data_type = get_child(data_type, index)?;
 
     // catch what we can
     if array.children.is_null() {
-        return Err(Error::oos(format!(
-            "An ArrowArray of type {data_type:?} must have non-null children"
-        )));
+        polars_bail!(ComputeError: "an ArrowArray of type {data_type:?} must have non-null children");
     }
 
     if index >= array.n_children as usize {
-        return Err(Error::oos(format!(
-            "An ArrowArray of type {data_type:?} 
+        polars_bail!(ComputeError:
+            "an ArrowArray of type {data_type:?}
              must have child {index}."
-        )));
+        );
     }
 
     // Safety - part of the invariant
@@ -385,10 +383,10 @@ unsafe fn create_child(
 
     // catch what we can
     if arr_ptr.is_null() {
-        return Err(Error::oos(format!(
-            "An array of type {data_type:?}
+        polars_bail!(ComputeError:
+            "an array of type {data_type:?}
             must have a non-null child {index}"
-        )));
+        )
     }
 
     // Safety - invariant of this function
@@ -404,15 +402,15 @@ unsafe fn create_dictionary(
     array: &ArrowArray,
     data_type: &DataType,
     parent: InternalArrowArray,
-) -> Result<Option<ArrowArrayChild<'static>>> {
+) -> PolarsResult<Option<ArrowArrayChild<'static>>> {
     if let DataType::Dictionary(_, values, _) = data_type {
         let data_type = values.as_ref().clone();
         // catch what we can
         if array.dictionary.is_null() {
-            return Err(Error::oos(format!(
-                "An array of type {data_type:?}
+            polars_bail!(ComputeError:
+                "an array of type {data_type:?}
                 must have a non-null dictionary"
-            )));
+            )
         }
 
         // safety: part of the invariant
@@ -434,7 +432,7 @@ pub trait ArrowArrayRef: std::fmt::Debug {
     /// # Safety
     /// The caller must guarantee that the buffer `index` corresponds to a bitmap.
     /// This function assumes that the bitmap created from FFI is valid; this is impossible to prove.
-    unsafe fn validity(&self) -> Result<Option<Bitmap>> {
+    unsafe fn validity(&self) -> PolarsResult<Option<Bitmap>> {
         if self.array().null_count() == 0 {
             Ok(None)
         } else {
@@ -445,7 +443,7 @@ pub trait ArrowArrayRef: std::fmt::Debug {
     /// # Safety
     /// The caller must guarantee that the buffer `index` corresponds to a buffer.
     /// This function assumes that the buffer created from FFI is valid; this is impossible to prove.
-    unsafe fn buffer<T: NativeType>(&self, index: usize) -> Result<Buffer<T>> {
+    unsafe fn buffer<T: NativeType>(&self, index: usize) -> PolarsResult<Buffer<T>> {
         create_buffer::<T>(self.array(), self.data_type(), self.owner(), index)
     }
 
@@ -453,7 +451,7 @@ pub trait ArrowArrayRef: std::fmt::Debug {
     /// This function is safe iff:
     /// * the buffer at position `index` is valid for the declared length
     /// * the buffers' pointer is not mutable for the lifetime of `owner`
-    unsafe fn bitmap(&self, index: usize) -> Result<Bitmap> {
+    unsafe fn bitmap(&self, index: usize) -> PolarsResult<Bitmap> {
         create_bitmap(self.array(), self.data_type(), self.owner(), index, false)
     }
 
@@ -462,11 +460,11 @@ pub trait ArrowArrayRef: std::fmt::Debug {
     /// * `array.children` is not mutably shared for the lifetime of `parent`
     /// * the pointer of `array.children` at `index` is valid
     /// * the pointer of `array.children` at `index` is not mutably shared for the lifetime of `parent`
-    unsafe fn child(&self, index: usize) -> Result<ArrowArrayChild> {
+    unsafe fn child(&self, index: usize) -> PolarsResult<ArrowArrayChild> {
         create_child(self.array(), self.data_type(), self.parent().clone(), index)
     }
 
-    unsafe fn dictionary(&self) -> Result<Option<ArrowArrayChild>> {
+    unsafe fn dictionary(&self) -> PolarsResult<Option<ArrowArrayChild>> {
         create_dictionary(self.array(), self.data_type(), self.parent().clone())
     }
 

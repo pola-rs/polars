@@ -1,5 +1,6 @@
 use std::iter::FromIterator;
 use std::sync::Arc;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::{BinaryArray, MutableBinaryArray};
 use crate::array::physical_binary::*;
@@ -64,13 +65,11 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
     /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to either `Binary` or `LargeBinary`.
     /// # Implementation
     /// This function is `O(1)`
-    pub fn try_new(data_type: DataType, offsets: Offsets<O>, values: Vec<u8>) -> Result<Self> {
+    pub fn try_new(data_type: DataType, offsets: Offsets<O>, values: Vec<u8>) -> PolarsResult<Self> {
         try_check_offsets_bounds(&offsets, values.len())?;
 
         if data_type.to_physical_type() != Self::default_data_type().to_physical_type() {
-            return Err(Error::oos(
-                "MutableBinaryValuesArray can only be initialized with DataType::Binary or DataType::LargeBinary",
-            ));
+            polars_bail!(ComputeError: "MutableBinaryValuesArray can only be initialized with DataType::Binary or DataType::LargeBinary",)
         }
 
         Ok(Self {
@@ -303,7 +302,7 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
     /// # Error
     /// This operation errors iff the total length in bytes on the iterator exceeds `O`'s maximum value.
     /// (`i32::MAX` or `i64::MAX` respectively).
-    pub fn try_from_iter<P: AsRef<[u8]>, I: IntoIterator<Item = P>>(iter: I) -> Result<Self> {
+    pub fn try_from_iter<P: AsRef<[u8]>, I: IntoIterator<Item = P>>(iter: I) -> PolarsResult<Self> {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();
         let mut array = Self::with_capacity(lower);
@@ -336,7 +335,7 @@ impl<O: Offset, T: AsRef<[u8]>> Extend<T> for MutableBinaryValuesArray<O> {
 }
 
 impl<O: Offset, T: AsRef<[u8]>> TryExtend<T> for MutableBinaryValuesArray<O> {
-    fn try_extend<I: IntoIterator<Item = T>>(&mut self, iter: I) -> Result<()> {
+    fn try_extend<I: IntoIterator<Item = T>>(&mut self, iter: I) -> PolarsResult<()> {
         let mut iter = iter.into_iter();
         self.reserve(iter.size_hint().0, 0);
         iter.try_for_each(|x| self.try_push(x))
@@ -345,7 +344,7 @@ impl<O: Offset, T: AsRef<[u8]>> TryExtend<T> for MutableBinaryValuesArray<O> {
 
 impl<O: Offset, T: AsRef<[u8]>> TryPush<T> for MutableBinaryValuesArray<O> {
     #[inline]
-    fn try_push(&mut self, value: T) -> Result<()> {
+    fn try_push(&mut self, value: T) -> PolarsResult<()> {
         let bytes = value.as_ref();
         self.values.extend_from_slice(bytes);
         self.offsets.try_push(bytes.len())
@@ -367,7 +366,7 @@ unsafe impl<'a, O: Offset> ArrayAccessor<'a> for MutableBinaryValuesArray<O> {
 }
 
 impl<O: Offset> TryExtendFromSelf for MutableBinaryValuesArray<O> {
-    fn try_extend_from_self(&mut self, other: &Self) -> Result<()> {
+    fn try_extend_from_self(&mut self, other: &Self) -> PolarsResult<()> {
         self.values.extend_from_slice(&other.values);
         self.offsets.try_extend_from_self(&other.offsets)
     }

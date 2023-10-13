@@ -2,12 +2,12 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::ffi::{CStr, CString};
 use std::ptr;
+use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::ArrowSchema;
 use crate::datatypes::{
     DataType, Extension, Field, IntegerType, IntervalUnit, Metadata, TimeUnit, UnionMode,
 };
-use crate::error::{Error, Result};
 
 #[allow(dead_code)]
 struct SchemaPrivateData {
@@ -190,7 +190,7 @@ impl Drop for ArrowSchema {
     }
 }
 
-pub(crate) unsafe fn to_field(schema: &ArrowSchema) -> Result<Field> {
+pub(crate) unsafe fn to_field(schema: &ArrowSchema) -> PolarsResult<Field> {
     let dictionary = schema.dictionary();
     let data_type = if let Some(dictionary) = dictionary {
         let indices = to_integer_type(schema.format())?;
@@ -211,7 +211,7 @@ pub(crate) unsafe fn to_field(schema: &ArrowSchema) -> Result<Field> {
     Ok(Field::new(schema.name(), data_type, schema.nullable()).with_metadata(metadata))
 }
 
-fn to_integer_type(format: &str) -> Result<IntegerType> {
+fn to_integer_type(format: &str) -> PolarsResult<IntegerType> {
     use IntegerType::*;
     Ok(match format {
         "c" => Int8,
@@ -223,14 +223,15 @@ fn to_integer_type(format: &str) -> Result<IntegerType> {
         "l" => Int64,
         "L" => UInt64,
         _ => {
-            return Err(Error::OutOfSpec(
-                "Dictionary indices can only be integers".to_string(),
-            ))
+            polars_bail!(
+                ComputeError:
+                "dictionary indices can only be integers"
+            )
         },
     })
 }
 
-unsafe fn to_data_type(schema: &ArrowSchema) -> Result<DataType> {
+unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<DataType> {
     Ok(match schema.format() {
         "n" => DataType::Null,
         "b" => DataType::Boolean,
@@ -278,7 +279,7 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> Result<DataType> {
         "+s" => {
             let children = (0..schema.n_children as usize)
                 .map(|x| to_field(schema.child(x)))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
             DataType::Struct(children)
         },
         other => {
@@ -299,14 +300,14 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> Result<DataType> {
                     // Example: "w:42" fixed-width binary [42 bytes]
                     let size = size_raw
                         .parse::<usize>()
-                        .map_err(|_| Error::OutOfSpec("size is not a valid integer".to_string()))?;
+                        .map_err(|_| polars_err!(ComputeError: "size is not a valid integer"))?;
                     DataType::FixedSizeBinary(size)
                 },
                 ["+w", size_raw] => {
                     // Example: "+w:123" fixed-sized list [123 items]
                     let size = size_raw
                         .parse::<usize>()
-                        .map_err(|_| Error::OutOfSpec("size is not a valid integer".to_string()))?;
+                        .map_err(|_| polars_err!(ComputeError: "size is not a valid integer"))?;
                     let child = to_field(schema.child(0))?;
                     DataType::FixedSizeList(Box::new(child), size)
                 },
@@ -321,39 +322,37 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> Result<DataType> {
                             // Example: "d:19,10,NNN" decimal bitwidth = NNN [precision 19, scale 10]
                             // Only bitwdth of 128 currently supported
                             let bit_width = width_raw.parse::<usize>().map_err(|_| {
-                                Error::OutOfSpec(
-                                    "Decimal bit width is not a valid integer".to_string(),
-                                )
+                                polars_err!(ComputeError: "Decimal bit width is not a valid integer")
                             })?;
                             if bit_width == 256 {
                                 return Ok(DataType::Decimal256(
                                     precision_raw.parse::<usize>().map_err(|_| {
-                                        Error::OutOfSpec(
-                                            "Decimal precision is not a valid integer".to_string(),
-                                        )
+                                        polars_err!(ComputeError: "Decimal precision is not a valid integer")
                                     })?,
                                     scale_raw.parse::<usize>().map_err(|_| {
-                                        Error::OutOfSpec(
-                                            "Decimal scale is not a valid integer".to_string(),
-                                        )
+                                        polars_err!(ComputeError: "Decimal scale is not a valid integer")
                                     })?,
                                 ));
                             }
                             (precision_raw, scale_raw)
                         },
                         _ => {
-                            return Err(Error::OutOfSpec(
-                                "Decimal must contain 2 or 3 comma-separated values".to_string(),
-                            ));
+                            polars_bail!(ComputeError:
+                                "Decimal must contain 2 or 3 comma-separated values"
+                            )
                         },
                     };
 
                     DataType::Decimal(
                         precision.parse::<usize>().map_err(|_| {
-                            Error::OutOfSpec("Decimal precision is not a valid integer".to_string())
+                            polars_err!(ComputeError:
+                            "Decimal precision is not a valid integer"
+                            )
                         })?,
                         scale.parse::<usize>().map_err(|_| {
-                            Error::OutOfSpec("Decimal scale is not a valid integer".to_string())
+                            polars_err!(ComputeError:
+                            "Decimal scale is not a valid integer"
+                            )
                         })?,
                     )
                 },
@@ -366,19 +365,21 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> Result<DataType> {
                         .split(',')
                         .map(|x| {
                             x.parse::<i32>().map_err(|_| {
-                                Error::OutOfSpec("Union type id is not a valid integer".to_string())
+                                polars_err!(ComputeError:
+"Union type id is not a valid integer"
+                            )
                             })
                         })
-                        .collect::<Result<Vec<_>>>()?;
+                        .collect::<PolarsResult<Vec<_>>>()?;
                     let fields = (0..schema.n_children as usize)
                         .map(|x| to_field(schema.child(x)))
-                        .collect::<Result<Vec<_>>>()?;
+                        .collect::<PolarsResult<Vec<_>>>()?;
                     DataType::Union(fields, Some(type_ids), mode)
                 },
                 _ => {
-                    return Err(Error::OutOfSpec(format!(
+                    polars_bail!(ComputeError:
                         "The datatype \"{other}\" is still not supported in Rust implementation",
-                    )));
+                            )
                 },
             }
         },
@@ -465,7 +466,7 @@ fn to_format(data_type: &DataType) -> String {
     }
 }
 
-pub(super) fn get_child(data_type: &DataType, index: usize) -> Result<DataType> {
+pub(super) fn get_child(data_type: &DataType, index: usize) -> PolarsResult<DataType> {
     match (index, data_type) {
         (0, DataType::List(field)) => Ok(field.data_type().clone()),
         (0, DataType::FixedSizeList(field, _)) => Ok(field.data_type().clone()),
@@ -474,9 +475,9 @@ pub(super) fn get_child(data_type: &DataType, index: usize) -> Result<DataType> 
         (index, DataType::Struct(fields)) => Ok(fields[index].data_type().clone()),
         (index, DataType::Union(fields, _, _)) => Ok(fields[index].data_type().clone()),
         (index, DataType::Extension(_, subtype, _)) => get_child(subtype, index),
-        (child, data_type) => Err(Error::OutOfSpec(format!(
+        (child, data_type) => polars_bail!(ComputeError:
             "Requested child {child} to type {data_type:?} that has no such child",
-        ))),
+        ),
     }
 }
 

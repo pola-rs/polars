@@ -1,9 +1,9 @@
+use polars_error::PolarsResult;
 use super::super::ffi::ToFfi;
 use super::super::Array;
 use super::MapArray;
 use crate::array::FromFfi;
 use crate::bitmap::align;
-use crate::error::Result;
 use crate::ffi;
 use crate::offset::OffsetsBuffer;
 
@@ -53,7 +53,7 @@ unsafe impl ToFfi for MapArray {
 }
 
 impl<A: ffi::ArrowArrayRef> FromFfi<A> for MapArray {
-    unsafe fn try_from_ffi(array: A) -> Result<Self> {
+    unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
         let data_type = array.data_type().clone();
         let validity = unsafe { array.validity() }?;
         let offsets = unsafe { array.buffer::<i32>(1) }?;

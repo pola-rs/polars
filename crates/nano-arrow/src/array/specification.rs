@@ -1,5 +1,5 @@
+use polars_error::{polars_bail, polars_err, PolarsResult, to_compute_err};
 use crate::array::DictionaryKey;
-use crate::error::{Error, Result};
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 
 /// Helper trait to support `Offset` and `OffsetBuffer`
@@ -35,9 +35,9 @@ impl<O: Offset> OffsetsContainer<O> for Offsets<O> {
 pub(crate) fn try_check_offsets_bounds<O: Offset, C: OffsetsContainer<O>>(
     offsets: &C,
     values_len: usize,
-) -> Result<()> {
+) -> PolarsResult<()> {
     if offsets.last() > values_len {
-        Err(Error::oos("offsets must not exceed the values length"))
+        polars_bail!(ComputeError: "offsets must not exceed the values length")
     } else {
         Ok(())
     }
@@ -49,7 +49,7 @@ pub(crate) fn try_check_offsets_bounds<O: Offset, C: OffsetsContainer<O>>(
 pub(crate) fn try_check_utf8<O: Offset, C: OffsetsContainer<O>>(
     offsets: &C,
     values: &[u8],
-) -> Result<()> {
+) -> PolarsResult<()> {
     if offsets.as_slice().len() == 1 {
         return Ok(());
     }
@@ -59,7 +59,7 @@ pub(crate) fn try_check_utf8<O: Offset, C: OffsetsContainer<O>>(
     if values.is_ascii() {
         Ok(())
     } else {
-        simdutf8::basic::from_utf8(values)?;
+        simdutf8::basic::from_utf8(values).map_err(to_compute_err)?;
 
         // offsets can be == values.len()
         // find first offset from the end that is smaller
@@ -102,7 +102,7 @@ pub(crate) fn try_check_utf8<O: Offset, C: OffsetsContainer<O>>(
             }
         }
         if any_invalid {
-            return Err(Error::oos("Non-valid char boundary detected"));
+            polars_bail!(ComputeError: "non-valid char boundary detected")
         }
         Ok(())
     }
@@ -114,7 +114,7 @@ pub(crate) fn try_check_utf8<O: Offset, C: OffsetsContainer<O>>(
 pub(crate) unsafe fn check_indexes_unchecked<K: DictionaryKey>(
     keys: &[K],
     len: usize,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let mut invalid = false;
 
     // this loop is auto-vectorized
@@ -126,22 +126,23 @@ pub(crate) unsafe fn check_indexes_unchecked<K: DictionaryKey>(
 
     if invalid {
         let key = keys.iter().map(|k| k.as_usize()).max().unwrap();
-        Err(Error::oos(format!("One of the dictionary keys is {key} but it must be < than the length of the dictionary values, which is {len}")))
+        polars_bail!(ComputeError: "one of the dictionary keys is {key} but it must be < than the length of the dictionary values, which is {len}")
     } else {
         Ok(())
     }
 }
 
-pub fn check_indexes<K>(keys: &[K], len: usize) -> Result<()>
+pub fn check_indexes<K>(keys: &[K], len: usize) -> PolarsResult<()>
 where
     K: std::fmt::Debug + Copy + TryInto<usize>,
 {
     keys.iter().try_for_each(|key| {
         let key: usize = (*key)
             .try_into()
-            .map_err(|_| Error::oos(format!("The dictionary key must fit in a `usize`, but {key:?} does not")))?;
+            .map_err(|_| polars_err!(ComputeError: "The dictionary key must fit in a `usize`, but {key:?} does not")
+            )?;
         if key >= len {
-            Err(Error::oos(format!("One of the dictionary keys is {key} but it must be < than the length of the dictionary values, which is {len}")))
+            polars_bail!(ComputeError: "one of the dictionary keys is {key} but it must be < than the length of the dictionary values, which is {len}")
         } else {
             Ok(())
         }

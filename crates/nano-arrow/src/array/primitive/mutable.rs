@@ -1,12 +1,12 @@
 use std::iter::FromIterator;
 use std::sync::Arc;
+use polars_error::PolarsResult;
 
 use super::{check, PrimitiveArray};
 use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::DataType;
-use crate::error::Error;
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 
@@ -63,7 +63,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
         data_type: DataType,
         values: Vec<T>,
         validity: Option<MutableBitmap>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         check(&data_type, &values, validity.as_ref().map(|x| x.len()))?;
         Ok(Self {
             data_type,
@@ -359,8 +359,8 @@ impl<T: NativeType> Extend<Option<T>> for MutablePrimitiveArray<T> {
 }
 
 impl<T: NativeType> TryExtend<Option<T>> for MutablePrimitiveArray<T> {
-    /// This is infalible and is implemented for consistency with all other types
-    fn try_extend<I: IntoIterator<Item = Option<T>>>(&mut self, iter: I) -> Result<(), Error> {
+    /// This is infallible and is implemented for consistency with all other types
+    fn try_extend<I: IntoIterator<Item = Option<T>>>(&mut self, iter: I) -> PolarsResult<()> {
         self.extend(iter);
         Ok(())
     }
@@ -368,7 +368,8 @@ impl<T: NativeType> TryExtend<Option<T>> for MutablePrimitiveArray<T> {
 
 impl<T: NativeType> TryPush<Option<T>> for MutablePrimitiveArray<T> {
     /// This is infalible and is implemented for consistency with all other types
-    fn try_push(&mut self, item: Option<T>) -> Result<(), Error> {
+    #[inline]
+    fn try_push(&mut self, item: Option<T>) -> PolarsResult<()> {
         self.push(item);
         Ok(())
     }
@@ -655,7 +656,7 @@ impl<T: NativeType> PartialEq for MutablePrimitiveArray<T> {
 }
 
 impl<T: NativeType> TryExtendFromSelf for MutablePrimitiveArray<T> {
-    fn try_extend_from_self(&mut self, other: &Self) -> Result<(), Error> {
+    fn try_extend_from_self(&mut self, other: &Self) -> PolarsResult<()> {
         extend_validity(self.len(), &mut self.validity, &other.validity);
 
         let slice = other.values.as_slice();

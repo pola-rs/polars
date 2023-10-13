@@ -1,6 +1,5 @@
 use crate::array::*;
 use crate::datatypes::PhysicalType;
-use crate::error::Result;
 use crate::ffi;
 
 /// Trait describing how a struct presents itself to the
@@ -30,7 +29,7 @@ pub(crate) trait FromFfi<T: ffi::ArrowArrayRef>: Sized {
     /// # Safety
     /// This function is intrinsically `unsafe` as it requires the FFI to be made according
     /// to the [C data interface](https://arrow.apache.org/docs/format/CDataInterface.html)
-    unsafe fn try_from_ffi(array: T) -> Result<Self>;
+    unsafe fn try_from_ffi(array: T) -> PolarsResult<Self>;
 }
 
 macro_rules! ffi_dyn {

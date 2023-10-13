@@ -10,7 +10,6 @@ macro_rules! with_match_primitive_type {(
         Int16 => __with_ty__! { i16 },
         Int32 => __with_ty__! { i32 },
         Int64 => __with_ty__! { i64 },
-        Int128 => __with_ty__! { i128 },
         UInt8 => __with_ty__! { u8 },
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },

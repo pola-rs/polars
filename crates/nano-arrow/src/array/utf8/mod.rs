@@ -6,7 +6,6 @@ use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::DataType;
-use crate::error::{Error, Result};
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 use crate::trusted_len::TrustedLen;
 
@@ -21,6 +20,7 @@ mod mutable_values;
 pub use iterator::*;
 pub use mutable::*;
 pub use mutable_values::MutableUtf8ValuesArray;
+use polars_error::*;
 
 // Auxiliary struct to allow presenting &str as [u8] to a generic function
 pub(super) struct StrAsBytes<P>(P);
@@ -86,21 +86,17 @@ impl<O: Offset> Utf8Array<O> {
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         try_check_utf8(&offsets, &values)?;
         if validity
             .as_ref()
             .map_or(false, |validity| validity.len() != offsets.len_proxy())
         {
-            return Err(Error::oos(
-                "validity mask length must match the number of values",
-            ));
+            polars_bail!(ComputeError: "validity mask length must match the number of values");
         }
 
         if data_type.to_physical_type() != Self::default_data_type().to_physical_type() {
-            return Err(Error::oos(
-                "Utf8Array can only be initialized with DataType::Utf8 or DataType::LargeUtf8",
-            ));
+            polars_bail!(ComputeError: "Utf8Array can only be initialized with DataType::Utf8 or DataType::LargeUtf8")
         }
 
         Ok(Self {
@@ -368,22 +364,22 @@ impl<O: Offset> Utf8Array<O> {
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         try_check_offsets_bounds(&offsets, values.len())?;
 
         if validity
             .as_ref()
             .map_or(false, |validity| validity.len() != offsets.len_proxy())
         {
-            return Err(Error::oos(
+            polars_bail!(ComputeError:
                 "validity mask length must match the number of values",
-            ));
+            )
         }
 
         if data_type.to_physical_type() != Self::default_data_type().to_physical_type() {
-            return Err(Error::oos(
+            polars_bail!(ComputeError:
                 "BinaryArray can only be initialized with DataType::Utf8 or DataType::LargeUtf8",
-            ));
+            )
         }
 
         Ok(Self {

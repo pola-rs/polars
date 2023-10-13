@@ -1,3 +1,4 @@
+use polars_error::{polars_ensure, PolarsError, PolarsResult, polars_bail};
 use crate::array::Array;
 use crate::bitmap::Bitmap;
 use crate::error::{Error, Result};
@@ -13,11 +14,9 @@ pub fn combine_validities(lhs: Option<&Bitmap>, rhs: Option<&Bitmap>) -> Option<
 
 // Errors iff the two arrays have a different length.
 #[inline]
-pub fn check_same_len(lhs: &dyn Array, rhs: &dyn Array) -> Result<()> {
-    if lhs.len() != rhs.len() {
-        return Err(Error::InvalidArgumentError(
-            "Arrays must have the same length".to_string(),
-        ));
-    }
+pub fn check_same_len(lhs: &dyn Array, rhs: &dyn Array) -> PolarsResult<()> {
+    polars_ensure!(lhs.len() == rhs.len(), ComputeError:
+            "arrays must have the same length"
+    );
     Ok(())
 }

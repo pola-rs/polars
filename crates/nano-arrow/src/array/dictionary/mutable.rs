@@ -10,21 +10,6 @@ use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
 use crate::error::Result;
 
-/// A mutable, strong-typed version of [`DictionaryArray`].
-///
-/// # Example
-/// Building a UTF8 dictionary with `i32` keys.
-/// ```
-/// # use arrow2::array::{MutableDictionaryArray, MutableUtf8Array, TryPush};
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// let mut array: MutableDictionaryArray<i32, MutableUtf8Array<i32>> = MutableDictionaryArray::new();
-/// array.try_push(Some("A"))?;
-/// array.try_push(Some("B"))?;
-/// array.push_null();
-/// array.try_push(Some("C"))?;
-/// # Ok(())
-/// # }
-/// ```
 #[derive(Debug)]
 pub struct MutableDictionaryArray<K: DictionaryKey, M: MutableArray> {
     data_type: DataType,

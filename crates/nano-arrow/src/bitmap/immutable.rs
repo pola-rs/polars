@@ -3,6 +3,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use either::Either;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
 use super::{chunk_iter_to_vec, IntoIter, MutableBitmap};
@@ -65,13 +66,13 @@ impl Default for Bitmap {
     }
 }
 
-pub(super) fn check(bytes: &[u8], offset: usize, length: usize) -> Result<(), Error> {
+pub(super) fn check(bytes: &[u8], offset: usize, length: usize) -> PolarsResult<()> {
     if offset + length > bytes.len().saturating_mul(8) {
-        return Err(Error::InvalidArgumentError(format!(
+        polars_bail!(InvalidOperation:
             "The offset + length of the bitmap ({}) must be `<=` to the number of bytes times 8 ({})",
             offset + length,
             bytes.len().saturating_mul(8)
-        )));
+        );
     }
     Ok(())
 }
@@ -87,7 +88,7 @@ impl Bitmap {
     /// # Errors
     /// This function errors iff `length > bytes.len() * 8`
     #[inline]
-    pub fn try_new(bytes: Vec<u8>, length: usize) -> Result<Self, Error> {
+    pub fn try_new(bytes: Vec<u8>, length: usize) -> PolarsResult<Self> {
         check(&bytes, 0, length)?;
         let unset_bits = count_zeros(&bytes, 0, length);
         Ok(Self {
@@ -343,7 +344,7 @@ impl Bitmap {
         offset: usize,
         length: usize,
         unset_bits: usize,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         check(&bytes, offset, length)?;
         Ok(Self {
             bytes,

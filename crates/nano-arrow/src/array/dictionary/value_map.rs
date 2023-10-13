@@ -4,6 +4,7 @@ use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
 
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
+use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::DictionaryKey;
 use crate::array::indexable::{AsIndexed, Indexable};
@@ -60,11 +61,9 @@ pub struct ValueMap<K: DictionaryKey, M: MutableArray> {
 }
 
 impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
-    pub fn try_empty(values: M) -> Result<Self> {
+    pub fn try_empty(values: M) -> PolarsResult<Self> {
         if !values.is_empty() {
-            return Err(Error::InvalidArgumentError(
-                "initializing value map with non-empty values array".into(),
-            ));
+            polars_bail!(ComputeError: "initializing value map with non-empty values array")
         }
         Ok(Self {
             values,
@@ -72,7 +71,7 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
         })
     }
 
-    pub fn from_values(values: M) -> Result<Self>
+    pub fn from_values(values: M) -> PolarsResult<Self>
     where
         M: Indexable,
         M::Type: Eq + Hash,
@@ -82,7 +81,7 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
             BuildHasherDefault::<PassthroughHasher>::default(),
         );
         for index in 0..values.len() {
-            let key = K::try_from(index).map_err(|_| Error::Overflow)?;
+            let key = K::try_from(index).map_err(|_| polars_err!(ComputeError: "overflow"))?;
             // safety: we only iterate within bounds
             let value = unsafe { values.value_unchecked_at(index) };
             let hash = ahash_hash(value.borrow());
@@ -92,9 +91,7 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
                 stored_value.borrow() == value.borrow()
             }) {
                 RawEntryMut::Occupied(_) => {
-                    return Err(Error::InvalidArgumentError(
-                        "duplicate value in dictionary values array".into(),
-                    ))
+                    polars_bail!(InvalidOperation: "duplicate value in dictionary values array")
                 },
                 RawEntryMut::Vacant(entry) => {
                     // NB: don't use .insert() here!
@@ -128,7 +125,7 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
     pub fn try_push_valid<V>(
         &mut self,
         value: V,
-        mut push: impl FnMut(&mut M, V) -> Result<()>,
+        mut push: impl FnMut(&mut M, V) -> PolarsResult<()>,
     ) -> Result<K>
     where
         M: Indexable,
@@ -147,7 +144,7 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
                 RawEntryMut::Occupied(entry) => entry.key().key,
                 RawEntryMut::Vacant(entry) => {
                     let index = self.values.len();
-                    let key = K::try_from(index).map_err(|_| Error::Overflow)?;
+                    let key = K::try_from(index).map_err(|_| polars_err!(ComputeError: "overflow"))?;
                     entry.insert_hashed_nocheck(hash, Hashed { hash, key }, ()); // NB: don't use .insert() here!
                     push(&mut self.values, value)?;
                     debug_assert_eq!(self.values.len(), index + 1);

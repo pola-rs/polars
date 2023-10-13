@@ -1,6 +1,6 @@
+use polars_error::{polars_err, PolarsResult};
 use super::DictionaryKey;
 use crate::array::{Array, PrimitiveArray, Utf8Array};
-use crate::error::{Error, Result};
 use crate::trusted_len::TrustedLen;
 use crate::types::Offset;
 
@@ -14,7 +14,7 @@ pub trait DictValue {
     unsafe fn get_unchecked(&self, item: usize) -> Self::IterValue<'_>;
 
     /// Take a [`dyn Array`] an try to downcast it to the type of `DictValue`.
-    fn downcast_values(array: &dyn Array) -> Result<&Self>
+    fn downcast_values(array: &dyn Array) -> PolarsResult<&Self>
     where
         Self: Sized;
 }
@@ -26,7 +26,7 @@ impl<O: Offset> DictValue for Utf8Array<O> {
         self.value_unchecked(item)
     }
 
-    fn downcast_values(array: &dyn Array) -> Result<&Self>
+    fn downcast_values(array: &dyn Array) -> PolarsResult<&Self>
     where
         Self: Sized,
     {
@@ -34,7 +34,7 @@ impl<O: Offset> DictValue for Utf8Array<O> {
             .as_any()
             .downcast_ref::<Self>()
             .ok_or_else(|| {
-                Error::InvalidArgumentError("could not convert array to dictionary value".into())
+                polars_err!(InvalidOperation: "could not convert array to dictionary value")
             })
             .map(|arr| {
                 assert_eq!(

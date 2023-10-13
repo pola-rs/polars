@@ -1,10 +1,10 @@
 use std::sync::Arc;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::StructArray;
 use crate::array::{Array, MutableArray};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::error::Error;
 
 /// Converting a [`MutableStructArray`] into a [`StructArray`] is `O(1)`.
 #[derive(Debug)]
@@ -18,15 +18,13 @@ fn check(
     data_type: &DataType,
     values: &[Box<dyn MutableArray>],
     validity: Option<usize>,
-) -> Result<(), Error> {
+) -> PolarsResult<()> {
     let fields = StructArray::try_get_fields(data_type)?;
     if fields.is_empty() {
-        return Err(Error::oos("A StructArray must contain at least one field"));
+        polars_bail!(ComputeError: "a StructArray must contain at least one field")
     }
     if fields.len() != values.len() {
-        return Err(Error::oos(
-                "A StructArray must have a number of fields in its DataType equal to the number of child values",
-            ));
+        polars_bail!(ComputeError: "a StructArray must have a number of fields in its DataType equal to the number of child values")
     }
 
     fields
@@ -35,10 +33,10 @@ fn check(
             .enumerate()
             .try_for_each(|(index, (data_type, child))| {
                 if data_type != child {
-                    Err(Error::oos(format!(
-                        "The children DataTypes of a StructArray must equal the children data types. 
+                    polars_bail!(ComputeError:
+                        "The children DataTypes of a StructArray must equal the children data types.
                          However, the field {index} has data type {data_type:?} but the value has data type {child:?}"
-                    )))
+                    )
                 } else {
                     Ok(())
                 }
@@ -51,19 +49,19 @@ fn check(
             .enumerate()
             .try_for_each(|(index, a_len)| {
                 if a_len != len {
-                    Err(Error::oos(format!(
+                    polars_bail!(ComputeError:
                         "The children must have an equal number of values.
                          However, the values at index {index} have a length of {a_len}, which is different from values at index 0, {len}."
-                    )))
+                    )
                 } else {
                     Ok(())
                 }
             })?;
 
     if validity.map_or(false, |validity| validity != len) {
-        return Err(Error::oos(
-            "The validity length of a StructArray must match its number of elements",
-        ));
+        polars_bail!(ComputeError:
+            "the validity length of a StructArray must match its number of elements",
+        )
     }
     Ok(())
 }
@@ -100,7 +98,7 @@ impl MutableStructArray {
         data_type: DataType,
         values: Vec<Box<dyn MutableArray>>,
         validity: Option<MutableBitmap>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         check(&data_type, &values, validity.as_ref().map(|x| x.len()))?;
         Ok(Self {
             data_type,

@@ -1,8 +1,8 @@
 //! Contains [`Chunk`], a container of [`Array`] where every array has the
 //! same length.
 
+use polars_error::{polars_bail, PolarsResult};
 use crate::array::Array;
-use crate::error::{Error, Result};
 
 /// A vector of trait objects of [`Array`] where every item has
 /// the same length, [`Chunk::len`].
@@ -22,7 +22,7 @@ impl<A: AsRef<dyn Array>> Chunk<A> {
     /// Creates a new [`Chunk`].
     /// # Error
     /// Iff the arrays do not have the same length
-    pub fn try_new(arrays: Vec<A>) -> Result<Self> {
+    pub fn try_new(arrays: Vec<A>) -> PolarsResult<Self> {
         if !arrays.is_empty() {
             let len = arrays.first().unwrap().as_ref().len();
             if arrays
@@ -30,9 +30,10 @@ impl<A: AsRef<dyn Array>> Chunk<A> {
                 .map(|array| array.as_ref())
                 .any(|array| array.len() != len)
             {
-                return Err(Error::InvalidArgumentError(
+
+                polars_bail!(ComputeError:
                     "Chunk require all its arrays to have an equal number of rows".to_string(),
-                ));
+                );
             }
         }
         Ok(Self { arrays })

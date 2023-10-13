@@ -1,8 +1,8 @@
 //! Contains the declaration of [`Offset`]
 use std::hint::unreachable_unchecked;
+use polars_error::{PolarsResult, polars_err, PolarsError, polars_bail};
 
 use crate::buffer::Buffer;
-use crate::error::Error;
 pub use crate::types::Offset;
 
 /// A wrapper type of [`Vec<O>`] representing the invariants of Arrow's offsets.
@@ -20,7 +20,7 @@ impl<O: Offset> Default for Offsets<O> {
 }
 
 impl<O: Offset> TryFrom<Vec<O>> for Offsets<O> {
-    type Error = Error;
+    type Error = PolarsError;
 
     #[inline]
     fn try_from(offsets: Vec<O>) -> Result<Self, Self::Error> {
@@ -30,7 +30,7 @@ impl<O: Offset> TryFrom<Vec<O>> for Offsets<O> {
 }
 
 impl<O: Offset> TryFrom<Buffer<O>> for OffsetsBuffer<O> {
-    type Error = Error;
+    type Error = PolarsError;
 
     #[inline]
     fn try_from(offsets: Buffer<O>) -> Result<Self, Self::Error> {
@@ -40,7 +40,7 @@ impl<O: Offset> TryFrom<Buffer<O>> for OffsetsBuffer<O> {
 }
 
 impl<O: Offset> TryFrom<Vec<O>> for OffsetsBuffer<O> {
-    type Error = Error;
+    type Error = PolarsError;
 
     #[inline]
     fn try_from(offsets: Vec<O>) -> Result<Self, Self::Error> {
@@ -71,7 +71,7 @@ impl<O: Offset> Offsets<O> {
 
     /// Creates a new [`Offsets`] from an iterator of lengths
     #[inline]
-    pub fn try_from_iter<I: IntoIterator<Item = usize>>(iter: I) -> Result<Self, Error> {
+    pub fn try_from_iter<I: IntoIterator<Item = usize>>(iter: I) -> PolarsResult<Self> {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();
         let mut offsets = Self::with_capacity(lower);
@@ -110,7 +110,7 @@ impl<O: Offset> Offsets<O> {
     /// This function:
     /// * checks that this length does not overflow
     #[inline]
-    pub fn try_push(&mut self, length: usize) -> Result<(), Error> {
+    pub fn try_push(&mut self, length: usize) -> PolarsResult<()> {
         if O::IS_LARGE {
             let length = O::from_as_usize(length);
             let old_length = self.last();
@@ -118,10 +118,10 @@ impl<O: Offset> Offsets<O> {
             self.0.push(new_length);
             Ok(())
         } else {
-            let length = O::from_usize(length).ok_or(Error::Overflow)?;
+            let length = O::from_usize(length).ok_or(polars_err!(ComputeError: "overflow"))?;
 
             let old_length = self.last();
-            let new_length = old_length.checked_add(&length).ok_or(Error::Overflow)?;
+            let new_length = old_length.checked_add(&length).ok_or(polars_err!(ComputeError: "overflow"))?;
             self.0.push(new_length);
             Ok(())
         }
@@ -209,7 +209,7 @@ impl<O: Offset> Offsets<O> {
     /// # Errors
     /// This function errors iff this operation overflows for the maximum value of `O`.
     #[inline]
-    pub fn try_from_lengths<I: Iterator<Item = usize>>(lengths: I) -> Result<Self, Error> {
+    pub fn try_from_lengths<I: Iterator<Item = usize>>(lengths: I) -> PolarsResult<Self> {
         let mut self_ = Self::with_capacity(lengths.size_hint().0);
         self_.try_extend_from_lengths(lengths)?;
         Ok(self_)
@@ -222,7 +222,7 @@ impl<O: Offset> Offsets<O> {
     pub fn try_extend_from_lengths<I: Iterator<Item = usize>>(
         &mut self,
         lengths: I,
-    ) -> Result<(), Error> {
+    ) -> PolarsResult<()> {
         let mut total_length = 0;
         let mut offset = *self.last();
         let original_offset = offset.to_usize();
@@ -240,19 +240,19 @@ impl<O: Offset> Offsets<O> {
 
         let last_offset = original_offset
             .checked_add(total_length)
-            .ok_or(Error::Overflow)?;
-        O::from_usize(last_offset).ok_or(Error::Overflow)?;
+            .ok_or_else(|| polars_err!(ComputeError: "overflow"))?;
+        O::from_usize(last_offset).ok_or_else(|| polars_err!(ComputeError: "overflow"))?;
         Ok(())
     }
 
     /// Extends itself from another [`Offsets`]
     /// # Errors
     /// This function errors iff this operation overflows for the maximum value of `O`.
-    pub fn try_extend_from_self(&mut self, other: &Self) -> Result<(), Error> {
+    pub fn try_extend_from_self(&mut self, other: &Self) -> PolarsResult<()> {
         let mut length = *self.last();
         let other_length = *other.last();
         // check if the operation would overflow
-        length.checked_add(&other_length).ok_or(Error::Overflow)?;
+        length.checked_add(&other_length).ok_or_else(|| polars_err!(ComputeError: "overflow"))?;
 
         let lengths = other.as_slice().windows(2).map(|w| w[1] - w[0]);
         let offsets = lengths.map(|new_length| {
@@ -271,7 +271,7 @@ impl<O: Offset> Offsets<O> {
         other: &OffsetsBuffer<O>,
         start: usize,
         length: usize,
-    ) -> Result<(), Error> {
+    ) -> PolarsResult<()> {
         if length == 0 {
             return Ok(());
         }
@@ -279,7 +279,7 @@ impl<O: Offset> Offsets<O> {
         let other_length = other.last().expect("Length to be non-zero");
         let mut length = *self.last();
         // check if the operation would overflow
-        length.checked_add(other_length).ok_or(Error::Overflow)?;
+        length.checked_add(other_length).ok_or_else(|| polars_err!(ComputeError: "overflow"))?;
 
         let lengths = other.windows(2).map(|w| w[1] - w[0]);
         let offsets = lengths.map(|new_length| {
@@ -298,13 +298,13 @@ impl<O: Offset> Offsets<O> {
 }
 
 /// Checks that `offsets` is monotonically increasing.
-fn try_check_offsets<O: Offset>(offsets: &[O]) -> Result<(), Error> {
+fn try_check_offsets<O: Offset>(offsets: &[O]) -> PolarsResult<()> {
     // this code is carefully constructed to auto-vectorize, don't change naively!
     match offsets.first() {
-        None => Err(Error::oos("offsets must have at least one element")),
+        None => polars_bail!(ComputeError: "offsets must have at least one element"),
         Some(first) => {
             if *first < O::zero() {
-                return Err(Error::oos("offsets must be larger than 0"));
+                polars_bail!(ComputeError: "offsets must be larger than 0")
             }
             let mut previous = *first;
             let mut any_invalid = false;
@@ -319,7 +319,7 @@ fn try_check_offsets<O: Offset>(offsets: &[O]) -> Result<(), Error> {
             }
 
             if any_invalid {
-                Err(Error::oos("offsets must be monotonically increasing"))
+                polars_bail!(ComputeError: "offsets must be monotonically increasing")
             } else {
                 Ok(())
             }
@@ -480,10 +480,10 @@ impl From<&OffsetsBuffer<i32>> for OffsetsBuffer<i64> {
 }
 
 impl TryFrom<&OffsetsBuffer<i64>> for OffsetsBuffer<i32> {
-    type Error = Error;
+    type Error = PolarsError;
 
     fn try_from(offsets: &OffsetsBuffer<i64>) -> Result<Self, Self::Error> {
-        i32::try_from(*offsets.last()).map_err(|_| Error::Overflow)?;
+        i32::try_from(*offsets.last()).map_err(|_| polars_err!(ComputeError: "overflow"))?;
 
         // this conversion is lossless and uphelds all invariants
         Ok(Self(
@@ -511,10 +511,10 @@ impl From<Offsets<i32>> for Offsets<i64> {
 }
 
 impl TryFrom<Offsets<i64>> for Offsets<i32> {
-    type Error = Error;
+    type Error = PolarsError;
 
     fn try_from(offsets: Offsets<i64>) -> Result<Self, Self::Error> {
-        i32::try_from(*offsets.last()).map_err(|_| Error::Overflow)?;
+        i32::try_from(*offsets.last()).map_err(|_| polars_err!(ComputeError: "overflow"))?;
 
         // this conversion is lossless and uphelds all invariants
         Ok(Self(

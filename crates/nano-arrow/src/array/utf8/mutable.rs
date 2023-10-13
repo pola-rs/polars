@@ -1,5 +1,6 @@
 use std::iter::FromIterator;
 use std::sync::Arc;
+use polars_error::polars_bail;
 
 use super::{MutableUtf8ValuesArray, MutableUtf8ValuesIter, StrAsBytes, Utf8Array};
 use crate::array::physical_binary::*;
@@ -67,9 +68,7 @@ impl<O: Offset> MutableUtf8Array<O> {
             .as_ref()
             .map_or(false, |validity| validity.len() != values.len())
         {
-            return Err(Error::oos(
-                "validity's length must be equal to the number of values",
-            ));
+            polars_bail!(ComputeError: "validity's length must be equal to the number of values")
         }
 
         Ok(Self { values, validity })

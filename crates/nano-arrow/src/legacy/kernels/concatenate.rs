@@ -1,5 +1,5 @@
+use polars_error::{polars_bail, PolarsResult};
 use crate::array::growable::make_growable;
-use crate::error::{Error as ArrowError, Result};
 
 use crate::legacy::prelude::*;
 
@@ -7,11 +7,9 @@ use crate::legacy::prelude::*;
 /// This does not check the arrays types.
 ///
 /// [Array]: arrow::array::Array
-pub fn concatenate_owned_unchecked(arrays: &[ArrayRef]) -> Result<ArrayRef> {
+pub fn concatenate_owned_unchecked(arrays: &[ArrayRef]) -> PolarsResult<ArrayRef> {
     if arrays.is_empty() {
-        return Err(ArrowError::InvalidArgumentError(
-            "concat requires input of at least one array".to_string(),
-        ));
+        polars_bail!(InvalidOperation: "concat requires input of at least one array")
     }
     if arrays.len() == 1 {
         return Ok(arrays[0].clone());

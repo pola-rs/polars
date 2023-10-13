@@ -4,7 +4,6 @@ use std::hint::unreachable_unchecked;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{DataType, IntegerType};
-use crate::error::Error;
 use crate::scalar::{new_scalar, Scalar};
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
@@ -21,6 +20,7 @@ mod value_map;
 
 pub use iterator::*;
 pub use mutable::*;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::primitive::PrimitiveArray;
 use super::specification::check_indexes;
@@ -113,22 +113,16 @@ fn check_data_type(
     key_type: IntegerType,
     data_type: &DataType,
     values_data_type: &DataType,
-) -> Result<(), Error> {
+) -> PolarsResult<()> {
     if let DataType::Dictionary(key, value, _) = data_type.to_logical_type() {
         if *key != key_type {
-            return Err(Error::oos(
-                "DictionaryArray must be initialized with a DataType::Dictionary whose integer is compatible to its keys",
-            ));
+            polars_bail!(ComputeError: "DictionaryArray must be initialized with a DataType::Dictionary whose integer is compatible to its keys")
         }
         if value.as_ref().to_logical_type() != values_data_type.to_logical_type() {
-            return Err(Error::oos(
-                "DictionaryArray must be initialized with a DataType::Dictionary whose value is equal to its values",
-            ));
+            polars_bail!(ComputeError: "DictionaryArray must be initialized with a DataType::Dictionary whose value is equal to its values")
         }
     } else {
-        return Err(Error::oos(
-            "DictionaryArray must be initialized with logical DataType::Dictionary",
-        ));
+        polars_bail!(ComputeError: "DictionaryArray must be initialized with logical DataType::Dictionary")
     }
     Ok(())
 }
@@ -147,7 +141,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
         data_type: DataType,
         keys: PrimitiveArray<K>,
         values: Box<dyn Array>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         check_data_type(K::KEY_TYPE, &data_type, values.data_type())?;
 
         if keys.null_count() != keys.len() {
@@ -173,7 +167,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// # Errors
     /// This function errors iff
     /// * any of the keys's values is not represented in `usize` or is `>= values.len()`
-    pub fn try_from_keys(keys: PrimitiveArray<K>, values: Box<dyn Array>) -> Result<Self, Error> {
+    pub fn try_from_keys(keys: PrimitiveArray<K>, values: Box<dyn Array>) -> PolarsResult<Self> {
         let data_type = Self::default_data_type(values.data_type().clone());
         Self::try_new(data_type, keys, values)
     }
@@ -190,7 +184,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
         data_type: DataType,
         keys: PrimitiveArray<K>,
         values: Box<dyn Array>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         check_data_type(K::KEY_TYPE, &data_type, values.data_type())?;
 
         Ok(Self {
@@ -249,7 +243,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// If they do [`DictionaryArray::iter_typed`] should be called
     pub fn values_iter_typed<V: DictValue>(
         &self,
-    ) -> Result<DictionaryValuesIterTyped<K, V>, Error> {
+    ) -> PolarsResult<DictionaryValuesIterTyped<K, V>> {
         let keys = &self.keys;
         assert_eq!(keys.null_count(), 0);
         let values = self.values.as_ref();
@@ -264,7 +258,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     /// This function panics if the `values` array
     pub fn iter_typed<V: DictValue>(
         &self,
-    ) -> Result<ZipValidity<V::IterValue<'_>, DictionaryValuesIterTyped<K, V>, BitmapIter>, Error>
+    ) -> PolarsResult<ZipValidity<V::IterValue<'_>, DictionaryValuesIterTyped<K, V>, BitmapIter>>
     {
         let keys = &self.keys;
         let values = self.values.as_ref();
@@ -387,13 +381,11 @@ impl<K: DictionaryKey> DictionaryArray<K> {
         new_scalar(self.values.as_ref(), index)
     }
 
-    pub(crate) fn try_get_child(data_type: &DataType) -> Result<&DataType, Error> {
+    pub(crate) fn try_get_child(data_type: &DataType) -> PolarsResult<&DataType> {
         Ok(match data_type.to_logical_type() {
             DataType::Dictionary(_, values, _) => values.as_ref(),
             _ => {
-                return Err(Error::oos(
-                    "Dictionaries must be initialized with DataType::Dictionary",
-                ))
+                polars_bail!(ComputeError: "Dictionaries must be initialized with DataType::Dictionary")
             },
         })
     }

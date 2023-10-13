@@ -1,5 +1,6 @@
 use std::iter::FromIterator;
 use std::sync::Arc;
+use polars_error::PolarsResult;
 
 use super::BooleanArray;
 use crate::array::physical_binary::extend_validity;
@@ -529,7 +530,7 @@ impl Extend<Option<bool>> for MutableBooleanArray {
 
 impl TryExtend<Option<bool>> for MutableBooleanArray {
     /// This is infalible and is implemented for consistency with all other types
-    fn try_extend<I: IntoIterator<Item = Option<bool>>>(&mut self, iter: I) -> Result<(), Error> {
+    fn try_extend<I: IntoIterator<Item = Option<bool>>>(&mut self, iter: I) -> PolarsResult<()> {
         self.extend(iter);
         Ok(())
     }
@@ -537,7 +538,7 @@ impl TryExtend<Option<bool>> for MutableBooleanArray {
 
 impl TryPush<Option<bool>> for MutableBooleanArray {
     /// This is infalible and is implemented for consistency with all other types
-    fn try_push(&mut self, item: Option<bool>) -> Result<(), Error> {
+    fn try_push(&mut self, item: Option<bool>) -> PolarsResult<()> {
         self.push(item);
         Ok(())
     }
@@ -550,7 +551,7 @@ impl PartialEq for MutableBooleanArray {
 }
 
 impl TryExtendFromSelf for MutableBooleanArray {
-    fn try_extend_from_self(&mut self, other: &Self) -> Result<(), Error> {
+    fn try_extend_from_self(&mut self, other: &Self) -> PolarsResult<()> {
         extend_validity(self.len(), &mut self.validity, &other.validity);
 
         let slice = other.values.as_slice();

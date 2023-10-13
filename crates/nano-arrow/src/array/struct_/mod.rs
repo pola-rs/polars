@@ -1,7 +1,6 @@
 use super::{new_empty_array, new_null_array, Array};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{DataType, Field};
-use crate::error::Error;
 
 #[cfg(feature = "arrow_rs")]
 mod data;
@@ -10,6 +9,7 @@ pub(super) mod fmt;
 mod iterator;
 mod mutable;
 pub use mutable::*;
+use polars_error::{polars_bail, PolarsResult};
 
 /// A [`StructArray`] is a nested [`Array`] with an optional validity representing
 /// multiple [`Array`] with the same number of rows.
@@ -48,15 +48,13 @@ impl StructArray {
         data_type: DataType,
         values: Vec<Box<dyn Array>>,
         validity: Option<Bitmap>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         let fields = Self::try_get_fields(&data_type)?;
         if fields.is_empty() {
-            return Err(Error::oos("A StructArray must contain at least one field"));
+            polars_bail!(ComputeError: "a StructArray must contain at least one field")
         }
         if fields.len() != values.len() {
-            return Err(Error::oos(
-                "A StructArray must have a number of fields in its DataType equal to the number of child values",
-            ));
+            polars_bail!(ComputeError:"a StructArray must have a number of fields in its DataType equal to the number of child values")
         }
 
         fields
@@ -65,10 +63,10 @@ impl StructArray {
             .enumerate()
             .try_for_each(|(index, (data_type, child))| {
                 if data_type != child {
-                    Err(Error::oos(format!(
-                        "The children DataTypes of a StructArray must equal the children data types. 
+                    polars_bail!(ComputeError:
+                        "The children DataTypes of a StructArray must equal the children data types.
                          However, the field {index} has data type {data_type:?} but the value has data type {child:?}"
-                    )))
+                    )
                 } else {
                     Ok(())
                 }
@@ -81,10 +79,8 @@ impl StructArray {
             .enumerate()
             .try_for_each(|(index, a_len)| {
                 if a_len != len {
-                    Err(Error::oos(format!(
-                        "The children must have an equal number of values.
-                         However, the values at index {index} have a length of {a_len}, which is different from values at index 0, {len}."
-                    )))
+                    polars_bail!(ComputeError: "The children must have an equal number of values.
+                         However, the values at index {index} have a length of {a_len}, which is different from values at index 0, {len}.")
                 } else {
                     Ok(())
                 }
@@ -94,9 +90,7 @@ impl StructArray {
             .as_ref()
             .map_or(false, |validity| validity.len() != len)
         {
-            return Err(Error::oos(
-                "The validity length of a StructArray must match its number of elements",
-            ));
+            polars_bail!(ComputeError:"The validity length of a StructArray must match its number of elements")
         }
 
         Ok(Self {
@@ -226,12 +220,10 @@ impl StructArray {
 
 impl StructArray {
     /// Returns the fields the `DataType::Struct`.
-    pub(crate) fn try_get_fields(data_type: &DataType) -> Result<&[Field], Error> {
+    pub(crate) fn try_get_fields(data_type: &DataType) -> PolarsResult<&[Field]> {
         match data_type.to_logical_type() {
             DataType::Struct(fields) => Ok(fields),
-            _ => Err(Error::oos(
-                "Struct array must be created with a DataType whose physical type is Struct",
-            )),
+            _ => polars_bail!(ComputeError: "Struct array must be created with a DataType whose physical type is Struct")
         }
     }
 

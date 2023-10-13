@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::FixedSizeListArray;
 use crate::array::physical_binary::extend_validity;
@@ -89,9 +90,9 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
     #[inline]
     /// Needs to be called when a valid value was extended to this array.
     /// This is a relatively low level function, prefer `try_push` when you can.
-    pub fn try_push_valid(&mut self) -> Result<()> {
+    pub fn try_push_valid(&mut self) -> PolarsResult<()> {
         if self.values.len() % self.size != 0 {
-            return Err(Error::Overflow);
+            polars_bail!(ComputeError: "overflow")
         };
         if let Some(validity) = &mut self.validity {
             validity.push(true)

@@ -10,7 +10,7 @@
 #![allow(clippy::type_complexity)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
-#![cfg_attr(feature = "nightly_build", feature(build_hasher_simple_hash_one))]
+#![cfg_attr(feature = "nightly", allow(clippy::non_canonical_partial_ord_impl))] // Remove once stable.
 
 #[macro_use]
 pub mod array;

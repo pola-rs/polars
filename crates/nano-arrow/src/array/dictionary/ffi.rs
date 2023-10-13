@@ -1,3 +1,4 @@
+use polars_error::{polars_err, PolarsResult};
 use super::{DictionaryArray, DictionaryKey};
 use crate::array::{FromFfi, PrimitiveArray, ToFfi};
 use crate::error::Error;
@@ -22,7 +23,7 @@ unsafe impl<K: DictionaryKey> ToFfi for DictionaryArray<K> {
 }
 
 impl<K: DictionaryKey, A: ffi::ArrowArrayRef> FromFfi<A> for DictionaryArray<K> {
-    unsafe fn try_from_ffi(array: A) -> Result<Self, Error> {
+    unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
         // keys: similar to PrimitiveArray, but the datatype is the inner one
         let validity = unsafe { array.validity() }?;
         let values = unsafe { array.buffer::<K>(1) }?;
@@ -32,7 +33,7 @@ impl<K: DictionaryKey, A: ffi::ArrowArrayRef> FromFfi<A> for DictionaryArray<K> 
         let keys = PrimitiveArray::<K>::try_new(K::PRIMITIVE.into(), values, validity)?;
         let values = array
             .dictionary()?
-            .ok_or_else(|| Error::oos("Dictionary Array must contain a dictionary in ffi"))?;
+            .ok_or_else(|| polars_err!(ComputeError: "Dictionary Array must contain a dictionary in ffi"))?;
         let values = ffi::try_from(values)?;
 
         // the assumption of this trait

@@ -19,6 +19,7 @@ mod mutable_values;
 pub use mutable_values::*;
 mod mutable;
 pub use mutable::*;
+use polars_error::{polars_bail, PolarsResult};
 
 #[cfg(feature = "arrow_rs")]
 mod data;
@@ -76,22 +77,18 @@ impl<O: Offset> BinaryArray<O> {
         offsets: OffsetsBuffer<O>,
         values: Buffer<u8>,
         validity: Option<Bitmap>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         try_check_offsets_bounds(&offsets, values.len())?;
 
         if validity
             .as_ref()
             .map_or(false, |validity| validity.len() != offsets.len_proxy())
         {
-            return Err(Error::oos(
-                "validity mask length must match the number of values",
-            ));
+            polars_bail!(ComputeError: "validity mask length must match the number of values")
         }
 
         if data_type.to_physical_type() != Self::default_data_type().to_physical_type() {
-            return Err(Error::oos(
-                "BinaryArray can only be initialized with DataType::Binary or DataType::LargeBinary",
-            ));
+            polars_bail!(ComputeError: "BinaryArray can only be initialized with DataType::Binary or DataType::LargeBinary")
         }
 
         Ok(Self {

@@ -2,10 +2,10 @@
 
 use chrono::format::{parse, Parsed, StrftimeItems};
 use chrono::{Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
+use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use crate::array::{PrimitiveArray, Utf8Array};
 use crate::datatypes::{DataType, TimeUnit};
-use crate::error::{Error, Result};
 use crate::offset::Offset;
 use crate::types::months_days_ns;
 
@@ -297,27 +297,25 @@ pub fn timeunit_scale(a: TimeUnit, b: TimeUnit) -> f64 {
 /// Parses an offset of the form `"+WX:YZ"` or `"UTC"` into [`FixedOffset`].
 /// # Errors
 /// If the offset is not in any of the allowed forms.
-pub fn parse_offset(offset: &str) -> Result<FixedOffset> {
+pub fn parse_offset(offset: &str) -> PolarsResult<FixedOffset> {
     if offset == "UTC" {
         return Ok(FixedOffset::east_opt(0).expect("FixedOffset::east out of bounds"));
     }
     let error = "timezone offset must be of the form [-]00:00";
 
     let mut a = offset.split(':');
-    let first = a
+    let first: &str = a
         .next()
-        .map(Ok)
-        .unwrap_or_else(|| Err(Error::InvalidArgumentError(error.to_string())))?;
+        .ok_or_else(|| polars_err!(InvalidOperation: error))?;
     let last = a
         .next()
-        .map(Ok)
-        .unwrap_or_else(|| Err(Error::InvalidArgumentError(error.to_string())))?;
+        .ok_or_else(|| polars_err!(InvalidOperation: error))?;
     let hours: i32 = first
         .parse()
-        .map_err(|_| Error::InvalidArgumentError(error.to_string()))?;
+        .map_err(|_| polars_err!(InvalidOperation: error))?;
     let minutes: i32 = last
         .parse()
-        .map_err(|_| Error::InvalidArgumentError(error.to_string()))?;
+        .map_err(|_| polars_err!(InvalidOperation: error))?;
 
     Ok(FixedOffset::east_opt(hours * 60 * 60 + minutes * 60)
         .expect("FixedOffset::east out of bounds"))
@@ -405,9 +403,9 @@ fn utf8_to_timestamp_ns_impl<O: Offset, T: chrono::TimeZone>(
 /// Parses `value` to a [`chrono_tz::Tz`] with the Arrow's definition of timestamp with a timezone.
 #[cfg(feature = "chrono-tz")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chrono-tz")))]
-pub fn parse_offset_tz(timezone: &str) -> Result<chrono_tz::Tz> {
+pub fn parse_offset_tz(timezone: &str) -> PolarsResult<chrono_tz::Tz> {
     timezone.parse::<chrono_tz::Tz>().map_err(|_| {
-        Error::InvalidArgumentError(format!("timezone \"{timezone}\" cannot be parsed"))
+        polars_err!(InvalidOperation: "timezone \"{timezone}\" cannot be parsed")
     })
 }
 
@@ -417,7 +415,7 @@ fn chrono_tz_utf_to_timestamp_ns<O: Offset>(
     array: &Utf8Array<O>,
     fmt: &str,
     timezone: String,
-) -> Result<PrimitiveArray<i64>> {
+) -> PolarsResult<PrimitiveArray<i64>> {
     let tz = parse_offset_tz(&timezone)?;
     Ok(utf8_to_timestamp_ns_impl(array, fmt, timezone, tz))
 }
@@ -427,10 +425,10 @@ fn chrono_tz_utf_to_timestamp_ns<O: Offset>(
     _: &Utf8Array<O>,
     _: &str,
     timezone: String,
-) -> Result<PrimitiveArray<i64>> {
-    Err(Error::InvalidArgumentError(format!(
-        "timezone \"{timezone}\" cannot be parsed (feature chrono-tz is not active)",
-    )))
+) -> PolarsResult<PrimitiveArray<i64>> {
+    timezone.parse::<chrono_tz::Tz>().map_err(|_| {
+        polars_err!(ComputeError: "timezone \"{timezone}\" cannot be parsed (feature chrono-tz is not active)")
+    })
 }
 
 /// Parses a [`Utf8Array`] to a timeozone-aware timestamp, i.e. [`PrimitiveArray<i64>`] with type `Timestamp(Nanosecond, Some(timezone))`.
@@ -445,7 +443,7 @@ pub fn utf8_to_timestamp_ns<O: Offset>(
     array: &Utf8Array<O>,
     fmt: &str,
     timezone: String,
-) -> Result<PrimitiveArray<i64>> {
+) -> PolarsResult<PrimitiveArray<i64>> {
     let tz = parse_offset(timezone.as_str());
 
     if let Ok(tz) = tz {

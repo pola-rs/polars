@@ -1,7 +1,7 @@
+use polars_error::PolarsResult;
 use super::FixedSizeListArray;
 use crate::array::ffi::{FromFfi, ToFfi};
 use crate::array::Array;
-use crate::error::Result;
 use crate::ffi;
 
 unsafe impl ToFfi for FixedSizeListArray {
@@ -28,7 +28,7 @@ unsafe impl ToFfi for FixedSizeListArray {
 }
 
 impl<A: ffi::ArrowArrayRef> FromFfi<A> for FixedSizeListArray {
-    unsafe fn try_from_ffi(array: A) -> Result<Self> {
+    unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
         let data_type = array.data_type().clone();
         let validity = unsafe { array.validity() }?;
         let child = unsafe { array.child(0)? };

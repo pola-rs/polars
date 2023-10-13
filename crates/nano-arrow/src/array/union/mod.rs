@@ -1,8 +1,8 @@
+use polars_error::{polars_bail, polars_err, PolarsResult};
 use super::{new_empty_array, new_null_array, Array};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::{DataType, Field, UnionMode};
-use crate::error::Error;
 use crate::scalar::{new_scalar, Scalar};
 
 #[cfg(feature = "arrow_rs")]
@@ -50,18 +50,16 @@ impl UnionArray {
         types: Buffer<i8>,
         fields: Vec<Box<dyn Array>>,
         offsets: Option<Buffer<i32>>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         let (f, ids, mode) = Self::try_get_all(&data_type)?;
 
         if f.len() != fields.len() {
-            return Err(Error::oos(
-                "The number of `fields` must equal the number of children fields in DataType::Union",
-            ));
+            polars_bail!(ComputeError: "the number of `fields` must equal the number of children fields in DataType::Union")
         };
         let number_of_fields: i8 = fields
             .len()
             .try_into()
-            .map_err(|_| Error::oos("The number of `fields` cannot be larger than i8::MAX"))?;
+            .map_err(|_| polars_err!(ComputeError: "the number of `fields` cannot be larger than i8::MAX"))?;
 
         f
             .iter().map(|a| a.data_type())
@@ -69,10 +67,10 @@ impl UnionArray {
             .enumerate()
             .try_for_each(|(index, (data_type, child))| {
                 if data_type != child {
-                    Err(Error::oos(format!(
-                        "The children DataTypes of a UnionArray must equal the children data types. 
+                    polars_bail!(ComputeError:
+                        "the children DataTypes of a UnionArray must equal the children data types.
                          However, the field {index} has data type {data_type:?} but the value has data type {child:?}"
-                    )))
+                    )
                 } else {
                     Ok(())
                 }
@@ -80,23 +78,23 @@ impl UnionArray {
 
         if let Some(offsets) = &offsets {
             if offsets.len() != types.len() {
-                return Err(Error::oos(
-                    "In a UnionArray, the offsets' length must be equal to the number of types",
-                ));
+                polars_bail!(ComputeError:
+                    "in a UnionArray, the offsets' length must be equal to the number of types"
+                    )
             }
         }
         if offsets.is_none() != mode.is_sparse() {
-            return Err(Error::oos(
-                "In a sparse UnionArray, the offsets must be set (and vice-versa)",
-            ));
+            polars_bail!(ComputeError:
+                "in a sparse UnionArray, the offsets must be set (and vice-versa)",
+                    )
         }
 
         // build hash
         let map = if let Some(&ids) = ids.as_ref() {
             if ids.len() != fields.len() {
-                return Err(Error::oos(
-                    "In a union, when the ids are set, their length must be equal to the number of fields",
-                ));
+                polars_bail!(ComputeError:
+                    "in a union, when the ids are set, their length must be equal to the number of fields",
+                    )
             }
 
             // example:
@@ -107,20 +105,24 @@ impl UnionArray {
 
             for (pos, &id) in ids.iter().enumerate() {
                 if !(0..=127).contains(&id) {
-                    return Err(Error::oos(
-                        "In a union, when the ids are set, every id must belong to [0, 128[",
-                    ));
+                    polars_bail!(ComputeError:
+                        "in a union, when the ids are set, every id must belong to [0, 128[",
+                    )
                 }
                 hash[id as usize] = pos;
             }
 
             types.iter().try_for_each(|&type_| {
                 if type_ < 0 {
-                    return Err(Error::oos("In a union, when the ids are set, every type must be >= 0"));
+                    polars_bail!(ComputeError:
+                        "in a union, when the ids are set, every type must be >= 0"
+                    )
                 }
                 let id = hash[type_ as usize];
                 if id >= fields.len() {
-                    Err(Error::oos("In a union, when the ids are set, each id must be smaller than the number of fields."))
+                    polars_bail!(ComputeError:
+    "in a union, when the ids are set, each id must be smaller than the number of fields."
+                    )
                 } else {
                     Ok(())
                 }
@@ -136,9 +138,9 @@ impl UnionArray {
                 }
             }
             if !is_valid {
-                return Err(Error::oos(
-                    "Every type in `types` must be larger than 0 and smaller than the number of fields.",
-                ));
+                polars_bail!(ComputeError:
+                    "every type in `types` must be larger than 0 and smaller than the number of fields.",
+                )
             }
 
             None
@@ -346,14 +348,14 @@ impl Array for UnionArray {
 }
 
 impl UnionArray {
-    fn try_get_all(data_type: &DataType) -> Result<UnionComponents, Error> {
+    fn try_get_all(data_type: &DataType) -> PolarsResult<UnionComponents> {
         match data_type.to_logical_type() {
             DataType::Union(fields, ids, mode) => {
                 Ok((fields, ids.as_ref().map(|x| x.as_ref()), *mode))
             },
-            _ => Err(Error::oos(
+            _ => polars_bail!(ComputeError:
                 "The UnionArray requires a logical type of DataType::Union",
-            )),
+            )
         }
     }
 

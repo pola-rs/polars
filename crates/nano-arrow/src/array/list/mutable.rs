@@ -1,11 +1,11 @@
 use std::sync::Arc;
+use polars_error::{polars_err, PolarsResult};
 
 use super::ListArray;
 use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::{DataType, Field};
-use crate::error::{Error, Result};
 use crate::offset::{Offset, Offsets};
 use crate::trusted_len::TrustedLen;
 
@@ -64,7 +64,7 @@ where
     M: MutableArray + TryExtend<Option<T>>,
     I: IntoIterator<Item = Option<T>>,
 {
-    fn try_extend<II: IntoIterator<Item = Option<I>>>(&mut self, iter: II) -> Result<()> {
+    fn try_extend<II: IntoIterator<Item = Option<I>>>(&mut self, iter: II) -> PolarsResult<()> {
         let iter = iter.into_iter();
         self.reserve(iter.size_hint().0);
         for items in iter {
@@ -81,7 +81,7 @@ where
     I: IntoIterator<Item = Option<T>>,
 {
     #[inline]
-    fn try_push(&mut self, item: Option<I>) -> Result<()> {
+    fn try_push(&mut self, item: Option<I>) -> PolarsResult<()> {
         if let Some(items) = item {
             let values = self.mut_values();
             values.try_extend(items)?;
@@ -98,7 +98,7 @@ where
     O: Offset,
     M: MutableArray + TryExtendFromSelf,
 {
-    fn try_extend_from_self(&mut self, other: &Self) -> Result<()> {
+    fn try_extend_from_self(&mut self, other: &Self) -> PolarsResult<()> {
         extend_validity(self.len(), &mut self.validity, &other.validity);
 
         self.values.try_extend_from_self(&other.values)?;
@@ -157,10 +157,10 @@ impl<O: Offset, M: MutableArray> MutableListArray<O, M> {
     #[inline]
     /// Needs to be called when a valid value was extended to this array.
     /// This is a relatively low level function, prefer `try_push` when you can.
-    pub fn try_push_valid(&mut self) -> Result<()> {
+    pub fn try_push_valid(&mut self) -> PolarsResult<()> {
         let total_length = self.values.len();
         let offset = self.offsets.last().to_usize();
-        let length = total_length.checked_sub(offset).ok_or(Error::Overflow)?;
+        let length = total_length.checked_sub(offset).ok_or(polars_err!(ComputeError: "overflow"))?;
 
         self.offsets.try_push(length)?;
         if let Some(validity) = &mut self.validity {
@@ -186,7 +186,7 @@ impl<O: Offset, M: MutableArray> MutableListArray<O, M> {
     /// - the new offsets are not in monotonic increasing order.
     /// - any new offset is not in bounds of the backing array.
     /// - the passed iterator has no upper bound.
-    pub fn try_extend_from_lengths<II>(&mut self, iterator: II) -> Result<()>
+    pub fn try_extend_from_lengths<II>(&mut self, iterator: II) -> PolarsResult<()>
     where
         II: TrustedLen<Item = Option<usize>> + Clone,
     {
