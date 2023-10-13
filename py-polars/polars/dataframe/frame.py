@@ -9725,7 +9725,7 @@ class DataFrame:
         on: str | Sequence[str] | None = None,
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
-        how: Literal["left", "inner"] = "left",
+        how: Literal["left", "inner", "outer"] = "left",
     ) -> DataFrame:
         """
         Update the values in this `DataFrame` with the non-null values in `other`.
@@ -9750,10 +9750,12 @@ class DataFrame:
            Join column(s) of the left DataFrame.
         right_on
            Join column(s) of the right DataFrame.
-        how : {'left', 'inner'}
-            'left' will keep all rows from the left table. Rows may be duplicated if
-            multiple rows in right frame match left row's `on` key.
-            'inner' will remove rows that are not found in other
+        how : {'left', 'inner', 'outer'}
+            * 'left' will keep all rows from the left table; rows may be duplicated
+              if multiple rows in the right frame match the left row's key.
+            * 'inner' keeps only those rows where the key exists in both frames.
+            * 'outer' will update existing rows where the key matches while also
+              adding any new rows contained in the given frame.
 
         Examples
         --------
@@ -9777,21 +9779,13 @@ class DataFrame:
         └─────┴─────┘
         >>> new_df = pl.DataFrame(
         ...     {
-        ...         "B": [4, None, 6],
-        ...         "C": [7, 8, 9],
+        ...         "B": [-66, None, -99],
+        ...         "C": [5, 3, 1],
         ...     }
         ... )
-        >>> new_df
-        shape: (3, 2)
-        ┌──────┬─────┐
-        │ B    ┆ C   │
-        │ ---  ┆ --- │
-        │ i64  ┆ i64 │
-        ╞══════╪═════╡
-        │ 4    ┆ 7   │
-        │ null ┆ 8   │
-        │ 6    ┆ 9   │
-        └──────┴─────┘
+
+        Update `df` values with the non-null values in `new_df`, by row index:
+
         >>> df.update(new_df)
         shape: (4, 2)
         ┌─────┬─────┐
@@ -9799,10 +9793,42 @@ class DataFrame:
         │ --- ┆ --- │
         │ i64 ┆ i64 │
         ╞═════╪═════╡
-        │ 1   ┆ 4   │
+        │ 1   ┆ -66 │
         │ 2   ┆ 500 │
-        │ 3   ┆ 6   │
+        │ 3   ┆ -99 │
         │ 4   ┆ 700 │
+        └─────┴─────┘
+
+        Update `df` values with the non-null values in `new_df`, by row index,
+        but only keeping those rows that are common to both frames:
+
+        >>> df.update(new_df, how="inner")
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ A   ┆ B   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ -66 │
+        │ 2   ┆ 500 │
+        │ 3   ┆ -99 │
+        └─────┴─────┘
+
+        Update `df` values with the non-null values in `new_df`, using an outer join
+        strategy that defines explicit join columns in each frame:
+
+        >>> df.update(new_df, left_on=["A"], right_on=["C"], how="outer")
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ A   ┆ B   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ -99 │
+        │ 2   ┆ 500 │
+        │ 3   ┆ 600 │
+        │ 4   ┆ 700 │
+        │ 5   ┆ -66 │
         └─────┴─────┘
 
         """
