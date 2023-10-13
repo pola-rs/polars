@@ -189,7 +189,7 @@ impl FetchRowGroupsFromObjectStore {
         row_groups: Range<usize>,
     ) -> PolarsResult<ColumnStore> {
         // Fetch the required row groups.
-        let row_groups = &self
+        let row_groups = self
             .row_groups_metadata
             .get(row_groups.clone())
             .map_or_else(

@@ -178,7 +178,9 @@ fn rg_to_dfs_optionally_par_over_columns(
         let md = &file_metadata.row_groups[rg];
         let current_row_count = md.num_rows() as IdxSize;
 
-        if use_statistics && !read_this_row_group(predicate.as_ref(), file_metadata, schema, rg)? {
+        if use_statistics
+            && !read_this_row_group(predicate.as_ref(), &file_metadata.row_groups[rg], schema)?
+        {
             *previous_row_count += current_row_count;
             continue;
         }
@@ -273,7 +275,11 @@ fn rg_to_dfs_par_over_rg(
         .map(|(rg_idx, md, local_limit, row_count_start)| {
             if local_limit == 0
                 || use_statistics
-                    && !read_this_row_group(predicate.as_ref(), file_metadata, schema, rg_idx)?
+                    && !read_this_row_group(
+                        predicate.as_ref(),
+                        &file_metadata.row_groups[rg_idx],
+                        schema,
+                    )?
             {
                 return Ok(None);
             }

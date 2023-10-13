@@ -544,34 +544,31 @@ fn push(
     }
 }
 
-/// Deserializes the statistics in the column chunks from all `row_groups`
+/// Deserializes the statistics in the column chunks from a single `row_group`
 /// into [`Statistics`] associated from `field`'s name.
 ///
 /// # Errors
 /// This function errors if the deserialization of the statistics fails (e.g. invalid utf8)
-pub fn deserialize(field: &Field, row_groups: &[RowGroupMetaData]) -> Result<Statistics> {
+pub fn deserialize(field: &Field, row_group: &RowGroupMetaData) -> Result<Statistics> {
     let mut statistics = MutableStatistics::try_new(field)?;
 
-    // transpose
-    row_groups.iter().try_for_each(|group| {
-        let columns = get_field_columns(group.columns(), field.name.as_ref());
-        let mut stats = columns
-            .into_iter()
-            .map(|column| {
-                Ok((
-                    column.statistics().transpose()?,
-                    column.descriptor().descriptor.primitive_type.clone(),
-                ))
-            })
-            .collect::<Result<VecDeque<(Option<_>, ParquetPrimitiveType)>>>()?;
-        push(
-            &mut stats,
-            statistics.min_value.as_mut(),
-            statistics.max_value.as_mut(),
-            statistics.distinct_count.as_mut(),
-            statistics.null_count.as_mut(),
-        )
-    })?;
+    let columns = get_field_columns(row_group.columns(), field.name.as_ref());
+    let mut stats = columns
+        .into_iter()
+        .map(|column| {
+            Ok((
+                column.statistics().transpose()?,
+                column.descriptor().descriptor.primitive_type.clone(),
+            ))
+        })
+        .collect::<Result<VecDeque<(Option<_>, ParquetPrimitiveType)>>>()?;
+    push(
+        &mut stats,
+        statistics.min_value.as_mut(),
+        statistics.max_value.as_mut(),
+        statistics.distinct_count.as_mut(),
+        statistics.null_count.as_mut(),
+    )?;
 
     Ok(statistics.into())
 }
