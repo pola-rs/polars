@@ -1,6 +1,7 @@
 use std::ops::Add;
 
 use multiversion::multiversion;
+use polars_error::PolarsResult;
 
 use crate::array::{Array, PrimitiveArray};
 use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact};
@@ -119,7 +120,7 @@ pub fn can_sum(data_type: &DataType) -> bool {
 /// and logical types as `array`.
 /// # Error
 /// Errors iff the operation is not supported.
-pub fn sum(array: &dyn Array) -> Result<Box<dyn Scalar>> {
+pub fn sum(array: &dyn Array) -> PolarsResult<Box<dyn Scalar>> {
     Ok(match array.data_type().to_physical_type() {
         PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
             let data_type = array.data_type().clone();
@@ -127,10 +128,7 @@ pub fn sum(array: &dyn Array) -> Result<Box<dyn Scalar>> {
             Box::new(PrimitiveScalar::new(data_type, sum_primitive::<$T>(array)))
         }),
         _ => {
-            return Err(Error::InvalidArgumentError(format!(
-                "The `sum` operator does not support type `{:?}`",
-                array.data_type(),
-            )))
+            unimplemented!()
         },
     })
 }

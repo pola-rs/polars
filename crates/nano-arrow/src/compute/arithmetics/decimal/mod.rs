@@ -9,11 +9,12 @@ mod div;
 pub use div::*;
 mod mul;
 pub use mul::*;
+use polars_error::{polars_bail, PolarsResult};
+
 mod sub;
 pub use sub::*;
 
 use crate::datatypes::DataType;
-use crate::error::{Error, Result};
 
 /// Maximum value that can exist with a selected precision
 #[inline]
@@ -35,16 +36,16 @@ fn number_digits(num: i128) -> usize {
     digit as usize
 }
 
-fn get_parameters(lhs: &DataType, rhs: &DataType) -> Result<(usize, usize)> {
+fn get_parameters(lhs: &DataType, rhs: &DataType) -> PolarsResult<(usize, usize)> {
     if let (DataType::Decimal(lhs_p, lhs_s), DataType::Decimal(rhs_p, rhs_s)) =
         (lhs.to_logical_type(), rhs.to_logical_type())
     {
         if lhs_p == rhs_p && lhs_s == rhs_s {
             Ok((*lhs_p, *lhs_s))
         } else {
-            Err(Error::InvalidArgumentError(
-                "Arrays must have the same precision and scale".to_string(),
-            ))
+            polars_bail!(InvalidOperation:
+                "Arrays must have the same precision and scale"
+            )
         }
     } else {
         unreachable!()

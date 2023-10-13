@@ -1,9 +1,9 @@
+use polars_error::PolarsResult;
 use crate::array::{Array, BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
-use crate::error::Result;
 use crate::offset::Offset;
 use crate::types::NativeType;
 
-pub(super) fn boolean_to_primitive_dyn<T>(array: &dyn Array) -> Result<Box<dyn Array>>
+pub(super) fn boolean_to_primitive_dyn<T>(array: &dyn Array) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType + num_traits::One,
 {
@@ -31,7 +31,7 @@ pub fn boolean_to_utf8<O: Offset>(from: &BooleanArray) -> Utf8Array<O> {
     Utf8Array::from_trusted_len_values_iter(iter)
 }
 
-pub(super) fn boolean_to_utf8_dyn<O: Offset>(array: &dyn Array) -> Result<Box<dyn Array>> {
+pub(super) fn boolean_to_utf8_dyn<O: Offset>(array: &dyn Array) -> PolarsResult<Box<dyn Array>> {
     let array = array.as_any().downcast_ref().unwrap();
     Ok(Box::new(boolean_to_utf8::<O>(array)))
 }
@@ -42,7 +42,7 @@ pub fn boolean_to_binary<O: Offset>(from: &BooleanArray) -> BinaryArray<O> {
     BinaryArray::from_trusted_len_values_iter(iter)
 }
 
-pub(super) fn boolean_to_binary_dyn<O: Offset>(array: &dyn Array) -> Result<Box<dyn Array>> {
+pub(super) fn boolean_to_binary_dyn<O: Offset>(array: &dyn Array) -> PolarsResult<Box<dyn Array>> {
     let array = array.as_any().downcast_ref().unwrap();
     Ok(Box::new(boolean_to_binary::<O>(array)))
 }

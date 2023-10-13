@@ -1,13 +1,13 @@
 //! Defines the division arithmetic kernels for Decimal
 //! `PrimitiveArrays`.
 
+use polars_error::{polars_bail, PolarsResult};
 use super::{adjusted_precision_scale, get_parameters, max_value, number_digits};
 use crate::array::PrimitiveArray;
 use crate::compute::arithmetics::{ArrayCheckedDiv, ArrayDiv};
 use crate::compute::arity::{binary, binary_checked, unary};
 use crate::compute::utils::{check_same_len, combine_validities};
 use crate::datatypes::DataType;
-use crate::error::{Error, Result};
 use crate::scalar::{PrimitiveScalar, Scalar};
 
 /// Divide two decimal primitive arrays with the same precision and scale. If
@@ -237,7 +237,7 @@ impl ArrayCheckedDiv<PrimitiveArray<i128>> for PrimitiveArray<i128> {
 pub fn adaptive_div(
     lhs: &PrimitiveArray<i128>,
     rhs: &PrimitiveArray<i128>,
-) -> Result<PrimitiveArray<i128>> {
+) -> PolarsResult<PrimitiveArray<i128>> {
     check_same_len(lhs, rhs)?;
 
     let (lhs_p, lhs_s, rhs_p, rhs_s) =
@@ -246,9 +246,7 @@ pub fn adaptive_div(
         {
             (*lhs_p, *lhs_s, *rhs_p, *rhs_s)
         } else {
-            return Err(Error::InvalidArgumentError(
-                "Incorrect data type for the array".to_string(),
-            ));
+            polars_bail!(ComputeError: "Incorrect data type for the array")
         };
 
     // The resulting precision is mutable because it could change while

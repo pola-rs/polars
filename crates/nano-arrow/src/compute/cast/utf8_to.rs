@@ -1,9 +1,9 @@
 use chrono::Datelike;
+use polars_error::PolarsResult;
 
 use super::CastOptions;
 use crate::array::*;
 use crate::datatypes::DataType;
-use crate::error::Result;
 use crate::offset::Offset;
 use crate::temporal_conversions::{
     utf8_to_naive_timestamp_ns as utf8_to_naive_timestamp_ns_,
@@ -44,7 +44,7 @@ pub(super) fn utf8_to_primitive_dyn<O: Offset, T>(
     from: &dyn Array,
     to: &DataType,
     options: CastOptions,
-) -> Result<Box<dyn Array>>
+) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType + lexical_core::FromLexical,
 {
@@ -68,7 +68,7 @@ pub fn utf8_to_date32<O: Offset>(from: &Utf8Array<O>) -> PrimitiveArray<i32> {
     PrimitiveArray::<i32>::from_trusted_len_iter(iter).to(DataType::Date32)
 }
 
-pub(super) fn utf8_to_date32_dyn<O: Offset>(from: &dyn Array) -> Result<Box<dyn Array>> {
+pub(super) fn utf8_to_date32_dyn<O: Offset>(from: &dyn Array) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(utf8_to_date32::<O>(from)))
 }
@@ -85,14 +85,14 @@ pub fn utf8_to_date64<O: Offset>(from: &Utf8Array<O>) -> PrimitiveArray<i64> {
     PrimitiveArray::from_trusted_len_iter(iter).to(DataType::Date64)
 }
 
-pub(super) fn utf8_to_date64_dyn<O: Offset>(from: &dyn Array) -> Result<Box<dyn Array>> {
+pub(super) fn utf8_to_date64_dyn<O: Offset>(from: &dyn Array) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(utf8_to_date64::<O>(from)))
 }
 
 pub(super) fn utf8_to_dictionary_dyn<O: Offset, K: DictionaryKey>(
     from: &dyn Array,
-) -> Result<Box<dyn Array>> {
+) -> PolarsResult<Box<dyn Array>> {
     let values = from.as_any().downcast_ref().unwrap();
     utf8_to_dictionary::<O, K>(values).map(|x| Box::new(x) as Box<dyn Array>)
 }
@@ -103,7 +103,7 @@ pub(super) fn utf8_to_dictionary_dyn<O: Offset, K: DictionaryKey>(
 /// in the array.
 pub fn utf8_to_dictionary<O: Offset, K: DictionaryKey>(
     from: &Utf8Array<O>,
-) -> Result<DictionaryArray<K>> {
+) -> PolarsResult<DictionaryArray<K>> {
     let mut array = MutableDictionaryArray::<K, MutableUtf8Array<O>>::new();
     array.try_extend(from.iter())?;
 
@@ -112,7 +112,7 @@ pub fn utf8_to_dictionary<O: Offset, K: DictionaryKey>(
 
 pub(super) fn utf8_to_naive_timestamp_ns_dyn<O: Offset>(
     from: &dyn Array,
-) -> Result<Box<dyn Array>> {
+) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(utf8_to_naive_timestamp_ns::<O>(from)))
 }
@@ -125,7 +125,7 @@ pub fn utf8_to_naive_timestamp_ns<O: Offset>(from: &Utf8Array<O>) -> PrimitiveAr
 pub(super) fn utf8_to_timestamp_ns_dyn<O: Offset>(
     from: &dyn Array,
     timezone: String,
-) -> Result<Box<dyn Array>> {
+) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
     utf8_to_timestamp_ns::<O>(from, timezone)
         .map(Box::new)
@@ -136,7 +136,7 @@ pub(super) fn utf8_to_timestamp_ns_dyn<O: Offset>(
 pub fn utf8_to_timestamp_ns<O: Offset>(
     from: &Utf8Array<O>,
     timezone: String,
-) -> Result<PrimitiveArray<i64>> {
+) -> PolarsResult<PrimitiveArray<i64>> {
     utf8_to_timestamp_ns_(from, RFC3339, timezone)
 }
 
@@ -152,7 +152,7 @@ pub fn utf8_to_large_utf8(from: &Utf8Array<i32>) -> Utf8Array<i64> {
 }
 
 /// Conversion of utf8
-pub fn utf8_large_to_utf8(from: &Utf8Array<i64>) -> Result<Utf8Array<i32>> {
+pub fn utf8_large_to_utf8(from: &Utf8Array<i64>) -> PolarsResult<Utf8Array<i32>> {
     let data_type = Utf8Array::<i32>::default_data_type();
     let validity = from.validity().cloned();
     let values = from.values().clone();

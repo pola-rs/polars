@@ -1,11 +1,11 @@
 #![allow(clippy::redundant_closure_call)]
 use multiversion::multiversion;
+use polars_error::{polars_bail, PolarsResult};
 
 use crate::array::{Array, BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
 use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{DataType, PhysicalType, PrimitiveType};
-use crate::error::{Error, Result};
 use crate::offset::Offset;
 use crate::scalar::*;
 use crate::types::simd::*;
@@ -319,7 +319,7 @@ macro_rules! dyn_generic {
 /// Returns the maximum of [`Array`]. The scalar is null when all elements are null.
 /// # Error
 /// Errors iff the type does not support this operation.
-pub fn max(array: &dyn Array) -> Result<Box<dyn Scalar>> {
+pub fn max(array: &dyn Array) -> PolarsResult<Box<dyn Scalar>> {
     Ok(match array.data_type().to_physical_type() {
         PhysicalType::Boolean => dyn_generic!(BooleanArray, BooleanScalar, array, max_boolean),
         PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
@@ -336,10 +336,7 @@ pub fn max(array: &dyn Array) -> Result<Box<dyn Scalar>> {
             dyn_generic!(BinaryArray<i64>, BinaryScalar<i64>, array, min_binary)
         },
         _ => {
-            return Err(Error::InvalidArgumentError(format!(
-                "The `max` operator does not support type `{:?}`",
-                array.data_type(),
-            )))
+            polars_bail!(InvalidOperation: "max not supported")
         },
     })
 }
@@ -347,7 +344,7 @@ pub fn max(array: &dyn Array) -> Result<Box<dyn Scalar>> {
 /// Returns the minimum of [`Array`]. The scalar is null when all elements are null.
 /// # Error
 /// Errors iff the type does not support this operation.
-pub fn min(array: &dyn Array) -> Result<Box<dyn Scalar>> {
+pub fn min(array: &dyn Array) -> PolarsResult<Box<dyn Scalar>> {
     Ok(match array.data_type().to_physical_type() {
         PhysicalType::Boolean => dyn_generic!(BooleanArray, BooleanScalar, array, min_boolean),
         PhysicalType::Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
@@ -364,10 +361,7 @@ pub fn min(array: &dyn Array) -> Result<Box<dyn Scalar>> {
             dyn_generic!(BinaryArray<i64>, BinaryScalar<i64>, array, min_binary)
         },
         _ => {
-            return Err(Error::InvalidArgumentError(format!(
-                "The `max` operator does not support type `{:?}`",
-                array.data_type(),
-            )))
+            polars_bail!(InvalidOperation: "min not supported")
         },
     })
 }

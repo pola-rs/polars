@@ -1,8 +1,8 @@
 use num_traits::{AsPrimitive, Float, NumCast};
+use polars_error::PolarsResult;
 
 use crate::array::*;
 use crate::datatypes::DataType;
-use crate::error::Result;
 use crate::types::NativeType;
 
 #[inline]
@@ -75,7 +75,7 @@ pub(super) fn decimal_to_decimal_dyn(
     from: &dyn Array,
     to_precision: usize,
     to_scale: usize,
-) -> Result<Box<dyn Array>> {
+) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(decimal_to_decimal(from, to_precision, to_scale)))
 }
@@ -102,7 +102,7 @@ where
     PrimitiveArray::<T>::new(T::PRIMITIVE.into(), values, from.validity().cloned())
 }
 
-pub(super) fn decimal_to_float_dyn<T>(from: &dyn Array) -> Result<Box<dyn Array>>
+pub(super) fn decimal_to_float_dyn<T>(from: &dyn Array) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType + Float,
     f64: AsPrimitive<T>,
@@ -128,7 +128,7 @@ where
     PrimitiveArray::from_trusted_len_iter(values)
 }
 
-pub(super) fn decimal_to_integer_dyn<T>(from: &dyn Array) -> Result<Box<dyn Array>>
+pub(super) fn decimal_to_integer_dyn<T>(from: &dyn Array) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType + NumCast,
 {

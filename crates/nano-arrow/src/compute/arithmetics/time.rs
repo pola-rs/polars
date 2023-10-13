@@ -12,11 +12,11 @@
 use std::ops::{Add, Sub};
 
 use num_traits::AsPrimitive;
+use polars_error::{polars_bail, PolarsResult};
 
 use crate::array::PrimitiveArray;
 use crate::compute::arity::{binary, unary};
 use crate::datatypes::{DataType, TimeUnit};
-use crate::error::{Error, Result};
 use crate::scalar::{PrimitiveScalar, Scalar};
 use crate::temporal_conversions;
 use crate::types::{months_days_ns, NativeType};
@@ -24,7 +24,7 @@ use crate::types::{months_days_ns, NativeType};
 /// Creates the scale required to add or subtract a Duration to a time array
 /// (Timestamp, Time, or Date). The resulting scale always multiplies the rhs
 /// number (Duration) so it can be added to the lhs number (time array).
-fn create_scale(lhs: &DataType, rhs: &DataType) -> Result<f64> {
+fn create_scale(lhs: &DataType, rhs: &DataType) -> PolarsResult<f64> {
     // Matching on both data types from both numbers to calculate the correct
     // scale for the operation. The timestamp, Time and duration have a
     // Timeunit enum in its data type. This enum is used to describe the
@@ -52,9 +52,9 @@ fn create_scale(lhs: &DataType, rhs: &DataType) -> Result<f64> {
             temporal_conversions::timeunit_scale(TimeUnit::Millisecond, *timeunit)
         },
         _ => {
-            return Err(Error::InvalidArgumentError(
-                "Incorrect data type for the arguments".to_string(),
-            ));
+            polars_bail!(ComputeError:
+                "Incorrect data type for the arguments"
+            )
         },
     };
 
@@ -254,7 +254,7 @@ where
 pub fn subtract_timestamps(
     lhs: &PrimitiveArray<i64>,
     rhs: &PrimitiveArray<i64>,
-) -> Result<PrimitiveArray<i64>> {
+) -> PolarsResult<PrimitiveArray<i64>> {
     // Matching on both data types from both arrays.
     // Both timestamps have a Timeunit enum in its data type.
     // This enum is used to adjust the scale between the timestamps.
@@ -269,9 +269,9 @@ pub fn subtract_timestamps(
 
             Ok(binary(lhs, rhs, DataType::Duration(*timeunit_a), op))
         },
-        _ => Err(Error::InvalidArgumentError(
-            "Incorrect data type for the arguments".to_string(),
-        )),
+        _ => polars_bail!(ComputeError:
+            "Incorrect data type for the arguments"
+        )
     }
 }
 
@@ -279,7 +279,7 @@ pub fn subtract_timestamps(
 pub fn sub_timestamps_scalar(
     lhs: &PrimitiveArray<i64>,
     rhs: &PrimitiveScalar<i64>,
-) -> Result<PrimitiveArray<i64>> {
+) -> PolarsResult<PrimitiveArray<i64>> {
     let (scale, timeunit_a) =
         if let (DataType::Timestamp(timeunit_a, None), DataType::Timestamp(timeunit_b, None)) =
             (lhs.data_type(), rhs.data_type())
@@ -313,7 +313,7 @@ pub fn sub_timestamps_scalar(
 pub fn add_interval(
     timestamp: &PrimitiveArray<i64>,
     interval: &PrimitiveArray<months_days_ns>,
-) -> Result<PrimitiveArray<i64>> {
+) -> PolarsResult<PrimitiveArray<i64>> {
     match timestamp.data_type().to_logical_type() {
         DataType::Timestamp(time_unit, Some(timezone_str)) => {
             let time_unit = *time_unit;
@@ -371,7 +371,7 @@ pub fn add_interval(
 pub fn add_interval_scalar(
     timestamp: &PrimitiveArray<i64>,
     interval: &PrimitiveScalar<months_days_ns>,
-) -> Result<PrimitiveArray<i64>> {
+) -> PolarsResult<PrimitiveArray<i64>> {
     let interval = if let Some(interval) = *interval.value() {
         interval
     } else {

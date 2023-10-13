@@ -1,11 +1,11 @@
 //! Defines the addition arithmetic kernels for [`PrimitiveArray`] representing decimals.
+use polars_error::{polars_bail, PolarsResult};
 use super::{adjusted_precision_scale, get_parameters, max_value, number_digits};
 use crate::array::PrimitiveArray;
 use crate::compute::arithmetics::{ArrayAdd, ArrayCheckedAdd, ArraySaturatingAdd};
 use crate::compute::arity::{binary, binary_checked};
 use crate::compute::utils::{check_same_len, combine_validities};
 use crate::datatypes::DataType;
-use crate::error::{Error, Result};
 
 /// Adds two decimal [`PrimitiveArray`] with the same precision and scale.
 /// # Error
@@ -13,21 +13,6 @@ use crate::error::{Error, Result};
 /// # Panic
 /// This function panics iff the added numbers result in a number larger than
 /// the possible number for the precision.
-///
-/// # Examples
-/// ```
-/// use arrow2::compute::arithmetics::decimal::add;
-/// use arrow2::array::PrimitiveArray;
-/// use arrow2::datatypes::DataType;
-///
-/// let a = PrimitiveArray::from([Some(1i128), Some(1i128), None, Some(2i128)]).to(DataType::Decimal(5, 2));
-/// let b = PrimitiveArray::from([Some(1i128), Some(2i128), None, Some(2i128)]).to(DataType::Decimal(5, 2));
-///
-/// let result = add(&a, &b);
-/// let expected = PrimitiveArray::from([Some(2i128), Some(3i128), None, Some(4i128)]).to(DataType::Decimal(5, 2));
-///
-/// assert_eq!(result, expected);
-/// ```
 pub fn add(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveArray<i128>) -> PrimitiveArray<i128> {
     let (precision, _) = get_parameters(lhs.data_type(), rhs.data_type()).unwrap();
 
@@ -176,7 +161,7 @@ impl ArraySaturatingAdd<PrimitiveArray<i128>> for PrimitiveArray<i128> {
 pub fn adaptive_add(
     lhs: &PrimitiveArray<i128>,
     rhs: &PrimitiveArray<i128>,
-) -> Result<PrimitiveArray<i128>> {
+) -> PolarsResult<PrimitiveArray<i128>> {
     check_same_len(lhs, rhs)?;
 
     let (lhs_p, lhs_s, rhs_p, rhs_s) =
@@ -185,9 +170,7 @@ pub fn adaptive_add(
         {
             (*lhs_p, *lhs_s, *rhs_p, *rhs_s)
         } else {
-            return Err(Error::InvalidArgumentError(
-                "Incorrect data type for the array".to_string(),
-            ));
+            polars_bail!(ComputeError: "Incorrect data type for the array")
         };
 
     // The resulting precision is mutable because it could change while

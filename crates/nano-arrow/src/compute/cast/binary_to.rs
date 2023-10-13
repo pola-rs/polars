@@ -1,7 +1,7 @@
+use polars_error::PolarsResult;
 use super::CastOptions;
 use crate::array::*;
 use crate::datatypes::DataType;
-use crate::error::Result;
 use crate::offset::{Offset, Offsets};
 use crate::types::NativeType;
 
@@ -20,7 +20,7 @@ pub fn binary_to_large_binary(from: &BinaryArray<i32>, to_data_type: DataType) -
 pub fn binary_large_to_binary(
     from: &BinaryArray<i64>,
     to_data_type: DataType,
-) -> Result<BinaryArray<i32>> {
+) -> PolarsResult<BinaryArray<i32>> {
     let values = from.values().clone();
     let offsets = from.offsets().try_into()?;
     Ok(BinaryArray::<i32>::new(
@@ -35,7 +35,7 @@ pub fn binary_large_to_binary(
 pub fn binary_to_utf8<O: Offset>(
     from: &BinaryArray<O>,
     to_data_type: DataType,
-) -> Result<Utf8Array<O>> {
+) -> PolarsResult<Utf8Array<O>> {
     Utf8Array::<O>::try_new(
         to_data_type,
         from.offsets().clone(),
@@ -50,7 +50,7 @@ pub fn binary_to_utf8<O: Offset>(
 pub fn binary_to_large_utf8(
     from: &BinaryArray<i32>,
     to_data_type: DataType,
-) -> Result<Utf8Array<i64>> {
+) -> PolarsResult<Utf8Array<i64>> {
     let values = from.values().clone();
     let offsets = from.offsets().into();
 
@@ -88,7 +88,7 @@ pub(super) fn binary_to_primitive_dyn<O: Offset, T>(
     from: &dyn Array,
     to: &DataType,
     options: CastOptions,
-) -> Result<Box<dyn Array>>
+) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType + lexical_core::FromLexical,
 {
@@ -106,7 +106,7 @@ where
 /// in the array.
 pub fn binary_to_dictionary<O: Offset, K: DictionaryKey>(
     from: &BinaryArray<O>,
-) -> Result<DictionaryArray<K>> {
+) -> PolarsResult<DictionaryArray<K>> {
     let mut array = MutableDictionaryArray::<K, MutableBinaryArray<O>>::new();
     array.try_extend(from.iter())?;
 
@@ -115,7 +115,7 @@ pub fn binary_to_dictionary<O: Offset, K: DictionaryKey>(
 
 pub(super) fn binary_to_dictionary_dyn<O: Offset, K: DictionaryKey>(
     from: &dyn Array,
-) -> Result<Box<dyn Array>> {
+) -> PolarsResult<Box<dyn Array>> {
     let values = from.as_any().downcast_ref().unwrap();
     binary_to_dictionary::<O, K>(values).map(|x| Box::new(x) as Box<dyn Array>)
 }

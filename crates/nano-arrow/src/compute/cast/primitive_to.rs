@@ -1,13 +1,13 @@
 use std::hash::Hash;
 
 use num_traits::{AsPrimitive, Float, ToPrimitive};
+use polars_error::PolarsResult;
 
 use super::CastOptions;
 use crate::array::*;
 use crate::bitmap::Bitmap;
 use crate::compute::arity::unary;
 use crate::datatypes::{DataType, IntervalUnit, TimeUnit};
-use crate::error::Result;
 use crate::offset::{Offset, Offsets};
 use crate::temporal_conversions::*;
 use crate::types::{days_ms, f16, months_days_ns, NativeType};
@@ -48,7 +48,7 @@ pub fn primitive_to_binary<T: NativeType + lexical_core::ToLexical, O: Offset>(
     }
 }
 
-pub(super) fn primitive_to_binary_dyn<T, O>(from: &dyn Array) -> Result<Box<dyn Array>>
+pub(super) fn primitive_to_binary_dyn<T, O>(from: &dyn Array) -> PolarsResult<Box<dyn Array>>
 where
     O: Offset,
     T: NativeType + lexical_core::ToLexical,
@@ -72,7 +72,7 @@ pub fn primitive_to_boolean<T: NativeType>(
 pub(super) fn primitive_to_boolean_dyn<T>(
     from: &dyn Array,
     to_type: DataType,
-) -> Result<Box<dyn Array>>
+) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType,
 {
@@ -116,7 +116,7 @@ pub fn primitive_to_utf8<T: NativeType + lexical_core::ToLexical, O: Offset>(
     }
 }
 
-pub(super) fn primitive_to_utf8_dyn<T, O>(from: &dyn Array) -> Result<Box<dyn Array>>
+pub(super) fn primitive_to_utf8_dyn<T, O>(from: &dyn Array) -> PolarsResult<Box<dyn Array>>
 where
     O: Offset,
     T: NativeType + lexical_core::ToLexical,
@@ -129,7 +129,7 @@ pub(super) fn primitive_to_primitive_dyn<I, O>(
     from: &dyn Array,
     to_type: &DataType,
     options: CastOptions,
-) -> Result<Box<dyn Array>>
+) -> PolarsResult<Box<dyn Array>>
 where
     I: NativeType + num_traits::NumCast + num_traits::AsPrimitive<O>,
     O: NativeType + num_traits::NumCast,
@@ -190,7 +190,7 @@ pub(super) fn integer_to_decimal_dyn<T>(
     from: &dyn Array,
     precision: usize,
     scale: usize,
-) -> Result<Box<dyn Array>>
+) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType + AsPrimitive<i128>,
 {
@@ -235,7 +235,7 @@ pub(super) fn float_to_decimal_dyn<T>(
     from: &dyn Array,
     precision: usize,
     scale: usize,
-) -> Result<Box<dyn Array>>
+) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType + Float + ToPrimitive,
     f64: AsPrimitive<T>,
@@ -278,7 +278,7 @@ where
 pub(super) fn primitive_to_same_primitive_dyn<T>(
     from: &dyn Array,
     to_type: &DataType,
-) -> Result<Box<dyn Array>>
+) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType,
 {
@@ -288,7 +288,7 @@ where
 
 pub(super) fn primitive_to_dictionary_dyn<T: NativeType + Eq + Hash, K: DictionaryKey>(
     from: &dyn Array,
-) -> Result<Box<dyn Array>> {
+) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
     primitive_to_dictionary::<T, K>(from).map(|x| Box::new(x) as Box<dyn Array>)
 }
@@ -299,7 +299,7 @@ pub(super) fn primitive_to_dictionary_dyn<T: NativeType + Eq + Hash, K: Dictiona
 /// in the array.
 pub fn primitive_to_dictionary<T: NativeType + Eq + Hash, K: DictionaryKey>(
     from: &PrimitiveArray<T>,
-) -> Result<DictionaryArray<K>> {
+) -> PolarsResult<DictionaryArray<K>> {
     let iter = from.iter().map(|x| x.copied());
     let mut array = MutableDictionaryArray::<K, _>::try_empty(MutablePrimitiveArray::<T>::from(
         from.data_type().clone(),
@@ -472,7 +472,7 @@ fn chrono_tz_timestamp_to_utf8<O: Offset>(
     from: &PrimitiveArray<i64>,
     time_unit: TimeUnit,
     timezone_str: &str,
-) -> Result<Utf8Array<O>> {
+) -> PolarsResult<Utf8Array<O>> {
     let timezone = parse_offset_tz(timezone_str)?;
     Ok(timestamp_to_utf8_impl::<O, chrono_tz::Tz>(
         from, time_unit, timezone,
@@ -484,12 +484,11 @@ fn chrono_tz_timestamp_to_utf8<O: Offset>(
     _: &PrimitiveArray<i64>,
     _: TimeUnit,
     timezone_str: &str,
-) -> Result<Utf8Array<O>> {
-    use crate::error::Error;
-    Err(Error::InvalidArgumentError(format!(
+) -> PolarsResult<Utf8Array<O>> {
+    panic!(
         "timezone \"{}\" cannot be parsed (feature chrono-tz is not active)",
         timezone_str
-    )))
+    )
 }
 
 /// Returns a [`Utf8Array`] where every element is the utf8 representation of the timestamp in the rfc3339 format.
@@ -497,7 +496,7 @@ pub fn timestamp_to_utf8<O: Offset>(
     from: &PrimitiveArray<i64>,
     time_unit: TimeUnit,
     timezone_str: &str,
-) -> Result<Utf8Array<O>> {
+) -> PolarsResult<Utf8Array<O>> {
     let timezone = parse_offset(timezone_str);
 
     if let Ok(timezone) = timezone {
