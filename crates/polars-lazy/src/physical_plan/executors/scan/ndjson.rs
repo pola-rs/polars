@@ -19,7 +19,7 @@ impl AnonymousScan for LazyJsonLineReader {
             .finish()
     }
 
-    fn schema(&self, infer_schema_length: Option<usize>) -> PolarsResult<Schema> {
+    fn schema(&self, infer_schema_length: Option<usize>) -> PolarsResult<SchemaRef> {
         // Short-circuit schema inference if the schema has been explicitly provided.
         if let Some(schema) = &self.schema {
             return Ok(schema.clone());
@@ -32,7 +32,7 @@ impl AnonymousScan for LazyJsonLineReader {
             polars_json::ndjson::infer(&mut reader, infer_schema_length).map_err(to_compute_err)?;
         let schema = Schema::from_iter(StructArray::get_fields(&data_type));
 
-        Ok(schema)
+        Ok(Arc::new(schema))
     }
     fn allows_projection_pushdown(&self) -> bool {
         true

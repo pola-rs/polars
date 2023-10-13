@@ -11,7 +11,7 @@ pub struct LazyJsonLineReader {
     pub(crate) batch_size: Option<usize>,
     pub(crate) low_memory: bool,
     pub(crate) rechunk: bool,
-    pub(crate) schema: Option<Schema>,
+    pub(crate) schema: Option<SchemaRef>,
     pub(crate) row_count: Option<RowCount>,
     pub(crate) infer_schema_length: Option<usize>,
     pub(crate) n_rows: Option<usize>,
@@ -54,8 +54,8 @@ impl LazyJsonLineReader {
     }
     /// Set the JSON file's schema
     #[must_use]
-    pub fn with_schema(mut self, schema: Schema) -> Self {
-        self.schema = Some(schema);
+    pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
+        self.schema = schema;
         self
     }
 

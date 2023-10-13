@@ -438,7 +438,7 @@ fn scan_anonymous_fn() -> PolarsResult<()> {
     let function = Arc::new(|_scan_opts: AnonymousScanOptions| Ok(fruits_cars()));
 
     let args = ScanArgsAnonymous {
-        schema: Some(fruits_cars().schema()),
+        schema: Some(Arc::new(fruits_cars().schema())),
         ..ScanArgsAnonymous::default()
     };
 

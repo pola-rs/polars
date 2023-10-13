@@ -132,17 +132,17 @@ impl PyLazyFrame {
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
 
-        let mut lf = LazyJsonLineReader::new(path)
+        let lf = LazyJsonLineReader::new(path)
             .with_infer_schema_length(infer_schema_length)
             .with_batch_size(batch_size)
             .with_n_rows(n_rows)
             .low_memory(low_memory)
             .with_rechunk(rechunk)
-            .with_row_count(row_count);
-        if let Some(schema) = schema {
-            lf = lf.with_schema(schema.0);
-        }
-        let lf = lf.finish().map_err(PyPolarsErr::from)?;
+            .with_schema(schema.map(|schema| schema.0))
+            .with_row_count(row_count)
+            .finish()
+            .map_err(PyPolarsErr::from)?;
+
         Ok(lf.into())
     }
 
