@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
-from polars.exceptions import TimeZoneAwareConstructorWarning
+from polars.exceptions import DuplicateError, TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
 
@@ -685,6 +685,13 @@ def test_init_series() -> None:
     assert df.schema == {"x": pl.Date, "y": pl.Boolean}
     assert df.rows() == [(None, True)]
 
+    # Behavior for mixed named and unnamed series.
+    assert pl.DataFrame([pl.Series(), pl.Series("x"), pl.Series()]).columns == [
+        "column_0",
+        "x",
+        "column_2",
+    ]
+
     # Single Series
     df = pl.DataFrame(pl.Series("a", [1, 2, 3]))
     expected = pl.DataFrame({"a": [1, 2, 3]})
@@ -853,6 +860,10 @@ def test_init_errors() -> None:
     # Unmatched input
     with pytest.raises(TypeError):
         pl.DataFrame(0)
+
+    # Duplicate schema
+    with pytest.raises(DuplicateError):
+        pl.DataFrame(schema=["", ""])
 
 
 def test_init_records() -> None:

@@ -10,7 +10,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, DuplicateError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -475,6 +475,34 @@ def test_from_arrow() -> None:
     )
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]  # type: ignore[union-attr]
     assert df.schema == {"a": pl.UInt32, "b": pl.UInt64}  # type: ignore[union-attr]
+
+    # empty string column name
+    df = pl.select(pl.Series("", [1], pl.Int8), pl.Series("a", [1], pl.Int8))
+    dfs = (df.select(""), df)
+
+    for df in dfs:
+        assert pl.DataFrame(df.to_arrow()).schema == df.schema
+        assert pl.DataFrame(df.head(0).to_arrow()).schema == df.schema
+
+
+def test_from_arrow_duplicate_names() -> None:
+    a1 = pa.array([1])
+    a2 = pa.array([2])
+    tbl_base = pa.Table.from_arrays([a1, a2], names=["x", "x"])
+
+    for tbl in (
+        tbl_base.rename_columns(["", ""]),
+        tbl_base.rename_columns(["a", "a"]),
+    ):
+        with pytest.raises(DuplicateError):
+            pl.DataFrame(tbl)
+
+        assert pl.DataFrame(tbl, schema=("a", "")).to_dicts() == [
+            {
+                "a": 1,
+                "": 2,
+            }
+        ]
 
 
 def test_from_pandas_dataframe() -> None:

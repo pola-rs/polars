@@ -62,7 +62,12 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ComputeError, ShapeError, TimeZoneAwareConstructorWarning
+from polars.exceptions import (
+    ComputeError,
+    DuplicateError,
+    ShapeError,
+    TimeZoneAwareConstructorWarning,
+)
 from polars.utils._wrap import wrap_df, wrap_s
 from polars.utils.meta import get_index_type, threadpool_size
 from polars.utils.various import (
@@ -709,10 +714,13 @@ def _unpack_schema(
         # coerce schema to list[str | tuple[str, PolarsDataType | PythonDataType | None]
         schema = list(schema.items())
     else:
-        column_names = [
-            (col or f"column_{i}") if isinstance(col, str) else col[0]
-            for i, col in enumerate(schema)
-        ]
+        # Check for duplicates.
+        column_names = {col if isinstance(col, str) else col[0]: None for col in schema}  # type: ignore[assignment]
+
+        if len(column_names) != len(schema):
+            raise DuplicateError("Schema contained duplicate column names")
+
+        column_names = list(column_names)
 
     # determine column dtypes from schema and lookup_names
     lookup: dict[str, str] | None = (
@@ -918,9 +926,8 @@ def _sequence_of_series_to_pydf(
     schema_overrides: SchemaDict | None,
     **kwargs: Any,
 ) -> PyDataFrame:
-    series_names = [s.name for s in data]
     column_names, schema_overrides = _unpack_schema(
-        schema or series_names,
+        schema or [s.name or f"column_{i}" for i, s in enumerate(data)],
         schema_overrides=schema_overrides,
         n_expected=len(data),
     )
@@ -1443,9 +1450,17 @@ def arrow_to_pydf(
 ) -> PyDataFrame:
     """Construct a PyDataFrame from an Arrow Table."""
     original_schema = schema
-    column_names, schema_overrides = _unpack_schema(
-        (schema or data.column_names), schema_overrides=schema_overrides
-    )
+
+    try:
+        column_names, schema_overrides = _unpack_schema(
+            (schema or data.column_names), schema_overrides=schema_overrides
+        )
+    except DuplicateError as e:
+        if schema is None:
+            raise DuplicateError("Arrow table contained duplicate column names.") from e
+
+        raise
+
     try:
         if column_names != data.column_names:
             data = data.rename_columns(column_names)
@@ -1461,7 +1476,7 @@ def arrow_to_pydf(
     names = []
     for i, column in enumerate(data):
         # extract the name before casting
-        name = f"column_{i}" if column._name is None else column._name
+        name = column._name
         names.append(name)
 
         column = coerce_arrow(column)
@@ -1480,7 +1495,10 @@ def arrow_to_pydf(
         # path for table without rows that keeps datatype
         if tbl.shape[0] == 0:
             pydf = pl.DataFrame(
-                [pl.Series(name, c) for (name, c) in zip(tbl.column_names, tbl.columns)]
+                {
+                    name: wrap_s(arrow_to_pyseries(name, c))
+                    for name, c in zip(tbl.column_names, tbl.columns)
+                }
             )._df
         else:
             pydf = PyDataFrame.from_arrow_record_batches(tbl.to_batches())
