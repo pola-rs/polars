@@ -258,6 +258,9 @@ pub enum FunctionExpr {
     ForwardFill {
         limit: FillNullLimit,
     },
+    SumHorizontal,
+    MaxHorizontal,
+    MinHorizontal,
     #[cfg(feature = "ewma")]
     EwmMean {
         options: EWMOptions,
@@ -270,9 +273,6 @@ pub enum FunctionExpr {
     EwmVar {
         options: EWMOptions,
     },
-    SumHorizontal,
-    MaxHorizontal,
-    MinHorizontal,
 }
 
 impl Hash for FunctionExpr {
@@ -772,15 +772,15 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             },
             BackwardFill { limit } => map!(dispatch::backward_fill, limit),
             ForwardFill { limit } => map!(dispatch::forward_fill, limit),
+            SumHorizontal => map_as_slice!(dispatch::sum_horizontal),
+            MaxHorizontal => wrap!(dispatch::max_horizontal),
+            MinHorizontal => wrap!(dispatch::min_horizontal),
             #[cfg(feature = "ewma")]
             EwmMean { options } => map!(ewm::ewm_mean, options),
             #[cfg(feature = "ewma")]
             EwmStd { options } => map!(ewm::ewm_std, options),
             #[cfg(feature = "ewma")]
             EwmVar { options } => map!(ewm::ewm_var, options),
-            SumHorizontal => map_as_slice!(dispatch::sum_horizontal),
-            MaxHorizontal => wrap!(dispatch::max_horizontal),
-            MinHorizontal => wrap!(dispatch::min_horizontal),
         }
     }
 }
