@@ -1,16 +1,18 @@
 #[cfg(feature = "csv")]
 use std::io::{Read, Seek};
 
-#[cfg(feature = "parquet")]
-use polars_core::cloud::CloudOptions;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
+#[cfg(feature = "parquet")]
+use polars_io::cloud::CloudOptions;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcReader;
 #[cfg(all(feature = "parquet", feature = "async"))]
 use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
+#[cfg(all(feature = "cloud", feature = "parquet"))]
+use polars_io::pl_async::get_runtime;
 #[cfg(any(
     feature = "parquet",
     feature = "parquet_async",
@@ -20,9 +22,10 @@ use polars_io::parquet::ParquetReader;
 use polars_io::RowCount;
 #[cfg(feature = "csv")]
 use polars_io::{
-    csv::utils::{get_reader_bytes, infer_file_schema, is_compressed},
+    csv::utils::{infer_file_schema, is_compressed},
     csv::CsvEncoding,
     csv::NullValues,
+    utils::get_reader_bytes,
 };
 
 use super::builder_functions::*;
@@ -81,6 +84,14 @@ macro_rules! try_delayed {
     };
 }
 
+#[cfg(any(feature = "parquet", feature = "parquet_async",))]
+fn prepare_schema(mut schema: Schema, row_count: Option<&RowCount>) -> SchemaRef {
+    if let Some(rc) = row_count {
+        let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+    }
+    Arc::new(schema)
+}
+
 impl LogicalPlanBuilder {
     pub fn anonymous_scan(
         function: Arc<dyn AnonymousScan>,
@@ -95,23 +106,29 @@ impl LogicalPlanBuilder {
             None => function.schema(infer_schema_length)?,
         };
 
-        let file_info = FileInfo {
-            schema: schema.clone(),
-            row_estimation: (n_rows, n_rows.unwrap_or(usize::MAX)),
+        let file_info = FileInfo::new(schema.clone(), (n_rows, n_rows.unwrap_or(usize::MAX)));
+        let file_options = FileScanOptions {
+            n_rows,
+            with_columns: None,
+            cache: false,
+            row_count: None,
+            rechunk: false,
+            file_counter: Default::default(),
+            hive_partitioning: false,
         };
-        Ok(LogicalPlan::AnonymousScan {
-            function,
+
+        Ok(LogicalPlan::Scan {
+            path: "".into(),
             file_info,
             predicate: None,
-            options: Arc::new(AnonymousScanOptions {
-                fmt_str: name,
-                schema,
-                skip_rows,
-                n_rows,
-                output_schema: None,
-                with_columns: None,
-                predicate: None,
-            }),
+            file_options,
+            scan_type: FileScan::Anonymous {
+                function,
+                options: Arc::new(AnonymousScanOptions {
+                    fmt_str: name,
+                    skip_rows,
+                }),
+            },
         }
         .into())
     }
@@ -128,35 +145,50 @@ impl LogicalPlanBuilder {
         low_memory: bool,
         cloud_options: Option<CloudOptions>,
         use_statistics: bool,
+        hive_partitioning: bool,
+        // used to prevent multiple cloud calls
+        known_schema: Option<SchemaRef>,
     ) -> PolarsResult<Self> {
         use polars_io::{is_cloud_url, SerReader as _};
 
         let path = path.into();
-        let (mut schema, num_rows) = if is_cloud_url(&path) {
-            #[cfg(not(feature = "async"))]
+        let (schema, num_rows, metadata) = if is_cloud_url(&path) {
+            #[cfg(not(feature = "cloud"))]
             panic!(
                 "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
             );
 
-            #[cfg(feature = "async")]
-            {
+            #[cfg(feature = "cloud")]
+            if let Some(known_schema) = known_schema {
+                (known_schema, None, None)
+            } else {
                 let uri = path.to_string_lossy();
-                ParquetAsyncReader::file_info(&uri, cloud_options.as_ref())?
+                get_runtime().block_on(async {
+                    let mut reader =
+                        ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), None, None)
+                            .await?;
+                    let schema = Arc::new(reader.schema().await?);
+                    let num_rows = reader.num_rows().await?;
+                    let metadata = reader.get_metadata().await?.clone();
+
+                    PolarsResult::Ok((schema, Some(num_rows), Some(metadata)))
+                })?
             }
         } else {
             let file = polars_utils::open_file(&path)?;
             let mut reader = ParquetReader::new(file);
-            (reader.schema()?, reader.num_rows()?)
+            (
+                prepare_schema(reader.schema()?, row_count.as_ref()),
+                Some(reader.num_rows()?),
+                Some(reader.get_metadata()?.clone()),
+            )
         };
 
-        if let Some(rc) = &row_count {
-            let _ = schema.insert_at_index(0, rc.name.as_str().into(), IDX_DTYPE);
+        let mut file_info = FileInfo::new(schema, (num_rows, num_rows.unwrap_or(0)));
+
+        if hive_partitioning {
+            file_info.set_hive_partitions(path.as_path());
         }
-
-        let file_info = FileInfo {
-            schema: Arc::new(schema),
-            row_estimation: (Some(num_rows), num_rows),
-        };
 
         let options = FileScanOptions {
             with_columns: None,
@@ -165,6 +197,7 @@ impl LogicalPlanBuilder {
             rechunk,
             row_count,
             file_counter: Default::default(),
+            hive_partitioning,
         };
         Ok(LogicalPlan::Scan {
             path,
@@ -178,6 +211,7 @@ impl LogicalPlanBuilder {
                     use_statistics,
                 },
                 cloud_options,
+                metadata,
             },
         }
         .into())
@@ -205,10 +239,7 @@ impl LogicalPlanBuilder {
         let schema = Arc::new(schema);
 
         let num_rows = reader._num_rows()?;
-        let file_info = FileInfo {
-            schema,
-            row_estimation: (None, num_rows),
-        };
+        let file_info = FileInfo::new(schema, (None, num_rows));
 
         let file_options = FileScanOptions {
             with_columns: None,
@@ -217,6 +248,8 @@ impl LogicalPlanBuilder {
             rechunk,
             row_count,
             file_counter: Default::default(),
+            // TODO! add
+            hive_partitioning: false,
         };
         Ok(LogicalPlan::Scan {
             path,
@@ -232,7 +265,7 @@ impl LogicalPlanBuilder {
     #[cfg(feature = "csv")]
     pub fn scan_csv<P: Into<std::path::PathBuf>>(
         path: P,
-        delimiter: u8,
+        separator: u8,
         has_header: bool,
         ignore_errors: bool,
         mut skip_rows: usize,
@@ -281,7 +314,7 @@ impl LogicalPlanBuilder {
         // this needs a way to estimated bytes/rows.
         let (mut inferred_schema, rows_read, bytes_read) = infer_file_schema(
             &reader_bytes,
-            delimiter,
+            separator,
             infer_schema_length,
             has_header,
             schema_overwrite,
@@ -315,10 +348,7 @@ impl LogicalPlanBuilder {
         let estimated_n_rows = (rows_read as f64 / bytes_read as f64 * n_bytes as f64) as usize;
 
         skip_rows += skip_rows_after_header;
-        let file_info = FileInfo {
-            schema,
-            row_estimation: (None, estimated_n_rows),
-        };
+        let file_info = FileInfo::new(schema, (None, estimated_n_rows));
 
         let options = FileScanOptions {
             with_columns: None,
@@ -327,6 +357,8 @@ impl LogicalPlanBuilder {
             rechunk,
             row_count,
             file_counter: Default::default(),
+            // TODO! add
+            hive_partitioning: false,
         };
         Ok(LogicalPlan::Scan {
             path,
@@ -336,7 +368,7 @@ impl LogicalPlanBuilder {
             scan_type: FileScan::Csv {
                 options: CsvParserOptions {
                     has_header,
-                    delimiter,
+                    separator,
                     ignore_errors,
                     skip_rows,
                     low_memory,
@@ -523,9 +555,11 @@ impl LogicalPlanBuilder {
     pub fn filter(self, predicate: Expr) -> Self {
         let predicate = if has_expr(&predicate, |e| match e {
             Expr::Column(name) => is_regex_projection(name),
-            Expr::Wildcard | Expr::RenameAlias { .. } | Expr::Columns(_) | Expr::DtypeColumn(_) => {
-                true
-            },
+            Expr::Wildcard
+            | Expr::RenameAlias { .. }
+            | Expr::Columns(_)
+            | Expr::DtypeColumn(_)
+            | Expr::Nth(_) => true,
             _ => false,
         }) {
             let schema = try_delayed!(self.0.schema(), &self.0, into);

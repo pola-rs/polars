@@ -41,6 +41,8 @@ Computation
     Expr.n_unique
     Expr.null_count
     Expr.pct_change
+    Expr.peak_max
+    Expr.peak_min
     Expr.radians
     Expr.rank
     Expr.rolling_apply

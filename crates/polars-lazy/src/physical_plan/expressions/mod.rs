@@ -8,6 +8,8 @@ mod count;
 mod filter;
 mod group_iter;
 mod literal;
+#[cfg(feature = "dynamic_group_by")]
+mod rolling;
 mod slice;
 mod sort;
 mod sortby;
@@ -31,6 +33,8 @@ use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
+#[cfg(feature = "dynamic_group_by")]
+pub(crate) use rolling::RollingExpr;
 pub(crate) use slice::*;
 pub(crate) use sort::*;
 pub(crate) use sortby::*;
@@ -623,7 +627,7 @@ impl PhysicalIoExpr for PhysicalIoHelper {
     }
 }
 
-pub(super) fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
+pub(crate) fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
     let has_window_function = if let Some(expr) = expr.as_expression() {
         expr.into_iter()
             .any(|expr| matches!(expr, Expr::Window { .. }))

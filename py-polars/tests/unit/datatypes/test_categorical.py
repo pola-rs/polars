@@ -310,7 +310,7 @@ def test_nested_categorical_aggregation_7848() -> None:
     ).with_columns([pl.col("letter").cast(pl.Categorical)]).group_by(
         maintain_order=True, by=["group"]
     ).all().with_columns(
-        [pl.col("letter").list.lengths().alias("c_group")]
+        [pl.col("letter").list.len().alias("c_group")]
     ).group_by(
         by=["c_group"], maintain_order=True
     ).agg(
@@ -407,4 +407,18 @@ def test_list_builder_different_categorical_rev_maps() -> None:
 
     assert pl.DataFrame({"c": [s1, s2]}).to_dict(False) == {
         "c": [["a", "b"], ["c", "d"]]
+    }
+
+
+def test_categorical_collect_11408() -> None:
+    df = pl.DataFrame(
+        data={"groups": ["a", "b", "c"], "cats": ["a", "b", "c"], "amount": [1, 2, 3]},
+        schema={"groups": pl.Utf8, "cats": pl.Categorical, "amount": pl.Int8},
+    )
+
+    assert df.group_by("groups").agg(
+        pl.col("cats").filter(pl.col("amount") == pl.col("amount").min()).first()
+    ).sort("groups").to_dict(False) == {
+        "groups": ["a", "b", "c"],
+        "cats": ["a", "b", "c"],
     }

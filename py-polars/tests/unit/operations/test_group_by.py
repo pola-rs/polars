@@ -348,10 +348,10 @@ def test_group_by_dynamic_flat_agg_4814() -> None:
             (pl.col("b") / pl.col("a")).last().alias("last_ratio_2"),
         ]
     ).to_dict(False) == {
-        "a": [1, 2],
-        "sum_ratio_1": [4.2, 5.0],
-        "last_ratio_1": [6.0, 6.0],
-        "last_ratio_2": [6.0, 6.0],
+        "a": [0, 1, 2],
+        "sum_ratio_1": [1.0, 4.2, 5.0],
+        "last_ratio_1": [1.0, 6.0, 6.0],
+        "last_ratio_2": [1.0, 6.0, 6.0],
     }
 
 
@@ -388,7 +388,7 @@ def test_group_by_dynamic_overlapping_groups_flat_apply_multiple_5038(
         .to_dict(False)
     )
 
-    assert res["corr"] == pytest.approx([6.988674024215477])
+    assert res["corr"] == pytest.approx([9.148920923684765])
     assert res["a"] == [None]
 
 
@@ -576,10 +576,11 @@ def test_group_by_dynamic_elementwise_following_mean_agg_6904(
         pl.DataFrame(
             {
                 "a": [
+                    datetime(2020, 12, 31, 23, 59, 50),
                     datetime(2021, 1, 1, 0, 0),
                     datetime(2021, 1, 1, 0, 0, 10),
                 ],
-                "c": [0.9092974268256817, -0.7568024953079282],
+                "c": [0.9092974268256817, 0.9092974268256817, -0.7568024953079282],
             }
         ).with_columns(pl.col("a").dt.replace_time_zone(time_zone)),
     )
@@ -897,3 +898,19 @@ def test_groupby_dynamic_deprecated() -> None:
     expected = df.group_by_dynamic("date", every="2d").agg(pl.sum("value"))
     assert_frame_equal(result, expected, check_row_order=False)
     assert_frame_equal(result_lazy, expected, check_row_order=False)
+
+
+def test_group_by_multiple_keys_one_literal() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2], "b": [4, 5, 6]})
+
+    expected = {"a": [1, 2], "literal": [1, 1], "b": [5, 6]}
+    for streaming in [True, False]:
+        assert (
+            df.lazy()
+            .group_by("a", pl.lit(1))
+            .agg(pl.col("b").max())
+            .sort(["a", "b"])
+            .collect(streaming=streaming)
+            .to_dict(False)
+            == expected
+        )

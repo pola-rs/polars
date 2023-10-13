@@ -1,6 +1,6 @@
 use super::*;
 
-#[allow(clippy::ptr_arg)]
+#[allow(clippy::all)]
 fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataType {
     // ensure we don't get List<null>
     let dtype = if let Some(arr) = chunks.get(0) {
@@ -19,7 +19,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             let list_arr = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
             let values_arr = list_arr.values();
             let cat = unsafe {
-                Series::try_from_arrow_unchecked(
+                Series::_try_from_arrow_unchecked(
                     "",
                     vec![values_arr.clone()],
                     values_arr.data_type(),
@@ -46,7 +46,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             let list_arr = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             let values_arr = list_arr.values();
             let cat = unsafe {
-                Series::try_from_arrow_unchecked(
+                Series::_try_from_arrow_unchecked(
                     "",
                     vec![values_arr.clone()],
                     values_arr.data_type(),
@@ -105,6 +105,19 @@ where
         unsafe { Self::from_chunks(name, chunks) }
     }
 
+    pub fn from_chunk_iter_like<I>(ca: &Self, iter: I) -> Self
+    where
+        I: IntoIterator,
+        T: PolarsDataType<Array = <I as IntoIterator>::Item>,
+        <I as IntoIterator>::Item: Array,
+    {
+        let chunks = iter
+            .into_iter()
+            .map(|x| Box::new(x) as Box<dyn Array>)
+            .collect();
+        unsafe { Self::from_chunks_and_dtype_unchecked(ca.name(), chunks, ca.dtype().clone()) }
+    }
+
     pub fn try_from_chunk_iter<I, A, E>(name: &str, iter: I) -> Result<Self, E>
     where
         I: IntoIterator<Item = Result<A, E>>,
@@ -118,7 +131,36 @@ where
         unsafe { Ok(Self::from_chunks(name, chunks?)) }
     }
 
-    /// Create a new ChunkedArray from existing chunks.
+    pub(crate) fn from_chunk_iter_and_field<I>(field: Arc<Field>, chunks: I) -> Self
+    where
+        I: IntoIterator,
+        T: PolarsDataType<Array = <I as IntoIterator>::Item>,
+        <I as IntoIterator>::Item: Array,
+    {
+        assert_eq!(
+            std::mem::discriminant(&T::get_dtype()),
+            std::mem::discriminant(&field.dtype)
+        );
+
+        let mut length = 0;
+        let chunks = chunks
+            .into_iter()
+            .map(|x| {
+                length += x.len();
+                Box::new(x) as Box<dyn Array>
+            })
+            .collect();
+
+        ChunkedArray {
+            field,
+            chunks,
+            phantom: PhantomData,
+            bit_settings: Default::default(),
+            length: length.try_into().unwrap(),
+        }
+    }
+
+    /// Create a new [`ChunkedArray`] from existing chunks.
     ///
     /// # Safety
     /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
@@ -129,15 +171,13 @@ where
             dtype @ DataType::Array(_, _) => from_chunks_list_dtype(&mut chunks, dtype),
             dt => dt,
         };
-        // assertions in debug mode
-        // that check if the data types in the arrays are as expected
-        #[cfg(debug_assertions)]
-        {
-            if !chunks.is_empty() && dtype.is_primitive() {
-                assert_eq!(chunks[0].data_type(), &dtype.to_physical().to_arrow())
-            }
-        }
-        let field = Arc::new(Field::new(name, dtype));
+        Self::from_chunks_and_dtype(name, chunks, dtype)
+    }
+
+    /// # Safety
+    /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
+    pub unsafe fn with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
+        let field = self.field.clone();
         let mut out = ChunkedArray {
             field,
             chunks,
@@ -149,10 +189,24 @@ where
         out
     }
 
+    /// Create a new [`ChunkedArray`] from existing chunks.
+    ///
     /// # Safety
     /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
-    pub unsafe fn with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
-        let field = self.field.clone();
+    pub unsafe fn from_chunks_and_dtype(
+        name: &str,
+        chunks: Vec<ArrayRef>,
+        dtype: DataType,
+    ) -> Self {
+        // assertions in debug mode
+        // that check if the data types in the arrays are as expected
+        #[cfg(debug_assertions)]
+        {
+            if !chunks.is_empty() && dtype.is_primitive() {
+                assert_eq!(chunks[0].data_type(), &dtype.to_physical().to_arrow())
+            }
+        }
+        let field = Arc::new(Field::new(name, dtype));
         let mut out = ChunkedArray {
             field,
             chunks,
@@ -191,29 +245,7 @@ where
         }
         out
     }
-}
 
-impl ListChunked {
-    pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
-        name: &str,
-        chunks: Vec<ArrayRef>,
-        dtype: DataType,
-    ) -> Self {
-        let field = Arc::new(Field::new(name, dtype));
-        let mut out = ChunkedArray {
-            field,
-            chunks,
-            phantom: PhantomData,
-            bit_settings: Default::default(),
-            length: 0,
-        };
-        out.compute_len();
-        out
-    }
-}
-
-#[cfg(feature = "dtype-array")]
-impl ArrayChunked {
     pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
         name: &str,
         chunks: Vec<ArrayRef>,

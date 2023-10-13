@@ -40,3 +40,34 @@ pub(super) fn replace_time_zone(s: &[Series], time_zone: Option<&str>) -> Polars
     let s2 = &s[1].utf8().unwrap();
     Ok(polars_ops::prelude::replace_time_zone(ca, time_zone, s2)?.into_series())
 }
+
+#[cfg(feature = "dtype-struct")]
+pub(super) fn value_counts(s: &Series, sort: bool, parallel: bool) -> PolarsResult<Series> {
+    s.value_counts(sort, parallel)
+        .map(|df| df.into_struct(s.name()).into_series())
+}
+
+#[cfg(feature = "unique_counts")]
+pub(super) fn unique_counts(s: &Series) -> PolarsResult<Series> {
+    Ok(s.unique_counts().into_series())
+}
+
+pub(super) fn backward_fill(s: &Series, limit: FillNullLimit) -> PolarsResult<Series> {
+    s.fill_null(FillNullStrategy::Backward(limit))
+}
+
+pub(super) fn forward_fill(s: &Series, limit: FillNullLimit) -> PolarsResult<Series> {
+    s.fill_null(FillNullStrategy::Forward(limit))
+}
+
+pub(super) fn sum_horizontal(s: &[Series]) -> PolarsResult<Series> {
+    polars_ops::prelude::sum_horizontal(s)
+}
+
+pub(super) fn max_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
+    polars_ops::prelude::max_horizontal(s)
+}
+
+pub(super) fn min_horizontal(s: &mut [Series]) -> PolarsResult<Option<Series>> {
+    polars_ops::prelude::min_horizontal(s)
+}

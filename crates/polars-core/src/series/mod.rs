@@ -28,8 +28,6 @@ use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
 use crate::chunked_array::Settings;
-#[cfg(feature = "rank")]
-use crate::prelude::unique::rank::rank;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{_split_offsets, get_casting_failures, split_ca, split_series, Wrap};
@@ -234,6 +232,15 @@ impl Series {
         self
     }
 
+    pub fn from_arrow(name: &str, array: ArrayRef) -> PolarsResult<Series> {
+        Self::try_from((name, array))
+    }
+
+    #[cfg(feature = "arrow_rs")]
+    pub fn from_arrow_rs(name: &str, array: &dyn arrow_array::Array) -> PolarsResult<Series> {
+        Self::from_arrow(name, array.into())
+    }
+
     /// Shrink the capacity of this array to fit its length.
     pub fn shrink_to_fit(&mut self) {
         self._get_inner_mut().shrink_to_fit()
@@ -298,6 +305,14 @@ impl Series {
             },
             DataType::Binary => self.binary().unwrap().cast_unchecked(dtype),
             _ => self.cast(dtype),
+        }
+    }
+
+    /// Cast numerical types to f64, and keep floats as is.
+    pub fn to_float(&self) -> PolarsResult<Series> {
+        match self.dtype() {
+            DataType::Float32 | DataType::Float64 => Ok(self.clone()),
+            _ => self.cast(&DataType::Float64),
         }
     }
 
@@ -480,24 +495,31 @@ impl Series {
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> PolarsResult<Series> {
-        let idx = IdxCa::mmap_slice("", idx);
-        self.take_unchecked(&idx)
+    pub unsafe fn take_unchecked_from_slice(&self, idx: &[IdxSize]) -> Series {
+        self.take_slice_unchecked(idx)
     }
 
     /// Take by index if ChunkedArray contains a single chunk.
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_threaded(
-        &self,
-        idx: &IdxCa,
-        rechunk: bool,
-    ) -> PolarsResult<Series> {
+    pub unsafe fn take_unchecked_threaded(&self, idx: &IdxCa, rechunk: bool) -> Series {
         self.threaded_op(rechunk, idx.len(), &|offset, len| {
             let idx = idx.slice(offset as i64, len);
-            self.take_unchecked(&idx)
+            Ok(self.take_unchecked(&idx))
         })
+        .unwrap()
+    }
+
+    /// Take by index if ChunkedArray contains a single chunk.
+    ///
+    /// # Safety
+    /// This doesn't check any bounds. Null validity is checked.
+    pub unsafe fn take_slice_unchecked_threaded(&self, idx: &[IdxSize], rechunk: bool) -> Series {
+        self.threaded_op(rechunk, idx.len(), &|offset, len| {
+            Ok(self.take_slice_unchecked(&idx[offset..offset + len]))
+        })
+        .unwrap()
     }
 
     /// # Safety
@@ -540,6 +562,13 @@ impl Series {
             let idx = idx.slice(offset as i64, len);
             self.take(&idx)
         })
+    }
+
+    /// Traverse and collect every nth element in a new array.
+    pub fn take_every(&self, n: usize) -> Series {
+        let idx = (0..self.len() as IdxSize).step_by(n).collect_ca("");
+        // SAFETY: we stay in-bounds.
+        unsafe { self.take_unchecked(&idx) }
     }
 
     /// Filter by boolean mask. This operation clones data.
@@ -702,11 +731,6 @@ impl Series {
         {
             panic!("activate 'product' feature")
         }
-    }
-
-    #[cfg(feature = "rank")]
-    pub fn rank(&self, options: RankOptions, seed: Option<u64>) -> Series {
-        rank(self, options.method, options.descending, seed)
     }
 
     /// Cast throws an error if conversion had overflows
@@ -901,7 +925,7 @@ impl Series {
     pub fn unique_stable(&self) -> PolarsResult<Series> {
         let idx = self.arg_unique()?;
         // SAFETY: Indices are in bounds.
-        unsafe { self.take_unchecked(&idx) }
+        unsafe { Ok(self.take_unchecked(&idx)) }
     }
 
     pub fn idx(&self) -> PolarsResult<&IdxCa> {

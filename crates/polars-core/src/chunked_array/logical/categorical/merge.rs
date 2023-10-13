@@ -38,7 +38,7 @@ struct State {
 
 #[derive(Default)]
 pub(crate) struct RevMapMerger {
-    id: u32,
+    id: Option<u32>,
     original: Arc<RevMapping>,
     // only initiate state when
     // we encounter a rev-map from a different source,
@@ -48,12 +48,14 @@ pub(crate) struct RevMapMerger {
 
 impl RevMapMerger {
     pub(crate) fn new(rev_map: Arc<RevMapping>) -> Self {
-        let RevMapping::Global(_, _, id) = rev_map.as_ref() else {
-            panic!("impl error")
+        let id = if let RevMapping::Global(_, _, id) = rev_map.as_ref() {
+            Some(*id)
+        } else {
+            None
         };
         RevMapMerger {
             state: None,
-            id: *id,
+            id,
             original: rev_map,
         }
     }
@@ -74,11 +76,12 @@ impl RevMapMerger {
         if Arc::ptr_eq(&self.original, rev_map) {
             return Ok(());
         }
+        let msg = "categoricals don't originate from the same string cache\n\
+    try setting a global string cache or increase the scope of the local string cache";
         let RevMapping::Global(map, slots, id) = rev_map.as_ref() else {
-            polars_bail!(ComputeError: "expected global rev-map")
+            polars_bail!(ComputeError: msg)
         };
-        polars_ensure!(*id == self.id, ComputeError: "categoricals don't originate from the same string cache\n\
-    try setting a global string cache or increase the scope of the local string cache");
+        polars_ensure!(Some(*id) == self.id, ComputeError: msg);
 
         if self.state.is_none() {
             self.init_state()
@@ -103,7 +106,7 @@ impl RevMapMerger {
         match self.state {
             None => self.original,
             Some(state) => {
-                let new_rev = RevMapping::Global(state.map, state.slots.into(), self.id);
+                let new_rev = RevMapping::Global(state.map, state.slots.into(), self.id.unwrap());
                 Arc::new(new_rev)
             },
         }
@@ -143,7 +146,7 @@ pub(crate) fn merge_rev_map(
 }
 
 impl CategoricalChunked {
-    pub(crate) fn merge_categorical_map(&self, other: &Self) -> PolarsResult<Arc<RevMapping>> {
+    pub fn _merge_categorical_map(&self, other: &Self) -> PolarsResult<Arc<RevMapping>> {
         merge_rev_map(self.get_rev_map(), other.get_rev_map())
     }
 }
@@ -153,13 +156,13 @@ impl CategoricalChunked {
 mod test {
     use super::*;
     use crate::chunked_array::categorical::CategoricalChunkedBuilder;
-    use crate::{enable_string_cache, reset_string_cache, IUseStringCache};
+    use crate::{disable_string_cache, enable_string_cache, StringCacheHolder};
 
     #[test]
     fn test_merge_rev_map() {
         let _lock = SINGLE_LOCK.lock();
-        reset_string_cache();
-        let _sc = IUseStringCache::hold();
+        disable_string_cache();
+        let _sc = StringCacheHolder::hold();
 
         let mut builder1 = CategoricalChunkedBuilder::new("foo", 10);
         let mut builder2 = CategoricalChunkedBuilder::new("foo", 10);
@@ -167,7 +170,7 @@ mod test {
         builder2.drain_iter(vec![Some("hello"), None, Some("world"), Some("bar")].into_iter());
         let ca1 = builder1.finish();
         let ca2 = builder2.finish();
-        let rev_map = ca1.merge_categorical_map(&ca2).unwrap();
+        let rev_map = ca1._merge_categorical_map(&ca2).unwrap();
 
         let mut ca = UInt32Chunked::new("", &[0, 1, 2, 3]);
         ca.categorical_map = Some(rev_map);

@@ -21,7 +21,7 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.type_aliases import ClosedInterval
+    from polars.type_aliases import ClosedInterval, Label, TimeUnit
 
 
 @pytest.fixture()
@@ -48,7 +48,7 @@ def example_df() -> pl.DataFrame:
 def test_rolling_kernels_and_group_by_rolling(
     example_df: pl.DataFrame, period: str | timedelta, closed: ClosedInterval
 ) -> None:
-    out1 = example_df.select(
+    out1 = example_df.set_sorted("dt").select(
         [
             pl.col("dt"),
             # this differs from group_by aggregation because the empty window is
@@ -538,7 +538,7 @@ def test_dynamic_group_by_timezone_awareness(
             offset=offset,
             closed="right",
             include_boundaries=True,
-            truncate=False,
+            label="datapoint",
         ).agg(pl.col("value").last())
     ).dtypes == [pl.Datetime("ns", "UTC")] * 3 + [pl.Int64]
 
@@ -554,7 +554,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         "date",
         every="31m",
         include_boundaries=True,
-        truncate=False,
+        label="datapoint",
         start_by="datapoint",
     ).agg(pl.count()).to_dict(False) == {
         "_lower_boundary": [
@@ -598,7 +598,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         period="3d",
         include_boundaries=True,
         start_by="monday",
-        truncate=False,
+        label="datapoint",
     ).agg([pl.count(), pl.col("day").first().alias("data_day")])
     assert result.to_dict(False) == {
         "_lower_boundary": [
@@ -623,7 +623,7 @@ def test_group_by_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         period="3d",
         include_boundaries=True,
         start_by="saturday",
-        truncate=False,
+        label="datapoint",
     ).agg([pl.count(), pl.col("day").first().alias("data_day")])
     assert result.to_dict(False) == {
         "_lower_boundary": [
@@ -684,6 +684,77 @@ def test_group_by_dynamic_by_monday_and_offset_5444() -> None:
         .agg(pl.col("value").sum())
     )
     assert result_empty.schema == result.schema
+
+
+def test_group_by_dynamic_truncate_to_label_deprecation() -> None:
+    df = pl.LazyFrame({"ts": [], "n": []})
+    with pytest.warns(
+        DeprecationWarning, match="replace `truncate=False` with `label='datapoint'`"
+    ):
+        df.group_by_dynamic("ts", every="1d", truncate=False)
+    with pytest.warns(
+        DeprecationWarning, match="replace `truncate=True` with `label='left'`"
+    ):
+        df.group_by_dynamic("ts", every="1d", truncate=True)
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("left", [datetime(2020, 1, 1), datetime(2020, 1, 2)]),
+        ("right", [datetime(2020, 1, 2), datetime(2020, 1, 3)]),
+        ("datapoint", [datetime(2020, 1, 1, 1), datetime(2020, 1, 2, 3)]),
+    ],
+)
+def test_group_by_dynamic_label(label: Label, expected: list[datetime]) -> None:
+    df = pl.DataFrame(
+        {
+            "ts": [
+                datetime(2020, 1, 1, 1),
+                datetime(2020, 1, 1, 2),
+                datetime(2020, 1, 2, 3),
+                datetime(2020, 1, 2, 4),
+            ],
+            "n": [1, 2, 3, 4],
+            "group": ["a", "a", "b", "b"],
+        }
+    ).sort("ts")
+    result = (
+        df.group_by_dynamic("ts", every="1d", label=label, by="group")
+        .agg(pl.col("n"))["ts"]
+        .to_list()
+    )
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("left", [datetime(2020, 1, 1), datetime(2020, 1, 2), datetime(2020, 1, 3)]),
+        ("right", [datetime(2020, 1, 2), datetime(2020, 1, 3), datetime(2020, 1, 4)]),
+        (
+            "datapoint",
+            [datetime(2020, 1, 1, 1), datetime(2020, 1, 2, 2), datetime(2020, 1, 3, 3)],
+        ),
+    ],
+)
+def test_group_by_dynamic_label_with_by(label: Label, expected: list[datetime]) -> None:
+    df = pl.DataFrame(
+        {
+            "ts": [
+                datetime(2020, 1, 1, 1),
+                datetime(2020, 1, 2, 2),
+                datetime(2020, 1, 3, 3),
+            ],
+            "n": [1, 2, 3],
+        }
+    ).sort("ts")
+    result = (
+        df.group_by_dynamic("ts", every="1d", label=label)
+        .agg(pl.col("n"))["ts"]
+        .to_list()
+    )
+    assert result == expected
 
 
 def test_group_by_rolling_iter() -> None:
@@ -761,11 +832,11 @@ def test_rolling_kernels_group_by_dynamic_7548() -> None:
     ).to_dict(
         False
     ) == {
-        "time": [0, 1, 2, 3],
-        "value": [[0, 1, 2], [1, 2, 3], [2, 3], [3]],
-        "min_value": [0, 1, 2, 3],
-        "max_value": [2, 3, 3, 3],
-        "sum_value": [3, 6, 5, 3],
+        "time": [-1, 0, 1, 2, 3],
+        "value": [[0, 1], [0, 1, 2], [1, 2, 3], [2, 3], [3]],
+        "min_value": [0, 0, 1, 2, 3],
+        "max_value": [1, 2, 3, 3, 3],
+        "sum_value": [1, 3, 6, 5, 3],
     }
 
 
@@ -784,12 +855,13 @@ def test_rolling_cov_corr() -> None:
     assert res["corr"][:2] == [None] * 2
 
 
-def test_rolling_empty_window_9406() -> None:
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_rolling_empty_window_9406(time_unit: TimeUnit) -> None:
     datecol = pl.Series(
         "d",
         [datetime(2019, 1, x) for x in [16, 17, 18, 22, 23]],
-        dtype=pl.Datetime(time_unit="us", time_zone=None),
-    )
+        dtype=pl.Datetime(time_unit=time_unit, time_zone=None),
+    ).set_sorted()
     rawdata = pl.Series("x", [1.1, 1.2, 1.3, 1.15, 1.25], dtype=pl.Float64)
     rmin = pl.Series("x", [None, 1.1, 1.1, None, 1.15], dtype=pl.Float64)
     rmax = pl.Series("x", [None, 1.1, 1.2, None, 1.15], dtype=pl.Float64)
@@ -832,6 +904,20 @@ def test_rolling_weighted_quantile_10031() -> None:
         ),
         pl.Series([None, None, None, 3.5, 5.5]),
     )
+
+
+def test_rolling_aggregations_unsorted_raise_10991() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [datetime(2020, 1, 3), datetime(2020, 1, 1), datetime(2020, 1, 2)],
+            "val": [1, 2, 3],
+        }
+    )
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match="argument in operation 'rolling_sum' is not explicitly sorted",
+    ):
+        df.with_columns(roll=pl.col("val").rolling_sum("2d", by="dt", closed="right"))
 
 
 def test_rolling() -> None:
@@ -900,3 +986,37 @@ def test_rolling() -> None:
         a.rolling_sum(3),
         pl.Series("a", [None, None, 22.0, nan, nan]),
     )
+
+
+def test_rolling_by_date() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 3)],
+            "val": [1, 2, 3],
+        }
+    ).sort("dt")
+
+    result = df.with_columns(
+        roll=pl.col("val").rolling_sum("2d", by="dt", closed="right")
+    )
+    expected = df.with_columns(roll=pl.Series([1, 3, 5]))
+    assert_frame_equal(result, expected)
+
+
+def test_rolling_nanoseconds_11003() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [
+                "2020-01-01T00:00:00.000000000",
+                "2020-01-01T00:00:00.000000100",
+                "2020-01-01T00:00:00.000000200",
+            ],
+            "val": [1, 2, 3],
+        }
+    )
+    df = df.with_columns(pl.col("dt").str.to_datetime(time_unit="ns")).set_sorted("dt")
+    result = df.with_columns(
+        pl.col("val").rolling_sum("500ns", by="dt", closed="right")
+    )
+    expected = df.with_columns(val=pl.Series([1, 3, 6]))
+    assert_frame_equal(result, expected)

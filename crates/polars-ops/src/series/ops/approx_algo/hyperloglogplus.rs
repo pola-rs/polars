@@ -16,10 +16,10 @@
 //!     assert_eq!(hllp.count(), 2);
 //! ```
 
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::Hash;
 use std::marker::PhantomData;
 
-use polars_core::export::ahash::{AHasher, RandomState};
+use polars_core::export::ahash::RandomState;
 
 /// The greater is P, the smaller the error.
 const HLL_P: usize = 14_usize;
@@ -85,9 +85,7 @@ where
     /// reasonable performance.
     #[inline]
     fn hash_value(&self, obj: &T) -> u64 {
-        let mut hasher: AHasher = SEED.build_hasher();
-        obj.hash(&mut hasher);
-        hasher.finish()
+        SEED.hash_one(obj)
     }
 
     /// Adds an element to the HyperLogLog.

@@ -1,6 +1,6 @@
 // used only if feature="is_in", feature="dtype-categorical"
 #[allow(unused_imports)]
-use polars_core::{with_string_cache, SINGLE_LOCK};
+use polars_core::{disable_string_cache, StringCacheHolder, SINGLE_LOCK};
 
 use super::*;
 
@@ -132,24 +132,22 @@ fn test_is_in_categorical_3420() -> PolarsResult<()> {
     ]?;
 
     let _guard = SINGLE_LOCK.lock();
+    disable_string_cache();
+    let _sc = StringCacheHolder::hold();
 
-    let _: PolarsResult<_> = with_string_cache(|| {
-        let s = Series::new("x", ["a", "b", "c"]).strict_cast(&DataType::Categorical(None))?;
-        let out = df
-            .lazy()
-            .with_column(col("a").strict_cast(DataType::Categorical(None)))
-            .filter(col("a").is_in(lit(s).alias("x")))
-            .collect()?;
+    let s = Series::new("x", ["a", "b", "c"]).strict_cast(&DataType::Categorical(None))?;
+    let out = df
+        .lazy()
+        .with_column(col("a").strict_cast(DataType::Categorical(None)))
+        .filter(col("a").is_in(lit(s).alias("x")))
+        .collect()?;
 
-        let mut expected = df![
-            "a" => ["a", "b", "c"],
-            "b" => [1, 2, 3]
-        ]?;
-        expected.try_apply("a", |s| s.cast(&DataType::Categorical(None)))?;
-        assert!(out.frame_equal(&expected));
-
-        Ok(())
-    });
+    let mut expected = df![
+        "a" => ["a", "b", "c"],
+        "b" => [1, 2, 3]
+    ]?;
+    expected.try_apply("a", |s| s.cast(&DataType::Categorical(None)))?;
+    assert!(out.frame_equal(&expected));
     Ok(())
 }
 

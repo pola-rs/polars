@@ -12,7 +12,12 @@ if TYPE_CHECKING:
 
     from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.type_aliases import NullBehavior, ToStructStrategy
+    from polars.type_aliases import (
+        IntoExpr,
+        IntoExprColumn,
+        NullBehavior,
+        ToStructStrategy,
+    )
 
 
 @expr_dispatch
@@ -76,19 +81,46 @@ class ListNameSpace:
 
         """
 
-    def lengths(self) -> Series:
+    def len(self) -> Series:
         """
-        Get the length of the arrays as UInt32.
+        Return the number of elements in each list.
+
+        Null values are treated like regular elements in this context.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`UInt32`.
 
         Examples
         --------
-        >>> s = pl.Series([[1, 2, 3], [5]])
-        >>> s.list.lengths()
+        >>> s = pl.Series([[1, 2, None], [5]])
+        >>> s.list.len()
         shape: (2,)
         Series: '' [u32]
         [
             3
             1
+        ]
+
+        """
+
+    def drop_nulls(self) -> Series:
+        """
+        Drop all null values in the list.
+
+        The original order of the remaining elements is preserved.
+
+        Examples
+        --------
+        >>> s = pl.Series("values", [[None, 1, None, 2], [None], [3, 4]])
+        >>> s.list.drop_nulls()
+        shape: (3,)
+        Series: 'values' [list[i64]]
+        [
+            [1, 2]
+            []
+            [3, 4]
         ]
 
         """
@@ -198,7 +230,7 @@ class ListNameSpace:
     def __getitem__(self, item: int) -> Series:
         return self.get(item)
 
-    def join(self, separator: str) -> Series:
+    def join(self, separator: IntoExpr) -> Series:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -313,7 +345,7 @@ class ListNameSpace:
 
         """
 
-    def shift(self, periods: int = 1) -> Series:
+    def shift(self, periods: int | IntoExprColumn = 1) -> Series:
         """
         Shift values by the given period.
 
@@ -434,7 +466,7 @@ class ListNameSpace:
 
         """
 
-    def count_match(
+    def count_matches(
         self, element: float | str | bool | int | date | datetime | time | Expr
     ) -> Expr:
         """
@@ -688,3 +720,30 @@ class ListNameSpace:
 
         """  # noqa: W505
         return self.set_symmetric_difference(other)
+
+    @deprecate_renamed_function("count_matches", version="0.19.3")
+    def count_match(
+        self, element: float | str | bool | int | date | datetime | time | Expr
+    ) -> Expr:
+        """
+        Count how often the value produced by ``element`` occurs.
+
+        .. deprecated:: 0.19.3
+            This method has been renamed to :func:`count_matches`.
+
+        Parameters
+        ----------
+        element
+            An expression that produces a single value
+
+        """
+
+    @deprecate_renamed_function("len", version="0.19.8")
+    def lengths(self) -> Series:
+        """
+        Return the number of elements in each list.
+
+        .. deprecated:: 0.19.8
+            This method has been renamed to :func:`len`.
+
+        """

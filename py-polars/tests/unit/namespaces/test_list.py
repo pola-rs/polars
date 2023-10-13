@@ -94,6 +94,19 @@ def test_list_concat() -> None:
     assert out_s[0].to_list() == [1, 2, 4, 1]
 
 
+def test_list_join() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [["ab", "c", "d"], ["e", "f"], ["g"], [], None],
+            "separator": ["&", None, "*", "_", "*"],
+        }
+    )
+    out = df.select(pl.col("a").list.join("-"))
+    assert out.to_dict(False) == {"a": ["ab-c-d", "e-f", "g", "", None]}
+    out = df.select(pl.col("a").list.join(pl.col("separator")))
+    assert out.to_dict(False) == {"a": ["ab&c&d", None, "g", "", None]}
+
+
 def test_list_arr_empty() -> None:
     df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []]})
 
@@ -127,6 +140,43 @@ def test_list_shift() -> None:
     s = pl.Series("a", [[1, 2], [3, 2, 1]])
     expected = pl.Series("a", [[None, 1], [None, 3, 2]])
     assert s.list.shift().to_list() == expected.to_list()
+
+    df = pl.DataFrame(
+        {
+            "values": [
+                [1, 2, None],
+                [1, 2, 3],
+                [None, 1, 2],
+                [None, None, None],
+                [1, 2],
+            ],
+            "shift": [1, -2, 3, 2, None],
+        }
+    )
+    df = df.select(pl.col("values").list.shift(pl.col("shift")))
+    expected_df = pl.DataFrame(
+        {
+            "values": [
+                [None, 1, 2],
+                [3, None, None],
+                [None, None, None],
+                [None, None, None],
+                None,
+            ]
+        }
+    )
+    assert_frame_equal(df, expected_df)
+
+
+def test_list_drop_nulls() -> None:
+    s = pl.Series("values", [[1, None, 2, None], [None, None], [1, 2], None])
+    expected = pl.Series("values", [[1, 2], [], [1, 2], None])
+    assert_series_equal(s.list.drop_nulls(), expected)
+
+    df = pl.DataFrame({"values": [[None, 1, None, 2], [None], [3, 4]]})
+    df = df.select(pl.col("values").list.drop_nulls())
+    expected_df = pl.DataFrame({"values": [[1, 2], [], [3, 4]]})
+    assert_frame_equal(df, expected_df)
 
 
 def test_list_diff() -> None:
@@ -450,8 +500,13 @@ def test_list_tail_underflow_9087() -> None:
 
 def test_list_count_match_boolean_nulls_9141() -> None:
     a = pl.DataFrame({"a": [[True, None, False]]})
+    assert a.select(pl.col("a").list.count_matches(True))["a"].to_list() == [1]
 
-    assert a.select(pl.col("a").list.count_match(True))["a"].to_list() == [1]
+
+def test_list_count_matches_boolean_nulls_9141() -> None:
+    a = pl.DataFrame({"a": [[True, None, False]]})
+
+    assert a.select(pl.col("a").list.count_matches(True))["a"].to_list() == [1]
 
 
 def test_list_set_operations() -> None:
@@ -557,3 +612,18 @@ def test_utf8_empty_series_arg_min_max_10703() -> None:
         "arg_min": [0, None],
         "arg_max": [0, None],
     }
+
+
+def test_list_len() -> None:
+    s = pl.Series([[1, 2, None], [5]])
+    result = s.list.len()
+    expected = pl.Series([3, 1], dtype=pl.UInt32)
+    assert_series_equal(result, expected)
+
+
+def test_list_lengths_deprecated() -> None:
+    s = pl.Series([[1, 2, None], [5]])
+    with pytest.deprecated_call():
+        result = s.list.lengths()
+    expected = pl.Series([3, 1], dtype=pl.UInt32)
+    assert_series_equal(result, expected)

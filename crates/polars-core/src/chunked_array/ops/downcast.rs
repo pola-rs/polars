@@ -77,6 +77,24 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         Chunks::new(&self.chunks)
     }
 
+    #[inline]
+    pub fn downcast_get(&self, idx: usize) -> Option<&T::Array> {
+        let arr = self.chunks.get(idx)?;
+        // SAFETY: T::Array guarantees this is correct.
+        let arr = &**arr;
+        unsafe { Some(&*(arr as *const dyn Array as *const T::Array)) }
+    }
+
+    #[inline]
+    /// # Safety
+    /// It is up to the caller to ensure the chunk idx is in-bounds
+    pub unsafe fn downcast_get_unchecked(&self, idx: usize) -> &T::Array {
+        let arr = self.chunks.get_unchecked(idx);
+        // SAFETY: T::Array guarantees this is correct.
+        let arr = &**arr;
+        unsafe { &*(arr as *const dyn Array as *const T::Array) }
+    }
+
     /// Get the index of the chunk and the index of the value in that chunk.
     #[inline]
     pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {

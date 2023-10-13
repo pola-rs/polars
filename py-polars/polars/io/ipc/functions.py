@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO
 import polars._reexport as pl
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _prepare_file_arg
-from polars.utils.various import normalise_filepath
+from polars.utils.various import normalize_filepath
 
 with contextlib.suppress(ImportError):
     from polars.polars import read_ipc_schema as _read_ipc_schema
@@ -85,8 +85,7 @@ def read_ipc(
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
                 raise ModuleNotFoundError(
-                    "'pyarrow' is required when using"
-                    " 'read_ipc(..., use_pyarrow=True)'"
+                    "pyarrow is required when using `read_ipc(..., use_pyarrow=True)`"
                 )
 
             import pyarrow as pa
@@ -204,13 +203,13 @@ def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDa
 
     """
     if isinstance(source, (str, Path)):
-        source = normalise_filepath(source)
+        source = normalize_filepath(source)
 
     return _read_ipc_schema(source)
 
 
 def scan_ipc(
-    source: str | Path,
+    source: str | Path | list[str] | list[Path],
     *,
     n_rows: int | None = None,
     cache: bool = True,

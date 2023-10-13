@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from collections import namedtuple
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
@@ -10,11 +11,11 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
-from polars.exceptions import ShapeError, TimeZoneAwareConstructorWarning
+from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
 
@@ -267,37 +268,43 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
 
 
 def test_init_pydantic_2x() -> None:
-    class PageView(BaseModel):
-        user_id: str
-        ts: datetime = Field(alias=["ts", "$date"])  # type: ignore[literal-required, arg-type]
-        path: str = Field("?", alias=["url", "path"])  # type: ignore[literal-required, arg-type]
-        referer: str = Field("?", alias="referer")
-        event: Literal["leave", "enter"] = Field("enter")
-        time_on_page: int = Field(0, serialization_alias="top")
+    try:
+        # don't fail if manually testing with pydantic 1.x
+        from pydantic import TypeAdapter
 
-    data_json = """
-    [{
-        "user_id": "x",
-        "ts": {"$date": "2021-01-01T00:00:00.000Z"},
-        "url": "/latest/foobar",
-        "referer": "https://google.com",
-        "event": "enter",
-        "top": 123
-    }]
-    """
-    adapter: TypeAdapter[Any] = TypeAdapter(List[PageView])
-    models = adapter.validate_json(data_json)
+        class PageView(BaseModel):
+            user_id: str
+            ts: datetime = Field(alias=["ts", "$date"])  # type: ignore[literal-required, arg-type]
+            path: str = Field("?", alias=["url", "path"])  # type: ignore[literal-required, arg-type]
+            referer: str = Field("?", alias="referer")
+            event: Literal["leave", "enter"] = Field("enter")
+            time_on_page: int = Field(0, serialization_alias="top")
 
-    result = pl.DataFrame(models)
+        data_json = """
+        [{
+            "user_id": "x",
+            "ts": {"$date": "2021-01-01T00:00:00.000Z"},
+            "url": "/latest/foobar",
+            "referer": "https://google.com",
+            "event": "enter",
+            "top": 123
+        }]
+        """
+        adapter: TypeAdapter[Any] = TypeAdapter(List[PageView])
+        models = adapter.validate_json(data_json)
 
-    assert result.to_dict(False) == {
-        "user_id": ["x"],
-        "ts": [datetime(2021, 1, 1, 0, 0)],
-        "path": ["?"],
-        "referer": ["https://google.com"],
-        "event": ["enter"],
-        "time_on_page": [0],
-    }
+        result = pl.DataFrame(models)
+
+        assert result.to_dict(False) == {
+            "user_id": ["x"],
+            "ts": [datetime(2021, 1, 1, 0, 0)],
+            "path": ["?"],
+            "referer": ["https://google.com"],
+            "event": ["enter"],
+            "time_on_page": [0],
+        }
+    except ImportError:
+        pass
 
 
 def test_init_structured_objects_unhashable() -> None:
@@ -456,6 +463,24 @@ def test_dataclasses_initvar_typing() -> None:
     assert dataclasses.asdict(abc) == df.rows(named=True)[0]
 
 
+def test_collections_namedtuple() -> None:
+    TestData = namedtuple("TestData", ["id", "info"])
+    nt_data = [TestData(1, "a"), TestData(2, "b"), TestData(3, "c")]
+
+    df1 = pl.DataFrame(nt_data)
+    assert df1.to_dict(False) == {"id": [1, 2, 3], "info": ["a", "b", "c"]}
+
+    df2 = pl.DataFrame({"data": nt_data, "misc": ["x", "y", "z"]})
+    assert df2.to_dict(False) == {
+        "data": [
+            {"id": 1, "info": "a"},
+            {"id": 2, "info": "b"},
+            {"id": 3, "info": "c"},
+        ],
+        "misc": ["x", "y", "z"],
+    }
+
+
 def test_init_ndarray(monkeypatch: Any) -> None:
     # Empty array
     df = pl.DataFrame(np.array([]))
@@ -580,6 +605,26 @@ def test_init_ndarray(monkeypatch: Any) -> None:
     )
     assert_frame_equal(df0, df1, nans_compare_equal=True)
     assert df2.rows() == [(1.0, 4.0), (2.5, None), (None, 6.5)]
+
+
+def test_null_array_print_format() -> None:
+    pa_tbl_null = pa.table({"a": [None, None]})
+    df_null = pl.from_arrow(pa_tbl_null)
+    assert df_null.shape == (2, 1)
+    assert df_null.dtypes == [pl.Null]  # type: ignore[union-attr]
+    assert df_null.rows() == [(None,), (None,)]  # type: ignore[union-attr]
+
+    assert (
+        str(df_null) == "shape: (2, 1)\n"
+        "┌──────┐\n"
+        "│ a    │\n"
+        "│ ---  │\n"
+        "│ null │\n"
+        "╞══════╡\n"
+        "│ null │\n"
+        "│ null │\n"
+        "└──────┘"
+    )
 
 
 def test_init_arrow() -> None:
@@ -821,9 +866,29 @@ def test_init_records() -> None:
     assert_frame_equal(df, expected)
     assert df.to_dicts() == dicts
 
-    df_cd = pl.DataFrame(dicts, schema=["c", "d"])
-    expected = pl.DataFrame({"c": [1, 2, 1], "d": [2, 1, 2]})
-    assert_frame_equal(df_cd, expected)
+    df_cd = pl.DataFrame(dicts, schema=["a", "c", "d"])
+    expected_values = {
+        "a": [1, 2, 1],
+        "c": [None, None, None],
+        "d": [None, None, None],
+    }
+    assert df_cd.to_dict(False) == expected_values
+
+    data = {"a": 1, "b": 2, "c": 3}
+
+    df1 = pl.from_dicts([data])
+    assert df1.columns == ["a", "b", "c"]
+
+    df1.columns = ["x", "y", "z"]
+    assert df1.columns == ["x", "y", "z"]
+
+    df2 = pl.from_dicts([data], schema=["c", "b", "a"])
+    assert df2.columns == ["c", "b", "a"]
+
+    for colname in ("c", "b", "a"):
+        assert pl.from_dicts([data], schema=[colname]).to_dict(False) == {
+            colname: [data[colname]]
+        }
 
 
 def test_init_records_schema_order() -> None:
@@ -956,13 +1021,10 @@ def test_from_dicts_missing_columns() -> None:
     ]
     assert pl.from_dicts(data).to_dict(False) == {"a": [1, None], "b": [None, 2]}
 
-    # missing columns in the schema; only load the declared keys
+    # partial schema with some columns missing; only load the declared keys
     data = [{"a": 1, "b": 2}]
     assert pl.from_dicts(data, schema=["a"]).to_dict(False) == {"a": [1]}
-
-    # invalid
-    with pytest.raises(ShapeError):
-        pl.from_dicts([{"a": 1, "b": 2}], schema=["xyz"])
+    assert pl.from_dicts(data, schema=["x"]).to_dict(False) == {"x": [None]}
 
 
 def test_from_rows_dtype() -> None:
@@ -1286,7 +1348,7 @@ def test_datetime_date_subclasses() -> None:
 def test_list_null_constructor() -> None:
     s = pl.Series("a", [[None], [None]], dtype=pl.List(pl.Null))
     assert s.dtype == pl.List(pl.Null)
-    assert s.to_list() == [None, None]
+    assert s.to_list() == [[None], [None]]
 
     # nested
     dtype = pl.List(pl.List(pl.Int8))

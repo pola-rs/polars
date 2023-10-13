@@ -9,7 +9,6 @@ use arrow::compute::comparison;
 use arrow::scalar::{BinaryScalar, PrimitiveScalar, Scalar, Utf8Scalar};
 use either::Either;
 use num_traits::{NumCast, ToPrimitive};
-use polars_arrow::kernels::rolling::compare_fn_nan_max;
 use polars_arrow::prelude::FromData;
 
 use crate::prelude::*;
@@ -687,7 +686,7 @@ where
 {
     match (lhs.len(), rhs.len()) {
         (_, 1) => {
-            let right = rhs.get(0).map(|s| s.with_name(""));
+            let right = rhs.get_as_series(0).map(|s| s.with_name(""));
             // SAFETY: values within iterator do not outlive the iterator itself
             unsafe {
                 lhs.amortized_iter()
@@ -696,7 +695,7 @@ where
             }
         },
         (1, _) => {
-            let left = lhs.get(0).map(|s| s.with_name(""));
+            let left = lhs.get_as_series(0).map(|s| s.with_name(""));
             // SAFETY: values within iterator do not outlive the iterator itself
             unsafe {
                 rhs.amortized_iter()

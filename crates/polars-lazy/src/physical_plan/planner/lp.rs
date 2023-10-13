@@ -150,9 +150,16 @@ pub fn create_physical_plan(
     match logical_plan {
         #[cfg(feature = "python")]
         PythonScan { options, .. } => Ok(Box::new(executors::PythonScanExec { options })),
-        FileSink { .. } => panic!(
-            "sink_parquet not yet supported in standard engine. Use 'collect().write_parquet()'"
-        ),
+        Sink { payload, .. } => {
+            match payload {
+                SinkType::Memory => panic!("Memory Sink not supported in the standard engine."),
+                SinkType::File{file_type, ..} => panic!(
+                    "sink_{file_type:?} not yet supported in standard engine. Use 'collect().write_parquet()'"
+                ),
+                #[cfg(feature = "cloud")]
+                SinkType::Cloud{..} => panic!("Cloud Sink not supported in standard engine.")
+            }
+        }
         Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()
@@ -189,6 +196,7 @@ pub fn create_physical_plan(
             predicate,
             file_options,
         } => {
+            let mut state = ExpressionConversionState::default();
             let predicate = predicate
                 .map(|pred| {
                     create_physical_expr(
@@ -196,7 +204,7 @@ pub fn create_physical_plan(
                         Context::Default,
                         expr_arena,
                         output_schema.as_ref(),
-                        &mut Default::default(),
+                        &mut state,
                     )
                 })
                 .map_or(Ok(None), |v| v.map(Some))?;
@@ -224,14 +232,30 @@ pub fn create_physical_plan(
                 FileScan::Parquet {
                     options,
                     cloud_options,
+                    metadata
                 } => Ok(Box::new(executors::ParquetExec::new(
                     path,
-                    file_info.schema,
+                    file_info,
                     predicate,
                     options,
                     cloud_options,
                     file_options,
+                    metadata
                 ))),
+                FileScan::Anonymous {
+                    function,
+                    ..
+                } => {
+                    Ok(Box::new(executors::AnonymousScanExec {
+                        function,
+                        predicate,
+                        file_options,
+                        file_info,
+                        output_schema,
+                        predicate_has_windows: state.has_windows,
+                    }))
+
+                }
             }
         },
         Projection {
@@ -292,33 +316,6 @@ pub fn create_physical_plan(
                 df,
                 projection,
                 selection,
-                predicate_has_windows: state.has_windows,
-            }))
-        },
-        AnonymousScan {
-            function,
-            predicate,
-            options,
-            output_schema,
-            ..
-        } => {
-            let mut state = ExpressionConversionState::default();
-            let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
-            let predicate = predicate
-                .map(|pred| {
-                    create_physical_expr(
-                        pred,
-                        Context::Default,
-                        expr_arena,
-                        output_schema.as_ref(),
-                        &mut state,
-                    )
-                })
-                .map_or(Ok(None), |v| v.map(Some))?;
-            Ok(Box::new(executors::AnonymousScanExec {
-                function,
-                predicate,
-                options,
                 predicate_has_windows: state.has_windows,
             }))
         },

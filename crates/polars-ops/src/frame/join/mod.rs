@@ -1,34 +1,49 @@
+mod args;
+#[cfg(feature = "asof_join")]
+mod asof;
+#[cfg(feature = "dtype-categorical")]
+mod checks;
+mod cross_join;
+mod general;
+mod hash_join;
 #[cfg(feature = "merge_sorted")]
 mod merge_sorted;
+
 #[cfg(feature = "chunked_ids")]
 use std::borrow::Cow;
+use std::fmt::{Debug, Display, Formatter};
+use std::hash::Hash;
 
+use ahash::RandomState;
+pub use args::*;
+#[cfg(feature = "asof_join")]
+use asof::AsofJoinBy;
+#[cfg(feature = "asof_join")]
+pub use asof::{AsOfOptions, AsofJoin, AsofStrategy};
+#[cfg(feature = "dtype-categorical")]
+pub(crate) use checks::*;
+pub use cross_join::CrossJoin;
+#[cfg(feature = "chunked_ids")]
+use either::Either;
+#[cfg(feature = "chunked_ids")]
+use general::create_chunked_index_mapping;
+pub use general::{_finish_join, _join_suffix_name};
+pub use hash_join::*;
+use hashbrown::hash_map::{Entry, RawEntryMut};
+use hashbrown::HashMap;
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
-use polars_core::frame::hash_join::*;
+use polars_arrow::trusted_len::TrustedLen;
+use polars_core::hashing::partition::{this_partition, AsU64};
+use polars_core::hashing::{BytesHash, _df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
 use polars_core::prelude::*;
+pub(super) use polars_core::series::IsSorted;
 use polars_core::utils::{_to_physical_and_bit_repr, slice_slice};
 use polars_core::POOL;
+use rayon::prelude::*;
 
-use super::*;
-
-macro_rules! det_hash_prone_order {
-    ($self:expr, $other:expr) => {{
-        // The shortest relation will be used to create a hash table.
-        let left_first = $self.len() > $other.len();
-        let a;
-        let b;
-        if left_first {
-            a = $self;
-            b = $other;
-        } else {
-            b = $self;
-            a = $other;
-        }
-
-        (a, b, !left_first)
-    }};
-}
+use super::hashing::{create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded};
+use super::IntoDf;
 
 pub trait DataFrameJoinOps: IntoDf {
     /// Generic join method. Can be used to join on multiple columns.
@@ -295,25 +310,29 @@ pub trait DataFrameJoinOps: IntoDf {
                 // Take the left and right dataframes by join tuples
                 let (df_left, df_right) = POOL.join(
                     || unsafe {
-                        remove_selected(left_df, &selected_left).take_opt_iter_unchecked(
-                            opt_join_tuples
+                        remove_selected(left_df, &selected_left).take_unchecked(
+                            &opt_join_tuples
                                 .iter()
-                                .map(|(left, _right)| left.map(|i| i as usize)),
+                                .map(|(left, _right)| *left)
+                                .collect_ca(""),
                         )
                     },
                     || unsafe {
-                        remove_selected(other, &selected_right).take_opt_iter_unchecked(
-                            opt_join_tuples
+                        remove_selected(other, &selected_right).take_unchecked(
+                            &opt_join_tuples
                                 .iter()
-                                .map(|(_left, right)| right.map(|i| i as usize)),
+                                .map(|(_left, right)| *right)
+                                .collect_ca(""),
                         )
                     },
                 );
                 // Allocate a new vec for df_left so that the keys are left and then other values.
                 let mut keys = Vec::with_capacity(selected_left.len() + df_left.width());
                 for (s_left, s_right) in selected_left.iter().zip(&selected_right) {
-                    let mut s = s_left.zip_outer_join_column(s_right, opt_join_tuples);
-                    s.rename(s_left.name());
+                    let s = unsafe {
+                        zip_outer_join_column(s_left, s_right, opt_join_tuples)
+                            .with_name(s_left.name())
+                    };
                     keys.push(s)
                 }
                 keys.extend_from_slice(df_left.get_columns());

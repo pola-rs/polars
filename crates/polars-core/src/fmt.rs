@@ -197,7 +197,6 @@ where
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let limit = std::cmp::min(LIMIT, self.len());
-        let taker = self.take_rand();
         let inner_type = T::type_name();
         write!(
             f,
@@ -208,21 +207,21 @@ where
 
         if limit < self.len() {
             for i in 0..limit / 2 {
-                match taker.get(i) {
+                match self.get(i) {
                     None => writeln!(f, "\tnull")?,
                     Some(val) => writeln!(f, "\t{val}")?,
                 };
             }
             writeln!(f, "\t…")?;
             for i in (0..limit / 2).rev() {
-                match taker.get(self.len() - i - 1) {
+                match self.get(self.len() - i - 1) {
                     None => writeln!(f, "\tnull")?,
                     Some(val) => writeln!(f, "\t{val}")?,
                 };
             }
         } else {
             for i in 0..limit {
-                match taker.get(i) {
+                match self.get(i) {
                     None => writeln!(f, "\tnull")?,
                     Some(val) => writeln!(f, "\t{val}")?,
                 };
@@ -314,7 +313,7 @@ impl Debug for Series {
                 "Series"
             ),
             DataType::Null => {
-                writeln!(f, "nullarray; shape: {}", self.len())
+                format_array!(f, self.null().unwrap(), "null", self.name(), "Series")
             },
             DataType::Binary => {
                 format_array!(f, self.binary().unwrap(), "binary", self.name(), "Series")

@@ -389,3 +389,23 @@ def test_parquet_statistics_filter_9925(tmp_path: Path) -> None:
         (pl.col("code").floordiv(100_000)).is_in([0, 3])
     )
     assert q.collect().to_dict(False) == {"code": [300964, 300972, 26]}
+
+
+@pytest.mark.write_disk()
+def test_parquet_statistics_filter_11069(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "foo.parquet"
+    pl.DataFrame({"x": [1, None]}).write_parquet(file_path, statistics=False)
+    assert pl.scan_parquet(file_path).filter(pl.col("x").is_null()).collect().to_dict(
+        False
+    ) == {"x": [None]}
+
+
+def test_parquet_list_arg(io_files_path: Path) -> None:
+    first = io_files_path / "foods1.parquet"
+    second = io_files_path / "foods2.parquet"
+
+    df = pl.scan_parquet(source=[first, second]).collect()
+    assert df.shape == (54, 4)
+    assert df.row(-1) == ("seafood", 194, 12.0, 1)
+    assert df.row(0) == ("vegetables", 45, 0.5, 2)

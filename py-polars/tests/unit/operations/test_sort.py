@@ -275,11 +275,27 @@ def test_top_k() -> None:
     assert_series_equal(s.top_k(3), pl.Series("a", [8, 5, 3]))
     assert_series_equal(s.bottom_k(4), pl.Series("a", [1, 2, 3, 5]))
 
+    assert_series_equal(s.top_k(pl.Series([3])), pl.Series("a", [8, 5, 3]))
+    assert_series_equal(s.bottom_k(pl.Series([4])), pl.Series("a", [1, 2, 3, 5]))
+
     # 5886
-    df = pl.DataFrame({"test": [2, 4, 1, 3]})
+    df = pl.DataFrame(
+        {
+            "test": [2, 4, 1, 3],
+            "val": [2, 4, 9, 3],
+        }
+    )
     assert_frame_equal(
         df.select(pl.col("test").top_k(10)),
         pl.DataFrame({"test": [4, 3, 2, 1]}),
+    )
+
+    assert_frame_equal(
+        df.select(
+            top_k=pl.col("test").top_k(pl.col("val").min()),
+            bottom_k=pl.col("test").bottom_k(pl.col("val").min()),
+        ),
+        pl.DataFrame({"top_k": [4, 3], "bottom_k": [1, 2]}),
     )
 
     # dataframe
@@ -695,3 +711,20 @@ def test_sorted_update_flags_10327() -> None:
             pl.Series("a", [], dtype=pl.Int64).to_frame(),
         ]
     )["a"].to_list() == [1, 2]
+
+
+def test_sort_by_11653() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [0, 0, 0, 0, 0, 1],
+            "weights": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "other": [0.8, 0.4, 0.5, 0.6, 0.7, 0.8],
+        }
+    )
+
+    assert df.group_by("id").agg(
+        (pl.col("weights") / pl.col("weights").sum())
+        .sort_by("other")
+        .sum()
+        .alias("sort_by"),
+    ).sort("id").to_dict(False) == {"id": [0, 1], "sort_by": [1.0, 1.0]}

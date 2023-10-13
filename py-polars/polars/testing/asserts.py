@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import textwrap
-from typing import Any
+from typing import Any, NoReturn
 
 from polars import functions as F
 from polars.dataframe import DataFrame
@@ -75,24 +75,20 @@ def assert_frame_equal(
     >>> assert_frame_equal(df1, df2)  # doctest: +SKIP
     AssertionError: Values for column 'a' are different.
     """
-    if isinstance(left, LazyFrame) and isinstance(right, LazyFrame):
-        left, right = left.collect(), right.collect()
-        obj = "LazyFrames"
+    collect_input_frames = isinstance(left, LazyFrame) and isinstance(right, LazyFrame)
+    if collect_input_frames:
+        objs = "LazyFrames"
     elif isinstance(left, DataFrame) and isinstance(right, DataFrame):
-        obj = "DataFrames"
+        objs = "DataFrames"
     else:
-        raise_assert_detail("Inputs", "Unexpected input types", type(left), type(right))
+        raise_assert_detail("Inputs", "unexpected input types", type(left), type(right))
 
-    if left.shape[0] != right.shape[0]:  # type: ignore[union-attr]
-        raise_assert_detail(obj, "Length mismatch", left.shape, right.shape)  # type: ignore[union-attr]
-
-    left_not_right = [c for c in left.columns if c not in right.columns]
-    if left_not_right:
+    if left_not_right := [c for c in left.columns if c not in right.columns]:
         raise AssertionError(
             f"columns {left_not_right!r} in left frame, but not in right"
         )
-    right_not_left = [c for c in right.columns if c not in left.columns]
-    if right_not_left:
+
+    if right_not_left := [c for c in right.columns if c not in left.columns]:
         raise AssertionError(
             f"columns {right_not_left!r} in right frame, but not in left"
         )
@@ -102,13 +98,25 @@ def assert_frame_equal(
             f"columns are not in the same order:\n{left.columns!r}\n{right.columns!r}"
         )
 
+    if collect_input_frames:
+        if check_dtype:  # check this _before_ we collect
+            left_schema, right_schema = left.schema, right.schema
+            if left_schema != right_schema:
+                raise_assert_detail(
+                    objs, "lazy schemas are not equal", left_schema, right_schema
+                )
+        left, right = left.collect(), right.collect()  # type: ignore[union-attr]
+
+    if left.shape[0] != right.shape[0]:  # type: ignore[union-attr]
+        raise_assert_detail(objs, "length mismatch", left.shape, right.shape)  # type: ignore[union-attr]
+
     if not check_row_order:
         try:
             left = left.sort(by=left.columns)
             right = right.sort(by=left.columns)
         except ComputeError as exc:
             raise InvalidAssert(
-                "cannot set 'check_row_order=False' on frame with unsortable columns"
+                "cannot set `check_row_order=False` on frame with unsortable columns"
             ) from exc
 
     # note: does not assume a particular column order
@@ -250,13 +258,13 @@ def assert_series_equal(
         isinstance(left, Series)  # type: ignore[redundant-expr]
         and isinstance(right, Series)
     ):
-        raise_assert_detail("Inputs", "Unexpected input types", type(left), type(right))
+        raise_assert_detail("Inputs", "unexpected input types", type(left), type(right))
 
     if len(left) != len(right):
-        raise_assert_detail("Series", "Length mismatch", len(left), len(right))
+        raise_assert_detail("Series", "length mismatch", len(left), len(right))
 
     if check_names and left.name != right.name:
-        raise_assert_detail("Series", "Name mismatch", left.name, right.name)
+        raise_assert_detail("Series", "name mismatch", left.name, right.name)
 
     _assert_series_inner(
         left,
@@ -347,7 +355,7 @@ def _assert_series_inner(
 ) -> None:
     """Compare Series dtype + values."""
     if check_dtype and left.dtype != right.dtype:
-        raise_assert_detail("Series", "Dtype mismatch", left.dtype, right.dtype)
+        raise_assert_detail("Series", "dtype mismatch", left.dtype, right.dtype)
 
     if left.null_count() != right.null_count():
         raise_assert_detail(
@@ -369,6 +377,8 @@ def _assert_series_inner(
             unequal = unequal & ~(
                 (left.is_nan() & right.is_nan()).fill_null(F.lit(False))
             )
+    if comparing_float_dtypes and not nans_compare_equal:
+        unequal = unequal | left.is_nan() | right.is_nan()
 
     # check nested dtypes in separate function
     if left.dtype.is_nested or right.dtype.is_nested:
@@ -398,7 +408,7 @@ def _assert_series_inner(
         if check_exact:
             raise_assert_detail(
                 "Series",
-                "Exact value mismatch",
+                "exact value mismatch",
                 left=list(left),
                 right=list(right),
             )
@@ -434,7 +444,7 @@ def _assert_series_inner(
             if mismatch:
                 raise_assert_detail(
                     "Series",
-                    f"Value mismatch{nan_info}",
+                    f"value mismatch{nan_info}",
                     left=list(left),
                     right=list(right),
                 )
@@ -443,6 +453,7 @@ def _assert_series_inner(
 def _assert_series_nested(
     left: Series,
     right: Series,
+    *,
     check_dtype: bool,
     check_exact: bool,
     atol: float,
@@ -468,10 +479,10 @@ def _assert_series_nested(
                         s2,
                     )
             elif (s1 is None and s2 is not None) or (s2 is None and s1 is not None):
-                raise_assert_detail("Series", "Nested value mismatch", s1, s2)
+                raise_assert_detail("Series", "nested value mismatch", s1, s2)
             elif len(s1) != len(s2):
                 raise_assert_detail(
-                    "Series", "Nested list length mismatch", len(s1), len(s2)
+                    "Series", "nested list length mismatch", len(s1), len(s2)
                 )
 
             _assert_series_inner(
@@ -492,13 +503,13 @@ def _assert_series_nested(
         if len(ls.columns) != len(rs.columns):
             raise_assert_detail(
                 "Series",
-                "Nested struct fields mismatch",
+                "nested struct fields mismatch",
                 len(ls.columns),
                 len(rs.columns),
             )
         elif len(ls) != len(rs):
             raise_assert_detail(
-                "Series", "Nested struct length mismatch", len(ls), len(rs)
+                "Series", "nested struct length mismatch", len(ls), len(rs)
             )
         for s1, s2 in zip(ls, rs):
             _assert_series_inner(
@@ -524,15 +535,13 @@ def raise_assert_detail(
     left: Any,
     right: Any,
     exc: AssertionError | None = None,
-) -> None:
+) -> NoReturn:
     """Raise a detailed assertion error."""
     __tracebackhide__ = True
 
     error_msg = textwrap.dedent(
         f"""\
-        {obj} are different.
-
-        {detail}
+        {obj} are different ({detail})
         [left]:  {left}
         [right]: {right}\
         """

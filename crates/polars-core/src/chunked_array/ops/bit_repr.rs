@@ -2,7 +2,7 @@ use arrow::buffer::Buffer;
 
 use crate::prelude::*;
 
-/// Reinterprets the type of a ChunkedArray. T and U must have the same size
+/// Reinterprets the type of a [`ChunkedArray`]. T and U must have the same size
 /// and alignment.
 fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
     ca: &ChunkedArray<T>,
@@ -22,8 +22,9 @@ fn reinterpret_chunked_array<T: PolarsNumericType, U: PolarsNumericType>(
     ChunkedArray::from_chunk_iter(ca.name(), chunks)
 }
 
-/// Reinterprets the type of a ListChunked. T and U must have the same size
+/// Reinterprets the type of a [`ListChunked`]. T and U must have the same size
 /// and alignment.
+#[cfg(feature = "reinterpret")]
 fn reinterpret_list_chunked<T: PolarsNumericType, U: PolarsNumericType>(
     ca: &ListChunked,
 ) -> ListChunked {
@@ -245,7 +246,7 @@ impl UInt32Chunked {
 /// Used to save compilation paths. Use carefully. Although this is safe,
 /// if misused it can lead to incorrect results.
 impl Float32Chunked {
-    pub(crate) fn apply_as_ints<F>(&self, f: F) -> Series
+    pub fn apply_as_ints<F>(&self, f: F) -> Series
     where
         F: Fn(&Series) -> Series,
     {
@@ -256,7 +257,7 @@ impl Float32Chunked {
     }
 }
 impl Float64Chunked {
-    pub(crate) fn apply_as_ints<F>(&self, f: F) -> Series
+    pub fn apply_as_ints<F>(&self, f: F) -> Series
     where
         F: Fn(&Series) -> Series,
     {

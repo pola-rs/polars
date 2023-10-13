@@ -1,5 +1,5 @@
 import re
-from datetime import date
+from datetime import date, datetime
 from tempfile import NamedTemporaryFile
 from typing import Any
 
@@ -38,6 +38,25 @@ def test_union_duplicates() -> None:
         )
         == 10
     )
+
+
+def test_cse_with_struct_expr_11116() -> None:
+    df = pl.DataFrame([{"s": {"a": 1, "b": 4}, "c": 3}]).lazy()
+    out = df.with_columns(
+        pl.col("s").struct.field("a").alias("s_a"),
+        pl.col("s").struct.field("b").alias("s_b"),
+        (
+            (pl.col("s").struct.field("a") <= pl.col("c"))
+            & (pl.col("s").struct.field("b") > pl.col("c"))
+        ).alias("c_between_a_and_b"),
+    ).collect(comm_subexpr_elim=True)
+    assert out.to_dict(False) == {
+        "s": [{"a": 1, "b": 4}],
+        "c": [3],
+        "s_a": [1],
+        "s_b": [4],
+        "c_between_a_and_b": [True],
+    }
 
 
 def test_cse_schema_6081() -> None:
@@ -418,4 +437,102 @@ def test_cse_count_in_group_by() -> None:
         "a": [1, 2],
         "b": [[1], []],
         "c": [[40], []],
+    }
+
+
+def test_no_cse_in_with_context() -> None:
+    df1 = pl.DataFrame(
+        {
+            "timestamp": [
+                datetime(2023, 1, 1, 0, 0),
+                datetime(2023, 5, 1, 0, 0),
+                datetime(2023, 10, 1, 0, 0),
+            ],
+            "value": [2, 5, 9],
+        }
+    )
+    df2 = pl.DataFrame(
+        {
+            "date_start": [
+                datetime(2022, 12, 31, 0, 0),
+                datetime(2023, 1, 2, 0, 0),
+            ],
+            "date_end": [
+                datetime(2023, 4, 30, 0, 0),
+                datetime(2023, 5, 5, 0, 0),
+            ],
+            "label": [0, 1],
+        }
+    )
+
+    assert (
+        df1.lazy()
+        .with_context(df2.lazy())
+        .select(
+            pl.col("date_start", "label").take(
+                pl.col("date_start").search_sorted("timestamp") - 1
+            ),
+        )
+    ).collect().to_dict(False) == {
+        "date_start": [
+            datetime(2022, 12, 31, 0, 0),
+            datetime(2023, 1, 2, 0, 0),
+            datetime(2023, 1, 2, 0, 0),
+        ],
+        "label": [0, 1, 1],
+    }
+
+
+def test_cse_slice_11594() -> None:
+    df = pl.LazyFrame({"a": [1, 2, 1, 2, 1, 2]})
+
+    q = df.select(
+        pl.col("a").slice(offset=1, length=pl.count() - 1).alias("1"),
+        pl.col("a").slice(offset=1, length=pl.count() - 1).alias("2"),
+    )
+
+    assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
+
+    assert q.collect(comm_subexpr_elim=True).to_dict(False) == {
+        "1": [2, 1, 2, 1, 2],
+        "2": [2, 1, 2, 1, 2],
+    }
+
+    q = df.select(
+        pl.col("a").slice(offset=1, length=pl.count() - 1).alias("1"),
+        pl.col("a").slice(offset=0, length=pl.count() - 1).alias("2"),
+    )
+
+    assert "__POLARS_CSE" in q.explain(comm_subexpr_elim=True)
+
+    assert q.collect(comm_subexpr_elim=True).to_dict(False) == {
+        "1": [2, 1, 2, 1, 2],
+        "2": [1, 2, 1, 2, 1],
+    }
+
+
+def test_cse_is_in_11489() -> None:
+    df = pl.DataFrame(
+        {"cond": [1, 2, 3, 2, 1], "x": [1.0, 0.20, 3.0, 4.0, 0.50]}
+    ).lazy()
+    any_cond = (
+        pl.when(pl.col("cond").is_in([2, 3]))
+        .then(True)
+        .when(pl.col("cond").is_in([1]))
+        .then(False)
+        .otherwise(None)
+        .alias("any_cond")
+    )
+    val = (
+        pl.when(any_cond)
+        .then(1.0)
+        .when(~any_cond)
+        .then(0.0)
+        .otherwise(None)
+        .alias("val")
+    )
+    assert df.select("cond", any_cond, val).collect().to_dict(False) == {
+        "cond": [1, 2, 3, 2, 1],
+        "any_cond": [False, True, True, True, False],
+        "val": [0.0, 1.0, 1.0, 1.0, 0.0],
     }

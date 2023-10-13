@@ -131,20 +131,6 @@ impl LogicalPlan {
         let (mut branch, id) = id;
 
         match self {
-            AnonymousScan {
-                file_info, options, ..
-            } => self.write_scan(
-                acc_str,
-                prev_node,
-                "ANONYMOUS SCAN",
-                Path::new(""),
-                options.with_columns.as_deref().map(|cols| cols.as_slice()),
-                file_info.schema.len(),
-                &options.predicate,
-                branch,
-                id,
-                id_map,
-            ),
             Union { inputs, .. } => {
                 let current_node = DotNode {
                     branch,
@@ -391,11 +377,16 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)
             },
-            FileSink { input, .. } => {
+            Sink { input, payload, .. } => {
                 let current_node = DotNode {
                     branch,
                     id,
-                    fmt: "FILE_SINK",
+                    fmt: match payload {
+                        SinkType::Memory => "SINK (MEMORY)",
+                        SinkType::File { .. } => "SINK (FILE)",
+                        #[cfg(feature = "cloud")]
+                        SinkType::Cloud { .. } => "SINK (CLOUD)",
+                    },
                 };
                 self.write_dot(acc_str, prev_node, current_node, id_map)?;
                 input.dot(acc_str, (branch, id + 1), current_node, id_map)

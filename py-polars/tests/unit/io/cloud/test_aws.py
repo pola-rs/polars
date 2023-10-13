@@ -28,6 +28,7 @@ def monkeypatch_module() -> Any:
 def s3_base(monkeypatch_module: Any) -> Iterator[str]:
     monkeypatch_module.setenv("AWS_ACCESS_KEY_ID", "accesskey")
     monkeypatch_module.setenv("AWS_SECRET_ACCESS_KEY", "secretkey")
+    monkeypatch_module.setenv("AWS_DEFAULT_REGION", "us-east-1")
 
     host = "127.0.0.1"
     port = 5000
@@ -73,7 +74,6 @@ def test_read_s3(s3: str, function: Callable[..., Any], extension: str) -> None:
     ("function", "extension"),
     [
         (pl.scan_ipc, "ipc"),
-        (pl.scan_parquet, "parquet"),
     ],
 )
 def test_scan_s3(s3: str, function: Callable[..., Any], extension: str) -> None:

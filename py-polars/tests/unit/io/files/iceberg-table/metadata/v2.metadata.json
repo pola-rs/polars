@@ -1,0 +1,109 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "c470045a-5d75-48aa-9d4b-86a86a9b1fce",
+  "location" : "/tmp/iceberg/t1",
+  "last-updated-ms" : 1694547405299,
+  "last-column-id" : 3,
+  "schema" : {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "str",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "ts",
+      "required" : false,
+      "type" : "timestamp"
+    } ]
+  },
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 2,
+      "name" : "str",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "ts",
+      "required" : false,
+      "type" : "timestamp"
+    } ]
+  } ],
+  "partition-spec" : [ {
+    "name" : "ts_day",
+    "transform" : "day",
+    "source-id" : 3,
+    "field-id" : 1000
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ {
+      "name" : "ts_day",
+      "transform" : "day",
+      "source-id" : 3,
+      "field-id" : 1000
+    } ]
+  } ],
+  "last-partition-id" : 1000,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "fokkodriesprong"
+  },
+  "current-snapshot-id" : 7051579356916758811,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 7051579356916758811,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "snapshot-id" : 7051579356916758811,
+    "timestamp-ms" : 1694547405299,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1694547283063",
+      "added-data-files" : "2",
+      "added-records" : "3",
+      "added-files-size" : "1788",
+      "changed-partition-count" : "2",
+      "total-records" : "3",
+      "total-files-size" : "1788",
+      "total-data-files" : "2",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "/tmp/iceberg/t1/metadata/snap-7051579356916758811-1-aef5d952-7e24-4764-9b30-3483be37240f.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1694547405299,
+    "snapshot-id" : 7051579356916758811
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1694547211303,
+    "metadata-file" : "/tmp/iceberg/t1/metadata/v1.metadata.json"
+  } ]
+}

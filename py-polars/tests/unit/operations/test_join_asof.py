@@ -455,14 +455,12 @@ def test_asof_join_nearest() -> None:
             "a": [1, 2, 3, 4, 5],
         }
     ).set_sorted("asof_key")
-
     df2 = pl.DataFrame(
         {
             "asof_key": [1, 2, 3, 10],
             "b": [1, 2, 3, 4],
         }
     ).set_sorted("asof_key")
-
     expected = pl.DataFrame(
         {
             "asof_key": [9, 9, 10, 10, 10],
@@ -597,6 +595,32 @@ def test_asof_join_nearest_with_tolerance() -> None:
     )
     assert_frame_equal(out, expected)
 
+    # Case #9: last item is closest match
+    df1 = pl.DataFrame(
+        {
+            "asof_key_left": [10.00001, 20.0, 30.0],
+        }
+    ).set_sorted("asof_key_left")
+    df2 = pl.DataFrame(
+        {
+            "asof_key_right": [10.00001, 20.0001, 29.0],
+        }
+    ).set_sorted("asof_key_right")
+    out = df1.join_asof(
+        df2,
+        left_on="asof_key_left",
+        right_on="asof_key_right",
+        strategy="nearest",
+        tolerance=0.5,
+    )
+    expected = pl.DataFrame(
+        {
+            "asof_key_left": [10.00001, 20.0, 30.0],
+            "asof_key_right": [10.00001, 20.0001, None],
+        }
+    )
+    assert_frame_equal(out, expected)
+
 
 def test_asof_join_nearest_by() -> None:
     # Generic join_asof
@@ -677,6 +701,35 @@ def test_asof_join_nearest_by() -> None:
     )
 
     out = a.join_asof(b, by="code", on="time", strategy="nearest")
+    assert_frame_equal(out, expected)
+
+    # last item is closest match
+    df1 = pl.DataFrame(
+        {
+            "a": [1, 1, 1],
+            "asof_key_left": [10.00001, 20.0, 30.0],
+        }
+    ).set_sorted("asof_key_left")
+    df2 = pl.DataFrame(
+        {
+            "a": [1, 1, 1],
+            "asof_key_right": [10.00001, 20.0001, 29.0],
+        }
+    ).set_sorted("asof_key_right")
+    out = df1.join_asof(
+        df2,
+        left_on="asof_key_left",
+        right_on="asof_key_right",
+        by="a",
+        strategy="nearest",
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [1, 1, 1],
+            "asof_key_left": [10.00001, 20.0, 30.0],
+            "asof_key_right": [10.00001, 20.0001, 29.0],
+        }
+    )
     assert_frame_equal(out, expected)
 
 
@@ -932,6 +985,36 @@ def test_asof_join_nearest_by_with_tolerance() -> None:
     out = df1.join_asof(
         df2, by="group", on="asof_key", strategy="nearest", tolerance=1.0
     ).sort(by=["group", "a"])
+    assert_frame_equal(out, expected)
+
+    # last item is closest match
+    df1 = pl.DataFrame(
+        {
+            "a": [1, 1, 1],
+            "asof_key_left": [10.00001, 20.0, 30.0],
+        }
+    ).set_sorted("asof_key_left")
+    df2 = pl.DataFrame(
+        {
+            "a": [1, 1, 1],
+            "asof_key_right": [10.00001, 20.0001, 29.0],
+        }
+    ).set_sorted("asof_key_right")
+    out = df1.join_asof(
+        df2,
+        left_on="asof_key_left",
+        right_on="asof_key_right",
+        by="a",
+        strategy="nearest",
+        tolerance=0.5,
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [1, 1, 1],
+            "asof_key_left": [10.00001, 20.0, 30.0],
+            "asof_key_right": [10.00001, 20.0001, None],
+        }
+    )
     assert_frame_equal(out, expected)
 
 

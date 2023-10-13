@@ -4,6 +4,7 @@ use polars_utils::sync::SyncPtr;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
+use crate::series::implementations::null::NullChunked;
 
 #[inline]
 #[allow(unused_variables)]
@@ -280,5 +281,16 @@ impl<T: PolarsObject> ChunkAnyValue for ObjectChunked<T> {
             None => Err(polars_err!(ComputeError: "index is out of bounds")),
             Some(v) => Ok(AnyValue::Object(v)),
         }
+    }
+}
+
+impl ChunkAnyValue for NullChunked {
+    #[inline]
+    unsafe fn get_any_value_unchecked(&self, _index: usize) -> AnyValue {
+        AnyValue::Null
+    }
+
+    fn get_any_value(&self, _index: usize) -> PolarsResult<AnyValue> {
+        Ok(AnyValue::Null)
     }
 }

@@ -48,7 +48,6 @@ You may use the issue to discuss possible solutions.
 ### Setting up your local environment
 
 Polars development flow relies on both Rust and Python, which means setting up your local development environment is not trivial.
-For contributing to Node.js Polars, please check out the [Node.js Polars](https://github.com/pola-rs/nodejs-polars) repository.
 If you run into problems, please contact us on [Discord](https://discord.gg/4UfP5cfBE7).
 
 _Note that if you are a Windows user, the steps below might not work as expected; try developing using [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)._
@@ -56,7 +55,7 @@ _Note that if you are a Windows user, the steps below might not work as expected
 Start by [forking](https://docs.github.com/en/get-started/quickstart/fork-a-repo) the Polars repository, then clone your forked repository using `git`:
 
 ```bash
-git clone git@github.com:<username>/polars.git
+git clone https://github.com/<username>/polars.git
 cd polars
 ```
 
@@ -89,7 +88,7 @@ This will do a number of things:
 
 - Use Python to create a virtual environment in the `.venv` folder.
 - Use [pip](https://pip.pypa.io/) to install all Python dependencies for development, linting, and building documentation.
-- Use Rust to compile and install Polars in your virtual environment.
+- Use Rust to compile and install Polars in your virtual environment. _At least 8GB of RAM is recommended for this step to run smoothly._
 - Use [pytest](https://docs.pytest.org/) to run the Python unittests in your virtual environment
 
 Check if linting also works correctly by running:
@@ -148,12 +147,69 @@ If you are stuck or unsure about your solution, feel free to open a draft pull r
 
 ## Contributing to documentation
 
-The most important components of Polars documentation are the [user guide](https://pola-rs.github.io/polars-book/user-guide/), the API references, and the database of questions on [StackOverflow](https://stackoverflow.com/).
+The most important components of Polars documentation are the [user guide](https://pola-rs.github.io/polars/user-guide/), the API references, and the database of questions on [StackOverflow](https://stackoverflow.com/).
 
 ### User guide
 
-The user guide is maintained in the [polars-book](https://github.com/pola-rs/polars-book) repository.
-For contributing to the user guide, please refer to the [contributing guide](https://github.com/pola-rs/polars-book/blob/master/CONTRIBUTING.md) in that repository.
+The user guide is maintained in the `docs/user-guide` folder. Before creating a PR first raise an issue to discuss what you feel is missing or could be improved.
+
+#### Building and serving the user guide
+
+The user guide is built using [MkDocs](https://www.mkdocs.org/). You install the dependencies for building the user guide by running `make requirements` in the root of the repo.
+
+Run `mkdocs serve` to build and serve the user guide so you can view it locally and see updates as you make changes.
+
+#### Creating a new user guide page
+
+Each user guide page is based on a `.md` markdown file. This file must be listed in `mkdocs.yml`.
+
+#### Adding a shell code block
+
+To add a code block with code to be run in a shell with tabs for Python and Rust, use the following format:
+
+````
+=== ":fontawesome-brands-python: Python"
+
+    ```shell
+    $ pip install fsspec
+    ```
+
+=== ":fontawesome-brands-rust: Rust"
+
+    ```shell
+    $ cargo add aws_sdk_s3
+    ```
+````
+
+#### Adding a code block
+
+The snippets for Python and Rust code blocks are in the `docs/src/python/` and `docs/src/rust/` directories, respectively. To add a code snippet with Python or Rust code to a `.md` page, use the following format:
+
+```
+{{code_block('user-guide/io/cloud-storage','read_parquet',[read_parquet,read_csv])}}
+```
+
+- The first argument is a path to either or both files called `docs/src/python/user-guide/io/cloud-storage.py` and `docs/src/rust/user-guide/io/cloud-storage.rs`.
+- The second argument is the name given at the start and end of each snippet in the `.py` or `.rs` file
+- The third argument is a list of links to functions in the API docs. For each element of the list there must be a corresponding entry in `docs/_build/API_REFERENCE_LINKS.yml`
+
+If the corresponding `.py` and `.rs` snippet files both exist then each snippet named in the second argument to `code_block` above must exist or the build will fail. An empty snippet should be added to the `.py` or `.rs` file if the snippet is not needed.
+
+Each snippet is formatted as follows:
+
+```python
+# --8<-- [start:read_parquet]
+import polars as pl
+
+df = pl.read_parquet("file.parquet")
+# --8<-- [end:read_parquet]
+```
+
+The snippet is delimited by `--8<-- [start:<snippet_name>]` and `--8<-- [end:<snippet_name>]`. The snippet name must match the name given in the second argument to `code_block` above.
+
+#### Linting
+
+Before committing, install `dprint` (see above) and run `dprint fmt` from the `docs` directory to lint the markdown files.
 
 ### API reference
 
@@ -181,10 +237,6 @@ The resulting HTML files will be in `py-polars/docs/build/html`.
 
 New additions to the API should be added manually to the API reference by adding an entry to the correct `.rst` file in the `py-polars/docs/source/reference` directory.
 
-#### Node.js
-
-For contributions to Node.js Polars, please refer to the official [Node.js Polars repository](https://github.com/pola-rs/nodejs-polars).
-
 ### StackOverflow
 
 We use StackOverflow to create a database of high quality questions and answers that is searchable and remains up-to-date.
@@ -192,7 +244,6 @@ There is a separate tag for each language:
 
 - [Python Polars](https://stackoverflow.com/questions/tagged/python-polars)
 - [Rust Polars](https://stackoverflow.com/questions/tagged/rust-polars)
-- [Node.js Polars](https://stackoverflow.com/questions/tagged/nodejs-polars)
 
 Contributions in the form of well-formulated questions or answers are always welcome!
 If you add a new question, please notify us by adding a [matching issue](https://github.com/pola-rs/polars/issues/new?&labels=question&template=question.yml) to our GitHub issue tracker.
@@ -225,21 +276,14 @@ Start by bumping the version number in the source code:
 
 Directly after merging your pull request, release the new version:
 
-8. Go back to the [releases page](https://github.com/pola-rs/polars/releases) and click _Edit_ on the appropriate draft release.
-9. On the draft release page, click _Publish release_. This will create a new release and a new tag, which will trigger the GitHub Actions release workflow ([Python](https://github.com/pola-rs/polars/actions/workflows/release-python.yml) / [Rust](https://github.com/pola-rs/polars/actions/workflows/release-rust.yml)).
-10. Wait for all release jobs to finish, then check [crates.io](https://crates.io/crates/polars)/[PyPI](https://pypi.org/project/polars/) to verify that the new Polars release is now available.
+8. Go to the release workflow ([Python](https://github.com/pola-rs/polars/actions/workflows/release-python.yml)/[Rust](https://github.com/pola-rs/polars/actions/workflows/release-rust.yml)), click _Run workflow_ in the top right, and click the green button. This will trigger the workflow, which will build all release artifacts and publish them.
+9. Wait for the workflow to finish, then check [crates.io](https://crates.io/crates/polars)/[PyPI](https://pypi.org/project/polars/)/[GitHub](https://github.com/pola-rs/polars/releases) to verify that the new Polars release is now available.
 
 ### Troubleshooting
 
 It may happen that one or multiple release jobs fail. If so, you should first try to simply re-run the failed jobs from the GitHub Actions UI.
 
-If that doesn't help, you will have to figure out what's wrong and commit a fix. Once your fix has made it to the `main` branch, re-trigger the release workflow by updating the git tag associated with the release. Note the commit hash of your fix, and run the following command:
-
-```shell
-git tag -f <version-number> <commit-hash> && git push -f origin <version-number>
-```
-
-This will update the tag to point to the commit of your fix. The release workflows will re-trigger and hopefully succeed this time!
+If that doesn't help, you will have to figure out what's wrong and commit a fix. Once your fix has made it to the `main` branch, simply re-trigger the release workflow.
 
 ## License
 

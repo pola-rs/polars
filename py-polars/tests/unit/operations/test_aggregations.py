@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -115,7 +117,7 @@ def test_quantile() -> None:
 @pytest.mark.parametrize("n", [1, 2, 10, 100])
 def test_quantile_vs_numpy(tp: type, n: int) -> None:
     a: np.ndarray[Any, Any] = np.random.randint(0, 50, n).astype(tp)
-    np_result: Optional[npt.ArrayLike] = np.median(a)
+    np_result: npt.ArrayLike | None = np.median(a)
     # nan check
     if np_result != np_result:
         np_result = None
@@ -279,3 +281,9 @@ def test_sum_empty_and_null_set() -> None:
     df = pl.DataFrame({"a": [None, None, None], "b": [1, 1, 1]})
     assert df.select(pl.sum("a")).item() == 0.0
     assert df.group_by("b").agg(pl.sum("a"))["a"].item() == 0.0
+
+
+def test_horizontal_sum_null_to_identity() -> None:
+    assert pl.DataFrame({"a": [1, 5], "b": [10, None]}).select(
+        [pl.sum_horizontal(["a", "b"])]
+    ).to_series().to_list() == [11, 5]

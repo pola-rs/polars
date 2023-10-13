@@ -1,7 +1,7 @@
 #[cfg(feature = "date_offset")]
 use polars_arrow::time_zone::Tz;
 #[cfg(feature = "date_offset")]
-use polars_core::chunked_array::ops::arity::try_binary_elementwise_values;
+use polars_core::chunked_array::ops::arity::try_binary_elementwise;
 #[cfg(feature = "date_offset")]
 use polars_time::prelude::*;
 
@@ -90,7 +90,7 @@ pub(super) fn datetime(
                     .map(|ndt| match time_unit {
                         TimeUnit::Milliseconds => ndt.timestamp_millis(),
                         TimeUnit::Microseconds => ndt.timestamp_micros(),
-                        TimeUnit::Nanoseconds => ndt.timestamp_nanos(),
+                        TimeUnit::Nanoseconds => ndt.timestamp_nanos_opt().unwrap(),
                     })
             } else {
                 None
@@ -126,16 +126,26 @@ fn apply_offsets_to_datetime(
     offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>,
     time_zone: Option<&Tz>,
 ) -> PolarsResult<Int64Chunked> {
-    match offsets.len() {
-        1 => match offsets.get(0) {
+    match (datetime.len(), offsets.len()) {
+        (1, _) => match datetime.0.get(0) {
+            Some(dt) => offsets.try_apply_values_generic(|offset| {
+                offset_fn(&Duration::parse(offset), dt, time_zone)
+            }),
+            _ => Ok(Int64Chunked::full_null(datetime.0.name(), offsets.len())),
+        },
+        (_, 1) => match offsets.get(0) {
             Some(offset) => datetime
                 .0
                 .try_apply(|v| offset_fn(&Duration::parse(offset), v, time_zone)),
             _ => Ok(datetime.0.apply(|_| None)),
         },
-        _ => try_binary_elementwise_values(datetime, offsets, |timestamp: i64, offset: &str| {
-            let offset = Duration::parse(offset);
-            offset_fn(&offset, timestamp, time_zone)
+        _ => try_binary_elementwise(datetime, offsets, |timestamp_opt, offset_opt| {
+            match (timestamp_opt, offset_opt) {
+                (Some(timestamp), Some(offset)) => {
+                    offset_fn(&Duration::parse(offset), timestamp, time_zone).map(Some)
+                },
+                _ => Ok(None),
+            }
         }),
     }
 }

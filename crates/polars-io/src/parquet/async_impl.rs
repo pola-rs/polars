@@ -2,44 +2,44 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use arrow::io::parquet::read::{
-    self as parquet2_read, read_columns_async, ColumnChunkMetaData, RowGroupMetaData,
-};
+use arrow::io::parquet::read::{self as parquet2_read, RowGroupMetaData};
 use arrow::io::parquet::write::FileMetaData;
-use futures::future::BoxFuture;
-use futures::lock::Mutex;
-use futures::{stream, StreamExt, TryFutureExt, TryStreamExt};
+use bytes::Bytes;
+use futures::future::try_join_all;
 use object_store::path::Path as ObjectPath;
 use object_store::ObjectStore;
-use polars_core::cloud::CloudOptions;
 use polars_core::config::verbose;
 use polars_core::datatypes::PlHashMap;
 use polars_core::error::{to_compute_err, PolarsResult};
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
+use smartstring::alias::String as SmartString;
 
-use super::cloud::{build, CloudLocation, CloudReader};
+use super::cloud::{build_object_store, CloudLocation, CloudReader};
 use super::mmap;
 use super::mmap::ColumnStore;
-use super::read_impl::FetchRowGroups;
+use crate::cloud::CloudOptions;
 
 pub struct ParquetObjectStore {
-    store: Arc<Mutex<Box<dyn ObjectStore>>>,
+    store: Arc<dyn ObjectStore>,
     path: ObjectPath,
     length: Option<u64>,
-    metadata: Option<FileMetaData>,
+    metadata: Option<Arc<FileMetaData>>,
 }
 
 impl ParquetObjectStore {
-    pub fn from_uri(uri: &str, options: Option<&CloudOptions>) -> PolarsResult<Self> {
-        let (CloudLocation { prefix, .. }, store) = build(uri, options)?;
-        let store = Arc::new(Mutex::from(store));
+    pub async fn from_uri(
+        uri: &str,
+        options: Option<&CloudOptions>,
+        metadata: Option<Arc<FileMetaData>>,
+    ) -> PolarsResult<Self> {
+        let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options).await?;
 
         Ok(ParquetObjectStore {
             store,
-            path: prefix.into(),
+            path: ObjectPath::from_url_path(prefix).map_err(to_compute_err)?,
             length: None,
-            metadata: None,
+            metadata,
         })
     }
 
@@ -48,9 +48,13 @@ impl ParquetObjectStore {
         if self.length.is_some() {
             return Ok(());
         }
-        let path = self.path.clone();
-        let locked_store = self.store.lock().await;
-        self.length = Some(locked_store.head(&path).await.map_err(to_compute_err)?.size as u64);
+        self.length = Some(
+            self.store
+                .head(&self.path)
+                .await
+                .map_err(to_compute_err)?
+                .size as u64,
+        );
         Ok(())
     }
 
@@ -75,102 +79,115 @@ impl ParquetObjectStore {
         let path = self.path.clone();
         let length = self.length;
         let mut reader = CloudReader::new(length, object_store, path);
+
         parquet2_read::read_metadata_async(&mut reader)
             .await
             .map_err(to_compute_err)
     }
 
     /// Fetch and memoize the metadata of the parquet file.
-    pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetaData> {
-        self.initialize_length().await?;
+    pub async fn get_metadata(&mut self) -> PolarsResult<&Arc<FileMetaData>> {
         if self.metadata.is_none() {
-            self.metadata = Some(self.fetch_metadata().await?);
+            self.metadata = Some(Arc::new(self.fetch_metadata().await?));
         }
         Ok(self.metadata.as_ref().unwrap())
     }
 }
 
-/// A vector of downloaded RowGroups.
-/// A RowGroup will have 1 or more columns, for each column we store:
-///   - a reference to its metadata
-///   - the actual content as downloaded from object storage (generally cloud).
-type RowGroupChunks<'a> = Vec<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>>;
+async fn read_single_column_async(
+    async_reader: &ParquetObjectStore,
+    start: usize,
+    length: usize,
+) -> PolarsResult<(u64, Bytes)> {
+    let chunk = async_reader
+        .store
+        .get_range(&async_reader.path, start..start + length)
+        .await
+        .map_err(to_compute_err)?;
+    Ok((start as u64, chunk))
+}
+
+async fn read_columns_async2(
+    async_reader: &ParquetObjectStore,
+    ranges: &[(u64, u64)],
+) -> PolarsResult<Vec<(u64, Bytes)>> {
+    let futures = ranges.iter().map(|(start, length)| async {
+        read_single_column_async(async_reader, *start as usize, *length as usize).await
+    });
+
+    try_join_all(futures).await
+}
 
 /// Download rowgroups for the column whose indexes are given in `projection`.
 /// We concurrently download the columns for each field.
-#[tokio::main(flavor = "current_thread")]
-async fn download_projection<'a: 'b, 'b>(
-    projection: &[usize],
-    row_groups: &'a [RowGroupMetaData],
-    schema: &ArrowSchema,
-    async_reader: &'b ParquetObjectStore,
-) -> PolarsResult<RowGroupChunks<'a>> {
-    let fields = projection
-        .iter()
-        .map(|i| schema.fields[*i].name.clone())
-        .collect::<Vec<_>>();
-
-    let reader_factory = || {
-        let object_store = async_reader.store.clone();
-        let path = async_reader.path.clone();
-        Box::pin(futures::future::ready(Ok(CloudReader::new(
-            async_reader.length,
-            object_store,
-            path,
-        ))))
-    }
-        as BoxFuture<'static, std::result::Result<CloudReader, std::io::Error>>;
-
+async fn download_projection(
+    fields: &[SmartString],
+    row_groups: &[RowGroupMetaData],
+    async_reader: &Arc<ParquetObjectStore>,
+) -> PolarsResult<Vec<Vec<(u64, Bytes)>>> {
     // Build the cartesian product of the fields and the row groups.
-    let product = fields
-        .into_iter()
-        .flat_map(|f| row_groups.iter().map(move |r| (f.clone(), r)));
-
-    // Download them all concurrently.
-    stream::iter(product)
-        .then(move |(name, row_group)| async move {
+    let product_futures = fields
+        .iter()
+        .flat_map(|name| row_groups.iter().map(move |r| (name.clone(), r)))
+        .map(|(name, row_group)| async move {
             let columns = row_group.columns();
-            read_columns_async(reader_factory, columns, name.as_ref())
-                .map_err(to_compute_err)
-                .await
-        })
-        .try_collect()
-        .await
+            let ranges = columns
+                .iter()
+                .filter_map(|meta| {
+                    if meta.descriptor().path_in_schema[0] == name.as_str() {
+                        Some(meta.byte_range())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            let async_reader = async_reader.clone();
+            let handle =
+                tokio::spawn(async move { read_columns_async2(&async_reader, &ranges).await });
+            handle.await.unwrap()
+        });
+
+    // Download concurrently
+    futures::future::try_join_all(product_futures).await
 }
 
-pub(crate) struct FetchRowGroupsFromObjectStore {
-    reader: ParquetObjectStore,
+pub struct FetchRowGroupsFromObjectStore {
+    reader: Arc<ParquetObjectStore>,
     row_groups_metadata: Vec<RowGroupMetaData>,
-    projection: Vec<usize>,
+    projected_fields: Vec<SmartString>,
     logging: bool,
-    schema: ArrowSchema,
 }
 
 impl FetchRowGroupsFromObjectStore {
     pub fn new(
         reader: ParquetObjectStore,
         metadata: &FileMetaData,
-        projection: &Option<Vec<usize>>,
+        schema: SchemaRef,
+        projection: Option<&[usize]>,
     ) -> PolarsResult<Self> {
-        let schema = parquet2_read::schema::infer_schema(metadata)?;
         let logging = verbose();
 
-        let projection = projection
-            .to_owned()
-            .unwrap_or_else(|| (0usize..schema.fields.len()).collect::<Vec<_>>());
+        let projected_fields = projection
+            .map(|projection| {
+                projection
+                    .iter()
+                    .map(|i| schema.get_at_index(*i).unwrap().0.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| schema.iter().map(|tpl| tpl.0).cloned().collect());
 
         Ok(FetchRowGroupsFromObjectStore {
-            reader,
+            reader: Arc::new(reader),
             row_groups_metadata: metadata.row_groups.to_owned(),
-            projection,
+            projected_fields,
             logging,
-            schema,
         })
     }
-}
 
-impl FetchRowGroups for FetchRowGroupsFromObjectStore {
-    fn fetch_row_groups(&mut self, row_groups: Range<usize>) -> PolarsResult<ColumnStore> {
+    pub(crate) async fn fetch_row_groups(
+        &mut self,
+        row_groups: Range<usize>,
+    ) -> PolarsResult<ColumnStore> {
         // Fetch the required row groups.
         let row_groups = &self
             .row_groups_metadata
@@ -184,21 +201,19 @@ impl FetchRowGroups for FetchRowGroupsFromObjectStore {
 
         // Package in the format required by ColumnStore.
         let downloaded =
-            download_projection(&self.projection, row_groups, &self.schema, &self.reader)?;
+            download_projection(&self.projected_fields, row_groups, &self.reader).await?;
+
         if self.logging {
             eprintln!(
                 "BatchedParquetReader: fetched {} row_groups for {} fields, yielding {} column chunks.",
                 row_groups.len(),
-                self.projection.len(),
+                self.projected_fields.len(),
                 downloaded.len(),
             );
         }
         let downloaded_per_filepos = downloaded
             .into_iter()
-            .flat_map(|rg| {
-                rg.into_iter()
-                    .map(|(meta, data)| (meta.byte_range().0, data))
-            })
+            .flat_map(|rg| rg.into_iter())
             .collect::<PlHashMap<_, _>>();
 
         if self.logging {

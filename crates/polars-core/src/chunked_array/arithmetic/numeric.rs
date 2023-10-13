@@ -286,7 +286,7 @@ where
         let mut out = self
             .apply_kernel(&|arr| Box::new(<T::Native as ArrayArithmetics>::div_scalar(arr, &rhs)));
 
-        if rhs < T::Native::zero() {
+        if rhs.tot_lt(&T::Native::zero()) {
             out.set_sorted_flag(self.is_sorted_flag().reverse());
         } else {
             out.set_sorted_flag(self.is_sorted_flag());

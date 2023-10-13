@@ -3,6 +3,7 @@ use arrow::io::parquet::read::{
     column_iter_to_arrays, get_field_columns, ArrayIter, BasicDecompressor, ColumnChunkMetaData,
     PageReader,
 };
+use bytes::Bytes;
 #[cfg(feature = "async")]
 use polars_core::datatypes::PlHashMap;
 
@@ -22,7 +23,7 @@ use super::*;
 pub enum ColumnStore<'a> {
     Local(&'a [u8]),
     #[cfg(feature = "async")]
-    Fetched(PlHashMap<u64, Vec<u8>>),
+    Fetched(PlHashMap<u64, Bytes>),
 }
 
 /// For local files memory maps all columns that are part of the parquet field `field_name`.
@@ -52,7 +53,7 @@ fn _mmap_single_column<'a>(
                     "mmap_columns: column with start {start} must be prefetched in ColumnStore.\n"
                 )
             });
-            entry.as_slice()
+            entry.as_ref()
         },
     };
     (meta, chunk)

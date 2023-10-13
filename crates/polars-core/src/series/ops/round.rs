@@ -1,5 +1,4 @@
 use num_traits::pow::Pow;
-use num_traits::{clamp_max, clamp_min};
 
 use crate::prelude::*;
 
@@ -59,68 +58,5 @@ impl Series {
             return Ok(s);
         }
         polars_bail!(opq = ceil, self.dtype());
-    }
-
-    /// Clamp underlying values to the `min` and `max` values.
-    pub fn clip(mut self, min: AnyValue<'_>, max: AnyValue<'_>) -> PolarsResult<Self> {
-        if self.dtype().is_numeric() {
-            macro_rules! apply_clip {
-                ($pl_type:ty, $ca:expr) => {{
-                    let min = min
-                        .extract::<<$pl_type as PolarsNumericType>::Native>()
-                        .unwrap();
-                    let max = max
-                        .extract::<<$pl_type as PolarsNumericType>::Native>()
-                        .unwrap();
-
-                    $ca.apply_mut(|val| val.clamp(min, max));
-                }};
-            }
-            let mutable = self._get_inner_mut();
-            downcast_as_macro_arg_physical_mut!(mutable, apply_clip);
-            Ok(self)
-        } else {
-            polars_bail!(opq = clip, self.dtype());
-        }
-    }
-
-    /// Clamp underlying values to the `max` value.
-    pub fn clip_max(mut self, max: AnyValue<'_>) -> PolarsResult<Self> {
-        if self.dtype().is_numeric() {
-            macro_rules! apply_clip {
-                ($pl_type:ty, $ca:expr) => {{
-                    let max = max
-                        .extract::<<$pl_type as PolarsNumericType>::Native>()
-                        .unwrap();
-
-                    $ca.apply_mut(|val| clamp_max(val, max));
-                }};
-            }
-            let mutable = self._get_inner_mut();
-            downcast_as_macro_arg_physical_mut!(mutable, apply_clip);
-            Ok(self)
-        } else {
-            polars_bail!(opq = clip_max, self.dtype());
-        }
-    }
-
-    /// Clamp underlying values to the `min` value.
-    pub fn clip_min(mut self, min: AnyValue<'_>) -> PolarsResult<Self> {
-        if self.dtype().is_numeric() {
-            macro_rules! apply_clip {
-                ($pl_type:ty, $ca:expr) => {{
-                    let min = min
-                        .extract::<<$pl_type as PolarsNumericType>::Native>()
-                        .unwrap();
-
-                    $ca.apply_mut(|val| clamp_min(val, min));
-                }};
-            }
-            let mutable = self._get_inner_mut();
-            downcast_as_macro_arg_physical_mut!(mutable, apply_clip);
-            Ok(self)
-        } else {
-            polars_bail!(opq = clip_min, self.dtype());
-        }
     }
 }

@@ -2,19 +2,21 @@ from __future__ import annotations
 
 import io
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars.type_aliases import ParquetCompression
 
 
@@ -29,6 +31,7 @@ COMPRESSIONS = [
 ]
 
 
+@pytest.mark.write_disk()
 def test_write_parquet_using_pyarrow_9753(tmpdir: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     df.write_parquet(
@@ -215,13 +218,13 @@ def test_chunked_round_trip() -> None:
     df1 = pl.DataFrame(
         {
             "a": [1] * 2,
-            "l": [[1] for j in range(0, 2)],
+            "l": [[1] for j in range(2)],
         }
     )
     df2 = pl.DataFrame(
         {
             "a": [2] * 3,
-            "l": [[2] for j in range(0, 3)],
+            "l": [[2] for j in range(3)],
         }
     )
 
@@ -486,11 +489,24 @@ def test_parquet_string_cache() -> None:
     assert_series_equal(pl.read_parquet(f)["a"].cast(str), df["a"].cast(str))
 
 
-def test_tz_aware_parquet_9586() -> None:
-    result = pl.read_parquet(
-        Path("tests") / "unit" / "io" / "files" / "tz_aware.parquet"
-    )
+def test_tz_aware_parquet_9586(io_files_path: Path) -> None:
+    result = pl.read_parquet(io_files_path / "tz_aware.parquet")
     expected = pl.DataFrame(
         {"UTC_DATETIME_ID": [datetime(2023, 6, 26, 14, 15, 0, tzinfo=timezone.utc)]}
     ).select(pl.col("*").cast(pl.Datetime("ns", "UTC")))
     assert_frame_equal(result, expected)
+
+
+def test_nested_list_page_reads_to_end_11548() -> None:
+    df = pl.select(
+        pl.repeat(pl.arange(0, 2048, dtype=pl.UInt64).implode(), 2).alias("x"),
+    )
+
+    f = io.BytesIO()
+
+    pq.write_table(df.to_arrow(), f, data_page_size=1)
+
+    f.seek(0)
+
+    result = pl.read_parquet(f).select(pl.col("x").list.len())
+    assert result.to_series().to_list() == [2048, 2048]

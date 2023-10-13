@@ -85,12 +85,6 @@ def test_filter_where() -> None:
     assert_frame_equal(result_filter, expected)
 
 
-def test_list_join_strings() -> None:
-    s = pl.Series("a", [["ab", "c", "d"], ["e", "f"], ["g"], []])
-    expected = pl.Series("a", ["ab-c-d", "e-f", "g", ""])
-    assert_series_equal(s.list.join("-"), expected)
-
-
 def test_count_expr() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 3, 3], "b": ["a", "a", "b", "a", "a"]})
 
@@ -265,6 +259,22 @@ def test_null_count_expr() -> None:
     assert df.select([pl.all().null_count()]).to_dict(False) == {"key": [0], "val": [1]}
 
 
+def test_pos_neg() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [3, 2, 1],
+            "y": [6, 7, 8],
+        }
+    ).with_columns(-pl.col("x"), +pl.col("y"), -pl.lit(1))
+
+    # #11149: ensure that we preserve the output name (where available)
+    assert df.to_dict(False) == {
+        "x": [-3, -2, -1],
+        "y": [6, 7, 8],
+        "literal": [-1, -1, -1],
+    }
+
+
 def test_power_by_expression() -> None:
     out = pl.DataFrame(
         {"a": [1, None, None, 4, 5, 6], "b": [1, 2, None, 4, None, 6]}
@@ -368,6 +378,11 @@ def test_rank_so_4109() -> None:
             [None, 1.0, 2.0, 3.0],
         ],
     }
+
+
+def test_rank_string_null_11252() -> None:
+    rank = pl.Series([None, "", "z", None, "a"]).rank()
+    assert rank.to_list() == [None, 1.0, 3.0, None, 2.0]
 
 
 def test_unique_empty() -> None:

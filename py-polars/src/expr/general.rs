@@ -284,18 +284,29 @@ impl PyExpr {
     }
 
     #[cfg(feature = "top_k")]
-    fn top_k(&self, k: usize) -> Self {
-        self.inner.clone().top_k(k).into()
+    fn top_k(&self, k: Self) -> Self {
+        self.inner.clone().top_k(k.inner).into()
     }
 
     #[cfg(feature = "top_k")]
-    fn bottom_k(&self, k: usize) -> Self {
-        self.inner.clone().bottom_k(k).into()
+    fn bottom_k(&self, k: Self) -> Self {
+        self.inner.clone().bottom_k(k.inner).into()
+    }
+
+    #[cfg(feature = "peaks")]
+    fn peak_min(&self) -> Self {
+        self.clone().inner.peak_min().into()
+    }
+
+    #[cfg(feature = "peaks")]
+    fn peak_max(&self) -> Self {
+        self.clone().inner.peak_max().into()
     }
 
     fn arg_max(&self) -> Self {
         self.clone().inner.arg_max().into()
     }
+
     fn arg_min(&self) -> Self {
         self.clone().inner.arg_min().into()
     }
@@ -387,12 +398,12 @@ impl PyExpr {
         self.clone().inner.approx_n_unique().into()
     }
 
-    fn is_first(&self) -> Self {
-        self.clone().inner.is_first().into()
+    fn is_first_distinct(&self) -> Self {
+        self.clone().inner.is_first_distinct().into()
     }
 
-    fn is_last(&self) -> Self {
-        self.clone().inner.is_last().into()
+    fn is_last_distinct(&self) -> Self {
+        self.clone().inner.is_last_distinct().into()
     }
 
     fn explode(&self) -> Self {
@@ -447,20 +458,16 @@ impl PyExpr {
         self.clone().inner.ceil().into()
     }
 
-    fn clip(&self, py: Python, min: PyObject, max: PyObject) -> Self {
-        let min = min.extract::<Wrap<AnyValue>>(py).unwrap().0;
-        let max = max.extract::<Wrap<AnyValue>>(py).unwrap().0;
-        self.clone().inner.clip(min, max).into()
+    fn clip(&self, min: Self, max: Self) -> Self {
+        self.clone().inner.clip(min.inner, max.inner).into()
     }
 
-    fn clip_min(&self, py: Python, min: PyObject) -> Self {
-        let min = min.extract::<Wrap<AnyValue>>(py).unwrap().0;
-        self.clone().inner.clip_min(min).into()
+    fn clip_min(&self, min: Self) -> Self {
+        self.clone().inner.clip_min(min.inner).into()
     }
 
-    fn clip_max(&self, py: Python, max: PyObject) -> Self {
-        let max = max.extract::<Wrap<AnyValue>>(py).unwrap().0;
-        self.clone().inner.clip_max(max).into()
+    fn clip_max(&self, max: Self) -> Self {
+        self.clone().inner.clip_max(max.inner).into()
     }
 
     fn abs(&self) -> Self {
@@ -556,10 +563,29 @@ impl PyExpr {
             .into_iter()
             .map(|e| e.inner)
             .collect::<Vec<Expr>>();
-        self.clone()
-            .inner
-            .over_with_options(partition_by, WindowOptions { mapping: mapping.0 })
+        self.inner
+            .clone()
+            .over_with_options(partition_by, mapping.0)
             .into()
+    }
+
+    fn rolling(
+        &self,
+        index_column: &str,
+        period: &str,
+        offset: &str,
+        closed: Wrap<ClosedWindow>,
+        check_sorted: bool,
+    ) -> Self {
+        let options = RollingGroupOptions {
+            index_column: index_column.into(),
+            period: Duration::parse(period),
+            offset: Duration::parse(offset),
+            closed_window: closed.0,
+            check_sorted,
+        };
+
+        self.inner.clone().rolling(options).into()
     }
 
     fn _and(&self, expr: Self) -> Self {
@@ -739,10 +765,10 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (n, with_replacement, shuffle, seed))]
-    fn sample_n(&self, n: usize, with_replacement: bool, shuffle: bool, seed: Option<u64>) -> Self {
+    fn sample_n(&self, n: Self, with_replacement: bool, shuffle: bool, seed: Option<u64>) -> Self {
         self.inner
             .clone()
-            .sample_n(n, with_replacement, shuffle, seed)
+            .sample_n(n.inner, with_replacement, shuffle, seed)
             .into()
     }
 
@@ -853,5 +879,47 @@ impl PyExpr {
             IsSorted::Ascending
         };
         self.inner.clone().set_sorted_flag(is_sorted).into()
+    }
+
+    #[cfg(feature = "ffi_plugin")]
+    fn register_plugin(
+        &self,
+        lib: &str,
+        symbol: &str,
+        args: Vec<PyExpr>,
+        is_elementwise: bool,
+        input_wildcard_expansion: bool,
+        auto_explode: bool,
+        cast_to_supertypes: bool,
+    ) -> Self {
+        use polars_plan::prelude::*;
+        let inner = self.inner.clone();
+
+        let collect_groups = if is_elementwise {
+            ApplyOptions::ApplyFlat
+        } else {
+            ApplyOptions::ApplyGroups
+        };
+        let mut input = Vec::with_capacity(args.len() + 1);
+        input.push(inner);
+        for a in args {
+            input.push(a.inner)
+        }
+
+        Expr::Function {
+            input,
+            function: FunctionExpr::FfiPlugin {
+                lib: Arc::from(lib),
+                symbol: Arc::from(symbol),
+            },
+            options: FunctionOptions {
+                collect_groups,
+                input_wildcard_expansion,
+                auto_explode,
+                cast_to_supertypes,
+                ..Default::default()
+            },
+        }
+        .into()
     }
 }
