@@ -76,7 +76,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
             projection,
             &schema,
             Some(metadata),
-            predicate,
+            predicate.as_deref(),
             self.parallel,
             self.row_count,
             self.use_statistics,
@@ -180,6 +180,7 @@ impl<R: MmapBytesReader + 'static> ParquetReader<R> {
             schema,
             self.n_rows.unwrap_or(usize::MAX),
             self.projection,
+            None,
             self.row_count,
             chunk_size,
             self.use_statistics,
@@ -342,6 +343,7 @@ impl ParquetAsyncReader {
             schema,
             self.n_rows.unwrap_or(usize::MAX),
             self.projection,
+            self.predicate.clone(),
             self.row_count,
             chunk_size,
             self.use_statistics,
@@ -353,8 +355,9 @@ impl ParquetAsyncReader {
         self.reader.get_metadata().await
     }
 
-    pub async fn finish(self) -> PolarsResult<DataFrame> {
+    pub async fn finish(mut self) -> PolarsResult<DataFrame> {
         let rechunk = self.rechunk;
+        let schema = self.schema().await?;
 
         let predicate = self.predicate.clone();
         // batched reader deals with slice pushdown
@@ -368,6 +371,9 @@ impl ParquetAsyncReader {
                 Ok(df)
             })?;
             chunks.push(out)
+        }
+        if chunks.is_empty() {
+            return Ok(DataFrame::from(schema.as_ref()));
         }
         let mut df = concat_df(&chunks)?;
 

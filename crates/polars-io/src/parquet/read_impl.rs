@@ -115,7 +115,7 @@ fn rg_to_dfs(
     remaining_rows: &mut usize,
     file_metadata: &FileMetaData,
     schema: &SchemaRef,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<&dyn PhysicalIoExpr>,
     row_count: Option<RowCount>,
     parallel: ParallelStrategy,
     projection: &[usize],
@@ -166,7 +166,7 @@ fn rg_to_dfs_optionally_par_over_columns(
     remaining_rows: &mut usize,
     file_metadata: &FileMetaData,
     schema: &SchemaRef,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<&dyn PhysicalIoExpr>,
     row_count: Option<RowCount>,
     parallel: ParallelStrategy,
     projection: &[usize],
@@ -175,12 +175,12 @@ fn rg_to_dfs_optionally_par_over_columns(
 ) -> PolarsResult<Vec<DataFrame>> {
     let mut dfs = Vec::with_capacity(row_group_end - row_group_start);
 
-    for rg in row_group_start..row_group_end {
-        let md = &file_metadata.row_groups[rg];
+    for rg_idx in row_group_start..row_group_end {
+        let md = &file_metadata.row_groups[rg_idx];
         let current_row_count = md.num_rows() as IdxSize;
 
         if use_statistics
-            && !read_this_row_group(predicate.as_deref(), &file_metadata.row_groups[rg], schema)?
+            && !read_this_row_group(predicate, &file_metadata.row_groups[rg_idx], schema)?
         {
             *previous_row_count += current_row_count;
             continue;
@@ -217,7 +217,8 @@ fn rg_to_dfs_optionally_par_over_columns(
                 .collect::<PolarsResult<Vec<_>>>()?
         };
 
-        *remaining_rows = remaining_rows.saturating_sub(file_metadata.row_groups[rg].num_rows());
+        *remaining_rows =
+            remaining_rows.saturating_sub(file_metadata.row_groups[rg_idx].num_rows());
 
         let mut df = DataFrame::new_no_checks(columns);
         if let Some(rc) = &row_count {
@@ -225,7 +226,7 @@ fn rg_to_dfs_optionally_par_over_columns(
         }
         materialize_hive_partitions(&mut df, hive_partition_columns);
 
-        apply_predicate(&mut df, predicate.as_deref(), true)?;
+        apply_predicate(&mut df, predicate, true)?;
 
         *previous_row_count += current_row_count;
         dfs.push(df);
@@ -247,7 +248,7 @@ fn rg_to_dfs_par_over_rg(
     remaining_rows: &mut usize,
     file_metadata: &FileMetaData,
     schema: &SchemaRef,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<&dyn PhysicalIoExpr>,
     row_count: Option<RowCount>,
     projection: &[usize],
     use_statistics: bool,
@@ -276,11 +277,7 @@ fn rg_to_dfs_par_over_rg(
         .map(|(rg_idx, md, local_limit, row_count_start)| {
             if local_limit == 0
                 || use_statistics
-                    && !read_this_row_group(
-                        predicate.as_deref(),
-                        &file_metadata.row_groups[rg_idx],
-                        schema,
-                    )?
+                    && !read_this_row_group(predicate, &file_metadata.row_groups[rg_idx], schema)?
             {
                 return Ok(None);
             }
@@ -305,7 +302,7 @@ fn rg_to_dfs_par_over_rg(
             }
             materialize_hive_partitions(&mut df, hive_partition_columns);
 
-            apply_predicate(&mut df, predicate.as_deref(), false)?;
+            apply_predicate(&mut df, predicate, false)?;
 
             Ok(Some(df))
         })
@@ -320,7 +317,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     projection: Option<&[usize]>,
     schema: &SchemaRef,
     metadata: Option<FileMetaDataRef>,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<&dyn PhysicalIoExpr>,
     mut parallel: ParallelStrategy,
     row_count: Option<RowCount>,
     use_statistics: bool,
@@ -464,6 +461,7 @@ pub struct BatchedParquetReader {
     projection: Vec<usize>,
     schema: SchemaRef,
     metadata: FileMetaDataRef,
+    predicate: Option<Arc<dyn PhysicalIoExpr>>,
     row_count: Option<RowCount>,
     rows_read: IdxSize,
     row_group_offset: usize,
@@ -483,6 +481,7 @@ impl BatchedParquetReader {
         schema: SchemaRef,
         limit: usize,
         projection: Option<Vec<usize>>,
+        predicate: Option<Arc<dyn PhysicalIoExpr>>,
         row_count: Option<RowCount>,
         chunk_size: usize,
         use_statistics: bool,
@@ -506,6 +505,7 @@ impl BatchedParquetReader {
             metadata,
             row_count,
             rows_read: 0,
+            predicate,
             row_group_offset: 0,
             n_row_groups,
             chunks_fifo: VecDeque::with_capacity(POOL.current_num_threads()),
@@ -534,7 +534,7 @@ impl BatchedParquetReader {
                 &mut self.limit,
                 &self.metadata,
                 &self.schema,
-                None,
+                self.predicate.as_deref(),
                 self.row_count.clone(),
                 self.parallel,
                 &self.projection,
