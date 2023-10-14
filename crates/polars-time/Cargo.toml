@@ -13,6 +13,7 @@ arrow = { workspace = true, features = ["compute", "temporal"] }
 polars-core = { workspace = true, default-features = false, features = ["dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
 polars-ops = { workspace = true }
 polars-utils = { workspace = true }
+polars-error = {workspace = true}
 
 atoi = { workspace = true }
 chrono = { workspace = true }

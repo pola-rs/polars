@@ -1317,6 +1317,7 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "arrow-format",
+ "atoi",
  "avro-schema",
  "base64",
  "bytemuck",
@@ -1335,7 +1336,9 @@ dependencies = [
  "multiversion",
  "num-traits",
  "parquet2",
+ "polars-error",
  "rustc_version",
+ "serde",
  "simdutf8",
  "streaming-iterator",
  "strength_reduce",
@@ -1627,24 +1630,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "polars-arrow"
-version = "0.33.2"
-dependencies = [
- "atoi",
- "chrono",
- "chrono-tz",
- "ethnum",
- "hashbrown 0.14.0",
- "multiversion",
- "nano-arrow",
- "num-traits",
- "polars-error",
- "serde",
- "thiserror",
- "version_check",
-]
-
-[[package]]
 name = "polars-core"
 version = "0.33.2"
 dependencies = [
@@ -1662,7 +1647,6 @@ dependencies = [
  "ndarray",
  "num-traits",
  "once_cell",
- "polars-arrow",
  "polars-error",
  "polars-row",
  "polars-utils",
@@ -1682,7 +1666,6 @@ dependencies = [
 name = "polars-error"
 version = "0.33.2"
 dependencies = [
- "nano-arrow",
  "object_store",
  "regex",
  "thiserror",
@@ -1719,7 +1702,6 @@ dependencies = [
  "object_store",
  "once_cell",
  "percent-encoding",
- "polars-arrow",
  "polars-core",
  "polars-error",
  "polars-json",
@@ -1751,7 +1733,6 @@ dependencies = [
  "itoa",
  "nano-arrow",
  "num-traits",
- "polars-arrow",
  "polars-error",
  "polars-utils",
  "ryu",
@@ -1766,8 +1747,8 @@ dependencies = [
  "ahash",
  "bitflags 2.4.0",
  "glob",
+ "nano-arrow",
  "once_cell",
- "polars-arrow",
  "polars-core",
  "polars-io",
  "polars-json",
@@ -1801,7 +1782,6 @@ dependencies = [
  "memchr",
  "nano-arrow",
  "num-traits",
- "polars-arrow",
  "polars-core",
  "polars-error",
  "polars-json",
@@ -1824,8 +1804,8 @@ dependencies = [
  "crossbeam-queue",
  "enum_dispatch",
  "hashbrown 0.14.0",
+ "nano-arrow",
  "num-traits",
- "polars-arrow",
  "polars-core",
  "polars-io",
  "polars-ops",
@@ -1850,7 +1830,6 @@ dependencies = [
  "nano-arrow",
  "once_cell",
  "percent-encoding",
- "polars-arrow",
  "polars-core",
  "polars-ffi",
  "polars-io",
@@ -1879,7 +1858,7 @@ dependencies = [
 name = "polars-sql"
 version = "0.33.2"
 dependencies = [
- "polars-arrow",
+ "nano-arrow",
  "polars-core",
  "polars-lazy",
  "polars-plan",
@@ -1899,7 +1878,6 @@ dependencies = [
  "nano-arrow",
  "now",
  "once_cell",
- "polars-arrow",
  "polars-core",
  "polars-ops",
  "polars-utils",

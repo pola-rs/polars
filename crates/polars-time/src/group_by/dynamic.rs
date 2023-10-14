@@ -1,5 +1,5 @@
-use polars_arrow::time_zone::Tz;
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::time_zone::Tz;
+use arrow::legacy::utils::CustomIterTools;
 use polars_core::export::rayon::prelude::*;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;

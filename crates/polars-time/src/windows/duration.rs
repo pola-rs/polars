@@ -2,11 +2,11 @@ use std::cmp::Ordering;
 use std::ops::Mul;
 
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
-use polars_arrow::error::polars_err;
-use polars_arrow::export::arrow::temporal_conversions::{
+use polars_error::*;
+use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
-use polars_arrow::time_zone::Tz;
+use arrow::legacy::time_zone::Tz;
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,

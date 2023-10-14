@@ -20,7 +20,7 @@ pub use datetime::DatetimeMethods;
 #[cfg(feature = "dtype-duration")]
 pub use duration::DurationMethods;
 use kernels::*;
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 #[cfg(feature = "rolling_window")]
 pub use rolling_window::*;

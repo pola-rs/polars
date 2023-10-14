@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 polars = { path = "../../crates/polars" }
-polars-arrow = { path = "../../crates/polars-arrow" }
+arrow = {workspace = true}
 
 pyo3 = { workspace = true, features = ["extension-module"] }
 

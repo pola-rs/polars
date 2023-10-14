@@ -5,8 +5,7 @@ use std::convert::TryFrom;
 
 use arrow::array::{Array, PrimitiveArray};
 pub use dispatch::*;
-use polars_arrow::export::arrow;
-use polars_arrow::kernels::rolling;
+use arrow::legacy::kernels::rolling;
 use polars_core::prelude::*;
 
 use crate::prelude::*;

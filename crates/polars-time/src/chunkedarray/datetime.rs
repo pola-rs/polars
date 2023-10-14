@@ -2,7 +2,7 @@ use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::cast::{cast, CastOptions};
 use arrow::compute::temporal;
 use arrow::error::Result as ArrowResult;
-use polars_arrow::export::arrow;
+use arrow;
 use polars_core::prelude::*;
 
 use super::*;

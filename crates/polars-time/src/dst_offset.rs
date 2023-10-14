@@ -3,7 +3,7 @@ use chrono::TimeZone;
 #[cfg(feature = "timezones")]
 use chrono_tz::OffsetComponents;
 #[cfg(feature = "timezones")]
-use polars_arrow::time_zone::Tz;
+use arrow::legacy::time_zone::Tz;
 #[cfg(feature = "timezones")]
 use polars_core::prelude::*;
 #[cfg(feature = "timezones")]
