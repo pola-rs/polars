@@ -268,6 +268,10 @@ def duration(
     └─────────────────────┴─────────────────────┴─────────────────────┘
 
     """  # noqa: W505
+    if weeks is not None:
+        weeks = parse_as_expression(weeks)
+    if days is not None:
+        days = parse_as_expression(days)
     if hours is not None:
         hours = parse_as_expression(hours)
     if minutes is not None:
@@ -280,21 +284,17 @@ def duration(
         microseconds = parse_as_expression(microseconds)
     if nanoseconds is not None:
         nanoseconds = parse_as_expression(nanoseconds)
-    if days is not None:
-        days = parse_as_expression(days)
-    if weeks is not None:
-        weeks = parse_as_expression(weeks)
 
     return wrap_expr(
         plr.duration(
-            days,
-            seconds,
-            nanoseconds,
-            microseconds,
-            milliseconds,
-            minutes,
-            hours,
             weeks,
+            days,
+            hours,
+            minutes,
+            seconds,
+            milliseconds,
+            microseconds,
+            nanoseconds,
             time_unit,
         )
     )
