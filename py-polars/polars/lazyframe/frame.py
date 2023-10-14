@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import os
 import warnings
+from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -723,10 +724,10 @@ class LazyFrame:
         ...     }
         ... )
         >>> lf.schema
-        {'foo': Int64, 'bar': Float64, 'ham': Utf8}
+        OrderedDict([('foo', Int64), ('bar', Float64), ('ham', Utf8)])
 
         """
-        return self._ldf.schema()
+        return OrderedDict(self._ldf.schema())
 
     def __dataframe_consortium_standard__(
         self, *, api_version: str | None = None

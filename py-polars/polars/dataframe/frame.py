@@ -4,7 +4,7 @@ from __future__ import annotations
 import contextlib
 import os
 import random
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO, TextIOWrapper
 from operator import itemgetter
@@ -1253,10 +1253,10 @@ class DataFrame:
         ...     }
         ... )
         >>> df.schema
-        {'foo': Int64, 'bar': Float64, 'ham': Utf8}
+        OrderedDict([('foo', Int64), ('bar', Float64), ('ham', Utf8)])
 
         """
-        return dict(zip(self.columns, self.dtypes))
+        return OrderedDict(zip(self.columns, self.dtypes))
 
     def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
         """
