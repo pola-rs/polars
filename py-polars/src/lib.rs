@@ -51,7 +51,7 @@ use pyo3::wrap_pyfunction;
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::{
-    ArrowErrorException, ColumnNotFoundError, ComputeError, DuplicateError, InvalidOperationError,
+    ColumnNotFoundError, ComputeError, DuplicateError, InvalidOperationError,
     NoDataError, OutOfBoundsError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError,
     StructFieldNotFoundError,
 };
@@ -243,8 +243,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
 
     // Exceptions
-    m.add("ArrowError", py.get_type::<ArrowErrorException>())
-        .unwrap();
     m.add("ColumnNotFoundError", py.get_type::<ColumnNotFoundError>())
         .unwrap();
     m.add("ComputeError", py.get_type::<ComputeError>())

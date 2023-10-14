@@ -13,6 +13,7 @@ arrow = { workspace = true }
 polars-core = { workspace = true }
 polars-lazy = { workspace = true, features = ["strings", "cross_join", "trigonometry", "abs", "round_series", "log", "regex", "is_in", "meta", "cum_agg"] }
 polars-plan = { workspace = true }
+polars-error = {workspace = true}
 
 rand = { workspace = true }
 serde = { workspace = true }

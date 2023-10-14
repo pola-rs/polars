@@ -21,7 +21,7 @@ pub use ipc::*;
 pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
-use polars_arrow::prelude::QuantileInterpolOptions;
+use arrow::legacy::prelude::QuantileInterpolOptions;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_io::RowCount;
@@ -848,7 +848,7 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use polars_arrow::prelude::QuantileInterpolOptions;
+    /// use arrow::legacy::prelude::QuantileInterpolOptions;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
@@ -1637,7 +1637,7 @@ impl LazyGroupBy {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use polars_arrow::prelude::QuantileInterpolOptions;
+    /// use arrow::legacy::prelude::QuantileInterpolOptions;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()

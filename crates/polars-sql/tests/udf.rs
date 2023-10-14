@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_arrow::error::PolarsResult;
+use polars_error::PolarsResult;
 use polars_core::prelude::{DataType, Field, *};
 use polars_core::series::Series;
 use polars_lazy::prelude::IntoLazy;

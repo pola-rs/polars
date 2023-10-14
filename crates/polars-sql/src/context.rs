@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 
-use polars_arrow::error::to_compute_err;
+use polars_error::to_compute_err;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_plan::prelude::*;

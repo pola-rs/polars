@@ -1523,6 +1523,7 @@ dependencies = [
  "seq-macro",
  "snap",
  "streaming-decompression",
+ "xxhash-rust",
  "zstd",
 ]
 
@@ -1666,8 +1667,12 @@ dependencies = [
 name = "polars-error"
 version = "0.33.2"
 dependencies = [
+ "arrow-format",
+ "avro-schema",
  "object_store",
+ "parquet2",
  "regex",
+ "simdutf8",
  "thiserror",
 ]
 
@@ -1860,6 +1865,7 @@ version = "0.33.2"
 dependencies = [
  "nano-arrow",
  "polars-core",
+ "polars-error",
  "polars-lazy",
  "polars-plan",
  "rand",
@@ -1879,6 +1885,7 @@ dependencies = [
  "now",
  "once_cell",
  "polars-core",
+ "polars-error",
  "polars-ops",
  "polars-utils",
  "regex",

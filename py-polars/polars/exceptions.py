@@ -19,7 +19,7 @@ except ImportError:
     # when there is no binary yet
 
     class ArrowError(Exception):  # type: ignore[no-redef]
-        """Exception raised the underlying Arrow library encounters an error."""
+        """deprecated will be removed"""
 
     class ColumnNotFoundError(Exception):  # type: ignore[no-redef]
         """Exception raised when a specified column is not found."""
