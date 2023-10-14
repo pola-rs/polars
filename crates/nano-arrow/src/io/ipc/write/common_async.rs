@@ -1,14 +1,14 @@
 use futures::{AsyncWrite, AsyncWriteExt};
+use polars_error::PolarsResult;
 
 use super::super::CONTINUATION_MARKER;
 use super::common::{pad_to_64, EncodedData};
-use crate::error::Result;
 
 /// Write a message's IPC data and buffers, returning metadata and buffer data lengths written
 pub async fn write_message<W: AsyncWrite + Unpin + Send>(
     mut writer: W,
     encoded: EncodedData,
-) -> Result<(usize, usize)> {
+) -> PolarsResult<(usize, usize)> {
     let arrow_data_len = encoded.arrow_data.len();
 
     let a = 64 - 1;
@@ -42,7 +42,7 @@ pub async fn write_message<W: AsyncWrite + Unpin + Send>(
 pub async fn write_continuation<W: AsyncWrite + Unpin + Send>(
     mut writer: W,
     total_len: i32,
-) -> Result<usize> {
+) -> PolarsResult<usize> {
     writer.write_all(&CONTINUATION_MARKER).await?;
     writer.write_all(&total_len.to_le_bytes()[..]).await?;
     Ok(8)
@@ -51,7 +51,7 @@ pub async fn write_continuation<W: AsyncWrite + Unpin + Send>(
 async fn write_body_buffers<W: AsyncWrite + Unpin + Send>(
     mut writer: W,
     data: &[u8],
-) -> Result<usize> {
+) -> PolarsResult<usize> {
     let len = data.len();
     let pad_len = pad_to_64(data.len());
     let total_len = len + pad_len;

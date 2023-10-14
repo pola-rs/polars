@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
+use polars_error::{polars_err, PolarsResult};
 
 use super::super::super::IpcField;
 use super::super::deserialize::{read, skip};
@@ -7,7 +8,6 @@ use super::super::read_basic::*;
 use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
 use crate::array::StructArray;
 use crate::datatypes::DataType;
-use crate::error::{Error, Result};
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_struct<R: Read + Seek>(
@@ -23,11 +23,11 @@ pub fn read_struct<R: Read + Seek>(
     limit: Option<usize>,
     version: Version,
     scratch: &mut Vec<u8>,
-) -> Result<StructArray> {
+) -> PolarsResult<StructArray> {
     let field_node = field_nodes.pop_front().ok_or_else(|| {
-        Error::oos(format!(
+        polars_err!(oos =
             "IPC: unable to fetch the field for {data_type:?}. The file or stream is corrupted."
-        ))
+        )
     })?;
 
     let validity = read_validity(
@@ -62,7 +62,7 @@ pub fn read_struct<R: Read + Seek>(
                 scratch,
             )
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     StructArray::try_new(data_type, values, validity)
 }
@@ -71,14 +71,14 @@ pub fn skip_struct(
     field_nodes: &mut VecDeque<Node>,
     data_type: &DataType,
     buffers: &mut VecDeque<IpcBuffer>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
-        Error::oos("IPC: unable to fetch the field for struct. The file or stream is corrupted.")
+        polars_err!(oos ="IPC: unable to fetch the field for struct. The file or stream is corrupted.")
     })?;
 
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| Error::oos("IPC: missing validity buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
 
     let fields = StructArray::get_fields(data_type);
 

@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
+use polars_error::{polars_err, PolarsResult};
 
 use super::super::super::IpcField;
 use super::super::deserialize::{read, skip};
@@ -8,7 +9,6 @@ use super::super::{Compression, Dictionaries, IpcBuffer, Node, OutOfSpecKind, Ve
 use crate::array::UnionArray;
 use crate::datatypes::DataType;
 use crate::datatypes::UnionMode::Dense;
-use crate::error::{Error, Result};
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_union<R: Read + Seek>(
@@ -24,23 +24,23 @@ pub fn read_union<R: Read + Seek>(
     limit: Option<usize>,
     version: Version,
     scratch: &mut Vec<u8>,
-) -> Result<UnionArray> {
+) -> PolarsResult<UnionArray> {
     let field_node = field_nodes.pop_front().ok_or_else(|| {
-        Error::oos(format!(
+        polars_err!(ComputeError:
             "IPC: unable to fetch the field for {data_type:?}. The file or stream is corrupted."
-        ))
+        )
     })?;
 
     if version != Version::V5 {
         let _ = buffers
             .pop_front()
-            .ok_or_else(|| Error::oos("IPC: missing validity buffer."))?;
+            .ok_or_else(|| polars_err!(oos ="IPC: missing validity buffer."))?;
     };
 
     let length: usize = field_node
         .length()
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
     let length = limit.map(|limit| limit.min(length)).unwrap_or(length);
 
     let types = read_buffer(
@@ -92,7 +92,7 @@ pub fn read_union<R: Read + Seek>(
                 scratch,
             )
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     UnionArray::try_new(data_type, types, fields, offsets)
 }
@@ -101,18 +101,18 @@ pub fn skip_union(
     field_nodes: &mut VecDeque<Node>,
     data_type: &DataType,
     buffers: &mut VecDeque<IpcBuffer>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
-        Error::oos("IPC: unable to fetch the field for struct. The file or stream is corrupted.")
+        polars_err!(oos ="IPC: unable to fetch the field for struct. The file or stream is corrupted.")
     })?;
 
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| Error::oos("IPC: missing validity buffer."))?;
+        .ok_or_else(|| polars_err!(oos ="IPC: missing validity buffer."))?;
     if let DataType::Union(_, _, Dense) = data_type {
         let _ = buffers
             .pop_front()
-            .ok_or_else(|| Error::oos("IPC: missing offsets buffer."))?;
+            .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer."))?;
     } else {
         unreachable!()
     };

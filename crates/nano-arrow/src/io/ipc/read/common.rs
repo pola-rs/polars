@@ -3,13 +3,13 @@ use std::io::{Read, Seek};
 
 use ahash::AHashMap;
 use arrow_format;
+use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::deserialize::{read, skip};
 use super::Dictionaries;
 use crate::array::*;
 use crate::chunk::Chunk;
 use crate::datatypes::{DataType, Field};
-use crate::error::{Error, Result};
 use crate::io::ipc::read::OutOfSpecKind;
 use crate::io::ipc::{IpcField, IpcSchema};
 
@@ -87,12 +87,12 @@ pub fn read_record_batch<R: Read + Seek>(
     block_offset: u64,
     file_size: u64,
     scratch: &mut Vec<u8>,
-) -> Result<Chunk<Box<dyn Array>>> {
+) -> PolarsResult<Chunk<Box<dyn Array>>> {
     assert_eq!(fields.len(), ipc_schema.fields.len());
     let buffers = batch
         .buffers()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferBuffers(err)))?
-        .ok_or_else(|| Error::from(OutOfSpecKind::MissingMessageBuffers))?;
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferBuffers(err)))?
+        .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingMessageBuffers))?;
     let mut buffers: VecDeque<arrow_format::ipc::BufferRef> = buffers.iter().collect();
 
     // check that the sum of the sizes of all buffers is <= than the size of the file
@@ -102,12 +102,12 @@ pub fn read_record_batch<R: Read + Seek>(
             let buffer_size: u64 = buffer
                 .length()
                 .try_into()
-                .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+                .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
             Ok(buffer_size)
         })
-        .sum::<Result<u64>>()?;
+        .sum::<PolarsResult<u64>>()?;
     if buffers_size > file_size {
-        return Err(Error::from(OutOfSpecKind::InvalidBuffersLength {
+        return Err(polars_err!(oos = OutOfSpecKind::InvalidBuffersLength {
             buffers_size,
             file_size,
         }));
@@ -115,8 +115,8 @@ pub fn read_record_batch<R: Read + Seek>(
 
     let field_nodes = batch
         .nodes()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferNodes(err)))?
-        .ok_or_else(|| Error::from(OutOfSpecKind::MissingMessageNodes))?;
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferNodes(err)))?
+        .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingMessageNodes))?;
     let mut field_nodes = field_nodes.iter().collect::<VecDeque<_>>();
 
     let columns = if let Some(projection) = projection {
@@ -135,7 +135,7 @@ pub fn read_record_batch<R: Read + Seek>(
                     block_offset,
                     ipc_schema.is_little_endian,
                     batch.compression().map_err(|err| {
-                        Error::from(OutOfSpecKind::InvalidFlatbufferCompression(err))
+                        polars_err!(oos = OutOfSpecKind::InvalidFlatbufferCompression(err))
                     })?,
                     limit,
                     version,
@@ -147,7 +147,7 @@ pub fn read_record_batch<R: Read + Seek>(
                 },
             })
             .filter_map(|x| x.transpose())
-            .collect::<Result<Vec<_>>>()?
+            .collect::<PolarsResult<Vec<_>>>()?
     } else {
         fields
             .iter()
@@ -163,14 +163,14 @@ pub fn read_record_batch<R: Read + Seek>(
                     block_offset,
                     ipc_schema.is_little_endian,
                     batch.compression().map_err(|err| {
-                        Error::from(OutOfSpecKind::InvalidFlatbufferCompression(err))
+                        polars_err!(oos = OutOfSpecKind::InvalidFlatbufferCompression(err))
                     })?,
                     limit,
                     version,
                     scratch,
                 )
             })
-            .collect::<Result<Vec<_>>>()?
+            .collect::<PolarsResult<Vec<_>>>()?
     };
     Chunk::try_new(columns)
 }
@@ -215,14 +215,14 @@ pub(crate) fn first_dict_field<'a>(
     id: i64,
     fields: &'a [Field],
     ipc_fields: &'a [IpcField],
-) -> Result<(&'a Field, &'a IpcField)> {
+) -> PolarsResult<(&'a Field, &'a IpcField)> {
     assert_eq!(fields.len(), ipc_fields.len());
     for (field, ipc_field) in fields.iter().zip(ipc_fields.iter()) {
         if let Some(field) = find_first_dict_field(id, field, ipc_field) {
             return Ok(field);
         }
     }
-    Err(Error::from(OutOfSpecKind::InvalidId { requested_id: id }))
+    Err(polars_err!(oos =OutOfSpecKind::InvalidId { requested_id: id }))
 }
 
 /// Reads a dictionary from the reader,
@@ -237,33 +237,31 @@ pub fn read_dictionary<R: Read + Seek>(
     block_offset: u64,
     file_size: u64,
     scratch: &mut Vec<u8>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     if batch
         .is_delta()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferIsDelta(err)))?
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferIsDelta(err)))?
     {
-        return Err(Error::NotYetImplemented(
-            "delta dictionary batches not supported".to_string(),
-        ));
+        polars_bail!(ComputeError: "delta dictionary batches not supported")
     }
 
     let id = batch
         .id()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferId(err)))?;
+        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferId(err)))?;
     let (first_field, first_ipc_field) = first_dict_field(id, fields, &ipc_schema.fields)?;
 
     let batch = batch
         .data()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferData(err)))?
-        .ok_or_else(|| Error::from(OutOfSpecKind::MissingData))?;
+        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferData(err)))?
+        .ok_or_else(|| polars_err!(oos =OutOfSpecKind::MissingData))?;
 
     let value_type =
         if let DataType::Dictionary(_, value_type, _) = first_field.data_type.to_logical_type() {
             value_type.as_ref()
         } else {
-            return Err(Error::from(OutOfSpecKind::InvalidIdDataType {
+            polars_bail!(oos = OutOfSpecKind::InvalidIdDataType {
                 requested_id: id,
-            }));
+            })
         };
 
     // Make a fake schema for the dictionary batch.

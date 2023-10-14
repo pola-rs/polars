@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use crate::error::Error;
 
 /// The different types of errors that reading from IPC can cause
@@ -108,5 +109,11 @@ impl From<OutOfSpecKind> for Error {
 impl From<arrow_format::ipc::planus::Error> for Error {
     fn from(error: arrow_format::ipc::planus::Error) -> Self {
         Error::OutOfSpec(error.to_string())
+    }
+}
+
+impl Display for OutOfSpecKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
     }
 }

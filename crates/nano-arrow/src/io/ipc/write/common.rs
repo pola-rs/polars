@@ -1,13 +1,13 @@
 use std::borrow::{Borrow, Cow};
 
 use arrow_format::ipc::planus::Builder;
+use polars_error::{polars_bail, PolarsResult, polars_err};
 
 use super::super::IpcField;
 use super::{write, write_dictionary};
 use crate::array::*;
 use crate::chunk::Chunk;
 use crate::datatypes::*;
-use crate::error::{Error, Result};
 use crate::io::ipc::endianness::is_native_little_endian;
 use crate::io::ipc::read::Dictionaries;
 use crate::match_integer_type;
@@ -35,14 +35,14 @@ fn encode_dictionary(
     options: &WriteOptions,
     dictionary_tracker: &mut DictionaryTracker,
     encoded_dictionaries: &mut Vec<EncodedData>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     use PhysicalType::*;
     match array.data_type().to_physical_type() {
         Utf8 | LargeUtf8 | Binary | LargeBinary | Primitive(_) | Boolean | Null
         | FixedSizeBinary => Ok(()),
         Dictionary(key_type) => match_integer_type!(key_type, |$T| {
             let dict_id = field.dictionary_id
-                .ok_or_else(|| Error::InvalidArgumentError("Dictionaries must have an associated id".to_string()))?;
+                .ok_or_else(|| polars_err!(InvalidOperation: "Dictionaries must have an associated id"))?;
 
             let emit = dictionary_tracker.insert(dict_id, array)?;
 
@@ -69,9 +69,9 @@ fn encode_dictionary(
             let array = array.as_any().downcast_ref::<StructArray>().unwrap();
             let fields = field.fields.as_slice();
             if array.fields().len() != fields.len() {
-                return Err(Error::InvalidArgumentError(
+                polars_bail!(InvalidOperation:
                     "The number of fields in a struct must equal the number of children in IpcField".to_string(),
-                ));
+                );
             }
             fields
                 .iter()
@@ -139,10 +139,9 @@ fn encode_dictionary(
                 .fields();
             let fields = &field.fields[..]; // todo: error instead
             if values.len() != fields.len() {
-                return Err(Error::InvalidArgumentError(
+                polars_bail!(InvalidOperation:
                     "The number of fields in a union must equal the number of children in IpcField"
-                        .to_string(),
-                ));
+                );
             }
             fields
                 .iter()
@@ -176,7 +175,7 @@ pub fn encode_chunk(
     fields: &[IpcField],
     dictionary_tracker: &mut DictionaryTracker,
     options: &WriteOptions,
-) -> Result<(Vec<EncodedData>, EncodedData)> {
+) -> PolarsResult<(Vec<EncodedData>, EncodedData)> {
     let mut encoded_message = EncodedData::default();
     let encoded_dictionaries = encode_chunk_amortized(
         chunk,
@@ -195,7 +194,7 @@ pub fn encode_chunk_amortized(
     dictionary_tracker: &mut DictionaryTracker,
     options: &WriteOptions,
     encoded_message: &mut EncodedData,
-) -> Result<Vec<EncodedData>> {
+) -> PolarsResult<Vec<EncodedData>> {
     let mut encoded_dictionaries = vec![];
 
     for (field, array) in fields.iter().zip(chunk.as_ref()) {
@@ -347,7 +346,7 @@ impl DictionaryTracker {
     /// * If the tracker has not been configured to error on replacement or this dictionary
     ///   has never been seen before, return `Ok(true)` to indicate that the dictionary was just
     ///   inserted.
-    pub fn insert(&mut self, dict_id: i64, array: &dyn Array) -> Result<bool> {
+    pub fn insert(&mut self, dict_id: i64, array: &dyn Array) -> PolarsResult<bool> {
         let values = match array.data_type() {
             DataType::Dictionary(key_type, _, _) => {
                 match_integer_type!(key_type, |$T| {
@@ -367,12 +366,11 @@ impl DictionaryTracker {
                 // Same dictionary values => no need to emit it again
                 return Ok(false);
             } else if self.cannot_replace {
-                return Err(Error::InvalidArgumentError(
+                polars_bail!(InvalidOperation:
                     "Dictionary replacement detected when writing IPC file format. \
                      Arrow IPC files only support a single dictionary for a given field \
                      across all batches."
-                        .to_string(),
-                ));
+                );
             }
         };
 

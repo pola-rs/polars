@@ -18,11 +18,11 @@
 //! Defines temporal kernels for time and date related functions.
 
 use chrono::{Datelike, Timelike};
+use polars_error::PolarsResult;
 
 use super::arity::unary;
 use crate::array::*;
 use crate::datatypes::*;
-use crate::error::{Error, Result};
 use crate::temporal_conversions::*;
 use crate::types::NativeType;
 
@@ -65,46 +65,42 @@ macro_rules! date_like {
                     chrono_tz(array, *time_unit, timezone_str, |x| x.$extract())
                 }
             },
-            dt => Err(Error::NotYetImplemented(format!(
-                "\"{}\" does not support type {:?}",
-                stringify!($extract),
-                dt
-            ))),
+            _ => unimplemented!()
         }
     };
 }
 
 /// Extracts the years of a temporal array as [`PrimitiveArray<i32>`].
 /// Use [`can_year`] to check if this operation is supported for the target [`DataType`].
-pub fn year(array: &dyn Array) -> Result<PrimitiveArray<i32>> {
+pub fn year(array: &dyn Array) -> PolarsResult<PrimitiveArray<i32>> {
     date_like!(year, array, DataType::Int32)
 }
 
 /// Extracts the months of a temporal array as [`PrimitiveArray<u32>`].
 /// Value ranges from 1 to 12.
 /// Use [`can_month`] to check if this operation is supported for the target [`DataType`].
-pub fn month(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
+pub fn month(array: &dyn Array) -> PolarsResult<PrimitiveArray<u32>> {
     date_like!(month, array, DataType::UInt32)
 }
 
 /// Extracts the days of a temporal array as [`PrimitiveArray<u32>`].
 /// Value ranges from 1 to 32 (Last day depends on month).
 /// Use [`can_day`] to check if this operation is supported for the target [`DataType`].
-pub fn day(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
+pub fn day(array: &dyn Array) -> PolarsResult<PrimitiveArray<u32>> {
     date_like!(day, array, DataType::UInt32)
 }
 
 /// Extracts weekday of a temporal array as [`PrimitiveArray<u32>`].
 /// Monday is 1, Tuesday is 2, ..., Sunday is 7.
 /// Use [`can_weekday`] to check if this operation is supported for the target [`DataType`]
-pub fn weekday(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
+pub fn weekday(array: &dyn Array) -> PolarsResult<PrimitiveArray<u32>> {
     date_like!(u32_weekday, array, DataType::UInt32)
 }
 
 /// Extracts ISO week of a temporal array as [`PrimitiveArray<u32>`]
 /// Value ranges from 1 to 53 (Last week depends on the year).
 /// Use [`can_iso_week`] to check if this operation is supported for the target [`DataType`]
-pub fn iso_week(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
+pub fn iso_week(array: &dyn Array) -> PolarsResult<PrimitiveArray<u32>> {
     date_like!(u32_iso_week, array, DataType::UInt32)
 }
 
@@ -128,11 +124,7 @@ macro_rules! time_like {
                     chrono_tz(array, *time_unit, timezone_str, |x| x.$extract())
                 }
             },
-            dt => Err(Error::NotYetImplemented(format!(
-                "\"{}\" does not support type {:?}",
-                stringify!($extract),
-                dt
-            ))),
+            _ => unimplemented!(),
         }
     };
 }
@@ -140,31 +132,31 @@ macro_rules! time_like {
 /// Extracts the hours of a temporal array as [`PrimitiveArray<u32>`].
 /// Value ranges from 0 to 23.
 /// Use [`can_hour`] to check if this operation is supported for the target [`DataType`].
-pub fn hour(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
+pub fn hour(array: &dyn Array) -> PolarsResult<PrimitiveArray<u32>> {
     time_like!(hour, array, DataType::UInt32)
 }
 
 /// Extracts the minutes of a temporal array as [`PrimitiveArray<u32>`].
 /// Value ranges from 0 to 59.
 /// Use [`can_minute`] to check if this operation is supported for the target [`DataType`].
-pub fn minute(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
+pub fn minute(array: &dyn Array) -> PolarsResult<PrimitiveArray<u32>> {
     time_like!(minute, array, DataType::UInt32)
 }
 
 /// Extracts the seconds of a temporal array as [`PrimitiveArray<u32>`].
 /// Value ranges from 0 to 59.
 /// Use [`can_second`] to check if this operation is supported for the target [`DataType`].
-pub fn second(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
+pub fn second(array: &dyn Array) -> PolarsResult<PrimitiveArray<u32>> {
     time_like!(second, array, DataType::UInt32)
 }
 
 /// Extracts the nanoseconds of a temporal array as [`PrimitiveArray<u32>`].
 /// Use [`can_nanosecond`] to check if this operation is supported for the target [`DataType`].
-pub fn nanosecond(array: &dyn Array) -> Result<PrimitiveArray<u32>> {
+pub fn nanosecond(array: &dyn Array) -> PolarsResult<PrimitiveArray<u32>> {
     time_like!(nanosecond, array, DataType::UInt32)
 }
 
-fn date_variants<F, O>(array: &dyn Array, data_type: DataType, op: F) -> Result<PrimitiveArray<O>>
+fn date_variants<F, O>(array: &dyn Array, data_type: DataType, op: F) -> PolarsResult<PrimitiveArray<O>>
 where
     O: NativeType,
     F: Fn(chrono::NaiveDateTime) -> O,
@@ -201,7 +193,7 @@ where
     }
 }
 
-fn time_variants<F, O>(array: &dyn Array, data_type: DataType, op: F) -> Result<PrimitiveArray<O>>
+fn time_variants<F, O>(array: &dyn Array, data_type: DataType, op: F) -> PolarsResult<PrimitiveArray<O>>
 where
     O: NativeType,
     F: Fn(chrono::NaiveTime) -> O,
@@ -245,7 +237,7 @@ fn chrono_tz<F, O>(
     time_unit: TimeUnit,
     timezone_str: &str,
     op: F,
-) -> Result<PrimitiveArray<O>>
+) -> PolarsResult<PrimitiveArray<O>>
 where
     O: NativeType,
     F: Fn(chrono::DateTime<chrono_tz::Tz>) -> O,
@@ -260,7 +252,7 @@ fn chrono_tz<F, O>(
     _: TimeUnit,
     timezone_str: &str,
     _: F,
-) -> Result<PrimitiveArray<O>>
+) -> PolarsResult<PrimitiveArray<O>>
 where
     O: NativeType,
     F: Fn(chrono::DateTime<chrono::FixedOffset>) -> O,

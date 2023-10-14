@@ -13,6 +13,7 @@ object_store = { workspace = true, default-features = false, optional = true }
 parquet2 = {workspace = true, optional = true, default-features = false}
 regex = { workspace = true, optional = true }
 thiserror = { workspace = true }
+arrow-format = "0.8.1"
 
 [features]
 python = []

@@ -3,12 +3,12 @@ use std::convert::TryInto;
 use std::io::{Read, Seek};
 
 use ahash::HashSet;
+use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::super::{Compression, Dictionaries, IpcBuffer, Node};
 use super::{read_primitive, skip_primitive};
 use crate::array::{DictionaryArray, DictionaryKey};
 use crate::datatypes::DataType;
-use crate::error::{Error, Result};
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_dictionary<T: DictionaryKey, R: Read + Seek>(
@@ -23,22 +23,22 @@ pub fn read_dictionary<T: DictionaryKey, R: Read + Seek>(
     limit: Option<usize>,
     is_little_endian: bool,
     scratch: &mut Vec<u8>,
-) -> Result<DictionaryArray<T>>
+) -> PolarsResult<DictionaryArray<T>>
 where
     Vec<u8>: TryInto<T::Bytes>,
 {
     let id = if let Some(id) = id {
         id
     } else {
-        return Err(Error::OutOfSpec("Dictionary has no id.".to_string()));
+        return polars_bail!(oos = "Dictionary has no id.");
     };
     let values = dictionaries
         .get(&id)
         .ok_or_else(|| {
             let valid_ids = dictionaries.keys().collect::<HashSet<_>>();
-            Error::OutOfSpec(format!(
+            polars_err!(ComputeError:
                 "Dictionary id {id} not found. Valid ids: {valid_ids:?}"
-            ))
+            )
         })?
         .clone();
 
@@ -60,6 +60,6 @@ where
 pub fn skip_dictionary(
     field_nodes: &mut VecDeque<Node>,
     buffers: &mut VecDeque<IpcBuffer>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     skip_primitive(field_nodes, buffers)
 }

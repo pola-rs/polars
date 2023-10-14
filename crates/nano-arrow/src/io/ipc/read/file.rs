@@ -3,6 +3,7 @@ use std::io::{Read, Seek, SeekFrom};
 
 use ahash::AHashMap;
 use arrow_format::ipc::planus::ReadAsRoot;
+use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::super::{ARROW_MAGIC_V1, ARROW_MAGIC_V2, CONTINUATION_MARKER};
 use super::common::*;
@@ -11,7 +12,6 @@ use super::{Dictionaries, OutOfSpecKind};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::Schema;
-use crate::error::{Error, Result};
 use crate::io::ipc::IpcSchema;
 
 /// Metadata of an Arrow IPC file, written in the footer of the file.
@@ -39,7 +39,7 @@ fn read_dictionary_message<R: Read + Seek>(
     reader: &mut R,
     offset: u64,
     data: &mut Vec<u8>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let mut message_size: [u8; 4] = [0; 4];
     reader.seek(SeekFrom::Start(offset))?;
     reader.read_exact(&mut message_size)?;
@@ -50,7 +50,7 @@ fn read_dictionary_message<R: Read + Seek>(
 
     let message_length: usize = message_length
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     data.clear();
     data.try_reserve(message_length)?;
@@ -64,14 +64,14 @@ fn read_dictionary_message<R: Read + Seek>(
 
 pub(crate) fn get_dictionary_batch<'a>(
     message: &'a arrow_format::ipc::MessageRef,
-) -> Result<arrow_format::ipc::DictionaryBatchRef<'a>> {
+) -> PolarsResult<arrow_format::ipc::DictionaryBatchRef<'a>> {
     let header = message
         .header()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferHeader(err)))?
-        .ok_or_else(|| Error::from(OutOfSpecKind::MissingMessageHeader))?;
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferHeader(err)))?
+        .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingMessageHeader))?;
     match header {
         arrow_format::ipc::MessageHeaderRef::DictionaryBatch(batch) => Ok(batch),
-        _ => Err(Error::from(OutOfSpecKind::UnexpectedMessageType)),
+        _ => polars_bail!(oos =OutOfSpecKind::UnexpectedMessageType)
     }
 }
 
@@ -82,19 +82,19 @@ fn read_dictionary_block<R: Read + Seek>(
     dictionaries: &mut Dictionaries,
     message_scratch: &mut Vec<u8>,
     dictionary_scratch: &mut Vec<u8>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let offset: u64 = block
         .offset
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::UnexpectedNegativeInteger))?;
+        .map_err(|_| polars_err!(oos =OutOfSpecKind::UnexpectedNegativeInteger))?;
     let length: u64 = block
         .meta_data_length
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::UnexpectedNegativeInteger))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
     read_dictionary_message(reader, offset, message_scratch)?;
 
     let message = arrow_format::ipc::MessageRef::read_as_root(message_scratch.as_ref())
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
 
     let batch = get_dictionary_batch(&message)?;
 
@@ -116,7 +116,7 @@ pub fn read_file_dictionaries<R: Read + Seek>(
     reader: &mut R,
     metadata: &FileMetadata,
     scratch: &mut Vec<u8>,
-) -> Result<Dictionaries> {
+) -> PolarsResult<Dictionaries> {
     let mut dictionaries = Default::default();
 
     let blocks = if let Some(blocks) = &metadata.dictionaries {
@@ -141,7 +141,7 @@ pub fn read_file_dictionaries<R: Read + Seek>(
 }
 
 /// Reads the footer's length and magic number in footer
-fn read_footer_len<R: Read + Seek>(reader: &mut R) -> Result<(u64, usize)> {
+fn read_footer_len<R: Read + Seek>(reader: &mut R) -> PolarsResult<(u64, usize)> {
     // read footer length and magic number in footer
     let end = reader.seek(SeekFrom::End(-10))? + 10;
 
@@ -151,51 +151,51 @@ fn read_footer_len<R: Read + Seek>(reader: &mut R) -> Result<(u64, usize)> {
     let footer_len = i32::from_le_bytes(footer[..4].try_into().unwrap());
 
     if footer[4..] != ARROW_MAGIC_V2 {
-        return Err(Error::from(OutOfSpecKind::InvalidFooter));
+        return Err(polars_err!(oos =OutOfSpecKind::InvalidFooter));
     }
     let footer_len = footer_len
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     Ok((end, footer_len))
 }
 
-pub(super) fn deserialize_footer(footer_data: &[u8], size: u64) -> Result<FileMetadata> {
+pub(super) fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMetadata> {
     let footer = arrow_format::ipc::FooterRef::read_as_root(footer_data)
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferFooter(err)))?;
+        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferFooter(err)))?;
 
     let blocks = footer
         .record_batches()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))?
-        .ok_or_else(|| Error::from(OutOfSpecKind::MissingRecordBatches))?;
+        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))?
+        .ok_or_else(|| polars_err!(oos =OutOfSpecKind::MissingRecordBatches))?;
 
     let blocks = blocks
         .iter()
         .map(|block| {
             block
                 .try_into()
-                .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))
+                .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     let ipc_schema = footer
         .schema()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferSchema(err)))?
-        .ok_or_else(|| Error::from(OutOfSpecKind::MissingSchema))?;
+        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferSchema(err)))?
+        .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingSchema))?;
     let (schema, ipc_schema) = fb_to_schema(ipc_schema)?;
 
     let dictionaries = footer
         .dictionaries()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferDictionaries(err)))?
+        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferDictionaries(err)))?
         .map(|dictionaries| {
             dictionaries
                 .into_iter()
                 .map(|block| {
                     block.try_into().map_err(|err| {
-                        Error::from(OutOfSpecKind::InvalidFlatbufferRecordBatches(err))
+                        polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err))
                     })
                 })
-                .collect::<Result<Vec<_>>>()
+                .collect::<PolarsResult<Vec<_>>>()
         })
         .transpose()?;
 
@@ -209,16 +209,16 @@ pub(super) fn deserialize_footer(footer_data: &[u8], size: u64) -> Result<FileMe
 }
 
 /// Read the Arrow IPC file's metadata
-pub fn read_file_metadata<R: Read + Seek>(reader: &mut R) -> Result<FileMetadata> {
+pub fn read_file_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMetadata> {
     // check if header contain the correct magic bytes
     let mut magic_buffer: [u8; 6] = [0; 6];
     let start = reader.stream_position()?;
     reader.read_exact(&mut magic_buffer)?;
     if magic_buffer != ARROW_MAGIC_V2 {
         if magic_buffer[..4] == ARROW_MAGIC_V1 {
-            return Err(Error::NotYetImplemented("feather v1 not supported".into()));
+            polars_bail!(ComputeError: "feather v1 not supported");
         }
-        return Err(Error::from(OutOfSpecKind::InvalidHeader));
+        polars_bail!(oos =OutOfSpecKind::InvalidHeader);
     }
 
     let (end, footer_len) = read_footer_len(reader)?;
@@ -238,14 +238,14 @@ pub fn read_file_metadata<R: Read + Seek>(reader: &mut R) -> Result<FileMetadata
 
 pub(crate) fn get_record_batch(
     message: arrow_format::ipc::MessageRef,
-) -> Result<arrow_format::ipc::RecordBatchRef> {
+) -> PolarsResult<arrow_format::ipc::RecordBatchRef> {
     let header = message
         .header()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferHeader(err)))?
-        .ok_or_else(|| Error::from(OutOfSpecKind::MissingMessageHeader))?;
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferHeader(err)))?
+        .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingMessageHeader))?;
     match header {
         arrow_format::ipc::MessageHeaderRef::RecordBatch(batch) => Ok(batch),
-        _ => Err(Error::from(OutOfSpecKind::UnexpectedMessageType)),
+        _ => polars_bail!(oos = OutOfSpecKind::UnexpectedMessageType),
     }
 }
 
@@ -266,18 +266,18 @@ pub fn read_batch<R: Read + Seek>(
     index: usize,
     message_scratch: &mut Vec<u8>,
     data_scratch: &mut Vec<u8>,
-) -> Result<Chunk<Box<dyn Array>>> {
+) -> PolarsResult<Chunk<Box<dyn Array>>> {
     let block = metadata.blocks[index];
 
     let offset: u64 = block
         .offset
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
 
     let length: u64 = block
         .meta_data_length
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     // read length
     reader.seek(SeekFrom::Start(offset))?;
@@ -289,7 +289,7 @@ pub fn read_batch<R: Read + Seek>(
     }
     let meta_len = i32::from_le_bytes(meta_buf)
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::UnexpectedNegativeInteger))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
 
     message_scratch.clear();
     message_scratch.try_reserve(meta_len)?;
@@ -299,7 +299,7 @@ pub fn read_batch<R: Read + Seek>(
         .read_to_end(message_scratch)?;
 
     let message = arrow_format::ipc::MessageRef::read_as_root(message_scratch.as_ref())
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
 
     let batch = get_record_batch(message)?;
 
@@ -312,7 +312,7 @@ pub fn read_batch<R: Read + Seek>(
         dictionaries,
         message
             .version()
-            .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferVersion(err)))?,
+            .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferVersion(err)))?,
         reader,
         offset + length,
         metadata.size,

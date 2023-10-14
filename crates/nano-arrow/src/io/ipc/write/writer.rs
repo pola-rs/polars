@@ -1,6 +1,7 @@
 use std::io::Write;
 
 use arrow_format::ipc::planus::Builder;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::super::{IpcField, ARROW_MAGIC_V2};
 use super::common::{DictionaryTracker, EncodedData, WriteOptions};
@@ -9,7 +10,6 @@ use super::{default_ipc_fields, schema, schema_to_bytes};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::*;
-use crate::error::{Error, Result};
 use crate::io::ipc::write::common::encode_chunk_amortized;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -49,7 +49,7 @@ impl<W: Write> FileWriter<W> {
         schema: Schema,
         ipc_fields: Option<Vec<IpcField>>,
         options: WriteOptions,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let mut slf = Self::new(writer, schema, ipc_fields, options);
         slf.start()?;
 
@@ -105,9 +105,9 @@ impl<W: Write> FileWriter<W> {
     /// Writes the header and first (schema) message to the file.
     /// # Errors
     /// Errors if the file has been started or has finished.
-    pub fn start(&mut self) -> Result<()> {
+    pub fn start(&mut self) -> PolarsResult<()> {
         if self.state != State::None {
-            return Err(Error::oos("The IPC file can only be started once"));
+            polars_bail!(oos = "The IPC file can only be started once");
         }
         // write magic to header
         self.writer.write_all(&ARROW_MAGIC_V2[..])?;
@@ -131,11 +131,11 @@ impl<W: Write> FileWriter<W> {
         &mut self,
         chunk: &Chunk<Box<dyn Array>>,
         ipc_fields: Option<&[IpcField]>,
-    ) -> Result<()> {
+    ) -> PolarsResult<()> {
         if self.state != State::Started {
-            return Err(Error::oos(
-                "The IPC file must be started before it can be written to. Call `start` before `write`",
-            ));
+            polars_bail!(
+                oos ="The IPC file must be started before it can be written to. Call `start` before `write`"
+            );
         }
 
         let ipc_fields = if let Some(ipc_fields) = ipc_fields {
@@ -177,11 +177,11 @@ impl<W: Write> FileWriter<W> {
     }
 
     /// Write footer and closing tag, then mark the writer as done
-    pub fn finish(&mut self) -> Result<()> {
+    pub fn finish(&mut self) -> PolarsResult<()> {
         if self.state != State::Started {
-            return Err(Error::oos(
-                "The IPC file must be started before it can be finished. Call `start` before `finish`",
-            ));
+            polars_bail!(
+                oos = "The IPC file must be started before it can be finished. Call `start` before `finish`"
+            );
         }
 
         // write EOS

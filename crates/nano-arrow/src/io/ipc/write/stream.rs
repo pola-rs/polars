@@ -4,6 +4,7 @@
 //! however the `FileWriter` expects a reader that supports `Seek`ing
 
 use std::io::Write;
+use polars_error::{PolarsError, PolarsResult};
 
 use super::super::IpcField;
 use super::common::{encode_chunk, DictionaryTracker, EncodedData, WriteOptions};
@@ -12,7 +13,6 @@ use super::{default_ipc_fields, schema_to_bytes};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::*;
-use crate::error::{Error, Result};
 
 /// Arrow stream writer
 ///
@@ -50,7 +50,7 @@ impl<W: Write> StreamWriter<W> {
 
     /// Starts the stream by writing a Schema message to it.
     /// Use `ipc_fields` to declare dictionary ids in the schema, for dictionary-reuse
-    pub fn start(&mut self, schema: &Schema, ipc_fields: Option<Vec<IpcField>>) -> Result<()> {
+    pub fn start(&mut self, schema: &Schema, ipc_fields: Option<Vec<IpcField>>) -> PolarsResult<()> {
         self.ipc_fields = Some(if let Some(ipc_fields) = ipc_fields {
             ipc_fields
         } else {
@@ -70,12 +70,13 @@ impl<W: Write> StreamWriter<W> {
         &mut self,
         columns: &Chunk<Box<dyn Array>>,
         ipc_fields: Option<&[IpcField]>,
-    ) -> Result<()> {
+    ) -> PolarsResult<()> {
         if self.finished {
-            return Err(Error::Io(std::io::Error::new(
+            let io_err = std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
                 "Cannot write to a finished stream".to_string(),
-            )));
+            );
+            return Err(PolarsError::from(io_err))
         }
 
         // we can't make it a closure because it borrows (and it can't borrow mut and non-mut below)
@@ -98,7 +99,7 @@ impl<W: Write> StreamWriter<W> {
     }
 
     /// Write continuation bytes, and mark the stream as done
-    pub fn finish(&mut self) -> Result<()> {
+    pub fn finish(&mut self) -> PolarsResult<()> {
         write_continuation(&mut self.writer, 0)?;
 
         self.finished = true;

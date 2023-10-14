@@ -1,4 +1,4 @@
-//! Contains the concatenate kernel
+//r Contains the concatenate kernel
 //!
 //! Example:
 //!
@@ -13,26 +13,22 @@
 //! assert_eq!(arr.len(), 3);
 //! ```
 
+use polars_error::{polars_bail, PolarsResult};
 use crate::array::growable::make_growable;
 use crate::array::Array;
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::error::{Error, Result};
 
 /// Concatenate multiple [Array] of the same type into a single [`Array`].
-pub fn concatenate(arrays: &[&dyn Array]) -> Result<Box<dyn Array>> {
+pub fn concatenate(arrays: &[&dyn Array]) -> PolarsResult<Box<dyn Array>> {
     if arrays.is_empty() {
-        return Err(Error::InvalidArgumentError(
-            "concat requires input of at least one array".to_string(),
-        ));
+        polars_bail!(InvalidOperation: "concat requires input of at least one array")
     }
 
     if arrays
         .iter()
         .any(|array| array.data_type() != arrays[0].data_type())
     {
-        return Err(Error::InvalidArgumentError(
-            "It is not possible to concatenate arrays of different data types.".to_string(),
-        ));
+        polars_bail!(InvalidOperation: "It is not possible to concatenate arrays of different data types.")
     }
 
     let lengths = arrays.iter().map(|array| array.len()).collect::<Vec<_>>();

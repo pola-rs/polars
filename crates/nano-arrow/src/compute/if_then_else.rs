@@ -1,7 +1,7 @@
 //! Contains the operator [`if_then_else`].
+use polars_error::{polars_bail, PolarsResult};
 use crate::array::{growable, Array, BooleanArray};
 use crate::bitmap::utils::SlicesIterator;
-use crate::error::{Error, Result};
 
 /// Returns the values from `lhs` if the predicate is `true` or from the `rhs` if the predicate is false
 /// Returns `None` if the predicate is `None`.
@@ -27,21 +27,21 @@ pub fn if_then_else(
     predicate: &BooleanArray,
     lhs: &dyn Array,
     rhs: &dyn Array,
-) -> Result<Box<dyn Array>> {
+) -> PolarsResult<Box<dyn Array>> {
     if lhs.data_type() != rhs.data_type() {
-        return Err(Error::InvalidArgumentError(format!(
+        polars_bail!(InvalidOperation:
             "If then else requires the arguments to have the same datatypes ({:?} != {:?})",
             lhs.data_type(),
             rhs.data_type()
-        )));
+        )
     }
     if (lhs.len() != rhs.len()) | (lhs.len() != predicate.len()) {
-        return Err(Error::InvalidArgumentError(format!(
+        polars_bail!(ComputeError:
             "If then else requires all arguments to have the same length (predicate = {}, lhs = {}, rhs = {})",
             predicate.len(),
             lhs.len(),
             rhs.len()
-        )));
+        );
     }
 
     let result = if predicate.null_count() > 0 {

@@ -1,3 +1,4 @@
+use polars_error::to_compute_err;
 use crate::error::Result;
 
 #[cfg(feature = "io_ipc_compression")]
@@ -36,7 +37,7 @@ pub fn compress_lz4(input_buf: &[u8], output_buf: &mut Vec<u8>) -> Result<()> {
     use crate::error::Error;
     let mut encoder = lz4::EncoderBuilder::new()
         .build(output_buf)
-        .map_err(Error::from)?;
+        .map_err(to_compute_err)?;
     encoder.write_all(input_buf)?;
     encoder.finish().1.map_err(|e| e.into())
 }

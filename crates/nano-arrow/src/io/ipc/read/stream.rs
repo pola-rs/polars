@@ -3,6 +3,7 @@ use std::io::Read;
 use ahash::AHashMap;
 use arrow_format;
 use arrow_format::ipc::planus::ReadAsRoot;
+use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
 
 use super::super::CONTINUATION_MARKER;
 use super::common::*;
@@ -11,7 +12,6 @@ use super::{Dictionaries, OutOfSpecKind};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::Schema;
-use crate::error::{Error, Result};
 use crate::io::ipc::IpcSchema;
 
 /// Metadata of an Arrow IPC stream, written at the start of the stream
@@ -28,7 +28,7 @@ pub struct StreamMetadata {
 }
 
 /// Reads the metadata of the stream
-pub fn read_stream_metadata<R: Read>(reader: &mut R) -> Result<StreamMetadata> {
+pub fn read_stream_metadata<R: Read>(reader: &mut R) -> PolarsResult<StreamMetadata> {
     // determine metadata length
     let mut meta_size: [u8; 4] = [0; 4];
     reader.read_exact(&mut meta_size)?;
@@ -43,7 +43,7 @@ pub fn read_stream_metadata<R: Read>(reader: &mut R) -> Result<StreamMetadata> {
 
     let length: usize = meta_length
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
 
     let mut buffer = vec![];
     buffer.try_reserve(length)?;
@@ -96,7 +96,7 @@ fn read_next<R: Read>(
     data_buffer: &mut Vec<u8>,
     projection: &Option<(Vec<usize>, AHashMap<usize, usize>, Schema)>,
     scratch: &mut Vec<u8>,
-) -> Result<Option<StreamState>> {
+) -> PolarsResult<Option<StreamState>> {
     // determine metadata length
     let mut meta_length: [u8; 4] = [0; 4];
 
@@ -109,7 +109,7 @@ fn read_next<R: Read>(
                 // https://arrow.apache.org/docs/format/Columnar.html#ipc-streaming-format
                 Ok(Some(StreamState::Waiting))
             } else {
-                Err(Error::from(e))
+                Err(PolarsError::from(e))
             };
         },
     }
@@ -125,7 +125,7 @@ fn read_next<R: Read>(
 
     let meta_length: usize = meta_length
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     if meta_length == 0 {
         // the stream has ended, mark the reader as finished
@@ -140,18 +140,18 @@ fn read_next<R: Read>(
         .read_to_end(message_buffer)?;
 
     let message = arrow_format::ipc::MessageRef::read_as_root(message_buffer.as_ref())
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
 
     let header = message
         .header()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferHeader(err)))?
-        .ok_or_else(|| Error::from(OutOfSpecKind::MissingMessageHeader))?;
+        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferHeader(err)))?
+        .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingMessageHeader))?;
 
     let block_length: usize = message
         .body_length()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferBodyLength(err)))?
+        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferBodyLength(err)))?
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::UnexpectedNegativeInteger))?;
+        .map_err(|_| polars_err!(oos =OutOfSpecKind::UnexpectedNegativeInteger))?;
 
     match header {
         arrow_format::ipc::MessageHeaderRef::RecordBatch(batch) => {
@@ -222,7 +222,7 @@ fn read_next<R: Read>(
                 scratch,
             )
         },
-        _ => Err(Error::from(OutOfSpecKind::UnexpectedMessageType)),
+        _ => polars_bail!(oos = OutOfSpecKind::UnexpectedMessageType),
     }
 }
 
@@ -289,7 +289,7 @@ impl<R: Read> StreamReader<R> {
         self.finished
     }
 
-    fn maybe_next(&mut self) -> Result<Option<StreamState>> {
+    fn maybe_next(&mut self) -> PolarsResult<Option<StreamState>> {
         if self.finished {
             return Ok(None);
         }
@@ -310,7 +310,7 @@ impl<R: Read> StreamReader<R> {
 }
 
 impl<R: Read> Iterator for StreamReader<R> {
-    type Item = Result<StreamState>;
+    type Item = PolarsResult<StreamState>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.maybe_next().transpose()

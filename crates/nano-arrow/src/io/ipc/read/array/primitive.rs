@@ -1,12 +1,12 @@
 use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::io::{Read, Seek};
+use polars_error::{polars_err, PolarsResult};
 
 use super::super::read_basic::*;
 use super::super::{Compression, IpcBuffer, Node, OutOfSpecKind};
 use crate::array::PrimitiveArray;
 use crate::datatypes::DataType;
-use crate::error::{Error, Result};
 use crate::types::NativeType;
 
 #[allow(clippy::too_many_arguments)]
@@ -20,14 +20,14 @@ pub fn read_primitive<T: NativeType, R: Read + Seek>(
     compression: Option<Compression>,
     limit: Option<usize>,
     scratch: &mut Vec<u8>,
-) -> Result<PrimitiveArray<T>>
+) -> PolarsResult<PrimitiveArray<T>>
 where
     Vec<u8>: TryInto<T::Bytes>,
 {
     let field_node = field_nodes.pop_front().ok_or_else(|| {
-        Error::oos(format!(
+        polars_err!(oos =
             "IPC: unable to fetch the field for {data_type:?}. The file or stream is corrupted."
-        ))
+        )
     })?;
 
     let validity = read_validity(
@@ -44,7 +44,7 @@ where
     let length: usize = field_node
         .length()
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
     let length = limit.map(|limit| limit.min(length)).unwrap_or(length);
 
     let values = read_buffer(
@@ -62,16 +62,16 @@ where
 pub fn skip_primitive(
     field_nodes: &mut VecDeque<Node>,
     buffers: &mut VecDeque<IpcBuffer>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
-        Error::oos("IPC: unable to fetch the field for primitive. The file or stream is corrupted.")
+        polars_err!(oos = "IPC: unable to fetch the field for primitive. The file or stream is corrupted.")
     })?;
 
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| Error::oos("IPC: missing validity buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| Error::oos("IPC: missing values buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing values buffer."))?;
     Ok(())
 }

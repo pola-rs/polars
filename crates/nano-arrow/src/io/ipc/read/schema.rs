@@ -1,5 +1,6 @@
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{FieldRef, FixedSizeListRef, MapRef, TimeRef, TimestampRef, UnionRef};
+use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::super::{IpcField, IpcSchema};
 use super::{OutOfSpecKind, StreamMetadata};
@@ -7,9 +8,8 @@ use crate::datatypes::{
     get_extension, DataType, Extension, Field, IntegerType, IntervalUnit, Metadata, Schema,
     TimeUnit, UnionMode,
 };
-use crate::error::{Error, Result};
 
-fn try_unzip_vec<A, B, I: Iterator<Item = Result<(A, B)>>>(iter: I) -> Result<(Vec<A>, Vec<B>)> {
+fn try_unzip_vec<A, B, I: Iterator<Item = PolarsResult<(A, B)>>>(iter: I) -> PolarsResult<(Vec<A>, Vec<B>)> {
     let mut a = vec![];
     let mut b = vec![];
     for maybe_item in iter {
@@ -21,7 +21,7 @@ fn try_unzip_vec<A, B, I: Iterator<Item = Result<(A, B)>>>(iter: I) -> Result<(V
     Ok((a, b))
 }
 
-fn deserialize_field(ipc_field: arrow_format::ipc::FieldRef) -> Result<(Field, IpcField)> {
+fn deserialize_field(ipc_field: arrow_format::ipc::FieldRef) -> PolarsResult<(Field, IpcField)> {
     let metadata = read_metadata(&ipc_field)?;
 
     let extension = get_extension(&metadata);
@@ -31,7 +31,7 @@ fn deserialize_field(ipc_field: arrow_format::ipc::FieldRef) -> Result<(Field, I
     let field = Field {
         name: ipc_field
             .name()?
-            .ok_or_else(|| Error::oos("Every field in IPC must have a name"))?
+            .ok_or_else(|| polars_err!(oos = "Every field in IPC must have a name"))?
             .to_string(),
         data_type,
         is_nullable: ipc_field.nullable()?,
@@ -41,7 +41,7 @@ fn deserialize_field(ipc_field: arrow_format::ipc::FieldRef) -> Result<(Field, I
     Ok((field, ipc_field_))
 }
 
-fn read_metadata(field: &arrow_format::ipc::FieldRef) -> Result<Metadata> {
+fn read_metadata(field: &arrow_format::ipc::FieldRef) -> PolarsResult<Metadata> {
     Ok(if let Some(list) = field.custom_metadata()? {
         let mut metadata_map = Metadata::new();
         for kv in list {
@@ -56,7 +56,7 @@ fn read_metadata(field: &arrow_format::ipc::FieldRef) -> Result<Metadata> {
     })
 }
 
-fn deserialize_integer(int: arrow_format::ipc::IntRef) -> Result<IntegerType> {
+fn deserialize_integer(int: arrow_format::ipc::IntRef) -> PolarsResult<IntegerType> {
     Ok(match (int.bit_width()?, int.is_signed()?) {
         (8, true) => IntegerType::Int8,
         (8, false) => IntegerType::UInt8,
@@ -66,11 +66,11 @@ fn deserialize_integer(int: arrow_format::ipc::IntRef) -> Result<IntegerType> {
         (32, false) => IntegerType::UInt32,
         (64, true) => IntegerType::Int64,
         (64, false) => IntegerType::UInt64,
-        _ => return Err(Error::oos("IPC: indexType can only be 8, 16, 32 or 64.")),
+        _ => polars_bail!(oos = "IPC: indexType can only be 8, 16, 32 or 64."),
     })
 }
 
-fn deserialize_timeunit(time_unit: arrow_format::ipc::TimeUnit) -> Result<TimeUnit> {
+fn deserialize_timeunit(time_unit: arrow_format::ipc::TimeUnit) -> PolarsResult<TimeUnit> {
     use arrow_format::ipc::TimeUnit::*;
     Ok(match time_unit {
         Second => TimeUnit::Second,
@@ -80,7 +80,7 @@ fn deserialize_timeunit(time_unit: arrow_format::ipc::TimeUnit) -> Result<TimeUn
     })
 }
 
-fn deserialize_time(time: TimeRef) -> Result<(DataType, IpcField)> {
+fn deserialize_time(time: TimeRef) -> PolarsResult<(DataType, IpcField)> {
     let unit = deserialize_timeunit(time.unit()?)?;
 
     let data_type = match (time.bit_width()?, unit) {
@@ -89,15 +89,15 @@ fn deserialize_time(time: TimeRef) -> Result<(DataType, IpcField)> {
         (64, TimeUnit::Microsecond) => DataType::Time64(TimeUnit::Microsecond),
         (64, TimeUnit::Nanosecond) => DataType::Time64(TimeUnit::Nanosecond),
         (bits, precision) => {
-            return Err(Error::nyi(format!(
+            polars_bail!(ComputeError:
                 "Time type with bit width of {bits} and unit of {precision:?}"
-            )))
+            )
         },
     };
     Ok((data_type, IpcField::default()))
 }
 
-fn deserialize_timestamp(timestamp: TimestampRef) -> Result<(DataType, IpcField)> {
+fn deserialize_timestamp(timestamp: TimestampRef) -> PolarsResult<(DataType, IpcField)> {
     let timezone = timestamp.timezone()?.map(|tz| tz.to_string());
     let time_unit = deserialize_timeunit(timestamp.unit()?)?;
     Ok((
@@ -106,15 +106,15 @@ fn deserialize_timestamp(timestamp: TimestampRef) -> Result<(DataType, IpcField)
     ))
 }
 
-fn deserialize_union(union_: UnionRef, field: FieldRef) -> Result<(DataType, IpcField)> {
+fn deserialize_union(union_: UnionRef, field: FieldRef) -> PolarsResult<(DataType, IpcField)> {
     let mode = UnionMode::sparse(union_.mode()? == arrow_format::ipc::UnionMode::Sparse);
     let ids = union_.type_ids()?.map(|x| x.iter().collect());
 
     let fields = field
         .children()?
-        .ok_or_else(|| Error::oos("IPC: Union must contain children"))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: Union must contain children"))?;
     if fields.is_empty() {
-        return Err(Error::oos("IPC: Union must contain at least one child"));
+        polars_bail!(oos = "IPC: Union must contain at least one child");
     }
 
     let (fields, ipc_fields) = try_unzip_vec(fields.iter().map(|field| {
@@ -128,15 +128,15 @@ fn deserialize_union(union_: UnionRef, field: FieldRef) -> Result<(DataType, Ipc
     Ok((DataType::Union(fields, ids, mode), ipc_field))
 }
 
-fn deserialize_map(map: MapRef, field: FieldRef) -> Result<(DataType, IpcField)> {
+fn deserialize_map(map: MapRef, field: FieldRef) -> PolarsResult<(DataType, IpcField)> {
     let is_sorted = map.keys_sorted()?;
 
     let children = field
         .children()?
-        .ok_or_else(|| Error::oos("IPC: Map must contain children"))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: Map must contain children"))?;
     let inner = children
         .get(0)
-        .ok_or_else(|| Error::oos("IPC: Map must contain one child"))??;
+        .ok_or_else(|| polars_err!(oos = "IPC: Map must contain one child"))??;
     let (field, ipc_field) = deserialize_field(inner)?;
 
     let data_type = DataType::Map(Box::new(field), is_sorted);
@@ -149,12 +149,12 @@ fn deserialize_map(map: MapRef, field: FieldRef) -> Result<(DataType, IpcField)>
     ))
 }
 
-fn deserialize_struct(field: FieldRef) -> Result<(DataType, IpcField)> {
+fn deserialize_struct(field: FieldRef) -> PolarsResult<(DataType, IpcField)> {
     let fields = field
         .children()?
-        .ok_or_else(|| Error::oos("IPC: Struct must contain children"))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: Struct must contain children"))?;
     if fields.is_empty() {
-        return Err(Error::oos("IPC: Struct must contain at least one child"));
+        polars_bail!(oos = "IPC: Struct must contain at least one child");
     }
     let (fields, ipc_fields) = try_unzip_vec(fields.iter().map(|field| {
         let (field, fields) = deserialize_field(field?)?;
@@ -167,13 +167,13 @@ fn deserialize_struct(field: FieldRef) -> Result<(DataType, IpcField)> {
     Ok((DataType::Struct(fields), ipc_field))
 }
 
-fn deserialize_list(field: FieldRef) -> Result<(DataType, IpcField)> {
+fn deserialize_list(field: FieldRef) -> PolarsResult<(DataType, IpcField)> {
     let children = field
         .children()?
-        .ok_or_else(|| Error::oos("IPC: List must contain children"))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: List must contain children"))?;
     let inner = children
         .get(0)
-        .ok_or_else(|| Error::oos("IPC: List must contain one child"))??;
+        .ok_or_else(|| polars_err!(oos = "IPC: List must contain one child"))??;
     let (field, ipc_field) = deserialize_field(inner)?;
 
     Ok((
@@ -185,13 +185,13 @@ fn deserialize_list(field: FieldRef) -> Result<(DataType, IpcField)> {
     ))
 }
 
-fn deserialize_large_list(field: FieldRef) -> Result<(DataType, IpcField)> {
+fn deserialize_large_list(field: FieldRef) -> PolarsResult<(DataType, IpcField)> {
     let children = field
         .children()?
-        .ok_or_else(|| Error::oos("IPC: List must contain children"))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: List must contain children"))?;
     let inner = children
         .get(0)
-        .ok_or_else(|| Error::oos("IPC: List must contain one child"))??;
+        .ok_or_else(|| polars_err!(oos = "IPC: List must contain one child"))??;
     let (field, ipc_field) = deserialize_field(inner)?;
 
     Ok((
@@ -206,19 +206,19 @@ fn deserialize_large_list(field: FieldRef) -> Result<(DataType, IpcField)> {
 fn deserialize_fixed_size_list(
     list: FixedSizeListRef,
     field: FieldRef,
-) -> Result<(DataType, IpcField)> {
+) -> PolarsResult<(DataType, IpcField)> {
     let children = field
         .children()?
-        .ok_or_else(|| Error::oos("IPC: FixedSizeList must contain children"))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: FixedSizeList must contain children"))?;
     let inner = children
         .get(0)
-        .ok_or_else(|| Error::oos("IPC: FixedSizeList must contain one child"))??;
+        .ok_or_else(|| polars_err!(oos = "IPC: FixedSizeList must contain one child"))??;
     let (field, ipc_field) = deserialize_field(inner)?;
 
     let size = list
         .list_size()?
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     Ok((
         DataType::FixedSizeList(Box::new(field), size),
@@ -234,12 +234,12 @@ fn get_data_type(
     field: arrow_format::ipc::FieldRef,
     extension: Extension,
     may_be_dictionary: bool,
-) -> Result<(DataType, IpcField)> {
+) -> PolarsResult<(DataType, IpcField)> {
     if let Some(dictionary) = field.dictionary()? {
         if may_be_dictionary {
             let int = dictionary
                 .index_type()?
-                .ok_or_else(|| Error::oos("indexType is mandatory in Dictionary."))?;
+                .ok_or_else(|| polars_err!(oos = "indexType is mandatory in Dictionary."))?;
             let index_type = deserialize_integer(int)?;
             let (inner, mut ipc_field) = get_data_type(field, extension, false)?;
             ipc_field.dictionary_id = Some(dictionary.id()?);
@@ -261,7 +261,7 @@ fn get_data_type(
 
     let type_ = field
         .type_()?
-        .ok_or_else(|| Error::oos("IPC: field type is mandatory"))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: field type is mandatory"))?;
 
     use arrow_format::ipc::TypeRef::*;
     Ok(match type_ {
@@ -280,7 +280,7 @@ fn get_data_type(
                 fixed
                     .byte_width()?
                     .try_into()
-                    .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?,
+                    .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?,
             ),
             IpcField::default(),
         ),
@@ -323,20 +323,20 @@ fn get_data_type(
             let bit_width: usize = decimal
                 .bit_width()?
                 .try_into()
-                .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+                .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
             let precision: usize = decimal
                 .precision()?
                 .try_into()
-                .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+                .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
             let scale: usize = decimal
                 .scale()?
                 .try_into()
-                .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+                .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
             let data_type = match bit_width {
                 128 => DataType::Decimal(precision, scale),
                 256 => DataType::Decimal256(precision, scale),
-                _ => return Err(Error::from(OutOfSpecKind::NegativeFooterLength)),
+                _ => return Err(polars_err!(oos = OutOfSpecKind::NegativeFooterLength)),
             };
 
             (data_type, IpcField::default())
@@ -351,26 +351,26 @@ fn get_data_type(
 }
 
 /// Deserialize an flatbuffers-encoded Schema message into [`Schema`] and [`IpcSchema`].
-pub fn deserialize_schema(message: &[u8]) -> Result<(Schema, IpcSchema)> {
+pub fn deserialize_schema(message: &[u8]) -> PolarsResult<(Schema, IpcSchema)> {
     let message = arrow_format::ipc::MessageRef::read_as_root(message)
-        .map_err(|err| Error::oos(format!("Unable deserialize message: {err:?}")))?;
+        .map_err(|err| polars_err!(oos = "Unable deserialize message: {err:?}"))?;
 
     let schema = match message
         .header()?
-        .ok_or_else(|| Error::oos("Unable to convert header to a schema".to_string()))?
+        .ok_or_else(|| polars_err!(oos = "Unable to convert header to a schema".to_string()))?
     {
-        arrow_format::ipc::MessageHeaderRef::Schema(schema) => Ok(schema),
-        _ => Err(Error::nyi("The message is expected to be a Schema message")),
+        arrow_format::ipc::MessageHeaderRef::Schema(schema) => PolarsResult::Ok(schema),
+        _ => polars_bail!(ComputeError: "The message is expected to be a Schema message"),
     }?;
 
     fb_to_schema(schema)
 }
 
 /// Deserialize the raw Schema table from IPC format to Schema data type
-pub(super) fn fb_to_schema(schema: arrow_format::ipc::SchemaRef) -> Result<(Schema, IpcSchema)> {
+pub(super) fn fb_to_schema(schema: arrow_format::ipc::SchemaRef) -> PolarsResult<(Schema, IpcSchema)> {
     let fields = schema
         .fields()?
-        .ok_or_else(|| Error::from(OutOfSpecKind::MissingFields))?;
+        .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingFields))?;
     let (fields, ipc_fields) = try_unzip_vec(fields.iter().map(|field| {
         let (field, fields) = deserialize_field(field?)?;
         Ok((field, fields))
@@ -404,20 +404,20 @@ pub(super) fn fb_to_schema(schema: arrow_format::ipc::SchemaRef) -> Result<(Sche
     ))
 }
 
-pub(super) fn deserialize_stream_metadata(meta: &[u8]) -> Result<StreamMetadata> {
+pub(super) fn deserialize_stream_metadata(meta: &[u8]) -> PolarsResult<StreamMetadata> {
     let message = arrow_format::ipc::MessageRef::read_as_root(meta)
-        .map_err(|err| Error::OutOfSpec(format!("Unable to get root as message: {err:?}")))?;
+        .map_err(|err| polars_err!(oos = "Unable to get root as message: {err:?}"))?;
     let version = message.version()?;
     // message header is a Schema, so read it
     let header = message
         .header()?
-        .ok_or_else(|| Error::oos("Unable to read the first IPC message"))?;
+        .ok_or_else(|| polars_err!(oos = "Unable to read the first IPC message"))?;
     let schema = if let arrow_format::ipc::MessageHeaderRef::Schema(schema) = header {
         schema
     } else {
-        return Err(Error::oos(
-            "The first IPC message of the stream must be a schema",
-        ));
+        polars_bail!(oos =
+            "The first IPC message of the stream must be a schema"
+        )
     };
     let (schema, ipc_schema) = fb_to_schema(schema)?;
 

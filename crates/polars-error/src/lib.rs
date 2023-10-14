@@ -95,6 +95,15 @@ impl From<parquet2::error::Error> for PolarsError {
     }
 }
 
+impl From<arrow_format::ipc::planus::Error> for PolarsError {
+    fn from(err: arrow_format::ipc::planus::Error) -> Self {
+        PolarsError::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("flatbuffers error: {err:?}"),
+        ))
+    }
+}
+
 impl From<TryReserveError> for PolarsError {
     fn from(value: TryReserveError) -> Self {
         polars_err!(ComputeError: "OOM: {}", value)
@@ -175,8 +184,8 @@ macro_rules! polars_err {
             InvalidOperation: "{} operation not supported for dtypes `{}` and `{}`", $op, $lhs, $rhs
         )
     };
-    (oos = $op:expr) => {
-        $crate::polars_err!(ComputeError: "out-of-spec {:?}", $op)
+    (oos = $arg:expr) => {
+        $crate::polars_err!(ComputeError: "out-of-spec: {}", $arg)
     };
     (opq = $op:ident, $arg:expr) => {
         $crate::polars_err!(op = concat!("`", stringify!($op), "`"), $arg)

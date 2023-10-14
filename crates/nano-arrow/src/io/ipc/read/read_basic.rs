@@ -1,13 +1,13 @@
 use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::io::{Read, Seek, SeekFrom};
+use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::super::compression;
 use super::super::endianness::is_native_little_endian;
 use super::{Compression, IpcBuffer, Node, OutOfSpecKind};
 use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
-use crate::error::{Error, Result};
 use crate::types::NativeType;
 
 fn read_swapped<T: NativeType, R: Read + Seek>(
@@ -15,7 +15,7 @@ fn read_swapped<T: NativeType, R: Read + Seek>(
     length: usize,
     buffer: &mut Vec<T>,
     is_little_endian: bool,
-) -> Result<()> {
+) -> PolarsResult<()> {
     // slow case where we must reverse bits
     let mut slice = vec![0u8; length * std::mem::size_of::<T>()];
     reader.read_exact(&mut slice)?;
@@ -33,13 +33,13 @@ fn read_swapped<T: NativeType, R: Read + Seek>(
                     Err(_) => unreachable!(),
                 };
                 *slot = T::from_be_bytes(a);
-                Result::Ok(())
+                PolarsResult::Ok(())
             })?;
     } else {
         // machine is big endian, file is little endian
-        return Err(Error::NotYetImplemented(
-            "Reading little endian files from big endian machines".to_string(),
-        ));
+        polars_bail!(ComputeError:
+            "Reading little endian files from big endian machines",
+        )
     }
     Ok(())
 }
@@ -49,29 +49,15 @@ fn read_uncompressed_buffer<T: NativeType, R: Read + Seek>(
     buffer_length: usize,
     length: usize,
     is_little_endian: bool,
-) -> Result<Vec<T>> {
+) -> PolarsResult<Vec<T>> {
     let required_number_of_bytes = length.saturating_mul(std::mem::size_of::<T>());
     if required_number_of_bytes > buffer_length {
-        return Err(Error::from(OutOfSpecKind::InvalidBuffer {
+        polars_bail!(oos = OutOfSpecKind::InvalidBuffer {
             length,
             type_name: std::any::type_name::<T>(),
             required_number_of_bytes,
             buffer_length,
-        }));
-        // todo: move this to the error's Display
-        /*
-        return Err(Error::OutOfSpec(
-            format!("The slots of the array times the physical size must \
-            be smaller or equal to the length of the IPC buffer. \
-            However, this array reports {} slots, which, for physical type \"{}\", corresponds to {} bytes, \
-            which is larger than the buffer length {}",
-                length,
-                std::any::type_name::<T>(),
-                bytes,
-                buffer_length,
-            ),
-        ));
-         */
+        });
     }
 
     // it is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
@@ -95,11 +81,11 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
     is_little_endian: bool,
     compression: Compression,
     scratch: &mut Vec<u8>,
-) -> Result<Vec<T>> {
+) -> PolarsResult<Vec<T>> {
     if is_little_endian != is_native_little_endian() {
-        return Err(Error::NotYetImplemented(
+        polars_bail!(ComputeError:
             "Reading compressed and big endian IPC".to_string(),
-        ));
+        )
     }
 
     // it is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
@@ -118,7 +104,7 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
 
     let compression = compression
         .codec()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferCompression(err)))?;
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferCompression(err)))?;
 
     match compression {
         arrow_format::ipc::CompressionType::Lz4Frame => {
@@ -139,20 +125,20 @@ pub fn read_buffer<T: NativeType, R: Read + Seek>(
     is_little_endian: bool,
     compression: Option<Compression>,
     scratch: &mut Vec<u8>,
-) -> Result<Buffer<T>> {
+) -> PolarsResult<Buffer<T>> {
     let buf = buf
         .pop_front()
-        .ok_or_else(|| Error::from(OutOfSpecKind::ExpectedBuffer))?;
+        .ok_or_else(|| polars_err!(oos = OutOfSpecKind::ExpectedBuffer))?;
 
     let offset: u64 = buf
         .offset()
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     let buffer_length: usize = buf
         .length()
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     reader.seek(SeekFrom::Start(block_offset + offset))?;
 
@@ -175,12 +161,13 @@ fn read_uncompressed_bitmap<R: Read + Seek>(
     length: usize,
     bytes: usize,
     reader: &mut R,
-) -> Result<Vec<u8>> {
+) -> PolarsResult<Vec<u8>> {
     if length > bytes * 8 {
-        return Err(Error::from(OutOfSpecKind::InvalidBitmap {
+        polars_bail!(oos = OutOfSpecKind::InvalidBitmap {
             length,
             number_of_bits: bytes * 8,
-        }));
+        }
+        )
     }
 
     let mut buffer = vec![];
@@ -199,7 +186,7 @@ fn read_compressed_bitmap<R: Read + Seek>(
     compression: Compression,
     reader: &mut R,
     scratch: &mut Vec<u8>,
-) -> Result<Vec<u8>> {
+) -> PolarsResult<Vec<u8>> {
     let mut buffer = vec![0; (length + 7) / 8];
 
     scratch.clear();
@@ -208,7 +195,7 @@ fn read_compressed_bitmap<R: Read + Seek>(
 
     let compression = compression
         .codec()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferCompression(err)))?;
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferCompression(err)))?;
 
     match compression {
         arrow_format::ipc::CompressionType::Lz4Frame => {
@@ -229,20 +216,20 @@ pub fn read_bitmap<R: Read + Seek>(
     _: bool,
     compression: Option<Compression>,
     scratch: &mut Vec<u8>,
-) -> Result<Bitmap> {
+) -> PolarsResult<Bitmap> {
     let buf = buf
         .pop_front()
-        .ok_or_else(|| Error::from(OutOfSpecKind::ExpectedBuffer))?;
+        .ok_or_else(|| polars_err!(oos = OutOfSpecKind::ExpectedBuffer))?;
 
     let offset: u64 = buf
         .offset()
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
 
     let bytes: usize = buf
         .length()
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
 
     reader.seek(SeekFrom::Start(block_offset + offset))?;
 
@@ -265,11 +252,11 @@ pub fn read_validity<R: Read + Seek>(
     compression: Option<Compression>,
     limit: Option<usize>,
     scratch: &mut Vec<u8>,
-) -> Result<Option<Bitmap>> {
+) -> PolarsResult<Option<Bitmap>> {
     let length: usize = field_node
         .length()
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
     let length = limit.map(|limit| limit.min(length)).unwrap_or(length);
 
     Ok(if field_node.null_count() > 0 {
@@ -285,7 +272,7 @@ pub fn read_validity<R: Read + Seek>(
     } else {
         let _ = buffers
             .pop_front()
-            .ok_or_else(|| Error::from(OutOfSpecKind::ExpectedBuffer))?;
+            .ok_or_else(|| polars_err!(oos = OutOfSpecKind::ExpectedBuffer))?;
         None
     })
 }

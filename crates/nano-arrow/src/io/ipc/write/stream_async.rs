@@ -123,7 +123,7 @@ where
                 std::io::ErrorKind::UnexpectedEof,
                 "writer closed".to_string(),
             );
-            PolarsError::from(io_err)
+            Err(PolarsError::from(io_err))
         }
     }
 
