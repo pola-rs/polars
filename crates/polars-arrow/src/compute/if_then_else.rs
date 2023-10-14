@@ -8,9 +8,9 @@ use crate::bitmap::utils::SlicesIterator;
 /// Returns `None` if the predicate is `None`.
 /// # Example
 /// ```rust
-/// # use arrow2::error::Result;
-/// use arrow2::compute::if_then_else::if_then_else;
-/// use arrow2::array::{Int32Array, BooleanArray};
+/// # use polars_arrow::error::Result;
+/// use polars_arrow::compute::if_then_else::if_then_else;
+/// use polars_arrow::array::{Int32Array, BooleanArray};
 ///
 /// # fn main() -> Result<()> {
 /// let lhs = Int32Array::from_slice(&[1, 2, 3]);

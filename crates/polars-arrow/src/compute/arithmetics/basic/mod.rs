@@ -45,8 +45,8 @@ impl NativeArithmetics for f64 {}
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::basic::negate;
-/// use arrow2::array::PrimitiveArray;
+/// use polars_arrow::compute::arithmetics::basic::negate;
+/// use polars_arrow::array::PrimitiveArray;
 ///
 /// let a = PrimitiveArray::from([None, Some(6), None, Some(7)]);
 /// let result = negate(&a);
@@ -64,8 +64,8 @@ where
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::basic::checked_negate;
-/// use arrow2::array::{Array, PrimitiveArray};
+/// use polars_arrow::compute::arithmetics::basic::checked_negate;
+/// use polars_arrow::array::{Array, PrimitiveArray};
 ///
 /// let a = PrimitiveArray::from([None, Some(6), Some(i8::MIN), Some(7)]);
 /// let result = checked_negate(&a);
@@ -84,8 +84,8 @@ where
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::basic::wrapping_negate;
-/// use arrow2::array::{Array, PrimitiveArray};
+/// use polars_arrow::compute::arithmetics::basic::wrapping_negate;
+/// use polars_arrow::array::{Array, PrimitiveArray};
 ///
 /// let a = PrimitiveArray::from([None, Some(6), Some(i8::MIN), Some(7)]);
 /// let result = wrapping_negate(&a);

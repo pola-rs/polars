@@ -1,22 +1,22 @@
-Welcome to arrow2's documentation. Thanks for checking it out!
+Welcome to polars_arrow's documentation. Thanks for checking it out!
 
 This is a library for efficient in-memory data operations with
 [Arrow in-memory format](https://arrow.apache.org/docs/format/Columnar.html).
 It is a re-write from the bottom up of the official `arrow` crate with soundness
 and type safety in mind.
 
-Check out [the guide](https://jorgecarleitao.github.io/arrow2/main/guide/) for an introduction.
+Check out [the guide](https://jorgecarleitao.github.io/polars_arrow/main/guide/) for an introduction.
 Below is an example of some of the things you can do with it:
 
 ```rust
 use std::sync::Arc;
 
-use arrow2::array::*;
-use arrow2::datatypes::{Field, DataType, Schema};
-use arrow2::compute::arithmetics;
-use arrow2::error::Result;
-use arrow2::io::parquet::write::*;
-use arrow2::chunk::Chunk;
+use polars_arrow::array::*;
+use polars_arrow::datatypes::{Field, DataType, Schema};
+use polars_arrow::compute::arithmetics;
+use polars_arrow::error::Result;
+use polars_arrow::io::parquet::write::*;
+use polars_arrow::chunk::Chunk;
 
 fn main() -> Result<()> {
     // declare arrays

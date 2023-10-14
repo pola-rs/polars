@@ -38,8 +38,8 @@ where
 /// This function panics iff the arrays have different lengths.
 /// # Examples
 /// ```rust
-/// use arrow2::array::BooleanArray;
-/// use arrow2::compute::boolean::and;
+/// use polars_arrow::array::BooleanArray;
+/// use polars_arrow::compute::boolean::and;
 ///
 /// let a = BooleanArray::from(&[Some(false), Some(true), None]);
 /// let b = BooleanArray::from(&[Some(true), Some(true), Some(false)]);
@@ -80,8 +80,8 @@ pub fn and(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
 /// This function panics iff the arrays have different lengths.
 /// # Examples
 /// ```rust
-/// use arrow2::array::BooleanArray;
-/// use arrow2::compute::boolean::or;
+/// use polars_arrow::array::BooleanArray;
+/// use polars_arrow::compute::boolean::or;
 ///
 /// let a = BooleanArray::from(vec![Some(false), Some(true), None]);
 /// let b = BooleanArray::from(vec![Some(true), Some(true), Some(false)]);
@@ -121,8 +121,8 @@ pub fn or(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
 /// null.
 /// # Example
 /// ```rust
-/// use arrow2::array::BooleanArray;
-/// use arrow2::compute::boolean::not;
+/// use polars_arrow::array::BooleanArray;
+/// use polars_arrow::compute::boolean::not;
 ///
 /// let a = BooleanArray::from(vec![Some(false), Some(true), None]);
 /// let not_a = not(&a);
@@ -137,8 +137,8 @@ pub fn not(array: &BooleanArray) -> BooleanArray {
 /// Returns a non-null [`BooleanArray`] with whether each value of the array is null.
 /// # Example
 /// ```rust
-/// use arrow2::array::BooleanArray;
-/// use arrow2::compute::boolean::is_null;
+/// use polars_arrow::array::BooleanArray;
+/// use polars_arrow::compute::boolean::is_null;
 /// # fn main() {
 /// let a = BooleanArray::from(vec![Some(false), Some(true), None]);
 /// let a_is_null = is_null(&a);
@@ -159,8 +159,8 @@ pub fn is_null(input: &dyn Array) -> BooleanArray {
 /// Returns a non-null [`BooleanArray`] with whether each value of the array is not null.
 /// # Example
 /// ```rust
-/// use arrow2::array::BooleanArray;
-/// use arrow2::compute::boolean::is_not_null;
+/// use polars_arrow::array::BooleanArray;
+/// use polars_arrow::compute::boolean::is_not_null;
 ///
 /// let a = BooleanArray::from(&vec![Some(false), Some(true), None]);
 /// let a_is_not_null = is_not_null(&a);
@@ -182,9 +182,9 @@ pub fn is_not_null(input: &dyn Array) -> BooleanArray {
 /// is null then the result is also null.
 /// # Example
 /// ```rust
-/// use arrow2::array::BooleanArray;
-/// use arrow2::compute::boolean::and_scalar;
-/// use arrow2::scalar::BooleanScalar;
+/// use polars_arrow::array::BooleanArray;
+/// use polars_arrow::compute::boolean::and_scalar;
+/// use polars_arrow::scalar::BooleanScalar;
 ///
 /// let array = BooleanArray::from_slice(&[false, false, true, true]);
 /// let scalar = BooleanScalar::new(Some(true));
@@ -207,9 +207,9 @@ pub fn and_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray 
 /// is null then the result is also null.
 /// # Example
 /// ```rust
-/// use arrow2::array::BooleanArray;
-/// use arrow2::compute::boolean::or_scalar;
-/// use arrow2::scalar::BooleanScalar;
+/// use polars_arrow::array::BooleanArray;
+/// use polars_arrow::compute::boolean::or_scalar;
+/// use polars_arrow::scalar::BooleanScalar;
 /// # fn main() {
 /// let array = BooleanArray::from_slice(&[false, false, true, true]);
 /// let scalar = BooleanScalar::new(Some(true));
@@ -236,8 +236,8 @@ pub fn or_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray {
 /// # Example
 ///
 /// ```
-/// use arrow2::array::BooleanArray;
-/// use arrow2::compute::boolean::any;
+/// use polars_arrow::array::BooleanArray;
+/// use polars_arrow::compute::boolean::any;
 ///
 /// let a = BooleanArray::from(&[Some(true), Some(false)]);
 /// let b = BooleanArray::from(&[Some(false), Some(false)]);
@@ -265,8 +265,8 @@ pub fn any(array: &BooleanArray) -> bool {
 /// # Example
 ///
 /// ```
-/// use arrow2::array::BooleanArray;
-/// use arrow2::compute::boolean::all;
+/// use polars_arrow::array::BooleanArray;
+/// use polars_arrow::compute::boolean::all;
 ///
 /// let a = BooleanArray::from(&[Some(true), Some(true)]);
 /// let b = BooleanArray::from(&[Some(false), Some(true)]);

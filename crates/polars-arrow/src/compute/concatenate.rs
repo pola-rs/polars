@@ -3,8 +3,8 @@
 //! Example:
 //!
 //! ```
-//! use arrow2::array::Utf8Array;
-//! use arrow2::compute::concatenate::concatenate;
+//! use polars_arrow::array::Utf8Array;
+//! use polars_arrow::compute::concatenate::concatenate;
 //!
 //! let arr = concatenate(&[
 //!     &Utf8Array::<i32>::from_slice(["hello", "world"]),

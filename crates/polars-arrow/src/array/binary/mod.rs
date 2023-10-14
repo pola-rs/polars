@@ -29,9 +29,9 @@ mod data;
 /// The size of this struct is `O(1)`, as all data is stored behind an [`std::sync::Arc`].
 /// # Example
 /// ```
-/// use arrow2::array::BinaryArray;
-/// use arrow2::bitmap::Bitmap;
-/// use arrow2::buffer::Buffer;
+/// use polars_arrow::array::BinaryArray;
+/// use polars_arrow::bitmap::Bitmap;
+/// use polars_arrow::buffer::Buffer;
 ///
 /// let array = BinaryArray::<i32>::from([Some([1, 2].as_ref()), None, Some([3].as_ref())]);
 /// assert_eq!(array.value(0), &[1, 2]);

@@ -855,8 +855,8 @@ fn transverse_recursive<T, F: Fn(&DataType) -> T + Clone>(
 /// This is used to assign an [`Encoding`] to every parquet column based on the columns' type (see example)
 /// # Example
 /// ```
-/// use arrow2::io::parquet::write::{transverse, Encoding};
-/// use arrow2::datatypes::{DataType, Field};
+/// use polars_arrow::io::parquet::write::{transverse, Encoding};
+/// use polars_arrow::datatypes::{DataType, Field};
 ///
 /// let dt = DataType::Struct(vec![
 ///     Field::new("a", DataType::Int64, true),

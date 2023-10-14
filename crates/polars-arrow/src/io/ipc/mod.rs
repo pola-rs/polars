@@ -29,12 +29,12 @@
 //! # Examples
 //! Read and write to a file:
 //! ```
-//! use arrow2::io::ipc::{{read::{FileReader, read_file_metadata}}, {write::{FileWriter, WriteOptions}}};
+//! use polars_arrow::io::ipc::{{read::{FileReader, read_file_metadata}}, {write::{FileWriter, WriteOptions}}};
 //! # use std::fs::File;
-//! # use arrow2::datatypes::{Field, Schema, DataType};
-//! # use arrow2::array::{Int32Array, Array};
-//! # use arrow2::chunk::Chunk;
-//! # use arrow2::error::Error;
+//! # use polars_arrow::datatypes::{Field, Schema, DataType};
+//! # use polars_arrow::array::{Int32Array, Array};
+//! # use polars_arrow::chunk::Chunk;
+//! # use polars_arrow::error::Error;
 //! // Setup the writer
 //! let path = "example.arrow".to_string();
 //! let mut file = File::create(&path)?;
@@ -67,11 +67,11 @@
 //! ```
 //!
 //! For further information and examples please consult the
-//! [user guide](https://jorgecarleitao.github.io/arrow2/io/index.html).
+//! [user guide](https://jorgecarleitao.github.io/polars_arrow/io/index.html).
 //! For even more examples check the `examples` folder in the main repository
-//! ([1](https://github.com/jorgecarleitao/arrow2/blob/main/examples/ipc_file_read.rs),
-//! [2](https://github.com/jorgecarleitao/arrow2/blob/main/examples/ipc_file_write.rs),
-//! [3](https://github.com/jorgecarleitao/arrow2/tree/main/examples/ipc_pyarrow)).
+//! ([1](https://github.com/jorgecarleitao/polars_arrow/blob/main/examples/ipc_file_read.rs),
+//! [2](https://github.com/jorgecarleitao/polars_arrow/blob/main/examples/ipc_file_write.rs),
+//! [3](https://github.com/jorgecarleitao/polars_arrow/tree/main/examples/ipc_pyarrow)).
 
 mod compression;
 mod endianness;

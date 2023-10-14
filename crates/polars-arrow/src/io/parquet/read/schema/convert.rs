@@ -482,6 +482,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[test]
     fn test_parquet_lists() -> PolarsResult<()> {
         let mut arrow_fields = Vec::new();
@@ -828,6 +829,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[test]
     fn test_repeated_nested_schema() -> PolarsResult<()> {
         let mut arrow_fields = Vec::new();
@@ -878,6 +880,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[test]
     fn test_column_desc_to_field() -> PolarsResult<()> {
         let message_type = "

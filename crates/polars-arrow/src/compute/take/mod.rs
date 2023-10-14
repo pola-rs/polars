@@ -94,8 +94,8 @@ pub fn take<O: Index>(
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::take::can_take;
-/// use arrow2::datatypes::{DataType};
+/// use polars_arrow::compute::take::can_take;
+/// use polars_arrow::datatypes::{DataType};
 ///
 /// let data_type = DataType::Int8;
 /// assert_eq!(can_take(&data_type), true);

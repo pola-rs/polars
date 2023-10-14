@@ -23,11 +23,11 @@ use crate::datatypes::Schema;
 ///
 /// ```
 /// use futures::SinkExt;
-/// use arrow2::array::{Array, Int32Array};
-/// use arrow2::datatypes::{DataType, Field, Schema};
-/// use arrow2::chunk::Chunk;
-/// use arrow2::io::parquet::write::{Encoding, WriteOptions, CompressionOptions, Version};
-/// # use arrow2::io::parquet::write::FileSink;
+/// use polars_arrow::array::{Array, Int32Array};
+/// use polars_arrow::datatypes::{DataType, Field, Schema};
+/// use polars_arrow::chunk::Chunk;
+/// use polars_arrow::io::parquet::write::{Encoding, WriteOptions, CompressionOptions, Version};
+/// # use polars_arrow::io::parquet::write::FileSink;
 /// # futures::executor::block_on(async move {
 ///
 /// let schema = Schema::from(vec![
@@ -56,7 +56,7 @@ use crate::datatypes::Schema;
 /// }
 /// sink.metadata.insert(String::from("key"), Some(String::from("value")));
 /// sink.close().await?;
-/// # arrow2::error::Result::Ok(())
+/// # polars_arrow::error::Result::Ok(())
 /// # }).unwrap();
 /// ```
 pub struct FileSink<'a, W: AsyncWrite + Send + Unpin> {

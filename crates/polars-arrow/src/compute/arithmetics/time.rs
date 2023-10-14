@@ -67,9 +67,9 @@ fn create_scale(lhs: &DataType, rhs: &DataType) -> PolarsResult<f64> {
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::time::add_duration;
-/// use arrow2::array::PrimitiveArray;
-/// use arrow2::datatypes::{DataType, TimeUnit};
+/// use polars_arrow::compute::arithmetics::time::add_duration;
+/// use polars_arrow::array::PrimitiveArray;
+/// use polars_arrow::datatypes::{DataType, TimeUnit};
 ///
 /// let timestamp = PrimitiveArray::from([
 ///     Some(100000i64),
@@ -147,9 +147,9 @@ where
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::time::subtract_duration;
-/// use arrow2::array::PrimitiveArray;
-/// use arrow2::datatypes::{DataType, TimeUnit};
+/// use polars_arrow::compute::arithmetics::time::subtract_duration;
+/// use polars_arrow::array::PrimitiveArray;
+/// use polars_arrow::datatypes::{DataType, TimeUnit};
 ///
 /// let timestamp = PrimitiveArray::from([
 ///     Some(100000i64),
@@ -226,9 +226,9 @@ where
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::time::subtract_timestamps;
-/// use arrow2::array::PrimitiveArray;
-/// use arrow2::datatypes::{DataType, TimeUnit};
+/// use polars_arrow::compute::arithmetics::time::subtract_timestamps;
+/// use polars_arrow::array::PrimitiveArray;
+/// use polars_arrow::datatypes::{DataType, TimeUnit};
 /// let timestamp_a = PrimitiveArray::from([
 ///     Some(100_010i64),
 ///     Some(200_020i64),

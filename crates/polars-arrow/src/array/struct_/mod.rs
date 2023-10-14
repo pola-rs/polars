@@ -15,8 +15,8 @@ use polars_error::{polars_bail, PolarsResult};
 /// multiple [`Array`] with the same number of rows.
 /// # Example
 /// ```
-/// use arrow2::array::*;
-/// use arrow2::datatypes::*;
+/// use polars_arrow::array::*;
+/// use polars_arrow::datatypes::*;
 /// let boolean = BooleanArray::from_slice(&[false, false, true, true]).boxed();
 /// let int = Int32Array::from_slice(&[42, 28, 19, 31]).boxed();
 ///

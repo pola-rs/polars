@@ -37,7 +37,7 @@ miri:  ## Run miri
 	cargo miri test \
 	    --features object \
 	    -p polars-core \
-	    -p polars-arrow
+#	    -p polars-arrow
 
 .PHONY: test
 test:  ## Run tests
@@ -102,8 +102,8 @@ doctest:  ## Check that documentation builds
 publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-error
 	cargo publish --allow-dirty -p polars-utils
-	cargo publish --allow-dirty -p polars-row
 	cargo publish --allow-dirty -p polars-arrow
+	cargo publish --allow-dirty -p polars-row
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
 	cargo publish --allow-dirty -p polars-ffi

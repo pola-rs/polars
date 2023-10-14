@@ -20,7 +20,7 @@ use crate::datatypes::*;
 /// The data written by this writer must be read in order. To signal that no more
 /// data is arriving through the stream call [`self.finish()`](StreamWriter::finish);
 ///
-/// For a usage walkthrough consult [this example](https://github.com/jorgecarleitao/arrow2/tree/main/examples/ipc_pyarrow).
+/// For a usage walkthrough consult [this example](https://github.com/jorgecarleitao/polars_arrow/tree/main/examples/ipc_pyarrow).
 pub struct StreamWriter<W: Write> {
     /// The object to write to
     writer: W,

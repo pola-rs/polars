@@ -25,7 +25,7 @@ pub fn serialize_batch(
     options: &WriteOptions,
 ) -> PolarsResult<(Vec<FlightData>, FlightData)> {
     if fields.len() != chunk.arrays().len() {
-        polars_bail!(oos = "The argument `fields` must be consistent with the columns' schema. Use e.g. &arrow2::io::flight::default_ipc_fields(&schema.fields)");
+        polars_bail!(oos = "The argument `fields` must be consistent with the columns' schema. Use e.g. &polars_arrow::io::flight::default_ipc_fields(&schema.fields)");
     }
 
     let mut dictionary_tracker = DictionaryTracker {

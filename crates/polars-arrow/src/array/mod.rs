@@ -353,7 +353,7 @@ pub fn new_null_array(data_type: DataType, length: usize) -> Box<dyn Array> {
     }
 }
 
-/// Trait providing bi-directional conversion between arrow2 [`Array`] and arrow-rs [`ArrayData`]
+/// Trait providing bi-directional conversion between polars_arrow [`Array`] and arrow-rs [`ArrayData`]
 ///
 /// [`ArrayData`]: arrow_data::ArrayData
 #[cfg(feature = "arrow_rs")]
@@ -401,7 +401,7 @@ impl From<&dyn arrow_array::Array> for Box<dyn Array> {
     }
 }
 
-/// Convert an arrow2 [`Array`] to [`arrow_data::ArrayData`]
+/// Convert an polars_arrow [`Array`] to [`arrow_data::ArrayData`]
 #[cfg(feature = "arrow_rs")]
 pub fn to_data(array: &dyn Array) -> arrow_data::ArrayData {
     use crate::datatypes::PhysicalType::*;
@@ -430,7 +430,7 @@ pub fn to_data(array: &dyn Array) -> arrow_data::ArrayData {
     }
 }
 
-/// Convert an [`arrow_data::ArrayData`] to arrow2 [`Array`]
+/// Convert an [`arrow_data::ArrayData`] to polars_arrow [`Array`]
 #[cfg(feature = "arrow_rs")]
 pub fn from_data(data: &arrow_data::ArrayData) -> Box<dyn Array> {
     use crate::datatypes::PhysicalType::*;

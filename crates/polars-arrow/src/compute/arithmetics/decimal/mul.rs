@@ -18,9 +18,9 @@ use crate::scalar::{PrimitiveScalar, Scalar};
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::decimal::mul;
-/// use arrow2::array::PrimitiveArray;
-/// use arrow2::datatypes::DataType;
+/// use polars_arrow::compute::arithmetics::decimal::mul;
+/// use polars_arrow::array::PrimitiveArray;
+/// use polars_arrow::datatypes::DataType;
 ///
 /// let a = PrimitiveArray::from([Some(1_00i128), Some(1_00i128), None, Some(2_00i128)]).to(DataType::Decimal(5, 2));
 /// let b = PrimitiveArray::from([Some(1_00i128), Some(2_00i128), None, Some(2_00i128)]).to(DataType::Decimal(5, 2));
@@ -117,9 +117,9 @@ pub fn mul_scalar(lhs: &PrimitiveArray<i128>, rhs: &PrimitiveScalar<i128>) -> Pr
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::decimal::saturating_mul;
-/// use arrow2::array::PrimitiveArray;
-/// use arrow2::datatypes::DataType;
+/// use polars_arrow::compute::arithmetics::decimal::saturating_mul;
+/// use polars_arrow::array::PrimitiveArray;
+/// use polars_arrow::datatypes::DataType;
 ///
 /// let a = PrimitiveArray::from([Some(999_99i128), Some(1_00i128), None, Some(2_00i128)]).to(DataType::Decimal(5, 2));
 /// let b = PrimitiveArray::from([Some(10_00i128), Some(2_00i128), None, Some(2_00i128)]).to(DataType::Decimal(5, 2));
@@ -167,9 +167,9 @@ pub fn saturating_mul(
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::decimal::checked_mul;
-/// use arrow2::array::PrimitiveArray;
-/// use arrow2::datatypes::DataType;
+/// use polars_arrow::compute::arithmetics::decimal::checked_mul;
+/// use polars_arrow::array::PrimitiveArray;
+/// use polars_arrow::datatypes::DataType;
 ///
 /// let a = PrimitiveArray::from([Some(999_99i128), Some(1_00i128), None, Some(2_00i128)]).to(DataType::Decimal(5, 2));
 /// let b = PrimitiveArray::from([Some(10_00i128), Some(2_00i128), None, Some(2_00i128)]).to(DataType::Decimal(5, 2));
@@ -236,9 +236,9 @@ impl ArraySaturatingMul<PrimitiveArray<i128>> for PrimitiveArray<i128> {
 /// ```
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::decimal::adaptive_mul;
-/// use arrow2::array::PrimitiveArray;
-/// use arrow2::datatypes::DataType;
+/// use polars_arrow::compute::arithmetics::decimal::adaptive_mul;
+/// use polars_arrow::array::PrimitiveArray;
+/// use polars_arrow::datatypes::DataType;
 ///
 /// let a = PrimitiveArray::from([Some(11111_0i128), Some(1_0i128)]).to(DataType::Decimal(6, 1));
 /// let b = PrimitiveArray::from([Some(10_002i128), Some(2_000i128)]).to(DataType::Decimal(5, 3));

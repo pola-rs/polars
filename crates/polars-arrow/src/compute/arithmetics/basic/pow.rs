@@ -10,8 +10,8 @@ use crate::compute::arity::{unary, unary_checked};
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::basic::powf_scalar;
-/// use arrow2::array::Float32Array;
+/// use polars_arrow::compute::arithmetics::basic::powf_scalar;
+/// use polars_arrow::array::Float32Array;
 ///
 /// let a = Float32Array::from(&[Some(2f32), None]);
 /// let actual = powf_scalar(&a, 2.0);
@@ -31,8 +31,8 @@ where
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::basic::checked_powf_scalar;
-/// use arrow2::array::Int8Array;
+/// use polars_arrow::compute::arithmetics::basic::checked_powf_scalar;
+/// use polars_arrow::array::Int8Array;
 ///
 /// let a = Int8Array::from(&[Some(1i8), None, Some(7i8)]);
 /// let actual = checked_powf_scalar(&a, 8usize);

@@ -253,9 +253,9 @@ pub fn build_filter(filter: &BooleanArray) -> PolarsResult<Filter> {
 ///
 /// # Example
 /// ```rust
-/// # use arrow2::array::{Int32Array, PrimitiveArray, BooleanArray};
-/// # use arrow2::error::Result;
-/// # use arrow2::compute::filter::filter;
+/// # use polars_arrow::array::{Int32Array, PrimitiveArray, BooleanArray};
+/// # use polars_arrow::error::Result;
+/// # use polars_arrow::compute::filter::filter;
 /// # fn main() -> Result<()> {
 /// let array = PrimitiveArray::from_slice([5, 6, 7, 8, 9]);
 /// let filter_array = BooleanArray::from_slice(&vec![true, false, false, true, false]);

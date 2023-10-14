@@ -19,8 +19,8 @@ use crate::compute::arity::{
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::basic::add;
-/// use arrow2::array::PrimitiveArray;
+/// use polars_arrow::compute::arithmetics::basic::add;
+/// use polars_arrow::array::PrimitiveArray;
 ///
 /// let a = PrimitiveArray::from([None, Some(6), None, Some(6)]);
 /// let b = PrimitiveArray::from([Some(5), None, None, Some(6)]);
@@ -40,8 +40,8 @@ where
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::basic::wrapping_add;
-/// use arrow2::array::PrimitiveArray;
+/// use polars_arrow::compute::arithmetics::basic::wrapping_add;
+/// use polars_arrow::array::PrimitiveArray;
 ///
 /// let a = PrimitiveArray::from([Some(-100i8), Some(100i8), Some(100i8)]);
 /// let b = PrimitiveArray::from([Some(0i8), Some(100i8), Some(0i8)]);
@@ -63,8 +63,8 @@ where
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::basic::checked_add;
-/// use arrow2::array::PrimitiveArray;
+/// use polars_arrow::compute::arithmetics::basic::checked_add;
+/// use polars_arrow::array::PrimitiveArray;
 ///
 /// let a = PrimitiveArray::from([Some(100i8), Some(100i8), Some(100i8)]);
 /// let b = PrimitiveArray::from([Some(0i8), Some(100i8), Some(0i8)]);
@@ -87,8 +87,8 @@ where
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::basic::saturating_add;
-/// use arrow2::array::PrimitiveArray;
+/// use polars_arrow::compute::arithmetics::basic::saturating_add;
+/// use polars_arrow::array::PrimitiveArray;
 ///
 /// let a = PrimitiveArray::from([Some(100i8)]);
 /// let b = PrimitiveArray::from([Some(100i8)]);
@@ -112,8 +112,8 @@ where
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::basic::overflowing_add;
-/// use arrow2::array::PrimitiveArray;
+/// use polars_arrow::compute::arithmetics::basic::overflowing_add;
+/// use polars_arrow::array::PrimitiveArray;
 ///
 /// let a = PrimitiveArray::from([Some(1i8), Some(100i8)]);
 /// let b = PrimitiveArray::from([Some(1i8), Some(100i8)]);
@@ -187,8 +187,8 @@ where
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::basic::add_scalar;
-/// use arrow2::array::PrimitiveArray;
+/// use polars_arrow::compute::arithmetics::basic::add_scalar;
+/// use polars_arrow::array::PrimitiveArray;
 ///
 /// let a = PrimitiveArray::from([None, Some(6), None, Some(6)]);
 /// let result = add_scalar(&a, &1i32);
@@ -208,8 +208,8 @@ where
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::basic::wrapping_add_scalar;
-/// use arrow2::array::Int8Array;
+/// use polars_arrow::compute::arithmetics::basic::wrapping_add_scalar;
+/// use polars_arrow::array::Int8Array;
 ///
 /// let a = Int8Array::from(&[None, Some(100)]);
 /// let result = wrapping_add_scalar(&a, &100i8);
@@ -229,8 +229,8 @@ where
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::basic::checked_add_scalar;
-/// use arrow2::array::Int8Array;
+/// use polars_arrow::compute::arithmetics::basic::checked_add_scalar;
+/// use polars_arrow::array::Int8Array;
 ///
 /// let a = Int8Array::from(&[None, Some(100), None, Some(100)]);
 /// let result = checked_add_scalar(&a, &100i8);
@@ -253,8 +253,8 @@ where
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::basic::saturating_add_scalar;
-/// use arrow2::array::PrimitiveArray;
+/// use polars_arrow::compute::arithmetics::basic::saturating_add_scalar;
+/// use polars_arrow::array::PrimitiveArray;
 ///
 /// let a = PrimitiveArray::from([Some(100i8)]);
 /// let result = saturating_add_scalar(&a, &100i8);
@@ -278,8 +278,8 @@ where
 ///
 /// # Examples
 /// ```
-/// use arrow2::compute::arithmetics::basic::overflowing_add_scalar;
-/// use arrow2::array::PrimitiveArray;
+/// use polars_arrow::compute::arithmetics::basic::overflowing_add_scalar;
+/// use polars_arrow::array::PrimitiveArray;
 ///
 /// let a = PrimitiveArray::from([Some(1i8), Some(100i8)]);
 /// let (result, overflow) = overflowing_add_scalar(&a, &100i8);

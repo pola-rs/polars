@@ -14,8 +14,8 @@
 //!
 //! Compare two [`PrimitiveArray`]s:
 //! ```
-//! use arrow2::array::{BooleanArray, PrimitiveArray};
-//! use arrow2::compute::comparison::primitive::gt;
+//! use polars_arrow::array::{BooleanArray, PrimitiveArray};
+//! use polars_arrow::compute::comparison::primitive::gt;
 //!
 //! let array1 = PrimitiveArray::<i32>::from([Some(1), None, Some(2)]);
 //! let array2 = PrimitiveArray::<i32>::from([Some(1), Some(3), Some(1)]);
@@ -25,8 +25,8 @@
 //!
 //! Compare two dynamically-typed [`Array`]s (trait objects):
 //! ```
-//! use arrow2::array::{Array, BooleanArray, PrimitiveArray};
-//! use arrow2::compute::comparison::eq;
+//! use polars_arrow::array::{Array, BooleanArray, PrimitiveArray};
+//! use polars_arrow::compute::comparison::eq;
 //!
 //! let array1: &dyn Array = &PrimitiveArray::<f64>::from(&[Some(10.0), None, Some(20.0)]);
 //! let array2: &dyn Array = &PrimitiveArray::<f64>::from(&[Some(10.0), None, Some(10.0)]);
@@ -36,8 +36,8 @@
 //!
 //! Compare (not equal) a [`Utf8Array`] to a word:
 //! ```
-//! use arrow2::array::{BooleanArray, Utf8Array};
-//! use arrow2::compute::comparison::utf8::neq_scalar;
+//! use polars_arrow::array::{BooleanArray, Utf8Array};
+//! use polars_arrow::compute::comparison::utf8::neq_scalar;
 //!
 //! let array = Utf8Array::<i32>::from([Some("compute"), None, Some("compare")]);
 //! let result = neq_scalar(&array, "compare");
