@@ -1,6 +1,6 @@
 [package]
 name = "polars-arrow"
-version = "0.1.0"
+version = { workspace = true }
 authors = [
   "Jorge C. Leitao <jorgecarleitao@gmail.com>",
   "Apache Arrow <dev@arrow.apache.org>",

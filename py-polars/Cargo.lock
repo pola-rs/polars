@@ -1598,7 +1598,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.1.0"
+version = "0.33.2"
 dependencies = [
  "ahash",
  "arrow-format",
