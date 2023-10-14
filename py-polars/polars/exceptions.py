@@ -1,6 +1,5 @@
 try:
     from polars.polars import (
-        ArrowError,
         ColumnNotFoundError,
         ComputeError,
         DuplicateError,
@@ -17,9 +16,6 @@ try:
 except ImportError:
     # They are only redefined for documentation purposes
     # when there is no binary yet
-
-    class ArrowError(Exception):  # type: ignore[no-redef]
-        """deprecated will be removed"""
 
     class ColumnNotFoundError(Exception):  # type: ignore[no-redef]
         """Exception raised when a specified column is not found."""
@@ -101,6 +97,9 @@ class TimeZoneAwareConstructorWarning(Warning):
 class UnsuitableSQLError(ValueError):
     """Exception raised when unsuitable SQL is given to a database method."""
 
+
+class ArrowError(Exception):  # type: ignore[no-redef]
+    """deprecated will be removed"""
 
 __all__ = [
     "ArrowError",

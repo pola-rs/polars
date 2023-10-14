@@ -37,7 +37,7 @@ miri:  ## Run miri
 	cargo miri test \
 	    --features object \
 	    -p polars-core \
-	    -p polars-arrow
+	    -p nano-arrow
 
 .PHONY: test
 test:  ## Run tests
@@ -45,7 +45,6 @@ test:  ## Run tests
 		-p polars-lazy \
 		-p polars-io \
 		-p polars-core \
-		-p polars-arrow \
 		-p polars-time \
 		-p polars-utils \
 		-p polars-row \
@@ -61,7 +60,6 @@ nextest:  ## Run tests with nextest
 		-p polars-lazy \
 		-p polars-io \
 		-p polars-core \
-		-p polars-arrow \
 		-p polars-time \
 		-p polars-utils \
 		-p polars-row \
@@ -79,7 +77,6 @@ test-doc:  ## Run doc examples
 	    -p polars-lazy \
 	    -p polars-io \
 	    -p polars-core \
-	    -p polars-arrow \
 		-p polars-sql
 
 .PHONY: bench-save
@@ -92,7 +89,6 @@ bench-cmp:  ## Run benchmark and compare
 
 .PHONY: doctest
 doctest:  ## Check that documentation builds
-	cargo doc --no-deps --all-features -p polars-arrow
 	cargo doc --no-deps --all-features -p polars-utils
 	cargo doc --no-deps --features=docs-selection -p polars-core
 	cargo doc --no-deps -p polars-time
