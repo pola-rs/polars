@@ -133,11 +133,10 @@ where
 
 #[cfg(test)]
 mod test {
-    use arrow::buffer::Buffer;
-    use arrow::datatypes::DataType;
-
     use super::*;
-    use crate::legacykernels::rolling::nulls::{rolling_max, rolling_min};
+    use crate::buffer::Buffer;
+    use crate::datatypes::DataType;
+    use crate::legacy::kernels::rolling::nulls::{rolling_max, rolling_min};
 
     #[test]
     fn test_rolling_median_nulls() {

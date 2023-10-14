@@ -250,7 +250,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::legacykernels::rolling::no_nulls::{rolling_max, rolling_min};
+    use crate::legacy::kernels::rolling::no_nulls::{rolling_max, rolling_min};
 
     #[test]
     fn test_rolling_median() {

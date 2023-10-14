@@ -97,10 +97,9 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
 
 #[cfg(test)]
 mod test {
-    use arrow::array::{Array, Int32Array, PrimitiveArray};
-    use arrow::datatypes::DataType;
-
     use super::*;
+    use crate::array::{Array, Int32Array, PrimitiveArray};
+    use crate::datatypes::DataType;
 
     fn get_array() -> ListArray<i64> {
         let values = Int32Array::from_slice([1, 2, 3, 4, 5, 6]);

@@ -399,12 +399,13 @@ pub(crate) fn to_data_type(
 #[cfg(test)]
 mod tests {
     use parquet2::metadata::SchemaDescriptor;
+    use polars_error::*;
 
     use super::*;
     use crate::datatypes::{DataType, Field, TimeUnit};
 
     #[test]
-    fn test_flat_primitives() -> Result<()> {
+    fn test_flat_primitives() -> PolarsResult<()> {
         let message = "
         message test_schema {
             REQUIRED BOOLEAN boolean;
@@ -442,7 +443,7 @@ mod tests {
     }
 
     #[test]
-    fn test_byte_array_fields() -> Result<()> {
+    fn test_byte_array_fields() -> PolarsResult<()> {
         let message = "
         message test_schema {
             REQUIRED BYTE_ARRAY binary;
@@ -462,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn test_duplicate_fields() -> Result<()> {
+    fn test_duplicate_fields() -> PolarsResult<()> {
         let message = "
         message test_schema {
             REQUIRED BOOLEAN boolean;
@@ -482,7 +483,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parquet_lists() -> Result<()> {
+    fn test_parquet_lists() -> PolarsResult<()> {
         let mut arrow_fields = Vec::new();
 
         // LIST encoding example taken from parquet-format/LogicalTypes.md
@@ -681,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parquet_list_with_struct() -> Result<()> {
+    fn test_parquet_list_with_struct() -> PolarsResult<()> {
         let mut arrow_fields = Vec::new();
 
         let message_type = "
@@ -723,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parquet_list_nullable() -> Result<()> {
+    fn test_parquet_list_nullable() -> PolarsResult<()> {
         let mut arrow_fields = Vec::new();
 
         let message_type = "
@@ -796,7 +797,7 @@ mod tests {
     }
 
     #[test]
-    fn test_nested_schema() -> Result<()> {
+    fn test_nested_schema() -> PolarsResult<()> {
         let mut arrow_fields = Vec::new();
         {
             let group1_fields = vec![
@@ -828,7 +829,7 @@ mod tests {
     }
 
     #[test]
-    fn test_repeated_nested_schema() -> Result<()> {
+    fn test_repeated_nested_schema() -> PolarsResult<()> {
         let mut arrow_fields = Vec::new();
         {
             arrow_fields.push(Field::new("leaf1", DataType::Int32, true));
@@ -878,7 +879,7 @@ mod tests {
     }
 
     #[test]
-    fn test_column_desc_to_field() -> Result<()> {
+    fn test_column_desc_to_field() -> PolarsResult<()> {
         let message_type = "
         message test_schema {
             REQUIRED BOOLEAN boolean;
@@ -946,7 +947,7 @@ mod tests {
     }
 
     #[test]
-    fn test_field_to_column_desc() -> Result<()> {
+    fn test_field_to_column_desc() -> PolarsResult<()> {
         let message_type = "
         message arrow_schema {
             REQUIRED BOOLEAN boolean;
@@ -1041,7 +1042,7 @@ mod tests {
     }
 
     #[test]
-    fn test_int96_options() -> Result<()> {
+    fn test_int96_options() -> PolarsResult<()> {
         for tu in [
             TimeUnit::Second,
             TimeUnit::Microsecond,

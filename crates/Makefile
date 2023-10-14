@@ -37,7 +37,7 @@ miri:  ## Run miri
 	cargo miri test \
 	    --features object \
 	    -p polars-core \
-	    -p nano-arrow
+	    -p polars-arrow
 
 .PHONY: test
 test:  ## Run tests

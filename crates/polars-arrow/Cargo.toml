@@ -1,5 +1,5 @@
 [package]
-name = "nano-arrow"
+name = "polars-arrow"
 version = "0.1.0"
 authors = [
   "Jorge C. Leitao <jorgecarleitao@gmail.com>",

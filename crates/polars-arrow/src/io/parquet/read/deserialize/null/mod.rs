@@ -59,6 +59,7 @@ mod tests {
     use parquet2::metadata::Descriptor;
     use parquet2::page::{DataPage, DataPageHeader, DataPageHeaderV1, Page};
     use parquet2::schema::types::{PhysicalType, PrimitiveType};
+    use polars_error::*;
 
     use super::iter_to_arrays;
     use crate::array::NullArray;
@@ -94,7 +95,7 @@ mod tests {
         let pages = fallible_streaming_iterator::convert(pages.into_iter());
         let arrays = iter_to_arrays(pages, DataType::Null, Some(10), 101);
 
-        let arrays = arrays.collect::<Result<Vec<_>, Error>>().unwrap();
+        let arrays = arrays.collect::<PolarsResult<Vec<_>>>().unwrap();
         let expected = std::iter::repeat(NullArray::new(DataType::Null, 10).boxed())
             .take(10)
             .chain(std::iter::once(NullArray::new(DataType::Null, 1).boxed()));
