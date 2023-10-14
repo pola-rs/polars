@@ -490,6 +490,11 @@ impl PyExpr {
     }
 
     #[cfg(feature = "trigonometry")]
+    fn cot(&self) -> Self {
+        self.clone().inner.cot().into()
+    }
+
+    #[cfg(feature = "trigonometry")]
     fn arcsin(&self) -> Self {
         self.clone().inner.arcsin().into()
     }
