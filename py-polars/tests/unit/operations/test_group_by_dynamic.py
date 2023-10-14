@@ -908,3 +908,26 @@ def test_group_by_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) 
         ((2, datetime(2020, 1, 1, 11, tzinfo=tzinfo)), (1, 3)),
     ]
     assert result2 == expected2
+
+
+@pytest.mark.skip(
+    reason="Currently bugged, see: https://github.com/pola-rs/polars/issues/11339 "
+)
+@pytest.mark.parametrize("include_boundaries", [True, False])
+def test_group_by_dynamic_lazy_schema(include_boundaries: bool) -> None:
+    lf = pl.LazyFrame(
+        {
+            "dt": pl.datetime_range(
+                start=datetime(2022, 2, 10),
+                end=datetime(2022, 2, 12),
+                eager=True,
+            ),
+            "n": range(3),
+        }
+    )
+
+    result = lf.group_by_dynamic(
+        "dt", every="2d", closed="right", include_boundaries=include_boundaries
+    ).agg(pl.col("dt").min().alias("dt_min"))
+
+    assert list(result.schema.items()) == list(result.collect().schema.items())
