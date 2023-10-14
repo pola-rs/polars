@@ -5,8 +5,8 @@ use std::sync::Mutex;
 
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
-use polars_arrow::is_valid::IsValid;
-use polars_arrow::kernels::sort_partition::partition_to_groups_amortized;
+use arrow::legacy::is_valid::IsValid;
+use arrow::legacy::kernels::sort_partition::partition_to_groups_amortized;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::hashing::integer_hash;

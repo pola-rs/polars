@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 #[cfg(feature = "timezones")]
 use once_cell::sync::Lazy;
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::utils::CustomIterTools;
 #[cfg(feature = "regex")]
 use regex::{escape, Regex};
 #[cfg(feature = "serde")]

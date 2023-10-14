@@ -49,7 +49,7 @@ pub use list::*;
 #[cfg(feature = "meta")]
 pub use meta::*;
 pub use options::*;
-use polars_arrow::prelude::QuantileInterpolOptions;
+use arrow::legacy::prelude::QuantileInterpolOptions;
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
