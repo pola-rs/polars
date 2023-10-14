@@ -42,7 +42,7 @@ use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
 
 use crate::prelude::*;
-use crate::{finish_reader, ArrowReader, ArrowResult, WriterFactory};
+use crate::{finish_reader, ArrowReader, WriterFactory};
 
 /// Read Arrows Stream IPC format into a DataFrame
 ///
@@ -124,7 +124,7 @@ impl<R> ArrowReader for read::StreamReader<R>
 where
     R: Read,
 {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
+    fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>> {
         self.next().map_or(Ok(None), |v| match v {
             Ok(stream_state) => match stream_state {
                 StreamState::Waiting => Ok(None),

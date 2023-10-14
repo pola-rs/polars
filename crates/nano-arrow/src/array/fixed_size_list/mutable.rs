@@ -6,7 +6,7 @@ use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, PushUnchecked, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::{DataType, Field};
-use crate::error::{Error, Result};
+
 
 /// The mutable version of [`FixedSizeListArray`].
 #[derive(Debug, Clone)]
@@ -201,7 +201,7 @@ where
     I: IntoIterator<Item = Option<T>>,
 {
     #[inline]
-    fn try_extend<II: IntoIterator<Item = Option<I>>>(&mut self, iter: II) -> Result<()> {
+    fn try_extend<II: IntoIterator<Item = Option<I>>>(&mut self, iter: II) -> PolarsResult<()> {
         for items in iter {
             self.try_push(items)?;
         }
@@ -215,7 +215,7 @@ where
     I: IntoIterator<Item = Option<T>>,
 {
     #[inline]
-    fn try_push(&mut self, item: Option<I>) -> Result<()> {
+    fn try_push(&mut self, item: Option<I>) -> PolarsResult<()> {
         if let Some(items) = item {
             self.values.try_extend(items)?;
             self.try_push_valid()?;
@@ -249,7 +249,7 @@ impl<M> TryExtendFromSelf for MutableFixedSizeListArray<M>
 where
     M: MutableArray + TryExtendFromSelf,
 {
-    fn try_extend_from_self(&mut self, other: &Self) -> Result<()> {
+    fn try_extend_from_self(&mut self, other: &Self) -> PolarsResult<()> {
         extend_validity(self.len(), &mut self.validity, &other.validity);
 
         self.values.try_extend_from_self(&other.values)

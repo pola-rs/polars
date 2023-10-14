@@ -1,7 +1,8 @@
+use polars_error::PolarsResult;
 use super::PrimitiveArray;
 use crate::array::{FromFfi, ToFfi};
 use crate::bitmap::align;
-use crate::error::Result;
+
 use crate::ffi;
 use crate::types::NativeType;
 
@@ -46,7 +47,7 @@ unsafe impl<T: NativeType> ToFfi for PrimitiveArray<T> {
 }
 
 impl<T: NativeType, A: ffi::ArrowArrayRef> FromFfi<A> for PrimitiveArray<T> {
-    unsafe fn try_from_ffi(array: A) -> Result<Self> {
+    unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
         let data_type = array.data_type().clone();
         let validity = unsafe { array.validity() }?;
         let values = unsafe { array.buffer::<T>(1) }?;

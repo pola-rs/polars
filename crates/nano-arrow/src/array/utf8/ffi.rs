@@ -1,7 +1,8 @@
+use polars_error::PolarsResult;
 use super::Utf8Array;
 use crate::array::{FromFfi, ToFfi};
 use crate::bitmap::align;
-use crate::error::Result;
+
 use crate::ffi;
 use crate::offset::{Offset, OffsetsBuffer};
 
@@ -48,7 +49,7 @@ unsafe impl<O: Offset> ToFfi for Utf8Array<O> {
 }
 
 impl<O: Offset, A: ffi::ArrowArrayRef> FromFfi<A> for Utf8Array<O> {
-    unsafe fn try_from_ffi(array: A) -> Result<Self> {
+    unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
         let data_type = array.data_type().clone();
         let validity = unsafe { array.validity() }?;
         let offsets = unsafe { array.buffer::<O>(1) }?;

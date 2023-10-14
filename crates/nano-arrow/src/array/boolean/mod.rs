@@ -4,7 +4,7 @@ use super::Array;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::{DataType, PhysicalType};
-use crate::error::Error;
+
 use crate::trusted_len::TrustedLen;
 
 #[cfg(feature = "arrow_rs")]

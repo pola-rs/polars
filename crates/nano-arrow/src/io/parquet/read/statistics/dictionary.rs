@@ -1,7 +1,8 @@
+use polars_error::PolarsResult;
 use super::make_mutable;
 use crate::array::*;
 use crate::datatypes::{DataType, PhysicalType};
-use crate::error::Result;
+
 use crate::match_integer_type;
 
 #[derive(Debug)]
@@ -11,7 +12,7 @@ pub struct DynMutableDictionary {
 }
 
 impl DynMutableDictionary {
-    pub fn try_with_capacity(data_type: DataType, capacity: usize) -> Result<Self> {
+    pub fn try_with_capacity(data_type: DataType, capacity: usize) -> PolarsResult<Self> {
         let inner = if let DataType::Dictionary(_, inner, _) = &data_type {
             inner.as_ref()
         } else {

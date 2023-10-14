@@ -20,7 +20,7 @@ pub use self::struct_::StructIterator;
 use super::*;
 use crate::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, MapArray};
 use crate::datatypes::{DataType, Field, IntervalUnit};
-use crate::error::Result;
+
 use crate::offset::Offsets;
 
 /// Creates a new iterator of compressed pages.
@@ -30,7 +30,7 @@ pub fn get_page_iterator<R: Read + Seek>(
     pages_filter: Option<PageFilter>,
     buffer: Vec<u8>,
     max_header_size: usize,
-) -> Result<PageReader<R>> {
+) -> PolarsResult<PageReader<R>> {
     Ok(_get_page_iterator(
         column_metadata,
         reader,
@@ -132,7 +132,7 @@ fn columns_to_iter_recursive<'a, I: 'a>(
     init: Vec<InitNested>,
     num_rows: usize,
     chunk_size: Option<usize>,
-) -> Result<NestedArrayIter<'a>>
+) -> PolarsResult<NestedArrayIter<'a>>
 where
     I: Pages,
 {
@@ -201,7 +201,7 @@ pub fn column_iter_to_arrays<'a, I: 'a>(
     field: Field,
     chunk_size: Option<usize>,
     num_rows: usize,
-) -> Result<ArrayIter<'a>>
+) -> PolarsResult<ArrayIter<'a>>
 where
     I: Pages,
 {

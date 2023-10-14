@@ -1,13 +1,14 @@
 use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
 use std::sync::Arc;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{
     count_zeros, fmt, get_bit, set, set_bit, BitChunk, BitChunksExactMut, BitmapIter,
 };
 use super::Bitmap;
 use crate::bitmap::utils::{merge_reversed, set_bit_unchecked};
-use crate::error::Error;
+
 use crate::trusted_len::TrustedLen;
 
 /// A container of booleans. [`MutableBitmap`] is semantically equivalent
@@ -76,13 +77,13 @@ impl MutableBitmap {
     /// # Errors
     /// This function errors iff `length > bytes.len() * 8`
     #[inline]
-    pub fn try_new(bytes: Vec<u8>, length: usize) -> Result<Self, Error> {
+    pub fn try_new(bytes: Vec<u8>, length: usize) -> PolarsResult<Self> {
         if length > bytes.len().saturating_mul(8) {
-            return Err(Error::InvalidArgumentError(format!(
+            polars_bail!(InvalidOperation:
                 "The length of the bitmap ({}) must be `<=` to the number of bytes times 8 ({})",
                 length,
                 bytes.len().saturating_mul(8)
-            )));
+            )
         }
         Ok(Self {
             length,

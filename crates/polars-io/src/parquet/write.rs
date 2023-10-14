@@ -3,7 +3,6 @@ use std::io::Write;
 use arrow::array::Array;
 use arrow::chunk::Chunk;
 use arrow::datatypes::{DataType as ArrowDataType, PhysicalType};
-use arrow::error::Error as ArrowError;
 use arrow::io::parquet::read::ParquetError;
 use arrow::io::parquet::write::{self, DynIter, DynStreamingIterator, Encoding, FileWriter, *};
 use polars_core::prelude::*;

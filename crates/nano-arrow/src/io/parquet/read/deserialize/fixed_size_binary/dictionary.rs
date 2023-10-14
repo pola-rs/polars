@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use parquet2::page::DictPage;
+use polars_error::PolarsResult;
 
 use super::super::dictionary::*;
 use super::super::utils::MaybeNext;
@@ -8,7 +9,7 @@ use super::super::Pages;
 use crate::array::{Array, DictionaryArray, DictionaryKey, FixedSizeBinaryArray};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::error::Result;
+
 use crate::io::parquet::read::deserialize::nested_utils::{InitNested, NestedState};
 
 /// An iterator adapter over [`Pages`] assumed to be encoded as parquet's dictionary-encoded binary representation
@@ -61,7 +62,7 @@ where
     I: Pages,
     K: DictionaryKey,
 {
-    type Item = Result<DictionaryArray<K>>;
+    type Item = PolarsResult<DictionaryArray<K>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let maybe_state = next_dict(
@@ -127,7 +128,7 @@ where
     I: Pages,
     K: DictionaryKey,
 {
-    type Item = Result<(NestedState, DictionaryArray<K>)>;
+    type Item = PolarsResult<(NestedState, DictionaryArray<K>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let maybe_state = nested_next_dict(

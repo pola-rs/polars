@@ -17,7 +17,6 @@ pub mod array;
 pub mod bitmap;
 pub mod buffer;
 pub mod chunk;
-pub mod error;
 #[cfg(feature = "io_ipc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_ipc")))]
 pub mod mmap;

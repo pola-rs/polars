@@ -40,7 +40,6 @@ use std::path::{Path, PathBuf};
 
 #[allow(unused)] // remove when updating to rust nightly >= 1.61
 use arrow::array::new_empty_array;
-use arrow::error::Result as ArrowResult;
 pub use options::*;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
@@ -90,7 +89,7 @@ pub trait WriterFactory {
 }
 
 pub trait ArrowReader {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>>;
+    fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>>;
 }
 
 #[cfg(any(

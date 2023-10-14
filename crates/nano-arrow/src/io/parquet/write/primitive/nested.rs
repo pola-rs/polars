@@ -3,11 +3,12 @@ use parquet2::page::DataPage;
 use parquet2::schema::types::PrimitiveType;
 use parquet2::statistics::serialize_statistics;
 use parquet2::types::NativeType;
+use polars_error::PolarsResult;
 
 use super::super::{nested, utils, WriteOptions};
 use super::basic::{build_statistics, encode_plain};
 use crate::array::{Array, PrimitiveArray};
-use crate::error::Result;
+
 use crate::io::parquet::read::schema::is_nullable;
 use crate::io::parquet::write::Nested;
 use crate::types::NativeType as ArrowNativeType;
@@ -17,7 +18,7 @@ pub fn array_to_page<T, R>(
     options: WriteOptions,
     type_: PrimitiveType,
     nested: &[Nested],
-) -> Result<DataPage>
+) -> PolarsResult<DataPage>
 where
     T: ArrowNativeType,
     R: NativeType,

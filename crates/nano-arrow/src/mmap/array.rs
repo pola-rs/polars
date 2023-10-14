@@ -1,11 +1,10 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 use polars_error::{polars_bail, polars_err, PolarsResult};
-use polars_error::PolarsError::ComputeError;
 
 use crate::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, StructArray};
 use crate::datatypes::DataType;
-use crate::error::Error;
+
 use crate::ffi::mmap::create_array;
 use crate::ffi::{export_array_to_c, try_from, ArrowArray, InternalArrowArray};
 use crate::io::ipc::read::{Dictionaries, IpcBuffer, Node, OutOfSpecKind};

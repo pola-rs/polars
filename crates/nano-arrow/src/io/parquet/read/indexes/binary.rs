@@ -1,15 +1,16 @@
 use parquet2::indexes::PageIndex;
+use polars_error::{PolarsResult, to_compute_err};
 
 use super::ColumnPageStatistics;
 use crate::array::{Array, BinaryArray, PrimitiveArray, Utf8Array};
 use crate::datatypes::{DataType, PhysicalType};
-use crate::error::Error;
+
 use crate::trusted_len::TrustedLen;
 
 pub fn deserialize(
     indexes: &[PageIndex<Vec<u8>>],
     data_type: &DataType,
-) -> Result<ColumnPageStatistics, Error> {
+) -> PolarsResult<ColumnPageStatistics> {
     Ok(ColumnPageStatistics {
         min: deserialize_binary_iter(indexes.iter().map(|index| index.min.as_ref()), data_type)?,
         max: deserialize_binary_iter(indexes.iter().map(|index| index.max.as_ref()), data_type)?,
@@ -24,16 +25,16 @@ pub fn deserialize(
 fn deserialize_binary_iter<'a, I: TrustedLen<Item = Option<&'a Vec<u8>>>>(
     iter: I,
     data_type: &DataType,
-) -> Result<Box<dyn Array>, Error> {
+) -> PolarsResult<Box<dyn Array>> {
     match data_type.to_physical_type() {
         PhysicalType::LargeBinary => Ok(Box::new(BinaryArray::<i64>::from_iter(iter))),
         PhysicalType::Utf8 => {
             let iter = iter.map(|x| x.map(|x| std::str::from_utf8(x)).transpose());
-            Ok(Box::new(Utf8Array::<i32>::try_from_trusted_len_iter(iter)?))
+            Ok(Box::new(Utf8Array::<i32>::try_from_trusted_len_iter(iter).map_err(to_compute_err)?))
         },
         PhysicalType::LargeUtf8 => {
             let iter = iter.map(|x| x.map(|x| std::str::from_utf8(x)).transpose());
-            Ok(Box::new(Utf8Array::<i64>::try_from_trusted_len_iter(iter)?))
+            Ok(Box::new(Utf8Array::<i64>::try_from_trusted_len_iter(iter).map_err(to_compute_err)?))
         },
         _ => Ok(Box::new(BinaryArray::<i32>::from_iter(iter))),
     }

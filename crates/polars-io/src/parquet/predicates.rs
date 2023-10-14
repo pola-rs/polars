@@ -3,7 +3,6 @@ use arrow::io::parquet::read::RowGroupMetaData;
 use polars_core::prelude::*;
 
 use crate::predicates::{BatchStats, ColumnStats, PhysicalIoExpr};
-use crate::ArrowResult;
 
 impl ColumnStats {
     fn from_arrow_stats(stats: Statistics, field: &ArrowField) -> Self {
@@ -20,7 +19,7 @@ impl ColumnStats {
 pub(crate) fn collect_statistics(
     md: &RowGroupMetaData,
     schema: SchemaRef,
-) -> ArrowResult<Option<BatchStats>> {
+) -> PolarsResult<Option<BatchStats>> {
     let mut stats = vec![];
 
     for (name, dt) in schema.iter() {

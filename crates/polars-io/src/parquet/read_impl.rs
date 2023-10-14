@@ -70,7 +70,7 @@ pub(super) fn array_iter_to_series(
 ) -> PolarsResult<Series> {
     let mut total_count = 0;
     let chunks = match num_rows {
-        None => iter.collect::<arrow::error::Result<Vec<_>>>()?,
+        None => iter.collect::<PolarsResult<Vec<_>>>()?,
         Some(n) => {
             let mut out = Vec::with_capacity(2);
 

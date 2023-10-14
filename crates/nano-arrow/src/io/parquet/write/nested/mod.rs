@@ -4,16 +4,17 @@ mod rep;
 use parquet2::encoding::hybrid_rle::encode_u32;
 use parquet2::read::levels::get_bit_width;
 use parquet2::write::Version;
+use polars_error::PolarsResult;
 pub use rep::num_values;
 
 use super::Nested;
-use crate::error::Result;
+
 use crate::offset::Offset;
 
-fn write_levels_v1<F: FnOnce(&mut Vec<u8>) -> Result<()>>(
+fn write_levels_v1<F: FnOnce(&mut Vec<u8>) -> PolarsResult<()>>(
     buffer: &mut Vec<u8>,
     encode: F,
-) -> Result<()> {
+) -> PolarsResult<()> {
     buffer.extend_from_slice(&[0; 4]);
     let start = buffer.len();
 
@@ -29,7 +30,7 @@ fn write_levels_v1<F: FnOnce(&mut Vec<u8>) -> Result<()>>(
 }
 
 /// writes the rep levels to a `Vec<u8>`.
-fn write_rep_levels(buffer: &mut Vec<u8>, nested: &[Nested], version: Version) -> Result<()> {
+fn write_rep_levels(buffer: &mut Vec<u8>, nested: &[Nested], version: Version) -> PolarsResult<()> {
     let max_level = max_rep_level(nested) as i16;
     if max_level == 0 {
         return Ok(());
@@ -54,7 +55,7 @@ fn write_rep_levels(buffer: &mut Vec<u8>, nested: &[Nested], version: Version) -
 }
 
 /// writes the rep levels to a `Vec<u8>`.
-fn write_def_levels(buffer: &mut Vec<u8>, nested: &[Nested], version: Version) -> Result<()> {
+fn write_def_levels(buffer: &mut Vec<u8>, nested: &[Nested], version: Version) -> PolarsResult<()> {
     let max_level = max_def_level(nested) as i16;
     if max_level == 0 {
         return Ok(());
@@ -107,7 +108,7 @@ pub fn write_rep_and_def(
     page_version: Version,
     nested: &[Nested],
     buffer: &mut Vec<u8>,
-) -> Result<(usize, usize)> {
+) -> PolarsResult<(usize, usize)> {
     write_rep_levels(buffer, nested, page_version)?;
     let repetition_levels_byte_length = buffer.len();
 

@@ -10,7 +10,7 @@ use super::DictionaryKey;
 use crate::array::indexable::{AsIndexed, Indexable};
 use crate::array::{Array, MutableArray};
 use crate::datatypes::DataType;
-use crate::error::{Error, Result};
+
 
 /// Hasher for pre-hashed values; similar to `hash_hasher` but with native endianness.
 ///
@@ -126,7 +126,7 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
         &mut self,
         value: V,
         mut push: impl FnMut(&mut M, V) -> PolarsResult<()>,
-    ) -> Result<K>
+    ) -> PolarsResult<K>
     where
         M: Indexable,
         V: AsIndexed<M>,

@@ -17,11 +17,12 @@ use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
 pub use parquet2::indexes::{FilteredPage, Interval};
+use polars_error::{polars_bail, PolarsResult};
 
 use super::get_field_pages;
 use crate::array::{Array, UInt64Array};
 use crate::datatypes::{DataType, Field, PhysicalType, PrimitiveType};
-use crate::error::Error;
+
 
 /// Page statistics of an Arrow field.
 #[derive(Debug, PartialEq)]
@@ -65,7 +66,7 @@ pub struct ColumnPageStatistics {
 fn deserialize(
     indexes: &mut VecDeque<&Box<dyn ParquetIndex>>,
     data_type: DataType,
-) -> Result<FieldPageStatistics, Error> {
+) -> PolarsResult<FieldPageStatistics> {
     match data_type.to_physical_type() {
         PhysicalType::Boolean => {
             let index = indexes
@@ -98,9 +99,9 @@ fn deserialize(
                     let index = index.as_any().downcast_ref::<FixedLenByteIndex>().unwrap();
                     Ok(fixed_len_binary::deserialize(&index.indexes, data_type).into())
                 },
-                other => Err(Error::nyi(format!(
+                other => polars_bail!(nyi =
                     "Deserialize {other:?} to arrow's int64"
-                ))),
+                )
             }
         },
         PhysicalType::Primitive(PrimitiveType::Int256) => {
@@ -125,9 +126,9 @@ fn deserialize(
                     let index = index.as_any().downcast_ref::<FixedLenByteIndex>().unwrap();
                     Ok(fixed_len_binary::deserialize(&index.indexes, data_type).into())
                 },
-                other => Err(Error::nyi(format!(
+                other => polars_bail!(nyi =
                     "Deserialize {other:?} to arrow's int64"
-                ))),
+                )
             }
         },
         PhysicalType::Primitive(PrimitiveType::UInt8)
@@ -164,9 +165,9 @@ fn deserialize(
                         .unwrap();
                     Ok(primitive::deserialize_i96(&index.indexes, data_type).into())
                 },
-                other => Err(Error::nyi(format!(
+                other => polars_bail!(nyi =
                     "Deserialize {other:?} to arrow's int64"
-                ))),
+                )
             }
         },
         PhysicalType::Primitive(PrimitiveType::Float32) => {
@@ -245,14 +246,14 @@ fn deserialize(
             let children = children_fields
                 .iter()
                 .map(|child| deserialize(indexes, child.data_type.clone()))
-                .collect::<Result<Vec<_>, Error>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
 
             Ok(FieldPageStatistics::Multiple(children))
         },
 
-        other => Err(Error::nyi(format!(
+        other => polars_bail!(nyi =
             "Deserialize into arrow's {other:?} page index"
-        ))),
+        )
     }
 }
 
@@ -279,7 +280,7 @@ pub fn read_columns_indexes<R: Read + Seek>(
     reader: &mut R,
     chunks: &[ColumnChunkMetaData],
     fields: &[Field],
-) -> Result<Vec<FieldPageStatistics>, Error> {
+) -> PolarsResult<Vec<FieldPageStatistics>> {
     let indexes = _read_columns_indexes(reader, chunks)?;
 
     fields
@@ -343,7 +344,7 @@ pub fn read_filtered_pages<
     fields: &[Field],
     predicate: F,
     //is_intersection: bool,
-) -> Result<Vec<Vec<Vec<FilteredPage>>>, Error> {
+) -> PolarsResult<Vec<Vec<Vec<FilteredPage>>>> {
     let num_rows = row_group.num_rows();
 
     // one vec per column
@@ -363,9 +364,9 @@ pub fn read_filtered_pages<
             locations
                 .iter()
                 .map(|locations| Ok(compute_page_row_intervals(locations, num_rows)?))
-                .collect::<Result<Vec<_>, Error>>()
+                .collect::<PolarsResult<Vec<_>>>()
         })
-        .collect::<Result<Vec<_>, Error>>()?;
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     let intervals = predicate(&indexes, &intervals);
 
@@ -375,7 +376,7 @@ pub fn read_filtered_pages<
             locations
                 .into_iter()
                 .map(|locations| Ok(select_pages(&intervals, locations, num_rows)?))
-                .collect::<Result<Vec<_>, Error>>()
+                .collect::<PolarsResult<Vec<_>>>()
         })
         .collect()
 }

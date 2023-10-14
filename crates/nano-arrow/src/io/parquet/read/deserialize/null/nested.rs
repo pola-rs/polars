@@ -1,12 +1,13 @@
 use std::collections::VecDeque;
 
 use parquet2::page::{DataPage, DictPage};
+use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
 use super::super::{utils, Pages};
 use crate::array::NullArray;
 use crate::datatypes::DataType;
-use crate::error::Result;
+
 use crate::io::parquet::read::deserialize::utils::DecodedState;
 
 impl<'a> utils::PageState<'a> for usize {
@@ -33,7 +34,7 @@ impl<'a> NestedDecoder<'a> for NullDecoder {
         &self,
         _page: &'a DataPage,
         dict: Option<&'a Self::Dictionary>,
-    ) -> Result<Self::State> {
+    ) -> PolarsResult<Self::State> {
         if let Some(n) = dict {
             return Ok(*n);
         }
@@ -45,7 +46,7 @@ impl<'a> NestedDecoder<'a> for NullDecoder {
         0
     }
 
-    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> Result<()> {
+    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> PolarsResult<()> {
         *decoded += *state;
         Ok(())
     }
@@ -102,7 +103,7 @@ impl<I> Iterator for NestedIter<I>
 where
     I: Pages,
 {
-    type Item = Result<(NestedState, NullArray)>;
+    type Item = PolarsResult<(NestedState, NullArray)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let maybe_state = next(

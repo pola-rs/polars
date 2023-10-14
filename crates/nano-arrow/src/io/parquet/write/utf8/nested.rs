@@ -1,11 +1,12 @@
 use parquet2::encoding::Encoding;
 use parquet2::page::DataPage;
 use parquet2::schema::types::PrimitiveType;
+use polars_error::PolarsResult;
 
 use super::super::{nested, utils, WriteOptions};
 use super::basic::{build_statistics, encode_plain};
 use crate::array::{Array, Utf8Array};
-use crate::error::Result;
+
 use crate::io::parquet::read::schema::is_nullable;
 use crate::io::parquet::write::Nested;
 use crate::offset::Offset;
@@ -15,7 +16,7 @@ pub fn array_to_page<O>(
     options: WriteOptions,
     type_: PrimitiveType,
     nested: &[Nested],
-) -> Result<DataPage>
+) -> PolarsResult<DataPage>
 where
     O: Offset,
 {

@@ -15,16 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use polars_error::PolarsResult;
 use super::Index;
 use crate::array::{Array, PrimitiveArray, StructArray};
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::error::Result;
+
 
 #[inline]
 fn take_validity<I: Index>(
     validity: Option<&Bitmap>,
     indices: &PrimitiveArray<I>,
-) -> Result<Option<Bitmap>> {
+) -> PolarsResult<Option<Bitmap>> {
     let indices_validity = indices.validity();
     match (validity, indices_validity) {
         (None, _) => Ok(indices_validity.cloned()),
@@ -48,12 +49,12 @@ fn take_validity<I: Index>(
     }
 }
 
-pub fn take<I: Index>(array: &StructArray, indices: &PrimitiveArray<I>) -> Result<StructArray> {
+pub fn take<I: Index>(array: &StructArray, indices: &PrimitiveArray<I>) -> PolarsResult<StructArray> {
     let values: Vec<Box<dyn Array>> = array
         .values()
         .iter()
         .map(|a| super::take(a.as_ref(), indices))
-        .collect::<Result<_>>()?;
+        .collect::<PolarsResult<_>>()?;
     let validity = take_validity(array.validity(), indices)?;
     Ok(StructArray::new(
         array.data_type().clone(),

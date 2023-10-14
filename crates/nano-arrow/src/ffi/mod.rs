@@ -9,12 +9,13 @@ mod stream;
 
 pub(crate) use array::{try_from, ArrowArrayRef, InternalArrowArray};
 pub use generated::{ArrowArray, ArrowArrayStream, ArrowSchema};
+use polars_error::PolarsResult;
 pub use stream::{export_iterator, ArrowArrayStreamReader};
 
 use self::schema::to_field;
 use crate::array::Array;
 use crate::datatypes::{DataType, Field};
-use crate::error::Result;
+
 
 /// Exports an [`Box<dyn Array>`] to the C data interface.
 pub fn export_array_to_c(array: Box<dyn Array>) -> ArrowArray {
@@ -30,7 +31,7 @@ pub fn export_field_to_c(field: &Field) -> ArrowSchema {
 /// # Safety
 /// This function is intrinsically `unsafe` and relies on a [`ArrowSchema`]
 /// being valid according to the [C data interface](https://arrow.apache.org/docs/format/CDataInterface.html) (FFI).
-pub unsafe fn import_field_from_c(field: &ArrowSchema) -> Result<Field> {
+pub unsafe fn import_field_from_c(field: &ArrowSchema) -> PolarsResult<Field> {
     to_field(field)
 }
 
@@ -41,6 +42,6 @@ pub unsafe fn import_field_from_c(field: &ArrowSchema) -> Result<Field> {
 pub unsafe fn import_array_from_c(
     array: ArrowArray,
     data_type: DataType,
-) -> Result<Box<dyn Array>> {
+) -> PolarsResult<Box<dyn Array>> {
     try_from(InternalArrowArray::new(array, data_type))
 }

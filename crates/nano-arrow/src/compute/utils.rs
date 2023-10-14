@@ -1,7 +1,7 @@
 use polars_error::{polars_ensure, PolarsError, PolarsResult, polars_bail};
 use crate::array::Array;
 use crate::bitmap::Bitmap;
-use crate::error::{Error, Result};
+
 
 pub fn combine_validities(lhs: Option<&Bitmap>, rhs: Option<&Bitmap>) -> Option<Bitmap> {
     match (lhs, rhs) {

@@ -5,13 +5,14 @@ use parquet2::schema::types::PrimitiveType;
 use parquet2::statistics::{
     serialize_statistics, BooleanStatistics, ParquetStatistics, Statistics,
 };
+use polars_error::PolarsResult;
 
 use super::super::{utils, WriteOptions};
 use crate::array::*;
-use crate::error::Result;
+
 use crate::io::parquet::read::schema::is_nullable;
 
-fn encode(iterator: impl Iterator<Item = bool>, buffer: &mut Vec<u8>) -> Result<()> {
+fn encode(iterator: impl Iterator<Item = bool>, buffer: &mut Vec<u8>) -> PolarsResult<()> {
     // encode values using bitpacking
     let len = buffer.len();
     let mut buffer = std::io::Cursor::new(buffer);
@@ -23,7 +24,7 @@ pub(super) fn encode_plain(
     array: &BooleanArray,
     is_optional: bool,
     buffer: &mut Vec<u8>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     if is_optional {
         let iter = array.iter().flatten().take(
             array
@@ -43,7 +44,7 @@ pub fn array_to_page(
     array: &BooleanArray,
     options: WriteOptions,
     type_: PrimitiveType,
-) -> Result<DataPage> {
+) -> PolarsResult<DataPage> {
     let is_optional = is_nullable(&type_.field_info);
 
     let validity = array.validity();

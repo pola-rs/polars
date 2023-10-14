@@ -1,6 +1,6 @@
 use std::iter::FromIterator;
 use std::sync::Arc;
-use polars_error::polars_bail;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::{MutableUtf8ValuesArray, MutableUtf8ValuesIter, StrAsBytes, Utf8Array};
 use crate::array::physical_binary::*;
@@ -8,7 +8,7 @@ use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::DataType;
-use crate::error::{Error, Result};
+
 use crate::offset::{Offset, Offsets};
 use crate::trusted_len::TrustedLen;
 
@@ -61,7 +61,7 @@ impl<O: Offset> MutableUtf8Array<O> {
         offsets: Offsets<O>,
         values: Vec<u8>,
         validity: Option<MutableBitmap>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let values = MutableUtf8ValuesArray::try_new(data_type, offsets, values)?;
 
         if validity
@@ -427,7 +427,7 @@ impl<O: Offset> MutableUtf8Array<O> {
     /// # Error
     /// This operation errors iff the total length in bytes on the iterator exceeds `O`'s maximum value.
     /// (`i32::MAX` or `i64::MAX` respectively).
-    fn try_from_iter<P: AsRef<str>, I: IntoIterator<Item = Option<P>>>(iter: I) -> Result<Self> {
+    fn try_from_iter<P: AsRef<str>, I: IntoIterator<Item = Option<P>>>(iter: I) -> PolarsResult<Self> {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();
         let mut array = Self::with_capacity(lower);
@@ -502,7 +502,7 @@ impl<O: Offset, T: AsRef<str>> Extend<Option<T>> for MutableUtf8Array<O> {
 }
 
 impl<O: Offset, T: AsRef<str>> TryExtend<Option<T>> for MutableUtf8Array<O> {
-    fn try_extend<I: IntoIterator<Item = Option<T>>>(&mut self, iter: I) -> Result<()> {
+    fn try_extend<I: IntoIterator<Item = Option<T>>>(&mut self, iter: I) -> PolarsResult<()> {
         let mut iter = iter.into_iter();
         self.reserve(iter.size_hint().0, 0);
         iter.try_for_each(|x| self.try_push(x))
@@ -511,7 +511,7 @@ impl<O: Offset, T: AsRef<str>> TryExtend<Option<T>> for MutableUtf8Array<O> {
 
 impl<O: Offset, T: AsRef<str>> TryPush<Option<T>> for MutableUtf8Array<O> {
     #[inline]
-    fn try_push(&mut self, value: Option<T>) -> Result<()> {
+    fn try_push(&mut self, value: Option<T>) -> PolarsResult<()> {
         match value {
             Some(value) => {
                 self.values.try_push(value.as_ref())?;
@@ -540,7 +540,7 @@ impl<O: Offset> PartialEq for MutableUtf8Array<O> {
 }
 
 impl<O: Offset> TryExtendFromSelf for MutableUtf8Array<O> {
-    fn try_extend_from_self(&mut self, other: &Self) -> Result<()> {
+    fn try_extend_from_self(&mut self, other: &Self) -> PolarsResult<()> {
         extend_validity(self.len(), &mut self.validity, &other.validity);
 
         self.values.try_extend_from_self(&other.values)

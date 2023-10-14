@@ -39,7 +39,7 @@ use arrow::io::ipc::read;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 
-use super::{finish_reader, ArrowReader, ArrowResult};
+use super::{finish_reader, ArrowReader};
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
@@ -167,7 +167,7 @@ impl<R: MmapBytesReader> ArrowReader for read::FileReader<R>
 where
     R: Read + Seek,
 {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
+    fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>> {
         self.next().map_or(Ok(None), |v| v.map(Some))
     }
 }

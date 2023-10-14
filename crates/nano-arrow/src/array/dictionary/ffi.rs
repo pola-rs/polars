@@ -1,7 +1,7 @@
 use polars_error::{polars_err, PolarsResult};
 use super::{DictionaryArray, DictionaryKey};
 use crate::array::{FromFfi, PrimitiveArray, ToFfi};
-use crate::error::Error;
+
 use crate::ffi;
 
 unsafe impl<K: DictionaryKey> ToFfi for DictionaryArray<K> {

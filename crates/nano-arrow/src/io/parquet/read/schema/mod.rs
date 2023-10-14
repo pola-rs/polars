@@ -1,6 +1,6 @@
 //! APIs to handle Parquet <-> Arrow schemas.
 use crate::datatypes::{Schema, TimeUnit};
-use crate::error::Result;
+
 
 mod convert;
 mod metadata;
@@ -10,6 +10,7 @@ pub use convert::{parquet_to_arrow_schema, parquet_to_arrow_schema_with_options}
 pub use metadata::read_schema_from_metadata;
 pub use parquet2::metadata::{FileMetaData, KeyValue, SchemaDescriptor};
 pub use parquet2::schema::types::ParquetType;
+use polars_error::PolarsResult;
 
 use self::metadata::parse_key_value_metadata;
 
@@ -39,7 +40,7 @@ impl Default for SchemaInferenceOptions {
 /// # Error
 /// This function errors iff the key `"ARROW:schema"` exists but is not correctly encoded,
 /// indicating that that the file's arrow metadata was incorrectly written.
-pub fn infer_schema(file_metadata: &FileMetaData) -> Result<Schema> {
+pub fn infer_schema(file_metadata: &FileMetaData) -> PolarsResult<Schema> {
     infer_schema_with_options(file_metadata, &None)
 }
 
@@ -47,7 +48,7 @@ pub fn infer_schema(file_metadata: &FileMetaData) -> Result<Schema> {
 pub fn infer_schema_with_options(
     file_metadata: &FileMetaData,
     options: &Option<SchemaInferenceOptions>,
-) -> Result<Schema> {
+) -> PolarsResult<Schema> {
     let mut metadata = parse_key_value_metadata(file_metadata.key_value_metadata());
 
     let schema = read_schema_from_metadata(&mut metadata)?;

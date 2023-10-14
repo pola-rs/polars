@@ -5,12 +5,13 @@ use parquet2::metadata::Descriptor;
 use parquet2::page::{DataPage, DataPageHeader, DataPageHeaderV1, DataPageHeaderV2};
 use parquet2::schema::types::PrimitiveType;
 use parquet2::statistics::ParquetStatistics;
+use polars_error::PolarsResult;
 
 use super::{Version, WriteOptions};
 use crate::bitmap::Bitmap;
-use crate::error::Result;
 
-fn encode_iter_v1<I: Iterator<Item = bool>>(buffer: &mut Vec<u8>, iter: I) -> Result<()> {
+
+fn encode_iter_v1<I: Iterator<Item = bool>>(buffer: &mut Vec<u8>, iter: I) -> PolarsResult<()> {
     buffer.extend_from_slice(&[0; 4]);
     let start = buffer.len();
     encode_bool(buffer, iter)?;
@@ -23,7 +24,7 @@ fn encode_iter_v1<I: Iterator<Item = bool>>(buffer: &mut Vec<u8>, iter: I) -> Re
     Ok(())
 }
 
-fn encode_iter_v2<I: Iterator<Item = bool>>(writer: &mut Vec<u8>, iter: I) -> Result<()> {
+fn encode_iter_v2<I: Iterator<Item = bool>>(writer: &mut Vec<u8>, iter: I) -> PolarsResult<()> {
     Ok(encode_bool(writer, iter)?)
 }
 
@@ -31,7 +32,7 @@ fn encode_iter<I: Iterator<Item = bool>>(
     writer: &mut Vec<u8>,
     iter: I,
     version: Version,
-) -> Result<()> {
+) -> PolarsResult<()> {
     match version {
         Version::V1 => encode_iter_v1(writer, iter),
         Version::V2 => encode_iter_v2(writer, iter),
@@ -45,7 +46,7 @@ pub fn write_def_levels(
     validity: Option<&Bitmap>,
     len: usize,
     version: Version,
-) -> Result<()> {
+) -> PolarsResult<()> {
     // encode def levels
     match (is_optional, validity) {
         (true, Some(validity)) => encode_iter(writer, validity.iter(), version),
@@ -66,7 +67,7 @@ pub fn build_plain_page(
     type_: PrimitiveType,
     options: WriteOptions,
     encoding: Encoding,
-) -> Result<DataPage> {
+) -> PolarsResult<DataPage> {
     let header = match options.version {
         Version::V1 => DataPageHeader::V1(DataPageHeaderV1 {
             num_values: num_values as i32,

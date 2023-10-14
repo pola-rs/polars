@@ -402,7 +402,7 @@ mod tests {
 
     use super::*;
     use crate::datatypes::{DataType, Field, TimeUnit};
-    use crate::error::Result;
+
 
     #[test]
     fn test_flat_primitives() -> Result<()> {

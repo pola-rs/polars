@@ -1,8 +1,9 @@
+use polars_error::PolarsResult;
 use crate::array::{new_null_array, Array, ListArray, NullArray, StructArray};
 use crate::bitmap::MutableBitmap;
 use crate::compute::concatenate;
 use crate::datatypes::DataType;
-use crate::error::Result;
+
 use crate::offset::Offsets;
 
 use crate::legacy::kernels::concatenate::concatenate_owned_unchecked;
@@ -100,7 +101,7 @@ impl<'a> AnonymousBuilder<'a> {
         }
     }
 
-    pub fn finish(self, inner_dtype: Option<&DataType>) -> Result<ListArray<i64>> {
+    pub fn finish(self, inner_dtype: Option<&DataType>) -> PolarsResult<ListArray<i64>> {
         // Safety:
         // offsets are monotonically increasing
         let offsets = unsafe { Offsets::new_unchecked(self.offsets) };

@@ -21,7 +21,6 @@ use std::sync::Arc;
 
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::DataType;
-use crate::error::Result;
 
 pub mod physical_binary;
 

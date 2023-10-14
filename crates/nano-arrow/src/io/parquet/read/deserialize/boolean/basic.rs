@@ -4,6 +4,7 @@ use parquet2::deserialize::SliceFilteredIter;
 use parquet2::encoding::Encoding;
 use parquet2::page::{split_buffer, DataPage, DictPage};
 use parquet2::schema::Repetition;
+use polars_error::PolarsResult;
 
 use super::super::utils::{
     extend_from_decoder, get_selected_rows, next, DecodedState, Decoder,
@@ -14,13 +15,13 @@ use crate::array::BooleanArray;
 use crate::bitmap::utils::BitmapIter;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::error::Result;
+
 
 #[derive(Debug)]
 struct Values<'a>(BitmapIter<'a>);
 
 impl<'a> Values<'a> {
-    pub fn try_new(page: &'a DataPage) -> Result<Self> {
+    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let (_, _, values) = split_buffer(page)?;
 
         Ok(Self(BitmapIter::new(values, 0, values.len() * 8)))
@@ -52,7 +53,7 @@ struct FilteredRequired<'a> {
 }
 
 impl<'a> FilteredRequired<'a> {
-    pub fn try_new(page: &'a DataPage) -> Result<Self> {
+    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let (_, _, values) = split_buffer(page)?;
         // todo: replace this by an iterator over slices, for faster deserialization
         let values = BitmapIter::new(values, 0, page.num_values());
@@ -109,7 +110,7 @@ impl<'a> Decoder<'a> for BooleanDecoder {
     type Dict = ();
     type DecodedState = (MutableBitmap, MutableBitmap);
 
-    fn build_state(&self, page: &'a DataPage, _: Option<&'a Self::Dict>) -> Result<Self::State> {
+    fn build_state(&self, page: &'a DataPage, _: Option<&'a Self::Dict>) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
@@ -206,7 +207,7 @@ impl<I: Pages> Iter<I> {
 }
 
 impl<I: Pages> Iterator for Iter<I> {
-    type Item = Result<BooleanArray>;
+    type Item = PolarsResult<BooleanArray>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let maybe_state = next(

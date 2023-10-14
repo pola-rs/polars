@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use crate::error::Error;
+
 
 /// The different types of errors that reading from IPC can cause
 #[derive(Debug)]
@@ -98,18 +98,6 @@ pub enum OutOfSpecKind {
     },
     /// FixedSizeBinaryArray has invalid datatype.
     InvalidDataType,
-}
-
-impl From<OutOfSpecKind> for Error {
-    fn from(kind: OutOfSpecKind) -> Self {
-        Error::OutOfSpec(format!("{kind:?}"))
-    }
-}
-
-impl From<arrow_format::ipc::planus::Error> for Error {
-    fn from(error: arrow_format::ipc::planus::Error) -> Self {
-        Error::OutOfSpec(error.to_string())
-    }
 }
 
 impl Display for OutOfSpecKind {

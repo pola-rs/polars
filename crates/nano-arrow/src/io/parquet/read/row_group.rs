@@ -3,12 +3,13 @@ use std::io::{Read, Seek};
 use parquet2::indexes::FilteredPage;
 use parquet2::metadata::ColumnChunkMetaData;
 use parquet2::read::{BasicDecompressor, IndexedPageReader, PageMetaData, PageReader};
+use polars_error::PolarsResult;
 
 use super::{ArrayIter, RowGroupMetaData};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::Field;
-use crate::error::Result;
+
 use crate::io::parquet::read::column_iter_to_arrays;
 
 /// An [`Iterator`] of [`Chunk`] that (dynamically) adapts a vector of iterators of [`Array`] into
@@ -50,7 +51,7 @@ impl RowGroupDeserializer {
 }
 
 impl Iterator for RowGroupDeserializer {
-    type Item = Result<Chunk<Box<dyn Array>>>;
+    type Item = PolarsResult<Chunk<Box<dyn Array>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.remaining_rows == 0 {
@@ -60,7 +61,7 @@ impl Iterator for RowGroupDeserializer {
             .column_chunks
             .iter_mut()
             .map(|iter| iter.next().unwrap())
-            .collect::<Result<Vec<_>>>()
+            .collect::<PolarsResult<Vec<_>>>()
             .and_then(Chunk::try_new);
         self.remaining_rows = self.remaining_rows.saturating_sub(
             chunk
@@ -108,7 +109,7 @@ pub fn read_columns<'a, R: Read + Seek>(
     reader: &mut R,
     columns: &'a [ColumnChunkMetaData],
     field_name: &str,
-) -> Result<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>> {
+) -> PolarsResult<Vec<(&'a ColumnChunkMetaData, Vec<u8>)>> {
     get_field_columns(columns, field_name)
         .into_iter()
         .map(|meta| _read_single_column(reader, meta))
@@ -118,7 +119,7 @@ pub fn read_columns<'a, R: Read + Seek>(
 fn _read_single_column<'a, R>(
     reader: &mut R,
     meta: &'a ColumnChunkMetaData,
-) -> Result<(&'a ColumnChunkMetaData, Vec<u8>)>
+) -> PolarsResult<(&'a ColumnChunkMetaData, Vec<u8>)>
 where
     R: Read + Seek,
 {
@@ -145,7 +146,7 @@ pub fn to_deserializer<'a>(
     num_rows: usize,
     chunk_size: Option<usize>,
     pages: Option<Vec<Vec<FilteredPage>>>,
-) -> Result<ArrayIter<'a>> {
+) -> PolarsResult<ArrayIter<'a>> {
     let chunk_size = chunk_size.map(|c| c.min(num_rows));
 
     let (columns, types) = if let Some(pages) = pages {
@@ -218,7 +219,7 @@ pub fn read_columns_many<'a, R: Read + Seek>(
     chunk_size: Option<usize>,
     limit: Option<usize>,
     pages: Option<Vec<Vec<Vec<FilteredPage>>>>,
-) -> Result<Vec<ArrayIter<'a>>> {
+) -> PolarsResult<Vec<ArrayIter<'a>>> {
     let num_rows = row_group.num_rows();
     let num_rows = limit.map(|limit| limit.min(num_rows)).unwrap_or(num_rows);
 
@@ -227,7 +228,7 @@ pub fn read_columns_many<'a, R: Read + Seek>(
     let field_columns = fields
         .iter()
         .map(|field| read_columns(reader, row_group.columns(), &field.name))
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<PolarsResult<Vec<_>>>()?;
 
     if let Some(pages) = pages {
         field_columns

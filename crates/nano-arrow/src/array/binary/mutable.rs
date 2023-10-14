@@ -8,7 +8,7 @@ use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::DataType;
-use crate::error::{Error, Result};
+
 use crate::offset::{Offset, Offsets};
 use crate::trusted_len::TrustedLen;
 
@@ -61,7 +61,7 @@ impl<O: Offset> MutableBinaryArray<O> {
         offsets: Offsets<O>,
         values: Vec<u8>,
         validity: Option<MutableBitmap>,
-    ) -> Result<Self> {
+    ) -> PolarsResult<Self> {
         let values = MutableBinaryValuesArray::try_new(data_type, offsets, values)?;
 
         if validity
@@ -125,7 +125,7 @@ impl<O: Offset> MutableBinaryArray<O> {
             .map(|_| value)
     }
 
-    fn try_from_iter<P: AsRef<[u8]>, I: IntoIterator<Item = Option<P>>>(iter: I) -> Result<Self> {
+    fn try_from_iter<P: AsRef<[u8]>, I: IntoIterator<Item = Option<P>>>(iter: I) -> PolarsResult<Self> {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();
         let mut primitive = Self::with_capacity(lower);
@@ -431,7 +431,7 @@ impl<O: Offset, T: AsRef<[u8]>> TryExtend<Option<T>> for MutableBinaryArray<O> {
 }
 
 impl<O: Offset, T: AsRef<[u8]>> TryPush<Option<T>> for MutableBinaryArray<O> {
-    fn try_push(&mut self, value: Option<T>) -> Result<()> {
+    fn try_push(&mut self, value: Option<T>) -> PolarsResult<()> {
         match value {
             Some(value) => {
                 self.values.try_push(value.as_ref())?;

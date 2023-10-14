@@ -4,6 +4,7 @@ use parquet2::deserialize::SliceFilteredIter;
 use parquet2::encoding::{hybrid_rle, Encoding};
 use parquet2::page::{split_buffer, DataPage, DictPage};
 use parquet2::schema::Repetition;
+use polars_error::PolarsResult;
 
 use super::super::utils::{
     dict_indices_decoder, extend_from_decoder, get_selected_rows, next, not_implemented,
@@ -15,7 +16,7 @@ use super::utils::FixedSizeBinary;
 use crate::array::FixedSizeBinaryArray;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::error::Result;
+
 
 pub(super) type Dict = Vec<u8>;
 
@@ -26,7 +27,7 @@ pub(super) struct Optional<'a> {
 }
 
 impl<'a> Optional<'a> {
-    pub(super) fn try_new(page: &'a DataPage, size: usize) -> Result<Self> {
+    pub(super) fn try_new(page: &'a DataPage, size: usize) -> PolarsResult<Self> {
         let (_, _, values) = split_buffer(page)?;
 
         let values = values.chunks_exact(size);
@@ -87,7 +88,7 @@ pub(super) struct RequiredDictionary<'a> {
 }
 
 impl<'a> RequiredDictionary<'a> {
-    pub(super) fn try_new(page: &'a DataPage, dict: &'a Dict) -> Result<Self> {
+    pub(super) fn try_new(page: &'a DataPage, dict: &'a Dict) -> PolarsResult<Self> {
         let values = dict_indices_decoder(page)?;
 
         Ok(Self { dict, values })
@@ -107,7 +108,7 @@ pub(super) struct OptionalDictionary<'a> {
 }
 
 impl<'a> OptionalDictionary<'a> {
-    pub(super) fn try_new(page: &'a DataPage, dict: &'a Dict) -> Result<Self> {
+    pub(super) fn try_new(page: &'a DataPage, dict: &'a Dict) -> PolarsResult<Self> {
         let values = dict_indices_decoder(page)?;
 
         Ok(Self {
@@ -159,7 +160,7 @@ impl<'a> Decoder<'a> for BinaryDecoder {
     type Dict = Dict;
     type DecodedState = (FixedSizeBinary, MutableBitmap);
 
-    fn build_state(&self, page: &'a DataPage, dict: Option<&'a Self::Dict>) -> Result<Self::State> {
+    fn build_state(&self, page: &'a DataPage, dict: Option<&'a Self::Dict>) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
@@ -299,7 +300,7 @@ impl<I: Pages> Iter<I> {
 }
 
 impl<I: Pages> Iterator for Iter<I> {
-    type Item = Result<FixedSizeBinaryArray>;
+    type Item = PolarsResult<FixedSizeBinaryArray>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let maybe_state = next(

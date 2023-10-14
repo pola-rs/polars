@@ -17,7 +17,7 @@ pub use utf8_to::*;
 
 use crate::array::*;
 use crate::datatypes::*;
-use crate::error::{Error, Result};
+
 use crate::match_integer_type;
 use crate::offset::{Offset, Offsets};
 
@@ -323,7 +323,7 @@ fn cast_list<O: Offset>(
     array: &ListArray<O>,
     to_type: &DataType,
     options: CastOptions,
-) -> Result<ListArray<O>> {
+) -> PolarsResult<ListArray<O>> {
     let values = array.values();
     let new_values = cast(
         values.as_ref(),
@@ -365,7 +365,7 @@ fn cast_fixed_size_list_to_list<O: Offset>(
     fixed: &FixedSizeListArray,
     to_type: &DataType,
     options: CastOptions,
-) -> Result<ListArray<O>> {
+) -> PolarsResult<ListArray<O>> {
     let new_values = cast(
         fixed.values().as_ref(),
         ListArray::<O>::get_child_type(to_type),
@@ -440,7 +440,7 @@ fn cast_list_to_fixed_size_list<O: Offset>(
 /// * List to primitive
 /// * Utf8 to boolean
 /// * Interval and duration
-pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Result<Box<dyn Array>> {
+pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> PolarsResult<Box<dyn Array>> {
     use DataType::*;
     let from_type = array.data_type();
 
@@ -967,7 +967,7 @@ fn cast_to_dictionary<K: DictionaryKey>(
     array: &dyn Array,
     dict_value_type: &DataType,
     options: CastOptions,
-) -> Result<Box<dyn Array>> {
+) -> PolarsResult<Box<dyn Array>> {
     let array = cast(array, dict_value_type, options)?;
     let array = array.as_ref();
     match *dict_value_type {

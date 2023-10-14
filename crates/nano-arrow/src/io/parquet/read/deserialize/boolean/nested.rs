@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use parquet2::encoding::Encoding;
 use parquet2::page::{split_buffer, DataPage, DictPage};
 use parquet2::schema::Repetition;
+use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
 use super::super::utils::MaybeNext;
@@ -11,7 +12,7 @@ use crate::array::BooleanArray;
 use crate::bitmap::utils::BitmapIter;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::error::Result;
+
 
 // The state of a `DataPage` of `Boolean` parquet boolean type
 #[allow(clippy::large_enum_variant)]
@@ -48,7 +49,7 @@ impl<'a> NestedDecoder<'a> for BooleanDecoder {
         &self,
         page: &'a DataPage,
         _: Option<&'a Self::Dictionary>,
-    ) -> Result<Self::State> {
+    ) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
@@ -77,7 +78,7 @@ impl<'a> NestedDecoder<'a> for BooleanDecoder {
         )
     }
 
-    fn push_valid(&self, state: &mut State, decoded: &mut Self::DecodedState) -> Result<()> {
+    fn push_valid(&self, state: &mut State, decoded: &mut Self::DecodedState) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
             State::Optional(page_values) => {
@@ -129,7 +130,7 @@ fn finish(data_type: &DataType, values: MutableBitmap, validity: MutableBitmap) 
 }
 
 impl<I: Pages> Iterator for NestedIter<I> {
-    type Item = Result<(NestedState, BooleanArray)>;
+    type Item = PolarsResult<(NestedState, BooleanArray)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let maybe_state = next(

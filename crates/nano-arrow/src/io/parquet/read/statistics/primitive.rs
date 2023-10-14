@@ -1,10 +1,11 @@
 use parquet2::schema::types::{PrimitiveLogicalType, TimeUnit as ParquetTimeUnit};
 use parquet2::statistics::{PrimitiveStatistics, Statistics as ParquetStatistics};
 use parquet2::types::NativeType as ParquetNativeType;
+use polars_error::PolarsResult;
 
 use crate::array::*;
 use crate::datatypes::TimeUnit;
-use crate::error::Result;
+
 use crate::types::NativeType;
 
 pub fn timestamp(logical_type: Option<&PrimitiveLogicalType>, time_unit: TimeUnit, x: i64) -> i64 {
@@ -33,12 +34,12 @@ pub fn timestamp(logical_type: Option<&PrimitiveLogicalType>, time_unit: TimeUni
     }
 }
 
-pub(super) fn push<P: ParquetNativeType, T: NativeType, F: Fn(P) -> Result<T> + Copy>(
+pub(super) fn push<P: ParquetNativeType, T: NativeType, F: Fn(P) -> PolarsResult<T> + Copy>(
     from: Option<&dyn ParquetStatistics>,
     min: &mut dyn MutableArray,
     max: &mut dyn MutableArray,
     map: F,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let min = min
         .as_mut_any()
         .downcast_mut::<MutablePrimitiveArray<T>>()

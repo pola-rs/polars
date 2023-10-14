@@ -63,7 +63,7 @@ mod tests {
     use super::iter_to_arrays;
     use crate::array::NullArray;
     use crate::datatypes::DataType;
-    use crate::error::Error;
+
 
     #[test]
     fn limit() {

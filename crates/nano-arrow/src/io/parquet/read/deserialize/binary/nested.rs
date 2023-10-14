@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use parquet2::encoding::Encoding;
 use parquet2::page::{split_buffer, DataPage, DictPage};
 use parquet2::schema::Repetition;
+use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
 use super::super::utils;
@@ -12,7 +13,7 @@ use super::utils::*;
 use crate::array::Array;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::error::Result;
+
 use crate::io::parquet::read::Pages;
 use crate::offset::Offset;
 
@@ -49,7 +50,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
         &self,
         page: &'a DataPage,
         dict: Option<&'a Self::Dictionary>,
-    ) -> Result<Self::State> {
+    ) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
@@ -86,7 +87,7 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
         )
     }
 
-    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> Result<()> {
+    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
             State::Optional(page) => {
@@ -163,7 +164,7 @@ impl<O: Offset, I: Pages> NestedIter<O, I> {
 }
 
 impl<O: Offset, I: Pages> Iterator for NestedIter<O, I> {
-    type Item = Result<(NestedState, Box<dyn Array>)>;
+    type Item = PolarsResult<(NestedState, Box<dyn Array>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {

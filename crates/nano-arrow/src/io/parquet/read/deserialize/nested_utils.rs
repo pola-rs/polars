@@ -3,13 +3,14 @@ use std::collections::VecDeque;
 use parquet2::encoding::hybrid_rle::HybridRleDecoder;
 use parquet2::page::{split_buffer, DataPage, DictPage, Page};
 use parquet2::read::levels::get_bit_width;
+use polars_error::PolarsResult;
 
 use super::super::Pages;
 pub use super::utils::Zip;
 use super::utils::{DecodedState, MaybeNext, PageState};
 use crate::array::Array;
 use crate::bitmap::MutableBitmap;
-use crate::error::Result;
+
 
 /// trait describing deserialized repetition and definition levels
 pub trait Nested: std::fmt::Debug + Send + Sync {
@@ -252,12 +253,12 @@ pub(super) trait NestedDecoder<'a> {
         &self,
         page: &'a DataPage,
         dict: Option<&'a Self::Dictionary>,
-    ) -> Result<Self::State>;
+    ) -> PolarsResult<Self::State>;
 
     /// Initializes a new state
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
-    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> Result<()>;
+    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> PolarsResult<()>;
     fn push_null(&self, decoded: &mut Self::DecodedState);
 
     fn deserialize_dict(&self, page: &DictPage) -> Self::Dictionary;
@@ -306,7 +307,7 @@ pub struct NestedPage<'a> {
 }
 
 impl<'a> NestedPage<'a> {
-    pub fn try_new(page: &'a DataPage) -> Result<Self> {
+    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let (rep_levels, def_levels, _) = split_buffer(page)?;
 
         let max_rep_level = page.descriptor.max_rep_level;
@@ -358,7 +359,7 @@ pub(super) fn extend<'a, D: NestedDecoder<'a>>(
     remaining: &mut usize,
     decoder: &D,
     chunk_size: Option<usize>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let mut values_page = decoder.build_state(page, dict)?;
     let mut page = NestedPage::try_new(page)?;
 
@@ -414,7 +415,7 @@ fn extend_offsets2<'a, D: NestedDecoder<'a>>(
     decoded: &mut D::DecodedState,
     decoder: &D,
     additional: usize,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let max_depth = nested.len();
 
     let mut cum_sum = vec![0u32; max_depth + 1];
@@ -489,7 +490,7 @@ pub(super) fn next<'a, I, D>(
     init: &[InitNested],
     chunk_size: Option<usize>,
     decoder: &D,
-) -> MaybeNext<Result<(NestedState, D::DecodedState)>>
+) -> MaybeNext<PolarsResult<(NestedState, D::DecodedState)>>
 where
     I: Pages,
     D: NestedDecoder<'a>,
@@ -550,4 +551,4 @@ where
 
 /// Type def for a sharable, boxed dyn [`Iterator`] of NestedStates and arrays
 pub type NestedArrayIter<'a> =
-    Box<dyn Iterator<Item = Result<(NestedState, Box<dyn Array>)>> + Send + Sync + 'a>;
+    Box<dyn Iterator<Item = PolarsResult<(NestedState, Box<dyn Array>)>> + Send + Sync + 'a>;

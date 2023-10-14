@@ -1,10 +1,11 @@
 //! Functionality to mmap in-memory data regions.
 use std::sync::Arc;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::{ArrowArray, InternalArrowArray};
 use crate::array::{BooleanArray, FromFfi, PrimitiveArray};
 use crate::datatypes::DataType;
-use crate::error::Error;
+
 use crate::types::NativeType;
 
 #[allow(dead_code)]
@@ -133,12 +134,12 @@ pub unsafe fn slice<T: NativeType>(slice: &[T]) -> PrimitiveArray<T> {
 ///
 /// Using this function is not unsafe, but the returned BooleanArrays's lifetime is bound to the lifetime
 /// of the slice. The returned [`BooleanArray`] _must not_ outlive the passed slice.
-pub unsafe fn bitmap(data: &[u8], offset: usize, length: usize) -> Result<BooleanArray, Error> {
+pub unsafe fn bitmap(data: &[u8], offset: usize, length: usize) -> PolarsResult<BooleanArray> {
     if offset >= 8 {
-        return Err(Error::InvalidArgumentError("offset should be < 8".into()));
+        polars_bail!(InvalidOperation: "offset should be < 8")
     };
     if length > data.len() * 8 - offset {
-        return Err(Error::InvalidArgumentError("given length is oob".into()));
+        polars_bail!(InvalidOperation: "given length is oob")
     }
     let null_count = 0;
     let validity = None;

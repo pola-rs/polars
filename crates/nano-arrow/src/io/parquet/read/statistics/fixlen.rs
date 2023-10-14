@@ -1,9 +1,10 @@
 use ethnum::I256;
 use parquet2::statistics::{FixedLenStatistics, Statistics as ParquetStatistics};
+use polars_error::PolarsResult;
 
 use super::super::{convert_days_ms, convert_i128};
 use crate::array::*;
-use crate::error::Result;
+
 use crate::io::parquet::read::convert_i256;
 use crate::types::{days_ms, i256};
 
@@ -12,7 +13,7 @@ pub(super) fn push_i128(
     n: usize,
     min: &mut dyn MutableArray,
     max: &mut dyn MutableArray,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let min = min
         .as_mut_any()
         .downcast_mut::<MutablePrimitiveArray<i128>>()
@@ -34,7 +35,7 @@ pub(super) fn push_i256_with_i128(
     n: usize,
     min: &mut dyn MutableArray,
     max: &mut dyn MutableArray,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let min = min
         .as_mut_any()
         .downcast_mut::<MutablePrimitiveArray<i256>>()
@@ -63,7 +64,7 @@ pub(super) fn push_i256(
     from: Option<&dyn ParquetStatistics>,
     min: &mut dyn MutableArray,
     max: &mut dyn MutableArray,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let min = min
         .as_mut_any()
         .downcast_mut::<MutablePrimitiveArray<i256>>()
@@ -84,7 +85,7 @@ pub(super) fn push(
     from: Option<&dyn ParquetStatistics>,
     min: &mut dyn MutableArray,
     max: &mut dyn MutableArray,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let min = min
         .as_mut_any()
         .downcast_mut::<MutableFixedSizeBinaryArray>()
@@ -107,7 +108,7 @@ pub(super) fn push_year_month(
     from: Option<&dyn ParquetStatistics>,
     min: &mut dyn MutableArray,
     max: &mut dyn MutableArray,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let min = min
         .as_mut_any()
         .downcast_mut::<MutablePrimitiveArray<i32>>()
@@ -128,7 +129,7 @@ pub(super) fn push_days_ms(
     from: Option<&dyn ParquetStatistics>,
     min: &mut dyn MutableArray,
     max: &mut dyn MutableArray,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let min = min
         .as_mut_any()
         .downcast_mut::<MutablePrimitiveArray<days_ms>>()

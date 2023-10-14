@@ -1,12 +1,13 @@
 use std::io::{Read, Seek};
 
 use parquet2::indexes::FilteredPage;
+use polars_error::PolarsResult;
 
 use super::{RowGroupDeserializer, RowGroupMetaData};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::Schema;
-use crate::error::Result;
+
 use crate::io::parquet::read::read_columns_many;
 
 /// An iterator of [`Chunk`]s coming from row groups of a parquet file.
@@ -42,7 +43,7 @@ impl<R: Read + Seek> FileReader<R> {
         }
     }
 
-    fn next_row_group(&mut self) -> Result<Option<RowGroupDeserializer>> {
+    fn next_row_group(&mut self) -> PolarsResult<Option<RowGroupDeserializer>> {
         let result = self.row_groups.next().transpose()?;
 
         // If current_row_group is None, then there will be no elements to remove.
@@ -64,7 +65,7 @@ impl<R: Read + Seek> FileReader<R> {
 }
 
 impl<R: Read + Seek> Iterator for FileReader<R> {
-    type Item = Result<Chunk<Box<dyn Array>>>;
+    type Item = PolarsResult<Chunk<Box<dyn Array>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.remaining_rows == 0 {
@@ -143,7 +144,7 @@ impl<R: Read + Seek> RowGroupReader<R> {
     }
 
     #[inline]
-    fn _next(&mut self) -> Result<Option<RowGroupDeserializer>> {
+    fn _next(&mut self) -> PolarsResult<Option<RowGroupDeserializer>> {
         if self.schema.fields.is_empty() {
             return Ok(None);
         }
@@ -193,7 +194,7 @@ impl<R: Read + Seek> RowGroupReader<R> {
 }
 
 impl<R: Read + Seek> Iterator for RowGroupReader<R> {
-    type Item = Result<RowGroupDeserializer>;
+    type Item = PolarsResult<RowGroupDeserializer>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self._next().transpose()

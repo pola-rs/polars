@@ -7,7 +7,7 @@ use crate::array::{Array, PrimitiveArray};
 use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{DataType, PhysicalType, PrimitiveType};
-use crate::error::{Error, Result};
+
 use crate::scalar::*;
 use crate::types::simd::*;
 use crate::types::NativeType;

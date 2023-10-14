@@ -1,13 +1,14 @@
 use std::io::{Read, Seek};
 
 use ahash::AHashMap;
+use polars_error::PolarsResult;
 
 use super::common::*;
 use super::{read_batch, read_file_dictionaries, Dictionaries, FileMetadata};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::Schema;
-use crate::error::Result;
+
 
 /// An iterator of [`Chunk`]s from an Arrow IPC file.
 pub struct FileReader<R: Read + Seek> {
@@ -85,7 +86,7 @@ impl<R: Read + Seek> FileReader<R> {
         (self.data_scratch, self.message_scratch) = scratches;
     }
 
-    fn read_dictionaries(&mut self) -> Result<()> {
+    fn read_dictionaries(&mut self) -> PolarsResult<()> {
         if self.dictionaries.is_none() {
             self.dictionaries = Some(read_file_dictionaries(
                 &mut self.reader,
@@ -98,7 +99,7 @@ impl<R: Read + Seek> FileReader<R> {
 }
 
 impl<R: Read + Seek> Iterator for FileReader<R> {
-    type Item = Result<Chunk<Box<dyn Array>>>;
+    type Item = PolarsResult<Chunk<Box<dyn Array>>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // get current block

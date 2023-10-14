@@ -10,7 +10,7 @@ use crate::array::{
 };
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::error::{Error, Result};
+
 use crate::offset::{Offset, Offsets};
 use crate::trusted_len::TrustedLen;
 

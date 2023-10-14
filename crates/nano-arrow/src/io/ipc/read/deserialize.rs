@@ -2,12 +2,13 @@ use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
 use arrow_format::ipc::{BodyCompressionRef, MetadataVersion};
+use polars_error::PolarsResult;
 
 use super::array::*;
 use super::{Dictionaries, IpcBuffer, Node};
 use crate::array::*;
 use crate::datatypes::{DataType, Field, PhysicalType};
-use crate::error::Result;
+
 use crate::io::ipc::IpcField;
 use crate::{match_integer_type, with_match_primitive_type};
 
@@ -25,7 +26,7 @@ pub fn read<R: Read + Seek>(
     limit: Option<usize>,
     version: MetadataVersion,
     scratch: &mut Vec<u8>,
-) -> Result<Box<dyn Array>> {
+) -> PolarsResult<Box<dyn Array>> {
     use PhysicalType::*;
     let data_type = field.data_type.clone();
 
@@ -232,7 +233,7 @@ pub fn skip(
     field_nodes: &mut VecDeque<Node>,
     data_type: &DataType,
     buffers: &mut VecDeque<IpcBuffer>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     use PhysicalType::*;
     match data_type.to_physical_type() {
         Null => skip_null(field_nodes),

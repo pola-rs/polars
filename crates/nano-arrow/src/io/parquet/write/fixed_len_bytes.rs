@@ -2,11 +2,12 @@ use parquet2::encoding::Encoding;
 use parquet2::page::DataPage;
 use parquet2::schema::types::PrimitiveType;
 use parquet2::statistics::{serialize_statistics, FixedLenStatistics};
+use polars_error::PolarsResult;
 
 use super::binary::ord_binary;
 use super::{utils, WriteOptions};
 use crate::array::{Array, FixedSizeBinaryArray, PrimitiveArray};
-use crate::error::Result;
+
 use crate::io::parquet::read::schema::is_nullable;
 use crate::types::i256;
 
@@ -28,7 +29,7 @@ pub fn array_to_page(
     options: WriteOptions,
     type_: PrimitiveType,
     statistics: Option<FixedLenStatistics>,
-) -> Result<DataPage> {
+) -> PolarsResult<DataPage> {
     let is_optional = is_nullable(&type_.field_info);
     let validity = array.validity();
 

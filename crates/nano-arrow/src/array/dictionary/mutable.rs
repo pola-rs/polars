@@ -1,5 +1,6 @@
 use std::hash::Hash;
 use std::sync::Arc;
+use polars_error::PolarsResult;
 
 use super::value_map::ValueMap;
 use super::{DictionaryArray, DictionaryKey};
@@ -8,7 +9,7 @@ use crate::array::primitive::MutablePrimitiveArray;
 use crate::array::{Array, MutableArray, TryExtend, TryPush};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::error::Result;
+
 
 #[derive(Debug)]
 pub struct MutableDictionaryArray<K: DictionaryKey, M: MutableArray> {
@@ -49,7 +50,7 @@ impl<K: DictionaryKey, M: MutableArray> MutableDictionaryArray<K, M> {
     /// Creates an empty [`MutableDictionaryArray`] from a given empty values array.
     /// # Errors
     /// Errors if the array is non-empty.
-    pub fn try_empty(values: M) -> Result<Self> {
+    pub fn try_empty(values: M) -> PolarsResult<Self> {
         Ok(Self::from_value_map(ValueMap::<K, M>::try_empty(values)?))
     }
 
@@ -58,7 +59,7 @@ impl<K: DictionaryKey, M: MutableArray> MutableDictionaryArray<K, M> {
     /// the values.
     /// # Errors
     /// Errors if there's more values than the maximum value of `K` or if values are not unique.
-    pub fn from_values(values: M) -> Result<Self>
+    pub fn from_values(values: M) -> PolarsResult<Self>
     where
         M: Indexable,
         M::Type: Eq + Hash,
@@ -190,7 +191,7 @@ where
     T: AsIndexed<M>,
     M::Type: Eq + Hash,
 {
-    fn try_extend<II: IntoIterator<Item = Option<T>>>(&mut self, iter: II) -> Result<()> {
+    fn try_extend<II: IntoIterator<Item = Option<T>>>(&mut self, iter: II) -> PolarsResult<()> {
         for value in iter {
             if let Some(value) = value {
                 let key = self
@@ -212,7 +213,7 @@ where
     T: AsIndexed<M>,
     M::Type: Eq + Hash,
 {
-    fn try_push(&mut self, item: Option<T>) -> Result<()> {
+    fn try_push(&mut self, item: Option<T>) -> PolarsResult<()> {
         if let Some(value) = item {
             let key = self
                 .map

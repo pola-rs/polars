@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use parquet2::page::DictPage;
 use parquet2::types::NativeType as ParquetNativeType;
+use polars_error::PolarsResult;
 
 use super::super::dictionary::{nested_next_dict, *};
 use super::super::nested_utils::{InitNested, NestedState};
@@ -11,7 +12,7 @@ use super::basic::deserialize_plain;
 use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::error::Result;
+
 use crate::types::NativeType;
 
 fn read_dict<P, T, F>(data_type: DataType, op: F, dict: &DictPage) -> Box<dyn Array>
@@ -86,7 +87,7 @@ where
     P: ParquetNativeType,
     F: Copy + Fn(P) -> T,
 {
-    type Item = Result<DictionaryArray<K>>;
+    type Item = PolarsResult<DictionaryArray<K>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let maybe_state = next_dict(
@@ -167,7 +168,7 @@ where
     P: ParquetNativeType,
     F: Copy + Fn(P) -> T,
 {
-    type Item = Result<(NestedState, DictionaryArray<K>)>;
+    type Item = PolarsResult<(NestedState, DictionaryArray<K>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let maybe_state = nested_next_dict(

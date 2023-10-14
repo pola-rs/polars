@@ -3,7 +3,7 @@ use super::super::ffi::ToFfi;
 use super::super::Array;
 use super::UnionArray;
 use crate::array::FromFfi;
-use crate::error::Result;
+
 use crate::ffi;
 
 unsafe impl ToFfi for UnionArray {
@@ -50,7 +50,7 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for UnionArray {
                 let child = array.child(index)?;
                 ffi::try_from(child)
             })
-            .collect::<Result<Vec<Box<dyn Array>>>>()?;
+            .collect::<PolarsResult<Vec<Box<dyn Array>>>>()?;
 
         if offset > 0 {
             types.slice(offset, length);

@@ -4,6 +4,7 @@ use parquet2::encoding::Encoding;
 use parquet2::page::{DataPage, DictPage};
 use parquet2::schema::Repetition;
 use parquet2::types::{decode, NativeType as ParquetNativeType};
+use polars_error::PolarsResult;
 
 use super::super::nested_utils::*;
 use super::super::{utils, Pages};
@@ -11,7 +12,7 @@ use super::basic::{deserialize_plain, Values, ValuesDictionary};
 use crate::array::PrimitiveArray;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::error::Result;
+
 use crate::types::NativeType;
 
 // The state of a `DataPage` of `Primitive` parquet primitive type
@@ -83,7 +84,7 @@ where
         &self,
         page: &'a DataPage,
         dict: Option<&'a Self::Dictionary>,
-    ) -> Result<Self::State> {
+    ) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
@@ -109,7 +110,7 @@ where
         )
     }
 
-    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> Result<()> {
+    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
             State::Optional(page_values) => {
@@ -220,7 +221,7 @@ where
     P: ParquetNativeType,
     F: Copy + Fn(P) -> T,
 {
-    type Item = Result<(NestedState, PrimitiveArray<T>)>;
+    type Item = PolarsResult<(NestedState, PrimitiveArray<T>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let maybe_state = next(

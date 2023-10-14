@@ -160,7 +160,7 @@ impl<O: Offset, M: MutableArray> MutableListArray<O, M> {
     pub fn try_push_valid(&mut self) -> PolarsResult<()> {
         let total_length = self.values.len();
         let offset = self.offsets.last().to_usize();
-        let length = total_length.checked_sub(offset).ok_or(polars_err!(ComputeError: "overflow"))?;
+        let length = total_length.checked_sub(offset).ok_or_else(|| polars_err!(ComputeError: "overflow"))?;
 
         self.offsets.try_push(length)?;
         if let Some(validity) = &mut self.validity {

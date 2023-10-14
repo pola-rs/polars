@@ -1,13 +1,14 @@
 use parquet2::statistics::{BooleanStatistics, Statistics as ParquetStatistics};
+use polars_error::PolarsResult;
 
 use crate::array::{MutableArray, MutableBooleanArray};
-use crate::error::Result;
+
 
 pub(super) fn push(
     from: Option<&dyn ParquetStatistics>,
     min: &mut dyn MutableArray,
     max: &mut dyn MutableArray,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let min = min
         .as_mut_any()
         .downcast_mut::<MutableBooleanArray>()

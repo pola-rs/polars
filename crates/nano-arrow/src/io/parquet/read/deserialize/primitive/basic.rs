@@ -5,13 +5,14 @@ use parquet2::encoding::{hybrid_rle, Encoding};
 use parquet2::page::{split_buffer, DataPage, DictPage};
 use parquet2::schema::Repetition;
 use parquet2::types::{decode, NativeType as ParquetNativeType};
+use polars_error::PolarsResult;
 
 use super::super::utils::{get_selected_rows, FilteredOptionalPageValidity, OptionalPageValidity};
 use super::super::{utils, Pages};
 use crate::array::MutablePrimitiveArray;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::error::Result;
+
 use crate::types::NativeType;
 
 #[derive(Debug)]
@@ -20,7 +21,7 @@ pub(super) struct FilteredRequiredValues<'a> {
 }
 
 impl<'a> FilteredRequiredValues<'a> {
-    pub fn try_new<P: ParquetNativeType>(page: &'a DataPage) -> Result<Self> {
+    pub fn try_new<P: ParquetNativeType>(page: &'a DataPage) -> PolarsResult<Self> {
         let (_, _, values) = split_buffer(page)?;
         assert_eq!(values.len() % std::mem::size_of::<P>(), 0);
 
@@ -44,7 +45,7 @@ pub(super) struct Values<'a> {
 }
 
 impl<'a> Values<'a> {
-    pub fn try_new<P: ParquetNativeType>(page: &'a DataPage) -> Result<Self> {
+    pub fn try_new<P: ParquetNativeType>(page: &'a DataPage) -> PolarsResult<Self> {
         let (_, _, values) = split_buffer(page)?;
         assert_eq!(values.len() % std::mem::size_of::<P>(), 0);
         Ok(Self {
@@ -71,7 +72,7 @@ impl<'a, T> ValuesDictionary<'a, T>
 where
     T: NativeType,
 {
-    pub fn try_new(page: &'a DataPage, dict: &'a Vec<T>) -> Result<Self> {
+    pub fn try_new(page: &'a DataPage, dict: &'a Vec<T>) -> PolarsResult<Self> {
         let values = utils::dict_indices_decoder(page)?;
 
         Ok(Self { dict, values })
@@ -157,7 +158,7 @@ where
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
 
-    fn build_state(&self, page: &'a DataPage, dict: Option<&'a Self::Dict>) -> Result<Self::State> {
+    fn build_state(&self, page: &'a DataPage, dict: Option<&'a Self::Dict>) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
@@ -334,7 +335,7 @@ where
     P: ParquetNativeType,
     F: Copy + Fn(P) -> T,
 {
-    type Item = Result<MutablePrimitiveArray<T>>;
+    type Item = PolarsResult<MutablePrimitiveArray<T>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let maybe_state = utils::next(

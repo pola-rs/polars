@@ -1,13 +1,13 @@
 use std::iter::FromIterator;
 use std::sync::Arc;
-use polars_error::PolarsResult;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::BooleanArray;
 use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::{DataType, PhysicalType};
-use crate::error::Error;
+
 use crate::trusted_len::TrustedLen;
 
 /// The Arrow's equivalent to `Vec<Option<bool>>`, but with `1/16` of its size.
@@ -59,20 +59,20 @@ impl MutableBooleanArray {
         data_type: DataType,
         values: MutableBitmap,
         validity: Option<MutableBitmap>,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         if validity
             .as_ref()
             .map_or(false, |validity| validity.len() != values.len())
         {
-            return Err(Error::oos(
+            polars_bail!(ComputeError:
                 "validity mask length must match the number of values",
-            ));
+            )
         }
 
         if data_type.to_physical_type() != PhysicalType::Boolean {
-            return Err(Error::oos(
+            polars_bail!(oos =
                 "MutableBooleanArray can only be initialized with a DataType whose physical type is Boolean",
-            ));
+            )
         }
 
         Ok(Self {

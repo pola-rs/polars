@@ -11,7 +11,7 @@ use polars_error::{polars_bail, polars_err, PolarsResult, to_compute_err};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::{DataType, Field};
-use crate::error::Error;
+
 use crate::io::ipc::read::file::{get_dictionary_batch, get_record_batch};
 use crate::io::ipc::read::{
     first_dict_field, Dictionaries, FileMetadata, IpcBuffer, Node, OutOfSpecKind,

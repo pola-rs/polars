@@ -1,10 +1,11 @@
 //! Defines kernels suitable to perform operations to primitive arrays.
 
+use polars_error::PolarsResult;
 use super::utils::{check_same_len, combine_validities};
 use crate::array::PrimitiveArray;
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::DataType;
-use crate::error::Result;
+
 use crate::types::NativeType;
 
 /// Applies an unary and infallible function to a [`PrimitiveArray`]. This is the
@@ -34,17 +35,17 @@ pub fn try_unary<I, F, O>(
     array: &PrimitiveArray<I>,
     op: F,
     data_type: DataType,
-) -> Result<PrimitiveArray<O>>
+) -> PolarsResult<PrimitiveArray<O>>
 where
     I: NativeType,
     O: NativeType,
-    F: Fn(I) -> Result<O>,
+    F: Fn(I) -> PolarsResult<O>,
 {
     let values = array
         .values()
         .iter()
         .map(|v| op(*v))
-        .collect::<Result<Vec<_>>>()?
+        .collect::<PolarsResult<Vec<_>>>()?
         .into();
 
     Ok(PrimitiveArray::<O>::new(
@@ -173,11 +174,11 @@ pub fn try_binary<T, D, F>(
     rhs: &PrimitiveArray<D>,
     data_type: DataType,
     op: F,
-) -> Result<PrimitiveArray<T>>
+) -> PolarsResult<PrimitiveArray<T>>
 where
     T: NativeType,
     D: NativeType,
-    F: Fn(T, D) -> Result<T>,
+    F: Fn(T, D) -> PolarsResult<T>,
 {
     check_same_len(lhs, rhs)?;
 
@@ -188,7 +189,7 @@ where
         .iter()
         .zip(rhs.values().iter())
         .map(|(l, r)| op(*l, *r))
-        .collect::<Result<Vec<_>>>()?
+        .collect::<PolarsResult<Vec<_>>>()?
         .into();
 
     Ok(PrimitiveArray::<T>::new(data_type, values, validity))

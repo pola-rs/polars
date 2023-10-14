@@ -1,7 +1,8 @@
+use polars_error::PolarsResult;
 use super::make_mutable;
 use crate::array::*;
 use crate::datatypes::DataType;
-use crate::error::Result;
+
 use crate::offset::Offsets;
 
 #[derive(Debug)]
@@ -11,7 +12,7 @@ pub struct DynMutableListArray {
 }
 
 impl DynMutableListArray {
-    pub fn try_with_capacity(data_type: DataType, capacity: usize) -> Result<Self> {
+    pub fn try_with_capacity(data_type: DataType, capacity: usize) -> PolarsResult<Self> {
         let inner = match data_type.to_logical_type() {
             DataType::List(inner) | DataType::LargeList(inner) => inner.data_type(),
             _ => unreachable!(),

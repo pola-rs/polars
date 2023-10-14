@@ -1,6 +1,6 @@
 use super::Scalar;
 use crate::datatypes::DataType;
-use crate::error::Error;
+
 use crate::types::NativeType;
 
 /// The implementation of [`Scalar`] for primitive, semantically equivalent to [`Option<T>`]
@@ -17,12 +17,9 @@ impl<T: NativeType> PrimitiveScalar<T> {
     pub fn new(data_type: DataType, value: Option<T>) -> Self {
         if !data_type.to_physical_type().eq_primitive(T::PRIMITIVE) {
             panic!(
-                "{:?}",
-                Error::InvalidArgumentError(format!(
                     "Type {} does not support logical type {:?}",
                     std::any::type_name::<T>(),
                     data_type
-                ))
             )
         }
         Self { value, data_type }

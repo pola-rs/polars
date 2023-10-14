@@ -1,11 +1,12 @@
 //! Contains operators to filter arrays such as [`filter`].
+use polars_error::PolarsResult;
 use crate::array::growable::{make_growable, Growable};
 use crate::array::*;
 use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact, SlicesIterator};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::chunk::Chunk;
 use crate::datatypes::DataType;
-use crate::error::Result;
+
 use crate::types::simd::Simd;
 use crate::types::{BitChunkOnes, NativeType};
 use crate::with_match_primitive_type;
@@ -211,7 +212,7 @@ fn filter_growable<'a>(growable: &mut impl Growable<'a>, chunks: &[(usize, usize
 /// Returns a prepared function optimized to filter multiple arrays.
 /// Creating this function requires time, but using it is faster than [filter] when the
 /// same filter needs to be applied to multiple arrays (e.g. a multiple columns).
-pub fn build_filter(filter: &BooleanArray) -> Result<Filter> {
+pub fn build_filter(filter: &BooleanArray) -> PolarsResult<Filter> {
     let iter = SlicesIterator::new(filter.values());
     let filter_count = iter.slots();
     let chunks = iter.collect::<Vec<_>>();
@@ -264,7 +265,7 @@ pub fn build_filter(filter: &BooleanArray) -> Result<Filter> {
 /// # Ok(())
 /// # }
 /// ```
-pub fn filter(array: &dyn Array, filter: &BooleanArray) -> Result<Box<dyn Array>> {
+pub fn filter(array: &dyn Array, filter: &BooleanArray) -> PolarsResult<Box<dyn Array>> {
     // The validities may be masking out `true` bits, making the filter operation
     // based on the values incorrect
     if let Some(validities) = filter.validity() {
@@ -304,7 +305,7 @@ pub fn filter(array: &dyn Array, filter: &BooleanArray) -> Result<Box<dyn Array>
 pub fn filter_chunk<A: AsRef<dyn Array>>(
     columns: &Chunk<A>,
     filter_values: &BooleanArray,
-) -> Result<Chunk<Box<dyn Array>>> {
+) -> PolarsResult<Chunk<Box<dyn Array>>> {
     let arrays = columns.arrays();
 
     let num_columns = arrays.len();
