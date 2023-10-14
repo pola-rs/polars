@@ -6,6 +6,7 @@ use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::ops::Deref;
 use std::{env, io};
+use std::collections::TryReserveError;
 
 pub use warning::*;
 
@@ -79,8 +80,24 @@ impl From<object_store::Error> for PolarsError {
     fn from(err: object_store::Error) -> Self {
         PolarsError::Io(std::io::Error::new(
             std::io::ErrorKind::Other,
-            format!("object store error {err:?}"),
+            format!("object-store error: {err:?}"),
         ))
+    }
+}
+
+#[cfg(feature = "parquet2")]
+impl From<parquet2::error::Error> for PolarsError {
+    fn from(err: parquet2::error::Error) -> Self {
+        PolarsError::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("parquet error: {err:?}"),
+        ))
+    }
+}
+
+impl From<TryReserveError> for PolarsError {
+    fn from(value: TryReserveError) -> Self {
+        polars_err!(ComputeError: "OOM: {}", value)
     }
 }
 
@@ -157,6 +174,9 @@ macro_rules! polars_err {
         $crate::polars_err!(
             InvalidOperation: "{} operation not supported for dtypes `{}` and `{}`", $op, $lhs, $rhs
         )
+    };
+    (oos = $op:expr) => {
+        $crate::polars_err!(ComputeError: "out-of-spec {:?}", $op)
     };
     (opq = $op:ident, $arg:expr) => {
         $crate::polars_err!(op = concat!("`", stringify!($op), "`"), $arg)

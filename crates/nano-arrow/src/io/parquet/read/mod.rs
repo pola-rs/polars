@@ -35,11 +35,11 @@ pub use parquet2::{
     types::int96_to_i64_ns,
     FallibleStreamingIterator,
 };
+use polars_error::PolarsResult;
 pub use row_group::*;
 pub use schema::{infer_schema, FileMetaData};
 
 use crate::array::Array;
-use crate::error::Result;
 use crate::types::{i256, NativeType};
 
 /// Trait describing a [`FallibleStreamingIterator`] of [`Page`]
@@ -51,17 +51,17 @@ pub trait Pages:
 impl<I: FallibleStreamingIterator<Item = Page, Error = ParquetError> + Send + Sync> Pages for I {}
 
 /// Type def for a sharable, boxed dyn [`Iterator`] of arrays
-pub type ArrayIter<'a> = Box<dyn Iterator<Item = Result<Box<dyn Array>>> + Send + Sync + 'a>;
+pub type ArrayIter<'a> = Box<dyn Iterator<Item = PolarsResult<Box<dyn Array>>> + Send + Sync + 'a>;
 
 /// Reads parquets' metadata synchronously.
-pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> Result<FileMetaData> {
+pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMetaData> {
     Ok(_read_metadata(reader)?)
 }
 
 /// Reads parquets' metadata asynchronously.
 pub async fn read_metadata_async<R: AsyncRead + AsyncSeek + Send + Unpin>(
     reader: &mut R,
-) -> Result<FileMetaData> {
+) -> PolarsResult<FileMetaData> {
     Ok(_read_metadata_async(reader).await?)
 }
 

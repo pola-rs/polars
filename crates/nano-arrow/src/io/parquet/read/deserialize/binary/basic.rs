@@ -5,6 +5,7 @@ use parquet2::deserialize::SliceFilteredIter;
 use parquet2::encoding::{delta_length_byte_array, hybrid_rle, Encoding};
 use parquet2::page::{split_buffer, DataPage, DictPage};
 use parquet2::schema::Repetition;
+use polars_error::{PolarsResult, to_compute_err};
 
 use super::super::utils::{
     extend_from_decoder, get_selected_rows, next, DecodedState, FilteredOptionalPageValidity,
@@ -15,7 +16,6 @@ use super::utils::*;
 use crate::array::{Array, BinaryArray, Utf8Array};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::{DataType, PhysicalType};
-use crate::error::{Error, Result};
 use crate::offset::Offset;
 
 #[derive(Debug)]
@@ -24,7 +24,7 @@ pub(super) struct Required<'a> {
 }
 
 impl<'a> Required<'a> {
-    pub fn try_new(page: &'a DataPage) -> Result<Self> {
+    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let (_, _, values) = split_buffer(page)?;
         let values = SizedBinaryIter::new(values, page.num_values());
 
@@ -43,7 +43,7 @@ pub(super) struct Delta<'a> {
 }
 
 impl<'a> Delta<'a> {
-    pub fn try_new(page: &'a DataPage) -> Result<Self> {
+    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let (_, _, values) = split_buffer(page)?;
 
         let mut lengths_iter = delta_length_byte_array::Decoder::try_new(values)?;
@@ -51,8 +51,8 @@ impl<'a> Delta<'a> {
         #[allow(clippy::needless_collect)] // we need to consume it to get the values
         let lengths = lengths_iter
             .by_ref()
-            .map(|x| x.map(|x| x as usize).map_err(Error::from))
-            .collect::<Result<Vec<_>>>()?;
+            .map(|x| x.map(|x| x as usize).map_err(to_compute_err))
+            .collect::<PolarsResult<Vec<_>>>()?;
 
         let values = lengths_iter.into_values();
         Ok(Self {
@@ -108,7 +108,7 @@ pub(super) struct FilteredDelta<'a> {
 }
 
 impl<'a> FilteredDelta<'a> {
-    pub fn try_new(page: &'a DataPage) -> Result<Self> {
+    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let values = Delta::try_new(page)?;
 
         let rows = get_selected_rows(page);
@@ -131,7 +131,7 @@ pub(super) struct RequiredDictionary<'a> {
 }
 
 impl<'a> RequiredDictionary<'a> {
-    pub fn try_new(page: &'a DataPage, dict: &'a Dict) -> Result<Self> {
+    pub fn try_new(page: &'a DataPage, dict: &'a Dict) -> PolarsResult<Self> {
         let values = utils::dict_indices_decoder(page)?;
 
         Ok(Self { dict, values })
@@ -150,7 +150,7 @@ pub(super) struct FilteredRequiredDictionary<'a> {
 }
 
 impl<'a> FilteredRequiredDictionary<'a> {
-    pub fn try_new(page: &'a DataPage, dict: &'a Dict) -> Result<Self> {
+    pub fn try_new(page: &'a DataPage, dict: &'a Dict) -> PolarsResult<Self> {
         let values = utils::dict_indices_decoder(page)?;
 
         let rows = get_selected_rows(page);
@@ -172,7 +172,7 @@ pub(super) struct ValuesDictionary<'a> {
 }
 
 impl<'a> ValuesDictionary<'a> {
-    pub fn try_new(page: &'a DataPage, dict: &'a Dict) -> Result<Self> {
+    pub fn try_new(page: &'a DataPage, dict: &'a Dict) -> PolarsResult<Self> {
         let values = utils::dict_indices_decoder(page)?;
 
         Ok(Self { dict, values })
@@ -235,7 +235,7 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
     type Dict = Dict;
     type DecodedState = (Binary<O>, MutableBitmap);
 
-    fn build_state(&self, page: &'a DataPage, dict: Option<&'a Self::Dict>) -> Result<Self::State> {
+    fn build_state(&self, page: &'a DataPage, dict: Option<&'a Self::Dict>) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
@@ -440,7 +440,7 @@ pub(super) fn finish<O: Offset>(
     data_type: &DataType,
     mut values: Binary<O>,
     mut validity: MutableBitmap,
-) -> Result<Box<dyn Array>> {
+) -> PolarsResult<Box<dyn Array>> {
     values.offsets.shrink_to_fit();
     values.values.shrink_to_fit();
     validity.shrink_to_fit();
@@ -487,7 +487,7 @@ impl<O: Offset, I: Pages> Iter<O, I> {
 }
 
 impl<O: Offset, I: Pages> Iterator for Iter<O, I> {
-    type Item = Result<Box<dyn Array>>;
+    type Item = PolarsResult<Box<dyn Array>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let maybe_state = next(

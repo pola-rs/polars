@@ -7,24 +7,24 @@ use parquet2::encoding::hybrid_rle;
 use parquet2::indexes::Interval;
 use parquet2::page::{split_buffer, DataPage, DictPage, Page};
 use parquet2::schema::Repetition;
+use polars_error::{polars_err, PolarsError, PolarsResult, to_compute_err};
 
 use super::super::Pages;
 use crate::bitmap::utils::BitmapIter;
 use crate::bitmap::MutableBitmap;
-use crate::error::Error;
 
-pub fn not_implemented(page: &DataPage) -> Error {
+pub fn not_implemented(page: &DataPage) -> PolarsError {
     let is_optional = page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
     let is_filtered = page.selected_rows().is_some();
     let required = if is_optional { "optional" } else { "required" };
     let is_filtered = if is_filtered { ", index-filtered" } else { "" };
-    Error::NotYetImplemented(format!(
+    polars_err!(ComputeError:
         "Decoding {:?} \"{:?}\"-encoded {} {} parquet pages",
         page.descriptor.primitive_type.physical_type,
         page.encoding(),
         required,
         is_filtered,
-    ))
+    )
 }
 
 /// A private trait representing structs that can receive elements.
@@ -100,7 +100,7 @@ pub struct FilteredOptionalPageValidity<'a> {
 }
 
 impl<'a> FilteredOptionalPageValidity<'a> {
-    pub fn try_new(page: &'a DataPage) -> Result<Self, Error> {
+    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let (_, validity, _) = split_buffer(page)?;
 
         let iter = hybrid_rle::Decoder::new(validity, 1);
@@ -215,7 +215,7 @@ pub struct OptionalPageValidity<'a> {
 }
 
 impl<'a> OptionalPageValidity<'a> {
-    pub fn try_new(page: &'a DataPage) -> Result<Self, Error> {
+    pub fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let (_, validity, _) = split_buffer(page)?;
 
         let iter = hybrid_rle::Decoder::new(validity, 1);
@@ -383,7 +383,7 @@ pub(super) trait Decoder<'a> {
         &self,
         page: &'a DataPage,
         dict: Option<&'a Self::Dict>,
-    ) -> Result<Self::State, Error>;
+    ) -> PolarsResult<Self::State>;
 
     /// Initializes a new [`Self::DecodedState`].
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
@@ -454,7 +454,7 @@ pub(super) fn next<'a, I: Pages, D: Decoder<'a>>(
     remaining: &'a mut usize,
     chunk_size: Option<usize>,
     decoder: &'a D,
-) -> MaybeNext<Result<D::DecodedState, Error>> {
+) -> MaybeNext<PolarsResult<D::DecodedState>> {
     // front[a1, a2, a3, ...]back
     if items.len() > 1 {
         return MaybeNext::Some(Ok(items.pop_front().unwrap()));
@@ -511,7 +511,7 @@ pub(super) fn next<'a, I: Pages, D: Decoder<'a>>(
 }
 
 #[inline]
-pub(super) fn dict_indices_decoder(page: &DataPage) -> Result<hybrid_rle::HybridRleDecoder, Error> {
+pub(super) fn dict_indices_decoder(page: &DataPage) -> PolarsResult<hybrid_rle::HybridRleDecoder> {
     let (_, _, indices_buffer) = split_buffer(page)?;
 
     // SPEC: Data page format: the bit width used to encode the entry ids stored as 1 byte (max bit width = 32),
@@ -520,5 +520,5 @@ pub(super) fn dict_indices_decoder(page: &DataPage) -> Result<hybrid_rle::Hybrid
     let indices_buffer = &indices_buffer[1..];
 
     hybrid_rle::HybridRleDecoder::try_new(indices_buffer, bit_width as u32, page.num_values())
-        .map_err(Error::from)
+        .map_err(to_compute_err)
 }

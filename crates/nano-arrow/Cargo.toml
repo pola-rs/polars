@@ -74,13 +74,7 @@ arrow-array = { workspace = true, optional = true }
 arrow-buffer = { workspace = true, optional = true }
 arrow-data = { workspace = true, optional = true }
 arrow-schema = { workspace = true, optional = true }
-
-# parquet support
-[dependencies.parquet2]
-version = "0.17"
-optional = true
-default_features = false
-features = ["async"]
+parquet2 = {workspace = true, optional = true, default-features = false, features = ["async"]}
 
 [dev-dependencies]
 avro-rs = { version = "0.13", features = ["snappy"] }
@@ -133,7 +127,7 @@ io_ipc_compression = ["lz4", "zstd"]
 io_flight = ["io_ipc", "arrow-format/flight-data"]
 
 # base64 + io_ipc because arrow schemas are stored as base64-encoded ipc format.
-io_parquet = ["parquet2", "io_ipc", "base64", "futures", "fallible-streaming-iterator"]
+io_parquet = ["parquet2", "parquet2/async", "polars-error/parquet2", "io_ipc", "base64", "futures", "fallible-streaming-iterator"]
 
 io_parquet_compression = [
   "io_parquet_zstd",

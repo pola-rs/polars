@@ -9,7 +9,8 @@ repository = { workspace = true }
 description = "Error definitions for the Polars DataFrame library"
 
 [dependencies]
-object_store = { version = "0.7", default-features = false, optional = true }
+object_store = { workspace = true, default-features = false, optional = true }
+parquet2 = {workspace = true, optional = true, default-features = false}
 regex = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
