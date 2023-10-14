@@ -8,8 +8,8 @@ name = "my_polars_functions"
 crate-type = ["cdylib"]
 
 [dependencies]
+arrow = { workspace = true }
 polars = { path = "../../crates/polars" }
-arrow = {workspace = true}
 
 pyo3 = { workspace = true, features = ["extension-module"] }
 
