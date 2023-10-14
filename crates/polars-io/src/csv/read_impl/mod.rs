@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 pub use batched_mmap::*;
 pub use batched_read::*;
-use polars_arrow::array::*;
+use arrow::legacy::array::*;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, get_casting_failures};

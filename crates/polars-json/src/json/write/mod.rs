@@ -7,9 +7,9 @@ use std::io::Write;
 use arrow::array::Array;
 use arrow::chunk::Chunk;
 use arrow::datatypes::Schema;
-use arrow::error::Error;
 use arrow::io::iterator::StreamingIterator;
 pub use fallible_streaming_iterator::*;
+use polars_error::{PolarsError, PolarsResult};
 pub(crate) use serialize::new_serializer;
 use serialize::serialize;
 
@@ -20,7 +20,7 @@ use serialize::serialize;
 pub struct Serializer<A, I>
 where
     A: AsRef<dyn Array>,
-    I: Iterator<Item = Result<A, Error>>,
+    I: Iterator<Item = PolarsResult<A>>,
 {
     arrays: I,
     buffer: Vec<u8>,
@@ -29,7 +29,7 @@ where
 impl<A, I> Serializer<A, I>
 where
     A: AsRef<dyn Array>,
-    I: Iterator<Item = Result<A, Error>>,
+    I: Iterator<Item = PolarsResult<A>>,
 {
     /// Creates a new [`Serializer`].
     pub fn new(arrays: I, buffer: Vec<u8>) -> Self {
@@ -40,13 +40,13 @@ where
 impl<A, I> FallibleStreamingIterator for Serializer<A, I>
 where
     A: AsRef<dyn Array>,
-    I: Iterator<Item = Result<A, Error>>,
+    I: Iterator<Item = PolarsResult<A>>,
 {
     type Item = [u8];
 
-    type Error = Error;
+    type Error = PolarsError;
 
-    fn advance(&mut self) -> Result<(), Error> {
+    fn advance(&mut self) -> PolarsResult<()> {
         self.buffer.clear();
         self.arrays
             .next()
@@ -103,9 +103,9 @@ impl<'a> RecordSerializer<'a> {
 impl<'a> FallibleStreamingIterator for RecordSerializer<'a> {
     type Item = [u8];
 
-    type Error = Error;
+    type Error = PolarsError;
 
-    fn advance(&mut self) -> Result<(), Error> {
+    fn advance(&mut self) -> PolarsResult<()> {
         self.buffer.clear();
         if self.index == self.end {
             return Ok(());
@@ -138,10 +138,10 @@ impl<'a> FallibleStreamingIterator for RecordSerializer<'a> {
 }
 
 /// Writes valid JSON from an iterator of (assumed JSON-encoded) bytes to `writer`
-pub fn write<W, I>(writer: &mut W, mut blocks: I) -> Result<(), Error>
+pub fn write<W, I>(writer: &mut W, mut blocks: I) -> PolarsResult<()>
 where
     W: std::io::Write,
-    I: FallibleStreamingIterator<Item = [u8], Error = Error>,
+    I: FallibleStreamingIterator<Item = [u8], Error = PolarsError>,
 {
     writer.write_all(&[b'['])?;
     let mut is_first_row = true;

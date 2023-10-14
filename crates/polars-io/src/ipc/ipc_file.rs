@@ -75,21 +75,6 @@ pub struct IpcReader<R: MmapBytesReader> {
     metadata: Option<read::FileMetadata>,
 }
 
-fn check_mmap_err(err: PolarsError) -> PolarsResult<()> {
-    if let PolarsError::ArrowError(ref e) = err {
-        if let arrow::error::Error::NotYetImplemented(s) = e.as_ref() {
-            if s == "mmap can only be done on uncompressed IPC files" {
-                eprintln!(
-                    "Could not mmap compressed IPC file, defaulting to normal read. \
-                    Toggle off 'memory_map' to silence this warning."
-                );
-                return Ok(());
-            }
-        }
-    }
-    Err(err)
-}
-
 impl<R: MmapBytesReader> IpcReader<R> {
     #[doc(hidden)]
     /// A very bad estimate of the number of rows
@@ -161,10 +146,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
             if verbose {
                 eprintln!("memory map ipc file")
             }
-            match self.finish_memmapped(predicate.clone()) {
-                Ok(df) => return Ok(df),
-                Err(err) => check_mmap_err(err)?,
-            }
+            return self.finish_memmapped(predicate.clone())
         }
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
@@ -211,10 +193,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 
     fn finish(mut self) -> PolarsResult<DataFrame> {
         if self.memmap && self.reader.to_file().is_some() {
-            match self.finish_memmapped(None) {
-                Ok(df) => return Ok(df),
-                Err(err) => check_mmap_err(err)?,
-            }
+            return self.finish_memmapped(None)
         }
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;

@@ -32,21 +32,21 @@ pub struct ZstdLevel(i32);
 
 impl ZstdLevel {
     pub fn try_new(level: i32) -> PolarsResult<Self> {
-        ZstdLevelParquet::try_new(level).map_err(ArrowError::from)?;
+        ZstdLevelParquet::try_new(level)?;
         Ok(ZstdLevel(level))
     }
 }
 
 impl BrotliLevel {
     pub fn try_new(level: u32) -> PolarsResult<Self> {
-        BrotliLevelParquet::try_new(level).map_err(ArrowError::from)?;
+        BrotliLevelParquet::try_new(level)?;
         Ok(BrotliLevel(level))
     }
 }
 
 impl GzipLevel {
     pub fn try_new(level: u8) -> PolarsResult<Self> {
-        GzipLevelParquet::try_new(level).map_err(ArrowError::from)?;
+        GzipLevelParquet::try_new(level)?;
         Ok(GzipLevel(level))
     }
 }
@@ -209,7 +209,7 @@ fn prepare_rg_iter<'a>(
     encodings: &'a [Vec<Encoding>],
     options: WriteOptions,
     parallel: bool,
-) -> impl Iterator<Item = Result<RowGroupIter<'a, ArrowError>, ArrowError>> + 'a {
+) -> impl Iterator<Item = PolarsResult<RowGroupIter<'a, PolarsError>>> + 'a {
     let rb_iter = df.iter_chunks();
     rb_iter.filter_map(move |batch| match batch.len() {
         0 => None,
@@ -279,7 +279,7 @@ fn create_serializer<'a>(
     encodings: &[Vec<Encoding>],
     options: WriteOptions,
     parallel: bool,
-) -> Result<RowGroupIter<'a, ArrowError>, ArrowError> {
+) -> PolarsResult<RowGroupIter<'a, PolarsError>> {
     let func = move |((array, type_), encoding): ((&ArrayRef, &ParquetType), &Vec<Encoding>)| {
         let encoded_columns = array_to_columns(array, type_.clone(), options, encoding).unwrap();
 
@@ -299,7 +299,7 @@ fn create_serializer<'a>(
                         options.compression,
                         vec![],
                     )
-                    .map_err(|e| ArrowError::External(format!("{e}"), Box::new(e))),
+                    .map_err(|e| PolarsError::from(e)),
                 );
 
                 Ok(pages)

@@ -67,7 +67,7 @@ use std::ops::Deref;
 
 use arrow::array::StructArray;
 pub use arrow::error::Result as ArrowResult;
-use polars_arrow::conversion::chunk_to_struct;
+use arrow::legacy::conversion::chunk_to_struct;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
@@ -142,7 +142,7 @@ where
                 let serializer = polars_json::ndjson::write::Serializer::new(batches, vec![]);
                 let writer =
                     polars_json::ndjson::write::FileWriter::new(&mut self.buffer, serializer);
-                writer.collect::<ArrowResult<()>>()?;
+                writer.collect::<PolarsResult<()>>()?;
             },
             JsonFormat::Json => {
                 let serializer = polars_json::json::write::Serializer::new(batches, vec![]);
@@ -226,7 +226,6 @@ where
                             .take(self.infer_schema_len.unwrap_or(usize::MAX))
                             .map(|value| {
                                 infer(value)
-                                    .map_err(PolarsError::from)
                                     .map(|dt| DataType::from(&dt))
                             })
                             .reduce(|l, r| {

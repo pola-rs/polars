@@ -57,7 +57,11 @@ fn get_buffers_nodes(
 ) -> PolarsResult<(VecDeque<IpcBuffer>, VecDeque<Node>)> {
     let compression = batch.compression().map_err(to_compute_err)?;
     if compression.is_some() {
-        polars_bail!(ComputeError: "mmap can only be done on uncompressed IPC files")
+        polars_bail!(ComputeError: "mmap can only be done on uncompressed IPC files\n\n
+
+        Could not mmap compressed IPC file, defaulting to normal read. \
+        Toggle off 'memory_map' to silence this warning."
+        )
     }
 
     let buffers = batch

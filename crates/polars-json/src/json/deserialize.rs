@@ -5,7 +5,6 @@ use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
 use arrow::chunk::Chunk;
 use arrow::datatypes::{DataType, Field, IntervalUnit, Schema};
-use arrow::error::Error;
 use arrow::offset::{Offset, Offsets};
 use arrow::temporal_conversions;
 use arrow::types::{f16, NativeType};
@@ -387,7 +386,7 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
     }
 }
 
-pub fn deserialize(json: &BorrowedValue, data_type: DataType) -> Result<Box<dyn Array>, Error> {
+pub fn deserialize(json: &BorrowedValue, data_type: DataType) -> PolarsResult<Box<dyn Array>> {
     match json {
         BorrowedValue::Array(rows) => match data_type {
             DataType::LargeList(inner) => Ok(_deserialize(rows, inner.data_type)),

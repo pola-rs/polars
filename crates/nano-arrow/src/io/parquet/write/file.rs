@@ -2,11 +2,11 @@ use std::io::Write;
 
 use parquet2::metadata::{KeyValue, SchemaDescriptor};
 use parquet2::write::{RowGroupIter, WriteOptions as FileWriteOptions};
+use polars_error::{PolarsError, PolarsResult};
 
 use super::schema::schema_to_metadata_key;
 use super::{to_parquet_schema, ThriftFileMetaData, WriteOptions};
 use crate::datatypes::Schema;
-use crate::error::{Error, Result};
 
 /// Attaches [`Schema`] to `key_value_metadata`
 pub fn add_arrow_schema(
@@ -50,7 +50,7 @@ impl<W: Write> FileWriter<W> {
     /// Returns a new [`FileWriter`].
     /// # Error
     /// If it is unable to derive a parquet schema from [`Schema`].
-    pub fn try_new(writer: W, schema: Schema, options: WriteOptions) -> Result<Self> {
+    pub fn try_new(writer: W, schema: Schema, options: WriteOptions) -> PolarsResult<Self> {
         let parquet_schema = to_parquet_schema(&schema)?;
 
         let created_by = Some("Arrow2 - Native Rust implementation of Arrow".to_string());
@@ -71,12 +71,12 @@ impl<W: Write> FileWriter<W> {
     }
 
     /// Writes a row group to the file.
-    pub fn write(&mut self, row_group: RowGroupIter<'_, Error>) -> Result<()> {
+    pub fn write(&mut self, row_group: RowGroupIter<'_, PolarsError>) -> PolarsResult<()> {
         Ok(self.writer.write(row_group)?)
     }
 
     /// Writes the footer of the parquet file. Returns the total size of the file.
-    pub fn end(&mut self, key_value_metadata: Option<Vec<KeyValue>>) -> Result<u64> {
+    pub fn end(&mut self, key_value_metadata: Option<Vec<KeyValue>>) -> PolarsResult<u64> {
         let key_value_metadata = add_arrow_schema(&self.schema, key_value_metadata);
         Ok(self.writer.end(key_value_metadata)?)
     }
