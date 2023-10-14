@@ -1931,6 +1931,20 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     │ null ┆ null ┆ null ┆ 10.0 │
     └──────┴──────┴──────┴──────┘
 
+    For non-numeric types, pl.lit needs to be used to specify a literal value.
+    >>> df.with_columns(pl.coalesce(pl.col(["a", "b", "c"]), pl.lit("")).alias("d"))
+    shape: (4, 4)
+    ┌──────┬──────┬──────┬─────┐
+    │ a    ┆ b    ┆ c    ┆ d   │
+    │ ---  ┆ ---  ┆ ---  ┆ --- │
+    │ i64  ┆ i64  ┆ i64  ┆ str │
+    ╞══════╪══════╪══════╪═════╡
+    │ 1    ┆ 1    ┆ 5    ┆ 1   │
+    │ null ┆ 2    ┆ null ┆ 2   │
+    │ null ┆ null ┆ 3    ┆ 3   │
+    │ null ┆ null ┆ null ┆     │
+    └──────┴──────┴──────┴─────┘
+
     """
     exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.coalesce(exprs))
