@@ -3,7 +3,7 @@ use arrow::temporal_conversions::{
 };
 use chrono::NaiveDateTime;
 use chrono_tz::{Tz, UTC};
-use polars_arrow::kernels::convert_to_naive_local;
+use arrow::legacy::kernels::convert_to_naive_local;
 use polars_core::chunked_array::ops::arity::try_binary_elementwise;
 use polars_core::prelude::*;
 

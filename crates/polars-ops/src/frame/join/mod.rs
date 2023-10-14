@@ -33,7 +33,7 @@ use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
-use polars_arrow::trusted_len::TrustedLen;
+use arrow::legacy::trusted_len::TrustedLen;
 use polars_core::hashing::partition::{this_partition, AsU64};
 use polars_core::hashing::{BytesHash, _df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
 use polars_core::prelude::*;

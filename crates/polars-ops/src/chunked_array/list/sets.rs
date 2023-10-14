@@ -8,7 +8,7 @@ use arrow::array::{
 use arrow::bitmap::Bitmap;
 use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
-use polars_arrow::utils::combine_validities_and;
+use arrow::legacy::utils::combine_validities_and;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_type;
 #[cfg(feature = "serde")]

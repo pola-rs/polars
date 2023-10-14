@@ -10,7 +10,7 @@ use arrow::offset::{Offset, Offsets};
 use arrow::temporal_conversions;
 use arrow::types::{f16, NativeType};
 use num_traits::NumCast;
-use polars_arrow::prelude::*;
+use arrow::legacy::prelude::*;
 use simd_json::{BorrowedValue, StaticNode};
 
 use super::*;

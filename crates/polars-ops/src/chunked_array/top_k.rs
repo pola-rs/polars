@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use either::Either;
-use polars_arrow::kernels::rolling::compare_fn_nan_max;
+use arrow::legacy::kernels::rolling::compare_fn_nan_max;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::sort::{sort_slice_ascending, sort_slice_descending};
 use polars_core::prelude::*;

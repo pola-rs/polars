@@ -1,5 +1,5 @@
 use arrow::array::ListArray;
-use polars_arrow::array::ListFromIter;
+use arrow::legacy::array::ListFromIter;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 
