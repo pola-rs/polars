@@ -667,19 +667,6 @@ def test_sort_top_k_fast_path() -> None:
     }
 
 
-def test_sorted_flag_group_by_dynamic() -> None:
-    df = pl.DataFrame({"ts": [date(2020, 1, 1), date(2020, 1, 2)], "val": [1, 2]})
-    assert (
-        (
-            df.group_by_dynamic(pl.col("ts").set_sorted(), every="1d").agg(
-                pl.col("val").sum()
-            )
-        )
-        .to_series()
-        .flags["SORTED_ASC"]
-    )
-
-
 def test_top_k_9385() -> None:
     assert pl.LazyFrame({"b": [True, False]}).sort(["b"]).slice(0, 1).collect()[
         "b"

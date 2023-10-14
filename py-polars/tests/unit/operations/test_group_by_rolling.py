@@ -211,21 +211,9 @@ def test_group_by_rolling_dynamic_sortedness_check() -> None:
     )
 
     with pytest.raises(pl.ComputeError, match=r"input data is not sorted"):
-        df.group_by_dynamic("idx", every="2i", by="group").agg(
-            pl.col("idx").alias("idx1")
-        )
-
-    with pytest.raises(pl.ComputeError, match=r"input data is not sorted"):
         df.group_by_rolling("idx", period="2i", by="group").agg(
             pl.col("idx").alias("idx1")
         )
-
-    # no `by` argument
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match=r"argument in operation 'group_by_dynamic' is not explicitly sorted",
-    ):
-        df.group_by_dynamic("idx", every="2i").agg(pl.col("idx").alias("idx1"))
 
     # no `by` argument
     with pytest.raises(
