@@ -185,7 +185,7 @@ impl ChunkCast for Utf8Chunked {
             DataType::Decimal(precision, scale) => match (precision, scale) {
                 (precision, Some(scale)) => {
                     let chunks = self.downcast_iter().map(|arr| {
-                        polars_arrow::compute::cast::cast_utf8_to_decimal(arr, *precision, *scale)
+                        arrow::legacy::compute::cast::cast_utf8_to_decimal(arr, *precision, *scale)
                     });
                     Ok(Int128Chunked::from_chunk_iter(self.name(), chunks)
                         .into_decimal_unchecked(*precision, *scale)

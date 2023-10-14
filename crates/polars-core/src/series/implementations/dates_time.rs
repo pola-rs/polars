@@ -11,7 +11,7 @@ use std::borrow::Cow;
 use std::ops::Deref;
 
 use ahash::RandomState;
-use polars_arrow::prelude::QuantileInterpolOptions;
+use arrow::legacy::prelude::QuantileInterpolOptions;
 
 use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;

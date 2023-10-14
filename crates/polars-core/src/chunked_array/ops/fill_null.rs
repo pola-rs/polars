@@ -3,9 +3,9 @@ use std::ops::Add;
 use arrow::compute;
 use arrow::types::simd::Simd;
 use num_traits::{Bounded, NumCast, One, Zero};
-use polars_arrow::kernels::set::set_at_nulls;
-use polars_arrow::trusted_len::FromIteratorReversed;
-use polars_arrow::utils::{CustomIterTools, FromTrustedLenIterator};
+use arrow::legacy::kernels::set::set_at_nulls;
+use arrow::legacy::trusted_len::FromIteratorReversed;
+use arrow::legacy::utils::{CustomIterTools, FromTrustedLenIterator};
 
 use crate::prelude::*;
 

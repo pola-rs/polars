@@ -4,7 +4,7 @@ use std::convert::TryFrom;
 
 use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::utils::{get_bit_unchecked, set_bit_unchecked};
-use polars_arrow::bitmap::unary_mut;
+use arrow::legacy::bitmap::unary_mut;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -385,7 +385,7 @@ impl Utf8Chunked {
     where
         F: FnMut(&'a str) -> &'a str,
     {
-        use polars_arrow::array::utf8::Utf8FromIter;
+        use arrow::legacy::array::utf8::Utf8FromIter;
         let chunks = self.downcast_iter().map(|arr| {
             let iter = arr.values_iter().map(&mut f);
             let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
@@ -416,7 +416,7 @@ impl BinaryChunked {
     where
         F: FnMut(&'a [u8]) -> &'a [u8],
     {
-        use polars_arrow::array::utf8::BinaryFromIter;
+        use arrow::legacy::array::utf8::BinaryFromIter;
         let chunks = self.downcast_iter().map(|arr| {
             let iter = arr.values_iter().map(&mut f);
             let value_size = (arr.get_values_size() as f64 * 1.3) as usize;

@@ -11,18 +11,18 @@ use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
-use polars_arrow::data_types::IsFloat;
-use polars_arrow::kernels::rolling;
-use polars_arrow::kernels::rolling::no_nulls::{
+use arrow::legacy::data_types::IsFloat;
+use arrow::legacy::kernels::rolling;
+use arrow::legacy::kernels::rolling::no_nulls::{
     MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
 };
-use polars_arrow::kernels::rolling::nulls::RollingAggWindowNulls;
-use polars_arrow::kernels::rolling::{
+use arrow::legacy::kernels::rolling::nulls::RollingAggWindowNulls;
+use arrow::legacy::kernels::rolling::{
     compare_fn_nan_max, compare_fn_nan_min, DynArgs, RollingQuantileParams, RollingVarParams,
 };
-use polars_arrow::kernels::take_agg::*;
-use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_arrow::trusted_len::TrustedLenPush;
+use arrow::legacy::kernels::take_agg::*;
+use arrow::legacy::prelude::QuantileInterpolOptions;
+use arrow::legacy::trusted_len::TrustedLenPush;
 use rayon::prelude::*;
 
 #[cfg(feature = "object")]

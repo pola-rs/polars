@@ -14,9 +14,9 @@ pub use boolean::*;
 use categorical::*;
 use dtypes::*;
 use null::*;
-use polars_arrow::array::list::AnonymousBuilder;
-use polars_arrow::array::null::MutableNullArray;
-use polars_arrow::prelude::*;
+use arrow::legacy::array::list::AnonymousBuilder;
+use arrow::legacy::array::null::MutableNullArray;
+use arrow::legacy::prelude::*;
 pub use primitive::*;
 
 use super::*;

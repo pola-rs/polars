@@ -3,7 +3,7 @@ use arrow::temporal_conversions::{
 };
 use arrow::types::PrimitiveType;
 #[cfg(feature = "dtype-struct")]
-use polars_arrow::trusted_len::TrustedLenPush;
+use arrow::legacy::trusted_len::TrustedLenPush;
 use polars_utils::format_smartstring;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::slice::GetSaferUnchecked;

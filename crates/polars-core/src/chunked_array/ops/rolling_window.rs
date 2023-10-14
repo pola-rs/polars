@@ -1,4 +1,4 @@
-use polars_arrow::prelude::DynArgs;
+use arrow::legacy::prelude::DynArgs;
 
 #[derive(Clone)]
 pub struct RollingOptionsFixedWindow {
@@ -34,9 +34,9 @@ mod inner_mod {
     use arrow::bitmap::MutableBitmap;
     use num_traits::pow::Pow;
     use num_traits::{Float, Zero};
-    use polars_arrow::bit_util::unset_bit_raw;
-    use polars_arrow::data_types::IsFloat;
-    use polars_arrow::trusted_len::TrustedLenPush;
+    use arrow::legacy::bit_util::unset_bit_raw;
+    use arrow::legacy::data_types::IsFloat;
+    use arrow::legacy::trusted_len::TrustedLenPush;
 
     use crate::prelude::*;
 

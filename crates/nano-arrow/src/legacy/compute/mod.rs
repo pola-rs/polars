@@ -6,7 +6,7 @@ use crate::legacy::utils::combine_validities_and;
 
 pub mod arithmetics;
 pub mod bitwise;
-#[cfg(feature = "compute")]
+#[cfg(feature = "compute_cast")]
 pub mod cast;
 #[cfg(feature = "dtype-decimal")]
 pub mod decimal;

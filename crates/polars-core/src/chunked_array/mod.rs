@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
-use polars_arrow::prelude::ValueSize;
+use arrow::legacy::prelude::ValueSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -49,8 +49,8 @@ use std::mem;
 use std::slice::Iter;
 
 use bitflags::bitflags;
-use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
-use polars_arrow::prelude::*;
+use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
+use arrow::legacy::prelude::*;
 
 use crate::series::IsSorted;
 use crate::utils::{first_non_null, last_non_null, CustomIterTools};

@@ -9,7 +9,7 @@ use arrow::compute;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::{Float, One, ToPrimitive, Zero};
-use polars_arrow::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
+use arrow::legacy::kernels::rolling::{compare_fn_nan_max, compare_fn_nan_min};
 pub use quantile::*;
 pub use var::*;
 
@@ -179,7 +179,7 @@ where
                         // similar to sum
                         let mut sum = 0.0;
                         for arr in self.downcast_iter() {
-                            sum += polars_arrow::kernels::agg_mean::sum_as_f64(arr);
+                            sum += arrow::legacy::kernels::agg_mean::sum_as_f64(arr);
                         }
                         Some(sum / (len - null_count) as f64)
                     },
@@ -593,7 +593,7 @@ impl<T: PolarsObject> ChunkAggSeries for ObjectChunked<T> {}
 
 #[cfg(test)]
 mod test {
-    use polars_arrow::prelude::QuantileInterpolOptions;
+    use arrow::legacy::prelude::QuantileInterpolOptions;
 
     use crate::prelude::*;
 

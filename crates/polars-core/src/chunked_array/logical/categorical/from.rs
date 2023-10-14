@@ -1,6 +1,6 @@
 use arrow::array::DictionaryArray;
 use arrow::datatypes::IntegerType;
-use polars_arrow::compute::cast::cast;
+use arrow::legacy::compute::cast::cast;
 
 use super::*;
 use crate::using_string_cache;

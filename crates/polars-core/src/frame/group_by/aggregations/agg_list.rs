@@ -1,5 +1,5 @@
 use arrow::offset::Offsets;
-use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
+use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;

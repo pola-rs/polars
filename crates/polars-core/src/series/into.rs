@@ -4,7 +4,7 @@
     feature = "dtype-duration",
     feature = "dtype-time"
 ))]
-use polars_arrow::compute::cast::cast;
+use arrow::legacy::compute::cast::cast;
 
 use crate::prelude::*;
 
