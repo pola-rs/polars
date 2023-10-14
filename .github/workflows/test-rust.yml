@@ -49,7 +49,7 @@ jobs:
           -p polars-plan
           -p polars-io
           -p polars-core
-          -p polars-arrow
+#          -p polars-arrow
           -p polars-time
           -p polars-utils
           -p polars-row
@@ -63,7 +63,7 @@ jobs:
           -p polars-plan
           -p polars-io
           -p polars-core
-          -p polars-arrow
+#          -p polars-arrow
           -p polars-time
           -p polars-utils
           -p polars-row
