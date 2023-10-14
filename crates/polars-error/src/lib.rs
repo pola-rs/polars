@@ -26,6 +26,12 @@ where
     }
 }
 
+impl AsRef<str> for ErrString {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
 impl Deref for ErrString {
     type Target = str;
 
