@@ -11,7 +11,7 @@ use crate::buffer::{Buffer, Bytes, BytesAllocator};
 use crate::datatypes::{DataType, PhysicalType};
 use crate::ffi::schema::get_child;
 use crate::types::NativeType;
-use crate::{match_integer_type, with_match_primitive_type};
+use crate::{match_integer_type, with_match_primitive_type_full};
 
 /// Reads a valid `ffi` interface into a `Box<dyn Array>`
 /// # Errors
@@ -22,7 +22,7 @@ pub unsafe fn try_from<A: ArrowArrayRef>(array: A) -> PolarsResult<Box<dyn Array
     Ok(match array.data_type().to_physical_type() {
         Null => Box::new(NullArray::try_from_ffi(array)?),
         Boolean => Box::new(BooleanArray::try_from_ffi(array)?),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             Box::new(PrimitiveArray::<$T>::try_from_ffi(array)?)
         }),
         Utf8 => Box::new(Utf8Array::<i32>::try_from_ffi(array)?),

@@ -628,7 +628,7 @@ pub fn clone(array: &dyn Array) -> Box<dyn Array> {
     match array.data_type().to_physical_type() {
         Null => clone_dyn!(array, NullArray),
         Boolean => clone_dyn!(array, BooleanArray),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             clone_dyn!(array, PrimitiveArray<$T>)
         }),
         Binary => clone_dyn!(array, BinaryArray<i32>),
@@ -700,7 +700,7 @@ pub use union::UnionArray;
 pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIter};
 
 pub(crate) use self::ffi::{offset_buffers_children_dictionary, FromFfi, ToFfi};
-use crate::{match_integer_type, with_match_primitive_type};
+use crate::{match_integer_type, with_match_primitive_type, with_match_primitive_type_full};
 
 /// A trait describing the ability of a struct to create itself from a iterator.
 /// This is similar to [`Extend`], but accepted the creation to error.

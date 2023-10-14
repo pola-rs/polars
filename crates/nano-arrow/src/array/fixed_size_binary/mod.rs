@@ -206,7 +206,7 @@ impl FixedSizeBinaryArray {
     pub(crate) fn maybe_get_size(data_type: &DataType) -> PolarsResult<usize> {
         match data_type.to_logical_type() {
             DataType::FixedSizeBinary(size) => {
-                polars_ensure!(*size == 0, ComputeError: "FixedSizeBinaryArray expects a positive size");
+                polars_ensure!(*size != 0, ComputeError: "FixedSizeBinaryArray expects a positive size");
                 Ok(*size)
             },
             _ => {

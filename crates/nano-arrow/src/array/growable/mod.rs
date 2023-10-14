@@ -87,7 +87,7 @@ pub fn make_growable<'a>(
     match data_type.to_physical_type() {
         Null => Box::new(null::GrowableNull::new(data_type.clone())),
         Boolean => dyn_growable!(boolean::GrowableBoolean, arrays, use_validity, capacity),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             dyn_growable!(primitive::GrowablePrimitive::<$T>, arrays, use_validity, capacity)
         }),
         Utf8 => dyn_growable!(utf8::GrowableUtf8::<i32>, arrays, use_validity, capacity),
