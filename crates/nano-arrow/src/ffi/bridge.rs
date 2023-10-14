@@ -1,5 +1,5 @@
 use crate::array::*;
-use crate::{match_integer_type, with_match_primitive_type};
+use crate::{match_integer_type, with_match_primitive_type_full};
 
 macro_rules! ffi_dyn {
     ($array:expr, $ty:ty) => {{
@@ -17,7 +17,7 @@ pub fn align_to_c_data_interface(array: Box<dyn Array>) -> Box<dyn Array> {
     match array.data_type().to_physical_type() {
         Null => ffi_dyn!(array, NullArray),
         Boolean => ffi_dyn!(array, BooleanArray),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             ffi_dyn!(array, PrimitiveArray<$T>)
         }),
         Binary => ffi_dyn!(array, BinaryArray<i32>),

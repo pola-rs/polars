@@ -56,7 +56,7 @@ pub fn offset_buffers_children_dictionary(array: &dyn Array) -> BuffersChildren 
     match array.data_type().to_physical_type() {
         Null => ffi_dyn!(array, NullArray),
         Boolean => ffi_dyn!(array, BooleanArray),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             ffi_dyn!(array, PrimitiveArray<$T>)
         }),
         Binary => ffi_dyn!(array, BinaryArray<i32>),

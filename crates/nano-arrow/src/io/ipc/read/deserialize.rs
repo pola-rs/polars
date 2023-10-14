@@ -9,7 +9,7 @@ use super::{Dictionaries, IpcBuffer, Node};
 use crate::array::*;
 use crate::datatypes::{DataType, Field, PhysicalType};
 use crate::io::ipc::IpcField;
-use crate::{match_integer_type, with_match_primitive_type};
+use crate::{match_integer_type, with_match_primitive_type, with_match_primitive_type_full};
 
 #[allow(clippy::too_many_arguments)]
 pub fn read<R: Read + Seek>(
@@ -43,7 +43,7 @@ pub fn read<R: Read + Seek>(
             scratch,
         )
         .map(|x| x.boxed()),
-        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+        Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
             read_primitive::<$T, _>(
                 field_nodes,
                 data_type,
