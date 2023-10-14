@@ -1,8 +1,7 @@
 use std::fmt::Debug;
 
-use crate::types::NativeType;
-
 use crate::legacy::index::IdxSize;
+use crate::types::NativeType;
 
 /// Find partition indexes such that every partition contains unique groups.
 fn find_partition_points<T>(values: &[T], n: usize, descending: bool) -> Vec<usize>

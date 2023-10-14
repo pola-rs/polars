@@ -1,5 +1,6 @@
 //! Contains functionality to load an ArrayData from the C Data Interface
 use std::sync::Arc;
+
 use polars_error::{polars_bail, PolarsResult};
 
 use super::ArrowArray;

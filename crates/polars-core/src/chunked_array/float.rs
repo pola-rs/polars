@@ -1,6 +1,6 @@
-use num_traits::Float;
 use arrow::legacy::kernels::float::*;
 use arrow::legacy::kernels::set::set_at_nulls;
+use num_traits::Float;
 
 use crate::prelude::*;
 

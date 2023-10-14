@@ -1,8 +1,9 @@
+use polars_error::{polars_bail, polars_ensure, PolarsResult};
+
 use crate::array::{ListArray, PrimitiveArray};
 use crate::bitmap::Bitmap;
 use crate::datatypes::PhysicalType::Primitive;
 use crate::types::NativeType;
-use polars_error::{polars_bail, polars_ensure, PolarsResult};
 use crate::with_match_primitive_type;
 
 unsafe fn bytes_iter<'a, T: NativeType>(

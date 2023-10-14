@@ -1,6 +1,5 @@
 //! APIs to read from and write to Parquet format.
 
-
 pub mod read;
 pub mod write;
 

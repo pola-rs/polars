@@ -16,7 +16,6 @@ use self::schema::to_field;
 use crate::array::Array;
 use crate::datatypes::{DataType, Field};
 
-
 /// Exports an [`Box<dyn Array>`] to the C data interface.
 pub fn export_array_to_c(array: Box<dyn Array>) -> ArrowArray {
     ArrowArray::new(bridge::align_to_c_data_interface(array))

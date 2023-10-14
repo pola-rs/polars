@@ -1,5 +1,6 @@
 use std::hash::Hash;
 use std::sync::Arc;
+
 use polars_error::PolarsResult;
 
 use super::value_map::ValueMap;
@@ -9,7 +10,6 @@ use crate::array::primitive::MutablePrimitiveArray;
 use crate::array::{Array, MutableArray, TryExtend, TryPush};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-
 
 #[derive(Debug)]
 pub struct MutableDictionaryArray<K: DictionaryKey, M: MutableArray> {

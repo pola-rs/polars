@@ -1,5 +1,6 @@
 use std::ffi::{CStr, CString};
 use std::ops::DerefMut;
+
 use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
 
 use super::{
@@ -35,7 +36,7 @@ unsafe fn handle_error(iter: &mut ArrowArrayStream) -> PolarsError {
     let error = unsafe { (iter.get_last_error.unwrap())(&mut *iter) };
 
     if error.is_null() {
-        return polars_err!(ComputeError: "got unspecified external error")
+        return polars_err!(ComputeError: "got unspecified external error");
     }
 
     let error = unsafe { CStr::from_ptr(error) };
@@ -77,8 +78,8 @@ impl<Iter: DerefMut<Target = ArrowArrayStream>> ArrowArrayStreamReader<Iter> {
             unsafe { (f)(&mut *iter, &mut field) }
         } else {
             polars_bail!(InvalidOperation:
-                "The C stream MUST contain a non-null get_schema"
-)
+                            "The C stream MUST contain a non-null get_schema"
+            )
         };
 
         if status != 0 {
@@ -103,7 +104,7 @@ impl<Iter: DerefMut<Target = ArrowArrayStream>> ArrowArrayStreamReader<Iter> {
     /// # Safety
     /// Calling this iterator's `next` assumes that the [`ArrowArrayStream`] produces arrow arrays
     /// that fulfill the C data interface
-    pub unsafe fn next(&mut self) -> Option<PolarsResult<Box<dyn Array> >> {
+    pub unsafe fn next(&mut self) -> Option<PolarsResult<Box<dyn Array>>> {
         let mut array = ArrowArray::empty();
         let status = unsafe { (self.iter.get_next.unwrap())(&mut *self.iter, &mut array) };
 

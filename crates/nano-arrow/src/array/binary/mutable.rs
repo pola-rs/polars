@@ -1,5 +1,6 @@
 use std::iter::FromIterator;
 use std::sync::Arc;
+
 use polars_error::{polars_bail, PolarsResult};
 
 use super::{BinaryArray, MutableBinaryValuesArray, MutableBinaryValuesIter};
@@ -8,7 +9,6 @@ use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::DataType;
-
 use crate::offset::{Offset, Offsets};
 use crate::trusted_len::TrustedLen;
 
@@ -125,7 +125,9 @@ impl<O: Offset> MutableBinaryArray<O> {
             .map(|_| value)
     }
 
-    fn try_from_iter<P: AsRef<[u8]>, I: IntoIterator<Item = Option<P>>>(iter: I) -> PolarsResult<Self> {
+    fn try_from_iter<P: AsRef<[u8]>, I: IntoIterator<Item = Option<P>>>(
+        iter: I,
+    ) -> PolarsResult<Self> {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();
         let mut primitive = Self::with_capacity(lower);

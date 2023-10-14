@@ -11,7 +11,6 @@ use crate::array::indexable::{AsIndexed, Indexable};
 use crate::array::{Array, MutableArray};
 use crate::datatypes::DataType;
 
-
 /// Hasher for pre-hashed values; similar to `hash_hasher` but with native endianness.
 ///
 /// We know that we'll only use it for `u64` values, so we can avoid endian conversion.
@@ -144,7 +143,8 @@ impl<K: DictionaryKey, M: MutableArray> ValueMap<K, M> {
                 RawEntryMut::Occupied(entry) => entry.key().key,
                 RawEntryMut::Vacant(entry) => {
                     let index = self.values.len();
-                    let key = K::try_from(index).map_err(|_| polars_err!(ComputeError: "overflow"))?;
+                    let key =
+                        K::try_from(index).map_err(|_| polars_err!(ComputeError: "overflow"))?;
                     entry.insert_hashed_nocheck(hash, Hashed { hash, key }, ()); // NB: don't use .insert() here!
                     push(&mut self.values, value)?;
                     debug_assert_eq!(self.values.len(), index + 1);

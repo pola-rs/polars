@@ -20,7 +20,6 @@ pub use self::struct_::StructIterator;
 use super::*;
 use crate::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, MapArray};
 use crate::datatypes::{DataType, Field, IntervalUnit};
-
 use crate::offset::Offsets;
 
 /// Creates a new iterator of compressed pages.

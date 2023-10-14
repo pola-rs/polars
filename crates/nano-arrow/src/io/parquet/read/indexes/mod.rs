@@ -23,7 +23,6 @@ use super::get_field_pages;
 use crate::array::{Array, UInt64Array};
 use crate::datatypes::{DataType, Field, PhysicalType, PrimitiveType};
 
-
 /// Page statistics of an Arrow field.
 #[derive(Debug, PartialEq)]
 pub enum FieldPageStatistics {
@@ -99,9 +98,7 @@ fn deserialize(
                     let index = index.as_any().downcast_ref::<FixedLenByteIndex>().unwrap();
                     Ok(fixed_len_binary::deserialize(&index.indexes, data_type).into())
                 },
-                other => polars_bail!(nyi =
-                    "Deserialize {other:?} to arrow's int64"
-                )
+                other => polars_bail!(nyi = "Deserialize {other:?} to arrow's int64"),
             }
         },
         PhysicalType::Primitive(PrimitiveType::Int256) => {
@@ -126,9 +123,7 @@ fn deserialize(
                     let index = index.as_any().downcast_ref::<FixedLenByteIndex>().unwrap();
                     Ok(fixed_len_binary::deserialize(&index.indexes, data_type).into())
                 },
-                other => polars_bail!(nyi =
-                    "Deserialize {other:?} to arrow's int64"
-                )
+                other => polars_bail!(nyi = "Deserialize {other:?} to arrow's int64"),
             }
         },
         PhysicalType::Primitive(PrimitiveType::UInt8)
@@ -165,9 +160,7 @@ fn deserialize(
                         .unwrap();
                     Ok(primitive::deserialize_i96(&index.indexes, data_type).into())
                 },
-                other => polars_bail!(nyi =
-                    "Deserialize {other:?} to arrow's int64"
-                )
+                other => polars_bail!(nyi = "Deserialize {other:?} to arrow's int64"),
             }
         },
         PhysicalType::Primitive(PrimitiveType::Float32) => {
@@ -251,9 +244,7 @@ fn deserialize(
             Ok(FieldPageStatistics::Multiple(children))
         },
 
-        other => polars_bail!(nyi =
-            "Deserialize into arrow's {other:?} page index"
-        )
+        other => polars_bail!(nyi = "Deserialize into arrow's {other:?} page index"),
     }
 }
 

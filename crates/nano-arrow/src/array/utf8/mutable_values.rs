@@ -1,5 +1,6 @@
 use std::iter::FromIterator;
 use std::sync::Arc;
+
 use polars_error::{polars_bail, PolarsResult};
 
 use super::{MutableUtf8Array, StrAsBytes, Utf8Array};
@@ -71,7 +72,11 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     /// * The `values` between two consecutive `offsets` are not valid utf8
     /// # Implementation
     /// This function is `O(N)` - checking utf8 is `O(N)`
-    pub fn try_new(data_type: DataType, offsets: Offsets<O>, values: Vec<u8>) -> PolarsResult<Self> {
+    pub fn try_new(
+        data_type: DataType,
+        offsets: Offsets<O>,
+        values: Vec<u8>,
+    ) -> PolarsResult<Self> {
         try_check_utf8(&offsets, &values)?;
         if data_type.to_physical_type() != Self::default_data_type().to_physical_type() {
             polars_bail!(ComputeError: "MutableUtf8ValuesArray can only be initialized with DataType::Utf8 or DataType::LargeUtf8")

@@ -2,7 +2,6 @@ use parquet2::statistics::{BinaryStatistics, Statistics as ParquetStatistics};
 use polars_error::PolarsResult;
 
 use crate::array::{MutableArray, MutableBinaryArray};
-
 use crate::offset::Offset;
 
 pub(super) fn push<O: Offset>(

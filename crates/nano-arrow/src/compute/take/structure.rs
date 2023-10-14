@@ -16,10 +16,10 @@
 // under the License.
 
 use polars_error::PolarsResult;
+
 use super::Index;
 use crate::array::{Array, PrimitiveArray, StructArray};
 use crate::bitmap::{Bitmap, MutableBitmap};
-
 
 #[inline]
 fn take_validity<I: Index>(
@@ -49,7 +49,10 @@ fn take_validity<I: Index>(
     }
 }
 
-pub fn take<I: Index>(array: &StructArray, indices: &PrimitiveArray<I>) -> PolarsResult<StructArray> {
+pub fn take<I: Index>(
+    array: &StructArray,
+    indices: &PrimitiveArray<I>,
+) -> PolarsResult<StructArray> {
     let values: Vec<Box<dyn Array>> = array
         .values()
         .iter()

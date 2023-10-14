@@ -1,10 +1,10 @@
 use std::any::Any;
+
 use polars_error::{polars_bail, PolarsResult};
 
 use crate::array::{Array, FromFfi, MutableArray, ToFfi};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::{DataType, PhysicalType};
-
 use crate::ffi;
 
 /// The concrete [`Array`] of [`DataType::Null`].

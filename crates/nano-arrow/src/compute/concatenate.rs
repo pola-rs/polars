@@ -14,6 +14,7 @@
 //! ```
 
 use polars_error::{polars_bail, PolarsResult};
+
 use crate::array::growable::make_growable;
 use crate::array::Array;
 use crate::bitmap::{Bitmap, MutableBitmap};

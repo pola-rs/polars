@@ -1,8 +1,9 @@
+use num_traits::{NumCast, Signed, Zero};
+
 #[cfg(not(feature = "bigidx"))]
 use crate::array::UInt32Array;
 #[cfg(feature = "bigidx")]
 use crate::array::UInt64Array;
-use num_traits::{NumCast, Signed, Zero};
 
 pub trait IndexToUsize {
     /// Translate the negative index to an offset.

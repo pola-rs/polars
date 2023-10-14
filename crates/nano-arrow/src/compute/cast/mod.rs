@@ -17,7 +17,6 @@ pub use utf8_to::*;
 
 use crate::array::*;
 use crate::datatypes::*;
-
 use crate::match_integer_type;
 use crate::offset::{Offset, Offsets};
 
@@ -440,7 +439,11 @@ fn cast_list_to_fixed_size_list<O: Offset>(
 /// * List to primitive
 /// * Utf8 to boolean
 /// * Interval and duration
-pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> PolarsResult<Box<dyn Array>> {
+pub fn cast(
+    array: &dyn Array,
+    to_type: &DataType,
+    options: CastOptions,
+) -> PolarsResult<Box<dyn Array>> {
     use DataType::*;
     let from_type = array.data_type();
 
@@ -452,9 +455,7 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Pola
     let as_options = options.with_wrapped(true);
     match (from_type, to_type) {
         (Null, _) | (_, Null) => Ok(new_null_array(to_type.clone(), array.len())),
-        (Struct(_), _) |
-        (_, Struct(_))
-        => polars_bail!(InvalidOperation:
+        (Struct(_), _) | (_, Struct(_)) => polars_bail!(InvalidOperation:
             "Cannot cast from struct to other types"
         ),
         (List(_), FixedSizeList(inner, size)) => cast_list_to_fixed_size_list::<i32>(
@@ -712,8 +713,8 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Pola
                         .boxed(),
                 ),
                 _ => polars_bail!(InvalidOperation:
-                "casting from {from_type:?} to {to_type:?} not supported",
-            ),
+                    "casting from {from_type:?} to {to_type:?} not supported",
+                ),
             }
         },
         (FixedSizeBinary(_), _) => match to_type {
@@ -954,8 +955,8 @@ pub fn cast(array: &dyn Array, to_type: &DataType, options: CastOptions) -> Pola
         },
 
         _ => polars_bail!(InvalidOperation:
-                "casting from {from_type:?} to {to_type:?} not supported",
-            )
+            "casting from {from_type:?} to {to_type:?} not supported",
+        ),
     }
 }
 

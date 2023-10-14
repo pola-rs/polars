@@ -1,5 +1,5 @@
-use polars_error::to_compute_err;
 use polars_core::prelude::*;
+use polars_error::to_compute_err;
 use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::*;
 use polars_plan::prelude::LiteralValue::Null;

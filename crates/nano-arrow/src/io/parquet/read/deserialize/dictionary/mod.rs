@@ -110,7 +110,11 @@ where
     type Dict = ();
     type DecodedState = (Vec<K>, MutableBitmap);
 
-    fn build_state(&self, page: &'a DataPage, _: Option<&'a Self::Dict>) -> PolarsResult<Self::State> {
+    fn build_state(
+        &self,
+        page: &'a DataPage,
+        _: Option<&'a Self::Dict>,
+    ) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();

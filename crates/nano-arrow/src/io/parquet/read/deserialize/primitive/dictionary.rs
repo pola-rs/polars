@@ -12,7 +12,6 @@ use super::basic::deserialize_plain;
 use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-
 use crate::types::NativeType;
 
 fn read_dict<P, T, F>(data_type: DataType, op: F, dict: &DictPage) -> Box<dyn Array>

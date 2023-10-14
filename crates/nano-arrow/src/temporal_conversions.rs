@@ -2,7 +2,7 @@
 
 use chrono::format::{parse, Parsed, StrftimeItems};
 use chrono::{Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime};
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{polars_err, PolarsResult};
 
 use crate::array::{PrimitiveArray, Utf8Array};
 use crate::datatypes::{DataType, TimeUnit};
@@ -404,9 +404,9 @@ fn utf8_to_timestamp_ns_impl<O: Offset, T: chrono::TimeZone>(
 #[cfg(feature = "chrono-tz")]
 #[cfg_attr(docsrs, doc(cfg(feature = "chrono-tz")))]
 pub fn parse_offset_tz(timezone: &str) -> PolarsResult<chrono_tz::Tz> {
-    timezone.parse::<chrono_tz::Tz>().map_err(|_| {
-        polars_err!(InvalidOperation: "timezone \"{timezone}\" cannot be parsed")
-    })
+    timezone
+        .parse::<chrono_tz::Tz>()
+        .map_err(|_| polars_err!(InvalidOperation: "timezone \"{timezone}\" cannot be parsed"))
 }
 
 #[cfg(feature = "chrono-tz")]
@@ -426,7 +426,7 @@ fn chrono_tz_utf_to_timestamp_ns<O: Offset>(
     _: &str,
     timezone: String,
 ) -> PolarsResult<PrimitiveArray<i64>> {
-    polars_bail!(ComputeError: "timezone \"{timezone}\" cannot be parsed (feature chrono-tz is not active)")
+    panic!("timezone \"{timezone}\" cannot be parsed (feature chrono-tz is not active)")
 }
 
 /// Parses a [`Utf8Array`] to a timeozone-aware timestamp, i.e. [`PrimitiveArray<i64>`] with type `Timestamp(Nanosecond, Some(timezone))`.

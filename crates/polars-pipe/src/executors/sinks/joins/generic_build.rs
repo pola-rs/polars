@@ -2,8 +2,8 @@ use std::any::Any;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use hashbrown::hash_map::RawEntryMut;
 use arrow::array::BinaryArray;
+use hashbrown::hash_map::RawEntryMut;
 use polars_core::datatypes::ChunkId;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;

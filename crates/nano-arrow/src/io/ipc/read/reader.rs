@@ -9,7 +9,6 @@ use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::Schema;
 
-
 /// An iterator of [`Chunk`]s from an Arrow IPC file.
 pub struct FileReader<R: Read + Seek> {
     reader: R,

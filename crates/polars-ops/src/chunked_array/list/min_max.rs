@@ -1,10 +1,10 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
-use arrow::types::NativeType;
 use arrow::legacy::array::PolarsArray;
 use arrow::legacy::data_types::{ArrayRef, IsFloat};
 use arrow::legacy::slice::ExtremaNanAware;
 use arrow::legacy::utils::CustomIterTools;
+use arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 

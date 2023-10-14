@@ -1,7 +1,7 @@
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
-use arrow::types::NativeType;
 use arrow::legacy::utils::CustomIterTools;
+use arrow::types::NativeType;
 use polars_core::export::num::{NumCast, ToPrimitive};
 use polars_core::prelude::*;
 

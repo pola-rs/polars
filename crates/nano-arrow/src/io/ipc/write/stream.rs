@@ -4,6 +4,7 @@
 //! however the `FileWriter` expects a reader that supports `Seek`ing
 
 use std::io::Write;
+
 use polars_error::{PolarsError, PolarsResult};
 
 use super::super::IpcField;
@@ -50,7 +51,11 @@ impl<W: Write> StreamWriter<W> {
 
     /// Starts the stream by writing a Schema message to it.
     /// Use `ipc_fields` to declare dictionary ids in the schema, for dictionary-reuse
-    pub fn start(&mut self, schema: &Schema, ipc_fields: Option<Vec<IpcField>>) -> PolarsResult<()> {
+    pub fn start(
+        &mut self,
+        schema: &Schema,
+        ipc_fields: Option<Vec<IpcField>>,
+    ) -> PolarsResult<()> {
         self.ipc_fields = Some(if let Some(ipc_fields) = ipc_fields {
             ipc_fields
         } else {
@@ -76,7 +81,7 @@ impl<W: Write> StreamWriter<W> {
                 std::io::ErrorKind::UnexpectedEof,
                 "Cannot write to a finished stream".to_string(),
             );
-            return Err(PolarsError::from(io_err))
+            return Err(PolarsError::from(io_err));
         }
 
         // we can't make it a closure because it borrows (and it can't borrow mut and non-mut below)

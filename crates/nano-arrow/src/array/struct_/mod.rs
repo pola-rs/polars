@@ -223,7 +223,9 @@ impl StructArray {
     pub(crate) fn try_get_fields(data_type: &DataType) -> PolarsResult<&[Field]> {
         match data_type.to_logical_type() {
             DataType::Struct(fields) => Ok(fields),
-            _ => polars_bail!(ComputeError: "Struct array must be created with a DataType whose physical type is Struct")
+            _ => {
+                polars_bail!(ComputeError: "Struct array must be created with a DataType whose physical type is Struct")
+            },
         }
     }
 

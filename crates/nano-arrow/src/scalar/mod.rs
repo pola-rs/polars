@@ -30,6 +30,7 @@ mod fixed_size_binary;
 pub use fixed_size_binary::*;
 mod union;
 pub use union::UnionScalar;
+
 use crate::{match_integer_type, with_match_primitive_type};
 
 /// Trait object declaring an optional value with a [`DataType`].

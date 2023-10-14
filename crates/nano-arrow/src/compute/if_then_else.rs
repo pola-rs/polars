@@ -1,5 +1,6 @@
 //! Contains the operator [`if_then_else`].
 use polars_error::{polars_bail, PolarsResult};
+
 use crate::array::{growable, Array, BooleanArray};
 use crate::bitmap::utils::SlicesIterator;
 

@@ -698,9 +698,9 @@ pub use primitive::*;
 pub use struct_::{MutableStructArray, StructArray};
 pub use union::UnionArray;
 pub use utf8::{MutableUtf8Array, MutableUtf8ValuesArray, Utf8Array, Utf8ValuesIter};
-use crate::{match_integer_type, with_match_primitive_type};
 
 pub(crate) use self::ffi::{offset_buffers_children_dictionary, FromFfi, ToFfi};
+use crate::{match_integer_type, with_match_primitive_type};
 
 /// A trait describing the ability of a struct to create itself from a iterator.
 /// This is similar to [`Extend`], but accepted the creation to error.

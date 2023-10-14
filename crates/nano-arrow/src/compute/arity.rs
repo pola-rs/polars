@@ -1,11 +1,11 @@
 //! Defines kernels suitable to perform operations to primitive arrays.
 
 use polars_error::PolarsResult;
+
 use super::utils::{check_same_len, combine_validities};
 use crate::array::PrimitiveArray;
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::DataType;
-
 use crate::types::NativeType;
 
 /// Applies an unary and infallible function to a [`PrimitiveArray`]. This is the

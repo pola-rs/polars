@@ -1,5 +1,6 @@
 //! Defines the addition arithmetic kernels for [`PrimitiveArray`] representing decimals.
 use polars_error::{polars_bail, PolarsResult};
+
 use super::{adjusted_precision_scale, get_parameters, max_value, number_digits};
 use crate::array::PrimitiveArray;
 use crate::compute::arithmetics::{ArrayAdd, ArrayCheckedAdd, ArraySaturatingAdd};

@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
+
 use polars_error::{polars_err, PolarsResult};
 
 use super::super::super::IpcField;
@@ -34,13 +35,13 @@ pub fn read_union<R: Read + Seek>(
     if version != Version::V5 {
         let _ = buffers
             .pop_front()
-            .ok_or_else(|| polars_err!(oos ="IPC: missing validity buffer."))?;
+            .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
     };
 
     let length: usize = field_node
         .length()
         .try_into()
-        .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
     let length = limit.map(|limit| limit.min(length)).unwrap_or(length);
 
     let types = read_buffer(
@@ -103,12 +104,14 @@ pub fn skip_union(
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
-        polars_err!(oos ="IPC: unable to fetch the field for struct. The file or stream is corrupted.")
+        polars_err!(
+            oos = "IPC: unable to fetch the field for struct. The file or stream is corrupted."
+        )
     })?;
 
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| polars_err!(oos ="IPC: missing validity buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
     if let DataType::Union(_, _, Dense) = data_type {
         let _ = buffers
             .pop_front()

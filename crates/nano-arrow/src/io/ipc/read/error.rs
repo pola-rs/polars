@@ -1,6 +1,5 @@
 use std::fmt::{Display, Formatter};
 
-
 /// The different types of errors that reading from IPC can cause
 #[derive(Debug)]
 #[non_exhaustive]

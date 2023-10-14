@@ -4,7 +4,6 @@ use polars_error::PolarsResult;
 
 use super::super::{convert_days_ms, convert_i128};
 use crate::array::*;
-
 use crate::io::parquet::read::convert_i256;
 use crate::types::{days_ms, i256};
 

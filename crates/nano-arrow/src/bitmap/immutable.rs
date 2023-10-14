@@ -8,7 +8,6 @@ use polars_error::{polars_bail, PolarsResult};
 use super::utils::{count_zeros, fmt, get_bit, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
 use super::{chunk_iter_to_vec, IntoIter, MutableBitmap};
 use crate::buffer::Bytes;
-
 use crate::trusted_len::TrustedLen;
 
 /// An immutable container semantically equivalent to `Arc<Vec<bool>>` but represented as `Arc<Vec<u8>>` where

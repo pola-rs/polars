@@ -1,4 +1,5 @@
 use polars_error::PolarsResult;
+
 use super::FixedSizeBinaryArray;
 use crate::array::{FromFfi, ToFfi};
 use crate::bitmap::align;

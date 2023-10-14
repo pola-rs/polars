@@ -1,8 +1,7 @@
 use crate::array::{BinaryArray, Utf8Array};
 use crate::datatypes::DataType;
-use crate::offset::Offsets;
-
 use crate::legacy::trusted_len::TrustedLenPush;
+use crate::offset::Offsets;
 
 #[inline]
 unsafe fn extend_from_trusted_len_values_iter<I, P>(

@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
+
 use polars_error::{polars_err, PolarsResult};
 
 use super::super::super::IpcField;
@@ -87,7 +88,9 @@ pub fn skip_map(
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
-        polars_err!(oos = "IPC: unable to fetch the field for map. The file or stream is corrupted.")
+        polars_err!(
+            oos = "IPC: unable to fetch the field for map. The file or stream is corrupted."
+        )
     })?;
 
     let _ = buffers
@@ -95,7 +98,7 @@ pub fn skip_map(
         .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| polars_err!(oos ="IPC: missing offsets buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer."))?;
 
     let data_type = MapArray::get_field(data_type).data_type();
 

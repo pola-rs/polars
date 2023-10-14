@@ -12,7 +12,6 @@ use super::basic::{deserialize_plain, Values, ValuesDictionary};
 use crate::array::PrimitiveArray;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-
 use crate::types::NativeType;
 
 // The state of a `DataPage` of `Primitive` parquet primitive type
@@ -110,7 +109,11 @@ where
         )
     }
 
-    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> PolarsResult<()> {
+    fn push_valid(
+        &self,
+        state: &mut Self::State,
+        decoded: &mut Self::DecodedState,
+    ) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
             State::Optional(page_values) => {

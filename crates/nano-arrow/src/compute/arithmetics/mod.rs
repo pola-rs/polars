@@ -16,12 +16,7 @@ pub mod basic;
 #[cfg(feature = "compute_arithmetics_decimal")]
 pub mod decimal;
 
-use crate::array::{Array, DictionaryArray, PrimitiveArray};
 use crate::bitmap::Bitmap;
-use crate::datatypes::{DataType, IntervalUnit, TimeUnit};
-use crate::match_integer_type;
-use crate::scalar::{PrimitiveScalar, Scalar};
-use crate::types::NativeType;
 
 pub trait ArrayAdd<Rhs>: Sized {
     /// Adds itself to `rhs`

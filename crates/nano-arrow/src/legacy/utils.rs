@@ -3,10 +3,9 @@ use std::ops::{BitAnd, BitOr};
 use crate::array::PrimitiveArray;
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::DataType;
-use crate::types::NativeType;
-
 use crate::legacy::bit_util::unset_bit_raw;
 use crate::legacy::trusted_len::{FromIteratorReversed, TrustedLen, TrustedLenPush};
+use crate::types::NativeType;
 
 #[derive(Clone)]
 pub struct TrustMyLength<I: Iterator<Item = J>, J> {

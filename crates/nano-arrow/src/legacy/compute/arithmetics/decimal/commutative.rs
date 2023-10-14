@@ -1,8 +1,8 @@
-use crate::array::PrimitiveArray;
-use crate::datatypes::DataType;
 use polars_error::*;
 
 use super::{get_parameters, max_value};
+use crate::array::PrimitiveArray;
+use crate::datatypes::DataType;
 use crate::legacy::compute::{binary_mut, unary_mut};
 
 pub fn commutative<F>(

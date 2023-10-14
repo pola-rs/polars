@@ -12,7 +12,6 @@ use super::super::{utils, Pages};
 use crate::array::MutablePrimitiveArray;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-
 use crate::types::NativeType;
 
 #[derive(Debug)]
@@ -158,7 +157,11 @@ where
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
 
-    fn build_state(&self, page: &'a DataPage, dict: Option<&'a Self::Dict>) -> PolarsResult<Self::State> {
+    fn build_state(
+        &self,
+        page: &'a DataPage,
+        dict: Option<&'a Self::Dict>,
+    ) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();

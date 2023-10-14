@@ -1,10 +1,11 @@
-use crate::array::PrimitiveArray;
-use crate::datatypes::DataType;
 use commutative::{
     commutative, commutative_scalar, non_commutative, non_commutative_scalar,
     non_commutative_scalar_swapped,
 };
 use polars_error::{PolarsError, PolarsResult};
+
+use crate::array::PrimitiveArray;
+use crate::datatypes::DataType;
 
 mod add;
 mod commutative;

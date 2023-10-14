@@ -1,4 +1,5 @@
 use polars_error::PolarsResult;
+
 use super::make_mutable;
 use crate::array::{Array, MapArray, MutableArray};
 use crate::datatypes::DataType;

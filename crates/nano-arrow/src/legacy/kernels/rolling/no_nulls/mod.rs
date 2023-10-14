@@ -6,9 +6,6 @@ mod variance;
 
 use std::fmt::Debug;
 
-use crate::array::PrimitiveArray;
-use crate::datatypes::DataType;
-use crate::types::NativeType;
 pub use mean::*;
 pub use min_max::*;
 use num_traits::{Float, NumCast};
@@ -19,8 +16,11 @@ pub use sum::*;
 pub use variance::*;
 
 use super::*;
+use crate::array::PrimitiveArray;
+use crate::datatypes::DataType;
 use crate::legacy::error::{polars_bail, PolarsResult};
 use crate::legacy::utils::CustomIterTools;
+use crate::types::NativeType;
 
 pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
     fn new(slice: &'a [T], start: usize, end: usize, params: DynArgs) -> Self;

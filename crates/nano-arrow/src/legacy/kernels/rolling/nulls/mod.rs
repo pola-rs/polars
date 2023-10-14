@@ -92,11 +92,10 @@ where
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use crate::array::{Array, Int32Array};
     use crate::buffer::Buffer;
     use crate::datatypes::DataType;
-
-    use super::*;
     use crate::legacy::kernels::rolling::nulls::mean::rolling_mean;
 
     fn get_null_arr() -> PrimitiveArray<f64> {

@@ -1,8 +1,8 @@
 use polars_error::PolarsResult;
+
 use super::make_mutable;
 use crate::array::*;
 use crate::datatypes::DataType;
-
 use crate::offset::Offsets;
 
 #[derive(Debug)]

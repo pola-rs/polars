@@ -1,7 +1,7 @@
 use std::borrow::{Borrow, Cow};
 
 use arrow_format::ipc::planus::Builder;
-use polars_error::{polars_bail, PolarsResult, polars_err};
+use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::super::IpcField;
 use super::{write, write_dictionary};

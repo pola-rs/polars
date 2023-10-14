@@ -1,4 +1,5 @@
 use polars_error::PolarsResult;
+
 use super::FixedSizeListArray;
 use crate::array::ffi::{FromFfi, ToFfi};
 use crate::array::Array;

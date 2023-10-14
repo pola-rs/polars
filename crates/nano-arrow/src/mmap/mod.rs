@@ -6,12 +6,11 @@ mod array;
 
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{Block, MessageRef, RecordBatchRef};
-use polars_error::{polars_bail, polars_err, PolarsResult, to_compute_err};
+use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
 
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::{DataType, Field};
-
 use crate::io::ipc::read::file::{get_dictionary_batch, get_record_batch};
 use crate::io::ipc::read::{
     first_dict_field, Dictionaries, FileMetadata, IpcBuffer, Node, OutOfSpecKind,
@@ -22,15 +21,13 @@ fn read_message(
     mut bytes: &[u8],
     block: arrow_format::ipc::Block,
 ) -> PolarsResult<(MessageRef, usize)> {
-    let offset: usize = block
-        .offset
-        .try_into()
-        .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
+    let offset: usize = block.offset.try_into().map_err(
+        |_err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength),
+    )?;
 
-    let block_length: usize = block
-        .meta_data_length
-        .try_into()
-        .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
+    let block_length: usize = block.meta_data_length.try_into().map_err(
+        |_err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength),
+    )?;
 
     bytes = &bytes[offset..];
     let mut message_length = bytes[..4].try_into().unwrap();
@@ -42,9 +39,9 @@ fn read_message(
         bytes = &bytes[4..];
     };
 
-    let message_length: usize = i32::from_le_bytes(message_length)
-        .try_into()
-        .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
+    let message_length: usize = i32::from_le_bytes(message_length).try_into().map_err(
+        |_err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength),
+    )?;
 
     let message = arrow_format::ipc::MessageRef::read_as_root(&bytes[..message_length])
         .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
@@ -52,9 +49,7 @@ fn read_message(
     Ok((message, offset + block_length))
 }
 
-fn get_buffers_nodes(
-    batch: RecordBatchRef,
-) -> PolarsResult<(VecDeque<IpcBuffer>, VecDeque<Node>)> {
+fn get_buffers_nodes(batch: RecordBatchRef) -> PolarsResult<(VecDeque<IpcBuffer>, VecDeque<Node>)> {
     let compression = batch.compression().map_err(to_compute_err)?;
     if compression.is_some() {
         polars_bail!(ComputeError: "mmap can only be done on uncompressed IPC files\n\n
@@ -179,12 +174,13 @@ unsafe fn mmap_dictionary<T: AsRef<[u8]>>(
         .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidFlatbufferData(err)))?
         .ok_or_else(|| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::MissingData))?;
 
-    let value_type =
-        if let DataType::Dictionary(_, value_type, _) = first_field.data_type.to_logical_type() {
-            value_type.as_ref()
-        } else {
-            polars_bail!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidIdDataType {requested_id: id} )
-        };
+    let value_type = if let DataType::Dictionary(_, value_type, _) =
+        first_field.data_type.to_logical_type()
+    {
+        value_type.as_ref()
+    } else {
+        polars_bail!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidIdDataType {requested_id: id} )
+    };
 
     // Make a fake schema for the dictionary batch.
     let field = Field::new("", value_type.clone(), false);

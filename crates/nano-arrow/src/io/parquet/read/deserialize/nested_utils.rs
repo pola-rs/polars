@@ -11,7 +11,6 @@ use super::utils::{DecodedState, MaybeNext, PageState};
 use crate::array::Array;
 use crate::bitmap::MutableBitmap;
 
-
 /// trait describing deserialized repetition and definition levels
 pub trait Nested: std::fmt::Debug + Send + Sync {
     fn inner(&mut self) -> (Vec<i64>, Option<MutableBitmap>);
@@ -258,7 +257,11 @@ pub(super) trait NestedDecoder<'a> {
     /// Initializes a new state
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
-    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> PolarsResult<()>;
+    fn push_valid(
+        &self,
+        state: &mut Self::State,
+        decoded: &mut Self::DecodedState,
+    ) -> PolarsResult<()>;
     fn push_null(&self, decoded: &mut Self::DecodedState);
 
     fn deserialize_dict(&self, page: &DictPage) -> Self::Dictionary;

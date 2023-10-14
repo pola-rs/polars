@@ -30,7 +30,7 @@ where
     let id = if let Some(id) = id {
         id
     } else {
-        return polars_bail!(oos = "Dictionary has no id.");
+        polars_bail!(oos = "Dictionary has no id.");
     };
     let values = dictionaries
         .get(&id)

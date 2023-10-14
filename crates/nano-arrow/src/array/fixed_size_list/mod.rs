@@ -2,7 +2,6 @@ use super::{new_empty_array, new_null_array, Array};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{DataType, Field};
 
-
 #[cfg(feature = "arrow_rs")]
 mod data;
 mod ffi;
@@ -187,7 +186,7 @@ impl FixedSizeListArray {
                 }
                 Ok((child.as_ref(), *size))
             },
-            _ => polars_bail!(ComputeError: "FixedSizeListArray expects DataType::FixedSizeList")
+            _ => polars_bail!(ComputeError: "FixedSizeListArray expects DataType::FixedSizeList"),
         }
     }
 

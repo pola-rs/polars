@@ -1,6 +1,6 @@
 use polars_error::{polars_bail, PolarsResult};
-use crate::array::growable::make_growable;
 
+use crate::array::growable::make_growable;
 use crate::legacy::prelude::*;
 
 /// Concatenate multiple [`Array`][Array] of the same type into a single [`Array`][Array].

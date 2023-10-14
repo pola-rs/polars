@@ -71,7 +71,7 @@ pub(crate) fn get_dictionary_batch<'a>(
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingMessageHeader))?;
     match header {
         arrow_format::ipc::MessageHeaderRef::DictionaryBatch(batch) => Ok(batch),
-        _ => polars_bail!(oos =OutOfSpecKind::UnexpectedMessageType)
+        _ => polars_bail!(oos = OutOfSpecKind::UnexpectedMessageType),
     }
 }
 
@@ -86,7 +86,7 @@ fn read_dictionary_block<R: Read + Seek>(
     let offset: u64 = block
         .offset
         .try_into()
-        .map_err(|_| polars_err!(oos =OutOfSpecKind::UnexpectedNegativeInteger))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
     let length: u64 = block
         .meta_data_length
         .try_into()
@@ -151,7 +151,7 @@ fn read_footer_len<R: Read + Seek>(reader: &mut R) -> PolarsResult<(u64, usize)>
     let footer_len = i32::from_le_bytes(footer[..4].try_into().unwrap());
 
     if footer[4..] != ARROW_MAGIC_V2 {
-        return Err(polars_err!(oos =OutOfSpecKind::InvalidFooter));
+        return Err(polars_err!(oos = OutOfSpecKind::InvalidFooter));
     }
     let footer_len = footer_len
         .try_into()
@@ -162,31 +162,31 @@ fn read_footer_len<R: Read + Seek>(reader: &mut R) -> PolarsResult<(u64, usize)>
 
 pub(super) fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMetadata> {
     let footer = arrow_format::ipc::FooterRef::read_as_root(footer_data)
-        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferFooter(err)))?;
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferFooter(err)))?;
 
     let blocks = footer
         .record_batches()
-        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))?
-        .ok_or_else(|| polars_err!(oos =OutOfSpecKind::MissingRecordBatches))?;
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))?
+        .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingRecordBatches))?;
 
     let blocks = blocks
         .iter()
         .map(|block| {
-            block
-                .try_into()
-                .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferRecordBatches(err)))
+            block.try_into().map_err(|err| {
+                polars_err!(oos = OutOfSpecKind::InvalidFlatbufferRecordBatches(err))
+            })
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
     let ipc_schema = footer
         .schema()
-        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferSchema(err)))?
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferSchema(err)))?
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingSchema))?;
     let (schema, ipc_schema) = fb_to_schema(ipc_schema)?;
 
     let dictionaries = footer
         .dictionaries()
-        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferDictionaries(err)))?
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferDictionaries(err)))?
         .map(|dictionaries| {
             dictionaries
                 .into_iter()
@@ -218,7 +218,7 @@ pub fn read_file_metadata<R: Read + Seek>(reader: &mut R) -> PolarsResult<FileMe
         if magic_buffer[..4] == ARROW_MAGIC_V1 {
             polars_bail!(ComputeError: "feather v1 not supported");
         }
-        polars_bail!(oos =OutOfSpecKind::InvalidHeader);
+        polars_bail!(oos = OutOfSpecKind::InvalidHeader);
     }
 
     let (end, footer_len) = read_footer_len(reader)?;
@@ -272,7 +272,7 @@ pub fn read_batch<R: Read + Seek>(
     let offset: u64 = block
         .offset
         .try_into()
-        .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     let length: u64 = block
         .meta_data_length

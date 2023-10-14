@@ -1,5 +1,6 @@
 use std::iter::FromIterator;
 use std::sync::Arc;
+
 use polars_error::{polars_bail, PolarsResult};
 
 use super::{BinaryArray, MutableBinaryArray};
@@ -10,7 +11,6 @@ use crate::array::{
 };
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-
 use crate::offset::{Offset, Offsets};
 use crate::trusted_len::TrustedLen;
 
@@ -65,7 +65,11 @@ impl<O: Offset> MutableBinaryValuesArray<O> {
     /// * The `data_type`'s [`crate::datatypes::PhysicalType`] is not equal to either `Binary` or `LargeBinary`.
     /// # Implementation
     /// This function is `O(1)`
-    pub fn try_new(data_type: DataType, offsets: Offsets<O>, values: Vec<u8>) -> PolarsResult<Self> {
+    pub fn try_new(
+        data_type: DataType,
+        offsets: Offsets<O>,
+        values: Vec<u8>,
+    ) -> PolarsResult<Self> {
         try_check_offsets_bounds(&offsets, values.len())?;
 
         if data_type.to_physical_type() != Self::default_data_type().to_physical_type() {

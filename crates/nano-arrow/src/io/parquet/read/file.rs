@@ -7,7 +7,6 @@ use super::{RowGroupDeserializer, RowGroupMetaData};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::Schema;
-
 use crate::io::parquet::read::read_columns_many;
 
 /// An iterator of [`Chunk`]s coming from row groups of a parquet file.

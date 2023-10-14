@@ -36,7 +36,11 @@ pub fn infer_schema(record: &Record) -> PolarsResult<Schema> {
         .into())
 }
 
-fn schema_to_field(schema: &AvroSchema, name: Option<&str>, props: Metadata) -> PolarsResult<Field> {
+fn schema_to_field(
+    schema: &AvroSchema,
+    name: Option<&str>,
+    props: Metadata,
+) -> PolarsResult<Field> {
     let mut nullable = false;
     let data_type = match schema {
         AvroSchema::Null => DataType::Null,
@@ -94,9 +98,7 @@ fn schema_to_field(schema: &AvroSchema, name: Option<&str>, props: Metadata) -> 
                 {
                     schema_to_field(schema, None, Metadata::default())?.data_type
                 } else {
-                    polars_bail!(nyi =
-                        "Can't read avro union {schema:?}"
-                    );
+                    polars_bail!(nyi = "Can't read avro union {schema:?}");
                 }
             } else {
                 let fields = schemas

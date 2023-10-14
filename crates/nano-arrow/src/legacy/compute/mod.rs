@@ -1,8 +1,7 @@
 use crate::array::PrimitiveArray;
 use crate::datatypes::DataType;
-use crate::types::NativeType;
-
 use crate::legacy::utils::combine_validities_and;
+use crate::types::NativeType;
 
 pub mod arithmetics;
 pub mod bitwise;

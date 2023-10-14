@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
+
 use polars_error::{polars_err, PolarsResult};
 
 use super::super::super::IpcField;
@@ -73,7 +74,9 @@ pub fn skip_struct(
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
-        polars_err!(oos ="IPC: unable to fetch the field for struct. The file or stream is corrupted.")
+        polars_err!(
+            oos = "IPC: unable to fetch the field for struct. The file or stream is corrupted."
+        )
     })?;
 
     let _ = buffers

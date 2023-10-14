@@ -8,7 +8,6 @@ use polars_error::PolarsResult;
 pub use rep::num_values;
 
 use super::Nested;
-
 use crate::offset::Offset;
 
 fn write_levels_v1<F: FnOnce(&mut Vec<u8>) -> PolarsResult<()>>(

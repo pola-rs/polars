@@ -1,5 +1,5 @@
-use chrono::prelude::*;
 use arrow::temporal_conversions::timestamp_ns_to_datetime;
+use chrono::prelude::*;
 use polars_core::prelude::*;
 
 use crate::date_range::datetime_range_i64;

@@ -6,10 +6,10 @@ use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::compute;
 use arrow::compute::comparison;
+use arrow::legacy::prelude::FromData;
 use arrow::scalar::{BinaryScalar, PrimitiveScalar, Scalar, Utf8Scalar};
 use either::Either;
 use num_traits::{NumCast, ToPrimitive};
-use arrow::legacy::prelude::FromData;
 
 use crate::prelude::*;
 use crate::series::IsSorted;

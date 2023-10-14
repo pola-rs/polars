@@ -19,7 +19,6 @@
 
 use crate::array::{new_empty_array, Array, NullArray, PrimitiveArray};
 use crate::datatypes::DataType;
-
 use crate::types::Index;
 
 mod binary;
@@ -34,11 +33,15 @@ mod utf8;
 
 pub(crate) use boolean::take as take_boolean;
 use polars_error::PolarsResult;
+
 use crate::{match_integer_type, with_match_primitive_type};
 
 /// Returns a new [`Array`] with only indices at `indices`. Null indices are taken as nulls.
 /// The returned array has a length equal to `indices.len()`.
-pub fn take<O: Index>(values: &dyn Array, indices: &PrimitiveArray<O>) -> PolarsResult<Box<dyn Array>> {
+pub fn take<O: Index>(
+    values: &dyn Array,
+    indices: &PrimitiveArray<O>,
+) -> PolarsResult<Box<dyn Array>> {
     if indices.len() == 0 {
         return Ok(new_empty_array(values.data_type().clone()));
     }

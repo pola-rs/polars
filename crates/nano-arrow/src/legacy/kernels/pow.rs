@@ -1,7 +1,8 @@
+use num_traits::pow::Pow;
+
 use crate::array::PrimitiveArray;
 use crate::compute::arity::binary;
 use crate::types::NativeType;
-use num_traits::pow::Pow;
 
 pub fn pow<T, F>(arr_1: &PrimitiveArray<T>, arr_2: &PrimitiveArray<F>) -> PrimitiveArray<T>
 where

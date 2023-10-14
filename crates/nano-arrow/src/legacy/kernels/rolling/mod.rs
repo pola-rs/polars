@@ -7,15 +7,15 @@ use std::cmp::Ordering;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 use std::sync::Arc;
 
-use crate::array::PrimitiveArray;
-use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::types::NativeType;
 use num_traits::{Bounded, Float, NumCast, One, Zero};
 use window::*;
 
+use crate::array::PrimitiveArray;
+use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::legacy::data_types::IsFloat;
 use crate::legacy::prelude::*;
 use crate::legacy::utils::CustomIterTools;
+use crate::types::NativeType;
 
 type Start = usize;
 type End = usize;

@@ -9,7 +9,6 @@ use polars_error::PolarsResult;
 
 use super::super::{utils, WriteOptions};
 use crate::array::*;
-
 use crate::io::parquet::read::schema::is_nullable;
 
 fn encode(iterator: impl Iterator<Item = bool>, buffer: &mut Vec<u8>) -> PolarsResult<()> {

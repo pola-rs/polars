@@ -1,6 +1,9 @@
 use std::convert::TryFrom;
 
 use arrow::compute::cast::utf8_to_large_utf8;
+use arrow::legacy::compute::cast::cast;
+#[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
+use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-datetime",
@@ -8,9 +11,6 @@ use arrow::compute::cast::utf8_to_large_utf8;
     feature = "dtype-duration"
 ))]
 use arrow::temporal_conversions::*;
-use arrow::legacy::compute::cast::cast;
-#[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
-use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use polars_error::feature_gated;
 
 use crate::chunked_array::cast::cast_chunks;

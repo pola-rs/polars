@@ -1,7 +1,7 @@
 use polars_error::PolarsResult;
+
 use crate::array::Array;
 use crate::datatypes::DataType;
-
 
 pub fn cast(array: &dyn Array, to_type: &DataType) -> PolarsResult<Box<dyn Array>> {
     match to_type {
@@ -19,10 +19,9 @@ pub fn cast(array: &dyn Array, to_type: &DataType) -> PolarsResult<Box<dyn Array
 }
 
 #[cfg(feature = "dtype-decimal")]
-use crate::array::{PrimitiveArray, Utf8Array};
-
-#[cfg(feature = "dtype-decimal")]
 use super::decimal::*;
+#[cfg(feature = "dtype-decimal")]
+use crate::array::{PrimitiveArray, Utf8Array};
 #[cfg(feature = "dtype-decimal")]
 use crate::legacy::prelude::LargeStringArray;
 #[cfg(feature = "dtype-decimal")]

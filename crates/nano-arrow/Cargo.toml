@@ -15,6 +15,7 @@ description = "Minimal implementation of the Arrow specification forked from arr
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+atoi = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
 # for timezone support
@@ -24,10 +25,9 @@ either = { workspace = true }
 foreign_vec = { version = "0.1" }
 hashbrown = { workspace = true }
 num-traits = { workspace = true }
-simdutf8 = { workspace = true }
-serde = { workspace = true, features = ["derive"], optional = true }
 polars-error = { workspace = true }
-atoi = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"], optional = true }
+simdutf8 = { workspace = true }
 
 ethnum = { workspace = true }
 
@@ -74,7 +74,7 @@ arrow-array = { workspace = true, optional = true }
 arrow-buffer = { workspace = true, optional = true }
 arrow-data = { workspace = true, optional = true }
 arrow-schema = { workspace = true, optional = true }
-parquet2 = {workspace = true, optional = true, default-features = false, features = ["async"]}
+parquet2 = { workspace = true, optional = true, default-features = false, features = ["async"] }
 
 [dev-dependencies]
 avro-rs = { version = "0.13", features = ["snappy"] }
@@ -120,14 +120,22 @@ full = [
   "chrono-tz",
 ]
 arrow_rs = ["arrow-buffer", "arrow-schema", "arrow-data", "arrow-array"]
-io_ipc = ["arrow-format"]
+io_ipc = ["arrow-format", "polars-error/arrow-format"]
 io_ipc_write_async = ["io_ipc", "futures"]
 io_ipc_read_async = ["io_ipc", "futures", "async-stream"]
 io_ipc_compression = ["lz4", "zstd"]
 io_flight = ["io_ipc", "arrow-format/flight-data"]
 
 # base64 + io_ipc because arrow schemas are stored as base64-encoded ipc format.
-io_parquet = ["parquet2", "parquet2/async", "polars-error/parquet2", "io_ipc", "base64", "futures", "fallible-streaming-iterator"]
+io_parquet = [
+  "parquet2",
+  "parquet2/async",
+  "polars-error/parquet2",
+  "io_ipc",
+  "base64",
+  "futures",
+  "fallible-streaming-iterator",
+]
 
 io_parquet_compression = [
   "io_parquet_zstd",

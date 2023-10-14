@@ -2,11 +2,11 @@ pub mod constants;
 mod warning;
 
 use std::borrow::Cow;
+use std::collections::TryReserveError;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
 use std::ops::Deref;
 use std::{env, io};
-use std::collections::TryReserveError;
 
 pub use warning::*;
 
@@ -102,6 +102,7 @@ impl From<avro_schema::error::Error> for PolarsError {
     }
 }
 
+#[cfg(feature = "parquet2")]
 impl From<PolarsError> for parquet2::error::Error {
     fn from(value: PolarsError) -> Self {
         // catch all needed :(.
@@ -114,7 +115,7 @@ impl From<simdutf8::basic::Utf8Error> for PolarsError {
         polars_err!(ComputeError: "invalid utf8: {}", value)
     }
 }
-
+#[cfg(feature = "arrow-format")]
 impl From<arrow_format::ipc::planus::Error> for PolarsError {
     fn from(err: arrow_format::ipc::planus::Error) -> Self {
         PolarsError::Io(std::io::Error::new(

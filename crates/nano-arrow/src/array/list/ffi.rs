@@ -1,10 +1,10 @@
 use polars_error::PolarsResult;
+
 use super::super::ffi::ToFfi;
 use super::super::Array;
 use super::ListArray;
 use crate::array::FromFfi;
 use crate::bitmap::align;
-
 use crate::ffi;
 use crate::offset::{Offset, OffsetsBuffer};
 

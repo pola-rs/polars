@@ -1,5 +1,6 @@
 use std::iter::FromIterator;
 use std::sync::Arc;
+
 use polars_error::PolarsResult;
 
 use super::{check, PrimitiveArray};

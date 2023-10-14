@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 use std::ops::{Add, Sub};
 
-use num_traits::Bounded;
 use arrow::legacy::index::IdxSize;
+use num_traits::Bounded;
 
 pub(super) fn join_asof_forward_with_tolerance<T: PartialOrd + Copy + Debug + Sub<Output = T>>(
     left: &[T],

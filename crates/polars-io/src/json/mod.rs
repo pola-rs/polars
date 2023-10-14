@@ -223,10 +223,7 @@ where
                         values
                             .iter()
                             .take(self.infer_schema_len.unwrap_or(usize::MAX))
-                            .map(|value| {
-                                infer(value)
-                                    .map(|dt| DataType::from(&dt))
-                            })
+                            .map(|value| infer(value).map(|dt| DataType::from(&dt)))
                             .reduce(|l, r| {
                                 let l = l?;
                                 let r = r?;

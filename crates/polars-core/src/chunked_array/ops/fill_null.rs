@@ -1,11 +1,11 @@
 use std::ops::Add;
 
 use arrow::compute;
-use arrow::types::simd::Simd;
-use num_traits::{Bounded, NumCast, One, Zero};
 use arrow::legacy::kernels::set::set_at_nulls;
 use arrow::legacy::trusted_len::FromIteratorReversed;
 use arrow::legacy::utils::{CustomIterTools, FromTrustedLenIterator};
+use arrow::types::simd::Simd;
+use num_traits::{Bounded, NumCast, One, Zero};
 
 use crate::prelude::*;
 

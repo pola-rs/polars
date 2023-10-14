@@ -6,7 +6,7 @@ use parquet2::schema::types::{
     PrimitiveConvertedType, PrimitiveLogicalType, TimeUnit as ParquetTimeUnit,
 };
 use parquet2::schema::Repetition;
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{polars_bail, PolarsResult};
 
 use super::super::ARROW_SCHEMA_META_KEY;
 use crate::datatypes::{DataType, Field, Schema, TimeUnit};
@@ -372,8 +372,6 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
             )],
             None,
         )),
-        other => polars_bail!(nyi =
-            "Writing the data type {other:?} is not yet implemented"
-        )
+        other => polars_bail!(nyi = "Writing the data type {other:?} is not yet implemented"),
     }
 }

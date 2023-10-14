@@ -1,8 +1,8 @@
+use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_encoding")]
 use base64::engine::general_purpose;
 #[cfg(feature = "string_encoding")]
 use base64::Engine as _;
-use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
 use polars_core::export::regex::Regex;

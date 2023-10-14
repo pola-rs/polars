@@ -17,7 +17,6 @@ use crate::array::FixedSizeBinaryArray;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
 
-
 pub(super) type Dict = Vec<u8>;
 
 #[derive(Debug)]
@@ -160,7 +159,11 @@ impl<'a> Decoder<'a> for BinaryDecoder {
     type Dict = Dict;
     type DecodedState = (FixedSizeBinary, MutableBitmap);
 
-    fn build_state(&self, page: &'a DataPage, dict: Option<&'a Self::Dict>) -> PolarsResult<Self::State> {
+    fn build_state(
+        &self,
+        page: &'a DataPage,
+        dict: Option<&'a Self::Dict>,
+    ) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();

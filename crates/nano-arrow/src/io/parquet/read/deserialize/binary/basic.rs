@@ -5,7 +5,7 @@ use parquet2::deserialize::SliceFilteredIter;
 use parquet2::encoding::{delta_length_byte_array, hybrid_rle, Encoding};
 use parquet2::page::{split_buffer, DataPage, DictPage};
 use parquet2::schema::Repetition;
-use polars_error::{PolarsResult, to_compute_err};
+use polars_error::{to_compute_err, PolarsResult};
 
 use super::super::utils::{
     extend_from_decoder, get_selected_rows, next, DecodedState, FilteredOptionalPageValidity,
@@ -235,7 +235,11 @@ impl<'a, O: Offset> utils::Decoder<'a> for BinaryDecoder<O> {
     type Dict = Dict;
     type DecodedState = (Binary<O>, MutableBitmap);
 
-    fn build_state(&self, page: &'a DataPage, dict: Option<&'a Self::Dict>) -> PolarsResult<Self::State> {
+    fn build_state(
+        &self,
+        page: &'a DataPage,
+        dict: Option<&'a Self::Dict>,
+    ) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();

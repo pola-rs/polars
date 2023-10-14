@@ -1,4 +1,5 @@
 use polars_error::{polars_bail, PolarsResult};
+
 use super::{primitive_as_primitive, primitive_to_primitive, CastOptions};
 use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
 use crate::compute::cast::cast;

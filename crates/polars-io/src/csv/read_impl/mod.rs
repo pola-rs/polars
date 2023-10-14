@@ -6,9 +6,9 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use arrow::legacy::array::*;
 pub use batched_mmap::*;
 pub use batched_read::*;
-use arrow::legacy::array::*;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical, get_casting_failures};

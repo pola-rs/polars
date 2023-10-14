@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
+
 use polars_error::{polars_err, PolarsResult};
 
 use super::super::super::IpcField;

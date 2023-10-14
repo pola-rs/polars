@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use polars_error::PolarsResult;
 use polars_core::prelude::{DataType, Field, *};
 use polars_core::series::Series;
+use polars_error::PolarsResult;
 use polars_lazy::prelude::IntoLazy;
 use polars_plan::prelude::{GetOutput, UserDefinedFunction};
 use polars_sql::function_registry::FunctionRegistry;

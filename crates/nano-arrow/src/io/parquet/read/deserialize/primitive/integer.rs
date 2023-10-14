@@ -7,7 +7,7 @@ use parquet2::encoding::Encoding;
 use parquet2::page::{split_buffer, DataPage, DictPage};
 use parquet2::schema::Repetition;
 use parquet2::types::NativeType as ParquetNativeType;
-use polars_error::{PolarsResult, to_compute_err};
+use polars_error::{to_compute_err, PolarsResult};
 
 use super::super::{utils, Pages};
 use super::basic::{finish, PrimitiveDecoder, State as PrimitiveState};
@@ -80,7 +80,11 @@ where
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
 
-    fn build_state(&self, page: &'a DataPage, dict: Option<&'a Self::Dict>) -> PolarsResult<Self::State> {
+    fn build_state(
+        &self,
+        page: &'a DataPage,
+        dict: Option<&'a Self::Dict>,
+    ) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();

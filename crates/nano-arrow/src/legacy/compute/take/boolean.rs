@@ -1,7 +1,6 @@
+use super::bitmap::take_bitmap_unchecked;
 use crate::array::{Array, BooleanArray, PrimitiveArray};
 use crate::bitmap::{Bitmap, MutableBitmap};
-
-use super::bitmap::take_bitmap_unchecked;
 use crate::legacy::index::IdxSize;
 
 // take implementation when neither values nor indices contain nulls

@@ -197,8 +197,8 @@ fn make_mutable(data_type: &DataType, capacity: usize) -> PolarsResult<Box<dyn M
             Box::new(MutableNullArray::new(DataType::Null, 0)) as Box<dyn MutableArray>
         },
         other => {
-            polars_bail!(nyi =
-                "deserializing parquet stats from {other:?} is still not implemented"
+            polars_bail!(
+                nyi = "deserializing parquet stats from {other:?} is still not implemented"
             )
         },
     })
@@ -453,9 +453,7 @@ fn push(
             // some implementations of parquet write arrow's u32 into i64.
             ParquetPhysicalType::Int64 => primitive::push(from, min, max, |x: i64| Ok(x as u32)),
             ParquetPhysicalType::Int32 => primitive::push(from, min, max, |x: i32| Ok(x as u32)),
-            other => polars_bail!(nyi =
-                "Can't decode UInt32 type from parquet type {other:?}"
-            ),
+            other => polars_bail!(nyi = "Can't decode UInt32 type from parquet type {other:?}"),
         },
         Int32 => primitive::push::<i32, i32, _>(from, min, max, Ok),
         Date64 => match physical_type {
@@ -464,9 +462,7 @@ fn push(
             ParquetPhysicalType::Int32 => {
                 primitive::push(from, min, max, |x: i32| Ok(x as i64 * 86400000))
             },
-            other => polars_bail!(nyi =
-                "Can't decode Date64 type from parquet type {other:?}"
-            ),
+            other => polars_bail!(nyi = "Can't decode Date64 type from parquet type {other:?}"),
         },
         Int64 | Time64(_) | Duration(_) => primitive::push::<i64, i64, _>(from, min, max, Ok),
         UInt64 => primitive::push(from, min, max, |x: i64| Ok(x as u64)),
@@ -513,8 +509,8 @@ fn push(
         Decimal(_, _) => match physical_type {
             ParquetPhysicalType::Int32 => primitive::push(from, min, max, |x: i32| Ok(x as i128)),
             ParquetPhysicalType::Int64 => primitive::push(from, min, max, |x: i64| Ok(x as i128)),
-            ParquetPhysicalType::FixedLenByteArray(n) if *n > 16 => polars_bail!(nyi=
-                "Can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}"
+            ParquetPhysicalType::FixedLenByteArray(n) if *n > 16 => polars_bail!(
+                nyi = "Can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}"
             ),
             ParquetPhysicalType::FixedLenByteArray(n) => fixlen::push_i128(from, *n, min, max),
             _ => unreachable!(),

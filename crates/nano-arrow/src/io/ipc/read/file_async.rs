@@ -6,7 +6,7 @@ use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{Block, MessageHeaderRef};
 use futures::stream::BoxStream;
 use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, Stream, StreamExt};
-use polars_error::{polars_bail, polars_err, PolarsResult, to_compute_err};
+use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::common::{apply_projection, prepare_projection, read_dictionary, read_record_batch};
 use super::file::{deserialize_footer, get_record_batch};
@@ -297,7 +297,11 @@ where
     Ok(dictionaries)
 }
 
-async fn read_dictionary_message<R>(mut reader: R, offset: u64, data: &mut Vec<u8>) -> PolarsResult<()>
+async fn read_dictionary_message<R>(
+    mut reader: R,
+    offset: u64,
+    data: &mut Vec<u8>,
+) -> PolarsResult<()>
 where
     R: AsyncRead + AsyncSeek + Unpin,
 {

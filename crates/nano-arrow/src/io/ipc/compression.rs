@@ -1,5 +1,4 @@
-use polars_error::{PolarsResult, to_compute_err};
-
+use polars_error::{to_compute_err, PolarsResult};
 
 #[cfg(feature = "io_ipc_compression")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_compression")))]
@@ -31,7 +30,6 @@ pub fn decompress_zstd(_input_buf: &[u8], _output_buf: &mut [u8]) -> PolarsResul
 #[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_compression")))]
 pub fn compress_lz4(input_buf: &[u8], output_buf: &mut Vec<u8>) -> PolarsResult<()> {
     use std::io::Write;
-
 
     let mut encoder = lz4::EncoderBuilder::new()
         .build(output_buf)

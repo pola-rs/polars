@@ -64,7 +64,6 @@ mod tests {
     use crate::array::NullArray;
     use crate::datatypes::DataType;
 
-
     #[test]
     fn limit() {
         let new_page = |values: i32| {

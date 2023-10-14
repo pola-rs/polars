@@ -1,8 +1,8 @@
 use polars_error::PolarsResult;
+
 use super::Utf8Array;
 use crate::array::{FromFfi, ToFfi};
 use crate::bitmap::align;
-
 use crate::ffi;
 use crate::offset::{Offset, OffsetsBuffer};
 

@@ -1,10 +1,9 @@
 use crate::array::ListArray;
-use crate::offset::{Offsets, OffsetsBuffer};
-
 use crate::legacy::compute::take::take_unchecked;
 use crate::legacy::prelude::*;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::legacy::utils::CustomIterTools;
+use crate::offset::{Offsets, OffsetsBuffer};
 
 /// Get the indices that would result in a get operation on the lists values.
 /// for example, consider this list:

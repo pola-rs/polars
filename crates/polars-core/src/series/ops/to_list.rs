@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use arrow::offset::Offsets;
 use arrow::legacy::kernels::list::array_to_unit_list;
+use arrow::offset::Offsets;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;

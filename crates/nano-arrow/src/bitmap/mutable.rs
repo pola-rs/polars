@@ -1,6 +1,7 @@
 use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
 use std::sync::Arc;
+
 use polars_error::{polars_bail, PolarsResult};
 
 use super::utils::{
@@ -8,7 +9,6 @@ use super::utils::{
 };
 use super::Bitmap;
 use crate::bitmap::utils::{merge_reversed, set_bit_unchecked};
-
 use crate::trusted_len::TrustedLen;
 
 /// A container of booleans. [`MutableBitmap`] is semantically equivalent

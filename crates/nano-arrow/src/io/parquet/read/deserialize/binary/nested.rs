@@ -13,7 +13,6 @@ use super::utils::*;
 use crate::array::Array;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-
 use crate::io::parquet::read::Pages;
 use crate::offset::Offset;
 
@@ -87,7 +86,11 @@ impl<'a, O: Offset> NestedDecoder<'a> for BinaryDecoder<O> {
         )
     }
 
-    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> PolarsResult<()> {
+    fn push_valid(
+        &self,
+        state: &mut Self::State,
+        decoded: &mut Self::DecodedState,
+    ) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
             State::Optional(page) => {

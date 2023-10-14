@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
+use arrow::legacy::utils::CustomIterTools;
 #[cfg(feature = "timezones")]
 use once_cell::sync::Lazy;
-use arrow::legacy::utils::CustomIterTools;
 #[cfg(feature = "regex")]
 use regex::{escape, Regex};
 #[cfg(feature = "serde")]

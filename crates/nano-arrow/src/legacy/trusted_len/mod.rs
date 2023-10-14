@@ -5,11 +5,11 @@ mod rev;
 use std::iter::Scan;
 use std::slice::Iter;
 
-use crate::array::FixedSizeListArray;
-use crate::bitmap::utils::{BitmapIter, ZipValidity, ZipValidityIter};
 pub use push_unchecked::*;
 pub use rev::FromIteratorReversed;
 
+use crate::array::FixedSizeListArray;
+use crate::bitmap::utils::{BitmapIter, ZipValidity, ZipValidityIter};
 use crate::legacy::utils::TrustMyLength;
 
 /// An iterator of known, fixed size.

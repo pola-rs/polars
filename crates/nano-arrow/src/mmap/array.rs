@@ -1,10 +1,10 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
+
 use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use crate::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, StructArray};
 use crate::datatypes::DataType;
-
 use crate::ffi::mmap::create_array;
 use crate::ffi::{export_array_to_c, try_from, ArrowArray, InternalArrowArray};
 use crate::io::ipc::read::{Dictionaries, IpcBuffer, Node, OutOfSpecKind};
@@ -13,20 +13,18 @@ use crate::offset::Offset;
 use crate::types::NativeType;
 use crate::{match_integer_type, with_match_primitive_type};
 
-fn get_buffer_bounds(buffers: &mut VecDeque<IpcBuffer>) -> PolarsResult<(usize, usize) > {
-    let buffer = buffers
-        .pop_front()
-        .ok_or_else(|| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::ExpectedBuffer))?;
+fn get_buffer_bounds(buffers: &mut VecDeque<IpcBuffer>) -> PolarsResult<(usize, usize)> {
+    let buffer = buffers.pop_front().ok_or_else(
+        || polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::ExpectedBuffer),
+    )?;
 
-    let offset: usize = buffer
-        .offset()
-        .try_into()
-        .map_err(|_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
+    let offset: usize = buffer.offset().try_into().map_err(
+        |_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength),
+    )?;
 
-    let length: usize = buffer
-        .length()
-        .try_into()
-        .map_err(|_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
+    let length: usize = buffer.length().try_into().map_err(
+        |_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength),
+    )?;
 
     Ok((offset, length))
 }
@@ -69,7 +67,7 @@ fn get_validity<'a>(
         // verify that they are in-bounds and get its pointer
         Some(
             data.get(block_offset + offset..block_offset + offset + length)
-                .ok_or_else(|| polars_err!(ComputeError: "buffer out of bounds"))?
+                .ok_or_else(|| polars_err!(ComputeError: "buffer out of bounds"))?,
         )
     } else {
         None
@@ -80,7 +78,7 @@ fn get_num_rows_and_null_count(node: &Node) -> PolarsResult<(usize, usize)> {
     let num_rows: usize = node
         .length()
         .try_into()
-        .map_err(|_| polars_err!(oos =  OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     let null_count: usize = node
         .null_count()
@@ -127,7 +125,7 @@ fn mmap_fixed_size_binary<T: AsRef<[u8]>>(
     let bytes_per_row = if let DataType::FixedSizeBinary(bytes_per_row) = data_type {
         bytes_per_row
     } else {
-       polars_bail!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidDataType);
+        polars_bail!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidDataType);
     };
     let (num_rows, null_count) = get_num_rows_and_null_count(node)?;
 
@@ -410,9 +408,9 @@ fn get_array<T: AsRef<[u8]>>(
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<ArrowArray> {
     use crate::datatypes::PhysicalType::*;
-    let node = field_nodes
-        .pop_front()
-        .ok_or_else(|| polars_err!(ComputeError: "out-of-spec: {:?}", OutOfSpecKind::ExpectedBuffer))?;
+    let node = field_nodes.pop_front().ok_or_else(
+        || polars_err!(ComputeError: "out-of-spec: {:?}", OutOfSpecKind::ExpectedBuffer),
+    )?;
 
     match data_type.to_physical_type() {
         Null => mmap_null(data, &node, block_offset, buffers),

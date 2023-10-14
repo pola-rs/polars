@@ -3,11 +3,10 @@ use crate::array::{
 };
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::offset::Offsets;
-use crate::types::NativeType;
-
 use crate::legacy::prelude::*;
 use crate::legacy::utils::CustomIterTools;
+use crate::offset::Offsets;
+use crate::types::NativeType;
 
 pub mod default_arrays;
 #[cfg(feature = "dtype-array")]

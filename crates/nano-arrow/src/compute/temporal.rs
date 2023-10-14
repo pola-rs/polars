@@ -65,7 +65,7 @@ macro_rules! date_like {
                     chrono_tz(array, *time_unit, timezone_str, |x| x.$extract())
                 }
             },
-            _ => unimplemented!()
+            _ => unimplemented!(),
         }
     };
 }
@@ -156,7 +156,11 @@ pub fn nanosecond(array: &dyn Array) -> PolarsResult<PrimitiveArray<u32>> {
     time_like!(nanosecond, array, DataType::UInt32)
 }
 
-fn date_variants<F, O>(array: &dyn Array, data_type: DataType, op: F) -> PolarsResult<PrimitiveArray<O>>
+fn date_variants<F, O>(
+    array: &dyn Array,
+    data_type: DataType,
+    op: F,
+) -> PolarsResult<PrimitiveArray<O>>
 where
     O: NativeType,
     F: Fn(chrono::NaiveDateTime) -> O,
@@ -193,7 +197,11 @@ where
     }
 }
 
-fn time_variants<F, O>(array: &dyn Array, data_type: DataType, op: F) -> PolarsResult<PrimitiveArray<O>>
+fn time_variants<F, O>(
+    array: &dyn Array,
+    data_type: DataType,
+    op: F,
+) -> PolarsResult<PrimitiveArray<O>>
 where
     O: NativeType,
     F: Fn(chrono::NaiveTime) -> O,
@@ -257,10 +265,10 @@ where
     O: NativeType,
     F: Fn(chrono::DateTime<chrono::FixedOffset>) -> O,
 {
-    Err(Error::InvalidArgumentError(format!(
+    panic!(
         "timezone \"{}\" cannot be parsed (feature chrono-tz is not active)",
         timezone_str
-    )))
+    )
 }
 
 fn extract_impl<T, A, F>(

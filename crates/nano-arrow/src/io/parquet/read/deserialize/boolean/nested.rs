@@ -13,7 +13,6 @@ use crate::bitmap::utils::BitmapIter;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
 
-
 // The state of a `DataPage` of `Boolean` parquet boolean type
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]

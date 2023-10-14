@@ -1,4 +1,5 @@
 use polars_error::PolarsResult;
+
 use crate::array::{Array, BinaryArray, BooleanArray, PrimitiveArray, Utf8Array};
 use crate::offset::Offset;
 use crate::types::NativeType;

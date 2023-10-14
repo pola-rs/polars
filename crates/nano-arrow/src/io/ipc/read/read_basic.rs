@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::io::{Read, Seek, SeekFrom};
+
 use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::super::compression;
@@ -52,12 +53,14 @@ fn read_uncompressed_buffer<T: NativeType, R: Read + Seek>(
 ) -> PolarsResult<Vec<T>> {
     let required_number_of_bytes = length.saturating_mul(std::mem::size_of::<T>());
     if required_number_of_bytes > buffer_length {
-        polars_bail!(oos = OutOfSpecKind::InvalidBuffer {
-            length,
-            type_name: std::any::type_name::<T>(),
-            required_number_of_bytes,
-            buffer_length,
-        });
+        polars_bail!(
+            oos = OutOfSpecKind::InvalidBuffer {
+                length,
+                type_name: std::any::type_name::<T>(),
+                required_number_of_bytes,
+                buffer_length,
+            }
+        );
     }
 
     // it is undefined behavior to call read_exact on un-initialized, https://doc.rust-lang.org/std/io/trait.Read.html#tymethod.read
@@ -163,10 +166,11 @@ fn read_uncompressed_bitmap<R: Read + Seek>(
     reader: &mut R,
 ) -> PolarsResult<Vec<u8>> {
     if length > bytes * 8 {
-        polars_bail!(oos = OutOfSpecKind::InvalidBitmap {
-            length,
-            number_of_bits: bytes * 8,
-        }
+        polars_bail!(
+            oos = OutOfSpecKind::InvalidBitmap {
+                length,
+                number_of_bits: bytes * 8,
+            }
         )
     }
 
@@ -224,12 +228,12 @@ pub fn read_bitmap<R: Read + Seek>(
     let offset: u64 = buf
         .offset()
         .try_into()
-        .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     let bytes: usize = buf
         .length()
         .try_into()
-        .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     reader.seek(SeekFrom::Start(block_offset + offset))?;
 
@@ -256,7 +260,7 @@ pub fn read_validity<R: Read + Seek>(
     let length: usize = field_node
         .length()
         .try_into()
-        .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
     let length = limit.map(|limit| limit.min(length)).unwrap_or(length);
 
     Ok(if field_node.null_count() > 0 {

@@ -7,7 +7,7 @@ use parquet2::encoding::hybrid_rle;
 use parquet2::indexes::Interval;
 use parquet2::page::{split_buffer, DataPage, DictPage, Page};
 use parquet2::schema::Repetition;
-use polars_error::{polars_err, PolarsError, PolarsResult, to_compute_err};
+use polars_error::{polars_err, to_compute_err, PolarsError, PolarsResult};
 
 use super::super::Pages;
 use crate::bitmap::utils::BitmapIter;

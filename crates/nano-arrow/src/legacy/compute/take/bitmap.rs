@@ -1,5 +1,4 @@
 use crate::bitmap::Bitmap;
-
 use crate::legacy::index::IdxSize;
 
 /// # Safety

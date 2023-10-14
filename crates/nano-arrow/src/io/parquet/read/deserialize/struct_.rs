@@ -1,4 +1,5 @@
-use polars_error::{PolarsError, PolarsResult};
+use polars_error::PolarsResult;
+
 use super::nested_utils::{NestedArrayIter, NestedState};
 use crate::array::{Array, StructArray};
 use crate::datatypes::{DataType, Field};

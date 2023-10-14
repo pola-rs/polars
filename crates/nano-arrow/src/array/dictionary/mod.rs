@@ -241,9 +241,7 @@ impl<K: DictionaryKey> DictionaryArray<K> {
     ///
     /// Panics if the keys of this [`DictionaryArray`] have any null types.
     /// If they do [`DictionaryArray::iter_typed`] should be called
-    pub fn values_iter_typed<V: DictValue>(
-        &self,
-    ) -> PolarsResult<DictionaryValuesIterTyped<K, V>> {
+    pub fn values_iter_typed<V: DictValue>(&self) -> PolarsResult<DictionaryValuesIterTyped<K, V>> {
         let keys = &self.keys;
         assert_eq!(keys.null_count(), 0);
         let values = self.values.as_ref();

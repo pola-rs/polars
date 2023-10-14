@@ -62,9 +62,7 @@ fn make_mutable(
                     as Box<dyn MutableArray>
             },
             other => {
-                polars_bail!(nyi =
-                    "Deserializing type {other:#?} is still not implemented"
-                )
+                polars_bail!(nyi = "Deserializing type {other:#?} is still not implemented")
             },
         },
     })
@@ -250,8 +248,8 @@ fn deserialize_value<'a>(
                     let len = match avro_inner {
                         AvroSchema::Bytes(_) => {
                             util::zigzag_i64(&mut block)?.try_into().map_err(|_| {
-                                polars_err!(oos =
-                                    "Avro format contains a non-usize number of bytes"
+                                polars_err!(
+                                    oos = "Avro format contains a non-usize number of bytes"
                                 )
                             })?
                         },
@@ -259,9 +257,7 @@ fn deserialize_value<'a>(
                         _ => unreachable!(),
                     };
                     if len > 16 {
-                        polars_bail!(oos =
-                            "Avro decimal bytes return more than 16 bytes"
-                        )
+                        polars_bail!(oos = "Avro decimal bytes return more than 16 bytes")
                     }
                     let mut bytes = [0u8; 16];
                     bytes[..len].copy_from_slice(&block[..len]);
@@ -277,9 +273,7 @@ fn deserialize_value<'a>(
             },
             PhysicalType::Utf8 => {
                 let len: usize = util::zigzag_i64(&mut block)?.try_into().map_err(|_| {
-                    polars_err!(oos =
-                        "Avro format contains a non-usize number of bytes"
-                    )
+                    polars_err!(oos = "Avro format contains a non-usize number of bytes")
                 })?;
                 let data = simdutf8::basic::from_utf8(&block[..len])?;
                 block = &block[len..];
@@ -292,9 +286,7 @@ fn deserialize_value<'a>(
             },
             PhysicalType::Binary => {
                 let len: usize = util::zigzag_i64(&mut block)?.try_into().map_err(|_| {
-                    polars_err!(oos =
-                        "Avro format contains a non-usize number of bytes"
-                    )
+                    polars_err!(oos = "Avro format contains a non-usize number of bytes")
                 })?;
                 let data = &block[..len];
                 block = &block[len..];
@@ -329,7 +321,11 @@ fn deserialize_value<'a>(
     Ok(block)
 }
 
-fn skip_item<'a>(field: &Field, avro_field: &AvroSchema, mut block: &'a [u8]) -> PolarsResult<&'a [u8]> {
+fn skip_item<'a>(
+    field: &Field,
+    avro_field: &AvroSchema,
+    mut block: &'a [u8],
+) -> PolarsResult<&'a [u8]> {
     if field.is_nullable {
         let variant = util::zigzag_i64(&mut block)?;
         let is_null_first = is_union_null_first(avro_field);
@@ -431,8 +427,8 @@ fn skip_item<'a>(field: &Field, avro_field: &AvroSchema, mut block: &'a [u8]) ->
                     let len = match avro_inner {
                         AvroSchema::Bytes(_) => {
                             util::zigzag_i64(&mut block)?.try_into().map_err(|_| {
-                                polars_err!(oos =
-                                    "Avro format contains a non-usize number of bytes"
+                                polars_err!(
+                                    oos = "Avro format contains a non-usize number of bytes"
                                 )
                             })?
                         },
@@ -445,9 +441,7 @@ fn skip_item<'a>(field: &Field, avro_field: &AvroSchema, mut block: &'a [u8]) ->
             },
             PhysicalType::Utf8 | PhysicalType::Binary => {
                 let len: usize = util::zigzag_i64(&mut block)?.try_into().map_err(|_| {
-                    polars_err!(oos =
-                        "Avro format contains a non-usize number of bytes"
-                    )
+                    polars_err!(oos = "Avro format contains a non-usize number of bytes")
                 })?;
                 block = &block[len..];
             },

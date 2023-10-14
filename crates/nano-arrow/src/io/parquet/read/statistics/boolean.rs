@@ -3,7 +3,6 @@ use polars_error::PolarsResult;
 
 use crate::array::{MutableArray, MutableBooleanArray};
 
-
 pub(super) fn push(
     from: Option<&dyn ParquetStatistics>,
     min: &mut dyn MutableArray,

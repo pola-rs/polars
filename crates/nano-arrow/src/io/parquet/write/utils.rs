@@ -10,7 +10,6 @@ use polars_error::PolarsResult;
 use super::{Version, WriteOptions};
 use crate::bitmap::Bitmap;
 
-
 fn encode_iter_v1<I: Iterator<Item = bool>>(buffer: &mut Vec<u8>, iter: I) -> PolarsResult<()> {
     buffer.extend_from_slice(&[0; 4]);
     let start = buffer.len();

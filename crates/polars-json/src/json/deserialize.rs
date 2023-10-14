@@ -5,11 +5,11 @@ use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
 use arrow::chunk::Chunk;
 use arrow::datatypes::{DataType, Field, IntervalUnit, Schema};
+use arrow::legacy::prelude::*;
 use arrow::offset::{Offset, Offsets};
 use arrow::temporal_conversions;
 use arrow::types::{f16, NativeType};
 use num_traits::NumCast;
-use arrow::legacy::prelude::*;
 use simd_json::{BorrowedValue, StaticNode};
 
 use super::*;

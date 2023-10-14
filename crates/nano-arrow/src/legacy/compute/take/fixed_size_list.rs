@@ -2,10 +2,9 @@ use crate::array::growable::{Growable, GrowableFixedSizeList};
 use crate::array::{Array, FixedSizeListArray, PrimitiveArray};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::{DataType, PhysicalType};
-use crate::types::NativeType;
-
 use crate::legacy::index::{IdxArr, IdxSize};
 use crate::legacy::prelude::ArrayRef;
+use crate::types::NativeType;
 use crate::with_match_primitive_type;
 
 pub unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxArr) -> FixedSizeListArray {

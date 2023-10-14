@@ -274,8 +274,6 @@ pub fn array_to_pages<K: DictionaryKey>(
             let iter = std::iter::once(Ok(dict_page)).chain(std::iter::once(Ok(data_page)));
             Ok(DynIter::new(Box::new(iter)))
         },
-        _ => polars_bail!(nyi =
-            "Dictionary arrays only support dictionary encoding"
-        )
+        _ => polars_bail!(nyi = "Dictionary arrays only support dictionary encoding"),
     }
 }

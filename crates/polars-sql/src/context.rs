@@ -1,8 +1,8 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 
-use polars_error::to_compute_err;
 use polars_core::prelude::*;
+use polars_error::to_compute_err;
 use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
 use polars_plan::utils::expressions_to_schema;

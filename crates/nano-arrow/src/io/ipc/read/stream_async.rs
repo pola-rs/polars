@@ -47,9 +47,9 @@ pub async fn read_stream_metadata_async<R: AsyncRead + Unpin + Send>(
         i32::from_le_bytes(meta_size)
     };
 
-    let meta_len: usize = meta_len
-        .try_into()
-        .map_err(|_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
+    let meta_len: usize = meta_len.try_into().map_err(
+        |_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength),
+    )?;
 
     let mut meta_buffer = vec![];
     meta_buffer.try_reserve(meta_len)?;
@@ -93,9 +93,9 @@ async fn maybe_next<R: AsyncRead + Unpin + Send>(
         i32::from_le_bytes(meta_length)
     };
 
-    let meta_length: usize = meta_length
-        .try_into()
-        .map_err(|_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
+    let meta_length: usize = meta_length.try_into().map_err(
+        |_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength),
+    )?;
 
     if meta_length == 0 {
         // the stream has ended, mark the reader as finished
@@ -119,9 +119,9 @@ async fn maybe_next<R: AsyncRead + Unpin + Send>(
 
     let block_length: usize = message
         .body_length()
-        .map_err(|err| polars_err!(oos= OutOfSpecKind::InvalidFlatbufferBodyLength(err)))?
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferBodyLength(err)))?
         .try_into()
-        .map_err(|err| polars_err!(oos= OutOfSpecKind::UnexpectedNegativeInteger))?;
+        .map_err(|_err| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
 
     match header {
         arrow_format::ipc::MessageHeaderRef::RecordBatch(batch) => {
@@ -173,7 +173,7 @@ async fn maybe_next<R: AsyncRead + Unpin + Send>(
             // read the next message until we encounter a Chunk<Box<dyn Array>> message
             Ok(Some(StreamState::Waiting(state)))
         },
-        _ => polars_bail!(oos = OutOfSpecKind::UnexpectedMessageType)
+        _ => polars_bail!(oos = OutOfSpecKind::UnexpectedMessageType),
     }
 }
 

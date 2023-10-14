@@ -2,8 +2,8 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 use ahash::RandomState;
-use num_traits::NumCast;
 use arrow::legacy::prelude::QuantileInterpolOptions;
+use num_traits::NumCast;
 use rayon::prelude::*;
 
 use self::hashing::*;

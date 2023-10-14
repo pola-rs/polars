@@ -1,11 +1,11 @@
 use std::ops::{AddAssign, DivAssign, MulAssign};
 
-use crate::array::PrimitiveArray;
-use crate::types::NativeType;
 use num_traits::Float;
 
+use crate::array::PrimitiveArray;
 use crate::legacy::trusted_len::TrustedLen;
 use crate::legacy::utils::CustomIterTools;
+use crate::types::NativeType;
 
 #[allow(clippy::too_many_arguments)]
 fn ewm_cov_internal<I, T>(

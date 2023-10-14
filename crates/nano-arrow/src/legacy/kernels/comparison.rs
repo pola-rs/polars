@@ -1,6 +1,5 @@
 use crate::array::{BooleanArray, FixedSizeListArray};
 use crate::bitmap::utils::count_zeros;
-
 use crate::legacy::utils::combine_validities_and;
 
 fn fixed_size_list_cmp<F>(a: &FixedSizeListArray, b: &FixedSizeListArray, func: F) -> BooleanArray

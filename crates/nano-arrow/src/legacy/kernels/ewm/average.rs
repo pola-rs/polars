@@ -1,11 +1,11 @@
 use std::ops::{AddAssign, MulAssign};
 
-use crate::array::PrimitiveArray;
-use crate::types::NativeType;
 use num_traits::Float;
 
+use crate::array::PrimitiveArray;
 use crate::legacy::trusted_len::TrustedLen;
 use crate::legacy::utils::CustomIterTools;
+use crate::types::NativeType;
 
 pub fn ewm_mean<I, T>(
     xs: I,

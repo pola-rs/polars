@@ -1,4 +1,5 @@
 use polars_error::{polars_err, PolarsResult};
+
 use super::DictionaryKey;
 use crate::array::{Array, PrimitiveArray, Utf8Array};
 use crate::trusted_len::TrustedLen;
@@ -33,9 +34,9 @@ impl<O: Offset> DictValue for Utf8Array<O> {
         array
             .as_any()
             .downcast_ref::<Self>()
-            .ok_or_else(|| {
-                polars_err!(InvalidOperation: "could not convert array to dictionary value")
-            })
+            .ok_or_else(
+                || polars_err!(InvalidOperation: "could not convert array to dictionary value"),
+            )
             .map(|arr| {
                 assert_eq!(
                     arr.null_count(),

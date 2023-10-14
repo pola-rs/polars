@@ -1,7 +1,8 @@
+use num_traits::Float;
+
 use crate::array::PrimitiveArray;
 use crate::compute::arity::binary;
 use crate::types::NativeType;
-use num_traits::Float;
 
 pub fn atan2<T: NativeType>(
     arr_1: &PrimitiveArray<T>,

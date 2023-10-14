@@ -1,10 +1,9 @@
-
 #[macro_export]
 macro_rules! with_match_primitive_type {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use crate::datatypes::PrimitiveType::*;
+    use $crate::datatypes::PrimitiveType::*;
     match $key_type {
         Int8 => __with_ty__! { i8 },
         Int16 => __with_ty__! { i16 },
@@ -26,7 +25,7 @@ macro_rules! match_integer_type {(
     $key_type:expr, | $_:tt $T:ident | $($body:tt)*
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use crate::datatypes::IntegerType::*;
+    use $crate::datatypes::IntegerType::*;
     match $key_type {
         Int8 => __with_ty__! { i8 },
         Int16 => __with_ty__! { i16 },
@@ -38,4 +37,3 @@ macro_rules! match_integer_type {(
         UInt64 => __with_ty__! { u64 },
     }
 })}
-

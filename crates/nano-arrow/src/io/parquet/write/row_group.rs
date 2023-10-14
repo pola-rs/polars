@@ -2,7 +2,7 @@ use parquet2::error::Error as ParquetError;
 use parquet2::schema::types::ParquetType;
 use parquet2::write::Compressor;
 use parquet2::FallibleStreamingIterator;
-use polars_error::{polars_bail, PolarsError, PolarsResult, to_compute_err};
+use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 
 use super::{
     array_to_columns, to_parquet_schema, DynIter, DynStreamingIterator, Encoding, RowGroupIter,
@@ -57,14 +57,19 @@ pub fn row_group_iter<A: AsRef<dyn Array> + 'static + Send + Sync>(
 /// An iterator adapter that converts an iterator over [`Chunk`] into an iterator
 /// of row groups.
 /// Use it to create an iterator consumable by the parquet's API.
-pub struct RowGroupIterator<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<Chunk<A>>>> {
+pub struct RowGroupIterator<
+    A: AsRef<dyn Array> + 'static,
+    I: Iterator<Item = PolarsResult<Chunk<A>>>,
+> {
     iter: I,
     options: WriteOptions,
     parquet_schema: SchemaDescriptor,
     encodings: Vec<Vec<Encoding>>,
 }
 
-impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<Chunk<A>>>> RowGroupIterator<A, I> {
+impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<Chunk<A>>>>
+    RowGroupIterator<A, I>
+{
     /// Creates a new [`RowGroupIterator`] from an iterator over [`Chunk`].
     ///
     /// # Errors
@@ -98,8 +103,8 @@ impl<A: AsRef<dyn Array> + 'static, I: Iterator<Item = PolarsResult<Chunk<A>>>> 
     }
 }
 
-impl<A: AsRef<dyn Array> + 'static + Send + Sync, I: Iterator<Item = PolarsResult<Chunk<A>>>> Iterator
-    for RowGroupIterator<A, I>
+impl<A: AsRef<dyn Array> + 'static + Send + Sync, I: Iterator<Item = PolarsResult<Chunk<A>>>>
+    Iterator for RowGroupIterator<A, I>
 {
     type Item = PolarsResult<RowGroupIter<'static, PolarsError>>;
 

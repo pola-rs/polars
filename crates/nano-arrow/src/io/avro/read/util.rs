@@ -1,8 +1,8 @@
 use std::io::Read;
+
 use polars_error::PolarsResult;
 
 use super::super::avro_decode;
-
 
 pub fn zigzag_i64<R: Read>(reader: &mut R) -> PolarsResult<i64> {
     let z = decode_variable(reader)?;

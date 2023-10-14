@@ -1,5 +1,4 @@
 use crate::array::{BinaryArray, ListArray, Utf8Array};
-
 pub use crate::legacy::array::default_arrays::*;
 pub use crate::legacy::array::*;
 pub use crate::legacy::bitmap::mutable::MutableBitmapExtension;

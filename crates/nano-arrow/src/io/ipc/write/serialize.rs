@@ -7,10 +7,10 @@ use super::common::{pad_to_64, Compression};
 use crate::array::*;
 use crate::bitmap::Bitmap;
 use crate::datatypes::PhysicalType;
-use crate::{match_integer_type, with_match_primitive_type};
 use crate::offset::{Offset, OffsetsBuffer};
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
+use crate::{match_integer_type, with_match_primitive_type};
 
 fn write_primitive<T: NativeType>(
     array: &PrimitiveArray<T>,

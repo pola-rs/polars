@@ -589,9 +589,7 @@ pub fn array_to_page_simple(
                 fixed_len_bytes::array_to_page(&array, options, type_, statistics)
             }
         },
-        other => polars_bail!(nyi =
-            "Writing parquet pages for data type {other:?}"
-        )
+        other => polars_bail!(nyi = "Writing parquet pages for data type {other:?}"),
     }
     .map(Page::Data)
 }
@@ -800,9 +798,7 @@ fn array_to_page_nested(
                 fixed_len_bytes::array_to_page(&array, options, type_, statistics)
             }
         },
-        other => polars_bail!(nyi =
-            "Writing nested parquet pages for data type {other:?}"
-        )
+        other => polars_bail!(nyi = "Writing nested parquet pages for data type {other:?}"),
     }
     .map(Page::Data)
 }

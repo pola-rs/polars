@@ -298,7 +298,7 @@ fn create_serializer<'a>(
                         options.compression,
                         vec![],
                     )
-                    .map_err(|e| PolarsError::from(e)),
+                    .map_err(PolarsError::from),
                 );
 
                 Ok(pages)

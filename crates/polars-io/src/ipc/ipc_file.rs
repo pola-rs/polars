@@ -146,7 +146,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
             if verbose {
                 eprintln!("memory map ipc file")
             }
-            return self.finish_memmapped(predicate.clone())
+            return self.finish_memmapped(predicate.clone());
         }
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
@@ -193,7 +193,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 
     fn finish(mut self) -> PolarsResult<DataFrame> {
         if self.memmap && self.reader.to_file().is_some() {
-            return self.finish_memmapped(None)
+            return self.finish_memmapped(None);
         }
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;

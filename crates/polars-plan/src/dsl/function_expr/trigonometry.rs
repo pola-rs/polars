@@ -1,5 +1,5 @@
-use num::Float;
 use arrow::legacy::kernels::atan2::atan2 as atan2_kernel;
+use num::Float;
 use polars_core::export::num;
 
 use super::*;

@@ -1,13 +1,12 @@
 use polars_error::PolarsResult;
+
 use crate::array::{new_null_array, Array, ListArray, NullArray, StructArray};
 use crate::bitmap::MutableBitmap;
 use crate::compute::concatenate;
 use crate::datatypes::DataType;
-
-use crate::offset::Offsets;
-
 use crate::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use crate::legacy::prelude::*;
+use crate::offset::Offsets;
 
 pub struct AnonymousBuilder<'a> {
     arrays: Vec<&'a dyn Array>,

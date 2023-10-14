@@ -6,7 +6,6 @@ use polars_error::PolarsResult;
 use super::super::{nested, utils, WriteOptions};
 use super::basic::{build_statistics, encode_plain};
 use crate::array::{Array, BinaryArray};
-
 use crate::io::parquet::read::schema::is_nullable;
 use crate::io::parquet::write::Nested;
 use crate::offset::Offset;

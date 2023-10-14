@@ -1,4 +1,5 @@
-use polars_error::{polars_bail, polars_err, PolarsResult, to_compute_err};
+use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
+
 use crate::array::DictionaryKey;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 

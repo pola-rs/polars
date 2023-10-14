@@ -1,4 +1,5 @@
 use polars_error::PolarsResult;
+
 use super::CastOptions;
 use crate::array::*;
 use crate::datatypes::DataType;

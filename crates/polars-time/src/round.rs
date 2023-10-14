@@ -1,5 +1,5 @@
-use arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 use arrow::legacy::time_zone::Tz;
+use arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 use polars_core::prelude::arity::try_binary_elementwise;
 use polars_core::prelude::*;
 

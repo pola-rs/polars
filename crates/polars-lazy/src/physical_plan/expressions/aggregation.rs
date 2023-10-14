@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::compute::concatenate::concatenate;
-use arrow::offset::Offsets;
 use arrow::legacy::prelude::QuantileInterpolOptions;
 use arrow::legacy::utils::CustomIterTools;
+use arrow::offset::Offsets;
 use polars_core::frame::group_by::{GroupByMethod, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;

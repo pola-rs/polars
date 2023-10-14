@@ -1,5 +1,5 @@
-use arrow::offset::OffsetsBuffer;
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
+use arrow::offset::OffsetsBuffer;
 use rayon::prelude::*;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};

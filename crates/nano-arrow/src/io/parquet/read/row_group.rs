@@ -9,7 +9,6 @@ use super::{ArrayIter, RowGroupMetaData};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::Field;
-
 use crate::io::parquet::read::column_iter_to_arrays;
 
 /// An [`Iterator`] of [`Chunk`] that (dynamically) adapts a vector of iterators of [`Array`] into

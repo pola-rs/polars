@@ -4,7 +4,7 @@ use parquet2::encoding::hybrid_rle::HybridRleDecoder;
 use parquet2::encoding::Encoding;
 use parquet2::page::{DataPage, DictPage, Page};
 use parquet2::schema::Repetition;
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{polars_err, PolarsResult};
 
 use super::super::super::Pages;
 use super::super::nested_utils::*;
@@ -104,7 +104,11 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
         )
     }
 
-    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> PolarsResult<()> {
+    fn push_valid(
+        &self,
+        state: &mut Self::State,
+        decoded: &mut Self::DecodedState,
+    ) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
             State::Optional(page_values) => {
@@ -160,11 +164,9 @@ pub fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn Array>>
         Ok(Some(page)) => {
             let (page, dict) = match (&dict, page) {
                 (None, Page::Data(_)) => {
-                    return MaybeNext::Some(Err(
-                        polars_err!(ComputeError:
+                    return MaybeNext::Some(Err(polars_err!(ComputeError:
                         "not implemented: dictionary arrays from non-dict-encoded pages",
-                    )
-                    ));
+                    )));
                 },
                 (_, Page::Dict(dict_page)) => {
                     *dict = Some(read_dict(dict_page));

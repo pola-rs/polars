@@ -1,6 +1,5 @@
 //! macros that define kernels for extracting
 //! `week`, `weekday`, `year`, `hour` etc. from primitive arrays.
-use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::compute::arity::unary;
 #[cfg(feature = "dtype-time")]
@@ -9,6 +8,7 @@ use arrow::temporal_conversions::{
     date32_to_datetime_opt, timestamp_ms_to_datetime_opt, timestamp_ns_to_datetime_opt,
     timestamp_us_to_datetime_opt,
 };
+use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 
 use super::super::windows::calendar::*;
 use super::*;

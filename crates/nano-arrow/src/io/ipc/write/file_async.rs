@@ -210,10 +210,7 @@ where
             this.task = Some(Self::write(writer, this.offset, record, dictionaries).boxed());
             Ok(())
         } else {
-            let io_err = std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                "writer is closed",
-            );
+            let io_err = std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "writer is closed");
             Err(PolarsError::from(io_err))
         }
     }

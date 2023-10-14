@@ -1,7 +1,6 @@
 use crate::array::BooleanArray;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-
 use crate::legacy::array::default_arrays::FromData;
 use crate::legacy::bit_util::{set_bit_raw, unset_bit_raw};
 use crate::legacy::trusted_len::{FromIteratorReversed, TrustedLen};

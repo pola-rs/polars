@@ -1,8 +1,8 @@
+use polars_error::PolarsResult;
+
 use crate::array::FixedSizeListArray;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use polars_error::PolarsResult;
-
 use crate::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use crate::legacy::prelude::ArrayRef;
 

@@ -57,9 +57,9 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
-pub(super) use det_hash_prone_order;
 #[cfg(feature = "performant")]
 use arrow::legacy::conversion::primitive_to_vec;
+pub(super) use det_hash_prone_order;
 use polars_utils::hash_to_partition;
 
 pub(super) unsafe fn get_hash_tbl_threaded_join_partitioned<Item>(

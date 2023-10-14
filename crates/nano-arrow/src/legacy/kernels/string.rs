@@ -1,7 +1,6 @@
 use crate::array::{UInt32Array, Utf8Array};
 use crate::buffer::Buffer;
 use crate::datatypes::DataType;
-
 use crate::legacy::prelude::*;
 use crate::legacy::trusted_len::TrustedLenPush;
 

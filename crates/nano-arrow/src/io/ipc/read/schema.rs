@@ -9,7 +9,9 @@ use crate::datatypes::{
     TimeUnit, UnionMode,
 };
 
-fn try_unzip_vec<A, B, I: Iterator<Item = PolarsResult<(A, B)>>>(iter: I) -> PolarsResult<(Vec<A>, Vec<B>)> {
+fn try_unzip_vec<A, B, I: Iterator<Item = PolarsResult<(A, B)>>>(
+    iter: I,
+) -> PolarsResult<(Vec<A>, Vec<B>)> {
     let mut a = vec![];
     let mut b = vec![];
     for maybe_item in iter {
@@ -280,7 +282,7 @@ fn get_data_type(
                 fixed
                     .byte_width()?
                     .try_into()
-                    .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?,
+                    .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?,
             ),
             IpcField::default(),
         ),
@@ -323,7 +325,7 @@ fn get_data_type(
             let bit_width: usize = decimal
                 .bit_width()?
                 .try_into()
-                .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
+                .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
             let precision: usize = decimal
                 .precision()?
                 .try_into()
@@ -353,7 +355,7 @@ fn get_data_type(
 /// Deserialize an flatbuffers-encoded Schema message into [`Schema`] and [`IpcSchema`].
 pub fn deserialize_schema(message: &[u8]) -> PolarsResult<(Schema, IpcSchema)> {
     let message = arrow_format::ipc::MessageRef::read_as_root(message)
-        .map_err(|err| polars_err!(oos = "Unable deserialize message: {err:?}"))?;
+        .map_err(|_err| polars_err!(oos = "Unable deserialize message: {err:?}"))?;
 
     let schema = match message
         .header()?
@@ -367,7 +369,9 @@ pub fn deserialize_schema(message: &[u8]) -> PolarsResult<(Schema, IpcSchema)> {
 }
 
 /// Deserialize the raw Schema table from IPC format to Schema data type
-pub(super) fn fb_to_schema(schema: arrow_format::ipc::SchemaRef) -> PolarsResult<(Schema, IpcSchema)> {
+pub(super) fn fb_to_schema(
+    schema: arrow_format::ipc::SchemaRef,
+) -> PolarsResult<(Schema, IpcSchema)> {
     let fields = schema
         .fields()?
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingFields))?;
@@ -406,7 +410,7 @@ pub(super) fn fb_to_schema(schema: arrow_format::ipc::SchemaRef) -> PolarsResult
 
 pub(super) fn deserialize_stream_metadata(meta: &[u8]) -> PolarsResult<StreamMetadata> {
     let message = arrow_format::ipc::MessageRef::read_as_root(meta)
-        .map_err(|err| polars_err!(oos = "Unable to get root as message: {err:?}"))?;
+        .map_err(|_err| polars_err!(oos = "Unable to get root as message: {err:?}"))?;
     let version = message.version()?;
     // message header is a Schema, so read it
     let header = message
@@ -415,9 +419,7 @@ pub(super) fn deserialize_stream_metadata(meta: &[u8]) -> PolarsResult<StreamMet
     let schema = if let arrow_format::ipc::MessageHeaderRef::Schema(schema) = header {
         schema
     } else {
-        polars_bail!(oos =
-            "The first IPC message of the stream must be a schema"
-        )
+        polars_bail!(oos = "The first IPC message of the stream must be a schema")
     };
     let (schema, ipc_schema) = fb_to_schema(schema)?;
 

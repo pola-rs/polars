@@ -7,7 +7,6 @@ use polars_error::PolarsResult;
 use super::binary::ord_binary;
 use super::{utils, WriteOptions};
 use crate::array::{Array, FixedSizeBinaryArray, PrimitiveArray};
-
 use crate::io::parquet::read::schema::is_nullable;
 use crate::types::i256;
 

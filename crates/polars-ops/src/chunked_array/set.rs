@@ -1,4 +1,4 @@
-use arrow::array::{PrimitiveArray, Array};
+use arrow::array::{Array, PrimitiveArray};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::MutableBitmap;

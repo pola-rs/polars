@@ -1,15 +1,15 @@
 use std::ops::BitOr;
 
-use crate::array::*;
-use crate::datatypes::DataType;
-use crate::types::NativeType;
 use polars_error::polars_err;
 
+use crate::array::*;
+use crate::datatypes::DataType;
 use crate::legacy::array::default_arrays::FromData;
 use crate::legacy::error::PolarsResult;
 use crate::legacy::index::IdxSize;
 use crate::legacy::kernels::BinaryMaskedSliceIterator;
 use crate::legacy::trusted_len::TrustedLenPush;
+use crate::types::NativeType;
 
 /// Set values in a primitive array where the primitive array has null values.
 /// this is faster because we don't have to invert and combine bitmaps

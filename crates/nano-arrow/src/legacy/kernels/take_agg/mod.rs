@@ -2,13 +2,13 @@
 mod boolean;
 mod var;
 
-use crate::array::{Array, BooleanArray, PrimitiveArray, Utf8Array};
-use crate::types::NativeType;
 pub use boolean::*;
 use num_traits::{NumCast, ToPrimitive};
 pub use var::*;
 
+use crate::array::{Array, BooleanArray, PrimitiveArray, Utf8Array};
 use crate::legacy::index::IdxSize;
+use crate::types::NativeType;
 
 /// Take kernel for single chunk without nulls and an iterator as index.
 /// # Safety

@@ -10,7 +10,6 @@ use super::utils::FixedSizeBinary;
 use crate::array::FixedSizeBinaryArray;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-
 use crate::io::parquet::read::deserialize::fixed_size_binary::basic::{
     finish, Dict, Optional, OptionalDictionary, Required, RequiredDictionary,
 };
@@ -80,7 +79,11 @@ impl<'a> NestedDecoder<'a> for BinaryDecoder {
         )
     }
 
-    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> PolarsResult<()> {
+    fn push_valid(
+        &self,
+        state: &mut Self::State,
+        decoded: &mut Self::DecodedState,
+    ) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
             State::Optional(page) => {

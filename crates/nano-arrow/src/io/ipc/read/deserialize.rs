@@ -8,7 +8,6 @@ use super::array::*;
 use super::{Dictionaries, IpcBuffer, Node};
 use crate::array::*;
 use crate::datatypes::{DataType, Field, PhysicalType};
-
 use crate::io::ipc::IpcField;
 use crate::{match_integer_type, with_match_primitive_type};
 

@@ -33,11 +33,10 @@ pub mod temporal_conversions;
 pub mod datatypes;
 
 pub mod ffi;
-pub mod util;
 pub mod legacy;
+pub mod util;
 
 // re-exported because we return `Either` in our public API
 // re-exported to construct dictionaries
 pub use ahash::AHashMap;
 pub use either::Either;
-

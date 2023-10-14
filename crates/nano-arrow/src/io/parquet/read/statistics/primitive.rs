@@ -5,7 +5,6 @@ use polars_error::PolarsResult;
 
 use crate::array::*;
 use crate::datatypes::TimeUnit;
-
 use crate::types::NativeType;
 
 pub fn timestamp(logical_type: Option<&PrimitiveLogicalType>, time_unit: TimeUnit, x: i64) -> i64 {

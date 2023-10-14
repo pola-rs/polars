@@ -1,6 +1,6 @@
 use polars_error::PolarsResult;
-use crate::array::*;
 
+use crate::array::*;
 
 pub(super) fn push(min: &mut dyn MutableArray, max: &mut dyn MutableArray) -> PolarsResult<()> {
     let min = min.as_mut_any().downcast_mut::<MutableNullArray>().unwrap();

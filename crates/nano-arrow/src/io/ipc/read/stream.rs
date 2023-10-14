@@ -43,7 +43,7 @@ pub fn read_stream_metadata<R: Read>(reader: &mut R) -> PolarsResult<StreamMetad
 
     let length: usize = meta_length
         .try_into()
-        .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     let mut buffer = vec![];
     buffer.try_reserve(length)?;
@@ -144,14 +144,14 @@ fn read_next<R: Read>(
 
     let header = message
         .header()
-        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferHeader(err)))?
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferHeader(err)))?
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingMessageHeader))?;
 
     let block_length: usize = message
         .body_length()
-        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferBodyLength(err)))?
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferBodyLength(err)))?
         .try_into()
-        .map_err(|_| polars_err!(oos =OutOfSpecKind::UnexpectedNegativeInteger))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
 
     match header {
         arrow_format::ipc::MessageHeaderRef::RecordBatch(batch) => {

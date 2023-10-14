@@ -1,4 +1,5 @@
 use std::sync::Arc;
+
 use polars_error::{polars_bail, PolarsResult};
 
 use super::FixedSizeListArray;
@@ -6,7 +7,6 @@ use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, PushUnchecked, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::{DataType, Field};
-
 
 /// The mutable version of [`FixedSizeListArray`].
 #[derive(Debug, Clone)]

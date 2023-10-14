@@ -86,6 +86,6 @@ fn _type_to_schema(data_type: &DataType, name_counter: &mut i32) -> PolarsResult
         },
         DataType::FixedSizeBinary(size) => AvroSchema::Fixed(Fixed::new("", *size)),
         DataType::Decimal(p, s) => AvroSchema::Bytes(Some(BytesLogical::Decimal(*p, *s))),
-        other => polars_bail!(nyi = "write {other:?} to avro")
+        other => polars_bail!(nyi = "write {other:?} to avro"),
     })
 }

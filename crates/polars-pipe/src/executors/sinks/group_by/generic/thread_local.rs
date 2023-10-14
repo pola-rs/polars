@@ -1,5 +1,5 @@
-use once_cell::sync::Lazy;
 use arrow::array::MutableBinaryArray;
+use once_cell::sync::Lazy;
 use polars_core::export::once_cell;
 
 use super::*;

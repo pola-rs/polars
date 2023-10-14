@@ -2,6 +2,7 @@
 //! same length.
 
 use polars_error::{polars_bail, PolarsResult};
+
 use crate::array::Array;
 
 /// A vector of trait objects of [`Array`] where every item has
@@ -30,7 +31,6 @@ impl<A: AsRef<dyn Array>> Chunk<A> {
                 .map(|array| array.as_ref())
                 .any(|array| array.len() != len)
             {
-
                 polars_bail!(ComputeError:
                     "Chunk require all its arrays to have an equal number of rows".to_string(),
                 );

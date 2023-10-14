@@ -10,7 +10,6 @@ use super::utils::{Binary, SizedBinaryIter};
 use crate::array::{Array, BinaryArray, DictionaryArray, DictionaryKey, Utf8Array};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::{DataType, PhysicalType};
-
 use crate::io::parquet::read::deserialize::nested_utils::{InitNested, NestedState};
 use crate::offset::Offset;
 

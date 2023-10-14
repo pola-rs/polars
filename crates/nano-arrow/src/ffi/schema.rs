@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::ffi::{CStr, CString};
 use std::ptr;
+
 use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::ArrowSchema;
@@ -366,8 +367,8 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<DataType> {
                         .map(|x| {
                             x.parse::<i32>().map_err(|_| {
                                 polars_err!(ComputeError:
-"Union type id is not a valid integer"
-                            )
+                                "Union type id is not a valid integer"
+                                )
                             })
                         })
                         .collect::<PolarsResult<Vec<_>>>()?;
@@ -378,8 +379,8 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<DataType> {
                 },
                 _ => {
                     polars_bail!(ComputeError:
-                        "The datatype \"{other}\" is still not supported in Rust implementation",
-                            )
+                    "The datatype \"{other}\" is still not supported in Rust implementation",
+                        )
                 },
             }
         },

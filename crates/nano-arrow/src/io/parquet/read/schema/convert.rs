@@ -403,7 +403,6 @@ mod tests {
     use super::*;
     use crate::datatypes::{DataType, Field, TimeUnit};
 
-
     #[test]
     fn test_flat_primitives() -> Result<()> {
         let message = "

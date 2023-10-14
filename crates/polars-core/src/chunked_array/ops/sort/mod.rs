@@ -12,10 +12,10 @@ use std::iter::FromIterator;
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
-use num_traits::Float;
 use arrow::legacy::kernels::rolling::compare_fn_nan_max;
 use arrow::legacy::prelude::{FromData, ValueSize};
 use arrow::legacy::trusted_len::TrustedLenPush;
+use num_traits::Float;
 use rayon::prelude::*;
 pub use slice::*;
 

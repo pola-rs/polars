@@ -25,7 +25,7 @@ pub fn serialize_batch(
     options: &WriteOptions,
 ) -> PolarsResult<(Vec<FlightData>, FlightData)> {
     if fields.len() != chunk.arrays().len() {
-       polars_bail!(oos = "The argument `fields` must be consistent with the columns' schema. Use e.g. &arrow2::io::flight::default_ipc_fields(&schema.fields)");
+        polars_bail!(oos = "The argument `fields` must be consistent with the columns' schema. Use e.g. &arrow2::io::flight::default_ipc_fields(&schema.fields)");
     }
 
     let mut dictionary_tracker = DictionaryTracker {
@@ -119,7 +119,7 @@ pub fn deserialize_batch(
 ) -> PolarsResult<Chunk<Box<dyn Array>>> {
     // check that the data_header is a record batch message
     let message = arrow_format::ipc::MessageRef::read_as_root(&data.data_header)
-        .map_err(|err| polars_err!(oos = "Unable to get root as message: {err:?}"))?;
+        .map_err(|_err| polars_err!(oos = "Unable to get root as message: {err:?}"))?;
 
     let length = data.data_body.len();
     let mut reader = std::io::Cursor::new(&data.data_body);
@@ -140,9 +140,7 @@ pub fn deserialize_batch(
             length as u64,
             &mut Default::default(),
         ),
-        _ => polars_bail!(oos =
-            "flight currently only supports reading RecordBatch messages"
-        ),
+        _ => polars_bail!(oos = "flight currently only supports reading RecordBatch messages"),
     }
 }
 
@@ -157,7 +155,7 @@ pub fn deserialize_dictionary(
 
     let chunk = if let ipc::MessageHeaderRef::DictionaryBatch(chunk) = message
         .header()?
-        .ok_or_else(|| polars_err!(oos ="Header is required"))?
+        .ok_or_else(|| polars_err!(oos = "Header is required"))?
     {
         chunk
     } else {
@@ -238,6 +236,6 @@ pub fn deserialize_message(
         },
         t => polars_bail!(ComputeError:
             "Reading types other than record batches not yet supported, unable to read {t:?}"
-        )
+        ),
     }
 }

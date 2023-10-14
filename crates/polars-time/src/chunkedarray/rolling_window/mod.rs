@@ -4,8 +4,8 @@ mod rolling_kernels;
 use std::convert::TryFrom;
 
 use arrow::array::{Array, PrimitiveArray};
-pub use dispatch::*;
 use arrow::legacy::kernels::rolling;
+pub use dispatch::*;
 use polars_core::prelude::*;
 
 use crate::prelude::*;

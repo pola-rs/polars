@@ -8,15 +8,15 @@ mod null;
 mod primitive;
 
 pub use anonymous::*;
+use arrow::legacy::array::list::AnonymousBuilder;
+use arrow::legacy::array::null::MutableNullArray;
+use arrow::legacy::prelude::*;
 pub use binary::*;
 pub use boolean::*;
 #[cfg(feature = "dtype-categorical")]
 use categorical::*;
 use dtypes::*;
 use null::*;
-use arrow::legacy::array::list::AnonymousBuilder;
-use arrow::legacy::array::null::MutableNullArray;
-use arrow::legacy::prelude::*;
 pub use primitive::*;
 
 use super::*;

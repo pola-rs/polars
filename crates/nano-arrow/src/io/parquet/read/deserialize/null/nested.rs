@@ -7,7 +7,6 @@ use super::super::nested_utils::*;
 use super::super::{utils, Pages};
 use crate::array::NullArray;
 use crate::datatypes::DataType;
-
 use crate::io::parquet::read::deserialize::utils::DecodedState;
 
 impl<'a> utils::PageState<'a> for usize {
@@ -46,7 +45,11 @@ impl<'a> NestedDecoder<'a> for NullDecoder {
         0
     }
 
-    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> PolarsResult<()> {
+    fn push_valid(
+        &self,
+        state: &mut Self::State,
+        decoded: &mut Self::DecodedState,
+    ) -> PolarsResult<()> {
         *decoded += *state;
         Ok(())
     }

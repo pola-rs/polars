@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
-use polars_error::{polars_bail, polars_err, PolarsResult};
+
+use polars_error::{polars_err, PolarsResult};
 
 use super::super::read_basic::*;
 use super::super::{Compression, IpcBuffer, Node, OutOfSpecKind};
@@ -68,7 +69,7 @@ pub fn skip_fixed_size_binary(
 
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| polars_err!(oos ="IPC: missing validity buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
     let _ = buffers
         .pop_front()
         .ok_or_else(|| polars_err!(oos = "IPC: missing values buffer."))?;

@@ -1,5 +1,6 @@
 use std::iter::FromIterator;
 use std::sync::Arc;
+
 use polars_error::{polars_bail, PolarsResult};
 
 use super::BooleanArray;
@@ -7,7 +8,6 @@ use crate::array::physical_binary::extend_validity;
 use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::{DataType, PhysicalType};
-
 use crate::trusted_len::TrustedLen;
 
 /// The Arrow's equivalent to `Vec<Option<bool>>`, but with `1/16` of its size.

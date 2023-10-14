@@ -1,8 +1,8 @@
 use polars_error::PolarsResult;
+
 use super::make_mutable;
 use crate::array::{Array, MutableArray, StructArray};
 use crate::datatypes::DataType;
-
 
 #[derive(Debug)]
 pub struct DynMutableStructArray {

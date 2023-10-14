@@ -1,5 +1,6 @@
 use std::iter::FromIterator;
 use std::sync::Arc;
+
 use polars_error::{polars_bail, PolarsResult};
 
 use super::{MutableUtf8ValuesArray, MutableUtf8ValuesIter, StrAsBytes, Utf8Array};
@@ -8,7 +9,6 @@ use crate::array::{Array, MutableArray, TryExtend, TryExtendFromSelf, TryPush};
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::DataType;
-
 use crate::offset::{Offset, Offsets};
 use crate::trusted_len::TrustedLen;
 
@@ -427,7 +427,9 @@ impl<O: Offset> MutableUtf8Array<O> {
     /// # Error
     /// This operation errors iff the total length in bytes on the iterator exceeds `O`'s maximum value.
     /// (`i32::MAX` or `i64::MAX` respectively).
-    fn try_from_iter<P: AsRef<str>, I: IntoIterator<Item = Option<P>>>(iter: I) -> PolarsResult<Self> {
+    fn try_from_iter<P: AsRef<str>, I: IntoIterator<Item = Option<P>>>(
+        iter: I,
+    ) -> PolarsResult<Self> {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();
         let mut array = Self::with_capacity(lower);

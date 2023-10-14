@@ -1,12 +1,12 @@
 //! Contains operators to filter arrays such as [`filter`].
 use polars_error::PolarsResult;
+
 use crate::array::growable::{make_growable, Growable};
 use crate::array::*;
 use crate::bitmap::utils::{BitChunkIterExact, BitChunksExact, SlicesIterator};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::chunk::Chunk;
 use crate::datatypes::DataType;
-
 use crate::types::simd::Simd;
 use crate::types::{BitChunkOnes, NativeType};
 use crate::with_match_primitive_type;

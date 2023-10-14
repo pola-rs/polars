@@ -4,6 +4,7 @@
 // write new batch
 // write new footer
 use std::io::{Read, Seek, SeekFrom, Write};
+
 use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::endianness::is_native_little_endian;

@@ -102,15 +102,17 @@ pub fn read_record_batch<R: Read + Seek>(
             let buffer_size: u64 = buffer
                 .length()
                 .try_into()
-                .map_err(|_| polars_err!(oos =OutOfSpecKind::NegativeFooterLength))?;
+                .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
             Ok(buffer_size)
         })
         .sum::<PolarsResult<u64>>()?;
     if buffers_size > file_size {
-        return Err(polars_err!(oos = OutOfSpecKind::InvalidBuffersLength {
-            buffers_size,
-            file_size,
-        }));
+        return Err(polars_err!(
+            oos = OutOfSpecKind::InvalidBuffersLength {
+                buffers_size,
+                file_size,
+            }
+        ));
     }
 
     let field_nodes = batch
@@ -222,7 +224,9 @@ pub(crate) fn first_dict_field<'a>(
             return Ok(field);
         }
     }
-    Err(polars_err!(oos =OutOfSpecKind::InvalidId { requested_id: id }))
+    Err(polars_err!(
+        oos = OutOfSpecKind::InvalidId { requested_id: id }
+    ))
 }
 
 /// Reads a dictionary from the reader,
@@ -247,21 +251,19 @@ pub fn read_dictionary<R: Read + Seek>(
 
     let id = batch
         .id()
-        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferId(err)))?;
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferId(err)))?;
     let (first_field, first_ipc_field) = first_dict_field(id, fields, &ipc_schema.fields)?;
 
     let batch = batch
         .data()
-        .map_err(|err| polars_err!(oos =OutOfSpecKind::InvalidFlatbufferData(err)))?
-        .ok_or_else(|| polars_err!(oos =OutOfSpecKind::MissingData))?;
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferData(err)))?
+        .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingData))?;
 
     let value_type =
         if let DataType::Dictionary(_, value_type, _) = first_field.data_type.to_logical_type() {
             value_type.as_ref()
         } else {
-            polars_bail!(oos = OutOfSpecKind::InvalidIdDataType {
-                requested_id: id,
-            })
+            polars_bail!(oos = OutOfSpecKind::InvalidIdDataType { requested_id: id })
         };
 
     // Make a fake schema for the dictionary batch.

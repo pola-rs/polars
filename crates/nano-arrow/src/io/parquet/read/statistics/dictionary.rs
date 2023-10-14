@@ -1,8 +1,8 @@
 use polars_error::PolarsResult;
+
 use super::make_mutable;
 use crate::array::*;
 use crate::datatypes::{DataType, PhysicalType};
-
 use crate::match_integer_type;
 
 #[derive(Debug)]
