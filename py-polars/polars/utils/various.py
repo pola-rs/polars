@@ -22,7 +22,8 @@ from polars.datatypes import (
     Utf8,
     unpack_dtypes,
 )
-from polars.dependencies import _PYARROW_AVAILABLE
+from polars.dependencies import _PYARROW_AVAILABLE, _check_for_numpy
+from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
     from collections.abc import Reversible
@@ -68,11 +69,15 @@ def _is_iterable_of(val: Iterable[object], eltype: type | tuple[type, ...]) -> b
 
 def is_bool_sequence(val: object) -> TypeGuard[Sequence[bool]]:
     """Check whether the given sequence is a sequence of booleans."""
+    if _check_for_numpy(val) and isinstance(val, np.ndarray):
+        return val.dtype == np.bool_
     return isinstance(val, Sequence) and _is_iterable_of(val, bool)
 
 
 def is_int_sequence(val: object) -> TypeGuard[Sequence[int]]:
     """Check whether the given sequence is a sequence of integers."""
+    if _check_for_numpy(val) and isinstance(val, np.ndarray):
+        return np.issubdtype(val.dtype, np.integer)
     return isinstance(val, Sequence) and _is_iterable_of(val, int)
 
 

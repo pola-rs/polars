@@ -77,6 +77,7 @@ def parse_as_expression(
     *,
     str_as_lit: bool = False,
     structify: bool = False,
+    wrap: bool = False,
 ) -> PyExpr | Expr:
     """
     Parse a single input into an expression.
@@ -119,7 +120,7 @@ def parse_as_expression(
     if structify:
         expr = _structify_expression(expr)
 
-    return expr._pyexpr
+    return expr if wrap else expr._pyexpr
 
 
 def _structify_expression(expr: Expr) -> Expr:
