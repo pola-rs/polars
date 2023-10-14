@@ -18,6 +18,7 @@ Computation
     Expr.cbrt
     Expr.cos
     Expr.cosh
+    Expr.cot
     Expr.cumcount
     Expr.cummax
     Expr.cummin
