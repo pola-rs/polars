@@ -187,12 +187,12 @@ macro_rules! get_any_value_unchecked {
 
 macro_rules! get_any_value {
     ($self:ident, $index:expr) => {{
-        let (chunk_idx, idx) = $self.index_to_chunked_index($index);
-        let arr = &*$self.chunks[chunk_idx];
-        polars_ensure!(idx < arr.len(), oob = idx, arr.len());
+        if $index >= $self.len() {
+            polars_bail!(oob = $index, $self.len());
+        }
         // SAFETY
         // bounds are checked
-        Ok(unsafe { arr_to_any_value(arr, idx, $self.dtype()) })
+        Ok(unsafe { $self.get_any_value_unchecked($index) })
     }};
 }
 
