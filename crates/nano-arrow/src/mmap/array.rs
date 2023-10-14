@@ -81,12 +81,12 @@ fn get_num_rows_and_null_count(node: &Node) -> PolarsResult<(usize, usize)> {
     let num_rows: usize = node
         .length()
         .try_into()
-        .map_err(|_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos =  OutOfSpecKind::NegativeFooterLength))?;
 
     let null_count: usize = node
         .null_count()
         .try_into()
-        .map_err(|_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
     Ok((num_rows, null_count))
 }
 

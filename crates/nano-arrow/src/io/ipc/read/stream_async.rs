@@ -3,6 +3,7 @@
 use arrow_format::ipc::planus::ReadAsRoot;
 use futures::future::BoxFuture;
 use futures::{AsyncRead, AsyncReadExt, FutureExt, Stream};
+use polars_error::*;
 
 use super::super::CONTINUATION_MARKER;
 use super::common::{read_dictionary, read_record_batch};
@@ -10,7 +11,6 @@ use super::schema::deserialize_stream_metadata;
 use super::{Dictionaries, OutOfSpecKind, StreamMetadata};
 use crate::array::*;
 use crate::chunk::Chunk;
-use crate::error::{Error, Result};
 
 /// A (private) state of stream messages
 struct ReadState<R> {
@@ -34,7 +34,7 @@ enum StreamState<R> {
 /// Reads the [`StreamMetadata`] of the Arrow stream asynchronously
 pub async fn read_stream_metadata_async<R: AsyncRead + Unpin + Send>(
     reader: &mut R,
-) -> Result<StreamMetadata> {
+) -> PolarsResult<StreamMetadata> {
     // determine metadata length
     let mut meta_size: [u8; 4] = [0; 4];
     reader.read_exact(&mut meta_size).await?;
@@ -49,7 +49,7 @@ pub async fn read_stream_metadata_async<R: AsyncRead + Unpin + Send>(
 
     let meta_len: usize = meta_len
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
 
     let mut meta_buffer = vec![];
     meta_buffer.try_reserve(meta_len)?;
@@ -65,7 +65,7 @@ pub async fn read_stream_metadata_async<R: AsyncRead + Unpin + Send>(
 /// or a [`StreamState`] otherwise.
 async fn maybe_next<R: AsyncRead + Unpin + Send>(
     mut state: ReadState<R>,
-) -> Result<Option<StreamState<R>>> {
+) -> PolarsResult<Option<StreamState<R>>> {
     let mut scratch = Default::default();
     // determine metadata length
     let mut meta_length: [u8; 4] = [0; 4];
@@ -79,7 +79,7 @@ async fn maybe_next<R: AsyncRead + Unpin + Send>(
                 // https://arrow.apache.org/docs/format/Columnar.html#ipc-streaming-format
                 Ok(Some(StreamState::Waiting(state)))
             } else {
-                Err(Error::from(e))
+                Err(PolarsError::from(e))
             };
         },
     }
@@ -95,7 +95,7 @@ async fn maybe_next<R: AsyncRead + Unpin + Send>(
 
     let meta_length: usize = meta_length
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::NegativeFooterLength))?;
 
     if meta_length == 0 {
         // the stream has ended, mark the reader as finished
@@ -110,18 +110,18 @@ async fn maybe_next<R: AsyncRead + Unpin + Send>(
         .await?;
 
     let message = arrow_format::ipc::MessageRef::read_as_root(state.message_buffer.as_ref())
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
 
     let header = message
         .header()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferHeader(err)))?
-        .ok_or_else(|| Error::from(OutOfSpecKind::MissingMessageHeader))?;
+        .map_err(|err| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::InvalidFlatbufferHeader(err)))?
+        .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingMessageHeader))?;
 
     let block_length: usize = message
         .body_length()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferBodyLength(err)))?
+        .map_err(|err| polars_err!(oos= OutOfSpecKind::InvalidFlatbufferBodyLength(err)))?
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::UnexpectedNegativeInteger))?;
+        .map_err(|err| polars_err!(oos= OutOfSpecKind::UnexpectedNegativeInteger))?;
 
     match header {
         arrow_format::ipc::MessageHeaderRef::RecordBatch(batch) => {
@@ -173,14 +173,14 @@ async fn maybe_next<R: AsyncRead + Unpin + Send>(
             // read the next message until we encounter a Chunk<Box<dyn Array>> message
             Ok(Some(StreamState::Waiting(state)))
         },
-        _ => Err(Error::from(OutOfSpecKind::UnexpectedMessageType)),
+        _ => polars_bail!(oos = OutOfSpecKind::UnexpectedMessageType)
     }
 }
 
 /// A [`Stream`] over an Arrow IPC stream that asynchronously yields [`Chunk`]s.
 pub struct AsyncStreamReader<'a, R: AsyncRead + Unpin + Send + 'a> {
     metadata: StreamMetadata,
-    future: Option<BoxFuture<'a, Result<Option<StreamState<R>>>>>,
+    future: Option<BoxFuture<'a, PolarsResult<Option<StreamState<R>>>>>,
 }
 
 impl<'a, R: AsyncRead + Unpin + Send + 'a> AsyncStreamReader<'a, R> {
@@ -204,7 +204,7 @@ impl<'a, R: AsyncRead + Unpin + Send + 'a> AsyncStreamReader<'a, R> {
 }
 
 impl<'a, R: AsyncRead + Unpin + Send> Stream for AsyncStreamReader<'a, R> {
-    type Item = Result<Chunk<Box<dyn Array>>>;
+    type Item = PolarsResult<Chunk<Box<dyn Array>>>;
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,

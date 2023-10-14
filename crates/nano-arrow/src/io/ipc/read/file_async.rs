@@ -6,6 +6,7 @@ use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{Block, MessageHeaderRef};
 use futures::stream::BoxStream;
 use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, Stream, StreamExt};
+use polars_error::{polars_bail, polars_err, PolarsResult, to_compute_err};
 
 use super::common::{apply_projection, prepare_projection, read_dictionary, read_record_batch};
 use super::file::{deserialize_footer, get_record_batch};
@@ -13,12 +14,11 @@ use super::{Dictionaries, FileMetadata, OutOfSpecKind};
 use crate::array::*;
 use crate::chunk::Chunk;
 use crate::datatypes::{Field, Schema};
-use crate::error::{Error, Result};
 use crate::io::ipc::{IpcSchema, ARROW_MAGIC_V2, CONTINUATION_MARKER};
 
 /// Async reader for Arrow IPC files
 pub struct FileStream<'a> {
-    stream: BoxStream<'a, Result<Chunk<Box<dyn Array>>>>,
+    stream: BoxStream<'a, PolarsResult<Chunk<Box<dyn Array>>>>,
     schema: Option<Schema>,
     metadata: FileMetadata,
 }
@@ -72,7 +72,7 @@ impl<'a> FileStream<'a> {
         metadata: FileMetadata,
         projection: Option<(Vec<usize>, AHashMap<usize, usize>)>,
         limit: Option<usize>,
-    ) -> BoxStream<'a, Result<Chunk<Box<dyn Array>>>>
+    ) -> BoxStream<'a, PolarsResult<Chunk<Box<dyn Array>>>>
     where
         R: AsyncRead + AsyncSeek + Unpin + Send + 'a,
     {
@@ -113,7 +113,7 @@ impl<'a> FileStream<'a> {
 }
 
 impl<'a> Stream for FileStream<'a> {
-    type Item = Result<Chunk<Box<dyn Array>>>;
+    type Item = PolarsResult<Chunk<Box<dyn Array>>>;
 
     fn poll_next(
         self: std::pin::Pin<&mut Self>,
@@ -124,7 +124,7 @@ impl<'a> Stream for FileStream<'a> {
 }
 
 /// Reads the footer's length and magic number in footer
-async fn read_footer_len<R: AsyncRead + AsyncSeek + Unpin>(reader: &mut R) -> Result<usize> {
+async fn read_footer_len<R: AsyncRead + AsyncSeek + Unpin>(reader: &mut R) -> PolarsResult<usize> {
     // read footer length and magic number in footer
     reader.seek(SeekFrom::End(-10)).await?;
     let mut footer: [u8; 10] = [0; 10];
@@ -133,15 +133,15 @@ async fn read_footer_len<R: AsyncRead + AsyncSeek + Unpin>(reader: &mut R) -> Re
     let footer_len = i32::from_le_bytes(footer[..4].try_into().unwrap());
 
     if footer[4..] != ARROW_MAGIC_V2 {
-        return Err(Error::from(OutOfSpecKind::InvalidFooter));
+        polars_bail!(oos = OutOfSpecKind::InvalidFooter)
     }
     footer_len
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))
 }
 
 /// Read the metadata from an IPC file.
-pub async fn read_file_metadata_async<R>(reader: &mut R) -> Result<FileMetadata>
+pub async fn read_file_metadata_async<R>(reader: &mut R) -> PolarsResult<FileMetadata>
 where
     R: AsyncRead + AsyncSeek + Unpin,
 {
@@ -170,7 +170,7 @@ async fn read_batch<R>(
     meta_buffer: &mut Vec<u8>,
     block_buffer: &mut Vec<u8>,
     scratch: &mut Vec<u8>,
-) -> Result<Chunk<Box<dyn Array>>>
+) -> PolarsResult<Chunk<Box<dyn Array>>>
 where
     R: AsyncRead + AsyncSeek + Unpin,
 {
@@ -179,7 +179,7 @@ where
     let offset: u64 = block
         .offset
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     reader.seek(SeekFrom::Start(offset)).await?;
     let mut meta_buf = [0; 4];
@@ -190,7 +190,7 @@ where
 
     let meta_len = i32::from_le_bytes(meta_buf)
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::UnexpectedNegativeInteger))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
 
     meta_buffer.clear();
     meta_buffer.try_reserve(meta_len)?;
@@ -200,15 +200,15 @@ where
         .await?;
 
     let message = arrow_format::ipc::MessageRef::read_as_root(meta_buffer)
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
 
     let batch = get_record_batch(message)?;
 
     let block_length: usize = message
         .body_length()
-        .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferBodyLength(err)))?
+        .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferBodyLength(err)))?
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::UnexpectedNegativeInteger))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::UnexpectedNegativeInteger))?;
 
     block_buffer.clear();
     block_buffer.try_reserve(block_length)?;
@@ -228,7 +228,7 @@ where
         dictionaries,
         message
             .version()
-            .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferVersion(err)))?,
+            .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferVersion(err)))?,
         &mut cursor,
         0,
         metadata.size,
@@ -242,7 +242,7 @@ async fn read_dictionaries<R>(
     ipc_schema: &IpcSchema,
     blocks: &[Block],
     scratch: &mut Vec<u8>,
-) -> Result<Dictionaries>
+) -> PolarsResult<Dictionaries>
 where
     R: AsyncRead + AsyncSeek + Unpin,
 {
@@ -254,22 +254,22 @@ where
         let offset: u64 = block
             .offset
             .try_into()
-            .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+            .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
         let length: usize = block
             .body_length
             .try_into()
-            .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+            .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
         read_dictionary_message(&mut reader, offset, &mut data).await?;
 
         let message = arrow_format::ipc::MessageRef::read_as_root(data.as_ref())
-            .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
+            .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferMessage(err)))?;
 
         let header = message
             .header()
-            .map_err(|err| Error::from(OutOfSpecKind::InvalidFlatbufferHeader(err)))?
-            .ok_or_else(|| Error::from(OutOfSpecKind::MissingMessageHeader))?;
+            .map_err(|err| polars_err!(oos = OutOfSpecKind::InvalidFlatbufferHeader(err)))?
+            .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingMessageHeader))?;
 
         match header {
             MessageHeaderRef::DictionaryBatch(batch) => {
@@ -291,13 +291,13 @@ where
                     scratch,
                 )?;
             },
-            _ => return Err(Error::from(OutOfSpecKind::UnexpectedMessageType)),
+            _ => polars_bail!(oos = OutOfSpecKind::UnexpectedMessageType),
         }
     }
     Ok(dictionaries)
 }
 
-async fn read_dictionary_message<R>(mut reader: R, offset: u64, data: &mut Vec<u8>) -> Result<()>
+async fn read_dictionary_message<R>(mut reader: R, offset: u64, data: &mut Vec<u8>) -> PolarsResult<()>
 where
     R: AsyncRead + AsyncSeek + Unpin,
 {
@@ -311,7 +311,7 @@ where
 
     let footer_size: usize = footer_size
         .try_into()
-        .map_err(|_| Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| polars_err!(oos = OutOfSpecKind::NegativeFooterLength))?;
 
     data.clear();
     data.try_reserve(footer_size)?;
@@ -327,7 +327,7 @@ async fn cached_read_dictionaries<R: AsyncRead + AsyncSeek + Unpin>(
     reader: &mut R,
     metadata: &FileMetadata,
     dictionaries: &mut Option<Dictionaries>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     match (&dictionaries, metadata.dictionaries.as_deref()) {
         (None, Some(blocks)) => {
             let new_dictionaries = read_dictionaries(

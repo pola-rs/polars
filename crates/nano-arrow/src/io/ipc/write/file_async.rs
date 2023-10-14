@@ -6,13 +6,13 @@ use arrow_format::ipc::planus::Builder;
 use arrow_format::ipc::{Block, Footer, MetadataVersion};
 use futures::future::BoxFuture;
 use futures::{AsyncWrite, AsyncWriteExt, FutureExt, Sink};
+use polars_error::{PolarsError, PolarsResult};
 
 use super::common::{encode_chunk, DictionaryTracker, EncodedData, WriteOptions};
 use super::common_async::{write_continuation, write_message};
 use super::schema::serialize_schema;
 use super::{default_ipc_fields, schema_to_bytes, Record};
 use crate::datatypes::*;
-use crate::error::{Error, Result};
 use crate::io::ipc::{IpcField, ARROW_MAGIC_V2};
 
 type WriteOutput<W> = (usize, Option<Block>, Vec<Block>, Option<W>);
@@ -63,7 +63,7 @@ type WriteOutput<W> = (usize, Option<Block>, Vec<Block>, Option<W>);
 /// ```
 pub struct FileSink<'a, W: AsyncWrite + Unpin + Send + 'a> {
     writer: Option<W>,
-    task: Option<BoxFuture<'a, Result<WriteOutput<W>>>>,
+    task: Option<BoxFuture<'a, PolarsResult<WriteOutput<W>>>>,
     options: WriteOptions,
     dictionary_tracker: DictionaryTracker,
     offset: usize,
@@ -106,7 +106,7 @@ where
         }
     }
 
-    async fn start(mut writer: W, encoded: EncodedData) -> Result<WriteOutput<W>> {
+    async fn start(mut writer: W, encoded: EncodedData) -> PolarsResult<WriteOutput<W>> {
         writer.write_all(&ARROW_MAGIC_V2[..]).await?;
         writer.write_all(&[0, 0]).await?;
         let (meta, data) = write_message(&mut writer, encoded).await?;
@@ -119,7 +119,7 @@ where
         mut offset: usize,
         record: EncodedData,
         dictionaries: Vec<EncodedData>,
-    ) -> Result<WriteOutput<W>> {
+    ) -> PolarsResult<WriteOutput<W>> {
         let mut dict_blocks = vec![];
         for dict in dictionaries {
             let (meta, data) = write_message(&mut writer, dict).await?;
@@ -141,7 +141,7 @@ where
         Ok((offset, Some(block), dict_blocks, Some(writer)))
     }
 
-    async fn finish(mut writer: W, footer: Footer) -> Result<WriteOutput<W>> {
+    async fn finish(mut writer: W, footer: Footer) -> PolarsResult<WriteOutput<W>> {
         write_continuation(&mut writer, 0).await?;
         let footer = {
             let mut builder = Builder::new();
@@ -157,7 +157,7 @@ where
         Ok((0, None, vec![], None))
     }
 
-    fn poll_write(&mut self, cx: &mut std::task::Context<'_>) -> Poll<Result<()>> {
+    fn poll_write(&mut self, cx: &mut std::task::Context<'_>) -> Poll<PolarsResult<()>> {
         if let Some(task) = &mut self.task {
             match futures::ready!(task.poll_unpin(cx)) {
                 Ok((offset, record, mut dictionaries, writer)) => {
@@ -185,16 +185,16 @@ impl<'a, W> Sink<Record<'_>> for FileSink<'a, W>
 where
     W: AsyncWrite + Unpin + Send + 'a,
 {
-    type Error = Error;
+    type Error = PolarsError;
 
     fn poll_ready(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<()>> {
+    ) -> std::task::Poll<PolarsResult<()>> {
         self.get_mut().poll_write(cx)
     }
 
-    fn start_send(self: std::pin::Pin<&mut Self>, item: Record<'_>) -> Result<()> {
+    fn start_send(self: std::pin::Pin<&mut Self>, item: Record<'_>) -> PolarsResult<()> {
         let this = self.get_mut();
 
         if let Some(writer) = this.writer.take() {
@@ -210,24 +210,25 @@ where
             this.task = Some(Self::write(writer, this.offset, record, dictionaries).boxed());
             Ok(())
         } else {
-            Err(Error::Io(std::io::Error::new(
+            let io_err = std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
                 "writer is closed",
-            )))
+            );
+            Err(PolarsError::from(io_err))
         }
     }
 
     fn poll_flush(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<()>> {
+    ) -> std::task::Poll<PolarsResult<()>> {
         self.get_mut().poll_write(cx)
     }
 
     fn poll_close(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<()>> {
+    ) -> std::task::Poll<PolarsResult<()>> {
         let this = self.get_mut();
         match futures::ready!(this.poll_write(cx)) {
             Ok(()) => {

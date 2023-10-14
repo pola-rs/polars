@@ -5,6 +5,7 @@ use std::task::Poll;
 
 use futures::future::BoxFuture;
 use futures::{AsyncWrite, AsyncWriteExt, FutureExt, Sink};
+use polars_error::{PolarsError, PolarsResult};
 
 use super::super::IpcField;
 pub use super::common::WriteOptions;
@@ -12,7 +13,6 @@ use super::common::{encode_chunk, DictionaryTracker, EncodedData};
 use super::common_async::{write_continuation, write_message};
 use super::{default_ipc_fields, schema_to_bytes, Record};
 use crate::datatypes::*;
-use crate::error::{Error, Result};
 
 /// A sink that writes array [`chunks`](crate::chunk::Chunk) as an IPC stream.
 ///
@@ -50,7 +50,7 @@ use crate::error::{Error, Result};
 /// ```
 pub struct StreamSink<'a, W: AsyncWrite + Unpin + Send + 'a> {
     writer: Option<W>,
-    task: Option<BoxFuture<'a, Result<Option<W>>>>,
+    task: Option<BoxFuture<'a, PolarsResult<Option<W>>>>,
     options: WriteOptions,
     dictionary_tracker: DictionaryTracker,
     fields: Vec<IpcField>,
@@ -85,7 +85,7 @@ where
         mut writer: W,
         schema: &Schema,
         ipc_fields: &[IpcField],
-    ) -> BoxFuture<'a, Result<Option<W>>> {
+    ) -> BoxFuture<'a, PolarsResult<Option<W>>> {
         let message = EncodedData {
             ipc_message: schema_to_bytes(schema, ipc_fields),
             arrow_data: vec![],
@@ -97,7 +97,7 @@ where
         .boxed()
     }
 
-    fn write(&mut self, record: Record<'_>) -> Result<()> {
+    fn write(&mut self, record: Record<'_>) -> PolarsResult<()> {
         let fields = record.fields().unwrap_or(&self.fields[..]);
         let (dictionaries, message) = encode_chunk(
             record.columns(),
@@ -119,14 +119,15 @@ where
             );
             Ok(())
         } else {
-            Err(Error::Io(std::io::Error::new(
+            let io_err = std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
                 "writer closed".to_string(),
-            )))
+            );
+            PolarsError::from(io_err)
         }
     }
 
-    fn poll_complete(&mut self, cx: &mut std::task::Context<'_>) -> Poll<Result<()>> {
+    fn poll_complete(&mut self, cx: &mut std::task::Context<'_>) -> Poll<PolarsResult<()>> {
         if let Some(task) = &mut self.task {
             match futures::ready!(task.poll_unpin(cx)) {
                 Ok(writer) => {
@@ -149,21 +150,21 @@ impl<'a, W> Sink<Record<'_>> for StreamSink<'a, W>
 where
     W: AsyncWrite + Unpin + Send,
 {
-    type Error = Error;
+    type Error = PolarsError;
 
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Result<()>> {
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<PolarsResult<()>> {
         self.get_mut().poll_complete(cx)
     }
 
-    fn start_send(self: Pin<&mut Self>, item: Record<'_>) -> Result<()> {
+    fn start_send(self: Pin<&mut Self>, item: Record<'_>) -> PolarsResult<()> {
         self.get_mut().write(item)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Result<()>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<PolarsResult<()>> {
         self.get_mut().poll_complete(cx)
     }
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Result<()>> {
+    fn poll_close(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<PolarsResult<()>> {
         let this = self.get_mut();
         match this.poll_complete(cx) {
             Poll::Ready(Ok(())) => {
