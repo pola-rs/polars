@@ -1312,40 +1312,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nano-arrow"
-version = "0.1.0"
-dependencies = [
- "ahash",
- "arrow-format",
- "atoi",
- "avro-schema",
- "base64",
- "bytemuck",
- "chrono",
- "chrono-tz",
- "dyn-clone",
- "either",
- "ethnum",
- "fallible-streaming-iterator",
- "foreign_vec",
- "futures",
- "getrandom",
- "hashbrown 0.14.0",
- "lexical-core",
- "lz4",
- "multiversion",
- "num-traits",
- "parquet2",
- "polars-error",
- "rustc_version",
- "serde",
- "simdutf8",
- "streaming-iterator",
- "strength_reduce",
- "zstd",
-]
-
-[[package]]
 name = "ndarray"
 version = "0.15.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1631,6 +1597,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-arrow"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "arrow-format",
+ "atoi",
+ "avro-schema",
+ "base64",
+ "bytemuck",
+ "chrono",
+ "chrono-tz",
+ "dyn-clone",
+ "either",
+ "ethnum",
+ "fallible-streaming-iterator",
+ "foreign_vec",
+ "futures",
+ "getrandom",
+ "hashbrown 0.14.0",
+ "lexical-core",
+ "lz4",
+ "multiversion",
+ "num-traits",
+ "parquet2",
+ "polars-error",
+ "rustc_version",
+ "serde",
+ "simdutf8",
+ "streaming-iterator",
+ "strength_reduce",
+ "zstd",
+]
+
+[[package]]
 name = "polars-core"
 version = "0.33.2"
 dependencies = [
@@ -1644,10 +1644,10 @@ dependencies = [
  "hashbrown 0.14.0",
  "indexmap 2.0.0",
  "itoap",
- "nano-arrow",
  "ndarray",
  "num-traits",
  "once_cell",
+ "polars-arrow",
  "polars-error",
  "polars-row",
  "polars-utils",
@@ -1680,7 +1680,7 @@ dependencies = [
 name = "polars-ffi"
 version = "0.33.2"
 dependencies = [
- "nano-arrow",
+ "polars-arrow",
  "polars-core",
 ]
 
@@ -1702,11 +1702,11 @@ dependencies = [
  "lexical-core",
  "memchr",
  "memmap2",
- "nano-arrow",
  "num-traits",
  "object_store",
  "once_cell",
  "percent-encoding",
+ "polars-arrow",
  "polars-core",
  "polars-error",
  "polars-json",
@@ -1736,8 +1736,8 @@ dependencies = [
  "hashbrown 0.14.0",
  "indexmap 2.0.0",
  "itoa",
- "nano-arrow",
  "num-traits",
+ "polars-arrow",
  "polars-error",
  "polars-utils",
  "ryu",
@@ -1752,8 +1752,8 @@ dependencies = [
  "ahash",
  "bitflags 2.4.0",
  "glob",
- "nano-arrow",
  "once_cell",
+ "polars-arrow",
  "polars-core",
  "polars-io",
  "polars-json",
@@ -1785,8 +1785,8 @@ dependencies = [
  "indexmap 2.0.0",
  "jsonpath_lib",
  "memchr",
- "nano-arrow",
  "num-traits",
+ "polars-arrow",
  "polars-core",
  "polars-error",
  "polars-json",
@@ -1809,8 +1809,8 @@ dependencies = [
  "crossbeam-queue",
  "enum_dispatch",
  "hashbrown 0.14.0",
- "nano-arrow",
  "num-traits",
+ "polars-arrow",
  "polars-core",
  "polars-io",
  "polars-ops",
@@ -1832,9 +1832,9 @@ dependencies = [
  "chrono-tz",
  "ciborium",
  "libloading",
- "nano-arrow",
  "once_cell",
  "percent-encoding",
+ "polars-arrow",
  "polars-core",
  "polars-ffi",
  "polars-io",
@@ -1854,7 +1854,7 @@ dependencies = [
 name = "polars-row"
 version = "0.33.2"
 dependencies = [
- "nano-arrow",
+ "polars-arrow",
  "polars-error",
  "polars-utils",
 ]
@@ -1863,7 +1863,7 @@ dependencies = [
 name = "polars-sql"
 version = "0.33.2"
 dependencies = [
- "nano-arrow",
+ "polars-arrow",
  "polars-core",
  "polars-error",
  "polars-lazy",
@@ -1881,9 +1881,9 @@ dependencies = [
  "atoi",
  "chrono",
  "chrono-tz",
- "nano-arrow",
  "now",
  "once_cell",
+ "polars-arrow",
  "polars-core",
  "polars-error",
  "polars-ops",
