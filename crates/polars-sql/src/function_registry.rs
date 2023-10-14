@@ -1,6 +1,6 @@
 //! This module defines the function registry and user defined functions.
 
-use polars_arrow::error::{polars_bail, PolarsResult};
+use polars_error::{polars_bail, PolarsResult};
 use polars_plan::prelude::udf::UserDefinedFunction;
 pub use polars_plan::prelude::{Context, FunctionOptions};
 /// A registry that holds user defined functions.

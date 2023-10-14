@@ -135,7 +135,7 @@ impl<'a> AnyValue<'a> {
                         // so we set the array pointer with values of the dictionary array.
                         #[cfg(feature = "dtype-categorical")]
                         {
-                            use polars_arrow::is_valid::IsValid as _;
+                            use arrow::legacy::is_valid::IsValid as _;
                             if let Some(arr) = arr.as_any().downcast_ref::<DictionaryArray<u32>>() {
                                 let keys = arr.keys();
                                 let values = arr.values();

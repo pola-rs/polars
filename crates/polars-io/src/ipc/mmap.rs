@@ -41,7 +41,7 @@ impl<'a> MMapChunkIter<'a> {
 }
 
 impl ArrowReader for MMapChunkIter<'_> {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
+    fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>> {
         if self.idx < self.end {
             let chunk = unsafe {
                 mmap_unchecked(

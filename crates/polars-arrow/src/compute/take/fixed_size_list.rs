@@ -1,37 +1,36 @@
-use arrow::array::growable::{Growable, GrowableFixedSizeList};
-use arrow::array::{Array, FixedSizeListArray, PrimitiveArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::datatypes::{DataType, PhysicalType};
-use arrow::types::NativeType;
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
 
-use crate::index::{IdxArr, IdxSize};
-use crate::prelude::ArrayRef;
-use crate::utils::with_match_primitive_type;
+use super::Index;
+use crate::array::growable::{Growable, GrowableFixedSizeList};
+use crate::array::{FixedSizeListArray, PrimitiveArray};
 
-pub unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxArr) -> FixedSizeListArray {
-    if let (PhysicalType::Primitive(primitive), 0) = (
-        values.values().data_type().to_physical_type(),
-        indices.null_count(),
-    ) {
-        let idx = indices.values().as_slice();
-        let child_values = values.values();
-        let DataType::FixedSizeList(_, width) = values.data_type() else {
-            unreachable!()
-        };
-
-        with_match_primitive_type!(primitive, |$T| {
-            let arr: &PrimitiveArray<$T> = child_values.as_any().downcast_ref().unwrap();
-            return take_unchecked_primitive(values, arr, idx, *width)
-        })
-    }
-
+/// `take` implementation for FixedSizeListArrays
+pub fn take<O: Index>(
+    values: &FixedSizeListArray,
+    indices: &PrimitiveArray<O>,
+) -> FixedSizeListArray {
     let mut capacity = 0;
     let arrays = indices
         .values()
         .iter()
         .map(|index| {
-            let index = *index as usize;
-            let slice = values.clone().sliced_unchecked(index, 1);
+            let index = index.to_usize();
+            let slice = values.clone().sliced(index, 1);
             capacity += slice.len();
             slice
         })
@@ -61,51 +60,4 @@ pub unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxArr) -> F
 
         growable.into()
     }
-}
-
-unsafe fn take_bitmap_unchecked(bitmap: &Bitmap, idx: &[IdxSize], width: usize) -> Bitmap {
-    let mut out = MutableBitmap::with_capacity(idx.len() * width);
-    let (slice, offset, _len) = bitmap.as_slice();
-
-    for &idx in idx {
-        out.extend_from_slice_unchecked(slice, offset + idx as usize * width, width)
-    }
-    out.into()
-}
-
-unsafe fn take_unchecked_primitive<T: NativeType>(
-    parent: &FixedSizeListArray,
-    list_values: &PrimitiveArray<T>,
-    idx: &[IdxSize],
-    width: usize,
-) -> FixedSizeListArray {
-    let values = list_values.values().as_slice();
-    let mut out = Vec::with_capacity(idx.len() * width);
-
-    for &i in idx {
-        let start = i as usize * width;
-        let end = start + width;
-        out.extend_from_slice(values.get_unchecked(start..end));
-    }
-
-    let validity = if list_values.null_count() > 0 {
-        let validity = list_values.validity().unwrap();
-        Some(take_bitmap_unchecked(validity, idx, width))
-    } else {
-        None
-    };
-    let list_values = Box::new(PrimitiveArray::new(
-        list_values.data_type().clone(),
-        out.into(),
-        validity,
-    )) as ArrayRef;
-    let validity = if parent.null_count() > 0 {
-        Some(super::bitmap::take_bitmap_unchecked(
-            parent.validity().unwrap(),
-            idx,
-        ))
-    } else {
-        None
-    };
-    FixedSizeListArray::new(parent.data_type().clone(), list_values, validity)
 }

@@ -1,6 +1,6 @@
 //! Defines different visitor patterns and for any tree.
 
-use polars_arrow::error::PolarsResult;
+use arrow::legacy::error::PolarsResult;
 mod expr;
 mod lp;
 mod visitors;

@@ -9,7 +9,6 @@ repository = { workspace = true }
 description = "Core of the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { workspace = true, features = ["compute"] }
 polars-error = { workspace = true }
 polars-row = { workspace = true }
 polars-utils = { workspace = true }
@@ -48,8 +47,8 @@ serde_json = { workspace = true }
 version_check = { workspace = true }
 
 [features]
-simd = ["arrow/simd", "polars-arrow/simd"]
-nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "polars-arrow/nightly"]
+simd = ["arrow/simd"]
+nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "arrow/nightly"]
 avx512 = []
 docs = []
 temporal = ["regex", "chrono", "polars-error/regex"]
@@ -60,10 +59,10 @@ lazy = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
 # more fast paths, slower compilation
-performant = ["polars-arrow/performant", "reinterpret"]
+performant = ["arrow/performant", "reinterpret"]
 
 # extra utilities for Utf8Chunked
-strings = ["regex", "polars-arrow/strings", "polars-error/regex"]
+strings = ["regex", "arrow/strings", "polars-error/regex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
 
@@ -107,7 +106,7 @@ unique_counts = []
 partition_by = []
 chunked_ids = []
 describe = []
-timezones = ["chrono-tz", "arrow/chrono-tz", "polars-arrow/timezones"]
+timezones = ["chrono-tz", "arrow/chrono-tz", "arrow/timezones"]
 dynamic_group_by = ["dtype-datetime", "dtype-date"]
 arrow_rs = ["arrow-array", "arrow/arrow_rs"]
 
@@ -116,10 +115,10 @@ dtype-date = ["temporal"]
 dtype-datetime = ["temporal"]
 dtype-duration = ["temporal"]
 dtype-time = ["temporal"]
-dtype-array = ["polars-arrow/dtype-array"]
+dtype-array = ["arrow/dtype-array"]
 dtype-i8 = []
 dtype-i16 = []
-dtype-decimal = ["dep:itoap", "polars-arrow/dtype-decimal"]
+dtype-decimal = ["dep:itoap", "arrow/dtype-decimal"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
@@ -128,11 +127,11 @@ dtype-struct = []
 parquet = ["arrow/io_parquet"]
 
 # scale to terabytes?
-bigidx = ["polars-arrow/bigidx", "polars-utils/bigidx"]
+bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
 python = []
 
 serde = ["dep:serde", "smartstring/serde", "bitflags/serde"]
-serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde", "smartstring/serde", "chrono/serde"]
+serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "smartstring/serde", "chrono/serde"]
 
 docs-selection = [
   "ndarray",

@@ -2,8 +2,8 @@ use std::hash::Hash;
 
 use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
-use polars_arrow::bit_util::*;
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::bit_util::*;
+use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
 fn is_first_distinct_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked

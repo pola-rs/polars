@@ -1,6 +1,6 @@
+use arrow::legacy::time_zone::Tz;
 #[cfg(feature = "dtype-date")]
-use polars_arrow::export::arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
-use polars_arrow::time_zone::Tz;
+use arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 use polars_core::chunked_array::ops::arity::{try_binary_elementwise, try_ternary_elementwise};
 use polars_core::prelude::*;
 

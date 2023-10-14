@@ -1,4 +1,4 @@
-use polars_arrow::error::PolarsResult;
+use arrow::legacy::error::PolarsResult;
 
 use crate::prelude::*;
 

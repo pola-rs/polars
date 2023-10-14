@@ -31,7 +31,7 @@ use std::borrow::Cow;
 use std::ops::{BitAnd, BitOr, BitXor, Deref};
 
 use ahash::RandomState;
-use polars_arrow::prelude::QuantileInterpolOptions;
+use arrow::legacy::prelude::QuantileInterpolOptions;
 
 use super::{private, IntoSeries, SeriesTrait, *};
 use crate::chunked_array::comparison::*;

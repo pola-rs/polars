@@ -1,5 +1,5 @@
 #[cfg(feature = "date_offset")]
-use polars_arrow::time_zone::Tz;
+use arrow::legacy::time_zone::Tz;
 #[cfg(feature = "date_offset")]
 use polars_core::chunked_array::ops::arity::try_binary_elementwise;
 #[cfg(feature = "date_offset")]

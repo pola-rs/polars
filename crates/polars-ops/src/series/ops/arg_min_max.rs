@@ -1,6 +1,6 @@
 use argminmax::ArgMinMax;
 use arrow::array::Array;
-use polars_arrow::bit_util::*;
+use arrow::legacy::bit_util::*;
 use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
 

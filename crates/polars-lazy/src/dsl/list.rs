@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_plan::constants::MAP_LIST_NAME;
 use polars_plan::dsl::*;

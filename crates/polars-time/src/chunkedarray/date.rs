@@ -1,4 +1,4 @@
-use polars_arrow::export::arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
+use arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 
 use super::*;
 

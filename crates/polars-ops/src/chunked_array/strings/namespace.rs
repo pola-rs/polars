@@ -1,8 +1,8 @@
+use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_encoding")]
 use base64::engine::general_purpose;
 #[cfg(feature = "string_encoding")]
 use base64::Engine as _;
-use polars_arrow::kernels::string::*;
 #[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
 use polars_core::export::regex::Regex;
@@ -63,7 +63,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     #[cfg(feature = "string_from_radix")]
     // Parse a string number with base _radix_ into a decimal (i32)
     fn parse_int(&self, radix: u32, strict: bool) -> PolarsResult<Int32Chunked> {
-        use polars_arrow::utils::CustomIterTools;
+        use arrow::legacy::utils::CustomIterTools;
         let ca = self.as_utf8();
         let f = |opt_s: Option<&str>| -> Option<i32> {
             opt_s.and_then(|s| <i32 as Num>::from_str_radix(s, radix).ok())

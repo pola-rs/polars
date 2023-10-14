@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use polars_arrow::export::arrow::array::*;
-use polars_arrow::export::arrow::compute::concatenate::concatenate;
-use polars_arrow::export::arrow::offset::Offsets;
-use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_arrow::utils::CustomIterTools;
+use arrow::array::*;
+use arrow::compute::concatenate::concatenate;
+use arrow::legacy::prelude::QuantileInterpolOptions;
+use arrow::legacy::utils::CustomIterTools;
+use arrow::offset::Offsets;
 use polars_core::frame::group_by::{GroupByMethod, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;

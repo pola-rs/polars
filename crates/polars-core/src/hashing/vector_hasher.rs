@@ -1,6 +1,6 @@
 use arrow::bitmap::utils::get_bit_unchecked;
 #[cfg(feature = "group_by_list")]
-use polars_arrow::kernels::list_bytes_iter::numeric_list_bytes_iter;
+use arrow::legacy::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use rayon::prelude::*;
 use xxhash_rust::xxh3::xxh3_64_with_seed;
 

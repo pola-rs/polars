@@ -1,6 +1,6 @@
 //! Traits for miscellaneous operations on ChunkedArray
+use arrow::legacy::prelude::QuantileInterpolOptions;
 use arrow::offset::OffsetsBuffer;
-use polars_arrow::prelude::QuantileInterpolOptions;
 
 #[cfg(feature = "object")]
 use crate::datatypes::ObjectType;

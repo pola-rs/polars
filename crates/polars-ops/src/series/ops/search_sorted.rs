@@ -2,8 +2,8 @@ use std::cmp::Ordering;
 use std::fmt::Debug;
 
 use arrow::array::{Array, BinaryArray, PrimitiveArray};
-use polars_arrow::kernels::rolling::compare_fn_nan_max;
-use polars_arrow::prelude::*;
+use arrow::legacy::kernels::rolling::compare_fn_nan_max;
+use arrow::legacy::prelude::*;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 #[cfg(feature = "serde")]

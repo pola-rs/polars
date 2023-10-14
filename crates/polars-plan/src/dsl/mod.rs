@@ -41,6 +41,7 @@ use std::sync::Arc;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
+use arrow::legacy::prelude::QuantileInterpolOptions;
 pub use expr::*;
 pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
@@ -49,7 +50,6 @@ pub use list::*;
 #[cfg(feature = "meta")]
 pub use meta::*;
 pub use options::*;
-use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
