@@ -51,9 +51,8 @@ use pyo3::wrap_pyfunction;
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::{
-    ColumnNotFoundError, ComputeError, DuplicateError, InvalidOperationError,
-    NoDataError, OutOfBoundsError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError,
-    StructFieldNotFoundError,
+    ColumnNotFoundError, ComputeError, DuplicateError, InvalidOperationError, NoDataError,
+    OutOfBoundsError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
 };
 use crate::expr::PyExpr;
 use crate::functions::string_cache::PyStringCacheHolder;

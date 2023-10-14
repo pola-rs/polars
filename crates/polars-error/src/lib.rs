@@ -88,10 +88,7 @@ impl From<object_store::Error> for PolarsError {
 #[cfg(feature = "parquet2")]
 impl From<parquet2::error::Error> for PolarsError {
     fn from(err: parquet2::error::Error) -> Self {
-        PolarsError::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("parquet error: {err:?}"),
-        ))
+        polars_err!(ComputeError: "parquet error: {err:?}")
     }
 }
 
@@ -118,10 +115,7 @@ impl From<simdutf8::basic::Utf8Error> for PolarsError {
 #[cfg(feature = "arrow-format")]
 impl From<arrow_format::ipc::planus::Error> for PolarsError {
     fn from(err: arrow_format::ipc::planus::Error) -> Self {
-        PolarsError::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("flatbuffers error: {err:?}"),
-        ))
+        polars_err!(ComputeError: "parquet error: {err:?}")
     }
 }
 

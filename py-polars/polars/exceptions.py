@@ -98,8 +98,9 @@ class UnsuitableSQLError(ValueError):
     """Exception raised when unsuitable SQL is given to a database method."""
 
 
-class ArrowError(Exception):  # type: ignore[no-redef]
-    """deprecated will be removed"""
+class ArrowError(Exception):
+    """deprecated will be removed."""
+
 
 __all__ = [
     "ArrowError",
