@@ -122,6 +122,7 @@ python:
   cs.matches: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.matches
   is_selector: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.is_selector
   selector_column_names: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.selector_column_names
+  expand_selector: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.expand_selector
 
   dt.convert_time_zone:
     name: dt.convert_time_zone

@@ -127,7 +127,7 @@ Polars also provides two helpful utility functions to aid with using selectors: 
 
 To predetermine the column names that are selected, which is especially useful for a LazyFrame object:
 
-{{code_block('user-guide/expressions/column-selections','selectors_colnames_utility',['selector_column_names'])}}
+{{code_block('user-guide/expressions/column-selections','selectors_colnames_utility',['expand_selector'])}}
 
 ```python exec="on" result="text" session="user-guide/column-selections"
 --8<-- "python/user-guide/expressions/column-selections.py:selectors_colnames_utility"
