@@ -86,7 +86,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ) + lit(1))
             .alias("days_in_month"),
         ])
-        .explode([col("day/eom")])
         .collect()?;
     println!("{}", &out);
     // --8<-- [end:group_by_dyn]
