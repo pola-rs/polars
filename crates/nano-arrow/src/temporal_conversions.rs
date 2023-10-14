@@ -426,9 +426,7 @@ fn chrono_tz_utf_to_timestamp_ns<O: Offset>(
     _: &str,
     timezone: String,
 ) -> PolarsResult<PrimitiveArray<i64>> {
-    timezone.parse::<chrono_tz::Tz>().map_err(|_| {
-        polars_err!(ComputeError: "timezone \"{timezone}\" cannot be parsed (feature chrono-tz is not active)")
-    })
+    polars_bail!(ComputeError: "timezone \"{timezone}\" cannot be parsed (feature chrono-tz is not active)")
 }
 
 /// Parses a [`Utf8Array`] to a timeozone-aware timestamp, i.e. [`PrimitiveArray<i64>`] with type `Timestamp(Nanosecond, Some(timezone))`.
