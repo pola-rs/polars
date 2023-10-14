@@ -45,7 +45,6 @@ pub use utils::write_def_levels;
 
 use crate::array::*;
 use crate::datatypes::*;
-use crate::error::{Error, Result};
 use crate::types::{days_ms, i256, NativeType};
 
 /// Currently supported options to write to parquet
@@ -63,6 +62,7 @@ pub struct WriteOptions {
 
 pub use file::FileWriter;
 pub use pages::{array_to_columns, Nested};
+use polars_error::{polars_bail, PolarsResult};
 pub use row_group::{row_group_iter, RowGroupIterator};
 pub use schema::to_parquet_type;
 pub use sink::FileSink;
@@ -106,12 +106,12 @@ fn decimal_length_from_precision(precision: usize) -> usize {
 }
 
 /// Creates a parquet [`SchemaDescriptor`] from a [`Schema`].
-pub fn to_parquet_schema(schema: &Schema) -> Result<SchemaDescriptor> {
+pub fn to_parquet_schema(schema: &Schema) -> PolarsResult<SchemaDescriptor> {
     let parquet_types = schema
         .fields
         .iter()
         .map(to_parquet_type)
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<PolarsResult<Vec<_>>>()?;
     Ok(SchemaDescriptor::new("root".to_string(), parquet_types))
 }
 
@@ -219,7 +219,7 @@ pub fn array_to_pages(
     nested: &[Nested],
     options: WriteOptions,
     encoding: Encoding,
-) -> Result<DynIter<'static, Result<Page>>> {
+) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
     if let DataType::Dictionary(key_type, _, _) = primitive_array.data_type().to_logical_type() {
         return match_integer_type!(key_type, |$T| {
             dictionary::array_to_pages::<$T>(
@@ -283,7 +283,7 @@ pub fn array_to_page(
     nested: &[Nested],
     options: WriteOptions,
     encoding: Encoding,
-) -> Result<Page> {
+) -> PolarsResult<Page> {
     if nested.len() == 1 {
         // special case where validity == def levels
         return array_to_page_simple(array, type_, options, encoding);
@@ -297,12 +297,12 @@ pub fn array_to_page_simple(
     type_: ParquetPrimitiveType,
     options: WriteOptions,
     encoding: Encoding,
-) -> Result<Page> {
+) -> PolarsResult<Page> {
     let data_type = array.data_type();
     if !can_encode(data_type, encoding) {
-        return Err(Error::InvalidArgumentError(format!(
+        polars_bail!(InvalidOperation:
             "The datatype {data_type:?} cannot be encoded by {encoding:?}"
-        )));
+        )
     }
 
     match data_type.to_logical_type() {
@@ -589,9 +589,9 @@ pub fn array_to_page_simple(
                 fixed_len_bytes::array_to_page(&array, options, type_, statistics)
             }
         },
-        other => Err(Error::NotYetImplemented(format!(
+        other => polars_bail!(nyi =
             "Writing parquet pages for data type {other:?}"
-        ))),
+        )
     }
     .map(Page::Data)
 }
@@ -602,7 +602,7 @@ fn array_to_page_nested(
     nested: &[Nested],
     options: WriteOptions,
     _encoding: Encoding,
-) -> Result<Page> {
+) -> PolarsResult<Page> {
     use DataType::*;
     match array.data_type().to_logical_type() {
         Null => {
@@ -800,9 +800,9 @@ fn array_to_page_nested(
                 fixed_len_bytes::array_to_page(&array, options, type_, statistics)
             }
         },
-        other => Err(Error::NotYetImplemented(format!(
+        other => polars_bail!(nyi =
             "Writing nested parquet pages for data type {other:?}"
-        ))),
+        )
     }
     .map(Page::Data)
 }

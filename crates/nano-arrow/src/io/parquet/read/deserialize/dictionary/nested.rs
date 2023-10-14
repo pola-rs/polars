@@ -4,6 +4,7 @@ use parquet2::encoding::hybrid_rle::HybridRleDecoder;
 use parquet2::encoding::Encoding;
 use parquet2::page::{DataPage, DictPage, Page};
 use parquet2::schema::Repetition;
+use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::super::super::Pages;
 use super::super::nested_utils::*;
@@ -12,7 +13,6 @@ use super::finish_key;
 use crate::array::{Array, DictionaryArray, DictionaryKey};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::error::{Error, Result};
 
 // The state of a required DataPage with a boolean physical type
 #[derive(Debug)]
@@ -22,7 +22,7 @@ pub struct Required<'a> {
 }
 
 impl<'a> Required<'a> {
-    fn try_new(page: &'a DataPage) -> Result<Self> {
+    fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let values = dict_indices_decoder(page)?;
         let length = page.num_values();
         Ok(Self { values, length })
@@ -81,7 +81,7 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
         &self,
         page: &'a DataPage,
         _: Option<&'a Self::Dictionary>,
-    ) -> Result<Self::State> {
+    ) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
@@ -104,7 +104,7 @@ impl<'a, K: DictionaryKey> NestedDecoder<'a> for DictionaryDecoder<K> {
         )
     }
 
-    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> Result<()> {
+    fn push_valid(&self, state: &mut Self::State, decoded: &mut Self::DecodedState) -> PolarsResult<()> {
         let (values, validity) = decoded;
         match state {
             State::Optional(page_values) => {
@@ -148,7 +148,7 @@ pub fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn Array>>
     data_type: DataType,
     chunk_size: Option<usize>,
     read_dict: F,
-) -> MaybeNext<Result<(NestedState, DictionaryArray<K>)>> {
+) -> MaybeNext<PolarsResult<(NestedState, DictionaryArray<K>)>> {
     if items.len() > 1 {
         let (nested, (values, validity)) = items.pop_front().unwrap();
         let keys = finish_key(values, validity);
@@ -160,9 +160,11 @@ pub fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn Array>>
         Ok(Some(page)) => {
             let (page, dict) = match (&dict, page) {
                 (None, Page::Data(_)) => {
-                    return MaybeNext::Some(Err(Error::nyi(
-                        "dictionary arrays from non-dict-encoded pages",
-                    )));
+                    return MaybeNext::Some(Err(
+                        polars_err!(ComputeError:
+                        "not implemented: dictionary arrays from non-dict-encoded pages",
+                    )
+                    ));
                 },
                 (_, Page::Dict(dict_page)) => {
                     *dict = Some(read_dict(dict_page));

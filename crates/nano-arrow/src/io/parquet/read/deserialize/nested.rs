@@ -1,18 +1,18 @@
 use ethnum::I256;
 use parquet2::schema::types::PrimitiveType;
+use polars_error::polars_bail;
 
 use super::nested_utils::{InitNested, NestedArrayIter};
 use super::*;
 use crate::array::PrimitiveArray;
 use crate::datatypes::{DataType, Field};
-use crate::error::{Error, Result};
 use crate::match_integer_type;
 
 /// Converts an iterator of arrays to a trait object returning trait objects
 #[inline]
 fn remove_nested<'a, I>(iter: I) -> NestedArrayIter<'a>
 where
-    I: Iterator<Item = Result<(NestedState, Box<dyn Array>)>> + Send + Sync + 'a,
+    I: Iterator<Item = PolarsResult<(NestedState, Box<dyn Array>)>> + Send + Sync + 'a,
 {
     Box::new(iter.map(|x| {
         x.map(|(mut nested, array)| {
@@ -27,7 +27,7 @@ where
 fn primitive<'a, A, I>(iter: I) -> NestedArrayIter<'a>
 where
     A: Array,
-    I: Iterator<Item = Result<(NestedState, A)>> + Send + Sync + 'a,
+    I: Iterator<Item = PolarsResult<(NestedState, A)>> + Send + Sync + 'a,
 {
     Box::new(iter.map(|x| {
         x.map(|(mut nested, array)| {
@@ -44,7 +44,7 @@ pub fn columns_to_iter_recursive<'a, I: 'a>(
     mut init: Vec<InitNested>,
     num_rows: usize,
     chunk_size: Option<usize>,
-) -> Result<NestedArrayIter<'a>>
+) -> PolarsResult<NestedArrayIter<'a>>
 where
     I: Pages,
 {
@@ -168,9 +168,9 @@ where
                     |x: i64| x as u32,
                 )),
                 other => {
-                    return Err(Error::nyi(format!(
-                        "Deserializing UInt32 from {other:?}'s parquet"
-                    )))
+                    polars_bail!(ComputeError:
+                        "deserializing UInt32 from {other:?}'s parquet"
+                    )
                 },
             }
         },
@@ -282,9 +282,9 @@ where
                         |x: i64| x as i128,
                     )),
                     PhysicalType::FixedLenByteArray(n) if n > 16 => {
-                        return Err(Error::InvalidArgumentError(format!(
-                            "Can't decode Decimal128 type from `FixedLenByteArray` of len {n}"
-                        )))
+                        polars_bail!(
+                            ComputeError: "Can't decode Decimal128 type from `FixedLenByteArray` of len {n}"
+                        )
                     },
                     PhysicalType::FixedLenByteArray(n) => {
                         let iter = fixed_size_binary::NestedIter::new(
@@ -317,10 +317,10 @@ where
                         Box::new(iter)
                     },
                     _ => {
-                        return Err(Error::nyi(format!(
+                        polars_bail!(ComputeError:
                             "Deserializing type for Decimal {:?} from parquet",
                             type_.physical_type
-                        )))
+                        )
                     },
                 }
             },
@@ -406,15 +406,15 @@ where
                         Box::new(iter) as _
                     },
                     PhysicalType::FixedLenByteArray(n) => {
-                        return Err(Error::InvalidArgumentError(format!(
+                        polars_bail!(ComputeError:
                             "Can't decode Decimal256 type from from `FixedLenByteArray` of len {n}"
-                        )))
+                        )
                     },
                     _ => {
-                        return Err(Error::nyi(format!(
+                        polars_bail!(ComputeError:
                             "Deserializing type for Decimal {:?} from parquet",
                             type_.physical_type
-                        )))
+                        )
                     },
                 }
             },
@@ -437,7 +437,7 @@ where
                             chunk_size,
                         )
                     })
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<PolarsResult<Vec<_>>>()?;
                 let columns = columns.into_iter().rev().collect();
                 Box::new(struct_::StructIterator::new(columns, fields.clone()))
             },
@@ -459,9 +459,9 @@ where
                 Box::new(iter) as _
             },
             other => {
-                return Err(Error::nyi(format!(
+                polars_bail!(ComputeError:
                     "Deserializing type {other:?} from parquet"
-                )))
+                )
             },
         },
     })
@@ -474,7 +474,7 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + Pages>(
     data_type: DataType,
     num_rows: usize,
     chunk_size: Option<usize>,
-) -> Result<NestedArrayIter<'a>> {
+) -> PolarsResult<NestedArrayIter<'a>> {
     use DataType::*;
     let values_data_type = if let Dictionary(_, v, _) = &data_type {
         v.as_ref()
@@ -583,9 +583,9 @@ fn dict_read<'a, K: DictionaryKey, I: 'a + Pages>(
         }
          */
         other => {
-            return Err(Error::nyi(format!(
+            polars_bail!(ComputeError:
                 "Reading nested dictionaries of type {other:?}"
-            )))
+            )
         },
     })
 }

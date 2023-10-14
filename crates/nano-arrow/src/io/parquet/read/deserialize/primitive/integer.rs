@@ -7,13 +7,13 @@ use parquet2::encoding::Encoding;
 use parquet2::page::{split_buffer, DataPage, DictPage};
 use parquet2::schema::Repetition;
 use parquet2::types::NativeType as ParquetNativeType;
+use polars_error::{PolarsResult, to_compute_err};
 
 use super::super::{utils, Pages};
 use super::basic::{finish, PrimitiveDecoder, State as PrimitiveState};
 use crate::array::MutablePrimitiveArray;
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::error::{Error, Result};
 use crate::io::parquet::read::deserialize::utils::{
     get_selected_rows, FilteredOptionalPageValidity, OptionalPageValidity,
 };
@@ -80,7 +80,7 @@ where
     type Dict = Vec<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
 
-    fn build_state(&self, page: &'a DataPage, dict: Option<&'a Self::Dict>) -> Result<Self::State> {
+    fn build_state(&self, page: &'a DataPage, dict: Option<&'a Self::Dict>) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
@@ -90,7 +90,7 @@ where
                 let (_, _, values) = split_buffer(page)?;
                 Decoder::try_new(values)
                     .map(State::DeltaBinaryPackedRequired)
-                    .map_err(Error::from)
+                    .map_err(to_compute_err)
             },
             (Encoding::DeltaBinaryPacked, _, true, false) => {
                 let (_, _, values) = split_buffer(page)?;
@@ -239,7 +239,7 @@ where
     i64: num_traits::AsPrimitive<P>,
     F: Copy + Fn(P) -> T,
 {
-    type Item = Result<MutablePrimitiveArray<T>>;
+    type Item = PolarsResult<MutablePrimitiveArray<T>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let maybe_state = utils::next(

@@ -16,7 +16,6 @@ use super::Pages;
 use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::DataType;
-use crate::error::{Error, Result};
 
 // The state of a `DataPage` of `Primitive` parquet primitive type
 #[derive(Debug)]
@@ -33,7 +32,7 @@ pub struct Required<'a> {
 }
 
 impl<'a> Required<'a> {
-    fn try_new(page: &'a DataPage) -> Result<Self> {
+    fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let values = dict_indices_decoder(page)?;
         Ok(Self { values })
     }
@@ -45,7 +44,7 @@ pub struct FilteredRequired<'a> {
 }
 
 impl<'a> FilteredRequired<'a> {
-    fn try_new(page: &'a DataPage) -> Result<Self> {
+    fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let values = dict_indices_decoder(page)?;
 
         let rows = get_selected_rows(page);
@@ -62,7 +61,7 @@ pub struct Optional<'a> {
 }
 
 impl<'a> Optional<'a> {
-    fn try_new(page: &'a DataPage) -> Result<Self> {
+    fn try_new(page: &'a DataPage) -> PolarsResult<Self> {
         let values = dict_indices_decoder(page)?;
 
         Ok(Self {
@@ -111,7 +110,7 @@ where
     type Dict = ();
     type DecodedState = (Vec<K>, MutableBitmap);
 
-    fn build_state(&self, page: &'a DataPage, _: Option<&'a Self::Dict>) -> Result<Self::State> {
+    fn build_state(&self, page: &'a DataPage, _: Option<&'a Self::Dict>) -> PolarsResult<Self::State> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
         let is_filtered = page.selected_rows().is_some();
@@ -241,7 +240,7 @@ pub(super) fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn 
     remaining: &mut usize,
     chunk_size: Option<usize>,
     read_dict: F,
-) -> MaybeNext<Result<DictionaryArray<K>>> {
+) -> MaybeNext<PolarsResult<DictionaryArray<K>>> {
     if items.len() > 1 {
         let (values, validity) = items.pop_front().unwrap();
         let keys = finish_key(values, validity);
@@ -256,8 +255,8 @@ pub(super) fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn 
         Ok(Some(page)) => {
             let (page, dict) = match (&dict, page) {
                 (None, Page::Data(_)) => {
-                    return MaybeNext::Some(Err(Error::nyi(
-                        "dictionary arrays from non-dict-encoded pages",
+                    return MaybeNext::Some(Err(polars_err!(ComputeError:
+                        "not implemented: dictionary arrays from non-dict-encoded pages",
                     )));
                 },
                 (_, Page::Dict(dict_page)) => {
@@ -312,3 +311,4 @@ pub(super) fn next_dict<K: DictionaryKey, I: Pages, F: Fn(&DictPage) -> Box<dyn 
 }
 
 pub use nested::next_dict as nested_next_dict;
+use polars_error::{polars_err, PolarsResult};

@@ -2,11 +2,11 @@ use parquet2::encoding::{delta_bitpacked, Encoding};
 use parquet2::page::DataPage;
 use parquet2::schema::types::PrimitiveType;
 use parquet2::statistics::{serialize_statistics, BinaryStatistics, ParquetStatistics, Statistics};
+use polars_error::{polars_bail, PolarsResult};
 
 use super::super::{utils, WriteOptions};
 use crate::array::{Array, BinaryArray};
 use crate::bitmap::Bitmap;
-use crate::error::{Error, Result};
 use crate::io::parquet::read::schema::is_nullable;
 use crate::offset::Offset;
 
@@ -40,7 +40,7 @@ pub fn array_to_page<O: Offset>(
     options: WriteOptions,
     type_: PrimitiveType,
     encoding: Encoding,
-) -> Result<DataPage> {
+) -> PolarsResult<DataPage> {
     let validity = array.validity();
     let is_optional = is_nullable(&type_.field_info);
 
@@ -65,11 +65,11 @@ pub fn array_to_page<O: Offset>(
             &mut buffer,
         ),
         _ => {
-            return Err(Error::InvalidArgumentError(format!(
+            polars_bail!(InvalidOperation:
                 "Datatype {:?} cannot be encoded by {:?} encoding",
                 array.data_type(),
                 encoding
-            )))
+            )
         },
     }
 

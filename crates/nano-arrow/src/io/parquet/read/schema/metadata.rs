@@ -1,16 +1,16 @@
 use base64::engine::general_purpose;
 use base64::Engine as _;
 pub use parquet2::metadata::KeyValue;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::super::super::ARROW_SCHEMA_META_KEY;
 use crate::datatypes::{Metadata, Schema};
-use crate::error::{Error, Result};
 use crate::io::ipc::read::deserialize_schema;
 
 /// Reads an arrow schema from Parquet's file metadata. Returns `None` if no schema was found.
 /// # Errors
 /// Errors iff the schema cannot be correctly parsed.
-pub fn read_schema_from_metadata(metadata: &mut Metadata) -> Result<Option<Schema>> {
+pub fn read_schema_from_metadata(metadata: &mut Metadata) -> PolarsResult<Option<Schema>> {
     metadata
         .remove(ARROW_SCHEMA_META_KEY)
         .map(|encoded| get_arrow_schema_from_metadata(&encoded))
@@ -18,7 +18,7 @@ pub fn read_schema_from_metadata(metadata: &mut Metadata) -> Result<Option<Schem
 }
 
 /// Try to convert Arrow schema metadata into a schema
-fn get_arrow_schema_from_metadata(encoded_meta: &str) -> Result<Schema> {
+fn get_arrow_schema_from_metadata(encoded_meta: &str) -> PolarsResult<Schema> {
     let decoded = general_purpose::STANDARD.decode(encoded_meta);
     match decoded {
         Ok(bytes) => {
@@ -31,9 +31,9 @@ fn get_arrow_schema_from_metadata(encoded_meta: &str) -> Result<Schema> {
         },
         Err(err) => {
             // The C++ implementation returns an error if the schema can't be parsed.
-            Err(Error::InvalidArgumentError(format!(
-                "Unable to decode the encoded schema stored in {ARROW_SCHEMA_META_KEY}, {err:?}"
-            )))
+            polars_bail!(InvalidOperation:
+                "unable to decode the encoded schema stored in {ARROW_SCHEMA_META_KEY}, {err:?}"
+            )
         },
     }
 }

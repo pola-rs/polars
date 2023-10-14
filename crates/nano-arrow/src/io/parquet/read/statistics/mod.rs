@@ -12,10 +12,10 @@ use parquet2::statistics::{
     Statistics as ParquetStatistics,
 };
 use parquet2::types::int96_to_i64_ns;
+use polars_error::{polars_bail, PolarsResult};
 
 use crate::array::*;
 use crate::datatypes::{DataType, Field, IntervalUnit, PhysicalType};
-use crate::error::{Error, Result};
 use crate::types::i256;
 use crate::with_match_primitive_type;
 
@@ -154,7 +154,7 @@ impl From<MutableStatistics> for Statistics {
     }
 }
 
-fn make_mutable(data_type: &DataType, capacity: usize) -> Result<Box<dyn MutableArray>> {
+fn make_mutable(data_type: &DataType, capacity: usize) -> PolarsResult<Box<dyn MutableArray>> {
     Ok(match data_type.to_physical_type() {
         PhysicalType::Boolean => {
             Box::new(MutableBooleanArray::with_capacity(capacity)) as Box<dyn MutableArray>
@@ -197,9 +197,9 @@ fn make_mutable(data_type: &DataType, capacity: usize) -> Result<Box<dyn Mutable
             Box::new(MutableNullArray::new(DataType::Null, 0)) as Box<dyn MutableArray>
         },
         other => {
-            return Err(Error::NotYetImplemented(format!(
-                "Deserializing parquet stats from {other:?} is still not implemented"
-            )))
+            polars_bail!(nyi =
+                "deserializing parquet stats from {other:?} is still not implemented"
+            )
         },
     })
 }
@@ -235,7 +235,7 @@ fn create_dt(data_type: &DataType) -> DataType {
 }
 
 impl MutableStatistics {
-    fn try_new(field: &Field) -> Result<Self> {
+    fn try_new(field: &Field) -> PolarsResult<Self> {
         let min_value = make_mutable(&field.data_type, 0)?;
         let max_value = make_mutable(&field.data_type, 0)?;
 
@@ -321,7 +321,7 @@ fn push(
     max: &mut dyn MutableArray,
     distinct_count: &mut dyn MutableArray,
     null_count: &mut dyn MutableArray,
-) -> Result<()> {
+) -> PolarsResult<()> {
     match min.data_type().to_logical_type() {
         List(_) | LargeList(_) => {
             let min = min
@@ -453,9 +453,9 @@ fn push(
             // some implementations of parquet write arrow's u32 into i64.
             ParquetPhysicalType::Int64 => primitive::push(from, min, max, |x: i64| Ok(x as u32)),
             ParquetPhysicalType::Int32 => primitive::push(from, min, max, |x: i32| Ok(x as u32)),
-            other => Err(Error::NotYetImplemented(format!(
+            other => polars_bail!(nyi =
                 "Can't decode UInt32 type from parquet type {other:?}"
-            ))),
+            ),
         },
         Int32 => primitive::push::<i32, i32, _>(from, min, max, Ok),
         Date64 => match physical_type {
@@ -464,9 +464,9 @@ fn push(
             ParquetPhysicalType::Int32 => {
                 primitive::push(from, min, max, |x: i32| Ok(x as i64 * 86400000))
             },
-            other => Err(Error::NotYetImplemented(format!(
+            other => polars_bail!(nyi =
                 "Can't decode Date64 type from parquet type {other:?}"
-            ))),
+            ),
         },
         Int64 | Time64(_) | Duration(_) => primitive::push::<i64, i64, _>(from, min, max, Ok),
         UInt64 => primitive::push(from, min, max, |x: i64| Ok(x as u64)),
@@ -513,9 +513,9 @@ fn push(
         Decimal(_, _) => match physical_type {
             ParquetPhysicalType::Int32 => primitive::push(from, min, max, |x: i32| Ok(x as i128)),
             ParquetPhysicalType::Int64 => primitive::push(from, min, max, |x: i64| Ok(x as i128)),
-            ParquetPhysicalType::FixedLenByteArray(n) if *n > 16 => Err(Error::NotYetImplemented(
-                format!("Can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}"),
-            )),
+            ParquetPhysicalType::FixedLenByteArray(n) if *n > 16 => polars_bail!(nyi=
+                "Can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}"
+            ),
             ParquetPhysicalType::FixedLenByteArray(n) => fixlen::push_i128(from, *n, min, max),
             _ => unreachable!(),
         },
@@ -529,9 +529,9 @@ fn push(
             ParquetPhysicalType::FixedLenByteArray(n) if *n <= 16 => {
                 fixlen::push_i256_with_i128(from, *n, min, max)
             },
-            ParquetPhysicalType::FixedLenByteArray(n) if *n > 32 => Err(Error::NotYetImplemented(
-                format!("Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}"),
-            )),
+            ParquetPhysicalType::FixedLenByteArray(n) if *n > 32 => polars_bail!(
+                nyi = "Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}"
+            ),
             ParquetPhysicalType::FixedLenByteArray(_) => fixlen::push_i256(from, min, max),
             _ => unreachable!(),
         },
@@ -550,7 +550,7 @@ fn push(
 ///
 /// # Errors
 /// This function errors if the deserialization of the statistics fails (e.g. invalid utf8)
-pub fn deserialize(field: &Field, row_group: &RowGroupMetaData) -> Result<Statistics> {
+pub fn deserialize(field: &Field, row_group: &RowGroupMetaData) -> PolarsResult<Statistics> {
     let mut statistics = MutableStatistics::try_new(field)?;
 
     let columns = get_field_columns(row_group.columns(), field.name.as_ref());
@@ -562,7 +562,7 @@ pub fn deserialize(field: &Field, row_group: &RowGroupMetaData) -> Result<Statis
                 column.descriptor().descriptor.primitive_type.clone(),
             ))
         })
-        .collect::<Result<VecDeque<(Option<_>, ParquetPrimitiveType)>>>()?;
+        .collect::<PolarsResult<VecDeque<(Option<_>, ParquetPrimitiveType)>>>()?;
     push(
         &mut stats,
         statistics.min_value.as_mut(),

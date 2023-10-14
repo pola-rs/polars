@@ -1,7 +1,7 @@
+use polars_error::{PolarsError, PolarsResult};
 use super::nested_utils::{NestedArrayIter, NestedState};
 use crate::array::{Array, StructArray};
 use crate::datatypes::{DataType, Field};
-use crate::error::Error;
 
 /// An iterator adapter over [`NestedArrayIter`] assumed to be encoded as Struct arrays
 pub struct StructIterator<'a> {
@@ -18,7 +18,7 @@ impl<'a> StructIterator<'a> {
 }
 
 impl<'a> Iterator for StructIterator<'a> {
-    type Item = Result<(NestedState, Box<dyn Array>), Error>;
+    type Item = PolarsResult<(NestedState, Box<dyn Array>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let values = self

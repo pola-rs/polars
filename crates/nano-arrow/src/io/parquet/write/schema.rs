@@ -6,10 +6,10 @@ use parquet2::schema::types::{
     PrimitiveConvertedType, PrimitiveLogicalType, TimeUnit as ParquetTimeUnit,
 };
 use parquet2::schema::Repetition;
+use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::super::ARROW_SCHEMA_META_KEY;
 use crate::datatypes::{DataType, Field, Schema, TimeUnit};
-use crate::error::{Error, Result};
 use crate::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 use crate::io::parquet::write::decimal_length_from_precision;
 
@@ -33,7 +33,7 @@ pub fn schema_to_metadata_key(schema: &Schema) -> KeyValue {
 }
 
 /// Creates a [`ParquetType`] from a [`Field`].
-pub fn to_parquet_type(field: &Field) -> Result<ParquetType> {
+pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
     let name = field.name.clone();
     let repetition = if field.is_nullable {
         Repetition::Optional
@@ -241,15 +241,15 @@ pub fn to_parquet_type(field: &Field) -> Result<ParquetType> {
         )?),
         DataType::Struct(fields) => {
             if fields.is_empty() {
-                return Err(Error::InvalidArgumentError(
+                polars_bail!(InvalidOperation:
                     "Parquet does not support writing empty structs".to_string(),
-                ));
+                )
             }
             // recursively convert children to types/nodes
             let fields = fields
                 .iter()
                 .map(to_parquet_type)
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<PolarsResult<Vec<_>>>()?;
             Ok(ParquetType::from_group(
                 name, repetition, None, None, fields, None,
             ))
@@ -372,8 +372,8 @@ pub fn to_parquet_type(field: &Field) -> Result<ParquetType> {
             )],
             None,
         )),
-        other => Err(Error::NotYetImplemented(format!(
+        other => polars_bail!(nyi =
             "Writing the data type {other:?} is not yet implemented"
-        ))),
+        )
     }
 }

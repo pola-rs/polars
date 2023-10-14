@@ -1,7 +1,7 @@
+use polars_error::PolarsResult;
 use super::make_mutable;
 use crate::array::{Array, MapArray, MutableArray};
 use crate::datatypes::DataType;
-use crate::error::Error;
 
 #[derive(Debug)]
 pub struct DynMutableMapArray {
@@ -10,7 +10,7 @@ pub struct DynMutableMapArray {
 }
 
 impl DynMutableMapArray {
-    pub fn try_with_capacity(data_type: DataType, capacity: usize) -> Result<Self, Error> {
+    pub fn try_with_capacity(data_type: DataType, capacity: usize) -> PolarsResult<Self> {
         let inner = match data_type.to_logical_type() {
             DataType::Map(inner, _) => inner,
             _ => unreachable!(),

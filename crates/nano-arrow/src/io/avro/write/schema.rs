@@ -2,18 +2,18 @@ use avro_schema::schema::{
     BytesLogical, Field as AvroField, Fixed, FixedLogical, IntLogical, LongLogical, Record,
     Schema as AvroSchema,
 };
+use polars_error::{polars_bail, PolarsResult};
 
 use crate::datatypes::*;
-use crate::error::{Error, Result};
 
 /// Converts a [`Schema`] to an Avro [`Record`].
-pub fn to_record(schema: &Schema) -> Result<Record> {
+pub fn to_record(schema: &Schema) -> PolarsResult<Record> {
     let mut name_counter: i32 = 0;
     let fields = schema
         .fields
         .iter()
         .map(|f| field_to_field(f, &mut name_counter))
-        .collect::<Result<_>>()?;
+        .collect::<PolarsResult<_>>()?;
     Ok(Record {
         name: "".to_string(),
         namespace: None,
@@ -23,7 +23,7 @@ pub fn to_record(schema: &Schema) -> Result<Record> {
     })
 }
 
-fn field_to_field(field: &Field, name_counter: &mut i32) -> Result<AvroField> {
+fn field_to_field(field: &Field, name_counter: &mut i32) -> PolarsResult<AvroField> {
     let schema = type_to_schema(field.data_type(), field.is_nullable, name_counter)?;
     Ok(AvroField::new(&field.name, schema))
 }
@@ -32,7 +32,7 @@ fn type_to_schema(
     data_type: &DataType,
     is_nullable: bool,
     name_counter: &mut i32,
-) -> Result<AvroSchema> {
+) -> PolarsResult<AvroSchema> {
     Ok(if is_nullable {
         AvroSchema::Union(vec![
             AvroSchema::Null,
@@ -48,7 +48,7 @@ fn _get_field_name(name_counter: &mut i32) -> String {
     format!("r{name_counter}")
 }
 
-fn _type_to_schema(data_type: &DataType, name_counter: &mut i32) -> Result<AvroSchema> {
+fn _type_to_schema(data_type: &DataType, name_counter: &mut i32) -> PolarsResult<AvroSchema> {
     Ok(match data_type.to_logical_type() {
         DataType::Null => AvroSchema::Null,
         DataType::Boolean => AvroSchema::Boolean,
@@ -68,7 +68,7 @@ fn _type_to_schema(data_type: &DataType, name_counter: &mut i32) -> Result<AvroS
             fields
                 .iter()
                 .map(|f| field_to_field(f, name_counter))
-                .collect::<Result<Vec<_>>>()?,
+                .collect::<PolarsResult<Vec<_>>>()?,
         )),
         DataType::Date32 => AvroSchema::Int(Some(IntLogical::Date)),
         DataType::Time32(TimeUnit::Millisecond) => AvroSchema::Int(Some(IntLogical::Time)),
@@ -86,6 +86,6 @@ fn _type_to_schema(data_type: &DataType, name_counter: &mut i32) -> Result<AvroS
         },
         DataType::FixedSizeBinary(size) => AvroSchema::Fixed(Fixed::new("", *size)),
         DataType::Decimal(p, s) => AvroSchema::Bytes(Some(BytesLogical::Decimal(*p, *s))),
-        other => return Err(Error::NotYetImplemented(format!("write {other:?} to avro"))),
+        other => polars_bail!(nyi = "write {other:?} to avro")
     })
 }

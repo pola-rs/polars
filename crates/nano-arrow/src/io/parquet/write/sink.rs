@@ -6,13 +6,13 @@ use futures::future::BoxFuture;
 use futures::{AsyncWrite, AsyncWriteExt, FutureExt, Sink, TryFutureExt};
 use parquet2::metadata::KeyValue;
 use parquet2::write::{FileStreamer, WriteOptions as ParquetWriteOptions};
+use polars_error::{polars_bail, PolarsError, PolarsResult, to_compute_err};
 
 use super::file::add_arrow_schema;
 use super::{Encoding, SchemaDescriptor, WriteOptions};
 use crate::array::Array;
 use crate::chunk::Chunk;
 use crate::datatypes::Schema;
-use crate::error::Error;
 
 /// Sink that writes array [`chunks`](Chunk) as a Parquet file.
 ///
@@ -61,7 +61,7 @@ use crate::error::Error;
 /// ```
 pub struct FileSink<'a, W: AsyncWrite + Send + Unpin> {
     writer: Option<FileStreamer<W>>,
-    task: Option<BoxFuture<'a, Result<Option<FileStreamer<W>>, Error>>>,
+    task: Option<BoxFuture<'a, PolarsResult<Option<FileStreamer<W>>>>>,
     options: WriteOptions,
     encodings: Vec<Vec<Encoding>>,
     schema: Schema,
@@ -85,11 +85,11 @@ where
         schema: Schema,
         encodings: Vec<Vec<Encoding>>,
         options: WriteOptions,
-    ) -> Result<Self, Error> {
+    ) -> PolarsResult<Self> {
         if encodings.len() != schema.fields.len() {
-            return Err(Error::InvalidArgumentError(
+            polars_bail!(InvalidOperation:
                 "The number of encodings must equal the number of fields".to_string(),
-            ));
+            )
         }
 
         let parquet_schema = crate::io::parquet::write::to_parquet_schema(&schema)?;
@@ -132,7 +132,7 @@ where
     fn poll_complete(
         &mut self,
         cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Error>> {
+    ) -> std::task::Poll<PolarsResult<()>> {
         if let Some(task) = &mut self.task {
             match futures::ready!(task.poll_unpin(cx)) {
                 Ok(writer) => {
@@ -155,14 +155,13 @@ impl<'a, W> Sink<Chunk<Box<dyn Array>>> for FileSink<'a, W>
 where
     W: AsyncWrite + Send + Unpin + 'a,
 {
-    type Error = Error;
+    type Error = PolarsError;
 
     fn start_send(self: Pin<&mut Self>, item: Chunk<Box<dyn Array>>) -> Result<(), Self::Error> {
         if self.schema.fields.len() != item.arrays().len() {
-            return Err(Error::InvalidArgumentError(
+            polars_bail!(InvalidOperation:
                 "The number of arrays in the chunk must equal the number of fields in the schema"
-                    .to_string(),
-            ));
+            )
         }
         let this = self.get_mut();
         if let Some(mut writer) = this.writer.take() {
@@ -178,10 +177,11 @@ where
             }));
             Ok(())
         } else {
-            Err(Error::Io(std::io::Error::new(
+            let io_err = std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
                 "writer closed".to_string(),
-            )))
+            );
+            Err(PolarsError::from(io_err))
         }
     }
 
@@ -221,8 +221,8 @@ where
                     let kv_meta = add_arrow_schema(&this.schema, metadata);
 
                     this.task = Some(Box::pin(async move {
-                        writer.end(kv_meta).map_err(Error::from).await?;
-                        writer.into_inner().close().map_err(Error::from).await?;
+                        writer.end(kv_meta).map_err(to_compute_err).await?;
+                        writer.into_inner().close().map_err(to_compute_err).await?;
                         Ok(None)
                     }));
                     this.poll_complete(cx)

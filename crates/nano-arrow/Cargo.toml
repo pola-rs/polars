@@ -58,7 +58,7 @@ futures = { workspace = true, optional = true }
 async-stream = { version = "0.3.2", optional = true }
 
 # avro support
-avro-schema = { version = "0.3", optional = true }
+avro-schema = { workspace = true, optional = true }
 
 # for division/remainder optimization at runtime
 strength_reduce = { version = "0.2", optional = true }
@@ -150,7 +150,7 @@ io_parquet_brotli = ["parquet2/brotli"]
 # parquet bloom filter functions
 io_parquet_bloom_filter = ["parquet2/bloom_filter"]
 
-io_avro = ["avro-schema"]
+io_avro = ["avro-schema", "polars-error/avro-schema"]
 io_avro_compression = [
   "avro-schema/compression",
 ]

@@ -3,12 +3,12 @@ use parquet2::schema::types::{
     PhysicalType, PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
 };
 use parquet2::types::int96_to_i64_ns;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::super::{ArrayIter, Pages};
 use super::{binary, boolean, fixed_size_binary, null, primitive};
 use crate::array::{Array, DictionaryKey, MutablePrimitiveArray, PrimitiveArray};
 use crate::datatypes::{DataType, IntervalUnit, TimeUnit};
-use crate::error::{Error, Result};
 use crate::match_integer_type;
 use crate::types::{days_ms, i256, NativeType};
 
@@ -17,26 +17,26 @@ use crate::types::{days_ms, i256, NativeType};
 fn dyn_iter<'a, A, I>(iter: I) -> ArrayIter<'a>
 where
     A: Array,
-    I: Iterator<Item = Result<A>> + Send + Sync + 'a,
+    I: Iterator<Item = PolarsResult<A>> + Send + Sync + 'a,
 {
     Box::new(iter.map(|x| x.map(|x| Box::new(x) as Box<dyn Array>)))
 }
 
 /// Converts an iterator of [MutablePrimitiveArray] into an iterator of [PrimitiveArray]
 #[inline]
-fn iden<T, I>(iter: I) -> impl Iterator<Item = Result<PrimitiveArray<T>>>
+fn iden<T, I>(iter: I) -> impl Iterator<Item = PolarsResult<PrimitiveArray<T>>>
 where
     T: NativeType,
-    I: Iterator<Item = Result<MutablePrimitiveArray<T>>>,
+    I: Iterator<Item = PolarsResult<MutablePrimitiveArray<T>>>,
 {
     iter.map(|x| x.map(|x| x.into()))
 }
 
 #[inline]
-fn op<T, I, F>(iter: I, op: F) -> impl Iterator<Item = Result<PrimitiveArray<T>>>
+fn op<T, I, F>(iter: I, op: F) -> impl Iterator<Item = PolarsResult<PrimitiveArray<T>>>
 where
     T: NativeType,
-    I: Iterator<Item = Result<MutablePrimitiveArray<T>>>,
+    I: Iterator<Item = PolarsResult<MutablePrimitiveArray<T>>>,
     F: Fn(T) -> T + Copy,
 {
     iter.map(move |x| {
@@ -55,7 +55,7 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
     data_type: DataType,
     chunk_size: Option<usize>,
     num_rows: usize,
-) -> Result<ArrayIter<'a>> {
+) -> PolarsResult<ArrayIter<'a>> {
     use DataType::*;
 
     let physical_type = &type_.physical_type;
@@ -191,9 +191,9 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
             |x: i64| x as i128,
         ))),
         (PhysicalType::FixedLenByteArray(n), Decimal(_, _)) if *n > 16 => {
-            return Err(Error::NotYetImplemented(format!(
-                "Can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}"
-            )))
+            polars_bail!(ComputeError:
+                "not implemented: can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}"
+            )
         },
         (PhysicalType::FixedLenByteArray(n), Decimal(_, _)) => {
             let n = *n;
@@ -288,9 +288,9 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
             Box::new(arrays) as _
         },
         (PhysicalType::FixedLenByteArray(n), Decimal256(_, _)) if *n > 32 => {
-            return Err(Error::NotYetImplemented(format!(
+            polars_bail!(ComputeError:
                 "Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}"
-            )))
+            )
         },
         (PhysicalType::Int32, Date64) => dyn_iter(iden(primitive::IntegerIter::new(
             pages,
@@ -344,9 +344,9 @@ pub fn page_iter_to_arrays<'a, I: Pages + 'a>(
             })
         },
         (from, to) => {
-            return Err(Error::NotYetImplemented(format!(
-                "Reading parquet type {from:?} to {to:?} still not implemented"
-            )))
+            polars_bail!(ComputeError:
+                "not implemented: reading parquet type {from:?} to {to:?} still not implemented"
+            )
         },
     })
 }
@@ -428,7 +428,7 @@ fn timestamp<'a, I: Pages + 'a>(
     num_rows: usize,
     chunk_size: Option<usize>,
     time_unit: TimeUnit,
-) -> Result<ArrayIter<'a>> {
+) -> PolarsResult<ArrayIter<'a>> {
     if physical_type == &PhysicalType::Int96 {
         return match time_unit {
             TimeUnit::Nanosecond => Ok(dyn_iter(iden(primitive::Iter::new(
@@ -463,9 +463,9 @@ fn timestamp<'a, I: Pages + 'a>(
     };
 
     if physical_type != &PhysicalType::Int64 {
-        return Err(Error::nyi(
-            "Can't decode a timestamp from a non-int64 parquet type",
-        ));
+        polars_bail!(ComputeError:
+            "not implemented: can't decode a timestamp from a non-int64 parquet type",
+        );
     }
 
     let iter = primitive::IntegerIter::new(pages, data_type, num_rows, chunk_size, |x: i64| x);
@@ -485,7 +485,7 @@ fn timestamp_dict<'a, K: DictionaryKey, I: Pages + 'a>(
     num_rows: usize,
     chunk_size: Option<usize>,
     time_unit: TimeUnit,
-) -> Result<ArrayIter<'a>> {
+) -> PolarsResult<ArrayIter<'a>> {
     if physical_type == &PhysicalType::Int96 {
         let logical_type = PrimitiveLogicalType::Timestamp {
             unit: ParquetTimeUnit::Nanoseconds,
@@ -536,7 +536,7 @@ fn dict_read<'a, K: DictionaryKey, I: Pages + 'a>(
     data_type: DataType,
     num_rows: usize,
     chunk_size: Option<usize>,
-) -> Result<ArrayIter<'a>> {
+) -> PolarsResult<ArrayIter<'a>> {
     use DataType::*;
     let values_data_type = if let Dictionary(_, v, _) = &data_type {
         v.as_ref()
@@ -644,9 +644,9 @@ fn dict_read<'a, K: DictionaryKey, I: Pages + 'a>(
             fixed_size_binary::DictIter::<K, _>::new(iter, data_type, num_rows, chunk_size),
         ),
         other => {
-            return Err(Error::nyi(format!(
-                "Reading dictionaries of type {other:?}"
-            )))
+            polars_bail!(ComputeError:
+                "not implemented: reading dictionaries of type {other:?}"
+            )
         },
     })
 }

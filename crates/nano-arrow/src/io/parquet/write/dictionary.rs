@@ -4,6 +4,7 @@ use parquet2::page::{DictPage, Page};
 use parquet2::schema::types::PrimitiveType;
 use parquet2::statistics::{serialize_statistics, ParquetStatistics};
 use parquet2::write::DynIter;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::binary::{
     build_statistics as binary_build_statistics, encode_plain as binary_encode_plain,
@@ -19,7 +20,6 @@ use super::{nested, Nested, WriteOptions};
 use crate::array::{Array, DictionaryArray, DictionaryKey};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::DataType;
-use crate::error::{Error, Result};
 use crate::io::parquet::read::schema::is_nullable;
 use crate::io::parquet::write::{slice_nested_leaf, utils};
 
@@ -29,7 +29,7 @@ fn serialize_def_levels_simple(
     is_optional: bool,
     options: WriteOptions,
     buffer: &mut Vec<u8>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     utils::write_def_levels(buffer, is_optional, validity, length, options.version)
 }
 
@@ -37,7 +37,7 @@ fn serialize_keys_values<K: DictionaryKey>(
     array: &DictionaryArray<K>,
     validity: Option<&Bitmap>,
     buffer: &mut Vec<u8>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let keys = array.keys_values_iter().map(|x| x as u32);
     if let Some(validity) = validity {
         // discard indices whose values are null.
@@ -72,7 +72,7 @@ fn serialize_levels(
     nested: &[Nested],
     options: WriteOptions,
     buffer: &mut Vec<u8>,
-) -> Result<(usize, usize)> {
+) -> PolarsResult<(usize, usize)> {
     if nested.len() == 1 {
         let is_optional = is_nullable(&type_.field_info);
         serialize_def_levels_simple(validity, length, is_optional, options, buffer)?;
@@ -103,7 +103,7 @@ fn serialize_keys<K: DictionaryKey>(
     nested: &[Nested],
     statistics: Option<ParquetStatistics>,
     options: WriteOptions,
-) -> Result<Page> {
+) -> PolarsResult<Page> {
     let mut buffer = vec![];
 
     // parquet only accepts a single validity - we "&" the validities into a single one
@@ -175,7 +175,7 @@ pub fn array_to_pages<K: DictionaryKey>(
     nested: &[Nested],
     options: WriteOptions,
     encoding: Encoding,
-) -> Result<DynIter<'static, Result<Page>>> {
+) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
     match encoding {
         Encoding::PlainDictionary | Encoding::RleDictionary => {
             // write DictPage
@@ -261,9 +261,9 @@ pub fn array_to_pages<K: DictionaryKey>(
                         (DictPage::new(buffer, array.len(), false), stats)
                     },
                     other => {
-                        return Err(Error::NotYetImplemented(format!(
+                        polars_bail!(nyi =
                             "Writing dictionary arrays to parquet only support data type {other:?}"
-                        )))
+                        )
                     },
                 };
             let dict_page = Page::Dict(dict_page);
@@ -274,8 +274,8 @@ pub fn array_to_pages<K: DictionaryKey>(
             let iter = std::iter::once(Ok(dict_page)).chain(std::iter::once(Ok(data_page)));
             Ok(DynIter::new(Box::new(iter)))
         },
-        _ => Err(Error::NotYetImplemented(
-            "Dictionary arrays only support dictionary encoding".to_string(),
-        )),
+        _ => polars_bail!(nyi =
+            "Dictionary arrays only support dictionary encoding"
+        )
     }
 }

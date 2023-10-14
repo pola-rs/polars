@@ -1,7 +1,7 @@
 use avro_schema::schema::{Enum, Fixed, Record, Schema as AvroSchema};
+use polars_error::{polars_bail, PolarsResult};
 
 use crate::datatypes::*;
-use crate::error::{Error, Result};
 
 fn external_props(schema: &AvroSchema) -> Metadata {
     let mut props = Metadata::new();
@@ -21,7 +21,7 @@ fn external_props(schema: &AvroSchema) -> Metadata {
 
 /// Infers an [`Schema`] from the root [`Record`].
 /// This
-pub fn infer_schema(record: &Record) -> Result<Schema> {
+pub fn infer_schema(record: &Record) -> PolarsResult<Schema> {
     Ok(record
         .fields
         .iter()
@@ -32,11 +32,11 @@ pub fn infer_schema(record: &Record) -> Result<Schema> {
                 external_props(&field.schema),
             )
         })
-        .collect::<Result<Vec<_>>>()?
+        .collect::<PolarsResult<Vec<_>>>()?
         .into())
 }
 
-fn schema_to_field(schema: &AvroSchema, name: Option<&str>, props: Metadata) -> Result<Field> {
+fn schema_to_field(schema: &AvroSchema, name: Option<&str>, props: Metadata) -> PolarsResult<Field> {
     let mut nullable = false;
     let data_type = match schema {
         AvroSchema::Null => DataType::Null,
@@ -94,15 +94,15 @@ fn schema_to_field(schema: &AvroSchema, name: Option<&str>, props: Metadata) -> 
                 {
                     schema_to_field(schema, None, Metadata::default())?.data_type
                 } else {
-                    return Err(Error::NotYetImplemented(format!(
+                    polars_bail!(nyi =
                         "Can't read avro union {schema:?}"
-                    )));
+                    );
                 }
             } else {
                 let fields = schemas
                     .iter()
                     .map(|s| schema_to_field(s, None, Metadata::default()))
-                    .collect::<Result<Vec<Field>>>()?;
+                    .collect::<PolarsResult<Vec<Field>>>()?;
                 DataType::Union(fields, None, UnionMode::Dense)
             }
         },
@@ -116,7 +116,7 @@ fn schema_to_field(schema: &AvroSchema, name: Option<&str>, props: Metadata) -> 
                     }
                     schema_to_field(&field.schema, Some(&field.name), props)
                 })
-                .collect::<Result<_>>()?;
+                .collect::<PolarsResult<_>>()?;
             DataType::Struct(fields)
         },
         AvroSchema::Enum { .. } => {

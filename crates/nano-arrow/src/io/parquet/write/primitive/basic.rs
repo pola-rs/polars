@@ -4,10 +4,10 @@ use parquet2::page::DataPage;
 use parquet2::schema::types::PrimitiveType;
 use parquet2::statistics::{serialize_statistics, PrimitiveStatistics};
 use parquet2::types::NativeType as ParquetNativeType;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::super::{utils, WriteOptions};
 use crate::array::{Array, PrimitiveArray};
-use crate::error::Error;
 use crate::io::parquet::read::schema::is_nullable;
 use crate::io::parquet::write::utils::ExactSizedIter;
 use crate::types::NativeType;
@@ -78,7 +78,7 @@ pub fn array_to_page_plain<T, P>(
     array: &PrimitiveArray<T>,
     options: WriteOptions,
     type_: PrimitiveType,
-) -> Result<DataPage, Error>
+) -> PolarsResult<DataPage>
 where
     T: NativeType,
     P: ParquetNativeType,
@@ -92,7 +92,7 @@ pub fn array_to_page_integer<T, P>(
     options: WriteOptions,
     type_: PrimitiveType,
     encoding: Encoding,
-) -> Result<DataPage, Error>
+) -> PolarsResult<DataPage>
 where
     T: NativeType,
     P: ParquetNativeType,
@@ -102,7 +102,7 @@ where
     match encoding {
         Encoding::DeltaBinaryPacked => array_to_page(array, options, type_, encoding, encode_delta),
         Encoding::Plain => array_to_page(array, options, type_, encoding, encode_plain),
-        other => Err(Error::nyi(format!("Encoding integer as {other:?}"))),
+        other => polars_bail!(nyi = "Encoding integer as {other:?}"),
     }
 }
 
@@ -112,7 +112,7 @@ pub fn array_to_page<T, P, F: Fn(&PrimitiveArray<T>, bool, Vec<u8>) -> Vec<u8>>(
     type_: PrimitiveType,
     encoding: Encoding,
     encode: F,
-) -> Result<DataPage, Error>
+) -> PolarsResult<DataPage>
 where
     T: NativeType,
     P: ParquetNativeType,

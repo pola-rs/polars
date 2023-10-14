@@ -1,7 +1,7 @@
+use polars_error::{polars_err, PolarsResult};
 use crate::array::*;
 use crate::bitmap::*;
 use crate::datatypes::*;
-use crate::error::*;
 use crate::offset::{Offset, Offsets};
 
 /// Auxiliary struct
@@ -31,10 +31,10 @@ impl<O: Offset> DynMutableListArray<O> {
     }
 
     #[inline]
-    pub fn try_push_valid(&mut self) -> Result<()> {
+    pub fn try_push_valid(&mut self) -> PolarsResult<()> {
         let total_length = self.values.len();
         let offset = self.offsets.last().to_usize();
-        let length = total_length.checked_sub(offset).ok_or(Error::Overflow)?;
+        let length = total_length.checked_sub(offset).ok_or(polars_err!(ComputeError: "overflow"))?;
 
         self.offsets.try_push(length)?;
         if let Some(validity) = &mut self.validity {
@@ -227,7 +227,7 @@ impl DynMutableStructArray {
     }
 
     #[inline]
-    pub fn try_push_valid(&mut self) -> Result<()> {
+    pub fn try_push_valid(&mut self) -> PolarsResult<()> {
         if let Some(validity) = &mut self.validity {
             validity.push(true)
         }

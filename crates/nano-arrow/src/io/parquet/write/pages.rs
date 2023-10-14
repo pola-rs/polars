@@ -3,12 +3,12 @@ use std::fmt::Debug;
 use parquet2::page::Page;
 use parquet2::schema::types::{ParquetType, PrimitiveType as ParquetPrimitiveType};
 use parquet2::write::DynIter;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::{array_to_pages, Encoding, WriteOptions};
 use crate::array::{Array, ListArray, MapArray, StructArray};
 use crate::bitmap::Bitmap;
 use crate::datatypes::PhysicalType;
-use crate::error::{Error, Result};
 use crate::io::parquet::read::schema::is_nullable;
 use crate::offset::{Offset, OffsetsBuffer};
 
@@ -56,7 +56,7 @@ impl Nested {
 }
 
 /// Constructs the necessary `Vec<Vec<Nested>>` to write the rep and def levels of `array` to parquet
-pub fn to_nested(array: &dyn Array, type_: &ParquetType) -> Result<Vec<Vec<Nested>>> {
+pub fn to_nested(array: &dyn Array, type_: &ParquetType) -> PolarsResult<Vec<Vec<Nested>>> {
     let mut nested = vec![];
 
     to_nested_recursive(array, type_, &mut nested, vec![])?;
@@ -68,7 +68,7 @@ fn to_nested_recursive(
     type_: &ParquetType,
     nested: &mut Vec<Vec<Nested>>,
     mut parents: Vec<Nested>,
-) -> Result<()> {
+) -> PolarsResult<()> {
     let is_optional = is_nullable(type_.get_field_info());
 
     use PhysicalType::*;
@@ -78,9 +78,9 @@ fn to_nested_recursive(
             let fields = if let ParquetType::GroupType { fields, .. } = type_ {
                 fields
             } else {
-                return Err(Error::InvalidArgumentError(
+                polars_bail!(InvalidOperation:
                     "Parquet type must be a group for a struct array".to_string(),
-                ));
+                )
             };
 
             parents.push(Nested::Struct(
@@ -99,14 +99,14 @@ fn to_nested_recursive(
                 if let ParquetType::GroupType { fields, .. } = &fields[0] {
                     &fields[0]
                 } else {
-                    return Err(Error::InvalidArgumentError(
+                    polars_bail!(InvalidOperation:
                         "Parquet type must be a group for a list array".to_string(),
-                    ));
+                    )
                 }
             } else {
-                return Err(Error::InvalidArgumentError(
+                polars_bail!(InvalidOperation:
                     "Parquet type must be a group for a list array".to_string(),
-                ));
+                )
             };
 
             parents.push(Nested::List(ListNested::new(
@@ -122,14 +122,14 @@ fn to_nested_recursive(
                 if let ParquetType::GroupType { fields, .. } = &fields[0] {
                     &fields[0]
                 } else {
-                    return Err(Error::InvalidArgumentError(
+                    polars_bail!(InvalidOperation:
                         "Parquet type must be a group for a list array".to_string(),
-                    ));
+                    )
                 }
             } else {
-                return Err(Error::InvalidArgumentError(
+                polars_bail!(InvalidOperation:
                     "Parquet type must be a group for a list array".to_string(),
-                ));
+                )
             };
 
             parents.push(Nested::LargeList(ListNested::new(
@@ -145,14 +145,14 @@ fn to_nested_recursive(
                 if let ParquetType::GroupType { fields, .. } = &fields[0] {
                     &fields[0]
                 } else {
-                    return Err(Error::InvalidArgumentError(
+                    polars_bail!(InvalidOperation:
                         "Parquet type must be a group for a map array".to_string(),
-                    ));
+                    )
                 }
             } else {
-                return Err(Error::InvalidArgumentError(
+                polars_bail!(InvalidOperation:
                     "Parquet type must be a group for a map array".to_string(),
-                ));
+                )
             };
 
             parents.push(Nested::List(ListNested::new(
@@ -233,7 +233,7 @@ pub fn array_to_columns<A: AsRef<dyn Array> + Send + Sync>(
     type_: ParquetType,
     options: WriteOptions,
     encoding: &[Encoding],
-) -> Result<Vec<DynIter<'static, Result<Page>>>> {
+) -> PolarsResult<Vec<DynIter<'static, PolarsResult<Page>>>> {
     let array = array.as_ref();
     let nested = to_nested(array, &type_)?;
 

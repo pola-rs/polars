@@ -2,13 +2,13 @@ use std::convert::TryInto;
 
 use avro_schema::file::Block;
 use avro_schema::schema::{Enum, Field as AvroField, Record, Schema as AvroSchema};
+use polars_error::{polars_bail, polars_err, PolarsResult};
 
 use super::nested::*;
 use super::util;
 use crate::array::*;
 use crate::chunk::Chunk;
 use crate::datatypes::*;
-use crate::error::{Error, Result};
 use crate::types::months_days_ns;
 use crate::with_match_primitive_type;
 
@@ -16,7 +16,7 @@ fn make_mutable(
     data_type: &DataType,
     avro_field: Option<&AvroSchema>,
     capacity: usize,
-) -> Result<Box<dyn MutableArray>> {
+) -> PolarsResult<Box<dyn MutableArray>> {
     Ok(match data_type.to_physical_type() {
         PhysicalType::Boolean => {
             Box::new(MutableBooleanArray::with_capacity(capacity)) as Box<dyn MutableArray>
@@ -57,14 +57,14 @@ fn make_mutable(
                 let values = fields
                     .iter()
                     .map(|field| make_mutable(field.data_type(), None, capacity))
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<PolarsResult<Vec<_>>>()?;
                 Box::new(DynMutableStructArray::new(values, data_type.clone()))
                     as Box<dyn MutableArray>
             },
             other => {
-                return Err(Error::NotYetImplemented(format!(
+                polars_bail!(nyi =
                     "Deserializing type {other:#?} is still not implemented"
-                )))
+                )
             },
         },
     })
@@ -83,7 +83,7 @@ fn deserialize_item<'a>(
     is_nullable: bool,
     avro_field: &AvroSchema,
     mut block: &'a [u8],
-) -> Result<&'a [u8]> {
+) -> PolarsResult<&'a [u8]> {
     if is_nullable {
         let variant = util::zigzag_i64(&mut block)?;
         let is_null_first = is_union_null_first(avro_field);
@@ -99,7 +99,7 @@ fn deserialize_value<'a>(
     array: &mut dyn MutableArray,
     avro_field: &AvroSchema,
     mut block: &'a [u8],
-) -> Result<&'a [u8]> {
+) -> PolarsResult<&'a [u8]> {
     let data_type = array.data_type();
     match data_type {
         DataType::List(inner) => {
@@ -250,8 +250,8 @@ fn deserialize_value<'a>(
                     let len = match avro_inner {
                         AvroSchema::Bytes(_) => {
                             util::zigzag_i64(&mut block)?.try_into().map_err(|_| {
-                                Error::ExternalFormat(
-                                    "Avro format contains a non-usize number of bytes".to_string(),
+                                polars_err!(oos =
+                                    "Avro format contains a non-usize number of bytes"
                                 )
                             })?
                         },
@@ -259,9 +259,9 @@ fn deserialize_value<'a>(
                         _ => unreachable!(),
                     };
                     if len > 16 {
-                        return Err(Error::ExternalFormat(
-                            "Avro decimal bytes return more than 16 bytes".to_string(),
-                        ));
+                        polars_bail!(oos =
+                            "Avro decimal bytes return more than 16 bytes"
+                        )
                     }
                     let mut bytes = [0u8; 16];
                     bytes[..len].copy_from_slice(&block[..len]);
@@ -277,8 +277,8 @@ fn deserialize_value<'a>(
             },
             PhysicalType::Utf8 => {
                 let len: usize = util::zigzag_i64(&mut block)?.try_into().map_err(|_| {
-                    Error::ExternalFormat(
-                        "Avro format contains a non-usize number of bytes".to_string(),
+                    polars_err!(oos =
+                        "Avro format contains a non-usize number of bytes"
                     )
                 })?;
                 let data = simdutf8::basic::from_utf8(&block[..len])?;
@@ -292,8 +292,8 @@ fn deserialize_value<'a>(
             },
             PhysicalType::Binary => {
                 let len: usize = util::zigzag_i64(&mut block)?.try_into().map_err(|_| {
-                    Error::ExternalFormat(
-                        "Avro format contains a non-usize number of bytes".to_string(),
+                    polars_err!(oos =
+                        "Avro format contains a non-usize number of bytes"
                     )
                 })?;
                 let data = &block[..len];
@@ -329,7 +329,7 @@ fn deserialize_value<'a>(
     Ok(block)
 }
 
-fn skip_item<'a>(field: &Field, avro_field: &AvroSchema, mut block: &'a [u8]) -> Result<&'a [u8]> {
+fn skip_item<'a>(field: &Field, avro_field: &AvroSchema, mut block: &'a [u8]) -> PolarsResult<&'a [u8]> {
     if field.is_nullable {
         let variant = util::zigzag_i64(&mut block)?;
         let is_null_first = is_union_null_first(avro_field);
@@ -366,7 +366,7 @@ fn skip_item<'a>(field: &Field, avro_field: &AvroSchema, mut block: &'a [u8]) ->
                     .map(|bytes| {
                         bytes
                             .try_into()
-                            .map_err(|_| Error::oos("Avro block size negative or too large"))
+                            .map_err(|_| polars_err!(oos = "Avro block size negative or too large"))
                     })
                     .transpose()?;
 
@@ -431,8 +431,8 @@ fn skip_item<'a>(field: &Field, avro_field: &AvroSchema, mut block: &'a [u8]) ->
                     let len = match avro_inner {
                         AvroSchema::Bytes(_) => {
                             util::zigzag_i64(&mut block)?.try_into().map_err(|_| {
-                                Error::ExternalFormat(
-                                    "Avro format contains a non-usize number of bytes".to_string(),
+                                polars_err!(oos =
+                                    "Avro format contains a non-usize number of bytes"
                                 )
                             })?
                         },
@@ -445,8 +445,8 @@ fn skip_item<'a>(field: &Field, avro_field: &AvroSchema, mut block: &'a [u8]) ->
             },
             PhysicalType::Utf8 | PhysicalType::Binary => {
                 let len: usize = util::zigzag_i64(&mut block)?.try_into().map_err(|_| {
-                    Error::ExternalFormat(
-                        "Avro format contains a non-usize number of bytes".to_string(),
+                    polars_err!(oos =
+                        "Avro format contains a non-usize number of bytes"
                     )
                 })?;
                 block = &block[len..];
@@ -478,7 +478,7 @@ pub fn deserialize(
     fields: &[Field],
     avro_fields: &[AvroField],
     projection: &[bool],
-) -> Result<Chunk<Box<dyn Array>>> {
+) -> PolarsResult<Chunk<Box<dyn Array>>> {
     assert_eq!(fields.len(), avro_fields.len());
     assert_eq!(fields.len(), projection.len());
 
@@ -498,7 +498,7 @@ pub fn deserialize(
                 make_mutable(&DataType::Int32, None, 0)
             }
         })
-        .collect::<Result<_>>()?;
+        .collect::<PolarsResult<_>>()?;
 
     // this is _the_ expensive transpose (rows -> columns)
     for _ in 0..rows {

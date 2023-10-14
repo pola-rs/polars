@@ -95,6 +95,26 @@ impl From<parquet2::error::Error> for PolarsError {
     }
 }
 
+#[cfg(feature = "avro-schema")]
+impl From<avro_schema::error::Error> for PolarsError {
+    fn from(value: avro_schema::error::Error) -> Self {
+        polars_err!(ComputeError: "avro-error: {}", value)
+    }
+}
+
+impl From<PolarsError> for parquet2::error::Error {
+    fn from(value: PolarsError) -> Self {
+        // catch all needed :(.
+        parquet2::error::Error::OutOfSpec(format!("error: {value}"))
+    }
+}
+
+impl From<simdutf8::basic::Utf8Error> for PolarsError {
+    fn from(value: simdutf8::basic::Utf8Error) -> Self {
+        polars_err!(ComputeError: "invalid utf8: {}", value)
+    }
+}
+
 impl From<arrow_format::ipc::planus::Error> for PolarsError {
     fn from(err: arrow_format::ipc::planus::Error) -> Self {
         PolarsError::Io(std::io::Error::new(
@@ -184,8 +204,11 @@ macro_rules! polars_err {
             InvalidOperation: "{} operation not supported for dtypes `{}` and `{}`", $op, $lhs, $rhs
         )
     };
-    (oos = $arg:expr) => {
-        $crate::polars_err!(ComputeError: "out-of-spec: {}", $arg)
+    (oos = $($tt:tt)+) => {
+        $crate::polars_err!(ComputeError: "out-of-spec: {}", $($tt)+)
+    };
+    (nyi = $($tt:tt)+) => {
+        $crate::polars_err!(ComputeError: "not yet implemented: {}", format!($($tt)+) )
     };
     (opq = $op:ident, $arg:expr) => {
         $crate::polars_err!(op = concat!("`", stringify!($op), "`"), $arg)

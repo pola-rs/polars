@@ -2,12 +2,6 @@
 
 pub use avro_schema;
 
-impl From<avro_schema::error::Error> for crate::error::Error {
-    fn from(error: avro_schema::error::Error) -> Self {
-        Self::ExternalFormat(error.to_string())
-    }
-}
-
 pub mod read;
 pub mod write;
 
@@ -21,9 +15,7 @@ macro_rules! avro_decode {
             loop {
                 if j > 9 {
                     // if j * 7 > 64
-                    return Err(Error::ExternalFormat(
-                        "zigzag decoding failed - corrupt avro file".to_string(),
-                    ));
+                    polars_error::polars_bail!(oos = "zigzag decoding failed - corrupt avro file")
                 }
                 $reader.read_exact(&mut buf[..])$($_await)*?;
                 i |= (u64::from(buf[0] & 0x7F)) << (j * 7);
