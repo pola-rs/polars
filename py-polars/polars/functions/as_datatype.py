@@ -190,6 +190,27 @@ def duration(
     """
     Create polars `Duration` from distinct time components.
 
+    Parameters
+    ----------
+    weeks
+        Number of weeks.
+    days
+        Number of days.
+    hours
+        Number of hours.
+    minutes
+        Number of minutes.
+    seconds
+        Number of seconds.
+    milliseconds
+        Number of milliseconds.
+    microseconds
+        Number of microseconds.
+    nanoseconds
+        Number of nanoseconds.
+    time_unit : {'us', 'ms', 'ns'}
+        Time unit of the resulting expression.
+
     Returns
     -------
     Expr
