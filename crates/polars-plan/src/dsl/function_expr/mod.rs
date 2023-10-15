@@ -248,13 +248,15 @@ pub enum FunctionExpr {
     },
     SetSortedFlag(IsSorted),
     #[cfg(feature = "ffi_plugin")]
+    /// Creating this node is unsafe
+    /// This will lead to calls over FFI>
     FfiPlugin {
         /// Shared library.
         lib: Arc<str>,
         /// Identifier in the shared lib.
         symbol: Arc<str>,
-        /// JSON serialized keyword arguments.
-        kwargs: Arc<std::ffi::CString>,
+        /// Pickle serialized keyword arguments.
+        kwargs: Arc<[u8]>,
     },
     BackwardFill {
         limit: FillNullLimit,
@@ -785,7 +787,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     plugin::call_plugin,
                     lib.as_ref(),
                     symbol.as_ref(),
-                    kwargs.as_c_str()
+                    kwargs.as_ref()
                 )
             },
             BackwardFill { limit } => map!(dispatch::backward_fill, limit),

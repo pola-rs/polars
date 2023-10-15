@@ -1,4 +1,4 @@
-use std::ffi::{CStr, CString};
+use std::ffi::{CString};
 use std::sync::RwLock;
 
 use arrow::ffi::{import_field_from_c, ArrowSchema};
@@ -42,30 +42,36 @@ pub(super) unsafe fn call_plugin(
     s: &[Series],
     lib: &str,
     symbol: &str,
-    kwargs: &CStr,
+    kwargs: &[u8],
 ) -> PolarsResult<Series> {
     let lib = get_lib(lib)?;
 
     // *const SeriesExprot: pointer to Box<SeriesExport>
     // * usize: length of that pointer
-    // * : json serialized kwargs
-    // *mut SeriesExport: pointer where return value should be writtten.
+    // *const u8: pointer to &[u8]
+    // usize: length of the u8 slice
+    // *mut SeriesExport: pointer where return value should be written.
     let symbol: libloading::Symbol<
         unsafe extern "C" fn(
             *const SeriesExport,
             usize,
-            *const std::os::raw::c_char,
+            *const u8,
+            usize,
             *mut SeriesExport,
         ),
     > = lib.get(symbol.as_bytes()).unwrap();
 
-    let n_args = s.len();
 
     let input = s.iter().map(export_series).collect::<Vec<_>>();
+    let input_len = s.len();
     let slice_ptr = input.as_ptr();
+
+    let kwargs_ptr = kwargs.as_ptr();
+    let kwargs_len = kwargs.len();
+
     let mut return_value = SeriesExport::empty();
     let return_value_ptr = &mut return_value as *mut SeriesExport;
-    symbol(slice_ptr, n_args, kwargs.as_ptr(), return_value_ptr);
+    symbol(slice_ptr, input_len, kwargs_ptr, kwargs_len, return_value_ptr);
 
     // The inputs get dropped when the ffi side calls the drop callback.
     for e in input {

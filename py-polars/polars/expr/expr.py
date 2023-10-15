@@ -9559,9 +9559,9 @@ class Expr:
         if kwargs is None:
             serialized_kwargs = ""
         else:
-            import json
+            import pickle
 
-            serialized_kwargs = json.dumps(kwargs)
+            serialized_kwargs = pickle.dumps(kwargs)
 
         return self._from_pyexpr(
             self._pyexpr.register_plugin(

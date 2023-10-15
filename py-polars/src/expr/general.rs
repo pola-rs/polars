@@ -892,7 +892,7 @@ impl PyExpr {
         lib: &str,
         symbol: &str,
         args: Vec<PyExpr>,
-        kwargs: &str,
+        kwargs: Arc<[u8]>,
         is_elementwise: bool,
         input_wildcard_expansion: bool,
         auto_explode: bool,
@@ -917,9 +917,7 @@ impl PyExpr {
             function: FunctionExpr::FfiPlugin {
                 lib: Arc::from(lib),
                 symbol: Arc::from(symbol),
-                kwargs: Arc::from(std::ffi::CString::new(kwargs).map_err(|e| {
-                    PyPolarsErr::Other(format!("could not convert args to C str: {}", e))
-                })?),
+                kwargs,
             },
             options: FunctionOptions {
                 collect_groups,
