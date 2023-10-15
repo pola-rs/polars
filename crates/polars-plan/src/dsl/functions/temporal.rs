@@ -255,10 +255,6 @@ impl DurationArgs {
 /// Construct a column of [`Duration`] from the provided [`DurationArgs`]
 #[cfg(feature = "temporal")]
 pub fn duration(args: DurationArgs) -> Expr {
-    println!("{}", args.milliseconds);
-    println!("{}", args.microseconds);
-    println!("{}", args.nanoseconds);
-
     let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
         if s.iter().any(|s| s.is_empty()) {
             return Ok(Some(Series::new_empty(
@@ -299,6 +295,9 @@ pub fn duration(args: DurationArgs) -> Expr {
                 if is_scalar(&microseconds) {
                     microseconds = microseconds.new_from_index(0, max_len);
                 }
+                if is_not_zero_scalar(&nanoseconds) {
+                    microseconds = microseconds + (nanoseconds / 1_000);
+                }
                 if is_not_zero_scalar(&milliseconds) {
                     microseconds = microseconds + (milliseconds * 1_000);
                 }
@@ -307,6 +306,12 @@ pub fn duration(args: DurationArgs) -> Expr {
             TimeUnit::Milliseconds => {
                 if is_scalar(&milliseconds) {
                     milliseconds = milliseconds.new_from_index(0, max_len);
+                }
+                if is_not_zero_scalar(&nanoseconds) {
+                    milliseconds = milliseconds + (nanoseconds / 1_000_000);
+                }
+                if is_not_zero_scalar(&microseconds) {
+                    milliseconds = milliseconds + (microseconds / 1_000);
                 }
                 milliseconds
             },
