@@ -3035,7 +3035,24 @@ def test_datetime_mean_and_median() -> None:
         ],
     )
     assert s.mean() == datetime(2023, 1, 4, 10, 43, 6)
+    assert s.dt.mean() == datetime(2023, 1, 4, 10, 43, 6)
     assert s.median() == datetime(2023, 1, 5, 2, 1, 41)
+    assert s.dt.median() == datetime(2023, 1, 5, 2, 1, 41)
+
+
+def test_date_mean_and_median() -> None:
+    s = pl.Series(
+        "s",
+        [
+            date(2023, 1, 3),
+            date(2023, 1, 5),
+            date(2023, 1, 5),
+        ],
+    )
+    assert s.mean() == datetime(2023, 1, 4, 10, 43, 6)
+    assert s.dt.mean() == datetime(2023, 1, 4, 10, 43, 6)
+    assert s.median() == datetime(2023, 1, 5, 2, 1, 41)
+    assert s.dt.median() == datetime(2023, 1, 5, 2, 1, 41)
 
 
 def test_rolling_group_by_empty_groups_by_take_6330() -> None:

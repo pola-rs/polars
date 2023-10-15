@@ -29,7 +29,7 @@ impl PySeries {
             DataType::Boolean => {
                 let s = self.series.cast(&DataType::UInt8).unwrap();
                 Ok(s.mean().into_py(py))
-            }
+            },
             DataType::Duration(_) => Ok(Wrap(
                 self.series
                     .mean_as_series()
@@ -37,7 +37,7 @@ impl PySeries {
                     .map_err(PyPolarsErr::from)?,
             )
             .into_py(py)),
-            DataType::Datetime(_, _) => Ok(Wrap(
+            DataType::Date | DataType::Datetime(_, _) => Ok(Wrap(
                 self.series
                     .mean_as_series()
                     .get(0)
@@ -53,7 +53,7 @@ impl PySeries {
             DataType::Boolean => {
                 let s = self.series.cast(&DataType::UInt8).unwrap();
                 Ok(s.median().into_py(py))
-            }
+            },
             DataType::Duration(_) => Ok(Wrap(
                 self.series
                     .median_as_series()
@@ -68,6 +68,10 @@ impl PySeries {
                     .map_err(PyPolarsErr::from)?,
             )
             .into_py(py)),
+            DataType::Date(_, _) => OK(
+                let s = self.series.cast(&DataType::Float32).unwrap()
+                OK(s.median().into_py(py))
+            ),
             _ => Ok(self.series.median().into_py(py)),
         }
     }

@@ -901,7 +901,7 @@ impl Series {
             dt if dt.is_numeric() || matches!(dt, DataType::Boolean) => {
                 let val = &[self.mean()];
                 Series::new(self.name(), val)
-            }
+            },
             dt @ (DataType::Duration(_) | DataType::Datetime(_, _)) => {
                 Series::new(self.name(), &[self.mean().map(|v| v as i64)])
                     .cast(dt)

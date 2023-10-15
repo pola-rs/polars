@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.datatypes import Date
+from polars.datatypes import Date, Datetime
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.convert import _to_python_date, _to_python_datetime
+from polars.utils.convert import _to_python_datetime
 
 if TYPE_CHECKING:
     import datetime as dt
@@ -56,7 +56,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s).max()  # type: ignore[return-value]
 
-    def median(self) -> dt.date | dt.datetime | dt.timedelta | None:
+    def median(self) -> dt.datetime | dt.timedelta | None:
         """
         Return median as python DateTime.
 
@@ -80,14 +80,16 @@ class DateTimeNameSpace:
         """
         s = wrap_s(self._s)
         out = s.median()
+
         if out is not None:
             if s.dtype == Date:
-                return _to_python_date(int(out))
-            else:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
-        return None
+                out = _to_python_datetime(int(out))
+            elif s.dtype == Datetime:
+                out = _to_python_datetime(int(out), s.dtype.time_unit)
 
-    def mean(self) -> dt.date | dt.datetime | None:
+        return out
+
+    def mean(self) -> dt.datetime | None:
         """
         Return mean as python DateTime.
 
@@ -103,12 +105,14 @@ class DateTimeNameSpace:
         """
         s = wrap_s(self._s)
         out = s.mean()
+
         if out is not None:
             if s.dtype == Date:
-                return _to_python_date(int(out))
-            else:
-                return _to_python_datetime(int(out), s.dtype.time_unit)  # type: ignore[union-attr]
-        return None
+                out = _to_python_datetime(int(out))
+            elif s.dtype == Datetime:
+                out = _to_python_datetime(int(out), s.dtype.time_unit)
+
+        return out
 
     def to_string(self, format: str) -> Series:
         """

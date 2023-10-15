@@ -1767,6 +1767,7 @@ class Series:
         2.0
 
         """
+        print("hi!")
         return self._s.median()
 
     def quantile(
