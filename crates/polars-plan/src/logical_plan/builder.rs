@@ -155,9 +155,7 @@ impl LogicalPlanBuilder {
         let path = path.into();
         let (schema, num_rows, metadata) = if is_cloud_url(&path) {
             #[cfg(not(feature = "cloud"))]
-            panic!(
-                "One or more of the cloud storage features ('aws', 'gcp', ...) must be enabled."
-            );
+            panic!("one or more of the cloud storage features ('aws', 'gcp', ...) must be enabled");
 
             #[cfg(feature = "cloud")]
             if let Some(known_schema) = known_schema {

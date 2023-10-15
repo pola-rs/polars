@@ -633,7 +633,7 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Int32(v) => AnyValue::Date(v),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            dt => panic!("cannot create date from other type; dtype: {dt}"),
         }
     }
     #[cfg(feature = "dtype-datetime")]
@@ -641,7 +641,7 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Datetime(v, tu, tz),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            dt => panic!("cannot create date from other type; dtype: {dt}"),
         }
     }
 
@@ -650,7 +650,7 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Duration(v, tu),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            dt => panic!("cannot create date from other type; dtype: {dt}"),
         }
     }
 
@@ -659,7 +659,7 @@ impl<'a> AnyValue<'a> {
         match self {
             AnyValue::Int64(v) => AnyValue::Time(v),
             AnyValue::Null => AnyValue::Null,
-            dt => panic!("cannot create date from other type. dtype: {dt}"),
+            dt => panic!("cannot create date from other type; dtype: {dt}"),
         }
     }
 

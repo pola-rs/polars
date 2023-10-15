@@ -66,11 +66,11 @@ impl<Iter: DerefMut<Target = ArrowArrayStream>> ArrowArrayStreamReader<Iter> {
         };
 
         if iter.get_next.is_none() {
-            polars_bail!(InvalidOperation: "the c stream must contain a non-null get_next")
+            polars_bail!(InvalidOperation: "the C stream must contain a non-null get_next")
         };
 
         if iter.get_last_error.is_none() {
-            polars_bail!(InvalidOperation: "The C stream MUST contain a non-null get_last_error")
+            polars_bail!(InvalidOperation: "the C stream must contain a non-null get_last_error")
         };
 
         let mut field = ArrowSchema::empty();
@@ -78,7 +78,7 @@ impl<Iter: DerefMut<Target = ArrowArrayStream>> ArrowArrayStreamReader<Iter> {
             unsafe { (f)(&mut *iter, &mut field) }
         } else {
             polars_bail!(InvalidOperation:
-                            "The C stream MUST contain a non-null get_schema"
+                            "the C stream must contain a non-null get_schema"
             )
         };
 

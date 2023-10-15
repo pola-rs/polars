@@ -517,7 +517,7 @@ def test_sql_left() -> None:
     }
     with pytest.raises(
         pl.InvalidOperationError,
-        match="Invalid 'length' for Left: 'xyz'",
+        match="invalid `length` for Left: 'xyz'",
     ):
         ctx.execute(
             """SELECT scol, LEFT(scol,'xyz') AS "scol:left2" FROM df"""
@@ -727,12 +727,12 @@ def test_sql_regex_operators_error() -> None:
     df = pl.LazyFrame({"sval": ["ABC", "abc", "000", "A0C", "a0c"]})
     with pl.SQLContext(df=df, eager_execution=True) as ctx:
         with pytest.raises(
-            pl.ComputeError, match="Invalid pattern for '~' operator: 12345"
+            pl.ComputeError, match="invalid pattern for '~' operator: 12345"
         ):
             ctx.execute("SELECT * FROM df WHERE sval ~ 12345")
         with pytest.raises(
             pl.ComputeError,
-            match=r"""Invalid pattern for '!~\*' operator: col\("abcde"\)""",
+            match=r"""invalid pattern for '!~\*' operator: col\("abcde"\)""",
         ):
             ctx.execute("SELECT * FROM df WHERE sval !~* abcde")
 
@@ -772,19 +772,19 @@ def test_sql_regexp_like_errors() -> None:
     with pl.SQLContext(df=pl.DataFrame({"scol": ["xyz"]})) as ctx:
         with pytest.raises(
             pl.InvalidOperationError,
-            match="Invalid/empty 'flags' for RegexpLike",
+            match="invalid/empty 'flags' for RegexpLike",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,'[x-z]+','')")
 
         with pytest.raises(
             pl.InvalidOperationError,
-            match="Invalid arguments for RegexpLike",
+            match="invalid arguments for RegexpLike",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol,999,999)")
 
         with pytest.raises(
             pl.InvalidOperationError,
-            match="Invalid number of arguments for RegexpLike",
+            match="invalid number of arguments for RegexpLike",
         ):
             ctx.execute("SELECT * FROM df WHERE REGEXP_LIKE(scol)")
 
@@ -815,7 +815,7 @@ def test_sql_round_ndigits(decimals: int, expected: list[float]) -> None:
 def test_sql_round_ndigits_errors() -> None:
     df = pl.DataFrame({"n": [99.999]})
     with pl.SQLContext(df=df, eager_execution=True) as ctx, pytest.raises(
-        pl.InvalidOperationError, match="Invalid 'decimals' for Round: -1"
+        pl.InvalidOperationError, match="invalid 'decimals' for Round: -1"
     ):
         ctx.execute("SELECT ROUND(n,-1) AS n FROM df")
 
@@ -1185,7 +1185,7 @@ def test_sql_expr() -> None:
     # expect expressions that can't reasonably be parsed as expressions to raise
     # (for example: those that explicitly reference tables and/or use wildcards)
     with pytest.raises(
-        pl.InvalidOperationError, match=r"Unable to parse 'xyz\.\*' as Expr"
+        pl.InvalidOperationError, match=r"unable to parse 'xyz\.\*' as Expr"
     ):
         pl.sql_expr("xyz.*")
 

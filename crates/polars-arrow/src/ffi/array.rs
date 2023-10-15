@@ -199,15 +199,15 @@ unsafe fn get_buffer_ptr<T: NativeType>(
 
     if index >= array.n_buffers as usize {
         polars_bail!(ComputeError:
-            "An ArrowArray of type {data_type:?}
-             must have buffer {index}."
+            "an ArrowArray of type {data_type:?}
+             must have buffer {index}"
         )
     }
 
     let ptr = *buffers.add(index);
     if ptr.is_null() {
         polars_bail!(ComputeError:
-            "An array of type {data_type:?}
+            "an array of type {data_type:?}
             must have a non-null buffer {index}"
         )
     }

@@ -98,7 +98,7 @@ pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
 
 /// Clamp underlying values to the `max` value.
 pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
-    polars_ensure!(s.dtype().to_physical().is_numeric(), InvalidOperation: "Only physical numeric types are supported.");
+    polars_ensure!(s.dtype().to_physical().is_numeric(), InvalidOperation: "only physical numeric types are supported");
 
     let original_type = s.dtype();
     // cast max to the dtype of s first.
@@ -125,7 +125,7 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
 
 /// Clamp underlying values to the `min` value.
 pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
-    polars_ensure!(s.dtype().to_physical().is_numeric(), InvalidOperation: "Only physical numeric types are supported.");
+    polars_ensure!(s.dtype().to_physical().is_numeric(), InvalidOperation: "only physical numeric types are supported");
 
     let original_type = s.dtype();
     // cast min to the dtype of s first.

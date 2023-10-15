@@ -452,7 +452,7 @@ pub(crate) fn to_datetime(
                 && tz.is_some()
                 && tz.map(|x| x.as_str()) != Some("UTC")
             {
-                polars_bail!(ComputeError: "offset-aware datetimes are converted to UTC. \
+                polars_bail!(ComputeError: "offset-aware datetimes are converted to UTC\n\n
                     Please either drop the time zone from the function call, or set it to UTC. \
                     To convert to a different time zone, please use `convert_time_zone`.")
             }

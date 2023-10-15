@@ -27,8 +27,9 @@ pub fn read_map<R: Read + Seek>(
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<MapArray> {
     let field_node = field_nodes.pop_front().ok_or_else(|| {
-        polars_err!(oos =
-            "IPC: unable to fetch the field for {data_type:?}. The file or stream is corrupted."
+        polars_err!(
+            oos =
+                "IPC: unable to fetch the field for {data_type:?}; the file or stream is corrupted"
         )
     })?;
 
@@ -88,17 +89,15 @@ pub fn skip_map(
     buffers: &mut VecDeque<IpcBuffer>,
 ) -> PolarsResult<()> {
     let _ = field_nodes.pop_front().ok_or_else(|| {
-        polars_err!(
-            oos = "IPC: unable to fetch the field for map. The file or stream is corrupted."
-        )
+        polars_err!(oos = "IPC: unable to fetch the field for map; the file or stream is corrupted")
     })?;
 
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer"))?;
     let _ = buffers
         .pop_front()
-        .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer."))?;
+        .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer"))?;
 
     let data_type = MapArray::get_field(data_type).data_type();
 

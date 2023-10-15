@@ -19,7 +19,7 @@ fn polars_glob(pattern: &str, cloud_options: Option<&CloudOptions>) -> PolarsRes
             Ok(Box::new(paths.into_iter().map(|a| Ok(PathBuf::from(&a)))))
         }
         #[cfg(not(feature = "async"))]
-        panic!("Feature `async` must be enabled to use globbing patterns with cloud urls.")
+        panic!("feature `async` must be enabled to use globbing patterns with cloud urls")
     } else {
         let paths = glob::glob(pattern)
             .map_err(|_| polars_err!(ComputeError: "invalid glob pattern given"))?;

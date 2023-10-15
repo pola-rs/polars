@@ -70,7 +70,7 @@ fn encode_dictionary(
             let fields = field.fields.as_slice();
             if array.fields().len() != fields.len() {
                 polars_bail!(InvalidOperation:
-                    "The number of fields in a struct must equal the number of children in IpcField".to_string(),
+                    "the number of fields in a struct must equal the number of children in IpcField".to_string(),
                 );
             }
             fields
@@ -140,7 +140,7 @@ fn encode_dictionary(
             let fields = &field.fields[..]; // todo: error instead
             if values.len() != fields.len() {
                 polars_bail!(InvalidOperation:
-                    "The number of fields in a union must equal the number of children in IpcField"
+                    "the number of fields in a union must equal the number of children in IpcField"
                 );
             }
             fields

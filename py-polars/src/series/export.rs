@@ -71,7 +71,7 @@ impl PySeries {
             },
             dt => {
                 raise_err!(
-                    format!("'to_numpy' not supported for dtype: {dt:?}"),
+                    format!("`to_numpy` not supported for dtype: {dt:?}"),
                     ComputeError
                 );
             },
@@ -199,7 +199,7 @@ impl PySeries {
                         PyList::new(py, NullIter { iter, n })
                     },
                     DataType::Unknown => {
-                        panic!("to_list not implemented for unknown")
+                        panic!("`to_list` not implemented for unknown")
                     },
                 };
                 pylist.to_object(py)

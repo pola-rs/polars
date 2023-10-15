@@ -140,7 +140,7 @@ where
     keys.iter().try_for_each(|key| {
         let key: usize = (*key)
             .try_into()
-            .map_err(|_| polars_err!(ComputeError: "The dictionary key must fit in a `usize`, but {key:?} does not")
+            .map_err(|_| polars_err!(ComputeError: "the dictionary key must fit in a `usize`, but {key:?} does not")
             )?;
         if key >= len {
             polars_bail!(ComputeError: "one of the dictionary keys is {key} but it must be < than the length of the dictionary values, which is {len}")

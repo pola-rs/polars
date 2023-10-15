@@ -262,7 +262,7 @@ pub fn array_to_pages<K: DictionaryKey>(
                     },
                     other => {
                         polars_bail!(nyi =
-                            "Writing dictionary arrays to parquet only support data type {other:?}"
+                            "writing dictionary arrays to parquet only support data type {other:?}"
                         )
                     },
                 };

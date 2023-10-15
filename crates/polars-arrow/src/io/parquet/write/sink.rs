@@ -88,7 +88,7 @@ where
     ) -> PolarsResult<Self> {
         if encodings.len() != schema.fields.len() {
             polars_bail!(InvalidOperation:
-                "The number of encodings must equal the number of fields".to_string(),
+                "the number of encodings must equal the number of fields".to_string(),
             )
         }
 
@@ -160,7 +160,7 @@ where
     fn start_send(self: Pin<&mut Self>, item: Chunk<Box<dyn Array>>) -> Result<(), Self::Error> {
         if self.schema.fields.len() != item.arrays().len() {
             polars_bail!(InvalidOperation:
-                "The number of arrays in the chunk must equal the number of fields in the schema"
+                "the number of arrays in the chunk must equal the number of fields in the schema"
             )
         }
         let this = self.get_mut();

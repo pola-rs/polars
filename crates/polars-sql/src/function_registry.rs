@@ -18,11 +18,11 @@ pub struct DefaultFunctionRegistry {}
 
 impl FunctionRegistry for DefaultFunctionRegistry {
     fn register(&mut self, _name: &str, _fun: UserDefinedFunction) -> PolarsResult<()> {
-        polars_bail!(ComputeError: "'register' not implemented on DefaultFunctionRegistry'")
+        polars_bail!(ComputeError: "`register` not implemented on DefaultFunctionRegistry'")
     }
 
     fn get_udf(&self, _name: &str) -> PolarsResult<Option<UserDefinedFunction>> {
-        polars_bail!(ComputeError: "'get_udf' not implemented on DefaultFunctionRegistry'")
+        polars_bail!(ComputeError: "`get_udf` not implemented on DefaultFunctionRegistry'")
     }
     fn contains(&self, _name: &str) -> bool {
         false

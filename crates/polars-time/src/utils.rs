@@ -30,12 +30,12 @@ pub(crate) fn localize_datetime(
                     please open an issue at https://github.com/pola-rs/polars/issues.", ndt, tz)
             ),
             ambiguous => polars_bail!(ComputeError:
-                format!("Invalid argument {}, expected one of: \"earliest\", \"latest\", \"raise\"", ambiguous)
+                format!("invalid argument {}, expected one of: \"earliest\", \"latest\", \"raise\"", ambiguous)
             ),
         },
         LocalResult::None => {
             polars_bail!(
-                ComputeError: format!("datetime '{}' is non-existent in time zone '{}'. Non-existent datetimes are not yet supported", ndt, tz)
+                ComputeError: format!("datetime '{}' is non-existent in time zone '{}'; non-existent datetimes are not yet supported", ndt, tz)
             )
         },
     }

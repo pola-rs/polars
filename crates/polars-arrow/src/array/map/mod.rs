@@ -131,7 +131,7 @@ impl MapArray {
         if let DataType::Map(field, _) = data_type.to_logical_type() {
             Ok(field.as_ref())
         } else {
-            polars_bail!(ComputeError: "The data_type's logical type must be DataType::Map")
+            polars_bail!(ComputeError: "the data_type's logical type must be DataType::Map")
         }
     }
 

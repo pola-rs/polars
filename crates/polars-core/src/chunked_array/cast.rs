@@ -192,7 +192,7 @@ impl ChunkCast for Utf8Chunked {
                 },
                 (None, None) => self.to_decimal(100),
                 _ => {
-                    polars_bail!(ComputeError: "expected 'precision' or 'scale' when casting to Decimal")
+                    polars_bail!(ComputeError: "expected `precision` or `scale` when casting to Decimal")
                 },
             },
             _ => cast_impl(self.name(), &self.chunks, data_type),

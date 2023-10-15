@@ -118,7 +118,7 @@ impl<'a, T: DictionaryKey> Growable<'a> for GrowableDictionary<'a, T> {
                         Ok(key) => key,
                         // todo: convert this to an error.
                         Err(_) => {
-                            panic!("The maximum key is too small")
+                            panic!("the maximum key is too small")
                         },
                     };
                     x

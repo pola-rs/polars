@@ -247,7 +247,7 @@ pub fn adaptive_div(
         {
             (*lhs_p, *lhs_s, *rhs_p, *rhs_s)
         } else {
-            polars_bail!(ComputeError: "Incorrect data type for the array")
+            polars_bail!(ComputeError: "incorrect data type for the array")
         };
 
     // The resulting precision is mutable because it could change while

@@ -267,7 +267,7 @@ impl SQLContext {
     fn register_ctes(&mut self, query: &Query) -> PolarsResult<()> {
         if let Some(with) = &query.with {
             if with.recursive {
-                polars_bail!(ComputeError: "Recursive CTEs are not supported")
+                polars_bail!(ComputeError: "recursive CTEs are not supported")
             }
             for cte in &with.cte_tables {
                 let cte_name = cte.alias.name.to_string();
@@ -742,7 +742,7 @@ impl SQLContext {
                 cols(schema.iter_names())
             },
             e => polars_bail!(
-                ComputeError: "Invalid wildcard expression: {:?}",
+                ComputeError: "invalid wildcard expression: {:?}",
                 e
             ),
         };
@@ -756,7 +756,7 @@ impl SQLContext {
         contains_wildcard_exclude: &mut bool,
     ) -> PolarsResult<Expr> {
         if options.opt_except.is_some() {
-            polars_bail!(InvalidOperation: "EXCEPT not supported. Use EXCLUDE instead")
+            polars_bail!(InvalidOperation: "EXCEPT not supported; use EXCLUDE instead")
         }
         Ok(match &options.opt_exclude {
             Some(ExcludeSelectItem::Single(ident)) => {

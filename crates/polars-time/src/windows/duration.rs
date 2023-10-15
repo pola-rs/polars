@@ -184,7 +184,7 @@ impl Duration {
                         nsecs += n;
                         parsed_int = true;
                     }
-                    unit => panic!("unit: '{unit}' not supported. Available units are: 'ns', 'us', 'ms', 's', 'm', 'h', 'd', 'w', 'q', 'mo', 'y', 'i'"),
+                    unit => panic!("unit: '{unit}' not supported; available units are: 'ns', 'us', 'ms', 's', 'm', 'h', 'd', 'w', 'q', 'mo', 'y', 'i'"),
                 }
                 unit.clear();
             }
@@ -428,7 +428,7 @@ impl Duration {
         new_datetime(year, month as u32, day, hour, minute, sec, nsec).ok_or(
             polars_err!(
                 ComputeError: format!(
-                    "cannot advance '{}' by {} month(s). \
+                    "cannot advance '{}' by {} month(s)\n\n
                         If you were trying to get the last day of each month, you may want to try `.dt.month_end` \
                         or append \"_saturating\" to your duration string.",
                         ts,

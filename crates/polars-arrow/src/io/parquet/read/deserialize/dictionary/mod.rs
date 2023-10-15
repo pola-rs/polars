@@ -165,7 +165,7 @@ where
                     match x.try_into() {
                         Ok(key) => key,
                         // todo: convert this to an error.
-                        Err(_) => panic!("The maximum key is too small"),
+                        Err(_) => panic!("the maximum key is too small"),
                     }
                 }),
             ),
@@ -180,7 +180,7 @@ where
                                 Ok(key) => key,
                                 // todo: convert this to an error.
                                 Err(_) => {
-                                    panic!("The maximum key is too small")
+                                    panic!("the maximum key is too small")
                                 },
                             };
                             x
@@ -200,7 +200,7 @@ where
                         Ok(key) => key,
                         // todo: convert this to an error.
                         Err(_) => {
-                            panic!("The maximum key is too small")
+                            panic!("the maximum key is too small")
                         },
                     };
                     x
@@ -217,7 +217,7 @@ where
                                 Ok(key) => key,
                                 // todo: convert this to an error.
                                 Err(_) => {
-                                    panic!("The maximum key is too small")
+                                    panic!("the maximum key is too small")
                                 },
                             };
                             x

@@ -39,7 +39,7 @@ fn read_swapped<T: NativeType, R: Read + Seek>(
     } else {
         // machine is big endian, file is little endian
         polars_bail!(ComputeError:
-            "Reading little endian files from big endian machines",
+            "reading little endian files from big endian machines",
         )
     }
     Ok(())
@@ -87,7 +87,7 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
 ) -> PolarsResult<Vec<T>> {
     if is_little_endian != is_native_little_endian() {
         polars_bail!(ComputeError:
-            "Reading compressed and big endian IPC".to_string(),
+            "reading compressed and big endian IPC".to_string(),
         )
     }
 

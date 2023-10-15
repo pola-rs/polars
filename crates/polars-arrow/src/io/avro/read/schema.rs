@@ -98,7 +98,7 @@ fn schema_to_field(
                 {
                     schema_to_field(schema, None, Metadata::default())?.data_type
                 } else {
-                    polars_bail!(nyi = "Can't read avro union {schema:?}");
+                    polars_bail!(nyi = "cannot read avro union {schema:?}");
                 }
             } else {
                 let fields = schemas

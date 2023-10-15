@@ -1286,7 +1286,7 @@ impl Expr {
             .with_fmt(expr_name_by)
         } else {
             if !options.window_size.parsed_int {
-                panic!("if dynamic windows are used in a rolling aggregation, the 'by' argument must be set")
+                panic!("if dynamic windows are used in a rolling aggregation, the `by` argument must be set")
             }
 
             self.apply(

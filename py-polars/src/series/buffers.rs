@@ -10,7 +10,7 @@ impl PySeries {
         let s = self.series.to_physical_repr();
         let arrays = s.chunks();
         if arrays.len() != 1 {
-            let msg = "Only can take pointer, if the 'series' contains a single chunk";
+            let msg = "only can take pointer, if the 'series' contains a single chunk";
             raise_err!(msg, ComputeError);
         }
         match s.dtype() {
@@ -37,7 +37,7 @@ impl PySeries {
                 Ok((0, arr.len(), arr.values().as_ptr() as usize))
             },
             _ => {
-                let msg = "Cannot take pointer of nested type, try to first select a buffer";
+                let msg = "cannot take pointer of nested type, try to first select a buffer";
                 raise_err!(msg, ComputeError);
             },
         }

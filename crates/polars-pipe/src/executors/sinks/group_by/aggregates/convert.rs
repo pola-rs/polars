@@ -250,7 +250,7 @@ where
                     AggregateFunction::Count(CountAgg::new()),
                 )
             },
-            agg => panic!("{agg:?} not yet implemented."),
+            agg => panic!("{agg:?} not yet implemented"),
         },
         _ => todo!(),
     }

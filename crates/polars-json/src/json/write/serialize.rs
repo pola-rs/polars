@@ -363,7 +363,7 @@ fn timestamp_tz_serializer<'a>(
         },
         #[cfg(not(feature = "chrono-tz"))]
         _ => {
-            panic!("Invalid Offset format (must be [-]00:00) or chrono-tz feature not active");
+            panic!("invalid Offset format (must be [-]00:00) or chrono-tz feature not active");
         },
     }
 }

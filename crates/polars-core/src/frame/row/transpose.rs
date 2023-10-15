@@ -42,7 +42,7 @@ impl DataFrame {
             #[cfg(feature = "object")]
             DataType::Object(_) => {
                 // this requires to support `Object` in Series::iter which we don't yet
-                polars_bail!(InvalidOperation: "Object dtype not supported in 'transpose'")
+                polars_bail!(InvalidOperation: "object dtype not supported in 'transpose'")
             },
             _ => {
                 let phys_dtype = dtype.to_physical();

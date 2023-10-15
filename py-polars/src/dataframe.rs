@@ -1147,7 +1147,7 @@ impl PyDataFrame {
                     Err(e) => panic!("UDF failed: {}", e.value(py)),
                 };
                 let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
-                    "Could not get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
+                    "could not get DataFrame attribute '_df'; make sure that you return a DataFrame object",
                 );
 
                 let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();

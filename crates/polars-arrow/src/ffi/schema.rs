@@ -379,7 +379,7 @@ unsafe fn to_data_type(schema: &ArrowSchema) -> PolarsResult<DataType> {
                 },
                 _ => {
                     polars_bail!(ComputeError:
-                    "The datatype \"{other}\" is still not supported in Rust implementation",
+                    "the datatype \"{other}\" is still not supported in Rust implementation",
                         )
                 },
             }
@@ -477,7 +477,7 @@ pub(super) fn get_child(data_type: &DataType, index: usize) -> PolarsResult<Data
         (index, DataType::Union(fields, _, _)) => Ok(fields[index].data_type().clone()),
         (index, DataType::Extension(_, subtype, _)) => get_child(subtype, index),
         (child, data_type) => polars_bail!(ComputeError:
-            "Requested child {child} to type {data_type:?} that has no such child",
+            "requested child {child} to type {data_type:?} that has no such child",
         ),
     }
 }

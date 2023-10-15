@@ -106,7 +106,7 @@ impl SqlExprVisitor<'_> {
                 subquery,
                 negated,
             } => self.visit_in_subquery(expr, subquery, *negated),
-            SqlExpr::Subquery(_) => polars_bail!(InvalidOperation: "Unexpected SQL Subquery"),
+            SqlExpr::Subquery(_) => polars_bail!(InvalidOperation: "unexpected SQL Subquery"),
             SqlExpr::IsDistinctFrom(e1, e2) => {
                 Ok(self.visit_expr(e1)?.neq_missing(self.visit_expr(e2)?))
             },
@@ -196,7 +196,7 @@ impl SqlExprVisitor<'_> {
                 }
             },
             _ => polars_bail!(
-                ComputeError: "Invalid identifier {:?}",
+                ComputeError: "invalid identifier {:?}",
                 idents
             ),
         }
@@ -208,7 +208,7 @@ impl SqlExprVisitor<'_> {
             UnaryOperator::Plus => lit(0) + expr,
             UnaryOperator::Minus => lit(0) - expr,
             UnaryOperator::Not => expr.not(),
-            other => polars_bail!(InvalidOperation: "Unary operator {:?} is not supported", other),
+            other => polars_bail!(InvalidOperation: "unary operator {:?} is not supported", other),
         })
     }
 
@@ -255,23 +255,23 @@ impl SqlExprVisitor<'_> {
             // ----
             SQLBinaryOperator::PGRegexMatch => match right {
                 Expr::Literal(LiteralValue::Utf8(_)) => left.str().contains(right, true),
-                _ => polars_bail!(ComputeError: "Invalid pattern for '~' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '~' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexNotMatch => match right {
                 Expr::Literal(LiteralValue::Utf8(_)) => left.str().contains(right, true).not(),
-                _ => polars_bail!(ComputeError: "Invalid pattern for '!~' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '!~' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexIMatch => match right {
                 Expr::Literal(LiteralValue::Utf8(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true)
                 },
-                _ => polars_bail!(ComputeError: "Invalid pattern for '~*' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '~*' operator: {:?}", right),
             },
             SQLBinaryOperator::PGRegexNotIMatch => match right {
                 Expr::Literal(LiteralValue::Utf8(pat)) => {
                     left.str().contains(lit(format!("(?i){}", pat)), true).not()
                 },
-                _ => polars_bail!(ComputeError: "Invalid pattern for '!~*' operator: {:?}", right),
+                _ => polars_bail!(ComputeError: "invalid pattern for '!~*' operator: {:?}", right),
             },
             other => polars_bail!(ComputeError: "SQL operator {:?} is not yet supported", other),
         })
@@ -309,7 +309,7 @@ impl SqlExprVisitor<'_> {
             BinaryOperator::LtEq => Ok(left.lt_eq(right.min())),
             BinaryOperator::Eq => polars_bail!(ComputeError: "ALL cannot be used with ="),
             BinaryOperator::NotEq => polars_bail!(ComputeError: "ALL cannot be used with !="),
-            _ => polars_bail!(ComputeError: "Invalid comparison operator"),
+            _ => polars_bail!(ComputeError: "invalid comparison operator"),
         }
     }
 
@@ -332,7 +332,7 @@ impl SqlExprVisitor<'_> {
             BinaryOperator::LtEq => Ok(left.lt_eq(right.max())),
             BinaryOperator::Eq => Ok(left.is_in(right)),
             BinaryOperator::NotEq => Ok(left.is_in(right).not()),
-            _ => polars_bail!(ComputeError: "Invalid comparison operator"),
+            _ => polars_bail!(ComputeError: "invalid comparison operator"),
         }
     }
 
@@ -386,7 +386,7 @@ impl SqlExprVisitor<'_> {
                     Some(UnaryOperator::Minus) => true,
                     Some(UnaryOperator::Plus) => false,
                     _ => {
-                        polars_bail!(ComputeError: "Unary op {:?} not supported for numeric SQL value", op)
+                        polars_bail!(ComputeError: "unary op {:?} not supported for numeric SQL value", op)
                     },
                 };
                 // Check for existence of decimal separator dot
@@ -702,7 +702,7 @@ pub(super) fn process_join_constraint(
             return Ok((using.clone(), using.clone()));
         }
     }
-    polars_bail!(InvalidOperation: "Unsupported SQL join constraint:\n{:?}", constraint);
+    polars_bail!(InvalidOperation: "unsupported SQL join constraint:\n{:?}", constraint);
 }
 
 /// parse a SQL expression to a polars expression
@@ -740,6 +740,6 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
             expr.alias(&alias.value)
         },
         SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx)?,
-        _ => polars_bail!(InvalidOperation: "Unable to parse '{}' as Expr", s.as_ref()),
+        _ => polars_bail!(InvalidOperation: "unable to parse '{}' as Expr", s.as_ref()),
     })
 }

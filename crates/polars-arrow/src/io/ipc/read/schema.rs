@@ -33,7 +33,7 @@ fn deserialize_field(ipc_field: arrow_format::ipc::FieldRef) -> PolarsResult<(Fi
     let field = Field {
         name: ipc_field
             .name()?
-            .ok_or_else(|| polars_err!(oos = "Every field in IPC must have a name"))?
+            .ok_or_else(|| polars_err!(oos = "every field in IPC must have a name"))?
             .to_string(),
         data_type,
         is_nullable: ipc_field.nullable()?,
@@ -68,7 +68,7 @@ fn deserialize_integer(int: arrow_format::ipc::IntRef) -> PolarsResult<IntegerTy
         (32, false) => IntegerType::UInt32,
         (64, true) => IntegerType::Int64,
         (64, false) => IntegerType::UInt64,
-        _ => polars_bail!(oos = "IPC: indexType can only be 8, 16, 32 or 64."),
+        _ => polars_bail!(oos = "IPC: indexType can only be 8, 16, 32 or 64"),
     })
 }
 
@@ -241,7 +241,7 @@ fn get_data_type(
         if may_be_dictionary {
             let int = dictionary
                 .index_type()?
-                .ok_or_else(|| polars_err!(oos = "indexType is mandatory in Dictionary."))?;
+                .ok_or_else(|| polars_err!(oos = "indexType is mandatory in Dictionary"))?;
             let index_type = deserialize_integer(int)?;
             let (inner, mut ipc_field) = get_data_type(field, extension, false)?;
             ipc_field.dictionary_id = Some(dictionary.id()?);
@@ -355,14 +355,14 @@ fn get_data_type(
 /// Deserialize an flatbuffers-encoded Schema message into [`Schema`] and [`IpcSchema`].
 pub fn deserialize_schema(message: &[u8]) -> PolarsResult<(Schema, IpcSchema)> {
     let message = arrow_format::ipc::MessageRef::read_as_root(message)
-        .map_err(|_err| polars_err!(oos = "Unable deserialize message: {err:?}"))?;
+        .map_err(|_err| polars_err!(oos = "unable deserialize message: {err:?}"))?;
 
     let schema = match message
         .header()?
-        .ok_or_else(|| polars_err!(oos = "Unable to convert header to a schema".to_string()))?
+        .ok_or_else(|| polars_err!(oos = "unable to convert header to a schema".to_string()))?
     {
         arrow_format::ipc::MessageHeaderRef::Schema(schema) => PolarsResult::Ok(schema),
-        _ => polars_bail!(ComputeError: "The message is expected to be a Schema message"),
+        _ => polars_bail!(ComputeError: "the message is expected to be a Schema message"),
     }?;
 
     fb_to_schema(schema)
@@ -410,16 +410,16 @@ pub(super) fn fb_to_schema(
 
 pub(super) fn deserialize_stream_metadata(meta: &[u8]) -> PolarsResult<StreamMetadata> {
     let message = arrow_format::ipc::MessageRef::read_as_root(meta)
-        .map_err(|_err| polars_err!(oos = "Unable to get root as message: {err:?}"))?;
+        .map_err(|_err| polars_err!(oos = "unable to get root as message: {err:?}"))?;
     let version = message.version()?;
     // message header is a Schema, so read it
     let header = message
         .header()?
-        .ok_or_else(|| polars_err!(oos = "Unable to read the first IPC message"))?;
+        .ok_or_else(|| polars_err!(oos = "unable to read the first IPC message"))?;
     let schema = if let arrow_format::ipc::MessageHeaderRef::Schema(schema) = header {
         schema
     } else {
-        polars_bail!(oos = "The first IPC message of the stream must be a schema")
+        polars_bail!(oos = "the first IPC message of the stream must be a schema")
     };
     let (schema, ipc_schema) = fb_to_schema(schema)?;
 

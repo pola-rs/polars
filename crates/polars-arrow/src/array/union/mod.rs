@@ -68,8 +68,8 @@ impl UnionArray {
             .try_for_each(|(index, (data_type, child))| {
                 if data_type != child {
                     polars_bail!(ComputeError:
-                        "the children DataTypes of a UnionArray must equal the children data types.
-                         However, the field {index} has data type {data_type:?} but the value has data type {child:?}"
+                        "the children DataTypes of a UnionArray must equal the children data types,
+                         yet the field {index} has data type {data_type:?} but the value has data type {child:?}"
                     )
                 } else {
                     Ok(())
@@ -121,7 +121,7 @@ impl UnionArray {
                 let id = hash[type_ as usize];
                 if id >= fields.len() {
                     polars_bail!(ComputeError:
-    "in a union, when the ids are set, each id must be smaller than the number of fields."
+    "in a union, when the ids are set, each id must be smaller than the number of fields"
                     )
                 } else {
                     Ok(())
@@ -139,7 +139,7 @@ impl UnionArray {
             }
             if !is_valid {
                 polars_bail!(ComputeError:
-                    "every type in `types` must be larger than 0 and smaller than the number of fields.",
+                    "every type in `types` must be larger than 0 and smaller than the number of fields",
                 )
             }
 
@@ -354,7 +354,7 @@ impl UnionArray {
                 Ok((fields, ids.as_ref().map(|x| x.as_ref()), *mode))
             },
             _ => polars_bail!(ComputeError:
-                "The UnionArray requires a logical type of DataType::Union",
+                "the UnionArray requires a logical type of DataType::Union",
             ),
         }
     }

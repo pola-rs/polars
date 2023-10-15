@@ -136,7 +136,7 @@ pub unsafe fn slice<T: NativeType>(slice: &[T]) -> PrimitiveArray<T> {
 /// of the slice. The returned [`BooleanArray`] _must not_ outlive the passed slice.
 pub unsafe fn bitmap(data: &[u8], offset: usize, length: usize) -> PolarsResult<BooleanArray> {
     if offset >= 8 {
-        polars_bail!(InvalidOperation: "offset should be < 8")
+        polars_bail!(InvalidOperation: "`offset` should be < 8")
     };
     if length > data.len() * 8 - offset {
         polars_bail!(InvalidOperation: "given length is oob")

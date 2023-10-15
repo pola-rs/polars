@@ -29,7 +29,7 @@ pub fn concatenate(arrays: &[&dyn Array]) -> PolarsResult<Box<dyn Array>> {
         .iter()
         .any(|array| array.data_type() != arrays[0].data_type())
     {
-        polars_bail!(InvalidOperation: "It is not possible to concatenate arrays of different data types.")
+        polars_bail!(InvalidOperation: "it is not possible to concatenate arrays of different data types")
     }
 
     let lengths = arrays.iter().map(|array| array.len()).collect::<Vec<_>>();

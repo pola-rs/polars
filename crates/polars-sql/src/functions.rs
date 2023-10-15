@@ -662,12 +662,12 @@ impl SqlFunctionVisitor<'_> {
                     Ok(e.round(match decimals {
                         Expr::Literal(LiteralValue::Int64(n)) => n as u32,
                         _ => {
-                            polars_bail!(InvalidOperation: "Invalid 'decimals' for Round: {}", function.args[1]);
+                            polars_bail!(InvalidOperation: "invalid 'decimals' for Round: {}", function.args[1]);
                         }
                     }))
                 }),
                 _ => {
-                    polars_bail!(InvalidOperation:"Invalid number of arguments for Round: {}",function.args.len());
+                    polars_bail!(InvalidOperation:"invalid number of arguments for Round: {}",function.args.len());
                 },
             },
 
@@ -686,7 +686,7 @@ impl SqlFunctionVisitor<'_> {
                 Ok(e.str().slice(0, match length {
                     Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
                     _ => {
-                        polars_bail!(InvalidOperation: "Invalid 'length' for Left: {}", function.args[1]);
+                        polars_bail!(InvalidOperation: "invalid `length` for Left: {}", function.args[1]);
                     }
                 }))
             }),
@@ -696,7 +696,7 @@ impl SqlFunctionVisitor<'_> {
                 1 => self.visit_unary(|e| e.str().strip_chars_start(lit(Null))),
                 2 => self.visit_binary(|e, s| e.str().strip_chars_start(s)),
                 _ => polars_bail!(InvalidOperation:
-                    "Invalid number of arguments for LTrim: {}",
+                    "invalid number of arguments for LTrim: {}",
                     function.args.len()
                 ),
             },
@@ -707,22 +707,22 @@ impl SqlFunctionVisitor<'_> {
                     Ok(e.str().contains(
                         match (pat, flags) {
                             (Expr::Literal(LiteralValue::Utf8(s)), Expr::Literal(LiteralValue::Utf8(f))) => {
-                                if f.is_empty() { polars_bail!(InvalidOperation: "Invalid/empty 'flags' for RegexpLike: {}", function.args[2]); };
+                                if f.is_empty() { polars_bail!(InvalidOperation: "invalid/empty 'flags' for RegexpLike: {}", function.args[2]); };
                                 lit(format!("(?{}){}", f, s))
                             },
                             _ => {
-                                polars_bail!(InvalidOperation: "Invalid arguments for RegexpLike: {}, {}", function.args[1], function.args[2]);
+                                polars_bail!(InvalidOperation: "invalid arguments for RegexpLike: {}, {}", function.args[1], function.args[2]);
                             },
                         },
                         true))
                 }),
-                _ => polars_bail!(InvalidOperation:"Invalid number of arguments for RegexpLike: {}",function.args.len()),
+                _ => polars_bail!(InvalidOperation:"invalid number of arguments for RegexpLike: {}",function.args.len()),
             },
             RTrim => match function.args.len() {
                 1 => self.visit_unary(|e| e.str().strip_chars_end(lit(Null))),
                 2 => self.visit_binary(|e, s| e.str().strip_chars_end(s)),
                 _ => polars_bail!(InvalidOperation:
-                    "Invalid number of arguments for RTrim: {}",
+                    "invalid number of arguments for RTrim: {}",
                     function.args.len()
                 ),
             },
@@ -732,7 +732,7 @@ impl SqlFunctionVisitor<'_> {
                     Ok(e.str().slice(match start {
                         Expr::Literal(LiteralValue::Int64(n)) => n,
                         _ => {
-                            polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
+                            polars_bail!(InvalidOperation: "invalid 'start' for Substring: {}", function.args[1]);
                         }
                     }, None))
                 }),
@@ -741,17 +741,17 @@ impl SqlFunctionVisitor<'_> {
                         match start {
                             Expr::Literal(LiteralValue::Int64(n)) => n,
                             _ => {
-                                polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
+                                polars_bail!(InvalidOperation: "invalid 'start' for Substring: {}", function.args[1]);
                             }
                         }, match length {
                             Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
                             _ => {
-                                polars_bail!(InvalidOperation: "Invalid 'length' for Substring: {}", function.args[2]);
+                                polars_bail!(InvalidOperation: "invalid 'length' for Substring: {}", function.args[2]);
                             }
                         }))
                 }),
                 _ => polars_bail!(InvalidOperation:
-                    "Invalid number of arguments for Substring: {}",
+                    "invalid number of arguments for Substring: {}",
                     function.args.len()
                 ),
             }
@@ -798,7 +798,7 @@ impl SqlFunctionVisitor<'_> {
                 if let FunctionArgExpr::Expr(e) = arg {
                     parse_sql_expr(e, self.ctx)
                 } else {
-                    polars_bail!(ComputeError: "Only expressions are supported in UDFs")
+                    polars_bail!(ComputeError: "only expressions are supported in UDFs")
                 }
             })
             .collect::<PolarsResult<Vec<_>>>()?;
@@ -829,7 +829,7 @@ impl SqlFunctionVisitor<'_> {
                 self.apply_cumulative_window(f, cumulative_f, spec)
             },
             Some(WindowType::NamedWindow(named_window)) => polars_bail!(
-                InvalidOperation: "Named windows are not supported yet. Got {:?}",
+                InvalidOperation: "named windows are not supported yet; got {:?}",
                 named_window
             ),
             _ => self.visit_unary(f),
@@ -1011,7 +1011,7 @@ impl SqlFunctionVisitor<'_> {
                 }
             },
             Some(WindowType::NamedWindow(named_window)) => polars_bail!(
-                InvalidOperation: "Named windows are not supported yet. Got: {:?}",
+                InvalidOperation: "named windows are not supported yet; got: {:?}",
                 named_window
             ),
             None => expr,
@@ -1021,7 +1021,7 @@ impl SqlFunctionVisitor<'_> {
     fn not_supported_error(&self) -> PolarsResult<Expr> {
         polars_bail!(
             InvalidOperation:
-            "No function matches the given name and arguments: `{}`",
+            "no function matches the given name and arguments: `{}`",
             self.func.to_string()
         );
     }
@@ -1053,10 +1053,10 @@ impl FromSqlExpr for f64 {
             SqlExpr::Value(v) => match v {
                 SqlValue::Number(s, _) => s
                     .parse()
-                    .map_err(|_| polars_err!(ComputeError: "can't parse literal {:?}", s)),
-                _ => polars_bail!(ComputeError: "can't parse literal {:?}", v),
+                    .map_err(|_| polars_err!(ComputeError: "cannot parse literal {:?}", s)),
+                _ => polars_bail!(ComputeError: "cannot parse literal {:?}", v),
             },
-            _ => polars_bail!(ComputeError: "can't parse literal {:?}", expr),
+            _ => polars_bail!(ComputeError: "cannot parse literal {:?}", expr),
         }
     }
 }
@@ -1069,9 +1069,9 @@ impl FromSqlExpr for String {
         match expr {
             SqlExpr::Value(v) => match v {
                 SqlValue::SingleQuotedString(s) => Ok(s.clone()),
-                _ => polars_bail!(ComputeError: "can't parse literal {:?}", v),
+                _ => polars_bail!(ComputeError: "cannot parse literal {:?}", v),
             },
-            _ => polars_bail!(ComputeError: "can't parse literal {:?}", expr),
+            _ => polars_bail!(ComputeError: "cannot parse literal {:?}", expr),
         }
     }
 }

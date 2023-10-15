@@ -209,7 +209,7 @@ pub(super) fn date_offset(s: &[Series]) -> PolarsResult<Series> {
             out.cast(&DataType::Datetime(*tu, tz.clone()))
         },
         dt => polars_bail!(
-            ComputeError: "cannot use 'date_offset' on Series of datatype {}", dt,
+            ComputeError: "cannot use `date_offset` on Series of datatype {}", dt,
         ),
     };
     if preserve_sortedness {

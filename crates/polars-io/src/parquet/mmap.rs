@@ -49,9 +49,7 @@ fn _mmap_single_column<'a>(
         #[cfg(all(feature = "async", feature = "parquet"))]
         ColumnStore::Fetched(fetched) => {
             let entry = fetched.get(&start).unwrap_or_else(|| {
-                panic!(
-                    "mmap_columns: column with start {start} must be prefetched in ColumnStore.\n"
-                )
+                panic!("mmap_columns: column with start {start} must be prefetched in ColumnStore")
             });
             entry.as_ref()
         },

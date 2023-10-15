@@ -456,7 +456,7 @@ pub fn cast(
     match (from_type, to_type) {
         (Null, _) | (_, Null) => Ok(new_null_array(to_type.clone(), array.len())),
         (Struct(_), _) | (_, Struct(_)) => polars_bail!(InvalidOperation:
-            "Cannot cast from struct to other types"
+            "cannot cast from struct to other types"
         ),
         (List(_), FixedSizeList(inner, size)) => cast_list_to_fixed_size_list::<i32>(
             array.as_any().downcast_ref().unwrap(),

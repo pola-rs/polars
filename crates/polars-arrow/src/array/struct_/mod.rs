@@ -79,8 +79,8 @@ impl StructArray {
             .enumerate()
             .try_for_each(|(index, a_len)| {
                 if a_len != len {
-                    polars_bail!(ComputeError: "The children must have an equal number of values.
-                         However, the values at index {index} have a length of {a_len}, which is different from values at index 0, {len}.")
+                    polars_bail!(ComputeError: "the children must have an equal number of values,
+                         yet the values at index {index} have a length of {a_len}, which is different from values at index 0, {len}.")
                 } else {
                     Ok(())
                 }
@@ -90,7 +90,7 @@ impl StructArray {
             .as_ref()
             .map_or(false, |validity| validity.len() != len)
         {
-            polars_bail!(ComputeError:"The validity length of a StructArray must match its number of elements")
+            polars_bail!(ComputeError:"the validity length of a StructArray must match its number of elements")
         }
 
         Ok(Self {

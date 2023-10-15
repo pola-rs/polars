@@ -70,7 +70,7 @@ impl ParquetSource {
             #[cfg(not(feature = "async"))]
             {
                 panic!(
-                    "Feature 'async' (or more likely one of the cloud provider features) is required to access parquet files on cloud storage."
+                    "feature 'async' (or more likely one of the cloud provider features) is required to access parquet files on cloud storage"
                 )
             }
             #[cfg(feature = "async")]

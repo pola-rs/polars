@@ -558,7 +558,7 @@ def test_strptime_subseconds_datetime(data: str, format: str, expected: time) ->
 def test_strptime_incomplete_formats(string: str, fmt: str) -> None:
     with pytest.raises(
         ComputeError,
-        match="Invalid format string",
+        match="invalid format string",
     ):
         pl.Series([string]).str.to_datetime(fmt)
 

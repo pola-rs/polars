@@ -60,16 +60,16 @@ pub(super) fn compile_fmt(fmt: &str) -> PolarsResult<String> {
     // be removed, and that error could be matched against in `transform_datetime_*s`
     // See https://github.com/chronotope/chrono/issues/1075.
     if HOUR_PATTERN.is_match(fmt) ^ MINUTE_PATTERN.is_match(fmt) {
-        polars_bail!(ComputeError: "Invalid format string: \
-            Please either specify both hour and minute, or neither.");
+        polars_bail!(ComputeError: "invalid format string: \
+            please either specify both hour and minute, or neither");
     }
     if SECOND_PATTERN.is_match(fmt) && !HOUR_PATTERN.is_match(fmt) {
-        polars_bail!(ComputeError: "Invalid format string: \
-            Found seconds directive, but no hours directive.");
+        polars_bail!(ComputeError: "invalid format string: \
+            found seconds directive, but no hours directive");
     }
     if TWELVE_HOUR_PATTERN.is_match(fmt) ^ MERIDIEM_PATTERN.is_match(fmt) {
-        polars_bail!(ComputeError: "Invalid format string: \
-            Please either specify both 12-hour directive and meridiem directive, or neither.");
+        polars_bail!(ComputeError: "invalid format string: \
+            please either specify both 12-hour directive and meridiem directive, or neither");
     }
 
     Ok(fmt

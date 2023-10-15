@@ -185,7 +185,7 @@ impl FixedSizeBinaryArray {
         ) {
             (DataType::FixedSizeBinary(size_a), DataType::FixedSizeBinary(size_b))
                 if size_a == size_b => {},
-            _ => panic!("Wrong DataType"),
+            _ => panic!("wrong DataType"),
         }
 
         Self {
