@@ -2,7 +2,7 @@ use std::hash::Hash;
 
 use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use polars_core::with_match_physical_integer_polars_type;

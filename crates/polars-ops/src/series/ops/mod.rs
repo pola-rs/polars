@@ -9,6 +9,7 @@ mod cut;
 mod floor_divide;
 #[cfg(feature = "fused")]
 mod fused;
+mod horizontal;
 #[cfg(feature = "convert_index")]
 mod index;
 #[cfg(feature = "is_first_distinct")]
@@ -44,6 +45,7 @@ pub use cut::*;
 pub use floor_divide::*;
 #[cfg(feature = "fused")]
 pub use fused::*;
+pub use horizontal::*;
 #[cfg(feature = "convert_index")]
 pub use index::*;
 #[cfg(feature = "is_first_distinct")]

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::utils::CustomIterTools;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;

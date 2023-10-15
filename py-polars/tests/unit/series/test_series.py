@@ -2027,6 +2027,14 @@ def test_trigonometric(f: str) -> None:
     assert_series_equal(result, expected)
 
 
+@pytest.mark.filterwarnings("ignore:invalid value encountered:RuntimeWarning")
+def test_trigonometric_cot() -> None:
+    # cotangent is not available in numpy...
+    s = pl.Series("a", [0.0, math.pi, None, math.nan])
+    expected = pl.Series("a", [math.inf, -8.1656e15, None, math.nan])
+    assert_series_equal(s.cot(), expected)
+
+
 def test_trigonometric_invalid_input() -> None:
     # String
     s = pl.Series("a", ["1", "2", "3"])

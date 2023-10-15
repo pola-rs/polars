@@ -92,4 +92,4 @@ jobs:
           cargo miri test
           --features object
           -p polars-core
-          -p polars-arrow
+#          -p polars-arrow

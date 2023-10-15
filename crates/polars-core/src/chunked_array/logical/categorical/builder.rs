@@ -2,8 +2,8 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 
 use arrow::array::*;
+use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::{Entry, RawEntryMut};
-use polars_arrow::trusted_len::TrustedLenPush;
 
 use crate::datatypes::PlHashMap;
 use crate::hashing::_HASHMAP_INIT_SIZE;

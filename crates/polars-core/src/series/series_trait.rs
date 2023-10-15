@@ -3,7 +3,7 @@ use std::borrow::Cow;
 #[cfg(feature = "temporal")]
 use std::sync::Arc;
 
-use polars_arrow::prelude::QuantileInterpolOptions;
+use arrow::legacy::prelude::QuantileInterpolOptions;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

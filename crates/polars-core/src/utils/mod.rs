@@ -6,9 +6,9 @@ use std::ops::{Deref, DerefMut};
 
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
+pub use arrow::legacy::utils::{TrustMyLength, *};
 use flatten::*;
 use num_traits::{One, Zero};
-pub use polars_arrow::utils::{TrustMyLength, *};
 use rayon::prelude::*;
 pub use series::*;
 use smartstring::alias::String as SmartString;

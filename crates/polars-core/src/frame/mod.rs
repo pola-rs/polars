@@ -4,7 +4,7 @@ use std::iter::{FromIterator, Iterator};
 use std::{mem, ops};
 
 use ahash::AHashSet;
-use polars_arrow::prelude::QuantileInterpolOptions;
+use arrow::legacy::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 
 #[cfg(feature = "algorithm_group_by")]

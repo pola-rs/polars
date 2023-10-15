@@ -1,4 +1,4 @@
-use polars_arrow::export::arrow::temporal_conversions::{
+use arrow::temporal_conversions::{
     MICROSECONDS, MILLISECONDS, MILLISECONDS_IN_DAY, NANOSECONDS, SECONDS_IN_DAY,
 };
 

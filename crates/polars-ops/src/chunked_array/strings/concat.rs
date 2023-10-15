@@ -1,5 +1,5 @@
 use arrow::array::Utf8Array;
-use polars_arrow::array::default_arrays::FromDataUtf8;
+use arrow::legacy::array::default_arrays::FromDataUtf8;
 use polars_core::prelude::*;
 
 // Vertically concatenate all strings in a Utf8Chunked.

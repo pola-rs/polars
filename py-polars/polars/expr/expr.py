@@ -5387,11 +5387,11 @@ class Expr:
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
-        │ i64 ┆ f64 │
+        │ f64 ┆ f64 │
         ╞═════╪═════╡
-        │ 1   ┆ 1.0 │
-        │ 2   ┆ NaN │
-        │ 3   ┆ 3.0 │
+        │ 1.0 ┆ 1.0 │
+        │ 2.0 ┆ NaN │
+        │ 3.0 ┆ 3.0 │
         └─────┴─────┘
 
         Fill null values using nearest interpolation.
@@ -7857,6 +7857,31 @@ class Expr:
 
         """
         return self._from_pyexpr(self._pyexpr.tan())
+
+    def cot(self) -> Self:
+        """
+        Compute the element-wise value for the cotangent.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Float64`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1.0]})
+        >>> df.select(pl.col("a").cot().round(2))
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 0.64 │
+        └──────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.cot())
 
     def arcsin(self) -> Self:
         """

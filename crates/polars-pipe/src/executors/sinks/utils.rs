@@ -1,4 +1,4 @@
-use polars_arrow::export::arrow::array::BinaryArray;
+use arrow::array::BinaryArray;
 use polars_core::export::ahash::RandomState;
 use polars_core::hashing::_hash_binary_array;
 

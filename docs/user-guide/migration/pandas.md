@@ -225,8 +225,8 @@ In `Pandas` we have:
 
 ```python
 df = pd.DataFrame({
-    "type": ["m", "n", "o", "m", "m", "n", "n"],
     "c": [1, 1, 1, 2, 2, 2, 2],
+    "type": ["m", "n", "o", "m", "m", "n", "n"],
 })
 
 df["size"] = df.groupby("c")["type"].transform(len)

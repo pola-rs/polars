@@ -236,11 +236,18 @@ pub fn max_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     if exprs.is_empty() {
         return Expr::Columns(Vec::new());
     }
-    let func = |s1, s2| {
-        let df = DataFrame::new_no_checks(vec![s1, s2]);
-        df.hmax()
-    };
-    reduce_exprs(func, exprs).alias("max")
+
+    Expr::Function {
+        input: exprs,
+        function: FunctionExpr::MaxHorizontal,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyFlat,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
 }
 
 /// Create a new column with the the minimum value per row.
@@ -251,30 +258,38 @@ pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
     if exprs.is_empty() {
         return Expr::Columns(Vec::new());
     }
-    let func = |s1, s2| {
-        let df = DataFrame::new_no_checks(vec![s1, s2]);
-        df.hmin()
-    };
-    reduce_exprs(func, exprs).alias("min")
+
+    Expr::Function {
+        input: exprs,
+        function: FunctionExpr::MinHorizontal,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyFlat,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
 }
 
 /// Create a new column with the the sum of the values in each row.
 ///
 /// The name of the resulting column will be `"sum"`; use [`alias`](Expr::alias) to choose a different name.
 pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let mut exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| {
-        Ok(Some(
-            &s1.fill_null(FillNullStrategy::Zero).unwrap()
-                + &s2.fill_null(FillNullStrategy::Zero).unwrap(),
-        ))
-    };
-    let init = match exprs.pop() {
-        Some(e) => e,
-        // use u32 as that is not cast to float as eagerly
-        _ => lit(0u32),
-    };
-    fold_exprs(init, func, exprs).alias("sum")
+    let exprs = exprs.as_ref().to_vec();
+
+    Expr::Function {
+        input: exprs,
+        function: FunctionExpr::SumHorizontal,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyFlat,
+            input_wildcard_expansion: true,
+            auto_explode: true,
+            cast_to_supertypes: false,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
 }
 
 /// Folds the expressions from left to right keeping the first non-null values.

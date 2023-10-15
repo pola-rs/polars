@@ -121,21 +121,28 @@ def test_in_notebook() -> None:
 
 
 @pytest.mark.parametrize(
-    ("percentiles", "expected"),
+    ("percentiles", "expected", "inject_median"),
     [
-        (None, [0.5]),
-        (0.2, [0.2, 0.5]),
-        (0.5, [0.5]),
-        ((0.25, 0.75), [0.25, 0.5, 0.75]),
+        (None, [0.5], True),
+        (0.2, [0.2, 0.5], True),
+        (0.5, [0.5], True),
+        ((0.25, 0.75), [0.25, 0.5, 0.75], True),
         # Undocumented effect - percentiles get sorted.
         # Can be changed, this serves as documentation of current behaviour.
-        ((0.6, 0.3), [0.3, 0.5, 0.6]),
+        ((0.6, 0.3), [0.3, 0.5, 0.6], True),
+        (None, [], False),
+        (0.2, [0.2], False),
+        (0.5, [0.5], False),
+        ((0.25, 0.75), [0.25, 0.75], False),
+        ((0.6, 0.3), [0.3, 0.6], False),
     ],
 )
 def test_parse_percentiles(
-    percentiles: Sequence[float] | float | None, expected: Sequence[float]
+    percentiles: Sequence[float] | float | None,
+    expected: Sequence[float],
+    inject_median: bool,
 ) -> None:
-    assert parse_percentiles(percentiles) == expected
+    assert parse_percentiles(percentiles, inject_median=inject_median) == expected
 
 
 @pytest.mark.parametrize(("percentiles"), [(1.1), ([-0.1])])

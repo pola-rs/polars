@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use polars_arrow::prelude::ArrayRef;
+use arrow::legacy::prelude::ArrayRef;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 use polars_utils::IdxSize;
 

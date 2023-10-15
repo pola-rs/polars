@@ -10,6 +10,6 @@ fn main() -> PolarsResult<()> {
         ])
         .collect()?;
 
-    dbg!(df);
+    println!("{}", df);
     Ok(())
 }

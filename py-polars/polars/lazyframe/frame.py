@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import os
 import warnings
+from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -312,7 +313,7 @@ class LazyFrame:
     @classmethod
     def _scan_csv(
         cls,
-        source: str,
+        source: str | list[str] | list[Path],
         *,
         has_header: bool = True,
         separator: str = ",",
@@ -356,9 +357,16 @@ class LazyFrame:
                 dtype_list.append((k, py_type_to_dtype(v)))
         processed_null_values = _process_null_values(null_values)
 
+        if isinstance(source, list):
+            sources = source
+            source = None  # type: ignore[assignment]
+        else:
+            sources = []  # type: ignore[assignment]
+
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_csv(
             source,
+            sources,
             separator,
             has_header,
             ignore_errors,
@@ -388,7 +396,7 @@ class LazyFrame:
     @classmethod
     def _scan_parquet(
         cls,
-        source: str,
+        source: str | list[str] | list[Path],
         *,
         n_rows: int | None = None,
         cache: bool = True,
@@ -412,9 +420,21 @@ class LazyFrame:
         polars.io.scan_parquet
 
         """
+        if isinstance(source, list):
+            sources = source
+            source = None  # type: ignore[assignment]
+            can_use_fsspec = False
+        else:
+            can_use_fsspec = True
+            sources = []  # type: ignore[assignment]
+
         # try fsspec scanner
-        if not _is_local_file(source) and not _is_supported_cloud(source):
-            scan = _scan_parquet_fsspec(source, storage_options)
+        if (
+            can_use_fsspec
+            and not _is_local_file(source)  # type: ignore[arg-type]
+            and not _is_supported_cloud(source)  # type: ignore[arg-type]
+        ):
+            scan = _scan_parquet_fsspec(source, storage_options)  # type: ignore[arg-type]
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
@@ -427,6 +447,7 @@ class LazyFrame:
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(
             source,
+            sources,
             n_rows,
             cache,
             parallel,
@@ -443,7 +464,7 @@ class LazyFrame:
     @classmethod
     def _scan_ipc(
         cls,
-        source: str | Path,
+        source: str | Path | list[str] | list[Path],
         *,
         n_rows: int | None = None,
         cache: bool = True,
@@ -464,11 +485,17 @@ class LazyFrame:
 
         """
         if isinstance(source, (str, Path)):
+            can_use_fsspec = True
             source = normalize_filepath(source)
+            sources = []
+        else:
+            can_use_fsspec = False
+            sources = [normalize_filepath(source) for source in source]
+            source = None  # type: ignore[assignment]
 
         # try fsspec scanner
-        if not _is_local_file(source):
-            scan = _scan_ipc_fsspec(source, storage_options)
+        if can_use_fsspec and not _is_local_file(source):  # type: ignore[arg-type]
+            scan = _scan_ipc_fsspec(source, storage_options)  # type: ignore[arg-type]
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
@@ -478,6 +505,7 @@ class LazyFrame:
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_ipc(
             source,
+            sources,
             n_rows,
             cache,
             rechunk,
@@ -489,9 +517,10 @@ class LazyFrame:
     @classmethod
     def _scan_ndjson(
         cls,
-        source: str,
+        source: str | Path | list[str] | list[Path],
         *,
         infer_schema_length: int | None = None,
+        schema: SchemaDefinition | None = None,
         batch_size: int | None = None,
         n_rows: int | None = None,
         low_memory: bool = False,
@@ -509,10 +538,18 @@ class LazyFrame:
         polars.io.scan_ndjson
 
         """
+        if isinstance(source, (str, Path)):
+            source = normalize_filepath(source)
+            sources = []
+        else:
+            sources = [normalize_filepath(source) for source in source]
+            source = None  # type: ignore[assignment]
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_ndjson(
             source,
+            sources,
             infer_schema_length,
+            schema,
             batch_size,
             n_rows,
             low_memory,
@@ -687,10 +724,10 @@ class LazyFrame:
         ...     }
         ... )
         >>> lf.schema
-        {'foo': Int64, 'bar': Float64, 'ham': Utf8}
+        OrderedDict([('foo', Int64), ('bar', Float64), ('ham', Utf8)])
 
         """
-        return self._ldf.schema()
+        return OrderedDict(self._ldf.schema())
 
     def __dataframe_consortium_standard__(
         self, *, api_version: str | None = None
@@ -5361,21 +5398,25 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... )
         >>> lf.interpolate().collect()
         shape: (4, 3)
-        ┌─────┬──────┬─────┐
-        │ foo ┆ bar  ┆ baz │
-        │ --- ┆ ---  ┆ --- │
-        │ i64 ┆ i64  ┆ i64 │
-        ╞═════╪══════╪═════╡
-        │ 1   ┆ 6    ┆ 1   │
-        │ 5   ┆ 7    ┆ 3   │
-        │ 9   ┆ 9    ┆ 6   │
-        │ 10  ┆ null ┆ 9   │
-        └─────┴──────┴─────┘
+        ┌──────┬──────┬──────────┐
+        │ foo  ┆ bar  ┆ baz      │
+        │ ---  ┆ ---  ┆ ---      │
+        │ f64  ┆ f64  ┆ f64      │
+        ╞══════╪══════╪══════════╡
+        │ 1.0  ┆ 6.0  ┆ 1.0      │
+        │ 5.0  ┆ 7.0  ┆ 3.666667 │
+        │ 9.0  ┆ 9.0  ┆ 6.333333 │
+        │ 10.0 ┆ null ┆ 9.0      │
+        └──────┴──────┴──────────┘
 
         """
         return self.select(F.col("*").interpolate())
 
-    def unnest(self, columns: str | Sequence[str], *more_columns: str) -> Self:
+    def unnest(
+        self,
+        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
+        *more_columns: ColumnNameOrSelector,
+    ) -> Self:
         """
         Decompose struct columns into separate columns for each of their fields.
 
@@ -5423,11 +5464,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └────────┴─────┴─────┴──────┴───────────┴───────┘
 
         """
-        if isinstance(columns, str):
-            columns = [columns]
-        if more_columns:
-            columns = list(columns)
-            columns.extend(more_columns)
+        columns = _expand_selectors(self, columns, *more_columns)
         return self._from_pyldf(self._ldf.unnest(columns))
 
     def merge_sorted(self, other: LazyFrame, key: str) -> Self:
@@ -5526,45 +5563,42 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         on: str | Sequence[str] | None = None,
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
-        how: Literal["left", "inner"] = "left",
+        how: Literal["left", "inner", "outer"] = "left",
     ) -> Self:
         """
         Update the values in this `LazyFrame` with the non-null values in `other`.
-
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
 
         Parameters
         ----------
         other
             LazyFrame that will be used to update the values
         on
-            Column names that will be joined on.
-            If none given the row count is used.
+            Column names that will be joined on; if given ``None`` the implicit row
+            index is used as a join key instead.
         left_on
            Join column(s) of the left DataFrame.
         right_on
            Join column(s) of the right DataFrame.
-        how : {'left', 'inner'}
-            'left' will keep all rows from the left table. Rows may be duplicated if
-            multiple rows in right frame match left row's `on` key.
-            'inner' will remove rows that are not found in other
+        how : {'left', 'inner', 'outer'}
+            * 'left' will keep all rows from the left table; rows may be duplicated
+              if multiple rows in the right frame match the left row's key.
+            * 'inner' keeps only those rows where the key exists in both frames.
+            * 'outer' will update existing rows where the key matches while also
+              adding any new rows contained in the given frame.
 
         Notes
         -----
-        This is syntactic sugar for a left/inner join + coalesce
+        This is syntactic sugar for a join + coalesce (upsert) operation.
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "A": [1, 2, 3, 4],
         ...         "B": [400, 500, 600, 700],
         ...     }
         ... )
-        >>> df
+        >>> lf.collect()
         shape: (4, 2)
         ┌─────┬─────┐
         │ A   ┆ B   │
@@ -5576,39 +5610,67 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ 600 │
         │ 4   ┆ 700 │
         └─────┴─────┘
-        >>> new_df = pl.DataFrame(
+        >>> new_lf = pl.LazyFrame(
         ...     {
-        ...         "B": [4, None, 6],
-        ...         "C": [7, 8, 9],
+        ...         "B": [-66, None, -99],
+        ...         "C": [5, 3, 1],
         ...     }
         ... )
-        >>> new_df
-        shape: (3, 2)
-        ┌──────┬─────┐
-        │ B    ┆ C   │
-        │ ---  ┆ --- │
-        │ i64  ┆ i64 │
-        ╞══════╪═════╡
-        │ 4    ┆ 7   │
-        │ null ┆ 8   │
-        │ 6    ┆ 9   │
-        └──────┴─────┘
-        >>> df.update(new_df)
+
+        Update `df` values with the non-null values in `new_df`, by row index:
+
+        >>> lf.update(new_lf).collect()
         shape: (4, 2)
         ┌─────┬─────┐
         │ A   ┆ B   │
         │ --- ┆ --- │
         │ i64 ┆ i64 │
         ╞═════╪═════╡
-        │ 1   ┆ 4   │
+        │ 1   ┆ -66 │
         │ 2   ┆ 500 │
-        │ 3   ┆ 6   │
+        │ 3   ┆ -99 │
         │ 4   ┆ 700 │
         └─────┴─────┘
 
-        """
-        row_count_used = False
+        Update `df` values with the non-null values in `new_df`, by row index,
+        but only keeping those rows that are common to both frames:
 
+        >>> lf.update(new_lf, how="inner").collect()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ A   ┆ B   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ -66 │
+        │ 2   ┆ 500 │
+        │ 3   ┆ -99 │
+        └─────┴─────┘
+
+        Update `df` values with the non-null values in `new_df`, using an outer join
+        strategy that defines explicit join columns in each frame:
+
+        >>> lf.update(new_lf, left_on=["A"], right_on=["C"], how="outer").collect()
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ A   ┆ B   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ -99 │
+        │ 2   ┆ 500 │
+        │ 3   ┆ 600 │
+        │ 4   ┆ 700 │
+        │ 5   ┆ -66 │
+        └─────┴─────┘
+
+        """
+        if how not in ("left", "inner", "outer"):
+            raise ValueError(
+                f"`how` must be one of {{'left', 'inner', 'outer'}}; found {how!r}"
+            )
+
+        row_count_used = False
         if on is None:
             if left_on is None and right_on is None:
                 # no keys provided--use row count
@@ -5623,7 +5685,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     raise ValueError("missing join columns for left frame")
                 if right_on is None:
                     raise ValueError("missing join columns for right frame")
-
         else:
             # move on into left/right_on to simplify logic
             left_on = right_on = on
@@ -5642,8 +5703,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if name not in right_names:
                 raise ValueError(f"right join column {name!r} not found")
 
-        # no need to join if only join columns are in other
-        if len(other.columns) == len(right_on):
+        # no need to join if *only* join columns are in other (inner/left update only)
+        if how != "outer" and len(other.columns) == len(right_on):
             if row_count_used:
                 return self.drop(row_count_name)
             return self

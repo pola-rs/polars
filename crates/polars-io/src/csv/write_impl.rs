@@ -1,5 +1,6 @@
 use std::io::Write;
 
+use arrow::legacy::time_zone::Tz;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-time",
@@ -9,7 +10,6 @@ use arrow::temporal_conversions;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
 use memchr::{memchr, memchr2};
-use polars_arrow::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_core::series::SeriesIter;
 use polars_core::POOL;

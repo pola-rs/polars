@@ -544,11 +544,35 @@ def test_update() -> None:
 
     assert df1.update(df2, on="a").to_dict(False) == {"a": [1, 2, 3], "b": [4, 8, 9]}
 
-    a = pl.DataFrame({"a": [1, 2, 3]})
-    b = pl.DataFrame({"b": [4, 5]})
+    a = pl.LazyFrame({"a": [1, 2, 3]})
+    b = pl.LazyFrame({"b": [4, 5], "c": [3, 1]})
     c = a.update(b)
 
-    assert c.rows() == a.rows()
+    assert_frame_equal(a, c)
+
+    # check behaviour of 'how' param
+    assert [1, 2, 3] == list(
+        a.update(b, left_on="a", right_on="c").collect().to_series()
+    )
+    assert [1, 3] == list(
+        a.update(b, how="inner", left_on="a", right_on="c").collect().to_series()
+    )
+    assert [1, 2, 3, 4, 5] == sorted(
+        a.update(b.rename({"b": "a"}), how="outer", on="a").collect().to_series()
+    )
+
+    # edge-case #11684
+    x = pl.DataFrame({"a": [0, 1]})
+    y = pl.DataFrame({"a": [2, 3]})
+    assert [0, 1, 2, 3] == sorted(x.update(y, on="a", how="outer")["a"].to_list())
+
+    # disallowed join strategies
+    for join_strategy in ("cross", "anti", "semi"):
+        with pytest.raises(
+            ValueError,
+            match=f"`how` must be one of {{'left', 'inner', 'outer'}}; found '{join_strategy}'",
+        ):
+            a.update(b, how=join_strategy)  # type: ignore[arg-type]
 
 
 def test_join_frame_consistency() -> None:

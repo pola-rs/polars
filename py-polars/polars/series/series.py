@@ -1501,7 +1501,7 @@ class Series:
         return wrap_df(PyDataFrame([self._s]))
 
     def describe(
-        self, percentiles: Sequence[float] | float | None = (0.25, 0.75)
+        self, percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75)
     ) -> DataFrame:
         """
         Quick summary statistics of a series.
@@ -1514,6 +1514,10 @@ class Series:
         percentiles
             One or more percentiles to include in the summary statistics (if the
             series has a numeric dtype). All values must be in the range `[0, 1]`.
+
+        Notes
+        -----
+        The median is included by default as the 50% percentile.
 
         Returns
         -------
@@ -4790,6 +4794,25 @@ class Series:
 
         """
 
+    def cot(self) -> Series:
+        """
+        Compute the element-wise value for the cotangent.
+
+        Examples
+        --------
+        >>> import math
+        >>> s = pl.Series("a", [0.0, math.pi / 2.0, math.pi])
+        >>> s.cot()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+            inf
+            6.1232e-17
+            -8.1656e15
+        ]
+
+        """
+
     def arcsin(self) -> Series:
         """
         Compute the element-wise value for the inverse sine.
@@ -5872,13 +5895,13 @@ class Series:
         >>> s = pl.Series("a", [1, 2, None, None, 5])
         >>> s.interpolate()
         shape: (5,)
-        Series: 'a' [i64]
+        Series: 'a' [f64]
         [
-            1
-            2
-            3
-            4
-            5
+            1.0
+            2.0
+            3.0
+            4.0
+            5.0
         ]
 
         """

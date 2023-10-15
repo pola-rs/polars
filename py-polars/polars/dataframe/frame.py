@@ -4,7 +4,7 @@ from __future__ import annotations
 import contextlib
 import os
 import random
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from collections.abc import Sized
 from io import BytesIO, StringIO, TextIOWrapper
 from operator import itemgetter
@@ -1253,10 +1253,10 @@ class DataFrame:
         ...     }
         ... )
         >>> df.schema
-        {'foo': Int64, 'bar': Float64, 'ham': Utf8}
+        OrderedDict([('foo', Int64), ('bar', Float64), ('ham', Utf8)])
 
         """
-        return dict(zip(self.columns, self.dtypes))
+        return OrderedDict(zip(self.columns, self.dtypes))
 
     def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
         """
@@ -4079,7 +4079,7 @@ class DataFrame:
         return None
 
     def describe(
-        self, percentiles: Sequence[float] | float | None = (0.25, 0.75)
+        self, percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75)
     ) -> Self:
         """
         Summary statistics for a DataFrame.
@@ -4089,6 +4089,10 @@ class DataFrame:
         percentiles
             One or more percentiles to include in the summary statistics.
             All values must be in the range `[0, 1]`.
+
+        Notes
+        -----
+        The median is included by default as the 50% percentile.
 
         See Also
         --------
@@ -7041,8 +7045,8 @@ class DataFrame:
 
     def melt(
         self,
-        id_vars: Sequence[str] | str | None = None,
-        value_vars: Sequence[str] | str | None = None,
+        id_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        value_vars: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
     ) -> Self:
@@ -7052,17 +7056,17 @@ class DataFrame:
         Optionally leaves identifiers set.
 
         This function is useful to massage a DataFrame into a format where one or more
-        columns are identifier variables (id_vars), while all other columns, considered
-        measured variables (value_vars), are "unpivoted" to the row axis, leaving just
+        columns are identifier variables (id_vars) while all other columns, considered
+        measured variables (value_vars), are "unpivoted" to the row axis leaving just
         two non-identifier columns, 'variable' and 'value'.
 
         Parameters
         ----------
         id_vars
-            Columns to use as identifier variables.
+            Column(s) or selector(s) to use as identifier variables.
         value_vars
-            Values to use as identifier variables.
-            If `value_vars` is empty all columns that are not in `id_vars` will be used.
+            Column(s) or selector(s) to use as values variables; if `value_vars`
+            is empty all columns that are not in `id_vars` will be used.
         variable_name
             Name to give to the `variable` column. Defaults to "variable"
         value_name
@@ -7077,7 +7081,8 @@ class DataFrame:
         ...         "c": [2, 4, 6],
         ...     }
         ... )
-        >>> df.melt(id_vars="a", value_vars=["b", "c"])
+        >>> import polars.selectors as cs
+        >>> df.melt(id_vars="a", value_vars=cs.numeric())
         shape: (6, 3)
         ┌─────┬──────────┬───────┐
         │ a   ┆ variable ┆ value │
@@ -7093,14 +7098,9 @@ class DataFrame:
         └─────┴──────────┴───────┘
 
         """
-        if isinstance(value_vars, str):
-            value_vars = [value_vars]
-        if isinstance(id_vars, str):
-            id_vars = [id_vars]
-        if value_vars is None:
-            value_vars = []
-        if id_vars is None:
-            id_vars = []
+        value_vars = [] if value_vars is None else _expand_selectors(self, value_vars)
+        id_vars = [] if id_vars is None else _expand_selectors(self, id_vars)
+
         return self._from_pydf(
             self._df.melt(id_vars, value_vars, value_name, variable_name)
         )
@@ -9480,16 +9480,16 @@ class DataFrame:
         ... )
         >>> df.interpolate()
         shape: (4, 3)
-        ┌─────┬──────┬─────┐
-        │ foo ┆ bar  ┆ baz │
-        │ --- ┆ ---  ┆ --- │
-        │ i64 ┆ i64  ┆ i64 │
-        ╞═════╪══════╪═════╡
-        │ 1   ┆ 6    ┆ 1   │
-        │ 5   ┆ 7    ┆ 3   │
-        │ 9   ┆ 9    ┆ 6   │
-        │ 10  ┆ null ┆ 9   │
-        └─────┴──────┴─────┘
+        ┌──────┬──────┬──────────┐
+        │ foo  ┆ bar  ┆ baz      │
+        │ ---  ┆ ---  ┆ ---      │
+        │ f64  ┆ f64  ┆ f64      │
+        ╞══════╪══════╪══════════╡
+        │ 1.0  ┆ 6.0  ┆ 1.0      │
+        │ 5.0  ┆ 7.0  ┆ 3.666667 │
+        │ 9.0  ┆ 9.0  ┆ 6.333333 │
+        │ 10.0 ┆ null ┆ 9.0      │
+        └──────┴──────┴──────────┘
 
         """
         return self.select(F.col("*").interpolate())
@@ -9725,7 +9725,7 @@ class DataFrame:
         on: str | Sequence[str] | None = None,
         left_on: str | Sequence[str] | None = None,
         right_on: str | Sequence[str] | None = None,
-        how: Literal["left", "inner"] = "left",
+        how: Literal["left", "inner", "outer"] = "left",
     ) -> DataFrame:
         """
         Update the values in this `DataFrame` with the non-null values in `other`.
@@ -9750,10 +9750,12 @@ class DataFrame:
            Join column(s) of the left DataFrame.
         right_on
            Join column(s) of the right DataFrame.
-        how : {'left', 'inner'}
-            'left' will keep all rows from the left table. Rows may be duplicated if
-            multiple rows in right frame match left row's `on` key.
-            'inner' will remove rows that are not found in other
+        how : {'left', 'inner', 'outer'}
+            * 'left' will keep all rows from the left table; rows may be duplicated
+              if multiple rows in the right frame match the left row's key.
+            * 'inner' keeps only those rows where the key exists in both frames.
+            * 'outer' will update existing rows where the key matches while also
+              adding any new rows contained in the given frame.
 
         Examples
         --------
@@ -9777,21 +9779,13 @@ class DataFrame:
         └─────┴─────┘
         >>> new_df = pl.DataFrame(
         ...     {
-        ...         "B": [4, None, 6],
-        ...         "C": [7, 8, 9],
+        ...         "B": [-66, None, -99],
+        ...         "C": [5, 3, 1],
         ...     }
         ... )
-        >>> new_df
-        shape: (3, 2)
-        ┌──────┬─────┐
-        │ B    ┆ C   │
-        │ ---  ┆ --- │
-        │ i64  ┆ i64 │
-        ╞══════╪═════╡
-        │ 4    ┆ 7   │
-        │ null ┆ 8   │
-        │ 6    ┆ 9   │
-        └──────┴─────┘
+
+        Update `df` values with the non-null values in `new_df`, by row index:
+
         >>> df.update(new_df)
         shape: (4, 2)
         ┌─────┬─────┐
@@ -9799,10 +9793,42 @@ class DataFrame:
         │ --- ┆ --- │
         │ i64 ┆ i64 │
         ╞═════╪═════╡
-        │ 1   ┆ 4   │
+        │ 1   ┆ -66 │
         │ 2   ┆ 500 │
-        │ 3   ┆ 6   │
+        │ 3   ┆ -99 │
         │ 4   ┆ 700 │
+        └─────┴─────┘
+
+        Update `df` values with the non-null values in `new_df`, by row index,
+        but only keeping those rows that are common to both frames:
+
+        >>> df.update(new_df, how="inner")
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ A   ┆ B   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ -66 │
+        │ 2   ┆ 500 │
+        │ 3   ┆ -99 │
+        └─────┴─────┘
+
+        Update `df` values with the non-null values in `new_df`, using an outer join
+        strategy that defines explicit join columns in each frame:
+
+        >>> df.update(new_df, left_on=["A"], right_on=["C"], how="outer")
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ A   ┆ B   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ -99 │
+        │ 2   ┆ 500 │
+        │ 3   ┆ 600 │
+        │ 4   ┆ 700 │
+        │ 5   ┆ -66 │
         └─────┴─────┘
 
         """

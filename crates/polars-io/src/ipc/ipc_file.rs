@@ -39,7 +39,7 @@ use arrow::io::ipc::read;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 
-use super::{finish_reader, ArrowReader, ArrowResult};
+use super::{finish_reader, ArrowReader};
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
@@ -76,15 +76,13 @@ pub struct IpcReader<R: MmapBytesReader> {
 }
 
 fn check_mmap_err(err: PolarsError) -> PolarsResult<()> {
-    if let PolarsError::ArrowError(ref e) = err {
-        if let arrow::error::Error::NotYetImplemented(s) = e.as_ref() {
-            if s == "mmap can only be done on uncompressed IPC files" {
-                eprintln!(
-                    "Could not mmap compressed IPC file, defaulting to normal read. \
-                    Toggle off 'memory_map' to silence this warning."
-                );
-                return Ok(());
-            }
+    if let PolarsError::ComputeError(s) = &err {
+        if s.as_ref() == "mmap can only be done on uncompressed IPC files" {
+            eprintln!(
+                "Could not mmap compressed IPC file, defaulting to normal read. \
+                Toggle off 'memory_map' to silence this warning."
+            );
+            return Ok(());
         }
     }
     Err(err)
@@ -185,7 +183,7 @@ impl<R: MmapBytesReader> ArrowReader for read::FileReader<R>
 where
     R: Read + Seek,
 {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
+    fn next_record_batch(&mut self) -> PolarsResult<Option<ArrowChunk>> {
         self.next().map_or(Ok(None), |v| v.map(Some))
     }
 }

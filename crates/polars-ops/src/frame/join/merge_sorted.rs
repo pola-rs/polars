@@ -1,4 +1,4 @@
-use polars_arrow::utils::{CustomIterTools, FromTrustedLenIterator};
+use arrow::legacy::utils::{CustomIterTools, FromTrustedLenIterator};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 

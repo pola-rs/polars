@@ -1,6 +1,6 @@
+use arrow::legacy::kernels::float::*;
+use arrow::legacy::kernels::set::set_at_nulls;
 use num_traits::Float;
-use polars_arrow::kernels::float::*;
-use polars_arrow::kernels::set::set_at_nulls;
 
 use crate::prelude::*;
 

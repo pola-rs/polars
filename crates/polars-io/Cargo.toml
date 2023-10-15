@@ -9,7 +9,6 @@ repository = { workspace = true }
 description = "IO related logic for the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { workspace = true }
 polars-core = { workspace = true }
 polars-error = { workspace = true, default-features = false }
 polars-json = { workspace = true, optional = true }
@@ -38,7 +37,7 @@ rayon = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, optional = true }
 ryu = { workspace = true, optional = true }
-serde = { workspace = true, features = ["derive"], optional = true }
+serde = { workspace = true, features = ["derive", "rc"], optional = true }
 serde_json = { version = "1", default-features = false, features = ["alloc", "raw_value"], optional = true }
 simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
@@ -65,6 +64,7 @@ json = [
   "dtype-struct",
   "csv",
 ]
+serde = ["dep:serde", "polars-core/serde-lazy"]
 # support for arrows ipc file parsing
 ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrows streaming ipc file parsing

@@ -1,14 +1,13 @@
+use arrow;
 use arrow::array::{Array, PrimitiveArray};
 use arrow::compute::cast::{cast, CastOptions};
 use arrow::compute::temporal;
-use arrow::error::Result as ArrowResult;
-use polars_arrow::export::arrow;
 use polars_core::prelude::*;
 
 use super::*;
 
 fn cast_and_apply<
-    F: Fn(&dyn Array) -> ArrowResult<PrimitiveArray<T::Native>>,
+    F: Fn(&dyn Array) -> PolarsResult<PrimitiveArray<T::Native>>,
     T: PolarsNumericType,
 >(
     ca: &DatetimeChunked,

@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
-pub use polars_arrow::kernels::ewm::EWMOptions;
-use polars_arrow::kernels::ewm::{ewm_mean, ewm_std, ewm_var};
+pub use arrow::legacy::kernels::ewm::EWMOptions;
+use arrow::legacy::kernels::ewm::{ewm_mean, ewm_std, ewm_var};
 
 use crate::prelude::*;
 

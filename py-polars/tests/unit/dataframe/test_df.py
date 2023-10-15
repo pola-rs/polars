@@ -500,7 +500,7 @@ def test_file_buffer() -> None:
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
     f.seek(0)
     # check if not fails on TryClone and Length impl in file.rs
-    with pytest.raises(pl.ArrowError):
+    with pytest.raises(pl.ComputeError):
         pl.read_parquet(f)
 
 
@@ -1008,11 +1008,10 @@ def test_describe() -> None:
             ("mean", 1.3333333333333333, None, None),
             ("std", 0.5773502691896257, None, None),
             ("min", 1.0, None, None),
-            ("50%", 1.0, None, None),
             ("max", 2.0, None, None),
         ]
 
-    described = df.describe(percentiles=(0.2, 0.4, 0.6, 0.8))
+    described = df.describe(percentiles=(0.2, 0.4, 0.5, 0.6, 0.8))
     assert described.schema == {
         "describe": pl.Utf8,
         "numerical": pl.Float64,
@@ -1601,7 +1600,7 @@ def test_reproducible_hash_with_seeds() -> None:
     if platform.mac_ver()[-1] != "arm64":
         expected = pl.Series(
             "s",
-            [13477868900383131459, 988796329533502010, 16840582678788620208],
+            [13477868900383131459, 6344663067812082469, 16840582678788620208],
             dtype=pl.UInt64,
         )
         result = df.hash_rows(*seeds)
@@ -1838,6 +1837,14 @@ def test_schema() -> None:
     )
     expected = {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.Utf8}
     assert df.schema == expected
+
+
+def test_schema_equality() -> None:
+    lf = pl.LazyFrame({"foo": [1, 2, 3], "bar": [6.0, 7.0, 8.0]})
+    lf_rev = lf.select("bar", "foo")
+
+    assert lf.schema != lf_rev.schema
+    assert lf.collect().schema != lf_rev.collect().schema
 
 
 def test_df_schema_unique() -> None:

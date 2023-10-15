@@ -21,7 +21,7 @@ pub trait AnonymousScan: Send + Sync {
 
     /// function to supply the schema.
     /// Allows for an optional infer schema argument for data sources with dynamic schemas
-    fn schema(&self, _infer_schema_length: Option<usize>) -> PolarsResult<Schema> {
+    fn schema(&self, _infer_schema_length: Option<usize>) -> PolarsResult<SchemaRef> {
         polars_bail!(ComputeError: "must supply either a schema or a schema function");
     }
     /// specify if the scan provider should allow predicate pushdowns
