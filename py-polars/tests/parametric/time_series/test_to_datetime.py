@@ -32,7 +32,7 @@ def test_to_datetime(datetimes: datetime, fmt: str) -> None:
                 or (("%I" in fmt) ^ ("%p" in fmt))
                 or (("%H" in fmt) ^ ("%p" in fmt))
             )
-            and "Invalid format string" in str(exc)
+            and "invalid format string" in str(exc)
         ) or (
             (
                 not any(day in fmt for day in ("%d", "%j"))
