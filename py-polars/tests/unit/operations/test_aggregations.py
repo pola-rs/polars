@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -101,7 +102,7 @@ def test_median() -> None:
 
 def test_single_element_std() -> None:
     s = pl.Series([1])
-    assert s.std(ddof=1) is None
+    assert math.isnan(s.std(ddof=1))
     assert s.std(ddof=0) == 0.0
 
 

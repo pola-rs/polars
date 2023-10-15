@@ -17,7 +17,7 @@ where
     fn var(&self, ddof: u8) -> Option<f64> {
         let n_values = self.len() - self.null_count();
         if n_values <= ddof as usize {
-            return None;
+            return Some(f64::NAN);
         }
 
         let mean = self.mean()?;
