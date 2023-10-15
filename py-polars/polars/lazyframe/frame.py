@@ -65,6 +65,7 @@ from polars.utils.deprecation import (
     deprecate_function,
     deprecate_renamed_function,
     deprecate_renamed_parameter,
+    issue_deprecation_warning,
 )
 from polars.utils.various import (
     _in_notebook,
@@ -2649,12 +2650,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 is_mask := is_bool_sequence(p)
             ):
                 p = constraints.pop("predicate")
-                warnings.warn(
+                issue_deprecation_warning(
                     "`filter` no longer takes a 'predicate' parameter.\n"
                     "To silence this warning you should omit the keyword and pass "
                     "as a positional argument instead.",
-                    DeprecationWarning,
-                    stacklevel=find_stacklevel(),
+                    version="0.19.9",
                 )
                 if is_mask:
                     boolean_masks.append(pl.Series(p, dtype=Boolean))
