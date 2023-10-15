@@ -273,68 +273,69 @@ pub fn duration(args: DurationArgs) -> Expr {
         let mut microseconds = s[6].cast(&DataType::Int64).unwrap();
         let mut nanoseconds = s[7].cast(&DataType::Int64).unwrap();
 
-        let max_len = s.iter().map(|s| s.len()).max().unwrap();
         let is_scalar = |s: &Series| s.len() == 1;
-        let is_not_zero_scalar =
-            |s: &Series| !(is_scalar(s) && s.get(0).unwrap() == AnyValue::Int64(0));
+        let is_zero_scalar = |s: &Series| is_scalar(s) && s.get(0).unwrap() == AnyValue::Int64(0);
 
+        // Process subseconds
+        let max_len = s.iter().map(|s| s.len()).max().unwrap();
         let mut duration = match args.time_unit {
-            TimeUnit::Nanoseconds => {
-                if is_scalar(&nanoseconds) {
-                    nanoseconds = nanoseconds.new_from_index(0, max_len);
-                }
-                if is_not_zero_scalar(&microseconds) {
-                    nanoseconds = nanoseconds + (microseconds * 1_000);
-                }
-                if is_not_zero_scalar(&milliseconds) {
-                    nanoseconds = nanoseconds + (milliseconds * 1_000_000);
-                }
-                nanoseconds
-            },
             TimeUnit::Microseconds => {
                 if is_scalar(&microseconds) {
                     microseconds = microseconds.new_from_index(0, max_len);
                 }
-                if is_not_zero_scalar(&nanoseconds) {
+                if !is_zero_scalar(&nanoseconds) {
                     microseconds = microseconds + (nanoseconds / 1_000);
                 }
-                if is_not_zero_scalar(&milliseconds) {
+                if !is_zero_scalar(&milliseconds) {
                     microseconds = microseconds + (milliseconds * 1_000);
                 }
                 microseconds
+            },
+            TimeUnit::Nanoseconds => {
+                if is_scalar(&nanoseconds) {
+                    nanoseconds = nanoseconds.new_from_index(0, max_len);
+                }
+                if !is_zero_scalar(&microseconds) {
+                    nanoseconds = nanoseconds + (microseconds * 1_000);
+                }
+                if !is_zero_scalar(&milliseconds) {
+                    nanoseconds = nanoseconds + (milliseconds * 1_000_000);
+                }
+                nanoseconds
             },
             TimeUnit::Milliseconds => {
                 if is_scalar(&milliseconds) {
                     milliseconds = milliseconds.new_from_index(0, max_len);
                 }
-                if is_not_zero_scalar(&nanoseconds) {
+                if !is_zero_scalar(&nanoseconds) {
                     milliseconds = milliseconds + (nanoseconds / 1_000_000);
                 }
-                if is_not_zero_scalar(&microseconds) {
+                if !is_zero_scalar(&microseconds) {
                     milliseconds = milliseconds + (microseconds / 1_000);
                 }
                 milliseconds
             },
         };
 
+        // Process other duration specifiers
         let multiplier = match args.time_unit {
             TimeUnit::Nanoseconds => NANOSECONDS,
             TimeUnit::Microseconds => MICROSECONDS,
             TimeUnit::Milliseconds => MILLISECONDS,
         };
-        if is_not_zero_scalar(&seconds) {
+        if !is_zero_scalar(&seconds) {
             duration = duration + seconds * multiplier;
         }
-        if is_not_zero_scalar(&minutes) {
+        if !is_zero_scalar(&minutes) {
             duration = duration + minutes * (multiplier * 60);
         }
-        if is_not_zero_scalar(&hours) {
+        if !is_zero_scalar(&hours) {
             duration = duration + hours * (multiplier * 60 * 60);
         }
-        if is_not_zero_scalar(&days) {
+        if !is_zero_scalar(&days) {
             duration = duration + days * (multiplier * SECONDS_IN_DAY);
         }
-        if is_not_zero_scalar(&weeks) {
+        if !is_zero_scalar(&weeks) {
             duration = duration + weeks * (multiplier * SECONDS_IN_DAY * 7);
         }
 
@@ -361,5 +362,6 @@ pub fn duration(args: DurationArgs) -> Expr {
             fmt_str: "duration",
             ..Default::default()
         },
-    }.alias("duration")
+    }
+    .alias("duration")
 }
