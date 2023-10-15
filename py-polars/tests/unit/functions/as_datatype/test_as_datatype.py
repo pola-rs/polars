@@ -94,8 +94,6 @@ def test_time() -> None:
     assert_series_equal(out["ms2"], df["micro"].rename("ms2"))
 
 
-
-
 def test_list_concat() -> None:
     s0 = pl.Series("a", [[1, 2]])
     s1 = pl.Series("b", [[3, 4, 5]])
