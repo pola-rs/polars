@@ -2647,16 +2647,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴─────┘
 
         """
-        # note: identify masks separately from predicates
         all_predicates: list[pl.Expr] = []
         boolean_masks = []
+
+        # note: identify masks separately from predicates
         for p in predicates:
             if is_bool_sequence(p):
                 boolean_masks.append(pl.Series(p, dtype=Boolean))
-            elif isinstance(p, Sequence) and all(isinstance(x, pl.Expr) for x in p):
-                all_predicates.extend(wrap_expr(parse_as_expression(x)) for x in p)
             else:
-                all_predicates.append(wrap_expr(parse_as_expression(p)))  # type: ignore[arg-type]
+                all_predicates.extend(
+                    wrap_expr(x) for x in parse_as_list_of_expressions(p)
+                )
 
         # identify deprecated usage of 'predicate' parameter
         if "predicate" in constraints:
