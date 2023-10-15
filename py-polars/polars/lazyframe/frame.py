@@ -2641,7 +2641,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if is_bool_sequence(p):
                 boolean_masks.append(pl.Series(p, dtype=Boolean))
             else:
-                all_predicates.append(parse_as_expression(p, wrap=True))
+                all_predicates.append(wrap_expr(parse_as_expression(p)))
 
         # identify deprecated usage of 'predicate' parameter
         if "predicate" in constraints:
@@ -2659,7 +2659,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 if is_mask:
                     boolean_masks.append(pl.Series(p, dtype=Boolean))
                 else:
-                    all_predicates.append(p)
+                    all_predicates.append(p)  # type: ignore[arg-type]
 
         # unpack equality constraints from kwargs
         all_predicates.extend(

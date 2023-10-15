@@ -77,7 +77,6 @@ def parse_as_expression(
     *,
     str_as_lit: bool = False,
     structify: bool = False,
-    wrap: bool = False,
 ) -> PyExpr | Expr:
     """
     Parse a single input into an expression.
@@ -91,8 +90,6 @@ def parse_as_expression(
         strings are parsed as column names.
     structify
         Convert multi-column expressions to a single struct expression.
-    wrap
-        Return an ``Expr`` object rather than a ``PyExpr`` object.
 
     """
     if isinstance(input, pl.Expr):
@@ -120,7 +117,7 @@ def parse_as_expression(
     if structify:
         expr = _structify_expression(expr)
 
-    return expr if wrap else expr._pyexpr
+    return expr._pyexpr
 
 
 def _structify_expression(expr: Expr) -> Expr:
