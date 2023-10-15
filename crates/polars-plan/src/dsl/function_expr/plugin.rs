@@ -46,6 +46,10 @@ pub(super) unsafe fn call_plugin(
 ) -> PolarsResult<Series> {
     let lib = get_lib(lib)?;
 
+    // *const SeriesExprot: pointer to Box<SeriesExport>
+    // * usize: length of that pointer
+    // * : json serialized kwargs
+    // *mut SeriesExport: pointer where return value should be writtten.
     let symbol: libloading::Symbol<
         unsafe extern "C" fn(
             *const SeriesExport,
@@ -84,6 +88,9 @@ pub(super) unsafe fn plugin_field(
 ) -> PolarsResult<Field> {
     let lib = get_lib(lib)?;
 
+    // *const ArrowSchema: pointer to heap Box<ArrowSchema>
+    // usize: length of the boxed slice
+    // *mut ArrowSchema: pointer where the return value can be written
     let symbol: libloading::Symbol<
         unsafe extern "C" fn(*const ArrowSchema, usize, *mut ArrowSchema),
     > = lib.get(symbol.as_bytes()).unwrap();
