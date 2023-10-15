@@ -255,8 +255,11 @@ impl DurationArgs {
 /// Construct a column of [`Duration`] from the provided [`DurationArgs`]
 #[cfg(feature = "temporal")]
 pub fn duration(args: DurationArgs) -> Expr {
+    println!("{}", args.milliseconds);
+    println!("{}", args.microseconds);
+    println!("{}", args.nanoseconds);
+
     let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-        assert_eq!(s.len(), 8);
         if s.iter().any(|s| s.is_empty()) {
             return Ok(Some(Series::new_empty(
                 s[0].name(),
@@ -264,20 +267,49 @@ pub fn duration(args: DurationArgs) -> Expr {
             )));
         }
 
-        let days = s[0].cast(&DataType::Int64).unwrap();
-        let seconds = s[1].cast(&DataType::Int64).unwrap();
-        let mut nanoseconds = s[2].cast(&DataType::Int64).unwrap();
-        let mut microseconds = s[3].cast(&DataType::Int64).unwrap();
-        let mut milliseconds = s[4].cast(&DataType::Int64).unwrap();
-        let minutes = s[5].cast(&DataType::Int64).unwrap();
-        let hours = s[6].cast(&DataType::Int64).unwrap();
-        let weeks = s[7].cast(&DataType::Int64).unwrap();
+        // TODO: Handle overflow for UInt64
+        let weeks = s[0].cast(&DataType::Int64).unwrap();
+        let days = s[1].cast(&DataType::Int64).unwrap();
+        let hours = s[2].cast(&DataType::Int64).unwrap();
+        let minutes = s[3].cast(&DataType::Int64).unwrap();
+        let seconds = s[4].cast(&DataType::Int64).unwrap();
+        let mut milliseconds = s[5].cast(&DataType::Int64).unwrap();
+        let mut microseconds = s[6].cast(&DataType::Int64).unwrap();
+        let mut nanoseconds = s[7].cast(&DataType::Int64).unwrap();
 
         let max_len = s.iter().map(|s| s.len()).max().unwrap();
+        let is_scalar = |s: &Series| s.len() == 1;
+        let is_not_zero_scalar =
+            |s: &Series| !(is_scalar(s) && s.get(0).unwrap() == AnyValue::Int64(0));
 
-        let condition = |s: &Series| {
-            // check if not literal 0 || full column
-            (s.len() != max_len && s.get(0).unwrap() != AnyValue::Int64(0)) || s.len() == max_len
+        let mut duration = match args.time_unit {
+            TimeUnit::Nanoseconds => {
+                if is_scalar(&nanoseconds) {
+                    nanoseconds = nanoseconds.new_from_index(0, max_len);
+                }
+                if is_not_zero_scalar(&microseconds) {
+                    nanoseconds = nanoseconds + (microseconds * 1_000);
+                }
+                if is_not_zero_scalar(&milliseconds) {
+                    nanoseconds = nanoseconds + (milliseconds * 1_000_000);
+                }
+                nanoseconds
+            },
+            TimeUnit::Microseconds => {
+                if is_scalar(&microseconds) {
+                    microseconds = microseconds.new_from_index(0, max_len);
+                }
+                if is_not_zero_scalar(&milliseconds) {
+                    microseconds = microseconds + (milliseconds * 1_000);
+                }
+                microseconds
+            },
+            TimeUnit::Milliseconds => {
+                if is_scalar(&milliseconds) {
+                    milliseconds = milliseconds.new_from_index(0, max_len);
+                }
+                milliseconds
+            },
         };
 
         let multiplier = match args.time_unit {
@@ -285,66 +317,36 @@ pub fn duration(args: DurationArgs) -> Expr {
             TimeUnit::Microseconds => MICROSECONDS,
             TimeUnit::Milliseconds => MILLISECONDS,
         };
-
-        let mut duration = match args.time_unit {
-            TimeUnit::Nanoseconds => {
-                if nanoseconds.len() != max_len {
-                    nanoseconds = nanoseconds.new_from_index(0, max_len);
-                }
-                if condition(&microseconds) {
-                    nanoseconds = nanoseconds + (microseconds * 1_000);
-                }
-                if condition(&milliseconds) {
-                    nanoseconds = nanoseconds + (milliseconds * 1_000_000);
-                }
-                nanoseconds
-            },
-            TimeUnit::Microseconds => {
-                if microseconds.len() != max_len {
-                    microseconds = microseconds.new_from_index(0, max_len);
-                }
-                if condition(&milliseconds) {
-                    microseconds = microseconds + (milliseconds * 1_000);
-                }
-                microseconds
-            },
-            TimeUnit::Milliseconds => {
-                if milliseconds.len() != max_len {
-                    milliseconds = milliseconds.new_from_index(0, max_len);
-                }
-                milliseconds
-            },
-        };
-
-        if condition(&seconds) {
-            duration = duration + (seconds * multiplier);
+        if is_not_zero_scalar(&seconds) {
+            duration = duration + seconds * multiplier;
         }
-        if condition(&days) {
-            duration = duration + (days * multiplier * SECONDS_IN_DAY);
+        if is_not_zero_scalar(&minutes) {
+            duration = duration + minutes * (multiplier * 60);
         }
-        if condition(&minutes) {
-            duration = duration + minutes * multiplier * 60;
+        if is_not_zero_scalar(&hours) {
+            duration = duration + hours * (multiplier * 60 * 60);
         }
-        if condition(&hours) {
-            duration = duration + hours * multiplier * 60 * 60;
+        if is_not_zero_scalar(&days) {
+            duration = duration + days * (multiplier * SECONDS_IN_DAY);
         }
-        if condition(&weeks) {
-            duration = duration + weeks * multiplier * SECONDS_IN_DAY * 7;
+        if is_not_zero_scalar(&weeks) {
+            duration = duration + weeks * (multiplier * SECONDS_IN_DAY * 7);
         }
 
         duration.cast(&DataType::Duration(args.time_unit)).map(Some)
     }) as Arc<dyn SeriesUdf>);
 
+    // TODO: Make non-anonymous
     Expr::AnonymousFunction {
         input: vec![
-            args.days,
-            args.seconds,
-            args.nanoseconds,
-            args.microseconds,
-            args.milliseconds,
-            args.minutes,
-            args.hours,
             args.weeks,
+            args.days,
+            args.hours,
+            args.minutes,
+            args.seconds,
+            args.milliseconds,
+            args.microseconds,
+            args.nanoseconds,
         ],
         function,
         output_type: GetOutput::from_type(DataType::Duration(args.time_unit)),
@@ -354,6 +356,5 @@ pub fn duration(args: DurationArgs) -> Expr {
             fmt_str: "duration",
             ..Default::default()
         },
-    }
-    .alias("duration")
+    }.alias("duration")
 }
