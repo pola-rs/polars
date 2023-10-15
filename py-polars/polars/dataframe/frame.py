@@ -136,6 +136,7 @@ if TYPE_CHECKING:
         FrameInitTypes,
         IndexOrder,
         IntoExpr,
+        IntoExprColumn,
         IpcCompression,
         JoinStrategy,
         JoinValidation,
@@ -3988,11 +3989,7 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        return (
-            self.lazy()
-            .filter(*predicates, **constraints)  # type: ignore[arg-type]
-            .collect(_eager=True)
-        )
+        return self.lazy().filter(*predicates, **constraints).collect(_eager=True)
 
     @overload
     def glimpse(

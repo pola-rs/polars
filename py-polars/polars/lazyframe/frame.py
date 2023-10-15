@@ -87,6 +87,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from polars import DataFrame, Expr
+    from polars.dependencies import numpy as np
     from polars.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
@@ -96,6 +97,7 @@ if TYPE_CHECKING:
         FillNullStrategy,
         FrameInitTypes,
         IntoExpr,
+        IntoExprColumn,
         JoinStrategy,
         JoinValidation,
         Label,
@@ -2546,7 +2548,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.clone())
 
-    def filter(self, *predicates: IntoExpr, **constraints: Any) -> Self:
+    def filter(
+        self,
+        *predicates: IntoExprColumn | bool | list[bool] | np.ndarray[Any, Any],
+        **constraints: Any,
+    ) -> Self:
         """
         Filter the rows in the LazyFrame based on a predicate expression.
 
@@ -2641,7 +2647,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if is_bool_sequence(p):
                 boolean_masks.append(pl.Series(p, dtype=Boolean))
             else:
-                all_predicates.append(wrap_expr(parse_as_expression(p)))
+                all_predicates.append(wrap_expr(parse_as_expression(p)))  # type: ignore[arg-type]
 
         # identify deprecated usage of 'predicate' parameter
         if "predicate" in constraints:
