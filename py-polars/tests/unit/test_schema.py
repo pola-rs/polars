@@ -251,15 +251,13 @@ def test_shrink_dtype() -> None:
 
 
 def test_diff_duration_dtype() -> None:
-    dates = ["2022-01-01", "2022-01-02", "2022-01-03", "2022-01-03"]
-    df = pl.DataFrame({"date": pl.Series(dates).str.strptime(pl.Date, "%Y-%m-%d")})
+    data = ["2022-01-01", "2022-01-02", "2022-01-03", "2022-01-03"]
+    df = pl.Series("date", data).str.to_date("%Y-%m-%d").to_frame()
 
-    assert df.select(pl.col("date").diff() < pl.duration(days=1))["date"].to_list() == [
-        None,
-        False,
-        False,
-        True,
-    ]
+    result = df.select(pl.col("date").diff() < pl.duration(days=1))
+
+    expected = pl.Series("date", [None, False, False, True]).to_frame()
+    assert_frame_equal(result, expected)
 
 
 def test_schema_owned_arithmetic_5669() -> None:
