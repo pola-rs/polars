@@ -2659,7 +2659,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 if is_mask:
                     boolean_masks.append(pl.Series(p, dtype=Boolean))
                 else:
-                    all_predicates += (p,)
+                    all_predicates.append(p)
 
         # unpack equality constraints from kwargs
         all_predicates.extend(
