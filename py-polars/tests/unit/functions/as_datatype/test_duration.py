@@ -141,3 +141,21 @@ def test_add_duration_3786() -> None:
         "add_milliseconds": [datetime(2022, 1, 1, 0, 0, 0, 1000)],
         "add_hours": [datetime(2022, 1, 1, 1, 0)],
     }
+
+
+@pytest.mark.parametrize(
+    ("time_unit", "ms", "us", "ns"),
+    [
+        ("ms", 11, 0, 0),
+        ("us", 0, 11_007, 0),
+        ("ns", 0, 0, 11_007_003),
+    ],
+)
+def test_duration_subseconds_us(time_unit: TimeUnit, ms: int, us: int, ns: int) -> None:
+    result = pl.duration(
+        milliseconds=6, microseconds=4_005, nanoseconds=1_002_003, time_unit=time_unit
+    )
+    expected = pl.duration(
+        milliseconds=ms, microseconds=us, nanoseconds=ns, time_unit=time_unit
+    )
+    assert_frame_equal(pl.select(result), pl.select(expected))
