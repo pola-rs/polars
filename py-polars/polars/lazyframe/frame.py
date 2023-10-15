@@ -2550,7 +2550,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def filter(
         self,
-        *predicates: IntoExprColumn | bool | list[bool] | np.ndarray[Any, Any],
+        *predicates: (
+            IntoExprColumn
+            | Iterable[IntoExprColumn]
+            | bool
+            | list[bool]
+            | np.ndarray[Any, Any]
+        ),
         **constraints: Any,
     ) -> Self:
         """
@@ -2642,10 +2648,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         # note: identify masks separately from predicates
-        all_predicates, boolean_masks = [], []
+        all_predicates: list[pl.Expr] = []
+        boolean_masks = []
         for p in predicates:
             if is_bool_sequence(p):
                 boolean_masks.append(pl.Series(p, dtype=Boolean))
+            elif isinstance(p, Sequence) and all(isinstance(x, pl.Expr) for x in p):
+                all_predicates.extend(wrap_expr(parse_as_expression(x)) for x in p)
             else:
                 all_predicates.append(wrap_expr(parse_as_expression(p)))  # type: ignore[arg-type]
 

@@ -2820,7 +2820,15 @@ def test_filter_multiple_predicates() -> None:
     )
 
     # using multiple predicates
-    out = df.filter(pl.col("a") == 1, pl.col("b") <= 2)
+    out = df.filter(pl.col("a") == 1, pl.col("b") <= 2)  # positional
+    expected = pl.DataFrame({"a": [1, 1, 1], "b": [1, 1, 2], "c": [1, 1, 2]})
+    assert_frame_equal(out, expected)
+
+    out = df.filter([pl.col("a") == 1, pl.col("b") <= 2])  # as list
+    expected = pl.DataFrame({"a": [1, 1, 1], "b": [1, 1, 2], "c": [1, 1, 2]})
+    assert_frame_equal(out, expected)
+
+    out = df.filter(*[pl.col("a") == 1, pl.col("b") <= 2])  # *splat
     expected = pl.DataFrame({"a": [1, 1, 1], "b": [1, 1, 2], "c": [1, 1, 2]})
     assert_frame_equal(out, expected)
 

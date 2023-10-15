@@ -3900,7 +3900,13 @@ class DataFrame:
 
     def filter(
         self,
-        *predicates: IntoExprColumn | bool | list[bool] | np.ndarray[Any, Any],
+        *predicates: (
+            IntoExprColumn
+            | Iterable[IntoExprColumn]
+            | bool
+            | list[bool]
+            | np.ndarray[Any, Any]
+        ),
         **constraints: Any,
     ) -> DataFrame:
         """
