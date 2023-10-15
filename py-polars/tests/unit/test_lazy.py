@@ -163,33 +163,41 @@ def test_filter_str() -> None:
 
 def test_filter_multiple_predicates() -> None:
     ldf = pl.LazyFrame(
-        {"a": [1, 1, 1, 2, 2], "b": [1, 1, 2, 2, 2], "c": [1, 1, 2, 3, 4]}
+        {
+            "a": [1, 1, 1, 2, 2],
+            "b": [1, 1, 2, 2, 2],
+            "c": [1, 1, 2, 3, 4],
+        }
     )
 
     # using multiple predicates
-    out = ldf.filter(pl.col("a") == 1, pl.col("b") <= 2).collect()
+    # multiple predicates
     expected = pl.DataFrame({"a": [1, 1, 1], "b": [1, 1, 2], "c": [1, 1, 2]})
-    assert_frame_equal(out, expected)
+    for out in (
+        ldf.filter(pl.col("a") == 1, pl.col("b") <= 2),  # positional/splat
+        ldf.filter([pl.col("a") == 1, pl.col("b") <= 2]),  # as list
+    ):
+        assert_frame_equal(out.collect(), expected)
 
-    # using multiple kwargs
-    out = ldf.filter(a=1, b=2).collect()
-    expected = pl.DataFrame({"a": [1], "b": [2], "c": [2]})
-    assert_frame_equal(out, expected)
+    # multiple kwargs
+    assert_frame_equal(
+        ldf.filter(a=1, b=2).collect(),
+        pl.DataFrame({"a": [1], "b": [2], "c": [2]}),
+    )
 
-    # using both
-    out = ldf.filter(pl.col("a") == 1, pl.col("b") <= 2, a=1, b=2).collect()
-    expected = pl.DataFrame({"a": [1], "b": [2], "c": [2]})
-    assert_frame_equal(out, expected)
+    # both positional and keyword args
+    assert_frame_equal(
+        ldf.filter(pl.col("c") < 4, a=2, b=2).collect(),
+        pl.DataFrame({"a": [2], "b": [2], "c": [3]}),
+    )
 
     # check 'predicate' keyword deprecation:
-    # note: can disambiguate new/old usage - only warn on old-style usage
+    # note: can disambiguate new/old usage - only expect warning on old-style usage
     with pytest.warns(
         DeprecationWarning,
         match="`filter` no longer takes a 'predicate' parameter",
     ):
-        ldf.filter(
-            predicate=pl.col("a").ge(1),
-        ).collect()
+        ldf.filter(predicate=pl.col("a").ge(1)).collect()
 
     ldf = pl.LazyFrame(
         {
