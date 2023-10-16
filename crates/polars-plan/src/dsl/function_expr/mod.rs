@@ -151,18 +151,23 @@ pub enum FunctionExpr {
     #[cfg(feature = "top_k")]
     TopK(bool),
     Shift(i64),
+    #[cfg(feature = "cum_agg")]
     Cumcount {
         reverse: bool,
     },
+    #[cfg(feature = "cum_agg")]
     Cumsum {
         reverse: bool,
     },
+    #[cfg(feature = "cum_agg")]
     Cumprod {
         reverse: bool,
     },
+    #[cfg(feature = "cum_agg")]
     Cummin {
         reverse: bool,
     },
+    #[cfg(feature = "cum_agg")]
     Cummax {
         reverse: bool,
     },
@@ -361,10 +366,15 @@ impl Display for FunctionExpr {
                 }
             },
             Shift(_) => "shift",
+            #[cfg(feature = "cum_agg")]
             Cumcount { .. } => "cumcount",
+            #[cfg(feature = "cum_agg")]
             Cumsum { .. } => "cumsum",
+            #[cfg(feature = "cum_agg")]
             Cumprod { .. } => "cumprod",
+            #[cfg(feature = "cum_agg")]
             Cummin { .. } => "cummin",
+            #[cfg(feature = "cum_agg")]
             Cummax { .. } => "cummax",
             #[cfg(feature = "dtype-struct")]
             ValueCounts { .. } => "value_counts",
@@ -649,10 +659,15 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(top_k, descending)
             },
             Shift(periods) => map!(dispatch::shift, periods),
+            #[cfg(feature = "cum_agg")]
             Cumcount { reverse } => map!(cum::cumcount, reverse),
+            #[cfg(feature = "cum_agg")]
             Cumsum { reverse } => map!(cum::cumsum, reverse),
+            #[cfg(feature = "cum_agg")]
             Cumprod { reverse } => map!(cum::cumprod, reverse),
+            #[cfg(feature = "cum_agg")]
             Cummin { reverse } => map!(cum::cummin, reverse),
+            #[cfg(feature = "cum_agg")]
             Cummax { reverse } => map!(cum::cummax, reverse),
             #[cfg(feature = "dtype-struct")]
             ValueCounts { sort, parallel } => map!(dispatch::value_counts, sort, parallel),

@@ -743,26 +743,31 @@ impl Expr {
     }
 
     /// Cumulatively count values from 0 to len.
+    #[cfg(feature = "cum_agg")]
     pub fn cumcount(self, reverse: bool) -> Self {
         self.apply_private(FunctionExpr::Cumcount { reverse })
     }
 
     /// Get an array with the cumulative sum computed at every element.
+    #[cfg(feature = "cum_agg")]
     pub fn cumsum(self, reverse: bool) -> Self {
         self.apply_private(FunctionExpr::Cumsum { reverse })
     }
 
     /// Get an array with the cumulative product computed at every element.
+    #[cfg(feature = "cum_agg")]
     pub fn cumprod(self, reverse: bool) -> Self {
         self.apply_private(FunctionExpr::Cumprod { reverse })
     }
 
     /// Get an array with the cumulative min computed at every element.
+    #[cfg(feature = "cum_agg")]
     pub fn cummin(self, reverse: bool) -> Self {
         self.apply_private(FunctionExpr::Cummin { reverse })
     }
 
     /// Get an array with the cumulative max computed at every element.
+    #[cfg(feature = "cum_agg")]
     pub fn cummax(self, reverse: bool) -> Self {
         self.apply_private(FunctionExpr::Cummax { reverse })
     }
