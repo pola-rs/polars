@@ -1,6 +1,6 @@
 use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
-use arrow::util::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
+use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
 

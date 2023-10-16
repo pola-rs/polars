@@ -3,8 +3,6 @@ use std::hash::{Hash, Hasher};
 
 use bytemuck::TransparentWrapper;
 
-use crate::array::Array;
-
 /// Converts an f32 into a canonical form, where -0 == 0 and all NaNs map to
 /// the same value.
 pub fn canonical_f32(x: f32) -> f32 {
@@ -143,7 +141,7 @@ impl<T: TotalHash> Hash for TotalOrdWrap<T> {
     }
 }
 
-macro_rules! impl_trivial_eq {
+macro_rules! impl_trivial_total {
     ($T: ty) => {
         impl TotalEq for $T {
             #[inline(always)]
@@ -156,12 +154,6 @@ macro_rules! impl_trivial_eq {
                 self != other
             }
         }
-    };
-}
-
-macro_rules! impl_trivial_eq_ord_hash {
-    ($T: ty) => {
-        impl_trivial_eq!($T);
 
         impl TotalOrd for $T {
             #[inline(always)]
@@ -203,25 +195,23 @@ macro_rules! impl_trivial_eq_ord_hash {
 
 // We can't do a blanket impl because Rust complains f32 might implement
 // Ord / Eq someday.
-impl_trivial_eq_ord_hash!(bool);
-impl_trivial_eq_ord_hash!(u8);
-impl_trivial_eq_ord_hash!(u16);
-impl_trivial_eq_ord_hash!(u32);
-impl_trivial_eq_ord_hash!(u64);
-impl_trivial_eq_ord_hash!(u128);
-impl_trivial_eq_ord_hash!(usize);
-impl_trivial_eq_ord_hash!(i8);
-impl_trivial_eq_ord_hash!(i16);
-impl_trivial_eq_ord_hash!(i32);
-impl_trivial_eq_ord_hash!(i64);
-impl_trivial_eq_ord_hash!(i128);
-impl_trivial_eq_ord_hash!(isize);
-impl_trivial_eq_ord_hash!(char);
-impl_trivial_eq_ord_hash!(&str);
-impl_trivial_eq_ord_hash!(&[u8]);
-impl_trivial_eq_ord_hash!(String);
-impl_trivial_eq!(&dyn Array);
-impl_trivial_eq!(Box<dyn Array>);
+impl_trivial_total!(bool);
+impl_trivial_total!(u8);
+impl_trivial_total!(u16);
+impl_trivial_total!(u32);
+impl_trivial_total!(u64);
+impl_trivial_total!(u128);
+impl_trivial_total!(usize);
+impl_trivial_total!(i8);
+impl_trivial_total!(i16);
+impl_trivial_total!(i32);
+impl_trivial_total!(i64);
+impl_trivial_total!(i128);
+impl_trivial_total!(isize);
+impl_trivial_total!(char);
+impl_trivial_total!(&str);
+impl_trivial_total!(&[u8]);
+impl_trivial_total!(String);
 
 macro_rules! impl_eq_ord_float {
     ($f:ty) => {
