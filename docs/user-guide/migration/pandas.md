@@ -176,7 +176,7 @@ the values in column `a` based on a condition. When the value in column `c` is e
 In `Pandas` this would be:
 
 ```python
-df.assign(a=lambda df_: np.where(df_.c == 2, df_.b, df_.a))
+df.assign(a=lambda df_: df_.a.where(df_.c != 2, df_.b))
 ```
 
 while in `Polars` this would be:
@@ -188,6 +188,7 @@ df.with_columns(
     .otherwise(pl.col("a")).alias("a")
 )
 ```
+
 `Polars` can compute every branch of an `if -> then -> otherwise` in
 parallel. This is valuable, when the branches get more expensive to compute.
 
