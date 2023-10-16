@@ -1040,3 +1040,15 @@ def test_assert_frame_equal_local_categoricals_deprecated() -> None:
 
     with pytest.deprecated_call():
         assert_frame_equal_local_categoricals(df, df)
+
+
+def test_assert_series_equal_full_series() -> None:
+    s1 = pl.Series([1, 2, 3])
+    s2 = pl.Series([1, 2, 4])
+    msg = (
+        r"Series are different \(value mismatch\)\n"
+        r"\[left\]:  \[1, 2, 3\]\n"
+        r"\[right\]: \[1, 2, 4\]"
+    )
+    with pytest.raises(AssertionError, match=msg):
+        assert_series_equal(s1, s2)

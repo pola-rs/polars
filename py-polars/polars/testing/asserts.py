@@ -443,7 +443,7 @@ def _check_series_equal_inexact(
     *,
     nans_compare_equal: bool,
     comparing_floats: bool,
-) -> bool:
+) -> tuple[bool, str]:
     # apply check with tolerance (to the known-unequal matches).
     left, right = left.filter(unequal), right.filter(unequal)
 
