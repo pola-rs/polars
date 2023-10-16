@@ -796,3 +796,6 @@ def test_group_by_with_expr_as_key() -> None:
 
     # tests: 11766
     assert gb.head(0).frame_equal(gb.agg(pl.col("x").head(0)).explode("x"))
+
+    # tests: 11766
+    assert gb.tail(0).frame_equal(gb.agg(pl.col("x").tail(0)).explode("x"))
