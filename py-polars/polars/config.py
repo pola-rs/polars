@@ -69,6 +69,7 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION",
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE",
     "POLARS_FMT_TABLE_ROUNDED_CORNERS",
+    "POLARS_FMT_TABLE_CELL_LIST_LEN",
     "POLARS_STREAMING_CHUNK_SIZE",
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
@@ -525,6 +526,54 @@ class Config(contextlib.ContextDecorator):
                 raise ValueError("number of characters must be > 0")
 
             os.environ["POLARS_FMT_STR_LEN"] = str(n)
+        return cls
+
+    @classmethod
+    def set_fmt_table_cell_list_len(cls, n: int | None) -> type[Config]:
+        """
+        Set the number of elements to display for List values.
+
+        Values less than 0 will result in all values being printed.
+
+        Parameters
+        ----------
+        n : int
+            Number of values to display.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "nums": [
+        ...             [1, 2, 3, 4, 5, 6],
+        ...         ]
+        ...     }
+        ... )
+        >>> df
+        shape: (1, 1)
+        ┌─────────────┐
+        │ nums        │
+        │ ---         │
+        │ list[i64]   │
+        ╞═════════════╡
+        │ [1, 2, … 6] │
+        └─────────────┘
+        >>> with pl.Config(fmt_table_cell_list_len=10):
+        ...     print(df)
+        ...
+        shape: (1, 1)
+        ┌────────────────────┐
+        │ nums               │
+        │ ---                │
+        │ list[i64]          │
+        ╞════════════════════╡
+        │ [1, 2, 3, 4, 5, 6] │
+        └────────────────────┘
+        """
+        if n is None:
+            os.environ.pop("POLARS_FMT_TABLE_CELL_LIST_LEN", None)
+        else:
+            os.environ["POLARS_FMT_TABLE_CELL_LIST_LEN"] = str(n)
         return cls
 
     @classmethod

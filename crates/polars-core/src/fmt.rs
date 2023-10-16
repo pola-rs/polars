@@ -1,6 +1,6 @@
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Display, Formatter, Write};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::{fmt, str};
 
@@ -949,12 +949,32 @@ impl Series {
                 self.get(1).unwrap(),
                 self.get(2).unwrap()
             ),
-            _ => format!(
-                "[{}, {}, … {}]",
-                self.get(0).unwrap(),
-                self.get(1).unwrap(),
-                self.get(self.len() - 1).unwrap()
-            ),
+            _ => {
+                let max_items = std::env::var(FMT_TABLE_CELL_LIST_LEN)
+                    .as_deref()
+                    .unwrap_or("")
+                    .parse()
+                    .map_or(3, |n: i64| if n < 0 { self.len() } else { n as usize });
+
+                let mut result = "[".to_owned();
+
+                for (i, item) in self.iter().enumerate() {
+                    write!(result, "{item}").unwrap();
+
+                    if i != self.len() - 1 {
+                        result.push_str(", ");
+                    }
+
+                    if i == max_items - 2 {
+                        result.push_str("… ");
+                        write!(result, "{}", self.get(self.len() - 1).unwrap()).unwrap();
+                        break;
+                    }
+                }
+                result.push(']');
+
+                result
+            },
         }
     }
 }
@@ -1089,7 +1109,7 @@ mod test {
     fn test_fmt_list() {
         let mut builder =
             ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
-        builder.append_opt_slice(Some(&[1, 2, 3]));
+        builder.append_opt_slice(Some(&[1, 2, 3, 4, 5, 6]));
         builder.append_opt_slice(None);
         let list = builder.finish().into_series();
 
@@ -1097,11 +1117,23 @@ mod test {
             r#"shape: (2,)
 Series: 'a' [list[i32]]
 [
-	[1, 2, 3]
+	[1, 2, … 6]
 	null
 ]"#,
             format!("{:?}", list)
         );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "10");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1, 2, 3, 4, 5, 6]
+	null
+]"#,
+            format!("{:?}", list)
+        )
     }
 
     #[test]
