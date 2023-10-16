@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::utils::CustomIterTools;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
@@ -170,9 +170,12 @@ impl PhysicalExpr for TernaryExpr {
             // truthy -> aggregated-flat | literal
             // falsy -> aggregated-flat | literal
             // simply align lengths and zip
-            (Literal(truthy) | AggregatedFlat(truthy), AggregatedFlat(falsy) | Literal(falsy))
+            (
+                Literal(truthy) | AggregatedScalar(truthy),
+                AggregatedScalar(falsy) | Literal(falsy),
+            )
             | (AggregatedList(truthy), AggregatedList(falsy))
-                if matches!(ac_mask.agg_state(), AggState::AggregatedFlat(_)) =>
+                if matches!(ac_mask.agg_state(), AggState::AggregatedScalar(_)) =>
             {
                 let mut truthy = truthy.clone();
                 let mut falsy = falsy.clone();

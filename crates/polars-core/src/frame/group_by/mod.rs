@@ -2,8 +2,8 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 use ahash::RandomState;
+use arrow::legacy::prelude::QuantileInterpolOptions;
 use num_traits::NumCast;
-use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 
 use self::hashing::*;
@@ -591,7 +591,7 @@ impl<'df> GroupBy<'df> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// # use polars_arrow::prelude::QuantileInterpolOptions;
+    /// # use arrow::legacy::prelude::QuantileInterpolOptions;
     ///
     /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.group_by(["date"])?.select(["temp"]).quantile(0.2, QuantileInterpolOptions::default())

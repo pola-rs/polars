@@ -683,7 +683,7 @@ impl SqlFunctionVisitor<'_> {
             EndsWith => self.visit_binary(|e, s| e.str().ends_with(s)),
             InitCap => self.visit_unary(|e| e.str().to_titlecase()),
             Left => self.try_visit_binary(|e, length| {
-                Ok(e.str().str_slice(0, match length {
+                Ok(e.str().slice(0, match length {
                     Expr::Literal(LiteralValue::Int64(n)) => Some(n as u64),
                     _ => {
                         polars_bail!(InvalidOperation: "Invalid 'length' for Left: {}", function.args[1]);
@@ -729,7 +729,7 @@ impl SqlFunctionVisitor<'_> {
             StartsWith => self.visit_binary(|e, s| e.str().starts_with(s)),
             Substring => match function.args.len() {
                 2 => self.try_visit_binary(|e, start| {
-                    Ok(e.str().str_slice(match start {
+                    Ok(e.str().slice(match start {
                         Expr::Literal(LiteralValue::Int64(n)) => n,
                         _ => {
                             polars_bail!(InvalidOperation: "Invalid 'start' for Substring: {}", function.args[1]);
@@ -737,7 +737,7 @@ impl SqlFunctionVisitor<'_> {
                     }, None))
                 }),
                 3 => self.try_visit_ternary(|e, start, length| {
-                    Ok(e.str().str_slice(
+                    Ok(e.str().slice(
                         match start {
                             Expr::Literal(LiteralValue::Int64(n)) => n,
                             _ => {

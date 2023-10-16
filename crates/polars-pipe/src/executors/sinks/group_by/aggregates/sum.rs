@@ -1,9 +1,9 @@
 use std::any::Any;
 use std::ops::Add;
 
-use polars_arrow::export::arrow::array::PrimitiveArray;
-use polars_arrow::export::arrow::compute::aggregate::Sum;
-use polars_arrow::export::arrow::types::simd::Simd;
+use arrow::array::PrimitiveArray;
+use arrow::compute::aggregate::Sum;
+use arrow::types::simd::Simd;
 use polars_core::export::num::NumCast;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::compute::aggregate::sum_primitive;
@@ -90,7 +90,7 @@ where
             arr.sliced_unchecked(offset as usize, length as usize)
         };
         let dtype = K::PolarsType::get_dtype().to_arrow();
-        let arr = polars_arrow::compute::cast::cast(arr.as_ref(), &dtype).unwrap();
+        let arr = arrow::legacy::compute::cast::cast(arr.as_ref(), &dtype).unwrap();
         let arr = unsafe {
             arr.as_any()
                 .downcast_ref::<PrimitiveArray<K>>()

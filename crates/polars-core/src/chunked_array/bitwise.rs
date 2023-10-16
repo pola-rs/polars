@@ -1,8 +1,8 @@
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
 use arrow::compute;
-use polars_arrow::compute::bitwise;
-use polars_arrow::utils::combine_validities_and;
+use arrow::legacy::compute::bitwise;
+use arrow::legacy::utils::combine_validities_and;
 
 use super::arithmetic::arithmetic_helper;
 use super::*;

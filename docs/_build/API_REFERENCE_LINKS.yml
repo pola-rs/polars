@@ -121,7 +121,7 @@ python:
   cs.contains: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.contains
   cs.matches: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.matches
   is_selector: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.is_selector
-  selector_column_names: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.selector_column_names
+  expand_selector: https://pola-rs.github.io/polars/py-polars/html/reference/selectors.html#polars.selectors.expand_selector
 
   dt.convert_time_zone:
     name: dt.convert_time_zone
@@ -229,7 +229,7 @@ rust:
     link: https://pola-rs.github.io/polars/docs/rust/dev/polars_io/prelude/struct.IpcReader.html
     feature_flags: ['ipc']
   scan_pyarrow_dataset: https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.scan_pyarrow_dataset.html
-  
+
   min: https://pola-rs.github.io/polars/docs/rust/dev/polars/series/struct.Series.html#method.min
   max: https://pola-rs.github.io/polars/docs/rust/dev/polars/series/struct.Series.html#method.max
   struct:
@@ -308,7 +308,7 @@ rust:
   cs.contains: https://github.com/pola-rs/polars/issues/10594
   cs.matches: https://github.com/pola-rs/polars/issues/10594
   is_selector: https://github.com/pola-rs/polars/issues/10594
-  selector_column_names: https://github.com/pola-rs/polars/issues/10594
+  expand_selector: https://github.com/pola-rs/polars/issues/10594
 
   dt.convert_time_zone:
     name: dt.convert_time_zone

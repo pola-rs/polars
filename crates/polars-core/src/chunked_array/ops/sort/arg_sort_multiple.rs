@@ -1,4 +1,4 @@
-use polars_arrow::data_types::IsFloat;
+use arrow::legacy::data_types::IsFloat;
 use polars_row::{convert_columns, RowsEncoded, SortField};
 use polars_utils::iter::EnumerateIdxTrait;
 

@@ -1,5 +1,5 @@
+use arrow::legacy::kernels::pow::pow as pow_kernel;
 use num::pow::Pow;
-use polars_arrow::kernels::pow::pow as pow_kernel;
 use polars_core::export::num;
 use polars_core::export::num::{Float, ToPrimitive};
 

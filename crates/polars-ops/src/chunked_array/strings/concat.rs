@@ -1,5 +1,5 @@
 use arrow::array::Utf8Array;
-use polars_arrow::array::default_arrays::FromDataUtf8;
+use arrow::legacy::array::default_arrays::FromDataUtf8;
 use polars_core::prelude::*;
 
 // Vertically concatenate all strings in a Utf8Chunked.
@@ -64,11 +64,6 @@ pub fn hor_str_concat(cas: &[&Utf8Chunked], delimiter: &str) -> PolarsResult<Utf
         cas.iter().all(|ca| ca.len() == 1 || ca.len() == len),
         ComputeError: "all series in `hor_str_concat` should have equal or unit length"
     );
-
-    let has_empty_ca = cas.iter().any(|ca| ca.is_empty());
-    if has_empty_ca {
-        return Ok(Utf8Chunked::full_null(cas[0].name(), 0));
-    }
 
     // Calculate total capacity needed.
     let tot_strings_bytes: usize = cas

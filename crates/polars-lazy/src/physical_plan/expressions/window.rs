@@ -1,7 +1,7 @@
 use std::fmt::Write;
 use std::sync::Arc;
 
-use polars_arrow::export::arrow::array::PrimitiveArray;
+use arrow::array::PrimitiveArray;
 use polars_core::export::arrow::bitmap::Bitmap;
 use polars_core::frame::group_by::{GroupBy, GroupsProxy};
 use polars_core::prelude::*;
@@ -330,7 +330,7 @@ impl WindowExpr {
             // (false, false, _) => Ok(MapStrategy::Join),
             // aggregations
             //`sum("foo").over("groups")`
-            (_, AggState::AggregatedFlat(_)) => Ok(MapStrategy::Join),
+            (_, AggState::AggregatedScalar(_)) => Ok(MapStrategy::Join),
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
             (WindowMapping::Join, AggState::AggregatedList(_)) => Ok(MapStrategy::Join),
@@ -631,7 +631,7 @@ impl PhysicalExpr for WindowExpr {
 fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Series {
     #[cfg(feature = "chunked_ids")]
     {
-        use polars_arrow::export::arrow::Either;
+        use arrow::Either;
 
         match join_opt_ids {
             Either::Left(ids) => unsafe {

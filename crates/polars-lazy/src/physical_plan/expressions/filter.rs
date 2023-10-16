@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_arrow::is_valid::IsValid;
+use arrow::legacy::is_valid::IsValid;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;

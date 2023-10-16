@@ -104,7 +104,7 @@
 //! use polars_core::prelude::*;
 //! use polars_core::df;
 //! use polars_lazy::prelude::*;
-//! use polars_arrow::prelude::QuantileInterpolOptions;
+//! use arrow::legacy::prelude::QuantileInterpolOptions;
 //!
 //! fn example() -> PolarsResult<DataFrame> {
 //!     let df = df!(

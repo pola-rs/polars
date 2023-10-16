@@ -1,6 +1,5 @@
 use arrow::ffi;
 use polars::prelude::*;
-use polars_arrow::export::arrow;
 use pyo3::exceptions::PyValueError;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;

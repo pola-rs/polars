@@ -9,9 +9,9 @@ use arrow::array::{
 };
 use arrow::bitmap::Bitmap;
 #[cfg(feature = "dtype-array")]
-use polars_arrow::prelude::fixed_size_list::AnonymousBuilder as AnonymousFixedSizeListArrayBuilder;
-use polars_arrow::prelude::list::AnonymousBuilder as AnonymousListArrayBuilder;
-use polars_arrow::trusted_len::{TrustedLen, TrustedLenPush};
+use arrow::legacy::prelude::fixed_size_list::AnonymousBuilder as AnonymousFixedSizeListArrayBuilder;
+use arrow::legacy::prelude::list::AnonymousBuilder as AnonymousListArrayBuilder;
+use arrow::legacy::trusted_len::{TrustedLen, TrustedLenPush};
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::{ObjectArray, PolarsObject};

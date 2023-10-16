@@ -3,12 +3,11 @@ pub use std::sync::Arc;
 
 pub(crate) use arrow::array::*;
 pub use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
-pub(crate) use arrow::util::total_ord::{TotalEq, TotalOrd};
-pub(crate) use polars_arrow::export::*;
 #[cfg(feature = "ewma")]
-pub use polars_arrow::kernels::ewm::EWMOptions;
-pub use polars_arrow::prelude::*;
-pub(crate) use polars_arrow::trusted_len::TrustedLen;
+pub use arrow::legacy::kernels::ewm::EWMOptions;
+pub use arrow::legacy::prelude::*;
+pub(crate) use arrow::legacy::trusted_len::TrustedLen;
+pub(crate) use arrow::util::total_ord::{TotalEq, TotalOrd};
 
 pub use crate::chunked_array::builder::{
     BinaryChunkedBuilder, BooleanChunkedBuilder, ChunkedBuilder, ListBinaryChunkedBuilder,

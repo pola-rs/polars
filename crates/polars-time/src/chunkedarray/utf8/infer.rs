@@ -1,6 +1,6 @@
+use arrow::array::PrimitiveArray;
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use once_cell::sync::Lazy;
-use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_core::prelude::*;
 use regex::Regex;
 

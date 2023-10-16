@@ -9,7 +9,6 @@ repository = { workspace = true }
 description = "More operations on Polars data structures"
 
 [dependencies]
-polars-arrow = { workspace = true, default-features = false }
 polars-core = { workspace = true, features = ["algorithm_group_by"], default-features = false }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }

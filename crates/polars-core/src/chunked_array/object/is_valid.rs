@@ -1,4 +1,4 @@
-use polars_arrow::is_valid::ArrowArray;
+use arrow::legacy::is_valid::ArrowArray;
 
 use super::{ObjectArray, PolarsObject};
 

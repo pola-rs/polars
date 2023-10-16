@@ -1,9 +1,9 @@
+use arrow::legacy::time_zone::Tz;
+use arrow::temporal_conversions::*;
 use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
 use now::DateTimeNow;
-use polars_arrow::export::arrow::temporal_conversions::*;
-use polars_arrow::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::timeunit_scale;
 

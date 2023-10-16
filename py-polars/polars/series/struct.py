@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections import OrderedDict
 from typing import TYPE_CHECKING, Sequence
 
 from polars.series.utils import expr_dispatch
@@ -9,8 +10,8 @@ from polars.utils.various import sphinx_accessor
 
 if TYPE_CHECKING:
     from polars import DataFrame, Series
-    from polars.datatypes import PolarsDataType
     from polars.polars import PySeries
+    from polars.type_aliases import SchemaDict
 elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 
@@ -65,11 +66,11 @@ class StructNameSpace:
         """
 
     @property
-    def schema(self) -> dict[str, PolarsDataType]:
+    def schema(self) -> SchemaDict:
         """Get the struct definition as a name/dtype schema dict."""
         if getattr(self, "_s", None) is None:
             return {}
-        return self._s.dtype().to_schema()
+        return OrderedDict(self._s.dtype().to_schema())
 
     def unnest(self) -> DataFrame:
         """

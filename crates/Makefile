@@ -10,7 +10,7 @@ fmt:  ## Run rustfmt and dprint
 
 .PHONY: check
 check:  ## Run cargo check with all features
-	cargo check --workspace --all-targets --exclude nano-arrow --all-features
+	cargo check --workspace --all-targets --all-features
 
 .PHONY: clippy
 clippy:  ## Run clippy with all features
@@ -37,7 +37,7 @@ miri:  ## Run miri
 	cargo miri test \
 	    --features object \
 	    -p polars-core \
-	    -p polars-arrow
+#	    -p polars-arrow
 
 .PHONY: test
 test:  ## Run tests
@@ -45,7 +45,6 @@ test:  ## Run tests
 		-p polars-lazy \
 		-p polars-io \
 		-p polars-core \
-		-p polars-arrow \
 		-p polars-time \
 		-p polars-utils \
 		-p polars-row \
@@ -61,7 +60,6 @@ nextest:  ## Run tests with nextest
 		-p polars-lazy \
 		-p polars-io \
 		-p polars-core \
-		-p polars-arrow \
 		-p polars-time \
 		-p polars-utils \
 		-p polars-row \
@@ -79,7 +77,6 @@ test-doc:  ## Run doc examples
 	    -p polars-lazy \
 	    -p polars-io \
 	    -p polars-core \
-	    -p polars-arrow \
 		-p polars-sql
 
 .PHONY: bench-save
@@ -92,7 +89,6 @@ bench-cmp:  ## Run benchmark and compare
 
 .PHONY: doctest
 doctest:  ## Check that documentation builds
-	cargo doc --no-deps --all-features -p polars-arrow
 	cargo doc --no-deps --all-features -p polars-utils
 	cargo doc --no-deps --features=docs-selection -p polars-core
 	cargo doc --no-deps -p polars-time
@@ -106,8 +102,8 @@ doctest:  ## Check that documentation builds
 publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-error
 	cargo publish --allow-dirty -p polars-utils
-	cargo publish --allow-dirty -p polars-row
 	cargo publish --allow-dirty -p polars-arrow
+	cargo publish --allow-dirty -p polars-row
 	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
 	cargo publish --allow-dirty -p polars-ffi

@@ -8,10 +8,10 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use arrow::array::PrimitiveArray;
 use arrow::compute::arithmetics::basic;
 use arrow::compute::arity_assign;
+use arrow::legacy::utils::combine_validities_and;
 use arrow::types::NativeType;
 use num_traits::{Num, NumCast, ToPrimitive, Zero};
 pub(super) use numeric::arithmetic_helper;
-use polars_arrow::utils::combine_validities_and;
 
 use crate::prelude::*;
 use crate::series::IsSorted;

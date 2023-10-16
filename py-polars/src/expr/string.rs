@@ -91,7 +91,7 @@ impl PyExpr {
     }
 
     fn str_slice(&self, start: i64, length: Option<u64>) -> Self {
-        self.inner.clone().str().str_slice(start, length).into()
+        self.inner.clone().str().slice(start, length).into()
     }
 
     fn str_explode(&self) -> Self {

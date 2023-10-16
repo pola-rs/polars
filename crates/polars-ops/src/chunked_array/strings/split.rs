@@ -1,5 +1,5 @@
 #[cfg(feature = "dtype-struct")]
-use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
+use arrow::array::{MutableArray, MutableUtf8Array};
 use polars_core::chunked_array::ops::arity::binary_elementwise_for_each;
 
 use super::*;

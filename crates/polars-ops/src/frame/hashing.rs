@@ -1,10 +1,10 @@
 use std::hash::Hash;
 
 use ahash::RandomState;
+use arrow::legacy::trusted_len::TrustedLen;
+use arrow::legacy::utils::CustomIterTools;
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
-use polars_arrow::trusted_len::TrustedLen;
-use polars_arrow::utils::CustomIterTools;
 use polars_core::hashing::partition::this_partition;
 use polars_core::prelude::*;
 use polars_core::utils::_set_partition_size;

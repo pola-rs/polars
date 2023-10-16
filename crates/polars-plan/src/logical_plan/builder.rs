@@ -401,7 +401,7 @@ impl LogicalPlanBuilder {
     pub fn drop_columns(self, to_drop: PlHashSet<String>) -> Self {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
 
-        let mut output_schema = Schema::with_capacity(schema.len() - to_drop.len());
+        let mut output_schema = Schema::with_capacity(schema.len().saturating_sub(to_drop.len()));
         let columns = schema
             .iter()
             .filter_map(|(col_name, dtype)| {
