@@ -155,8 +155,7 @@ df.assign(
 
 These column assignments are executed sequentially.
 
-In `Polars` we add columns to `df` using the `.with_columns` method and name them with
-the `.alias` method:
+In `Polars` we add columns to `df` using the `.with_columns` method:
 
 ```python
 df.with_columns(
