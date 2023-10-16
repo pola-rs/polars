@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, date
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import numpy as np
@@ -378,7 +378,7 @@ def test_utf8_date() -> None:
     df = pl.DataFrame({"x1": ["2021-01-01"]}).with_columns(
         **{"x1-date": pl.col("x1").cast(pl.Date)}
     )
-    expected = pl.DataFrame({"x1-date":[date(2021,1,1)]})
+    expected = pl.DataFrame({"x1-date": [date(2021, 1, 1)]})
     out = df.select(pl.col("x1-date"))
     assert out.shape == (1, 1)
     assert out.dtypes == [pl.Date]
@@ -408,7 +408,7 @@ def test_utf8_datetime() -> None:
         {
             "x1-datetime-ns": [first_row, second_row],
             "x1-datetime-ms": [first_row, second_row],
-            "x1-datetime-us": [first_row, second_row]
+            "x1-datetime-us": [first_row, second_row],
         }
     ).select(
         pl.col("x1-datetime-ns").dt.cast_time_unit("ns"),
