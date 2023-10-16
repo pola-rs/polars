@@ -788,3 +788,12 @@ def test_group_by_list_scalar_11749() -> None:
         "group_name": ["a;b", "c;d"],
         "eq": [[True, True, True, True], [True, False]],
     }
+
+
+def test_group_by_with_expr_as_key() -> None:
+    gb = pl.select(x=1).group_by(pl.col("x").alias("key"))
+    assert gb.agg(pl.all().first()).frame_equal(gb.agg(pl.first("x")))
+
+    # tests: 11766
+    assert gb.head(0).frame_equal(gb.agg(pl.col("x").head(0)).explode("x"))
+    assert gb.tail(0).frame_equal(gb.agg(pl.col("x").tail(0)).explode("x"))

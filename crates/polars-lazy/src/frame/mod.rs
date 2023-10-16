@@ -31,7 +31,7 @@ use polars_plan::global::FETCH_ROWS;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
 use polars_plan::logical_plan::collect_fingerprints;
 use polars_plan::logical_plan::optimize;
-use polars_plan::utils::expr_to_leaf_column_names;
+use polars_plan::utils::expr_output_name;
 use smartstring::alias::String as SmartString;
 
 use crate::fallible;
@@ -1674,10 +1674,10 @@ impl LazyGroupBy {
         let keys = self
             .keys
             .iter()
-            .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
+            .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([col("*").exclude(&keys).head(n).keep_name()])
+        self.agg([col("*").exclude(&keys).head(n)])
             .explode([col("*").exclude(&keys)])
     }
 
@@ -1686,10 +1686,10 @@ impl LazyGroupBy {
         let keys = self
             .keys
             .iter()
-            .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
+            .filter_map(|expr| expr_output_name(expr).ok())
             .collect::<Vec<_>>();
 
-        self.agg([col("*").exclude(&keys).tail(n).keep_name()])
+        self.agg([col("*").exclude(&keys).tail(n)])
             .explode([col("*").exclude(&keys)])
     }
 
