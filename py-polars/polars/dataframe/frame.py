@@ -136,6 +136,7 @@ if TYPE_CHECKING:
         FrameInitTypes,
         IndexOrder,
         IntoExpr,
+        IntoExprColumn,
         IpcCompression,
         JoinStrategy,
         JoinValidation,
@@ -3899,7 +3900,14 @@ class DataFrame:
 
     def filter(
         self,
-        predicate: (Expr | str | Series | list[bool] | np.ndarray[Any, Any] | bool),
+        *predicates: (
+            IntoExprColumn
+            | Iterable[IntoExprColumn]
+            | bool
+            | list[bool]
+            | np.ndarray[Any, Any]
+        ),
+        **constraints: Any,
     ) -> DataFrame:
         """
         Filter the rows in the DataFrame based on a predicate expression.
@@ -3908,8 +3916,10 @@ class DataFrame:
 
         Parameters
         ----------
-        predicate
+        predicates
             Expression that evaluates to a boolean Series.
+        constraints
+            Column filters. Use name=value to filter column name by the supplied value.
 
         Examples
         --------
@@ -3923,18 +3933,18 @@ class DataFrame:
 
         Filter on one condition:
 
-        >>> df.filter(pl.col("foo") < 3)
+        >>> df.filter(pl.col("foo") > 1)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
         │ i64 ┆ i64 ┆ str │
         ╞═════╪═════╪═════╡
-        │ 1   ┆ 6   ┆ a   │
         │ 2   ┆ 7   ┆ b   │
+        │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
 
-        Filter on multiple conditions:
+        Filter on multiple conditions, combined with and/or operators:
 
         >>> df.filter((pl.col("foo") < 3) & (pl.col("ham") == "a"))
         shape: (1, 3)
@@ -3945,8 +3955,6 @@ class DataFrame:
         ╞═════╪═════╪═════╡
         │ 1   ┆ 6   ┆ a   │
         └─────┴─────┴─────┘
-
-        Filter on an OR condition:
 
         >>> df.filter((pl.col("foo") == 1) | (pl.col("ham") == "c"))
         shape: (2, 3)
@@ -3959,13 +3967,35 @@ class DataFrame:
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
 
-        """
-        if _check_for_numpy(predicate) and isinstance(predicate, np.ndarray):
-            predicate = pl.Series(predicate)
+        Provide multiple filters using `*args` syntax:
 
-        return (
-            self.lazy().filter(predicate).collect(_eager=True)  # type: ignore[arg-type]
-        )
+        >>> df.filter(
+        ...     pl.col("foo") == 1,
+        ...     pl.col("ham") == "a",
+        ... )
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        └─────┴─────┴─────┘
+
+        Provide multiple filters using `**kwargs` syntax:
+
+        >>> df.filter(foo=1, ham="a")
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 6   ┆ a   │
+        └─────┴─────┴─────┘
+
+        """
+        return self.lazy().filter(*predicates, **constraints).collect(_eager=True)
 
     @overload
     def glimpse(

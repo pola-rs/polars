@@ -2822,6 +2822,49 @@ def test_filter_sequence() -> None:
     assert df.filter(np.array([True, False, True]))["a"].to_list() == [1, 3]
 
 
+def test_filter_multiple_predicates() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 2, 2],
+            "b": [1, 1, 2, 2, 2],
+            "c": [1, 1, 2, 3, 4],
+        }
+    )
+
+    # multiple predicates
+    expected = pl.DataFrame({"a": [1, 1, 1], "b": [1, 1, 2], "c": [1, 1, 2]})
+    for out in (
+        df.filter(pl.col("a") == 1, pl.col("b") <= 2),  # positional/splat
+        df.filter([pl.col("a") == 1, pl.col("b") <= 2]),  # as list
+    ):
+        assert_frame_equal(out, expected)
+
+    # multiple kwargs
+    assert_frame_equal(
+        df.filter(a=1, b=2),
+        pl.DataFrame({"a": [1], "b": [2], "c": [2]}),
+    )
+
+    # both positional and keyword args
+    assert_frame_equal(
+        pl.DataFrame({"a": [2], "b": [2], "c": [3]}),
+        df.filter(pl.col("c") < 4, a=2, b=2),
+    )
+
+    # boolean mask
+    out = df.filter([True, False, False, False, True])
+    expected = pl.DataFrame({"a": [1, 2], "b": [1, 2], "c": [1, 4]})
+    assert_frame_equal(out, expected)
+
+    # multiple boolean masks
+    out = df.filter(
+        np.array([True, True, False, True, False]),
+        np.array([True, False, True, True, False]),
+    )
+    expected = pl.DataFrame({"a": [1, 2], "b": [1, 2], "c": [1, 3]})
+    assert_frame_equal(out, expected)
+
+
 def test_indexing_set() -> None:
     df = pl.DataFrame({"bool": [True, True], "str": ["N/A", "N/A"], "nr": [1, 2]})
 

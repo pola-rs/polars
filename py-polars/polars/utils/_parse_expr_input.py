@@ -90,8 +90,6 @@ def parse_as_expression(
         strings are parsed as column names.
     structify
         Convert multi-column expressions to a single struct expression.
-    wrap
-        Return an ``Expr`` object rather than a ``PyExpr`` object.
 
     """
     if isinstance(input, pl.Expr):
