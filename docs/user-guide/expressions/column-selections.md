@@ -117,7 +117,7 @@ What if we want to apply a specific operation on the selected columns (i.e. get 
 
 ### Debugging `selectors`
 
-Polars also provides two helpful utility functions to aid with using selectors: `is_selector` and `selector_column_names`:
+Polars also provides two helpful utility functions to aid with using selectors: `is_selector` and `expand_selector`:
 
 {{code_block('user-guide/expressions/column-selections','selectors_is_selector_utility',['is_selector'])}}
 
