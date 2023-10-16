@@ -54,7 +54,7 @@ _fromtimestamp = datetime.fromtimestamp
 
 def _timestamp_in_seconds(dt: datetime) -> int:
     du = dt - EPOCH_UTC
-    return du.days * 86400 + du.seconds
+    return du.days * SECONDS_PER_DAY + du.seconds
 
 
 @overload
@@ -84,7 +84,7 @@ def _timedelta_to_pl_duration(td: timedelta | str | None) -> str | None:
         else:
             corrected_d = td.days + 1
             d = corrected_d and f"{corrected_d}d" or "-"
-            corrected_seconds = 24 * 3600 - (td.seconds + (td.microseconds > 0))
+            corrected_seconds = SECONDS_PER_DAY - (td.seconds + (td.microseconds > 0))
             s = corrected_seconds and f"{corrected_seconds}s" or ""
             us = td.microseconds and f"{10**6 - td.microseconds}us" or ""
 
@@ -124,7 +124,7 @@ def _time_to_pl_time(t: time) -> int:
 
 def _date_to_pl_date(d: date) -> int:
     dt = datetime.combine(d, datetime.min.time()).replace(tzinfo=timezone.utc)
-    return int(dt.timestamp()) // (3600 * 24)
+    return int(dt.timestamp()) // SECONDS_PER_DAY
 
 
 def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
@@ -174,7 +174,7 @@ def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "ns") -> time
 @lru_cache(256)
 def _to_python_date(value: int | float) -> date:
     """Convert polars int64 timestamp to Python date."""
-    return (EPOCH_UTC + timedelta(seconds=value * 86400)).date()
+    return (EPOCH_UTC + timedelta(seconds=value * SECONDS_PER_DAY)).date()
 
 
 def _to_python_datetime(
