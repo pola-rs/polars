@@ -130,7 +130,7 @@ fn run_on_group_by_engine(
     let state = ExecutionState::new();
     let mut ac = phys_expr.evaluate_on_groups(&df_context, &groups, &state)?;
     let out = match ac.agg_state() {
-        AggState::AggregatedFlat(_) | AggState::Literal(_) => {
+        AggState::AggregatedScalar(_) | AggState::Literal(_) => {
             let out = ac.aggregated();
             out.as_list().into_series()
         },

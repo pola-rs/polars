@@ -763,3 +763,28 @@ def test_group_by_multiple_keys_one_literal() -> None:
             .to_dict(False)
             == expected
         )
+
+
+def test_group_by_list_scalar_11749() -> None:
+    df = pl.DataFrame(
+        {
+            "group_name": ["a;b", "a;b", "c;d", "c;d", "a;b", "a;b"],
+            "parent_name": ["a", "b", "c", "d", "a", "b"],
+            "measurement": [
+                ["x1", "x2"],
+                ["x1", "x2"],
+                ["y1", "y2"],
+                ["z1", "z2"],
+                ["x1", "x2"],
+                ["x1", "x2"],
+            ],
+        }
+    )
+    assert (
+        df.group_by("group_name").agg(
+            (pl.col("measurement").first() == pl.col("measurement")).alias("eq"),
+        )
+    ).sort("group_name").to_dict(False) == {
+        "group_name": ["a;b", "c;d"],
+        "eq": [[True, True, True, True], [True, False]],
+    }
