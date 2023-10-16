@@ -1158,7 +1158,43 @@ Series: 'a' [list[i32]]
 	null
 ]"#,
             format!("{:?}", list)
-        )
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1, 2, 3, 4, 5, 6]
+	null
+]"#,
+            format!("{:?}", list)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1, 2, 3, 4, 5, 6]
+	null
+]"#,
+            format!("{:?}", list)
+        );
+
+        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "1");
+
+        assert_eq!(
+            r#"shape: (2,)
+Series: 'a' [list[i32]]
+[
+	[1, 2, 3, 4, 5, 6]
+	null
+]"#,
+            format!("{:?}", list)
+        );
     }
 
     #[test]
