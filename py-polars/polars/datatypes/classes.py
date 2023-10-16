@@ -200,7 +200,7 @@ class NumericType(DataType):
     """Base class for numeric data types."""
 
 
-class IntegralType(NumericType):
+class IntegerType(NumericType):
     """Base class for integral data types."""
 
 
@@ -225,35 +225,35 @@ class NestedType(DataType):
         return True
 
 
-class Int8(IntegralType):
+class Int8(IntegerType):
     """8-bit signed integer type."""
 
 
-class Int16(IntegralType):
+class Int16(IntegerType):
     """16-bit signed integer type."""
 
 
-class Int32(IntegralType):
+class Int32(IntegerType):
     """32-bit signed integer type."""
 
 
-class Int64(IntegralType):
+class Int64(IntegerType):
     """64-bit signed integer type."""
 
 
-class UInt8(IntegralType):
+class UInt8(IntegerType):
     """8-bit unsigned integer type."""
 
 
-class UInt16(IntegralType):
+class UInt16(IntegerType):
     """16-bit unsigned integer type."""
 
 
-class UInt32(IntegralType):
+class UInt32(IntegerType):
     """32-bit unsigned integer type."""
 
 
-class UInt64(IntegralType):
+class UInt64(IntegerType):
     """64-bit unsigned integer type."""
 
 
