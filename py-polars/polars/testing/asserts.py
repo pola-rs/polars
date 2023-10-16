@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import textwrap
 from typing import Any, NoReturn
 
 from polars import functions as F
@@ -80,7 +79,9 @@ def assert_frame_equal(
     elif isinstance(left, DataFrame) and isinstance(right, DataFrame):
         objs = "DataFrames"
     else:
-        raise_assert_detail("Inputs", "unexpected input types", type(left), type(right))
+        _raise_assert_detail(
+            "Inputs", "unexpected input types", type(left), type(right)
+        )
 
     if left_not_right := [c for c in left.columns if c not in right.columns]:
         raise AssertionError(
@@ -101,13 +102,13 @@ def assert_frame_equal(
         if check_dtype:  # check this _before_ we collect
             left_schema, right_schema = left.schema, right.schema
             if left_schema != right_schema:
-                raise_assert_detail(
+                _raise_assert_detail(
                     objs, "lazy schemas are not equal", left_schema, right_schema
                 )
         left, right = left.collect(), right.collect()  # type: ignore[union-attr]
 
     if left.shape[0] != right.shape[0]:  # type: ignore[union-attr]
-        raise_assert_detail(objs, "length mismatch", left.shape, right.shape)  # type: ignore[union-attr]
+        _raise_assert_detail(objs, "length mismatch", left.shape, right.shape)  # type: ignore[union-attr]
 
     if not check_row_order:
         try:
@@ -257,13 +258,15 @@ def assert_series_equal(
         isinstance(left, Series)  # type: ignore[redundant-expr]
         and isinstance(right, Series)
     ):
-        raise_assert_detail("Inputs", "unexpected input types", type(left), type(right))
+        _raise_assert_detail(
+            "Inputs", "unexpected input types", type(left), type(right)
+        )
 
     if len(left) != len(right):
-        raise_assert_detail("Series", "length mismatch", len(left), len(right))
+        _raise_assert_detail("Series", "length mismatch", len(left), len(right))
 
     if check_names and left.name != right.name:
-        raise_assert_detail("Series", "name mismatch", left.name, right.name)
+        _raise_assert_detail("Series", "name mismatch", left.name, right.name)
 
     _assert_series_inner(
         left,
@@ -354,10 +357,10 @@ def _assert_series_inner(
 ) -> None:
     """Compare Series dtype + values."""
     if check_dtype and left.dtype != right.dtype:
-        raise_assert_detail("Series", "dtype mismatch", left.dtype, right.dtype)
+        _raise_assert_detail("Series", "dtype mismatch", left.dtype, right.dtype)
 
     if left.null_count() != right.null_count():
-        raise_assert_detail(
+        _raise_assert_detail(
             "Series", "null_count is not equal", left.null_count(), right.null_count()
         )
 
@@ -369,14 +372,14 @@ def _assert_series_inner(
     unequal = left.ne_missing(right)
 
     # handle NaN values (which compare unequal to themselves)
-    comparing_float_dtypes = left.dtype in FLOAT_DTYPES and right.dtype in FLOAT_DTYPES
+    comparing_floats = left.dtype in FLOAT_DTYPES and right.dtype in FLOAT_DTYPES
     if unequal.any() and nans_compare_equal:
         # when both dtypes are scalar floats
-        if comparing_float_dtypes:
+        if comparing_floats:
             unequal = unequal & ~(
                 (left.is_nan() & right.is_nan()).fill_null(F.lit(False))
             )
-    if comparing_float_dtypes and not nans_compare_equal:
+    if comparing_floats and not nans_compare_equal:
         unequal = unequal | left.is_nan() | right.is_nan()
 
     # check nested dtypes in separate function
@@ -405,48 +408,72 @@ def _assert_series_inner(
     # assert exact, or with tolerance
     if unequal.any():
         if check_exact:
-            raise_assert_detail(
+            _raise_assert_detail(
                 "Series",
                 "exact value mismatch",
                 left=left.to_list(),
                 right=right.to_list(),
             )
         else:
-            # apply check with tolerance (to the known-unequal matches).
-            left, right = left.filter(unequal), right.filter(unequal)
-
-            if all(tp in UNSIGNED_INTEGER_DTYPES for tp in (left.dtype, right.dtype)):
-                # avoid potential "subtract-with-overflow" panic on uint math
-                s_diff = Series(
-                    "diff", [abs(v1 - v2) for v1, v2 in zip(left, right)], dtype=UInt64
-                )
-            else:
-                s_diff = (left - right).abs()
-
-            mismatch, nan_info = False, ""
-            if ((s_diff > (atol + rtol * right.abs())).sum() != 0) or (
-                left.is_null() != right.is_null()
-            ).any():
-                mismatch = True
-            elif comparing_float_dtypes:
-                # note: take special care with NaN values.
-                # if NaNs don't compare as equal, any NaN in the left Series is
-                # sufficient for a mismatch because the if condition above already
-                # compares the null values.
-                if not nans_compare_equal and left.is_nan().any():
-                    nan_info = " (nans_compare_equal=False)"
-                    mismatch = True
-                elif (left.is_nan() != right.is_nan()).any():
-                    nan_info = f" (nans_compare_equal={nans_compare_equal})"
-                    mismatch = True
+            mismatch, nan_info = _check_series_equal_inexact(
+                left,
+                right,
+                unequal,
+                atol=atol,
+                rtol=rtol,
+                nans_compare_equal=nans_compare_equal,
+                comparing_floats=comparing_floats,
+            )
 
             if mismatch:
-                raise_assert_detail(
+                _raise_assert_detail(
                     "Series",
                     f"value mismatch{nan_info}",
                     left=left.to_list(),
                     right=right.to_list(),
                 )
+
+
+def _check_series_equal_inexact(
+    left: Series,
+    right: Series,
+    unequal: Series,
+    atol: float,
+    rtol: float,
+    *,
+    nans_compare_equal: bool,
+    comparing_floats: bool,
+) -> bool:
+    # apply check with tolerance (to the known-unequal matches).
+    left, right = left.filter(unequal), right.filter(unequal)
+
+    if all(tp in UNSIGNED_INTEGER_DTYPES for tp in (left.dtype, right.dtype)):
+        # avoid potential "subtract-with-overflow" panic on uint math
+        s_diff = Series(
+            "diff", [abs(v1 - v2) for v1, v2 in zip(left, right)], dtype=UInt64
+        )
+    else:
+        s_diff = (left - right).abs()
+
+    mismatch, nan_info = False, ""
+    if ((s_diff > (atol + rtol * right.abs())).sum() != 0) or (
+        left.is_null() != right.is_null()
+    ).any():
+        mismatch = True
+
+    elif comparing_floats:
+        # note: take special care with NaN values.
+        # if NaNs don't compare as equal, any NaN in the left Series is
+        # sufficient for a mismatch because the if condition above already
+        # compares the null values.
+        if not nans_compare_equal and left.is_nan().any():
+            nan_info = " (nans_compare_equal=False)"
+            mismatch = True
+        elif (left.is_nan() != right.is_nan()).any():
+            nan_info = f" (nans_compare_equal={nans_compare_equal})"
+            mismatch = True
+
+    return mismatch, nan_info
 
 
 def _assert_series_nested(
@@ -471,16 +498,16 @@ def _assert_series_nested(
                 if nans_compare_equal:
                     continue
                 else:
-                    raise_assert_detail(
+                    _raise_assert_detail(
                         "Series",
                         f"Nested value mismatch (nans_compare_equal={nans_compare_equal})",
                         s1,
                         s2,
                     )
             elif (s1 is None and s2 is not None) or (s2 is None and s1 is not None):
-                raise_assert_detail("Series", "nested value mismatch", s1, s2)
+                _raise_assert_detail("Series", "nested value mismatch", s1, s2)
             elif len(s1) != len(s2):
-                raise_assert_detail(
+                _raise_assert_detail(
                     "Series", "nested list length mismatch", len(s1), len(s2)
                 )
 
@@ -500,14 +527,14 @@ def _assert_series_nested(
     elif left.dtype == Struct == right.dtype:
         ls, rs = left.struct.unnest(), right.struct.unnest()
         if len(ls.columns) != len(rs.columns):
-            raise_assert_detail(
+            _raise_assert_detail(
                 "Series",
                 "nested struct fields mismatch",
                 len(ls.columns),
                 len(rs.columns),
             )
         elif len(ls) != len(rs):
-            raise_assert_detail(
+            _raise_assert_detail(
                 "Series", "nested struct length mismatch", len(ls), len(rs)
             )
         for s1, s2 in zip(ls, rs):
@@ -528,25 +555,16 @@ def _assert_series_nested(
         return False
 
 
-def raise_assert_detail(
+def _raise_assert_detail(
     obj: str,
     detail: str,
     left: Any,
     right: Any,
-    exc: AssertionError | None = None,
 ) -> NoReturn:
     """Raise a detailed assertion error."""
     __tracebackhide__ = True
-
-    error_msg = textwrap.dedent(
-        f"""\
-        {obj} are different ({detail})
-        [left]:  {left}
-        [right]: {right}\
-        """
-    )
-
-    raise AssertionError(error_msg) from exc
+    msg = f"{obj} are different ({detail})\n[left]:  {left}\n[right]: {right}"
+    raise AssertionError(msg)
 
 
 @deprecate_function(
