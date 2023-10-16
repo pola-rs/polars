@@ -1,5 +1,6 @@
-use super::*;
 use polars_ops::frame::DataFrameJoinOps;
+
+use super::*;
 
 pub struct JoinExec {
     input_left: Option<Box<dyn Executor>>,
