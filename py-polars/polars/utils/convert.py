@@ -45,7 +45,7 @@ if sys.version_info >= (3, 11):
     _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
     _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
-
+SECONDS_PER_DAY = 60 * 60 * 24
 EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -71,24 +71,24 @@ def _timedelta_to_pl_duration(td: timedelta | str | None) -> str | None:
     """Convert python timedelta to a polars duration string."""
     if td is None or isinstance(td, str):
         return td
-    else:
-        if td.days >= 0:
-            d = td.days and f"{td.days}d" or ""
-            s = td.seconds and f"{td.seconds}s" or ""
-            us = td.microseconds and f"{td.microseconds}us" or ""
-        else:
-            if not td.seconds and not td.microseconds:
-                d = td.days and f"{td.days}d" or ""
-                s = ""
-                us = ""
-            else:
-                corrected_d = td.days + 1
-                d = corrected_d and f"{corrected_d}d" or "-"
-                corrected_seconds = 24 * 3600 - (td.seconds + (td.microseconds > 0))
-                s = corrected_seconds and f"{corrected_seconds}s" or ""
-                us = td.microseconds and f"{10**6 - td.microseconds}us" or ""
 
-        return f"{d}{s}{us}"
+    if td.days >= 0:
+        d = td.days and f"{td.days}d" or ""
+        s = td.seconds and f"{td.seconds}s" or ""
+        us = td.microseconds and f"{td.microseconds}us" or ""
+    else:
+        if not td.seconds and not td.microseconds:
+            d = td.days and f"{td.days}d" or ""
+            s = ""
+            us = ""
+        else:
+            corrected_d = td.days + 1
+            d = corrected_d and f"{corrected_d}d" or "-"
+            corrected_seconds = 24 * 3600 - (td.seconds + (td.microseconds > 0))
+            s = corrected_seconds and f"{corrected_seconds}s" or ""
+            us = td.microseconds and f"{10**6 - td.microseconds}us" or ""
+
+    return f"{d}{s}{us}"
 
 
 def _negate_duration(duration: str) -> str:
@@ -127,20 +127,22 @@ def _date_to_pl_date(d: date) -> int:
     return int(dt.timestamp()) // (3600 * 24)
 
 
-def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None = None) -> int:
+def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
+    """Convert a Python timedelta object to a total number of subseconds."""
     if time_unit == "ns":
-        return int(td.total_seconds() * 1e9)
-    elif time_unit == "us":
-        return int(td.total_seconds() * 1e6)
+        subseconds = td.microseconds * 1_000
+        subseconds_per_second = 1_000_000_000
     elif time_unit == "ms":
-        return int(td.total_seconds() * 1e3)
-    elif time_unit is None:
-        # python has us precision
-        return int(td.total_seconds() * 1e6)
+        subseconds = td.microseconds // 1_000
+        subseconds_per_second = 1_000
     else:
-        raise ValueError(
-            f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-        )
+        subseconds = td.microseconds
+        subseconds_per_second = 1_000_000
+
+    subseconds += td.seconds * subseconds_per_second
+    subseconds += td.days * SECONDS_PER_DAY * subseconds_per_second
+
+    return subseconds
 
 
 def _to_python_time(value: int) -> time:

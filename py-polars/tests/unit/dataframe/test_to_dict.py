@@ -7,13 +7,7 @@ from polars.testing import assert_frame_equal
 from polars.testing.parametric import dataframes
 
 
-@given(
-    df=dataframes(
-        # TODO: Remove exclusion when bug is fixed.
-        # https://github.com/pola-rs/polars/issues/11744
-        excluded_dtypes=[pl.Duration]
-    )
-)
+@given(df=dataframes())
 def test_to_dict(df: pl.DataFrame) -> None:
     d = df.to_dict(as_series=False)
     result = pl.from_dict(d, schema=df.schema)
