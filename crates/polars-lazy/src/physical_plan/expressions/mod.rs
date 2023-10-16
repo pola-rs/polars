@@ -50,8 +50,8 @@ pub(crate) enum AggState {
     /// Already aggregated: `.agg_list(group_tuples`) is called
     /// and produced a `Series` of dtype `List`
     AggregatedList(Series),
-    /// Already aggregated: `.agg_list(group_tuples`) is called
-    /// and produced a `Series` of any dtype that is not nested.
+    /// Already aggregated: `.agg` is called on an aggregation
+    /// that produces a scalar.
     /// think of `sum`, `mean`, `variance` like aggregations.
     AggregatedScalar(Series),
     /// Not yet aggregated: `agg_list` still has to be called.
