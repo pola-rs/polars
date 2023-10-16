@@ -10,7 +10,6 @@ import polars as pl
 from polars.exceptions import InvalidAssert
 from polars.testing import (
     assert_frame_equal,
-    assert_frame_equal_local_categoricals,
     assert_frame_not_equal,
     assert_series_equal,
     assert_series_not_equal,
@@ -1033,13 +1032,6 @@ def test_assert_series_equal_categorical_vs_str() -> None:
 
     with pytest.raises(AssertionError, match="dtype mismatch"):
         assert_series_equal(s1, s2, categorical_as_str=True)
-
-
-def test_assert_frame_equal_local_categoricals_deprecated() -> None:
-    df = pl.Series(["a", "b", "a"], dtype=pl.Categorical).to_frame()
-
-    with pytest.deprecated_call():
-        assert_frame_equal_local_categoricals(df, df)
 
 
 def test_assert_series_equal_full_series() -> None:

@@ -18,7 +18,6 @@ from polars.datatypes import (
 from polars.exceptions import ComputeError, InvalidAssert
 from polars.lazyframe import LazyFrame
 from polars.series import Series
-from polars.utils.deprecation import deprecate_function
 
 
 def assert_frame_equal(
@@ -565,25 +564,3 @@ def _raise_assert_detail(
     __tracebackhide__ = True
     msg = f"{obj} are different ({detail})\n[left]:  {left}\n[right]: {right}"
     raise AssertionError(msg)
-
-
-@deprecate_function(
-    "Use `assert_frame_equal` instead and pass `categorical_as_str=True`.",
-    version="0.18.13",
-)
-def assert_frame_equal_local_categoricals(df_a: DataFrame, df_b: DataFrame) -> None:
-    """Assert frame equal for frames containing categoricals."""
-    for (a_name, a_value), (b_name, b_value) in zip(
-        df_a.schema.items(), df_b.schema.items()
-    ):
-        if a_name != b_name:
-            print(f"{a_name} != {b_name}")
-            raise AssertionError
-        if a_value != b_value:
-            print(f"{a_value} != {b_value}")
-            raise AssertionError
-
-    cat_to_str = F.col(Categorical).cast(str)
-    assert_frame_equal(df_a.with_columns(cat_to_str), df_b.with_columns(cat_to_str))
-    cat_to_phys = F.col(Categorical).to_physical()
-    assert_frame_equal(df_a.with_columns(cat_to_phys), df_b.with_columns(cat_to_phys))
