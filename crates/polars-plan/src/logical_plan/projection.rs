@@ -355,20 +355,8 @@ fn prepare_excluded(
 
     // exclude group_by keys
     for mut expr in keys.iter() {
-        // Allow a number of aliases of a column expression, still exclude column from aggregation
-        loop {
-            match expr {
-                Expr::Column(name) => {
-                    exclude.insert(name.clone());
-                    break;
-                },
-                Expr::Alias(e, _) => {
-                    expr = e;
-                },
-                _ => {
-                    break;
-                },
-            }
+        if let Expr::Column(name) = expr {
+            exclude.insert(name.clone());
         }
     }
     Ok(exclude)
