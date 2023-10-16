@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import math
 from pathlib import Path
 
@@ -1208,3 +1209,27 @@ def test_sql_unary_ops_8890(match_float: bool) -> None:
             "c": [-3, -3],
             "d": [4, 4],
         }
+
+
+def test_sql_date() -> None:
+    df = pl.DataFrame(
+        {
+            "date": [
+                datetime.date(2021, 3, 15),
+                datetime.date(2021, 3, 28),
+                datetime.date(2021, 4, 4),
+            ],
+            "version": ["0.0.1", "0.7.3", "0.7.4"],
+        }
+    )
+
+    with pl.SQLContext(df=df, eager_execution=True) as ctx:
+        expected = pl.DataFrame({"date": [True, False, False]})
+        assert ctx.execute("SELECT date < DATE('2021-03-20') from df").frame_equal(
+            expected
+        )
+
+    expected = pl.DataFrame({"literal": ["2023-03-01"]})
+    assert pl.select(
+        pl.sql_expr("""CAST(DATE('2023-03', '%Y-%m') as STRING)""")
+    ).frame_equal(expected)
