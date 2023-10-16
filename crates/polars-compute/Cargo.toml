@@ -1,0 +1,17 @@
+[package]
+name = "polars-compute"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "Private compute kernels for the Polars DataFrame library"
+
+[dependencies]
+
+[build-dependencies]
+version_check = { workspace = true }
+
+[features]
+nightly = []
