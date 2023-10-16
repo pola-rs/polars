@@ -127,20 +127,16 @@ def _date_to_pl_date(d: date) -> int:
     return int(dt.timestamp()) // (3600 * 24)
 
 
-def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None = None) -> int:
-    if time_unit is None or time_unit == "us":
-        subseconds = td.microseconds
-        subseconds_per_second = 1_000_000
-    elif time_unit == "ns":
+def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
+    if time_unit == "ns":
         subseconds = td.microseconds * 1_000
         subseconds_per_second = 1_000_000_000
     elif time_unit == "ms":
         subseconds = td.microseconds // 1_000
         subseconds_per_second = 1_000
     else:
-        raise ValueError(
-            f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
-        )
+        subseconds = td.microseconds
+        subseconds_per_second = 1_000_000
 
     subseconds += td.seconds * subseconds_per_second
     subseconds += td.days * SECONDS_PER_DAY * subseconds_per_second
