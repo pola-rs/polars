@@ -9,7 +9,6 @@ repository = { workspace = true }
 description = "More operations on Polars data structures"
 
 [dependencies]
-polars-arrow = { workspace = true, default-features = false }
 polars-core = { workspace = true, features = ["algorithm_group_by"], default-features = false }
 polars-error = { workspace = true }
 polars-json = { workspace = true, optional = true }
@@ -90,6 +89,7 @@ string_from_radix = ["polars-core/strings"]
 extract_jsonpath = ["serde_json", "jsonpath_lib", "polars-json"]
 log = []
 hash = []
+zip_with = ["polars-core/zip_with"]
 group_by_list = ["polars-core/group_by_list"]
 rolling_window = ["polars-core/rolling_window"]
 moment = ["polars-core/moment"]

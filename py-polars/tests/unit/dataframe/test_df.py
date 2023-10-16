@@ -500,7 +500,7 @@ def test_file_buffer() -> None:
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
     f.seek(0)
     # check if not fails on TryClone and Length impl in file.rs
-    with pytest.raises(pl.ArrowError):
+    with pytest.raises(pl.ComputeError):
         pl.read_parquet(f)
 
 
@@ -1008,11 +1008,10 @@ def test_describe() -> None:
             ("mean", 1.3333333333333333, None, None),
             ("std", 0.5773502691896257, None, None),
             ("min", 1.0, None, None),
-            ("50%", 1.0, None, None),
             ("max", 2.0, None, None),
         ]
 
-    described = df.describe(percentiles=(0.2, 0.4, 0.6, 0.8))
+    described = df.describe(percentiles=(0.2, 0.4, 0.5, 0.6, 0.8))
     assert described.schema == {
         "describe": pl.Utf8,
         "numerical": pl.Float64,
@@ -1601,7 +1600,7 @@ def test_reproducible_hash_with_seeds() -> None:
     if platform.mac_ver()[-1] != "arm64":
         expected = pl.Series(
             "s",
-            [13477868900383131459, 988796329533502010, 16840582678788620208],
+            [13477868900383131459, 6344663067812082469, 16840582678788620208],
             dtype=pl.UInt64,
         )
         result = df.hash_rows(*seeds)
@@ -1838,6 +1837,14 @@ def test_schema() -> None:
     )
     expected = {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.Utf8}
     assert df.schema == expected
+
+
+def test_schema_equality() -> None:
+    lf = pl.LazyFrame({"foo": [1, 2, 3], "bar": [6.0, 7.0, 8.0]})
+    lf_rev = lf.select("bar", "foo")
+
+    assert lf.schema != lf_rev.schema
+    assert lf.collect().schema != lf_rev.collect().schema
 
 
 def test_df_schema_unique() -> None:
@@ -2815,6 +2822,49 @@ def test_filter_sequence() -> None:
     assert df.filter(np.array([True, False, True]))["a"].to_list() == [1, 3]
 
 
+def test_filter_multiple_predicates() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 2, 2],
+            "b": [1, 1, 2, 2, 2],
+            "c": [1, 1, 2, 3, 4],
+        }
+    )
+
+    # multiple predicates
+    expected = pl.DataFrame({"a": [1, 1, 1], "b": [1, 1, 2], "c": [1, 1, 2]})
+    for out in (
+        df.filter(pl.col("a") == 1, pl.col("b") <= 2),  # positional/splat
+        df.filter([pl.col("a") == 1, pl.col("b") <= 2]),  # as list
+    ):
+        assert_frame_equal(out, expected)
+
+    # multiple kwargs
+    assert_frame_equal(
+        df.filter(a=1, b=2),
+        pl.DataFrame({"a": [1], "b": [2], "c": [2]}),
+    )
+
+    # both positional and keyword args
+    assert_frame_equal(
+        pl.DataFrame({"a": [2], "b": [2], "c": [3]}),
+        df.filter(pl.col("c") < 4, a=2, b=2),
+    )
+
+    # boolean mask
+    out = df.filter([True, False, False, False, True])
+    expected = pl.DataFrame({"a": [1, 2], "b": [1, 2], "c": [1, 4]})
+    assert_frame_equal(out, expected)
+
+    # multiple boolean masks
+    out = df.filter(
+        np.array([True, True, False, True, False]),
+        np.array([True, False, True, True, False]),
+    )
+    expected = pl.DataFrame({"a": [1, 2], "b": [1, 2], "c": [1, 3]})
+    assert_frame_equal(out, expected)
+
+
 def test_indexing_set() -> None:
     df = pl.DataFrame({"bool": [True, True], "str": ["N/A", "N/A"], "nr": [1, 2]})
 
@@ -2838,8 +2888,8 @@ def test_set() -> None:
     )
     with pytest.raises(
         TypeError,
-        match=r"DataFrame object does not support `Series` assignment by index."
-        r"\n\nUse `DataFrame.with_columns`",
+        match=r"DataFrame object does not support `Series` assignment by index"
+        r"\n\nUse `DataFrame.with_columns`.",
     ):
         df["new"] = np.random.rand(10)
 

@@ -12,10 +12,11 @@ mod merge_sorted;
 #[cfg(feature = "chunked_ids")]
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::Hash;
 
 use ahash::RandomState;
 pub use args::*;
+use arrow::legacy::trusted_len::TrustedLen;
 #[cfg(feature = "asof_join")]
 use asof::AsofJoinBy;
 #[cfg(feature = "asof_join")]
@@ -33,7 +34,6 @@ use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
-use polars_arrow::trusted_len::TrustedLen;
 use polars_core::hashing::partition::{this_partition, AsU64};
 use polars_core::hashing::{BytesHash, _df_rows_to_hashes_threaded_vertical, _HASHMAP_INIT_SIZE};
 use polars_core::prelude::*;

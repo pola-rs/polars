@@ -55,12 +55,12 @@ def _create_col(
             raise TypeError(
                 "invalid input for `col`"
                 "\n\nExpected iterable of type `str` or `DataType`,"
-                f" got iterable of type {type(item).__name__!r}"
+                f" got iterable of type {type(item).__name__!r}."
             )
     else:
         raise TypeError(
             "invalid input for `col`"
-            f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}"
+            f"\n\nExpected `str` or `DataType`, got {type(name).__name__!r}."
         )
 
 

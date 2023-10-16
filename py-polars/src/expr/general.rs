@@ -490,6 +490,11 @@ impl PyExpr {
     }
 
     #[cfg(feature = "trigonometry")]
+    fn cot(&self) -> Self {
+        self.clone().inner.cot().into()
+    }
+
+    #[cfg(feature = "trigonometry")]
     fn arcsin(&self) -> Self {
         self.clone().inner.arcsin().into()
     }
@@ -882,7 +887,6 @@ impl PyExpr {
     }
 
     #[cfg(feature = "ffi_plugin")]
-    #[allow(clippy::too_many_arguments)]
     fn register_plugin(
         &self,
         lib: &str,

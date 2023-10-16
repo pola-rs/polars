@@ -46,3 +46,16 @@ pub fn get_float_fmt() -> PyResult<String> {
     };
     Ok(strfmt.to_string())
 }
+
+#[pyfunction]
+pub fn set_float_precision(precision: Option<usize>) -> PyResult<()> {
+    use polars_core::fmt::set_float_precision;
+    set_float_precision(precision);
+    Ok(())
+}
+
+#[pyfunction]
+pub fn get_float_precision() -> PyResult<Option<usize>> {
+    use polars_core::fmt::get_float_precision;
+    Ok(get_float_precision())
+}

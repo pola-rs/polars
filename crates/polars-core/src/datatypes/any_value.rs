@@ -1,9 +1,9 @@
+#[cfg(feature = "dtype-struct")]
+use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
 use arrow::types::PrimitiveType;
-#[cfg(feature = "dtype-struct")]
-use polars_arrow::trusted_len::TrustedLenPush;
 use polars_utils::format_smartstring;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::slice::GetSaferUnchecked;

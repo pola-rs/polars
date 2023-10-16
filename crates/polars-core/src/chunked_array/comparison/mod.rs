@@ -6,10 +6,10 @@ use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
 use arrow::compute;
 use arrow::compute::comparison;
+use arrow::legacy::prelude::FromData;
 use arrow::scalar::{BinaryScalar, PrimitiveScalar, Scalar, Utf8Scalar};
 use either::Either;
 use num_traits::{NumCast, ToPrimitive};
-use polars_arrow::prelude::FromData;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -859,7 +859,7 @@ impl ChunkCompare<&ArrayChunked> for ArrayChunked {
         arity::binary_mut_with_options(
             self,
             rhs,
-            polars_arrow::kernels::comparison::fixed_size_list_eq,
+            arrow::legacy::kernels::comparison::fixed_size_list_eq,
             "",
         )
     }
@@ -873,7 +873,7 @@ impl ChunkCompare<&ArrayChunked> for ArrayChunked {
         arity::binary_mut_with_options(
             self,
             rhs,
-            polars_arrow::kernels::comparison::fixed_size_list_neq,
+            arrow::legacy::kernels::comparison::fixed_size_list_neq,
             "",
         )
     }

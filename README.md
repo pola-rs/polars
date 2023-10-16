@@ -222,7 +222,7 @@ point to the `main` branch of this repo.
 polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>" }
 ```
 
-Required Rust version `>=1.65`.
+Required Rust version `>=1.71`.
 
 ## Contributing
 
@@ -264,8 +264,10 @@ Don't use this unless you hit the row boundary as the default polars is faster a
 
 ## Legacy
 
-Do you want polars to run on an old CPU (e.g. dating from before 2011)? Install `pip install polars-lts-cpu`. This polars project is
-compiled without [avx](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target features.
+Do you want polars to run on an old CPU (e.g. dating from before 2011), or on an `x86-64` build
+of Python on Apple Silicon under Rosetta? Install `pip install polars-lts-cpu`. This version of
+polars is compiled without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target
+features.
 
 ## Sponsors
 

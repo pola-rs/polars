@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
+use arrow::legacy::utils::CustomIterTools;
 #[cfg(feature = "timezones")]
 use once_cell::sync::Lazy;
-use polars_arrow::utils::CustomIterTools;
 #[cfg(feature = "regex")]
 use regex::{escape, Regex};
 #[cfg(feature = "serde")]
@@ -44,8 +44,8 @@ pub enum StringFunction {
     },
     #[cfg(feature = "string_from_radix")]
     FromRadix(u32, bool),
-    NChars,
-    Length,
+    LenBytes,
+    LenChars,
     #[cfg(feature = "string_justify")]
     LJust {
         width: usize,
@@ -114,8 +114,8 @@ impl StringFunction {
             FromRadix { .. } => mapper.with_dtype(DataType::Int32),
             #[cfg(feature = "extract_jsonpath")]
             JsonExtract { dtype, .. } => mapper.with_opt_dtype(dtype.clone()),
-            Length => mapper.with_dtype(DataType::UInt32),
-            NChars => mapper.with_dtype(DataType::UInt32),
+            LenBytes => mapper.with_dtype(DataType::UInt32),
+            LenChars => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "regex")]
             Replace { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "temporal")]
@@ -173,9 +173,9 @@ impl Display for StringFunction {
             StringFunction::JsonExtract { .. } => "json_extract",
             #[cfg(feature = "string_justify")]
             StringFunction::LJust { .. } => "ljust",
-            StringFunction::Length => "lengths",
+            StringFunction::LenBytes => "len_bytes",
             StringFunction::Lowercase => "lowercase",
-            StringFunction::NChars => "n_chars",
+            StringFunction::LenChars => "len_chars",
             #[cfg(feature = "string_justify")]
             StringFunction::RJust { .. } => "rjust",
             #[cfg(feature = "regex")]
@@ -234,14 +234,14 @@ pub(super) fn titlecase(s: &Series) -> PolarsResult<Series> {
     Ok(ca.to_titlecase().into_series())
 }
 
-pub(super) fn n_chars(s: &Series) -> PolarsResult<Series> {
+pub(super) fn len_chars(s: &Series) -> PolarsResult<Series> {
     let ca = s.utf8()?;
-    Ok(ca.str_n_chars().into_series())
+    Ok(ca.str_len_chars().into_series())
 }
 
-pub(super) fn lengths(s: &Series) -> PolarsResult<Series> {
+pub(super) fn len_bytes(s: &Series) -> PolarsResult<Series> {
     let ca = s.utf8()?;
-    Ok(ca.str_lengths().into_series())
+    Ok(ca.str_len_bytes().into_series())
 }
 
 #[cfg(feature = "regex")]

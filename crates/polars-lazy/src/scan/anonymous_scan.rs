@@ -6,7 +6,7 @@ use crate::prelude::*;
 #[derive(Clone)]
 pub struct ScanArgsAnonymous {
     pub infer_schema_length: Option<usize>,
-    pub schema: Option<Schema>,
+    pub schema: Option<SchemaRef>,
     pub skip_rows: Option<usize>,
     pub n_rows: Option<usize>,
     pub row_count: Option<RowCount>,

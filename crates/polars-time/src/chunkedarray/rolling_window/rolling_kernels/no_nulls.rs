@@ -1,6 +1,6 @@
+use arrow::legacy::kernels::rolling::no_nulls::{self, RollingAggWindowNoNulls};
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
-use polars_arrow::kernels::rolling::no_nulls::{self, RollingAggWindowNoNulls};
 
 use super::*;
 

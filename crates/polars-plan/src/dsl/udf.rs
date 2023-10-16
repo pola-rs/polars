@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_arrow::error::{polars_bail, PolarsResult};
+use arrow::legacy::error::{polars_bail, PolarsResult};
 use polars_core::prelude::Field;
 use polars_core::schema::Schema;
 

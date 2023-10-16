@@ -56,6 +56,28 @@ def test_hive_partitioned_predicate_pushdown(
 
 
 @pytest.mark.write_disk()
+def test_hive_partitioned_slice_pushdown(io_files_path: Path, tmp_path: Path) -> None:
+    df = pl.read_ipc(io_files_path / "*.ipc")
+
+    root = tmp_path / "partitioned_data"
+
+    # Ignore the pyarrow legacy warning until we can write properly with new settings.
+    warnings.filterwarnings("ignore")
+    pq.write_to_dataset(
+        df.to_arrow(),
+        root_path=root,
+        partition_cols=["category", "fats_g"],
+        use_legacy_dataset=True,
+    )
+
+    q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
+
+    # tests: 11682
+    assert q.head(1).collect().select(pl.all_horizontal(pl.all().count() == 1)).item()
+    assert q.head(0).collect().columns == ["calories", "sugars_g", "category", "fats_g"]
+
+
+@pytest.mark.write_disk()
 def test_hive_partitioned_projection_pushdown(
     io_files_path: Path, tmp_path: Path
 ) -> None:

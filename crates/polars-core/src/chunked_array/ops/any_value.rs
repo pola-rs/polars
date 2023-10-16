@@ -135,7 +135,7 @@ impl<'a> AnyValue<'a> {
                         // so we set the array pointer with values of the dictionary array.
                         #[cfg(feature = "dtype-categorical")]
                         {
-                            use polars_arrow::is_valid::IsValid as _;
+                            use arrow::legacy::is_valid::IsValid as _;
                             if let Some(arr) = arr.as_any().downcast_ref::<DictionaryArray<u32>>() {
                                 let keys = arr.keys();
                                 let values = arr.values();
@@ -187,12 +187,12 @@ macro_rules! get_any_value_unchecked {
 
 macro_rules! get_any_value {
     ($self:ident, $index:expr) => {{
-        let (chunk_idx, idx) = $self.index_to_chunked_index($index);
-        let arr = &*$self.chunks[chunk_idx];
-        polars_ensure!(idx < arr.len(), oob = idx, arr.len());
+        if $index >= $self.len() {
+            polars_bail!(oob = $index, $self.len());
+        }
         // SAFETY
         // bounds are checked
-        Ok(unsafe { arr_to_any_value(arr, idx, $self.dtype()) })
+        Ok(unsafe { $self.get_any_value_unchecked($index) })
     }};
 }
 

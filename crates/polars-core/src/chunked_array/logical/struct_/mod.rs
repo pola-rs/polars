@@ -5,8 +5,8 @@ use std::io::Write;
 use std::ops::BitOr;
 
 use arrow::bitmap::MutableBitmap;
+use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::offset::OffsetsBuffer;
-use polars_arrow::trusted_len::TrustedLenPush;
 use smartstring::alias::String as SmartString;
 
 use super::*;

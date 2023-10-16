@@ -1,7 +1,7 @@
-use polars_arrow::export::arrow::array::Array;
-use polars_arrow::kernels::rolling;
-use polars_arrow::kernels::rolling::no_nulls::{MaxWindow, MinWindow};
-use polars_arrow::kernels::take_agg::{
+use arrow::array::Array;
+use arrow::legacy::kernels::rolling;
+use arrow::legacy::kernels::rolling::no_nulls::{MaxWindow, MinWindow};
+use arrow::legacy::kernels::take_agg::{
     take_agg_no_null_primitive_iter_unchecked, take_agg_primitive_iter_unchecked,
 };
 use polars_core::export::num::Bounded;

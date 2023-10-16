@@ -1,7 +1,7 @@
 #[cfg(feature = "group_by_list")]
-use polars_arrow::kernels::list_bytes_iter::numeric_list_bytes_iter;
-use polars_arrow::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
-use polars_arrow::prelude::*;
+use arrow::legacy::kernels::list_bytes_iter::numeric_list_bytes_iter;
+use arrow::legacy::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
+use arrow::legacy::prelude::*;
 
 use super::*;
 use crate::config::verbose;

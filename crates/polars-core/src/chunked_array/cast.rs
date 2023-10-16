@@ -26,11 +26,10 @@ pub(crate) fn cast_chunks(
     };
 
     let arrow_dtype = dtype.to_arrow();
-    let chunks = chunks
+    chunks
         .iter()
         .map(|arr| arrow::compute::cast::cast(arr.as_ref(), &arrow_dtype, options))
-        .collect::<arrow::error::Result<Vec<_>>>()?;
-    Ok(chunks)
+        .collect::<PolarsResult<Vec<_>>>()
 }
 
 fn cast_impl_inner(
@@ -187,7 +186,7 @@ impl ChunkCast for Utf8Chunked {
             DataType::Decimal(precision, scale) => match (precision, scale) {
                 (precision, Some(scale)) => {
                     let chunks = self.downcast_iter().map(|arr| {
-                        polars_arrow::compute::cast::cast_utf8_to_decimal(arr, *precision, *scale)
+                        arrow::legacy::compute::cast::cast_utf8_to_decimal(arr, *precision, *scale)
                     });
                     Ok(Int128Chunked::from_chunk_iter(self.name(), chunks)
                         .into_decimal_unchecked(*precision, *scale)

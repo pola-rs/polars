@@ -282,7 +282,7 @@ def test_unsupported_engine() -> None:
 
 
 def test_unsupported_binary_workbook(path_xlsx: Path, path_xlsb: Path) -> None:
-    with pytest.raises(Exception, match="Invalid Excel Binary Workbook"):
+    with pytest.raises(Exception, match="invalid Excel Binary Workbook"):
         pl.read_excel(path_xlsx, engine="pyxlsb")
 
     with pytest.raises(Exception, match="does not support binary format"):
@@ -607,7 +607,7 @@ def test_excel_empty_sheet(
     request: pytest.FixtureRequest,
 ) -> None:
     empty_spreadsheet_path = request.getfixturevalue(source)
-    with pytest.raises(NoDataError, match="Empty Excel sheet"):
+    with pytest.raises(NoDataError, match="empty Excel sheet"):
         pl.read_excel(empty_spreadsheet_path)
 
     df = pl.read_excel(empty_spreadsheet_path, raise_if_empty=False)

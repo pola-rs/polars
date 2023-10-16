@@ -612,3 +612,18 @@ def test_utf8_empty_series_arg_min_max_10703() -> None:
         "arg_min": [0, None],
         "arg_max": [0, None],
     }
+
+
+def test_list_len() -> None:
+    s = pl.Series([[1, 2, None], [5]])
+    result = s.list.len()
+    expected = pl.Series([3, 1], dtype=pl.UInt32)
+    assert_series_equal(result, expected)
+
+
+def test_list_lengths_deprecated() -> None:
+    s = pl.Series([[1, 2, None], [5]])
+    with pytest.deprecated_call():
+        result = s.list.lengths()
+    expected = pl.Series([3, 1], dtype=pl.UInt32)
+    assert_series_equal(result, expected)

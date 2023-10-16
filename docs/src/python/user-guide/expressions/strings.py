@@ -8,8 +8,8 @@ import polars as pl
 df = pl.DataFrame({"animal": ["Crab", "cat and dog", "rab$bit", None]})
 
 out = df.select(
-    pl.col("animal").str.lengths().alias("byte_count"),
-    pl.col("animal").str.n_chars().alias("letter_count"),
+    pl.col("animal").str.len_bytes().alias("byte_count"),
+    pl.col("animal").str.len_chars().alias("letter_count"),
 )
 print(out)
 # --8<-- [end:df]

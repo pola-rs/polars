@@ -9,19 +9,25 @@ use crate::prelude::{LazyFrame, ScanArgsAnonymous};
 #[derive(Clone)]
 pub struct LazyJsonLineReader {
     pub(crate) path: PathBuf,
+    paths: Vec<PathBuf>,
     pub(crate) batch_size: Option<usize>,
     pub(crate) low_memory: bool,
     pub(crate) rechunk: bool,
-    pub(crate) schema: Option<Schema>,
+    pub(crate) schema: Option<SchemaRef>,
     pub(crate) row_count: Option<RowCount>,
     pub(crate) infer_schema_length: Option<usize>,
     pub(crate) n_rows: Option<usize>,
 }
 
 impl LazyJsonLineReader {
+    pub fn new_paths(paths: Vec<PathBuf>) -> Self {
+        Self::new(PathBuf::new()).with_paths(paths)
+    }
+
     pub fn new(path: impl AsRef<Path>) -> Self {
         LazyJsonLineReader {
             path: path.as_ref().to_path_buf(),
+            paths: vec![],
             batch_size: None,
             low_memory: false,
             rechunk: true,
@@ -46,6 +52,7 @@ impl LazyJsonLineReader {
     }
     /// Set the number of rows to use when inferring the json schema.
     /// the default is 100 rows.
+    /// Ignored when the schema is specified explicitly using [`Self::with_schema`].
     /// Setting to `None` will do a full table scan, very slow.
     #[must_use]
     pub fn with_infer_schema_length(mut self, num_rows: Option<usize>) -> Self {
@@ -54,8 +61,8 @@ impl LazyJsonLineReader {
     }
     /// Set the JSON file's schema
     #[must_use]
-    pub fn with_schema(mut self, schema: Schema) -> Self {
-        self.schema = Some(schema);
+    pub fn with_schema(mut self, schema: Option<SchemaRef>) -> Self {
+        self.schema = schema;
         self
     }
 
@@ -91,8 +98,17 @@ impl LazyFileListReader for LazyJsonLineReader {
         &self.path
     }
 
+    fn paths(&self) -> &[PathBuf] {
+        &self.paths
+    }
+
     fn with_path(mut self, path: PathBuf) -> Self {
         self.path = path;
+        self
+    }
+
+    fn with_paths(mut self, paths: Vec<PathBuf>) -> Self {
+        self.paths = paths;
         self
     }
 

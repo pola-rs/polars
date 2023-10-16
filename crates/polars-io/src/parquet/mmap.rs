@@ -66,7 +66,7 @@ pub(super) fn to_deserializer<'a>(
     field: Field,
     num_rows: usize,
     chunk_size: Option<usize>,
-) -> ArrowResult<ArrayIter<'a>> {
+) -> PolarsResult<ArrayIter<'a>> {
     let chunk_size = chunk_size.unwrap_or(usize::MAX).min(num_rows);
 
     let (columns, types): (Vec<_>, Vec<_>) = columns

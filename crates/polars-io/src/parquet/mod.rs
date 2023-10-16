@@ -22,8 +22,11 @@ mod read;
 mod read_impl;
 mod write;
 
+use arrow::io::parquet::write::FileMetaData;
 pub use read::*;
 pub use write::{BrotliLevel, GzipLevel, ZstdLevel, *};
+
+pub type FileMetaDataRef = Arc<FileMetaData>;
 
 use super::*;
 

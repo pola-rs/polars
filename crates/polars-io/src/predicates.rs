@@ -19,16 +19,6 @@ pub trait StatsEvaluator {
     fn should_read(&self, stats: &BatchStats) -> PolarsResult<bool>;
 }
 
-#[cfg(feature = "parquet")]
-pub(crate) fn arrow_schema_to_empty_df(schema: &ArrowSchema) -> DataFrame {
-    let columns = schema
-        .fields
-        .iter()
-        .map(|fld| Series::full_null(&fld.name, 0, &fld.data_type().into()))
-        .collect();
-    DataFrame::new_no_checks(columns)
-}
-
 #[cfg(any(feature = "parquet", feature = "json",))]
 pub(crate) fn apply_predicate(
     df: &mut DataFrame,
@@ -172,12 +162,12 @@ impl ColumnStats {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug)]
 pub struct BatchStats {
-    schema: Schema,
+    schema: SchemaRef,
     stats: Vec<ColumnStats>,
 }
 
 impl BatchStats {
-    pub fn new(schema: Schema, stats: Vec<ColumnStats>) -> Self {
+    pub fn new(schema: SchemaRef, stats: Vec<ColumnStats>) -> Self {
         Self { schema, stats }
     }
 
@@ -186,7 +176,7 @@ impl BatchStats {
     }
 
     pub fn schema(&self) -> &Schema {
-        &self.schema
+        self.schema.as_ref()
     }
 
     pub fn column_stats(&self) -> &[ColumnStats] {

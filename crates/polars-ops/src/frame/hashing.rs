@@ -1,10 +1,10 @@
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::hash::Hash;
 
 use ahash::RandomState;
+use arrow::legacy::trusted_len::TrustedLen;
+use arrow::legacy::utils::CustomIterTools;
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
-use polars_arrow::trusted_len::TrustedLen;
-use polars_arrow::utils::CustomIterTools;
 use polars_core::hashing::partition::this_partition;
 use polars_core::prelude::*;
 use polars_core::utils::_set_partition_size;
@@ -88,11 +88,7 @@ where
             .map(|iter| {
                 // create hashes and keys
                 iter.into_iter()
-                    .map(|val| {
-                        let mut hasher = build_hasher.build_hasher();
-                        val.hash(&mut hasher);
-                        (hasher.finish(), val)
-                    })
+                    .map(|val| (build_hasher.hash_one(&val), val))
                     .collect_trusted::<Vec<_>>()
             })
             .collect()

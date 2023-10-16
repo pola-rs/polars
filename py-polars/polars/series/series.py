@@ -486,7 +486,7 @@ class Series:
             time_zone = self.dtype.time_zone  # type: ignore[union-attr]
             if str(other.tzinfo) != str(time_zone):
                 raise TypeError(
-                    f"Datetime time zone '{other.tzinfo}' does not match Series timezone '{time_zone}'"
+                    f"Datetime time zone {other.tzinfo!r} does not match Series timezone {time_zone!r}"
                 )
             ts = _datetime_to_pl_timestamp(other, self.dtype.time_unit)  # type: ignore[union-attr]
             f = get_ffi_func(op + "_<>", Int64, self._s)
@@ -736,7 +736,7 @@ class Series:
             f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
             raise TypeError(
-                f"cannot do arithmetic with series of dtype: {self.dtype} and argument"
+                f"cannot do arithmetic with series of dtype: {self.dtype!r} and argument"
                 f" of type: {type(other).__name__!r}"
             )
         return self._from_pyseries(f(other))
@@ -965,7 +965,7 @@ class Series:
             return self
 
         if self.dtype not in INTEGER_DTYPES:
-            raise NotImplementedError("unsupported idxs datatype.")
+            raise NotImplementedError("unsupported idxs datatype")
 
         if self.len() == 0:
             return Series(self.name, [], dtype=idx_type)
@@ -1501,7 +1501,7 @@ class Series:
         return wrap_df(PyDataFrame([self._s]))
 
     def describe(
-        self, percentiles: Sequence[float] | float | None = (0.25, 0.75)
+        self, percentiles: Sequence[float] | float | None = (0.25, 0.50, 0.75)
     ) -> DataFrame:
         """
         Quick summary statistics of a series.
@@ -1514,6 +1514,10 @@ class Series:
         percentiles
             One or more percentiles to include in the summary statistics (if the
             series has a numeric dtype). All values must be in the range `[0, 1]`.
+
+        Notes
+        -----
+        The median is included by default as the 50% percentile.
 
         Returns
         -------
@@ -3719,11 +3723,13 @@ class Series:
 
     def len(self) -> int:
         """
-        Length of this Series.
+        Return the number of elements in this Series.
+
+        Null values are treated like regular elements in this context.
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s = pl.Series("a", [1, 2, None])
         >>> s.len()
         3
 
@@ -4497,7 +4503,9 @@ class Series:
 
     def clone(self) -> Self:
         """
-        Very cheap deepcopy/clone.
+        Create a copy of this Series.
+
+        This is a cheap operation that does not copy data.
 
         See Also
         --------
@@ -4781,6 +4789,25 @@ class Series:
             0.0
             1.6331e16
             -1.2246e-16
+        ]
+
+        """
+
+    def cot(self) -> Series:
+        """
+        Compute the element-wise value for the cotangent.
+
+        Examples
+        --------
+        >>> import math
+        >>> s = pl.Series("a", [0.0, math.pi / 2.0, math.pi])
+        >>> s.cot()
+        shape: (3,)
+        Series: 'a' [f64]
+        [
+            inf
+            6.1232e-17
+            -8.1656e15
         ]
 
         """
@@ -5867,13 +5894,13 @@ class Series:
         >>> s = pl.Series("a", [1, 2, None, None, 5])
         >>> s.interpolate()
         shape: (5,)
-        Series: 'a' [i64]
+        Series: 'a' [f64]
         [
-            1
-            2
-            3
-            4
-            5
+            1.0
+            2.0
+            3.0
+            4.0
+            5.0
         ]
 
         """

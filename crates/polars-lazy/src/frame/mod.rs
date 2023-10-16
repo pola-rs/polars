@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 pub use anonymous_scan::*;
+use arrow::legacy::prelude::QuantileInterpolOptions;
 #[cfg(feature = "csv")]
 pub use csv::*;
 pub use file_list_reader::*;
@@ -21,10 +22,10 @@ pub use ipc::*;
 pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
-use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_io::RowCount;
+use polars_plan::dsl::all_horizontal;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
 use polars_plan::global::FETCH_ROWS;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
@@ -847,7 +848,7 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use polars_arrow::prelude::QuantileInterpolOptions;
+    /// use arrow::legacy::prelude::QuantileInterpolOptions;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
@@ -1636,7 +1637,7 @@ impl LazyGroupBy {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use polars_arrow::prelude::QuantileInterpolOptions;
+    /// use arrow::legacy::prelude::QuantileInterpolOptions;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()

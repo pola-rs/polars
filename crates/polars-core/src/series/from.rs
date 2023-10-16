@@ -1,6 +1,9 @@
 use std::convert::TryFrom;
 
 use arrow::compute::cast::utf8_to_large_utf8;
+use arrow::legacy::compute::cast::cast;
+#[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
+use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-datetime",
@@ -8,9 +11,6 @@ use arrow::compute::cast::utf8_to_large_utf8;
     feature = "dtype-duration"
 ))]
 use arrow::temporal_conversions::*;
-use polars_arrow::compute::cast::cast;
-#[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
-use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 use polars_error::feature_gated;
 
 use crate::chunked_array::cast::cast_chunks;
@@ -489,7 +489,7 @@ fn convert<F: Fn(&dyn Array) -> ArrayRef>(arr: &[ArrayRef], f: F) -> Vec<ArrayRe
 }
 
 /// Converts to physical types and bubbles up the correct [`DataType`].
-fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataType) {
+unsafe fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataType) {
     match arrays[0].data_type() {
         ArrowDataType::Utf8 => (
             convert(&arrays, |arr| {
@@ -612,6 +612,19 @@ fn to_physical_and_dtype(arrays: Vec<ArrayRef>) -> (Vec<ArrayRef>, DataType) {
                     .collect();
                 (vec![arrow_array], DataType::Struct(polars_fields))
             })
+        },
+        // Use Series architecture to convert nested logical types to physical.
+        dt @ (ArrowDataType::Duration(_)
+        | ArrowDataType::Time32(_)
+        | ArrowDataType::Time64(_)
+        | ArrowDataType::Timestamp(_, _)
+        | ArrowDataType::Date32
+        | ArrowDataType::Decimal(_, _)
+        | ArrowDataType::Date64) => {
+            let dt = dt.clone();
+            let mut s = Series::_try_from_arrow_unchecked("", arrays, &dt).unwrap();
+            let dtype = s.dtype().clone();
+            (std::mem::take(s.chunks_mut()), dtype)
         },
         dt => {
             let dtype = dt.into();

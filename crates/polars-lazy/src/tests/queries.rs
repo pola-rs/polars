@@ -1356,6 +1356,7 @@ fn test_lazy_ternary_predicate_pushdown() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "dtype-categorical")]
 fn test_categorical_addition() -> PolarsResult<()> {
     let df = fruits_cars();
 
@@ -1464,6 +1465,7 @@ fn test_list_in_select_context() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "round_series")]
 fn test_round_after_agg() -> PolarsResult<()> {
     let df = fruits_cars();
 
@@ -1691,6 +1693,7 @@ fn empty_df() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "abs")]
 fn test_apply_flatten() -> PolarsResult<()> {
     let df = df![
          "A"=> [1.1435, 2.223456, 3.44732, -1.5234, -2.1238, -3.2923],

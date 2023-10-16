@@ -1,6 +1,6 @@
 //! Traits for miscellaneous operations on ChunkedArray
+use arrow::legacy::prelude::QuantileInterpolOptions;
 use arrow::offset::OffsetsBuffer;
-use polars_arrow::prelude::QuantileInterpolOptions;
 
 #[cfg(feature = "object")]
 use crate::datatypes::ObjectType;
@@ -24,7 +24,7 @@ pub(crate) mod downcast;
 pub(crate) mod explode;
 mod explode_and_offsets;
 mod extend;
-mod fill_null;
+pub mod fill_null;
 mod filter;
 mod for_each;
 pub mod full;

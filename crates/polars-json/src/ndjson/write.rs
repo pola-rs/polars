@@ -2,8 +2,8 @@
 use std::io::Write;
 
 use arrow::array::Array;
-use arrow::error::Error;
 pub use fallible_streaming_iterator::FallibleStreamingIterator;
+use polars_error::{PolarsError, PolarsResult};
 
 use super::super::json::write::new_serializer;
 
@@ -23,7 +23,7 @@ fn serialize(array: &dyn Array, buffer: &mut Vec<u8>) {
 pub struct Serializer<A, I>
 where
     A: AsRef<dyn Array>,
-    I: Iterator<Item = Result<A, Error>>,
+    I: Iterator<Item = PolarsResult<A>>,
 {
     arrays: I,
     buffer: Vec<u8>,
@@ -32,7 +32,7 @@ where
 impl<A, I> Serializer<A, I>
 where
     A: AsRef<dyn Array>,
-    I: Iterator<Item = Result<A, Error>>,
+    I: Iterator<Item = PolarsResult<A>>,
 {
     /// Creates a new [`Serializer`].
     pub fn new(arrays: I, buffer: Vec<u8>) -> Self {
@@ -43,13 +43,13 @@ where
 impl<A, I> FallibleStreamingIterator for Serializer<A, I>
 where
     A: AsRef<dyn Array>,
-    I: Iterator<Item = Result<A, Error>>,
+    I: Iterator<Item = PolarsResult<A>>,
 {
     type Item = [u8];
 
-    type Error = Error;
+    type Error = PolarsError;
 
-    fn advance(&mut self) -> Result<(), Error> {
+    fn advance(&mut self) -> PolarsResult<()> {
         self.buffer.clear();
         self.arrays
             .next()
@@ -75,7 +75,7 @@ where
 pub struct FileWriter<W, I>
 where
     W: Write,
-    I: FallibleStreamingIterator<Item = [u8], Error = Error>,
+    I: FallibleStreamingIterator<Item = [u8], Error = PolarsError>,
 {
     writer: W,
     iterator: I,
@@ -84,7 +84,7 @@ where
 impl<W, I> FileWriter<W, I>
 where
     W: Write,
-    I: FallibleStreamingIterator<Item = [u8], Error = Error>,
+    I: FallibleStreamingIterator<Item = [u8], Error = PolarsError>,
 {
     /// Creates a new [`FileWriter`].
     pub fn new(writer: W, iterator: I) -> Self {
@@ -104,9 +104,9 @@ where
 impl<W, I> Iterator for FileWriter<W, I>
 where
     W: Write,
-    I: FallibleStreamingIterator<Item = [u8], Error = Error>,
+    I: FallibleStreamingIterator<Item = [u8], Error = PolarsError>,
 {
-    type Item = Result<(), Error>;
+    type Item = PolarsResult<()>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let item = self.iterator.next().transpose()?;

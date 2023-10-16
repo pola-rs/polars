@@ -1,4 +1,4 @@
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::utils::CustomIterTools;
 use polars_core::frame::group_by::IntoGroupsProxy;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;

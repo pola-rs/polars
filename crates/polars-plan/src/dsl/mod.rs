@@ -41,6 +41,7 @@ use std::sync::Arc;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
+use arrow::legacy::prelude::QuantileInterpolOptions;
 pub use expr::*;
 pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
@@ -49,7 +50,6 @@ pub use list::*;
 #[cfg(feature = "meta")]
 pub use meta::*;
 pub use options::*;
-use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
@@ -793,20 +793,12 @@ impl Expr {
 
     /// Fill missing value with next non-null.
     pub fn backward_fill(self, limit: FillNullLimit) -> Self {
-        self.apply(
-            move |s: Series| s.fill_null(FillNullStrategy::Backward(limit)).map(Some),
-            GetOutput::same_type(),
-        )
-        .with_fmt("backward_fill")
+        self.apply_private(FunctionExpr::BackwardFill { limit })
     }
 
     /// Fill missing value with previous non-null.
     pub fn forward_fill(self, limit: FillNullLimit) -> Self {
-        self.apply(
-            move |s: Series| s.fill_null(FillNullStrategy::Forward(limit)).map(Some),
-            GetOutput::same_type(),
-        )
-        .with_fmt("forward_fill")
+        self.apply_private(FunctionExpr::ForwardFill { limit })
     }
 
     /// Round underlying floating point array to given decimal numbers.

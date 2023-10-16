@@ -220,7 +220,6 @@ pub fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     dsl::cumreduce_exprs(func, exprs).into()
 }
 
-#[allow(clippy::too_many_arguments)]
 #[pyfunction]
 #[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=None, ambiguous=None))]
 pub fn datetime(
@@ -299,39 +298,38 @@ pub fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<PyExpr> {
     Ok(dsl::dtype_cols(dtypes).into())
 }
 
-#[allow(clippy::too_many_arguments)]
 #[pyfunction]
-#[pyo3(signature = (days, seconds, nanoseconds, microseconds, milliseconds, minutes, hours, weeks, time_unit))]
+#[pyo3(signature = (weeks, days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds, time_unit))]
 pub fn duration(
-    days: Option<PyExpr>,
-    seconds: Option<PyExpr>,
-    nanoseconds: Option<PyExpr>,
-    microseconds: Option<PyExpr>,
-    milliseconds: Option<PyExpr>,
-    minutes: Option<PyExpr>,
-    hours: Option<PyExpr>,
     weeks: Option<PyExpr>,
+    days: Option<PyExpr>,
+    hours: Option<PyExpr>,
+    minutes: Option<PyExpr>,
+    seconds: Option<PyExpr>,
+    milliseconds: Option<PyExpr>,
+    microseconds: Option<PyExpr>,
+    nanoseconds: Option<PyExpr>,
     time_unit: Wrap<TimeUnit>,
 ) -> PyExpr {
     set_unwrapped_or_0!(
-        days,
-        seconds,
-        nanoseconds,
-        microseconds,
-        milliseconds,
-        minutes,
-        hours,
         weeks,
+        days,
+        hours,
+        minutes,
+        seconds,
+        milliseconds,
+        microseconds,
+        nanoseconds,
     );
     let args = DurationArgs {
-        days,
-        seconds,
-        nanoseconds,
-        microseconds,
-        milliseconds,
-        minutes,
-        hours,
         weeks,
+        days,
+        hours,
+        minutes,
+        seconds,
+        milliseconds,
+        microseconds,
+        nanoseconds,
         time_unit: time_unit.0,
     };
     dsl::duration(args).into()

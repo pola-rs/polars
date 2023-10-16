@@ -1,5 +1,5 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
-use polars_arrow::index::IndexToUsize;
+use arrow::legacy::index::IndexToUsize;
 use polars_core::utils::get_supertype;
 
 use super::*;

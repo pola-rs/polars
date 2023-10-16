@@ -1,4 +1,4 @@
-use polars_arrow::utils::CustomIterTools;
+use arrow::legacy::utils::CustomIterTools;
 use polars_ops::chunked_array::list::*;
 
 use super::*;

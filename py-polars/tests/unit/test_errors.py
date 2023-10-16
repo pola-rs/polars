@@ -560,31 +560,6 @@ def test_invalid_inner_type_cast_list() -> None:
         s.cast(pl.List(pl.Categorical))
 
 
-@pytest.mark.parametrize(
-    ("every", "match"),
-    [
-        ("-1i", r"'every' argument must be positive"),
-        (
-            "2h",
-            r"you cannot combine time durations like '2h' with integer durations like '3i'",
-        ),
-    ],
-)
-def test_group_by_dynamic_validation(every: str, match: str) -> None:
-    df = pl.DataFrame(
-        {
-            "index": [0, 0, 1, 1],
-            "group": ["banana", "pear", "banana", "pear"],
-            "weight": [2, 3, 5, 7],
-        }
-    )
-
-    with pytest.raises(pl.ComputeError, match=match):
-        df.group_by_dynamic("index", by="group", every=every, period="2i").agg(
-            pl.col("weight")
-        )
-
-
 def test_lit_agg_err() -> None:
     with pytest.raises(pl.ComputeError, match=r"cannot aggregate a literal"):
         pl.DataFrame({"y": [1]}).with_columns(pl.lit(1).sum().over("y"))
@@ -610,19 +585,6 @@ def test_invalid_group_by_arg() -> None:
         TypeError, match="specifying aggregations as a dictionary is not supported"
     ):
         df.group_by(1).agg({"a": "sum"})
-
-
-def test_no_sorted_err() -> None:
-    df = pl.DataFrame(
-        {
-            "dt": [datetime(2001, 1, 1), datetime(2001, 1, 2)],
-        }
-    )
-    with pytest.raises(
-        pl.InvalidOperationError,
-        match=r"argument in operation 'group_by_dynamic' is not explicitly sorted",
-    ):
-        df.group_by_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
 
 
 def test_serde_validation() -> None:
@@ -688,7 +650,7 @@ def test_sort_by_err_9259() -> None:
 def test_empty_inputs_error() -> None:
     df = pl.DataFrame({"col1": [1]})
     with pytest.raises(
-        pl.ComputeError, match="expression: 'fold' didn't get any inputs"
+        pl.ComputeError, match="expression: 'sum_horizontal' didn't get any inputs"
     ):
         df.select(pl.sum_horizontal(pl.exclude("col1")))
 

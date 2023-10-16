@@ -9,7 +9,7 @@ repository = { workspace = true }
 description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
-polars-arrow = { workspace = true }
+arrow = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"], default-features = false }
 polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
@@ -128,7 +128,7 @@ coalesce = ["polars-plan/coalesce"]
 regex = ["polars-plan/regex"]
 serde = [
   "polars-plan/serde",
-  "polars-arrow/serde",
+  "arrow/serde",
   "polars-core/serde-lazy",
   "polars-time?/serde",
   "polars-io/serde",

@@ -1,8 +1,8 @@
+use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_encoding")]
 use base64::engine::general_purpose;
 #[cfg(feature = "string_encoding")]
 use base64::Engine as _;
-use polars_arrow::kernels::string::*;
 #[cfg(feature = "string_from_radix")]
 use polars_core::export::num::Num;
 use polars_core::export::regex::Regex;
@@ -63,7 +63,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     #[cfg(feature = "string_from_radix")]
     // Parse a string number with base _radix_ into a decimal (i32)
     fn parse_int(&self, radix: u32, strict: bool) -> PolarsResult<Int32Chunked> {
-        use polars_arrow::utils::CustomIterTools;
+        use arrow::legacy::utils::CustomIterTools;
         let ca = self.as_utf8();
         let f = |opt_s: Option<&str>| -> Option<i32> {
             opt_s.and_then(|s| <i32 as Num>::from_str_radix(s, radix).ok())
@@ -145,15 +145,15 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     /// Get the length of the string values as number of chars.
-    fn str_n_chars(&self) -> UInt32Chunked {
+    fn str_len_chars(&self) -> UInt32Chunked {
         let ca = self.as_utf8();
-        ca.apply_kernel_cast(&string_nchars)
+        ca.apply_kernel_cast(&string_len_chars)
     }
 
     /// Get the length of the string values as number of bytes.
-    fn str_lengths(&self) -> UInt32Chunked {
+    fn str_len_bytes(&self) -> UInt32Chunked {
         let ca = self.as_utf8();
-        ca.apply_kernel_cast(&string_lengths)
+        ca.apply_kernel_cast(&string_len_bytes)
     }
 
     /// Return a copy of the string left filled with ASCII '0' digits to make a string of length width.

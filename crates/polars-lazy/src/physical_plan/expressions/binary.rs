@@ -205,11 +205,11 @@ impl PhysicalExpr for BinaryExpr {
                 AggState::Literal(_) | AggState::NotAggregated(_),
             ) => self.apply_elementwise(ac_l, ac_r, false),
             (
-                AggState::AggregatedFlat(_) | AggState::Literal(_),
-                AggState::AggregatedFlat(_) | AggState::Literal(_),
+                AggState::AggregatedScalar(_) | AggState::Literal(_),
+                AggState::AggregatedScalar(_) | AggState::Literal(_),
             ) => self.apply_elementwise(ac_l, ac_r, true),
-            (AggState::AggregatedFlat(_), AggState::NotAggregated(_))
-            | (AggState::NotAggregated(_), AggState::AggregatedFlat(_)) => {
+            (AggState::AggregatedScalar(_), AggState::NotAggregated(_))
+            | (AggState::NotAggregated(_), AggState::AggregatedScalar(_)) => {
                 self.apply_group_aware(ac_l, ac_r)
             },
             (AggState::AggregatedList(lhs), AggState::AggregatedList(rhs)) => {
