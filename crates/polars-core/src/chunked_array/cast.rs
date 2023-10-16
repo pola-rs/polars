@@ -5,8 +5,10 @@ use arrow::compute::cast::CastOptions;
 
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::categorical::CategoricalChunkedBuilder;
+#[cfg(feature = "temporal")]
+use crate::chunked_array::temporal::validate_is_number;
 #[cfg(feature = "timezones")]
-use crate::chunked_array::temporal::{validate_is_number, validate_time_zone};
+use crate::chunked_array::temporal::validate_time_zone;
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
 
