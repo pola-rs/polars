@@ -253,10 +253,7 @@ def assert_series_equal(
     >>> assert_series_equal(s1, s2)  # doctest: +SKIP
 
     """
-    if not (
-        isinstance(left, Series)  # type: ignore[redundant-expr]
-        and isinstance(right, Series)
-    ):
+    if not (isinstance(left, Series) and isinstance(right, Series)):  # type: ignore[redundant-expr]
         _raise_assertion_error(
             "Inputs", "unexpected input types", type(left), type(right)
         )
@@ -357,11 +354,6 @@ def _assert_series_inner(
     """Compare Series dtype + values."""
     if check_dtype and left.dtype != right.dtype:
         _raise_assertion_error("Series", "dtype mismatch", left.dtype, right.dtype)
-
-    if left.null_count() != right.null_count():
-        _raise_assertion_error(
-            "Series", "null_count is not equal", left.null_count(), right.null_count()
-        )
 
     if categorical_as_str and left.dtype == Categorical:
         left = left.cast(Utf8)

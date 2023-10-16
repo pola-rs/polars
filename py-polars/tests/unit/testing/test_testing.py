@@ -101,7 +101,7 @@ def test_compare_series_nulls() -> None:
     srs2 = pl.Series([1, None, None])
     assert_series_not_equal(srs1, srs2)
 
-    with pytest.raises(AssertionError, match="null_count is not equal"):
+    with pytest.raises(AssertionError, match="value mismatch"):
         assert_series_equal(srs1, srs2)
 
 
