@@ -487,7 +487,7 @@ class Series:
             f = get_ffi_func(op + "_<>", Float64, self._s)
             assert f is not None
             return self._from_pyseries(f(other))
-        if isinstance(other, datetime):
+        elif isinstance(other, datetime):
             if self.dtype == Date:
                 # require upcast when comparing date series to datetime
                 self = self.cast(Datetime("us"))
