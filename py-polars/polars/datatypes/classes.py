@@ -45,24 +45,23 @@ class DataTypeClass(type):
     def _string_repr(cls) -> str:
         return _dtype_str_repr(cls)
 
-    def base_type(cls) -> DataTypeClass:
-        """Return the base type."""
-        return cls
+    # Methods below defined here in signature only to satisfy mypy
+
+    @classmethod
+    def base_type(cls) -> DataTypeClass:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_(cls, other: PolarsDataType) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
+    def is_not(cls, other: PolarsDataType) -> bool:  # noqa: D102
+        ...
 
     @classproperty
-    def is_nested(self) -> bool:
-        """Check if this data type is nested."""
-        return False
-
-    @classmethod
-    def is_(cls, other: PolarsDataType) -> bool:
-        """Check if this DataType is the same as another DataType."""
-        return cls == other and hash(cls) == hash(other)
-
-    @classmethod
-    def is_not(cls, other: PolarsDataType) -> bool:
-        """Check if this DataType is NOT the same as another DataType."""
-        return not cls.is_(other)
+    def is_nested(self) -> bool:  # noqa: D102
+        ...
 
 
 class DataType(metaclass=DataTypeClass):
@@ -96,11 +95,6 @@ class DataType(metaclass=DataTypeClass):
         Struct
         """
         return cls
-
-    @classproperty
-    def is_nested(self) -> bool:
-        """Check if this data type is nested."""
-        return False
 
     @classinstmethod  # type: ignore[arg-type]
     def is_(self, other: PolarsDataType) -> bool:
@@ -147,6 +141,11 @@ class DataType(metaclass=DataTypeClass):
 
         """
         return not self.is_(other)
+
+    @classproperty
+    def is_nested(self) -> bool:
+        """Check if this data type is nested."""
+        return False
 
 
 def _custom_reconstruct(
