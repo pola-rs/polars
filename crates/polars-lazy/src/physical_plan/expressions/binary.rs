@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_core::frame::group_by::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_ops::prelude::floor_div_series;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;

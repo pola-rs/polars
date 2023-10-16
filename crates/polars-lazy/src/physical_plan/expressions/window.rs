@@ -1,6 +1,7 @@
 use std::fmt::Write;
 use std::sync::Arc;
 
+use polars_ops::frame::SeriesJoin;
 use arrow::array::PrimitiveArray;
 use polars_core::export::arrow::bitmap::Bitmap;
 use polars_core::frame::group_by::{GroupBy, GroupsProxy};

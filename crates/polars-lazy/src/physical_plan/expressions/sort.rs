@@ -8,6 +8,7 @@ use rayon::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
+use polars_ops::chunked_array::ListNameSpaceImpl;
 
 pub struct SortExpr {
     pub(crate) physical_expr: Arc<dyn PhysicalExpr>,
