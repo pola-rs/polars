@@ -36,6 +36,7 @@ Manipulation/selection
     LazyFrame.merge_sorted
     LazyFrame.rename
     LazyFrame.reverse
+    LazyFrame.rolling
     LazyFrame.select
     LazyFrame.select_seq
     LazyFrame.set_sorted
