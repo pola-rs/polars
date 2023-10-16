@@ -37,7 +37,7 @@ where
                 } else {
                     // safety:
                     // we are in bounds
-                    Some(unsafe { agg_window.update(start as usize, end as usize) })
+                    unsafe { agg_window.update(start as usize, end as usize) }
                 }
             })
         })

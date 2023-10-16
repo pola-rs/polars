@@ -38,7 +38,7 @@ impl<
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> T {
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         let vals = self.sorted.update(start, end);
         let length = vals.len();
 
@@ -60,14 +60,14 @@ impl<
                 if top_idx == idx {
                     // safety
                     // we are in bounds
-                    unsafe { *vals.get_unchecked(idx) }
+                    Some(unsafe { *vals.get_unchecked(idx) })
                 } else {
                     // safety
                     // we are in bounds
                     let (mid, mid_plus_1) =
                         unsafe { (*vals.get_unchecked(idx), *vals.get_unchecked(idx + 1)) };
 
-                    (mid + mid_plus_1) / T::from::<f64>(2.0f64).unwrap()
+                    Some((mid + mid_plus_1) / T::from::<f64>(2.0f64).unwrap())
                 }
             },
             QuantileInterpolOptions::Linear => {
@@ -77,16 +77,16 @@ impl<
                 if top_idx == idx {
                     // safety
                     // we are in bounds
-                    unsafe { *vals.get_unchecked(idx) }
+                    Some(unsafe { *vals.get_unchecked(idx) })
                 } else {
                     let proportion = T::from(float_idx - idx as f64).unwrap();
-                    proportion * (vals[top_idx] - vals[idx]) + vals[idx]
+                    Some(proportion * (vals[top_idx] - vals[idx]) + vals[idx])
                 }
             },
             _ => {
                 // safety
                 // we are in bounds
-                unsafe { *vals.get_unchecked(idx) }
+                Some(unsafe { *vals.get_unchecked(idx) })
             },
         }
     }

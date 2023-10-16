@@ -95,8 +95,8 @@ def test_group_by_rolling(
             "max",
             "mean",
             "sum",
-            #  "std", blocked by https://github.com/pola-rs/polars/issues/11140
-            #  "var", blocked by https://github.com/pola-rs/polars/issues/11140
+            "std",
+            "var",
             "median",
         ]
     ),

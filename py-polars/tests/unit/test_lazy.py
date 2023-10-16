@@ -734,8 +734,8 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
         ]
     ).collect()
 
-    assert cast(float, out_single_val_variance[0, "std"]) == 0.0
-    assert cast(float, out_single_val_variance[0, "var"]) == 0.0
+    assert cast(float, out_single_val_variance[0, "std"]) is None
+    assert cast(float, out_single_val_variance[0, "var"]) is None
 
 
 def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:

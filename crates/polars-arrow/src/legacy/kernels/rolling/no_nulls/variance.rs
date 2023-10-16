@@ -28,7 +28,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> T {
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         // if we exceed the end, we have a completely new window
         // so we recompute
         let recompute_sum = if start >= self.last_end || self.last_recompute > 128 {
@@ -70,7 +70,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<
             }
         }
         self.last_end = end;
-        self.sum_of_squares
+        Some(self.sum_of_squares)
     }
 }
 
@@ -110,25 +110,24 @@ impl<
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> T {
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         let count: T = NumCast::from(end - start).unwrap();
-        let sum_of_squares = self.sum_of_squares.update(start, end);
-        let mean = self.mean.update(start, end);
+        let sum_of_squares = self.sum_of_squares.update(start, end).unwrap();
+        let mean = self.mean.update(start, end).unwrap();
 
         let denom = count - NumCast::from(self.ddof).unwrap();
-        if end - start == 1 {
-            T::zero()
-        } else if denom <= T::zero() {
-            //ddof would be greater than # of observations
-            T::infinity()
+        if denom <= T::zero() {
+            None
+        } else if end - start == 1 {
+            Some(T::zero())
         } else {
             let out = (sum_of_squares - count * mean * mean) / denom;
             // variance cannot be negative.
             // if it is negative it is due to numeric instability
             if out < T::zero() {
-                T::zero()
+                Some(T::zero())
             } else {
-                out
+                Some(out)
             }
         }
     }

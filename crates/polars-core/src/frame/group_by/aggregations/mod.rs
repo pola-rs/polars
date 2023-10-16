@@ -141,7 +141,7 @@ where
                 None
             } else {
                 // SAFETY: we are in bounds.
-                Some(unsafe { agg_window.update(start as usize, end as usize) })
+                unsafe { agg_window.update(start as usize, end as usize) }
             }
         })
         .collect::<PrimitiveArray<T>>()
@@ -827,7 +827,13 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof).map(|flt| NumCast::from(flt).unwrap())
@@ -889,7 +895,13 @@ where
                         debug_assert!(len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof).map(|flt| NumCast::from(flt).unwrap())
@@ -1045,7 +1057,13 @@ where
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.var(ddof)
@@ -1087,7 +1105,13 @@ where
                         debug_assert!(first + len <= self.len() as IdxSize);
                         match len {
                             0 => None,
-                            1 => NumCast::from(0),
+                            1 => {
+                                if ddof == 0 {
+                                    NumCast::from(0)
+                                } else {
+                                    None
+                                }
+                            },
                             _ => {
                                 let arr_group = _slice_from_offsets(self, first, len);
                                 arr_group.std(ddof)

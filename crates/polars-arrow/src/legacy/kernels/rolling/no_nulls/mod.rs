@@ -28,7 +28,7 @@ pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
     /// Update and recompute the window
     /// # Safety
     /// `start` and `end` must be within the windows bounds
-    unsafe fn update(&mut self, start: usize, end: usize) -> T;
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T>;
 }
 
 // Use an aggregation window that maintains the state
@@ -47,21 +47,36 @@ where
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);
     let mut agg_window = Agg::new(values, start, end, params);
+    let mut validity = match create_validity(min_periods, len, window_size, &det_offsets_fn) {
+        Some(v) => v,
+        None => {
+            let mut validity = MutableBitmap::with_capacity(len);
+            validity.extend_constant(len, true);
+            validity
+        },
+    };
 
     let out = (0..len)
         .map(|idx| {
             let (start, end) = det_offsets_fn(idx, window_size, len);
             // safety:
             // we are in bounds
-            unsafe { agg_window.update(start, end) }
+            let agg = unsafe { agg_window.update(start, end) };
+            match agg {
+                Some(val) => val,
+                None => {
+                    // safety: we are in bounds
+                    unsafe { validity.set_unchecked(idx, false) };
+                    T::default()
+                },
+            }
         })
         .collect_trusted::<Vec<_>>();
 
-    let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
     Ok(Box::new(PrimitiveArray::new(
         T::PRIMITIVE.into(),
         out.into(),
-        validity.map(|b| b.into()),
+        Some(validity.into()),
     )))
 }
 

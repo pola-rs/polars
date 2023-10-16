@@ -23,7 +23,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign>
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> T {
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         // if we exceed the end, we have a completely new window
         // so we recompute
         let recompute_sum = if start >= self.last_end {
@@ -63,7 +63,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign>
             }
         }
         self.last_end = end;
-        self.sum
+        Some(self.sum)
     }
 }
 

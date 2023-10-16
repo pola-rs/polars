@@ -19,9 +19,9 @@ impl<
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        let sum = self.sum.update(start, end);
-        sum / NumCast::from(end - start).unwrap()
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+        let sum = self.sum.update(start, end).unwrap();
+        Some(sum / NumCast::from(end - start).unwrap())
     }
 }
 

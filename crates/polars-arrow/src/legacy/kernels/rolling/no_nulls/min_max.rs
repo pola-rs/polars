@@ -151,7 +151,7 @@ macro_rules! minmax_window {
                 }
             }
 
-            unsafe fn update(&mut self, start: usize, end: usize) -> T {
+            unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
                 //For details see: https://github.com/pola-rs/polars/pull/9277#issuecomment-1581401692
                 self.last_start = start; // Don't care where the last one started
                 let old_last_end = self.last_end; // But we need this
@@ -171,10 +171,10 @@ macro_rules! minmax_window {
                 if entering.map(|em| $new_is_m(&self.m, em.1) || empty_overlap) == Some(true) {
                     // The entering extremum "beats" the previous extremum so we can ignore the overlap
                     self.update_m_and_m_idx(entering.unwrap());
-                    return self.m;
+                    return Some(self.m);
                 } else if self.m_idx >= start || empty_overlap {
                     // The previous extremum didn't drop off. Keep it
-                    return self.m;
+                    return Some(self.m);
                 }
                 // Otherwise get the min of the overlapping window and the entering min
                 match (
@@ -194,7 +194,7 @@ macro_rules! minmax_window {
                     (None, None) => unreachable!(),
                 }
 
-                self.m
+                Some(self.m)
             }
         }
     };
