@@ -408,8 +408,8 @@ def _assert_series_inner(
             raise_assert_detail(
                 "Series",
                 "exact value mismatch",
-                left=list(left),
-                right=list(right),
+                left=left.to_list(),
+                right=right.to_list(),
             )
         else:
             # apply check with tolerance (to the known-unequal matches).
@@ -444,8 +444,8 @@ def _assert_series_inner(
                 raise_assert_detail(
                     "Series",
                     f"value mismatch{nan_info}",
-                    left=list(left),
-                    right=list(right),
+                    left=left.to_list(),
+                    right=right.to_list(),
                 )
 
 
