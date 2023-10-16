@@ -9557,11 +9557,11 @@ class Expr:
         else:
             args = [parse_as_expression(a) for a in args]
         if kwargs is None:
-            serialized_kwargs = ""
+            serialized_kwargs = b""
         else:
             import pickle
 
-            serialized_kwargs = pickle.dumps(kwargs)
+            serialized_kwargs = pickle.dumps(kwargs, protocol=2)
 
         return self._from_pyexpr(
             self._pyexpr.register_plugin(

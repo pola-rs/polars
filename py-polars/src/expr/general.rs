@@ -892,7 +892,7 @@ impl PyExpr {
         lib: &str,
         symbol: &str,
         args: Vec<PyExpr>,
-        kwargs: Arc<[u8]>,
+        kwargs: Vec<u8>,
         is_elementwise: bool,
         input_wildcard_expansion: bool,
         auto_explode: bool,
@@ -917,7 +917,7 @@ impl PyExpr {
             function: FunctionExpr::FfiPlugin {
                 lib: Arc::from(lib),
                 symbol: Arc::from(symbol),
-                kwargs,
+                kwargs: Arc::from(kwargs),
             },
             options: FunctionOptions {
                 collect_groups,
