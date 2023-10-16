@@ -4709,7 +4709,7 @@ class Expr:
 
     def ne_missing(self, other: Any) -> Self:
         """
-        Method equivalent of equality operator ``expr != other`` where `None` == None`.
+        Method equivalent of equality operator ``expr != other`` where ``None == None``.
 
         This differs from default ``ne`` where null values are propagated.
 
