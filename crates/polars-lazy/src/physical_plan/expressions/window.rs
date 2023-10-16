@@ -330,7 +330,7 @@ impl WindowExpr {
             // (false, false, _) => Ok(MapStrategy::Join),
             // aggregations
             //`sum("foo").over("groups")`
-            (_, AggState::AggregatedFlat(_)) => Ok(MapStrategy::Join),
+            (_, AggState::AggregatedScalar(_)) => Ok(MapStrategy::Join),
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
             (WindowMapping::Join, AggState::AggregatedList(_)) => Ok(MapStrategy::Join),

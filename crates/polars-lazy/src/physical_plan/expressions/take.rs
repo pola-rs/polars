@@ -57,11 +57,11 @@ impl PhysicalExpr for TakeExpr {
         let mut idx = self.idx.evaluate_on_groups(df, groups, state)?;
 
         let idx = match idx.state {
-            AggState::AggregatedFlat(s) => {
+            AggState::AggregatedScalar(s) => {
                 let idx = s.cast(&IDX_DTYPE)?;
                 let idx = idx.idx().unwrap();
 
-                // The indexes are AggregatedFlat, meaning they are a single values pointing into
+                // The indexes are AggregatedScalar, meaning they are a single values pointing into
                 // a group. If we zip this with the first of each group -> `idx + firs` then we can
                 // simply use a take operation on the whole array instead of per group.
 

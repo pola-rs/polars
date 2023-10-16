@@ -49,7 +49,7 @@ impl PhysicalExpr for CastExpr {
                 let casted = ca.apply_to_inner(&|s| self.finish(&s))?;
                 ac.with_series(casted.into_series(), true, None)?;
             },
-            AggState::AggregatedFlat(s) => {
+            AggState::AggregatedScalar(s) => {
                 let s = self.finish(s)?;
                 if ac.is_literal() {
                     ac.with_literal(s);
