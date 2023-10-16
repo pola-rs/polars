@@ -147,8 +147,10 @@ called `hundredXValue` where the `value` column is multiplied by 100.
 In `Pandas` this would be:
 
 ```python
-df["tenXValue"] = df["value"] * 10
-df["hundredXValue"] = df["value"] * 100
+df.assign(
+    tenXValue=lambda df_: df_.value * 10,
+    hundredXValue=lambda df_: df_.value * 100
+)
 ```
 
 These column assignments are executed sequentially.
@@ -174,7 +176,7 @@ the values in column `a` based on a condition. When the value in column `c` is e
 In `Pandas` this would be:
 
 ```python
-df.loc[df["c"] == 2, "a"] = df.loc[df["c"] == 2, "b"]
+df.assign(a=lambda df_: np.where(df_.c == 2, df_.b, df_.a))
 ```
 
 while in `Polars` this would be:
@@ -186,22 +188,17 @@ df.with_columns(
     .otherwise(pl.col("a")).alias("a")
 )
 ```
-
-The `Polars` way is pure in that the original `DataFrame` is not modified. The `mask` is
-also not computed twice as in `Pandas` (you could prevent this in `Pandas`, but that
-would require setting a temporary variable).
-
-Additionally `Polars` can compute every branch of an `if -> then -> otherwise` in
+`Polars` can compute every branch of an `if -> then -> otherwise` in
 parallel. This is valuable, when the branches get more expensive to compute.
 
 #### Filtering
 
 We want to filter the dataframe `df` with housing data based on some criteria.
 
-In `Pandas` you filter the dataframe by passing Boolean expressions to the `loc` method:
+In `Pandas` you filter the dataframe by passing Boolean expressions to the `query` method:
 
 ```python
-df.loc[(df['sqft_living'] > 2500) & (df['price'] < 300000)]
+df.query('m2_living > 2500 and price < 300000')
 ```
 
 while in `Polars` you call the `filter` method:
