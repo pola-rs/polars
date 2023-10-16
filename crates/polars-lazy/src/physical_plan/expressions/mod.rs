@@ -216,6 +216,17 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
+    fn from_agg_state(agg_state: AggState, groups: Cow<'a, GroupsProxy>) -> AggregationContext<'a> {
+        Self {
+            state: agg_state,
+            groups,
+            sorted: false,
+            update_groups: UpdateGroups::No,
+            original_len: true,
+            null_propagated: false,
+        }
+    }
+
     fn from_literal(lit: Series, groups: Cow<'a, GroupsProxy>) -> AggregationContext<'a> {
         Self {
             state: AggState::Literal(lit),
