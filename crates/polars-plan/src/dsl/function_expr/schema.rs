@@ -242,6 +242,12 @@ impl FunctionExpr {
             SumHorizontal => mapper.map_to_supertype(),
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
+            #[cfg(feature = "ewma")]
+            EwmMean { .. } => mapper.map_to_float_dtype(),
+            #[cfg(feature = "ewma")]
+            EwmStd { .. } => mapper.map_to_float_dtype(),
+            #[cfg(feature = "ewma")]
+            EwmVar { .. } => mapper.map_to_float_dtype(),
         }
     }
 }
