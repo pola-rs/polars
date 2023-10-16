@@ -354,7 +354,7 @@ fn prepare_excluded(
     }
 
     // exclude group_by keys
-    for mut expr in keys.iter() {
+    for expr in keys.iter() {
         if let Expr::Column(name) = expr {
             exclude.insert(name.clone());
         }
