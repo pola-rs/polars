@@ -1,3 +1,4 @@
+use std::ffi::CString;
 use std::sync::RwLock;
 
 use arrow::ffi::{import_field_from_c, ArrowSchema};
@@ -30,24 +31,59 @@ fn get_lib(lib: &str) -> PolarsResult<&'static Library> {
     }
 }
 
-pub(super) unsafe fn call_plugin(s: &[Series], lib: &str, symbol: &str) -> PolarsResult<Series> {
+unsafe fn retrieve_error_msg(lib: &Library) -> CString {
+    let symbol: libloading::Symbol<unsafe extern "C" fn() -> *mut std::os::raw::c_char> =
+        lib.get(b"get_last_error_message\0").unwrap();
+    let msg_ptr = symbol();
+    CString::from_raw(msg_ptr)
+}
+
+pub(super) unsafe fn call_plugin(
+    s: &[Series],
+    lib: &str,
+    symbol: &str,
+    kwargs: &[u8],
+) -> PolarsResult<Series> {
     let lib = get_lib(lib)?;
 
+    // *const SeriesExport: pointer to Box<SeriesExport>
+    // * usize: length of that pointer
+    // *const u8: pointer to &[u8]
+    // usize: length of the u8 slice
+    // *mut SeriesExport: pointer where return value should be written.
     let symbol: libloading::Symbol<
-        unsafe extern "C" fn(*const SeriesExport, usize) -> SeriesExport,
+        unsafe extern "C" fn(*const SeriesExport, usize, *const u8, usize, *mut SeriesExport),
     > = lib.get(symbol.as_bytes()).unwrap();
 
-    let n_args = s.len();
-
     let input = s.iter().map(export_series).collect::<Vec<_>>();
+    let input_len = s.len();
     let slice_ptr = input.as_ptr();
-    let out = symbol(slice_ptr, n_args);
 
+    let kwargs_ptr = kwargs.as_ptr();
+    let kwargs_len = kwargs.len();
+
+    let mut return_value = SeriesExport::empty();
+    let return_value_ptr = &mut return_value as *mut SeriesExport;
+    symbol(
+        slice_ptr,
+        input_len,
+        kwargs_ptr,
+        kwargs_len,
+        return_value_ptr,
+    );
+
+    // The inputs get dropped when the ffi side calls the drop callback.
     for e in input {
         std::mem::forget(e);
     }
 
-    import_series(out)
+    if !return_value.is_null() {
+        import_series(return_value)
+    } else {
+        let msg = retrieve_error_msg(lib);
+        let msg = msg.to_string_lossy();
+        polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
+    }
 }
 
 pub(super) unsafe fn plugin_field(
@@ -57,8 +93,12 @@ pub(super) unsafe fn plugin_field(
 ) -> PolarsResult<Field> {
     let lib = get_lib(lib)?;
 
-    let symbol: libloading::Symbol<unsafe extern "C" fn(*const ArrowSchema, usize) -> ArrowSchema> =
-        lib.get(symbol.as_bytes()).unwrap();
+    // *const ArrowSchema: pointer to heap Box<ArrowSchema>
+    // usize: length of the boxed slice
+    // *mut ArrowSchema: pointer where the return value can be written
+    let symbol: libloading::Symbol<
+        unsafe extern "C" fn(*const ArrowSchema, usize, *mut ArrowSchema),
+    > = lib.get(symbol.as_bytes()).unwrap();
 
     // we deallocate the fields buffer
     let fields = fields
@@ -68,8 +108,18 @@ pub(super) unsafe fn plugin_field(
         .into_boxed_slice();
     let n_args = fields.len();
     let slice_ptr = fields.as_ptr();
-    let out = symbol(slice_ptr, n_args);
 
-    let arrow_field = import_field_from_c(&out)?;
-    Ok(Field::from(&arrow_field))
+    let mut return_value = ArrowSchema::empty();
+    let return_value_ptr = &mut return_value as *mut ArrowSchema;
+    symbol(slice_ptr, n_args, return_value_ptr);
+
+    if !return_value.is_null() {
+        let arrow_field = import_field_from_c(&return_value)?;
+        let out = Field::from(&arrow_field);
+        Ok(out)
+    } else {
+        let msg = retrieve_error_msg(lib);
+        let msg = msg.to_string_lossy();
+        polars_bail!(ComputeError: "the plugin failed with message: {}", msg)
+    }
 }

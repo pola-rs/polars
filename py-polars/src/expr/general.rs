@@ -892,11 +892,12 @@ impl PyExpr {
         lib: &str,
         symbol: &str,
         args: Vec<PyExpr>,
+        kwargs: Vec<u8>,
         is_elementwise: bool,
         input_wildcard_expansion: bool,
         auto_explode: bool,
         cast_to_supertypes: bool,
-    ) -> Self {
+    ) -> PyResult<Self> {
         use polars_plan::prelude::*;
         let inner = self.inner.clone();
 
@@ -911,11 +912,12 @@ impl PyExpr {
             input.push(a.inner)
         }
 
-        Expr::Function {
+        Ok(Expr::Function {
             input,
             function: FunctionExpr::FfiPlugin {
                 lib: Arc::from(lib),
                 symbol: Arc::from(symbol),
+                kwargs: Arc::from(kwargs),
             },
             options: FunctionOptions {
                 collect_groups,
@@ -925,6 +927,6 @@ impl PyExpr {
                 ..Default::default()
             },
         }
-        .into()
+        .into())
     }
 }
