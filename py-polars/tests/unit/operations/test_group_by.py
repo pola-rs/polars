@@ -744,7 +744,32 @@ def test_groupby_rolling_deprecated() -> None:
             .collect()
         )
 
-    expected = df.group_by_rolling("date", period="2d").agg(pl.sum("value"))
+    expected = df.rolling("date", period="2d").agg(pl.sum("value"))
+    assert_frame_equal(result, expected, check_row_order=False)
+    assert_frame_equal(result_lazy, expected, check_row_order=False)
+
+
+def test_group_by_rolling_deprecated() -> None:
+    df = pl.DataFrame(
+        {
+            "date": pl.datetime_range(
+                datetime(2020, 1, 1), datetime(2020, 1, 5), eager=True
+            ),
+            "value": [1, 2, 3, 4, 5],
+        }
+    )
+
+    with pytest.deprecated_call():
+        result = df.group_by_rolling("date", period="2d").agg(pl.sum("value"))
+    with pytest.deprecated_call():
+        result_lazy = (
+            df.lazy()
+            .groupby_rolling("date", period="2d")
+            .agg(pl.sum("value"))
+            .collect()
+        )
+
+    expected = df.rolling("date", period="2d").agg(pl.sum("value"))
     assert_frame_equal(result, expected, check_row_order=False)
     assert_frame_equal(result_lazy, expected, check_row_order=False)
 

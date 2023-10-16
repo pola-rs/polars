@@ -2998,7 +2998,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        In case of a group_by_rolling on an integer column, the windows are defined by:
+        In case of a rolling operation on an integer column, the windows are defined by:
 
         - "1i"      # length 1
         - "10i"     # length 10
@@ -3054,19 +3054,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     pl.col("dt").str.strptime(pl.Datetime).set_sorted()
         ... )
         >>> out = (
-        ...     df.group_by_rolling(index_column="dt", period="2d")
+        ...     df.rolling(index_column="dt", period="2d")
         ...     .agg(
-        ...         [
-        ...             pl.sum("a").alias("sum_a"),
-        ...             pl.min("a").alias("min_a"),
-        ...             pl.max("a").alias("max_a"),
-        ...         ]
+        ...         pl.sum("a").alias("sum_a"),
+        ...         pl.min("a").alias("min_a"),
+        ...         pl.max("a").alias("max_a"),
         ...     )
         ...     .collect()
         ... )
-        >>> assert out["sum_a"].to_list() == [3, 10, 15, 24, 11, 1]
-        >>> assert out["max_a"].to_list() == [3, 7, 7, 9, 9, 1]
-        >>> assert out["min_a"].to_list() == [3, 3, 3, 3, 2, 1]
         >>> out
         shape: (6, 4)
         ┌─────────────────────┬───────┬───────┬───────┐
@@ -3091,7 +3086,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
 
-        lgb = self._ldf.group_by_rolling(
+        lgb = self._ldf.rolling(
             index_column, period, offset, closed, pyexprs_by, check_sorted
         )
         return LazyGroupBy(lgb)
@@ -3198,7 +3193,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         See Also
         --------
-        group_by_rolling
+        rolling
 
         Notes
         -----

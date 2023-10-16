@@ -32,7 +32,7 @@ def test_rolling_group_by_overlapping_groups() -> None:
         (
             df.with_row_count()
             .with_columns(pl.col("row_nr").cast(pl.Int32))
-            .group_by_rolling(
+            .rolling(
                 index_column="row_nr",
                 period="5i",
             )
@@ -48,7 +48,7 @@ def test_rolling_group_by_overlapping_groups() -> None:
 
 
 @pytest.mark.parametrize("lazy", [True, False])
-def test_group_by_rolling_agg_input_types(lazy: bool) -> None:
+def test_rolling_agg_input_types(lazy: bool) -> None:
     df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
         "index_column"
     )
@@ -56,24 +56,24 @@ def test_group_by_rolling_agg_input_types(lazy: bool) -> None:
 
     for bad_param in bad_agg_parameters():
         with pytest.raises(TypeError):  # noqa: PT012
-            result = df_or_lazy.group_by_rolling(
-                index_column="index_column", period="2i"
-            ).agg(bad_param)
+            result = df_or_lazy.rolling(index_column="index_column", period="2i").agg(
+                bad_param
+            )
             if lazy:
                 result.collect()  # type: ignore[union-attr]
 
     expected = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 4, 4, 3]})
 
     for good_param in good_agg_parameters():
-        result = df_or_lazy.group_by_rolling(
-            index_column="index_column", period="2i"
-        ).agg(good_param)
+        result = df_or_lazy.rolling(index_column="index_column", period="2i").agg(
+            good_param
+        )
         if lazy:
             result = result.collect()  # type: ignore[union-attr]
         assert_frame_equal(result, expected)
 
 
-def test_group_by_rolling_negative_offset_3914() -> None:
+def test_rolling_negative_offset_3914() -> None:
     df = pl.DataFrame(
         {
             "datetime": pl.datetime_range(
@@ -81,7 +81,7 @@ def test_group_by_rolling_negative_offset_3914() -> None:
             ),
         }
     )
-    assert df.group_by_rolling(index_column="datetime", period="2d", offset="-4d").agg(
+    assert df.rolling(index_column="datetime", period="2d", offset="-4d").agg(
         pl.count().alias("count")
     )["count"].to_list() == [0, 0, 1, 2, 2]
 
@@ -91,7 +91,7 @@ def test_group_by_rolling_negative_offset_3914() -> None:
         }
     )
 
-    assert df.group_by_rolling(index_column="ints", period="2i", offset="-5i").agg(
+    assert df.rolling(index_column="ints", period="2i", offset="-5i").agg(
         [pl.col("ints").alias("matches")]
     )["matches"].to_list() == [
         [],
@@ -118,7 +118,7 @@ def test_group_by_rolling_negative_offset_3914() -> None:
 
 
 @pytest.mark.parametrize("time_zone", [None, "US/Central"])
-def test_group_by_rolling_negative_offset_crossing_dst(time_zone: str | None) -> None:
+def test_rolling_negative_offset_crossing_dst(time_zone: str | None) -> None:
     df = pl.DataFrame(
         {
             "datetime": pl.datetime_range(
@@ -131,9 +131,9 @@ def test_group_by_rolling_negative_offset_crossing_dst(time_zone: str | None) ->
             "value": [1, 4, 9, 155],
         }
     )
-    result = df.group_by_rolling(
-        index_column="datetime", period="2d", offset="-1d"
-    ).agg(pl.col("value"))
+    result = df.rolling(index_column="datetime", period="2d", offset="-1d").agg(
+        pl.col("value")
+    )
     expected = pl.DataFrame(
         {
             "datetime": pl.datetime_range(
@@ -163,7 +163,7 @@ def test_group_by_rolling_negative_offset_crossing_dst(time_zone: str | None) ->
         ("1d", "none", [[9], [155], [], []]),
     ],
 )
-def test_group_by_rolling_non_negative_offset_9077(
+def test_rolling_non_negative_offset_9077(
     time_zone: str | None,
     offset: str,
     closed: ClosedInterval,
@@ -181,7 +181,7 @@ def test_group_by_rolling_non_negative_offset_9077(
             "value": [1, 4, 9, 155],
         }
     )
-    result = df.group_by_rolling(
+    result = df.rolling(
         index_column="datetime", period="2d", offset=offset, closed=closed
     ).agg(pl.col("value"))
     expected = pl.DataFrame(
@@ -199,7 +199,7 @@ def test_group_by_rolling_non_negative_offset_9077(
     assert_frame_equal(result, expected)
 
 
-def test_group_by_rolling_dynamic_sortedness_check() -> None:
+def test_rolling_dynamic_sortedness_check() -> None:
     # when the by argument is passed, the sortedness flag
     # will be unset as the take shuffles data, so we must explicitly
     # check the sortedness
@@ -211,19 +211,17 @@ def test_group_by_rolling_dynamic_sortedness_check() -> None:
     )
 
     with pytest.raises(pl.ComputeError, match=r"input data is not sorted"):
-        df.group_by_rolling("idx", period="2i", by="group").agg(
-            pl.col("idx").alias("idx1")
-        )
+        df.rolling("idx", period="2i", by="group").agg(pl.col("idx").alias("idx1"))
 
     # no `by` argument
     with pytest.raises(
         pl.InvalidOperationError,
         match=r"argument in operation 'group_by_rolling' is not explicitly sorted",
     ):
-        df.group_by_rolling("idx", period="2i").agg(pl.col("idx").alias("idx1"))
+        df.rolling("idx", period="2i").agg(pl.col("idx").alias("idx1"))
 
 
-def test_group_by_rolling_empty_groups_9973() -> None:
+def test_rolling_empty_groups_9973() -> None:
     dt1 = date(2001, 1, 1)
     dt2 = date(2001, 1, 2)
 
@@ -250,7 +248,7 @@ def test_group_by_rolling_empty_groups_9973() -> None:
         }
     )
 
-    out = data.group_by_rolling(
+    out = data.rolling(
         index_column="date",
         by="id",
         period="2d",
@@ -262,7 +260,7 @@ def test_group_by_rolling_empty_groups_9973() -> None:
     assert_frame_equal(out, expected)
 
 
-def test_group_by_rolling_duplicates_11281() -> None:
+def test_rolling_duplicates_11281() -> None:
     df = pl.DataFrame(
         {
             "ts": [
@@ -276,6 +274,6 @@ def test_group_by_rolling_duplicates_11281() -> None:
             "val": [1, 2, 2, 2, 3, 4],
         }
     ).sort("ts")
-    result = df.group_by_rolling("ts", period="1d", closed="left").agg(pl.col("val"))
+    result = df.rolling("ts", period="1d", closed="left").agg(pl.col("val"))
     expected = df.with_columns(val=pl.Series([[], [1], [1], [1], [2, 2, 2], [3]]))
     assert_frame_equal(result, expected)

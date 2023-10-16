@@ -3225,7 +3225,7 @@ class Expr:
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
 
-        In case of a group_by_rolling on an integer column, the windows are defined by:
+        In case of a rolling operation on an integer column, the windows are defined by:
 
         - "1i"      # length 1
         - "10i"     # length 10
@@ -5530,7 +5530,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
@@ -5736,7 +5736,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
@@ -5973,7 +5973,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
@@ -6206,7 +6206,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
@@ -6442,7 +6442,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
@@ -6678,7 +6678,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
@@ -6917,7 +6917,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
@@ -7082,7 +7082,7 @@ class Expr:
         Notes
         -----
         If you want to compute multiple aggregation statistics over the same dynamic
-        window, consider using `group_by_rolling` this method can cache the window size
+        window, consider using `rolling` - this method can cache the window size
         computation.
 
         Examples
