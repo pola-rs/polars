@@ -5,8 +5,10 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import polars as pl
+from polars import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -381,6 +383,13 @@ def test_utf8_date() -> None:
     assert out.dtypes == [pl.Date]
 
 
+def test_wrong_utf8_date() -> None:
+    df = pl.DataFrame({"x1": ["2021-01-aa"]})
+
+    with pytest.raises(ComputeError):
+        df.with_columns(**{"x1-date": pl.col("x1").cast(pl.Date)})
+
+
 def test_utf8_datetime() -> None:
     df = pl.DataFrame(
         {"x1": ["2021-12-19T00:39:57", "2022-12-19T16:39:57"]}
@@ -399,19 +408,38 @@ def test_utf8_datetime() -> None:
     assert out.dtypes == [pl.Datetime, pl.Datetime, pl.Datetime]
 
 
+def test_wrong_utf8_datetime() -> None:
+    df = pl.DataFrame({"x1": ["2021-12-19 00:39:57", "2022-12-19 16:39:57"]})
+    with pytest.raises(ComputeError):
+        df.with_columns(
+            **{"x1-datetime-ns": pl.col("x1").cast(pl.Datetime(time_unit="ns"))}
+        )
+
+
 def test_utf8_datetime_timezone() -> None:
     df = pl.DataFrame(
-        {"x1": ["1996-12-19T16:39:57-02:00", "2022-12-19T00:39:57-03:00"]}
+        {"x1": ["1996-12-19T16:39:57 +00:00", "2022-12-19T00:39:57 +00:00"]}
     ).with_columns(
         **{
-            "x1-datetime-ns": pl.col("x1").cast(pl.Datetime(time_unit="ns")),
-            "x1-datetime-ms": pl.col("x1").cast(pl.Datetime(time_unit="ms")),
-            "x1-datetime-us": pl.col("x1").cast(pl.Datetime(time_unit="us")),
+            "x1-datetime-ns": pl.col("x1").cast(
+                pl.Datetime(time_unit="ns", time_zone="America/Caracas")
+            ),
+            "x1-datetime-ms": pl.col("x1").cast(
+                pl.Datetime(time_unit="ms", time_zone="America/Santiago")
+            ),
+            "x1-datetime-us": pl.col("x1").cast(
+                pl.Datetime(time_unit="us", time_zone="UTC")
+            ),
         }
     )
 
     out = df.select(
         pl.col("x1-datetime-ns"), pl.col("x1-datetime-ms"), pl.col("x1-datetime-us")
     )
+
     assert out.shape == (2, 3)
-    assert out.dtypes == [pl.Datetime, pl.Datetime, pl.Datetime]
+    assert out.dtypes == [
+        pl.Datetime("ns", "America/Caracas"),
+        pl.Datetime("ms", "America/Santiago"),
+        pl.Datetime("us", "UTC"),
+    ]

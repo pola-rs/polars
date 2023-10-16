@@ -1375,7 +1375,7 @@ def test_quadratic_behavior_4736() -> None:
     ldf.select(reduce(add, (pl.col(fld) for fld in ldf.columns)))
 
 
-@pytest.mark.parametrize("input_dtype", [pl.Int64, pl.Float64])
+@pytest.mark.parametrize("input_dtype", [pl.Int64, pl.Float64, pl.Utf8])
 def test_from_epoch(input_dtype: pl.PolarsDataType) -> None:
     ldf = pl.LazyFrame(
         [

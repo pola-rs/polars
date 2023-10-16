@@ -5,6 +5,7 @@ use arrow::compute::cast::CastOptions;
 
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::categorical::CategoricalChunkedBuilder;
+use crate::chunked_array::temporal::{validate_is_number};
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::validate_time_zone;
 use crate::prelude::DataType::Datetime;
@@ -197,13 +198,13 @@ impl ChunkCast for Utf8Chunked {
                 },
             },
             #[cfg(feature = "dtype-date")]
-            DataType::Date => {
+            DataType::Date if !validate_is_number(&self.chunks) => {
                 let result = cast_chunks(&self.chunks, data_type, true)?;
                 let out = Series::try_from((self.name(), result))?;
                 Ok(out)
             },
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(tu, tz) => {
+            DataType::Datetime(tu, tz) if !validate_is_number(&self.chunks) => {
                 let out = match tz {
                     #[cfg(feature = "timezones")]
                     Some(tz) => {

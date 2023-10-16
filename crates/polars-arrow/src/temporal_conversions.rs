@@ -405,10 +405,11 @@ fn chrono_tz_utf_to_timestamp<O: Offset>(
 }
 
 #[cfg(not(feature = "chrono-tz"))]
-fn chrono_tz_utf_to_timestamp_ns<O: Offset>(
+fn chrono_tz_utf_to_timestamp<O: Offset>(
     _: &Utf8Array<O>,
     _: &str,
     timezone: String,
+    _: TimeUnit,
 ) -> PolarsResult<PrimitiveArray<i64>> {
     panic!("timezone \"{timezone}\" cannot be parsed (feature chrono-tz is not active)")
 }

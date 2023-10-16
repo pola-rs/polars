@@ -15,6 +15,7 @@ use chrono::NaiveDateTime;
 use chrono::NaiveTime;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+use polars_arrow::prelude::ArrayRef;
 #[cfg(feature = "dtype-time")]
 pub use time::time_to_time64ns;
 
@@ -35,3 +36,16 @@ pub(crate) fn validate_time_zone(tz: &str) -> PolarsResult<()> {
         },
     }
 }
+
+pub(crate) fn validate_is_number(vec_array: &Vec<ArrayRef>) -> bool {
+    vec_array.iter().all(|array|is_parsable_as_number(array))
+}
+
+fn is_parsable_as_number(array: &ArrayRef) -> bool {
+    if let Some(array) = array.as_any().downcast_ref::<polars_arrow::prelude::LargeStringArray>() {
+        array.iter().all(|value| value.expect("Unable to parse int string to datetime").parse::<i64>().is_ok())
+    } else {
+        false
+    }
+}
+
