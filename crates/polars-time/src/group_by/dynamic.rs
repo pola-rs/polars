@@ -31,7 +31,7 @@ pub struct DynamicGroupOptions {
     pub offset: Duration,
     /// Truncate the time column values to the window.
     pub label: Label,
-    /// Add the boundaries to the dataframe.
+    /// Add the boundaries to the DataFrame.
     pub include_boundaries: bool,
     pub closed_window: ClosedWindow,
     pub start_by: StartBy,

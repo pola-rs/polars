@@ -288,7 +288,7 @@ def test_invalid_sort_by() -> None:
     # `select a where b order by c desc`
     with pytest.raises(
         pl.ComputeError,
-        match=r"`sort_by` produced different length: 5 than the series that has to be sorted: 3",
+        match=r"`sort_by` produced different length \(5\) than the Series that has to be sorted \(3\)",
     ):
         df.select(pl.col("a").filter(pl.col("b") == "M").sort_by("c", descending=True))
 
@@ -434,7 +434,7 @@ def test_compare_different_len() -> None:
 
     s = pl.Series([2, 5, 8])
     with pytest.raises(
-        pl.ComputeError, match=r"cannot evaluate two series of different lengths"
+        pl.ComputeError, match=r"cannot evaluate two Series of different lengths"
     ):
         df.filter(pl.col("idx") == s)
 

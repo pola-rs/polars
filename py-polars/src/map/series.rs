@@ -1128,7 +1128,7 @@ fn append_series(
             // unpack the wrapper in a PySeries
             let py_pyseries = out
                 .getattr("_s")
-                .expect("could not get series attribute '_s'");
+                .expect("could not get Series attribute '_s'");
             let pyseries = py_pyseries.extract::<PySeries>()?;
             builder
                 .append_series(&pyseries.series)
@@ -1158,7 +1158,7 @@ fn call_series_lambda(pypolars: &PyModule, lambda: &PyAny, series: Series) -> Op
             // unpack the wrapper in a PySeries
             let py_pyseries = out
                 .getattr("_s")
-                .expect("could not get series attribute '_s'");
+                .expect("could not get Series attribute '_s'");
             let pyseries = py_pyseries.extract::<PySeries>().unwrap();
             Some(pyseries.series)
         },

@@ -9,7 +9,7 @@ impl TryFrom<StructArray> for DataFrame {
         let (fld, arrs, nulls) = arr.into_data();
         polars_ensure!(
             nulls.is_none(),
-            ComputeError: "cannot deserialize struct with nulls into a dataframe"
+            ComputeError: "cannot deserialize struct with nulls into a DataFrame"
         );
         let columns = fld
             .iter()

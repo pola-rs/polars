@@ -86,7 +86,7 @@ def when(condition: IntoExpr) -> pl.When:
     │ 4   ┆ 0   ┆ 1   │
     └─────┴─────┴─────┘
 
-    Note how in the example above for the second row in the dataframe,
+    Note how in the example above for the second row in the DataFrame,
     where `foo=3` and `bar=4`, the first `when` evaluates to `True`, and therefore
     the second `when`, which is also `True`, is not evaluated.
 

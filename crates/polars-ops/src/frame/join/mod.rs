@@ -131,7 +131,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 let mut right = Cow::Borrowed(other);
                 if left_df.should_rechunk() {
                     if _verbose {
-                        eprintln!("{:?} join triggered a rechunk of the left dataframe: {} columns are affected", args.how, left_df.width());
+                        eprintln!("{:?} join triggered a rechunk of the left DataFrame: {} columns are affected", args.how, left_df.width());
                     }
 
                     let mut tmp_left = left_df.clone();
@@ -140,7 +140,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 }
                 if other.should_rechunk() {
                     if _verbose {
-                        eprintln!("{:?} join triggered a rechunk of the right dataframe: {} columns are affected", args.how, other.width());
+                        eprintln!("{:?} join triggered a rechunk of the right DataFrame: {} columns are affected", args.how, other.width());
                     }
                     let mut tmp_right = other.clone();
                     tmp_right.as_single_chunk_par();

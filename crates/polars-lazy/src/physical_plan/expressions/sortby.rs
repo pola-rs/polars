@@ -210,7 +210,7 @@ impl PhysicalExpr for SortByExpr {
         polars_ensure!(
             sorted_idx.len() == series.len(),
             expr = self.expr, ComputeError:
-            "`sort_by` produced different length: {} than the series that has to be sorted: {}",
+            "`sort_by` produced different length ({}) than the Series that has to be sorted ({})",
             sorted_idx.len(), series.len()
         );
 

@@ -1285,7 +1285,7 @@ class DataFrame:
         allow_copy: bool = True,  # noqa: FBT001
     ) -> PolarsDataFrame:
         """
-        Convert to a dataframe object implementing the dataframe interchange protocol.
+        Convert to a DataFrame object implementing the dataframe interchange protocol.
 
         Parameters
         ----------
@@ -1307,7 +1307,7 @@ class DataFrame:
 
         Examples
         --------
-        Convert a Polars dataframe to a generic dataframe object and access some
+        Convert a Polars DataFrame to a generic dataframe object and access some
         properties.
 
         >>> df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
@@ -1828,7 +1828,7 @@ class DataFrame:
 
     def item(self, row: int | None = None, column: int | str | None = None) -> Any:
         """
-        Return the dataframe as a scalar, or return the element at the given row/column.
+        Return the DataFrame as a scalar, or return the element at the given row/column.
 
         Parameters
         ----------
@@ -1933,7 +1933,7 @@ class DataFrame:
         Parameters
         ----------
         as_series
-            True -> Values are series
+            True -> Values are Series
             False -> Values are List[Any]
 
         Examples
@@ -2846,7 +2846,7 @@ class DataFrame:
 
         Examples
         --------
-        Instantiate a basic dataframe:
+        Instantiate a basic DataFrame:
 
         >>> from random import uniform
         >>> from datetime import date

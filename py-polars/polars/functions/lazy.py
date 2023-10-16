@@ -106,7 +106,7 @@ def count(column: str | Series | None = None) -> Expr | int:
     column
         If dtype is:
 
-        * `pl.Series` : count the values in the series.
+        * `pl.Series` : count the values in the Series.
         * `str` : count the values in this column.
         * `None` : count the number of values in this context.
 
@@ -494,7 +494,7 @@ def first(column: str | Series | None = None) -> Expr | Any:
         if column.len() > 0:
             return column[0]
         else:
-            raise IndexError("the series is empty, so no first value can be returned")
+            raise IndexError("the Series is empty, so no first value can be returned")
     return F.col(column).first()
 
 
@@ -559,7 +559,7 @@ def last(column: str | Series | None = None) -> Expr:
         if column.len() > 0:
             return column[-1]
         else:
-            raise IndexError("the series is empty, so no last value can be returned")
+            raise IndexError("the Series is empty, so no last value can be returned")
     return F.col(column).last()
 
 
@@ -944,7 +944,7 @@ def map_groups(
 
     The output for group `1` can be understood as follows:
 
-    - group `1` contains series `'a': [1, 3]` and `'b': [4, 5]`
+    - group `1` contains Series `'a': [1, 3]` and `'b': [4, 5]`
     - applying the function to those lists of Series, one gets the output
       `[1 / 4 + 5, 3 / 4 + 6]`, i.e. `[5.25, 6.75]`
     """

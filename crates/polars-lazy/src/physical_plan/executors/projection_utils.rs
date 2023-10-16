@@ -250,7 +250,7 @@ pub(super) fn check_expand_literals(
                     series
                 } else {
                     polars_bail!(
-                        ComputeError: "series length {} doesn't match the dataframe height of {}",
+                        ComputeError: "Series length {} doesn't match the DataFrame height of {}",
                         series.len(), df_height
                     );
                 })
