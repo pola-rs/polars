@@ -45,7 +45,7 @@ if sys.version_info >= (3, 11):
     _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
     _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
-
+SECONDS_PER_DAY = 60 * 60 * 24
 EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -128,19 +128,24 @@ def _date_to_pl_date(d: date) -> int:
 
 
 def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None = None) -> int:
-    if time_unit == "ns":
-        return int(td.total_seconds() * 1e9)
-    elif time_unit == "us":
-        return int(td.total_seconds() * 1e6)
+    if time_unit is None or time_unit == "us":
+        subseconds = td.microseconds
+        subseconds_per_second = 1_000_000
+    elif time_unit == "ns":
+        subseconds = td.microseconds * 1_000
+        subseconds_per_second = 1_000_000_000
     elif time_unit == "ms":
-        return int(td.total_seconds() * 1e3)
-    elif time_unit is None:
-        # python has us precision
-        return int(td.total_seconds() * 1e6)
+        subseconds = td.microseconds // 1_000
+        subseconds_per_second = 1_000
     else:
         raise ValueError(
             f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
         )
+
+    subseconds += td.seconds * subseconds_per_second
+    subseconds += td.days * SECONDS_PER_DAY * subseconds_per_second
+
+    return subseconds
 
 
 def _to_python_time(value: int) -> time:
