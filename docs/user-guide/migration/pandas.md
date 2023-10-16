@@ -160,8 +160,8 @@ the `.alias` method:
 
 ```python
 df.with_columns(
-    (pl.col("value") * 10).alias("tenXValue"),
-    (pl.col("value") * 100).alias("hundredXValue"),
+    tenXValue=pl.col("value") * 10,
+    hundredXValue=pl.col("value") * 100,
 )
 ```
 
