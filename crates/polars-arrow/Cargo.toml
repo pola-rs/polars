@@ -26,6 +26,7 @@ foreign_vec = { version = "0.1" }
 hashbrown = { workspace = true }
 num-traits = { workspace = true }
 polars-error = { workspace = true }
+polars-utils = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 simdutf8 = { workspace = true }
 

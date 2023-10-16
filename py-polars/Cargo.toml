@@ -14,6 +14,7 @@ polars-error = { path = "../crates/polars-error" }
 polars-lazy = { path = "../crates/polars-lazy", default-features = false, features = ["python"] }
 polars-ops = { path = "../crates/polars-ops", default-features = false, features = ["convert_index"] }
 polars-plan = { path = "../crates/polars-plan", default-features = false }
+polars-utils = { path = "../crates/polars-utils", default-features = false }
 
 ahash = "0.8"
 ciborium = "0.2"

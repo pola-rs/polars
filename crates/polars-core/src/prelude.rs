@@ -7,7 +7,7 @@ pub use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
 pub use arrow::legacy::kernels::ewm::EWMOptions;
 pub use arrow::legacy::prelude::*;
 pub(crate) use arrow::legacy::trusted_len::TrustedLen;
-pub(crate) use arrow::util::total_ord::{TotalEq, TotalOrd};
+pub(crate) use polars_utils::total_ord::{TotalEq, TotalOrd};
 
 pub use crate::chunked_array::builder::{
     BinaryChunkedBuilder, BooleanChunkedBuilder, ChunkedBuilder, ListBinaryChunkedBuilder,

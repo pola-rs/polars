@@ -4,7 +4,7 @@ use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
-use arrow::util::total_ord::{canonical_f32, canonical_f64};
+use polars_utils::total_ord::{canonical_f32, canonical_f64};
 use polars_utils::slice::*;
 
 use crate::row::{RowsEncoded, SortField};
