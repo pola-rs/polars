@@ -128,6 +128,7 @@ def _date_to_pl_date(d: date) -> int:
 
 
 def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
+    """Convert a Python timedelta object to a total number of subseconds."""
     if time_unit == "ns":
         subseconds = td.microseconds * 1_000
         subseconds_per_second = 1_000_000_000
