@@ -37,8 +37,8 @@ pub(crate) fn validate_time_zone(tz: &str) -> PolarsResult<()> {
     }
 }
 
-pub(crate) fn validate_is_number(vec_array: &Vec<ArrayRef>) -> bool {
-    vec_array.iter().all(|array| is_parsable_as_number(array))
+pub(crate) fn validate_is_number(vec_array: &[ArrayRef]) -> bool {
+    vec_array.iter().all(is_parsable_as_number)
 }
 
 fn is_parsable_as_number(array: &ArrayRef) -> bool {
