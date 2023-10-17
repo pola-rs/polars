@@ -979,7 +979,8 @@ impl Series {
             _ if max_items >= self.len() => {
                 let mut result = "[".to_owned();
 
-                for item in self.iter() {
+                for i in 0..self.len() {
+                    let item = self.get(i).unwrap();
                     write!(result, "{item}").unwrap();
                     // this will always leave a trailing ", " after the last item
                     // but for long lists, this is faster than checking against the length each time
@@ -996,10 +997,8 @@ impl Series {
                 let mut result = "[".to_owned();
 
                 for (i, item) in self.iter().enumerate() {
-                    if i != max_items - 1 {
                         write!(result, "{item}").unwrap();
                         result.push_str(", ");
-                    }
 
                     if i == max_items.saturating_sub(2) {
                         result.push_str("… ");
