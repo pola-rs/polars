@@ -8367,7 +8367,6 @@ class Expr:
                   :math:`1-\alpha` and :math:`1` if ``adjust=True``,
                   and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
 
-
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})

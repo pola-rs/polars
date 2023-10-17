@@ -6480,6 +6480,18 @@ class Series:
                   :math:`1-\alpha` and :math:`1` if ``adjust=True``,
                   and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
 
+        Examples
+        --------
+        >>> s = pl.Series([1,2,3])
+        >>> s.ewm_mean(com=1)
+        shape: (3,)
+        Series: '' [f64]
+        [
+                1.0
+                1.666667
+                2.428571
+        ]
+
         """
 
     def ewm_std(
