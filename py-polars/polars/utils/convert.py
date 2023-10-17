@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from datetime import date, tzinfo
     from decimal import Decimal
 
-
     if sys.version_info >= (3, 10):
         from typing import ParamSpec
     else:
@@ -50,11 +49,13 @@ EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 VALID_TIME_UNITS = get_args(TimeUnit)
 
+
 def _validate_time_unit(time_unit: TimeUnit) -> None:
     if time_unit not in VALID_TIME_UNITS:
         raise ValueError(
             f"`time_unit` must be one of {set(VALID_TIME_UNITS)}, got {time_unit!r}"
         )
+
 
 _fromtimestamp = datetime.fromtimestamp
 
@@ -113,16 +114,14 @@ def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
         time_unit = "us"
     _validate_time_unit(time_unit)
 
+    micros = dt.microsecond
+    seconds = _timestamp_in_seconds(dt)
     if time_unit == "ns":
-        micros = dt.microsecond
-        return 1_000 * (_timestamp_in_seconds(dt) * 1_000_000 + micros)
+        return 1_000 * (seconds * 1_000_000 + micros)
     elif time_unit == "us":
-        micros = dt.microsecond
-        return _timestamp_in_seconds(dt) * 1_000_000 + micros
+        return seconds * 1_000_000 + micros
     elif time_unit == "ms":
-        millis = dt.microsecond // 1000
-        return _timestamp_in_seconds(dt) * 1_000 + millis
-
+        return seconds * 1_000 + micros // 1_000
 
 
 def _time_to_pl_time(t: time) -> int:
@@ -166,7 +165,7 @@ def _to_python_time(value: int) -> time:
         minutes, seconds = divmod(seconds, 60)
         hours, minutes = divmod(minutes, 60)
         return time(
-            hour=hours, minute=minutes, second=seconds, microsecond=nanoseconds // 1000
+            hour=hours, minute=minutes, second=seconds, microsecond=nanoseconds // 1_000
         )
 
 
@@ -174,7 +173,7 @@ def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "ns") -> time
     _validate_time_unit(time_unit)
 
     if time_unit == "ns":
-        return timedelta(microseconds=value // 1e3)
+        return timedelta(microseconds=value // 1_000)
     elif time_unit == "us":
         return timedelta(microseconds=value)
     elif time_unit == "ms":
@@ -194,21 +193,9 @@ def _to_python_datetime(
 ) -> datetime:
     """Convert polars int64 timestamp to Python datetime."""
     if not time_zone:
-        _validate_time_unit(time_unit)
-        if time_unit == "us":
-            return EPOCH + timedelta(microseconds=value)
-        elif time_unit == "ns":
-            return EPOCH + timedelta(microseconds=value // 1000)
-        elif time_unit == "ms":
-            return EPOCH + timedelta(milliseconds=value)
+        return EPOCH + _to_python_timedelta(value, time_unit)
     elif _ZONEINFO_AVAILABLE:
-        _validate_time_unit(time_unit)
-        if time_unit == "us":
-            dt = EPOCH_UTC + timedelta(microseconds=value)
-        elif time_unit == "ns":
-            dt = EPOCH_UTC + timedelta(microseconds=value // 1000)
-        elif time_unit == "ms":
-            dt = EPOCH_UTC + timedelta(milliseconds=value)
+        dt = EPOCH_UTC + _to_python_timedelta(value, time_unit)
         return _localize(dt, time_zone)
     else:
         raise ImportError(
