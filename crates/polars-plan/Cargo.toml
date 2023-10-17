@@ -98,7 +98,7 @@ asof_join = ["polars-core/asof_join", "polars-time", "polars-ops/asof_join"]
 concat_str = []
 range = []
 mode = ["polars-ops/mode"]
-cum_agg = ["polars-core/cum_agg"]
+cum_agg = ["polars-ops/cum_agg"]
 interpolate = ["polars-ops/interpolate"]
 rolling_window = [
   "polars-core/rolling_window",

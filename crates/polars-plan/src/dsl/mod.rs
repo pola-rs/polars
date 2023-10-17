@@ -54,7 +54,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
-use polars_core::utils::{try_get_supertype, NoNull};
+use polars_core::utils::try_get_supertype;
 #[cfg(feature = "rolling_window")]
 use polars_time::prelude::SeriesOpsTime;
 pub(crate) use selector::Selector;
@@ -743,26 +743,31 @@ impl Expr {
     }
 
     /// Cumulatively count values from 0 to len.
+    #[cfg(feature = "cum_agg")]
     pub fn cumcount(self, reverse: bool) -> Self {
         self.apply_private(FunctionExpr::Cumcount { reverse })
     }
 
     /// Get an array with the cumulative sum computed at every element.
+    #[cfg(feature = "cum_agg")]
     pub fn cumsum(self, reverse: bool) -> Self {
         self.apply_private(FunctionExpr::Cumsum { reverse })
     }
 
     /// Get an array with the cumulative product computed at every element.
+    #[cfg(feature = "cum_agg")]
     pub fn cumprod(self, reverse: bool) -> Self {
         self.apply_private(FunctionExpr::Cumprod { reverse })
     }
 
     /// Get an array with the cumulative min computed at every element.
+    #[cfg(feature = "cum_agg")]
     pub fn cummin(self, reverse: bool) -> Self {
         self.apply_private(FunctionExpr::Cummin { reverse })
     }
 
     /// Get an array with the cumulative max computed at every element.
+    #[cfg(feature = "cum_agg")]
     pub fn cummax(self, reverse: bool) -> Self {
         self.apply_private(FunctionExpr::Cummax { reverse })
     }

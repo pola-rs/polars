@@ -122,10 +122,15 @@ impl FunctionExpr {
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "dtype-categorical")]
             Categorical(func) => func.get_field(mapper),
+            #[cfg(feature = "cum_agg")]
             Cumcount { .. } => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "cum_agg")]
             Cumsum { .. } => mapper.map_dtype(cum::dtypes::cumsum),
+            #[cfg(feature = "cum_agg")]
             Cumprod { .. } => mapper.map_dtype(cum::dtypes::cumprod),
+            #[cfg(feature = "cum_agg")]
             Cummin { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "cum_agg")]
             Cummax { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => mapper.with_dtype(IDX_DTYPE),
