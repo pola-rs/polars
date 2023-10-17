@@ -79,7 +79,7 @@ def assert_frame_equal(
     AssertionError: values for column 'a' are different
 
     """
-    lazy = _assert_input_types(left, right)
+    lazy = _assert_frame_type_equal(left, right)
     objs = "LazyFrames" if lazy else "DataFrames"
 
     _assert_frame_schema_equal(
@@ -118,7 +118,7 @@ def assert_frame_equal(
             raise AssertionError(msg) from exc
 
 
-def _assert_input_types(
+def _assert_frame_type_equal(
     left: DataFrame | LazyFrame, right: DataFrame | LazyFrame
 ) -> bool:
     if isinstance(left, LazyFrame) and isinstance(right, LazyFrame):
