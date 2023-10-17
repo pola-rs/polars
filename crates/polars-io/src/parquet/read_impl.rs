@@ -96,9 +96,16 @@ pub(super) fn array_iter_to_series(
 }
 
 /// Materializes hive partitions.
-fn materialize_hive_partitions(df: &mut DataFrame, hive_partition_columns: Option<&[Series]>) {
+/// We have a special num_rows arg, as df can be empty when a projection contains
+/// only hive partition columns.
+/// Safety: num_rows equals the height of the df when the df height is non-zero.
+fn materialize_hive_partitions(
+    df: &mut DataFrame,
+    hive_partition_columns: Option<&[Series]>,
+    num_rows: Option<usize>,
+) {
     if let Some(hive_columns) = hive_partition_columns {
-        let num_rows = df.height();
+        let num_rows = num_rows.unwrap_or(df.height());
 
         for s in hive_columns {
             unsafe { df.with_column_unchecked(s.new_from_index(0, num_rows)) };
@@ -192,6 +199,7 @@ fn rg_to_dfs_optionally_par_over_columns(
         }
 
         let chunk_size = md.num_rows();
+        let projection_height = (*remaining_rows).min(md.num_rows());
         let columns = if let ParallelStrategy::Columns = parallel {
             POOL.install(|| {
                 projection
@@ -217,14 +225,17 @@ fn rg_to_dfs_optionally_par_over_columns(
                 .collect::<PolarsResult<Vec<_>>>()?
         };
 
-        *remaining_rows =
-            remaining_rows.saturating_sub(file_metadata.row_groups[rg_idx].num_rows());
+        *remaining_rows = *remaining_rows - projection_height;
 
         let mut df = DataFrame::new_no_checks(columns);
+        debug_assert!(
+            df.height() == projection_height,
+            "DataFrame height does not match expected projection height"
+        );
         if let Some(rc) = &row_count {
             df.with_row_count_mut(&rc.name, Some(*previous_row_count + rc.offset));
         }
-        materialize_hive_partitions(&mut df, hive_partition_columns);
+        materialize_hive_partitions(&mut df, hive_partition_columns, Some(projection_height));
 
         apply_predicate(&mut df, predicate, true)?;
 
@@ -279,6 +290,19 @@ fn rg_to_dfs_par_over_rg(
                 || use_statistics
                     && !read_this_row_group(predicate, &file_metadata.row_groups[rg_idx], schema)?
             {
+                // Projections may have only contained hive partition columns,
+                // which must still be materialized.
+                if hive_partition_columns.is_some() {
+                    let mut df = DataFrame::default();
+                    materialize_hive_partitions(
+                        &mut df,
+                        hive_partition_columns,
+                        Some(md.num_rows()),
+                    );
+
+                    return Ok(Some(df));
+                }
+
                 return Ok(None);
             }
             // test we don't read the parquet file if this env var is set
@@ -300,7 +324,8 @@ fn rg_to_dfs_par_over_rg(
             if let Some(rc) = &row_count {
                 df.with_row_count_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
             }
-            materialize_hive_partitions(&mut df, hive_partition_columns);
+            // safety: df height > 0
+            materialize_hive_partitions(&mut df, hive_partition_columns, None);
 
             apply_predicate(&mut df, predicate, false)?;
 
