@@ -502,7 +502,8 @@ where
     if *remaining == 0 && items.len() == 0 {
         return MaybeNext::None;
     }
-    if items.len() > 0 && items.front().unwrap().0.len() > chunk_size.unwrap_or(usize::MAX) {
+    if !items.len().is_empty() && items.front().unwrap().0.len() > chunk_size.unwrap_or(usize::MAX)
+    {
         return MaybeNext::Some(Ok(items.pop_front().unwrap()));
     }
 
@@ -540,7 +541,8 @@ where
             };
 
             // if possible, return the value immediately.
-            if items.len() > 0 && items.front().unwrap().0.len() > chunk_size.unwrap_or(usize::MAX)
+            if !items.len().is_empty()
+                && items.front().unwrap().0.len() > chunk_size.unwrap_or(usize::MAX)
             {
                 MaybeNext::Some(Ok(items.pop_front().unwrap()))
             } else {
