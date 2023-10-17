@@ -997,13 +997,13 @@ impl Series {
                 let mut result = "[".to_owned();
 
                 for (i, item) in self.iter().enumerate() {
-                    write!(result, "{item}").unwrap();
-                    result.push_str(", ");
-
-                    if i == max_items.saturating_sub(2) {
+                    if i == max_items.saturating_sub(1) {
                         result.push_str("… ");
                         write!(result, "{}", self.get(self.len() - 1).unwrap()).unwrap();
                         break;
+                    } else {
+                        write!(result, "{item}").unwrap();
+                        result.push_str(", ");
                     }
                 }
                 result.push(']');
