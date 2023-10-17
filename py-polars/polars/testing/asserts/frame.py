@@ -121,10 +121,18 @@ def assert_frame_equal(
 def _assert_frame_type_equal(
     left: DataFrame | LazyFrame, right: DataFrame | LazyFrame
 ) -> bool:
-    if isinstance(left, LazyFrame) and isinstance(right, LazyFrame):
-        return True
-    elif isinstance(left, DataFrame) and isinstance(right, DataFrame):
+    """
+    Assert that both inputs are either a DataFrame or a LazyFrame.
+
+    Returns
+    -------
+    bool
+        Whether the inputs are LazyFrames.
+    """
+    if isinstance(left, DataFrame) and isinstance(right, DataFrame):
         return False
+    elif isinstance(left, LazyFrame) and isinstance(right, LazyFrame):
+        return True
     else:
         raise_assertion_error(
             "Inputs",
@@ -147,18 +155,7 @@ def _assert_frame_schema_equal(
     if left_schema == right_schema:
         return
 
-    # We know schemas do not match...
-
-    if check_column_order and check_dtype:
-        # ... so we can raise here
-        msg = "x"
-        raise AssertionError(msg)
-
-    elif not check_column_order and check_dtype:
-        msg = "y"
-        raise AssertionError(msg)
-
-    # Assert that column names match in any order
+    # Special error message for when column names do not match
     if left_schema.keys() != right_schema.keys():
         if left_not_right := [c for c in left_schema if c not in right_schema]:
             msg = f"columns {left_not_right!r} in left frame, but not in right"
@@ -168,36 +165,21 @@ def _assert_frame_schema_equal(
             msg = f"columns {right_not_left!r} in right frame, but not in left"
             raise AssertionError(msg)
 
-    # Schemas don't match, but column names are known to match...
-    # Either dtypes are wrong, or column order is wrong, or both
+    if check_column_order and check_dtype:
+        msg = "schemas do not match"  # Checked in the fast path above
+        raise_assertion_error("Frames", msg, left_schema, right_schema)
 
-    if check_dtype:
-        if dict(left_schema) != dict(right_schema):
-            msg = "dtypes do not match"
-            raise AssertionError(msg)
-
-    # Check for column order
-    if check_column_order:
+    elif check_column_order:
         left_columns, right_columns = list(left_schema), list(right_schema)
         if left_columns != right_columns:
-            # TODO: Use raise_assertion_error to get nice formatting
-            msg = f"columns are not in the same order:\n{left_columns!r}\n{right_columns!r}"
-            raise AssertionError(msg)
+            msg = "columns are not in the same order"
+            raise_assertion_error("Frames", msg, left_columns, right_columns)
 
-        # Here we know the order matches. So dtypes must not match!
-        if check_dtype:
+    elif check_dtype:
+        left_schema_dict, right_schema_dict = dict(left_schema), dict(right_schema)
+        if left_schema_dict != right_schema_dict:
             msg = "dtypes do not match"
-            raise AssertionError(msg)
-
-    else:
-        # Here we know that we are not checking for column order
-        # Either dtypes are wrong, or column order is wrong but it doesn't matter,
-        # or both
-
-        # We are checking for dtypes and don't care about column order
-        if check_dtype and dict(left_schema) != dict(right_schema):
-            msg = "dtypes do not match"
-            raise AssertionError(msg)
+            raise_assertion_error("Frames", msg, left_schema_dict, right_schema_dict)
 
 
 def assert_frame_not_equal(
