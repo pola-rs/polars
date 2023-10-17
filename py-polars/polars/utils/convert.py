@@ -4,7 +4,7 @@ import sys
 from datetime import datetime, time, timedelta, timezone
 from decimal import Context
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar, overload, get_args
+from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar, get_args, overload
 
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 from polars.type_aliases import TimeUnit
