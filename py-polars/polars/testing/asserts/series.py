@@ -75,13 +75,7 @@ def assert_series_equal(
     [right]: [1, 5, 3]
 
     """
-    if not (isinstance(left, Series) and isinstance(right, Series)):  # type: ignore[redundant-expr]
-        raise_assertion_error(
-            "Inputs",
-            "unexpected input types",
-            type(left).__name__,
-            type(right).__name__,
-        )
+    _assert_correct_input_type(left, right)
 
     if len(left) != len(right):
         raise_assertion_error("Series", "length mismatch", len(left), len(right))
@@ -103,79 +97,14 @@ def assert_series_equal(
     )
 
 
-def assert_series_not_equal(
-    left: Series,
-    right: Series,
-    *,
-    check_dtype: bool = True,
-    check_names: bool = True,
-    check_exact: bool = False,
-    rtol: float = 1.0e-5,
-    atol: float = 1.0e-8,
-    nans_compare_equal: bool = True,
-    categorical_as_str: bool = False,
-) -> None:
-    """
-    Assert that the left and right Series are **not** equal.
-
-    This function is intended for use in unit tests.
-
-    Parameters
-    ----------
-    left
-        the series to compare.
-    right
-        the series to compare with.
-    check_dtype
-        if True, data types need to match exactly.
-    check_names
-        if True, names need to match.
-    check_exact
-        if False, test if values are within tolerance of each other
-        (see `rtol` & `atol`).
-    rtol
-        relative tolerance for inexact checking. Fraction of values in `right`.
-    atol
-        absolute tolerance for inexact checking.
-    nans_compare_equal
-        if your assert/test requires float NaN != NaN, set this to False.
-    categorical_as_str
-        Cast categorical columns to string before comparing. Enabling this helps
-        compare DataFrames that do not share the same string cache.
-
-    See Also
-    --------
-    assert_series_equal
-    assert_frame_not_equal
-
-    Examples
-    --------
-    >>> from polars.testing import assert_series_not_equal
-    >>> s1 = pl.Series([1, 2, 3])
-    >>> s2 = pl.Series([1, 2, 3])
-    >>> assert_series_not_equal(s1, s2)  # doctest: +SKIP
-    Traceback (most recent call last):
-    ...
-    AssertionError: Series are equal
-
-    """
-    try:
-        assert_series_equal(
-            left=left,
-            right=right,
-            check_dtype=check_dtype,
-            check_names=check_names,
-            check_exact=check_exact,
-            rtol=rtol,
-            atol=atol,
-            nans_compare_equal=nans_compare_equal,
-            categorical_as_str=categorical_as_str,
+def _assert_correct_input_type(left: Series, right: Series) -> None:
+    if not (isinstance(left, Series) and isinstance(right, Series)):  # type: ignore[redundant-expr]
+        raise_assertion_error(
+            "inputs",
+            "unexpected input types",
+            type(left).__name__,
+            type(right).__name__,
         )
-    except AssertionError:
-        return
-    else:
-        msg = "Series are equal"
-        raise AssertionError(msg)
 
 
 def _assert_series_values_equal(
@@ -189,7 +118,6 @@ def _assert_series_values_equal(
     categorical_as_str: bool,
 ) -> None:
     """Compare Series values."""
-
     if categorical_as_str and left.dtype == Categorical:
         left = left.cast(Utf8)
         right = right.cast(Utf8)
@@ -375,3 +303,78 @@ def _assert_series_nested(
         # fall-back to outer codepath (if mismatched dtypes we would expect
         # the equality check to fail - unless ALL series values are null)
         return False
+
+
+def assert_series_not_equal(
+    left: Series,
+    right: Series,
+    *,
+    check_dtype: bool = True,
+    check_names: bool = True,
+    check_exact: bool = False,
+    rtol: float = 1.0e-5,
+    atol: float = 1.0e-8,
+    nans_compare_equal: bool = True,
+    categorical_as_str: bool = False,
+) -> None:
+    """
+    Assert that the left and right Series are **not** equal.
+
+    This function is intended for use in unit tests.
+
+    Parameters
+    ----------
+    left
+        the series to compare.
+    right
+        the series to compare with.
+    check_dtype
+        if True, data types need to match exactly.
+    check_names
+        if True, names need to match.
+    check_exact
+        if False, test if values are within tolerance of each other
+        (see `rtol` & `atol`).
+    rtol
+        relative tolerance for inexact checking. Fraction of values in `right`.
+    atol
+        absolute tolerance for inexact checking.
+    nans_compare_equal
+        if your assert/test requires float NaN != NaN, set this to False.
+    categorical_as_str
+        Cast categorical columns to string before comparing. Enabling this helps
+        compare DataFrames that do not share the same string cache.
+
+    See Also
+    --------
+    assert_series_equal
+    assert_frame_not_equal
+
+    Examples
+    --------
+    >>> from polars.testing import assert_series_not_equal
+    >>> s1 = pl.Series([1, 2, 3])
+    >>> s2 = pl.Series([1, 2, 3])
+    >>> assert_series_not_equal(s1, s2)  # doctest: +SKIP
+    Traceback (most recent call last):
+    ...
+    AssertionError: Series are equal
+
+    """
+    try:
+        assert_series_equal(
+            left=left,
+            right=right,
+            check_dtype=check_dtype,
+            check_names=check_names,
+            check_exact=check_exact,
+            rtol=rtol,
+            atol=atol,
+            nans_compare_equal=nans_compare_equal,
+            categorical_as_str=categorical_as_str,
+        )
+    except AssertionError:
+        return
+    else:
+        msg = "Series are equal"
+        raise AssertionError(msg)
