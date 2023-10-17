@@ -10,7 +10,6 @@ import polars as pl
 from polars.exceptions import InvalidAssert
 from polars.testing import (
     assert_frame_equal,
-    assert_frame_equal_local_categoricals,
     assert_frame_not_equal,
     assert_series_equal,
     assert_series_not_equal,
@@ -102,7 +101,7 @@ def test_compare_series_nulls() -> None:
     srs2 = pl.Series([1, None, None])
     assert_series_not_equal(srs1, srs2)
 
-    with pytest.raises(AssertionError, match="null_count is not equal"):
+    with pytest.raises(AssertionError, match="value mismatch"):
         assert_series_equal(srs1, srs2)
 
 
@@ -326,7 +325,7 @@ def test_assert_frame_equal_ignore_row_order() -> None:
     df1 = pl.DataFrame({"a": [1, 2], "b": [4, 3]})
     df2 = pl.DataFrame({"a": [2, 1], "b": [3, 4]})
     df3 = pl.DataFrame({"b": [3, 4], "a": [2, 1]})
-    with pytest.raises(AssertionError, match="values for column 'a' are different."):
+    with pytest.raises(AssertionError, match="values for column 'a' are different"):
         assert_frame_equal(df1, df2)
 
     assert_frame_equal(df1, df2, check_row_order=False)
@@ -1035,8 +1034,13 @@ def test_assert_series_equal_categorical_vs_str() -> None:
         assert_series_equal(s1, s2, categorical_as_str=True)
 
 
-def test_assert_frame_equal_local_categoricals_deprecated() -> None:
-    df = pl.Series(["a", "b", "a"], dtype=pl.Categorical).to_frame()
-
-    with pytest.deprecated_call():
-        assert_frame_equal_local_categoricals(df, df)
+def test_assert_series_equal_full_series() -> None:
+    s1 = pl.Series([1, 2, 3])
+    s2 = pl.Series([1, 2, 4])
+    msg = (
+        r"Series are different \(value mismatch\)\n"
+        r"\[left\]:  \[1, 2, 3\]\n"
+        r"\[right\]: \[1, 2, 4\]"
+    )
+    with pytest.raises(AssertionError, match=msg):
+        assert_series_equal(s1, s2)
