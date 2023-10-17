@@ -7,12 +7,13 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar, get_args, overload
 
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
-from polars.type_aliases import TimeUnit
 
 if TYPE_CHECKING:
     from collections.abc import Reversible
     from datetime import date, tzinfo
     from decimal import Decimal
+
+    from polars.type_aliases import TimeUnit
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec
@@ -47,13 +48,12 @@ if sys.version_info >= (3, 11):
 SECONDS_PER_DAY = 60 * 60 * 24
 EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
-VALID_TIME_UNITS = get_args(TimeUnit)
 
 
 def _validate_time_unit(time_unit: TimeUnit) -> None:
-    if time_unit not in VALID_TIME_UNITS:
+    if time_unit not in ("ms", "us", "ns"):
         raise ValueError(
-            f"`time_unit` must be one of {set(VALID_TIME_UNITS)}, got {time_unit!r}"
+            f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
         )
 
 
@@ -116,9 +116,11 @@ def _date_to_pl_date(d: date) -> int:
 
 
 def _seconds_and_micros_to_subseconds(
-    seconds: int, micro_seconds: int, time_unit: TimeUnit
+    seconds: int, micro_seconds: int, time_unit: TimeUnit | None
 ) -> int:
     """Convert seconds and microseconds to subseconds in given time unit."""
+    if time_unit is None:
+        time_unit = "us"
     _validate_time_unit(time_unit)
     if time_unit == "ns":
         return 1_000 * (seconds * 1_000_000 + micro_seconds)
@@ -128,7 +130,7 @@ def _seconds_and_micros_to_subseconds(
         return seconds * 1_000 + micro_seconds // 1_000
 
 
-def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit = "us") -> int:
+def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
     """Convert a python datetime to a timestamp in given time unit."""
     if dt.tzinfo is None:
         # Make sure to use UTC rather than system time zone.
@@ -140,7 +142,7 @@ def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit = "us") -> int:
     )
 
 
-def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit = "us") -> int:
+def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
     """Convert a Python timedelta object to a total number of subseconds."""
     micro_seconds = td.microseconds
     seconds = td.days * SECONDS_PER_DAY + td.seconds
@@ -180,7 +182,7 @@ def _to_python_date(value: int | float) -> date:
 
 def _to_python_datetime(
     value: int | float,
-    time_unit: TimeUnit = "ns",
+    time_unit: TimeUnit | None = "ns",
     time_zone: str | None = None,
 ) -> datetime:
     """Convert polars int64 timestamp to Python datetime."""

@@ -60,6 +60,8 @@ def test_timedelta_to_pl_timedelta() -> None:
     assert out == 86_400_000_000
     out = _timedelta_to_pl_timedelta(timedelta(days=1), "ms")
     assert out == 86_400_000
+    out = _timedelta_to_pl_timedelta(timedelta(days=1), time_unit=None)
+    assert out == 86_400_000_000
 
 
 @pytest.mark.parametrize(
