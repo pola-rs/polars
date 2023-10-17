@@ -105,7 +105,6 @@ def _negate_duration(duration: str) -> str:
     return f"-{duration}"
 
 
-
 def _time_to_pl_time(t: time) -> int:
     t = t.replace(tzinfo=timezone.utc)
     return int((t.hour * 3_600 + t.minute * 60 + t.second) * 1e9 + t.microsecond * 1e3)
@@ -115,7 +114,10 @@ def _date_to_pl_date(d: date) -> int:
     dt = datetime.combine(d, datetime.min.time()).replace(tzinfo=timezone.utc)
     return int(dt.timestamp()) // SECONDS_PER_DAY
 
-def _seconds_and_micros_to_subseconds(seconds: int, micros:int, time_unit: TimeUnit | None) -> int:
+
+def _seconds_and_micros_to_subseconds(
+    seconds: int, micros: int, time_unit: TimeUnit | None
+) -> int:
     if time_unit is None:
         time_unit = "us"
     _validate_time_unit(time_unit)
@@ -127,6 +129,7 @@ def _seconds_and_micros_to_subseconds(seconds: int, micros:int, time_unit: TimeU
     elif time_unit == "ms":
         return seconds * 1_000 + micros // 1_000
 
+
 def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
     """Convert a python datetime to a timestamp in given time unit."""
     if dt.tzinfo is None:
@@ -134,14 +137,18 @@ def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
         dt = dt.replace(tzinfo=timezone.utc)
     micros = dt.microsecond
     seconds = _timestamp_in_seconds(dt)
-    return _seconds_and_micros_to_subseconds(seconds=seconds, subseconds=micros, time_unit=time_unit)
+    return _seconds_and_micros_to_subseconds(
+        seconds=seconds, subseconds=micros, time_unit=time_unit
+    )
 
 
 def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
     """Convert a Python timedelta object to a total number of subseconds."""
     micros = td.microsecond
     seconds = td.days * SECONDS_PER_DAY + td.seconds
-    return _seconds_and_micros_to_subseconds(seconds=seconds, subseconds=micros, time_unit=time_unit)
+    return _seconds_and_micros_to_subseconds(
+        seconds=seconds, subseconds=micros, time_unit=time_unit
+    )
 
 
 def _to_python_time(value: int) -> time:
@@ -157,7 +164,9 @@ def _to_python_time(value: int) -> time:
         )
 
 
-def _to_python_timedelta(value: int | float, time_unit: TimeUnit | None = "ns") -> timedelta:
+def _to_python_timedelta(
+    value: int | float, time_unit: TimeUnit | None = "ns"
+) -> timedelta:
     _validate_time_unit(time_unit)
 
     if time_unit == "ns":
