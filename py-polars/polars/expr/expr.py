@@ -8300,6 +8300,7 @@ class Expr:
             self._pyexpr.sample_n(n, with_replacement, shuffle, seed)
         )
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_mean(
         self,
         com: float | None = None,
@@ -8367,7 +8368,6 @@ class Expr:
                   :math:`1-\alpha` and :math:`1` if ``adjust=True``,
                   and :math:`1-\alpha` and :math:`\alpha` if ``adjust=False``.
 
-
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
@@ -8389,6 +8389,7 @@ class Expr:
             self._pyexpr.ewm_mean(alpha, adjust, min_periods, ignore_nulls)
         )
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_std(
         self,
         com: float | None = None,
@@ -8481,6 +8482,7 @@ class Expr:
             self._pyexpr.ewm_std(alpha, adjust, bias, min_periods, ignore_nulls)
         )
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_var(
         self,
         com: float | None = None,
