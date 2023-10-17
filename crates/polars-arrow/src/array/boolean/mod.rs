@@ -377,3 +377,9 @@ impl Array for BooleanArray {
         Box::new(self.clone().with_validity(validity))
     }
 }
+
+impl From<Bitmap> for BooleanArray {
+    fn from(values: Bitmap) -> Self {
+        Self { data_type: DataType::Boolean, values, validity: None }
+    }
+}

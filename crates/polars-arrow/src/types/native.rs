@@ -3,6 +3,7 @@ use std::ops::Neg;
 use std::panic::RefUnwindSafe;
 
 use bytemuck::{Pod, Zeroable};
+use polars_utils::total_ord::{TotalOrd, TotalEq};
 
 use super::PrimitiveType;
 
@@ -20,6 +21,7 @@ pub trait NativeType:
     + std::fmt::Display
     + PartialEq
     + Default
+    + TotalOrd
 {
     /// The corresponding variant of [`PrimitiveType`].
     const PRIMITIVE: PrimitiveType;
@@ -110,6 +112,18 @@ impl days_ms {
     #[inline]
     pub fn milliseconds(&self) -> i32 {
         self.1
+    }
+}
+
+impl TotalEq for days_ms {
+    fn tot_eq(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+impl TotalOrd for days_ms {
+    fn tot_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.days().cmp(&other.days()).then(self.milliseconds().cmp(&other.milliseconds()))
     }
 }
 
@@ -208,6 +222,21 @@ impl months_days_ns {
     #[inline]
     pub fn ns(&self) -> i64 {
         self.2
+    }
+}
+
+
+impl TotalEq for months_days_ns {
+    fn tot_eq(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+impl TotalOrd for months_days_ns {
+    fn tot_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.months().cmp(&other.months())
+            .then(self.days().cmp(&other.days()))
+            .then(self.ns().cmp(&other.ns()))
     }
 }
 
@@ -490,6 +519,22 @@ impl std::fmt::Display for f16 {
     }
 }
 
+impl TotalEq for f16 {
+    fn tot_eq(&self, other: &Self) -> bool {
+        if self.is_nan() {
+            other.is_nan()
+        } else {
+            self == other
+        }
+    }
+}
+
+impl TotalOrd for f16 {
+    fn tot_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        unimplemented!()
+    }
+}
+
 impl NativeType for f16 {
     const PRIMITIVE: PrimitiveType = PrimitiveType::Float16;
     type Bytes = [u8; 2];
@@ -551,6 +596,18 @@ impl std::fmt::Display for i256 {
 
 unsafe impl Pod for i256 {}
 unsafe impl Zeroable for i256 {}
+
+impl TotalEq for i256 {
+    fn tot_eq(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+impl TotalOrd for i256 {
+    fn tot_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.cmp(other)
+    }
+}
 
 impl NativeType for i256 {
     const PRIMITIVE: PrimitiveType = PrimitiveType::Int256;

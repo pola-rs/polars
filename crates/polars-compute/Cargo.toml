@@ -9,9 +9,14 @@ repository = { workspace = true }
 description = "Private compute kernels for the Polars DataFrame library"
 
 [dependencies]
+arrow = { workspace = true }
+polars-utils = { workspace = true }
+num-traits = { workspace = true }
+bytemuck = { workspace = true }
 
 [build-dependencies]
 version_check = { workspace = true }
 
 [features]
 nightly = []
+simd = []

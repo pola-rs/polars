@@ -2667,6 +2667,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-compute"
+version = "0.33.2"
+dependencies = [
+ "bytemuck",
+ "num-traits",
+ "polars-arrow",
+ "polars-utils",
+ "version_check",
+]
+
+[[package]]
 name = "polars-core"
 version = "0.35.4"
 dependencies = [
@@ -2686,6 +2697,7 @@ dependencies = [
  "num-traits",
  "once_cell",
  "polars-arrow",
+ "polars-compute",
  "polars-error",
  "polars-row",
  "polars-utils",
