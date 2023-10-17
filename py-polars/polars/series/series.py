@@ -6413,6 +6413,7 @@ class Series:
 
         """
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_mean(
         self,
         com: float | None = None,
@@ -6494,6 +6495,7 @@ class Series:
 
         """
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_std(
         self,
         com: float | None = None,
@@ -6579,6 +6581,7 @@ class Series:
 
         """
 
+    @deprecate_nonkeyword_arguments(version="0.19.10")
     def ewm_var(
         self,
         com: float | None = None,
