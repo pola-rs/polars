@@ -147,6 +147,11 @@ impl FunctionExpr {
                 DataType::UInt8 => DataType::Int16,
                 dt => dt.clone(),
             }),
+            #[cfg(feature = "pct_change")]
+            PctChange => mapper.map_dtype(|dt| match dt {
+                DataType::Float64 | DataType::Float32 => dt.clone(),
+                _ => DataType::Float64,
+            }),
             #[cfg(feature = "interpolate")]
             Interpolate(method) => match method {
                 InterpolationMethod::Linear => mapper.map_numeric_to_float_dtype(),

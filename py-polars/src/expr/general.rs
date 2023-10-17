@@ -741,8 +741,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "pct_change")]
-    fn pct_change(&self, n: i64) -> Self {
-        self.inner.clone().pct_change(n).into()
+    fn pct_change(&self, n: Self) -> Self {
+        self.inner.clone().pct_change(n.inner).into()
     }
 
     fn skew(&self, bias: bool) -> Self {

@@ -24,6 +24,8 @@ mod is_last_distinct;
 mod is_unique;
 #[cfg(feature = "log")]
 mod log;
+#[cfg(feature = "pct_change")]
+mod pct_change;
 #[cfg(feature = "rank")]
 mod rank;
 #[cfg(feature = "rle")]
@@ -62,6 +64,8 @@ pub use is_last_distinct::*;
 pub use is_unique::*;
 #[cfg(feature = "log")]
 pub use log::*;
+#[cfg(feature = "pct_change")]
+pub use pct_change::*;
 use polars_core::prelude::*;
 #[cfg(feature = "rank")]
 pub use rank::*;

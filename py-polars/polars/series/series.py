@@ -6033,7 +6033,7 @@ class Series:
 
         """
 
-    def pct_change(self, n: int = 1) -> Series:
+    def pct_change(self, n: int | IntoExprColumn = 1) -> Series:
         """
         Computes percentage change between values.
 
