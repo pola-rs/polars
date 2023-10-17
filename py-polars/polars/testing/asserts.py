@@ -79,7 +79,10 @@ def assert_frame_equal(
         objs = "DataFrames"
     else:
         _raise_assertion_error(
-            "Inputs", "unexpected input types", type(left), type(right)
+            "Inputs",
+            "unexpected input types",
+            type(left).__name__,
+            type(right).__name__,
         )
 
     if left_not_right := [c for c in left.columns if c not in right.columns]:
@@ -255,7 +258,10 @@ def assert_series_equal(
     """
     if not (isinstance(left, Series) and isinstance(right, Series)):  # type: ignore[redundant-expr]
         _raise_assertion_error(
-            "Inputs", "unexpected input types", type(left), type(right)
+            "Inputs",
+            "unexpected input types",
+            type(left).__name__,
+            type(right).__name__,
         )
 
     if len(left) != len(right):
