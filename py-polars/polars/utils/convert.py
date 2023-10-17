@@ -105,24 +105,6 @@ def _negate_duration(duration: str) -> str:
     return f"-{duration}"
 
 
-def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
-    """Convert a python datetime to a timestamp in given time unit."""
-    if dt.tzinfo is None:
-        # Make sure to use UTC rather than system time zone.
-        dt = dt.replace(tzinfo=timezone.utc)
-    if time_unit is None:
-        time_unit = "us"
-    _validate_time_unit(time_unit)
-
-    micros = dt.microsecond
-    seconds = _timestamp_in_seconds(dt)
-    if time_unit == "ns":
-        return 1_000 * (seconds * 1_000_000 + micros)
-    elif time_unit == "us":
-        return seconds * 1_000_000 + micros
-    elif time_unit == "ms":
-        return seconds * 1_000 + micros // 1_000
-
 
 def _time_to_pl_time(t: time) -> int:
     t = t.replace(tzinfo=timezone.utc)
@@ -133,27 +115,33 @@ def _date_to_pl_date(d: date) -> int:
     dt = datetime.combine(d, datetime.min.time()).replace(tzinfo=timezone.utc)
     return int(dt.timestamp()) // SECONDS_PER_DAY
 
-
-def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
-    """Convert a Python timedelta object to a total number of subseconds."""
+def _seconds_and_micros_to_subseconds(seconds: int, micros:int, time_unit: TimeUnit | None) -> int:
     if time_unit is None:
         time_unit = "us"
     _validate_time_unit(time_unit)
 
     if time_unit == "ns":
-        subseconds = td.microseconds * 1_000
-        subseconds_per_second = 1_000_000_000
+        return 1_000 * (seconds * 1_000_000 + micros)
+    elif time_unit == "us":
+        return seconds * 1_000_000 + micros
     elif time_unit == "ms":
-        subseconds = td.microseconds // 1_000
-        subseconds_per_second = 1_000
-    else:
-        subseconds = td.microseconds
-        subseconds_per_second = 1_000_000
+        return seconds * 1_000 + micros // 1_000
 
-    subseconds += td.seconds * subseconds_per_second
-    subseconds += td.days * SECONDS_PER_DAY * subseconds_per_second
+def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
+    """Convert a python datetime to a timestamp in given time unit."""
+    if dt.tzinfo is None:
+        # Make sure to use UTC rather than system time zone.
+        dt = dt.replace(tzinfo=timezone.utc)
+    micros = dt.microsecond
+    seconds = _timestamp_in_seconds(dt)
+    return _seconds_and_micros_to_subseconds(seconds=seconds, subseconds=micros, time_unit=time_unit)
 
-    return subseconds
+
+def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
+    """Convert a Python timedelta object to a total number of subseconds."""
+    micros = td.microsecond
+    seconds = td.days * SECONDS_PER_DAY + td.seconds
+    return _seconds_and_micros_to_subseconds(seconds=seconds, subseconds=micros, time_unit=time_unit)
 
 
 def _to_python_time(value: int) -> time:
@@ -169,7 +157,7 @@ def _to_python_time(value: int) -> time:
         )
 
 
-def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "ns") -> timedelta:
+def _to_python_timedelta(value: int | float, time_unit: TimeUnit | None = "ns") -> timedelta:
     _validate_time_unit(time_unit)
 
     if time_unit == "ns":
