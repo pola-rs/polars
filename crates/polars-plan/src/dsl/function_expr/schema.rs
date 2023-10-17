@@ -47,8 +47,21 @@ impl FunctionExpr {
             RollingSkew { .. } => mapper.map_to_float_dtype(),
             ShiftAndFill { .. } => mapper.with_same_dtype(),
             DropNans => mapper.with_same_dtype(),
+            DropNulls => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
             Clip { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "mode")]
+            Mode => mapper.with_same_dtype(),
+            #[cfg(feature = "moment")]
+            Skew(_) => mapper.with_dtype(DataType::Float64),
+            #[cfg(feature = "moment")]
+            Kurtosis(..) => mapper.with_dtype(DataType::Float64),
+            ArgUnique => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "rank")]
+            Rank { options, .. } => mapper.with_dtype(match options.method {
+                RankMethod::Average => DataType::Float64,
+                _ => IDX_DTYPE,
+            }),
             ListExpr(l) => {
                 use ListFunction::*;
                 match l {
