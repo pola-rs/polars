@@ -132,7 +132,7 @@ def assert_frame_equal(
                 categorical_as_str=categorical_as_str,
             )
         except AssertionError as exc:
-            msg = f"values for column {c!r} are different."
+            msg = f"values for column {c!r} are different"
             raise AssertionError(msg) from exc
 
 
@@ -406,7 +406,7 @@ def _assert_series_inner(
                 right=right.to_list(),
             )
         else:
-            mismatch, nan_info = _check_series_equal_inexact(
+            equal, nan_info = _check_series_equal_inexact(
                 left,
                 right,
                 unequal,
@@ -416,7 +416,7 @@ def _assert_series_inner(
                 comparing_floats=comparing_floats,
             )
 
-            if mismatch:
+            if not equal:
                 _raise_assertion_error(
                     "Series",
                     f"value mismatch{nan_info}",
@@ -446,11 +446,11 @@ def _check_series_equal_inexact(
     else:
         s_diff = (left - right).abs()
 
-    mismatch, nan_info = False, ""
+    equal, nan_info = True, ""
     if ((s_diff > (atol + rtol * right.abs())).sum() != 0) or (
         left.is_null() != right.is_null()
     ).any():
-        mismatch = True
+        equal = False
 
     elif comparing_floats:
         # note: take special care with NaN values.
@@ -458,13 +458,13 @@ def _check_series_equal_inexact(
         # sufficient for a mismatch because the if condition above already
         # compares the null values.
         if not nans_compare_equal and left.is_nan().any():
+            equal = False
             nan_info = " (nans_compare_equal=False)"
-            mismatch = True
         elif (left.is_nan() != right.is_nan()).any():
+            equal = False
             nan_info = f" (nans_compare_equal={nans_compare_equal})"
-            mismatch = True
 
-    return mismatch, nan_info
+    return equal, nan_info
 
 
 def _assert_series_nested(
