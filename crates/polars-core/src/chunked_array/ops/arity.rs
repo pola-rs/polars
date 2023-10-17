@@ -196,6 +196,38 @@ where
     ChunkedArray::try_from_chunk_iter(lhs.name(), iter)
 }
 
+
+/// Applies a kernel that produces `Array` types.
+/// 
+/// Intended for kernels that apply on values, this function will filter out any
+/// results which do not have two non-null inputs.
+#[inline]
+pub fn binary_mut_values<T, U, V, F, Arr>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+    name: &str,
+) -> ChunkedArray<V>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    V: PolarsDataType<Array = Arr>,
+    Arr: Array + StaticArray,
+    F: FnMut(&T::Array, &U::Array) -> Arr,
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let iter = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| {
+            let ret = op(lhs_arr, rhs_arr);
+            let inp_val = combine_validities_and(lhs_arr.validity(), rhs_arr.validity());
+            let val = combine_validities_and(inp_val.as_ref(), ret.validity());
+            ret.with_validity_typed(val)
+        });
+    ChunkedArray::from_chunk_iter(name, iter)
+}
+
 /// Applies a kernel that produces `Array` types.
 #[inline]
 pub fn binary_mut_with_options<T, U, V, F, Arr>(

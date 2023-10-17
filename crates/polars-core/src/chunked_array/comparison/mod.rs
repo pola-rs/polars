@@ -1,15 +1,17 @@
 mod scalar;
 
-use std::ops::{BitOr, Not};
+use std::ops::{BitOr, Not, BitAnd};
 
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{MutableBitmap, self};
 use arrow::compute;
 use arrow::compute::comparison;
 use arrow::legacy::prelude::FromData;
+use arrow::legacy::utils::{combine_validities_and, combine_validities_or};
 use arrow::scalar::{BinaryScalar, PrimitiveScalar, Scalar, Utf8Scalar};
 use either::Either;
 use num_traits::{NumCast, ToPrimitive};
+use polars_compute::comparisons::TotalOrdKernel;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -27,6 +29,7 @@ where
 impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Array: TotalOrdKernel
 {
     type Item = BooleanChunked;
 
@@ -47,7 +50,7 @@ where
                     BooleanChunked::full_null("", rhs.len())
                 }
             },
-            _ => arity::binary_mut_with_options(self, rhs, |a, b| comparison::eq(a, b), ""),
+            _ => arity::binary_mut_values(self, rhs, |a, b| a.tot_eq_kernel(b).into(), ""),
         }
     }
 
@@ -71,8 +74,19 @@ where
             _ => arity::binary_mut_with_options(
                 self,
                 rhs,
-                |a, b| comparison::eq_and_validity(a, b),
-                "",
+                |a, b| {
+                    let q = a.tot_eq_kernel(b);
+                    let combined = match (a.validity(), b.validity()) {
+                        (None, None) => q,
+                        (None, Some(r)) => &q & r,
+                        (Some(l), None) => &q & l,
+                        (Some(l), Some(r)) => {
+                            bitmap::ternary(&q, l, r, |q, l, r| (q & l & r) | !(l | r))
+                        }
+                    };
+                    combined.into()
+                },
+                ""
             ),
         }
     }

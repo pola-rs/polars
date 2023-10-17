@@ -64,6 +64,7 @@ ryu = "1.0.13"
 lexical-core = "0.8.5"
 percent-encoding = "2.3"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
+polars-compute = { version = "0.33.2", path = "crates/polars-compute", default-features = false }
 polars-core = { version = "0.33.2", path = "crates/polars-core", default-features = false }
 polars-plan = { version = "0.33.2", path = "crates/polars-plan", default-features = false }
 polars-lazy = { version = "0.33.2", path = "crates/polars-lazy", default-features = false }
