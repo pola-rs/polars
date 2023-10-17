@@ -1666,7 +1666,7 @@ class DataFrame:
         # select single column
         # df["foo"]
         if isinstance(item, str):
-            return wrap_s(self._df.column(item))
+            return self.get_column(item)
 
         # df[idx]
         if isinstance(item, int):
@@ -1864,7 +1864,7 @@ class DataFrame:
         s = (
             self._df.select_at_idx(column)
             if isinstance(column, int)
-            else self._df.column(column)
+            else self._df.get_column(column)
         )
         if s is None:
             raise IndexError(f"column index {column!r} is out of bounds")
@@ -6650,12 +6650,16 @@ class DataFrame:
 
     def get_column(self, name: str) -> Series:
         """
-        Get a single column as Series by name.
+        Get a single column by name.
 
         Parameters
         ----------
         name : str
             Name of the column to retrieve.
+
+        Returns
+        -------
+        Series
 
         See Also
         --------
@@ -6674,11 +6678,7 @@ class DataFrame:
         ]
 
         """
-        if not isinstance(name, str):
-            raise TypeError(
-                f"column name {name!r} should be be a string, but is {type(name).__name__!r}"
-            )
-        return self[name]
+        return wrap_s(self._df.get_column(name))
 
     def fill_null(
         self,
