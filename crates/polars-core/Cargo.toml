@@ -92,7 +92,6 @@ group_by_list = []
 # rolling window functions
 rolling_window = []
 diff = []
-pct_change = ["diff"]
 moment = []
 diagonal_concat = []
 horizontal_concat = []

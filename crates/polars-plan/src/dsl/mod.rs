@@ -1570,16 +1570,8 @@ impl Expr {
 
     #[cfg(feature = "pct_change")]
     /// Computes percentage change between values.
-    pub fn pct_change(self, n: i64) -> Expr {
-        use DataType::*;
-        self.apply(
-            move |s| s.pct_change(n).map(Some),
-            GetOutput::map_dtype(|dt| match dt {
-                Float64 | Float32 => dt.clone(),
-                _ => Float64,
-            }),
-        )
-        .with_fmt("pct_change")
+    pub fn pct_change(self, n: Expr) -> Expr {
+        self.apply_many_private(FunctionExpr::PctChange, &[n], false, false)
     }
 
     #[cfg(feature = "moment")]

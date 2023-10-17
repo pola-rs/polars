@@ -7464,7 +7464,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.diff(n, null_behavior))
 
-    def pct_change(self, n: int = 1) -> Self:
+    def pct_change(self, n: int | IntoExprColumn = 1) -> Self:
         """
         Computes percentage change between values.
 
@@ -7500,6 +7500,7 @@ class Expr:
         └──────┴────────────┘
 
         """
+        n = parse_as_expression(n)
         return self._from_pyexpr(self._pyexpr.pct_change(n))
 
     def skew(self, *, bias: bool = True) -> Self:

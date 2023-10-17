@@ -18,6 +18,11 @@ pub(super) fn diff(s: &Series, n: i64, null_behavior: NullBehavior) -> PolarsRes
     s.diff(n, null_behavior)
 }
 
+#[cfg(feature = "pct_change")]
+pub(super) fn pct_change(s: &[Series]) -> PolarsResult<Series> {
+    polars_ops::prelude::pct_change(&s[0], &s[1])
+}
+
 #[cfg(feature = "interpolate")]
 pub(super) fn interpolate(s: &Series, method: InterpolationMethod) -> PolarsResult<Series> {
     Ok(polars_ops::prelude::interpolate(s, method))
