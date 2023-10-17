@@ -5,7 +5,7 @@ from typing import cast
 from polars.dataframe import DataFrame
 from polars.exceptions import ComputeError, InvalidAssert
 from polars.lazyframe import LazyFrame
-from polars.testing.asserts.series import _assert_series_inner
+from polars.testing.asserts.series import _assert_series_values_equal
 from polars.testing.asserts.utils import raise_assertion_error
 
 
@@ -106,10 +106,9 @@ def assert_frame_equal(
 
     for c in left.columns:
         try:
-            _assert_series_inner(
+            _assert_series_values_equal(
                 left.get_column(c),
                 right.get_column(c),
-                check_dtype=False,  # already checked
                 check_exact=check_exact,
                 atol=atol,
                 rtol=rtol,

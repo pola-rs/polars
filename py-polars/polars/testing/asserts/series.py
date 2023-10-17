@@ -89,10 +89,12 @@ def assert_series_equal(
     if check_names and left.name != right.name:
         raise_assertion_error("Series", "name mismatch", left.name, right.name)
 
-    _assert_series_inner(
+    if check_dtype and left.dtype != right.dtype:
+        raise_assertion_error("Series", "dtype mismatch", left.dtype, right.dtype)
+
+    _assert_series_values_equal(
         left,
         right,
-        check_dtype=check_dtype,
         check_exact=check_exact,
         atol=atol,
         rtol=rtol,
@@ -176,20 +178,17 @@ def assert_series_not_equal(
         raise AssertionError(msg)
 
 
-def _assert_series_inner(
+def _assert_series_values_equal(
     left: Series,
     right: Series,
     *,
-    check_dtype: bool,
     check_exact: bool,
     atol: float,
     rtol: float,
     nans_compare_equal: bool,
     categorical_as_str: bool,
 ) -> None:
-    """Compare Series dtype + values."""
-    if check_dtype and left.dtype != right.dtype:
-        raise_assertion_error("Series", "dtype mismatch", left.dtype, right.dtype)
+    """Compare Series values."""
 
     if categorical_as_str and left.dtype == Categorical:
         left = left.cast(Utf8)
@@ -214,7 +213,6 @@ def _assert_series_inner(
         if _assert_series_nested(
             left=left.filter(unequal),
             right=right.filter(unequal),
-            check_dtype=check_dtype,
             check_exact=check_exact,
             atol=atol,
             rtol=rtol,
@@ -307,7 +305,6 @@ def _assert_series_nested(
     left: Series,
     right: Series,
     *,
-    check_dtype: bool,
     check_exact: bool,
     atol: float,
     rtol: float,
@@ -338,10 +335,9 @@ def _assert_series_nested(
                     "Series", "nested list length mismatch", len(s1), len(s2)
                 )
 
-            _assert_series_inner(
+            _assert_series_values_equal(
                 s1,
                 s2,
-                check_dtype=check_dtype,
                 check_exact=check_exact,
                 atol=atol,
                 rtol=rtol,
@@ -365,10 +361,9 @@ def _assert_series_nested(
                 "Series", "nested struct length mismatch", len(ls), len(rs)
             )
         for s1, s2 in zip(ls, rs):
-            _assert_series_inner(
+            _assert_series_values_equal(
                 s1,
                 s2,
-                check_dtype=check_dtype,
                 check_exact=check_exact,
                 atol=atol,
                 rtol=rtol,
