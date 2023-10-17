@@ -106,19 +106,16 @@ def assert_frame_equal(
         )
 
     if left_not_right := [c for c in left.columns if c not in right.columns]:
-        raise AssertionError(
-            f"columns {left_not_right!r} in left frame, but not in right"
-        )
+        msg = f"columns {left_not_right!r} in left frame, but not in right"
+        raise AssertionError(msg)
 
     if right_not_left := [c for c in right.columns if c not in left.columns]:
-        raise AssertionError(
-            f"columns {right_not_left!r} in right frame, but not in left"
-        )
+        msg = f"columns {right_not_left!r} in right frame, but not in left"
+        raise AssertionError(msg)
 
     if check_column_order and left.columns != right.columns:
-        raise AssertionError(
-            f"columns are not in the same order:\n{left.columns!r}\n{right.columns!r}"
-        )
+        msg = f"columns are not in the same order:\n{left.columns!r}\n{right.columns!r}"
+        raise AssertionError(msg)
 
     if collect_input_frames:
         if check_dtype:  # check this _before_ we collect
@@ -137,9 +134,8 @@ def assert_frame_equal(
             left = left.sort(by=left.columns)
             right = right.sort(by=left.columns)
         except ComputeError as exc:
-            raise InvalidAssert(
-                "cannot set `check_row_order=False` on frame with unsortable columns"
-            ) from exc
+            msg = "cannot set `check_row_order=False` on frame with unsortable columns"
+            raise InvalidAssert(msg) from exc
 
     # note: does not assume a particular column order
     for c in left.columns:
@@ -238,7 +234,8 @@ def assert_frame_not_equal(
     except AssertionError:
         return
     else:
-        raise AssertionError("frames are equal")
+        msg = "frames are equal"
+        raise AssertionError(msg)
 
 
 def assert_series_equal(
@@ -397,7 +394,8 @@ def assert_series_not_equal(
     except AssertionError:
         return
     else:
-        raise AssertionError("Series are equal")
+        msg = "Series are equal"
+        raise AssertionError(msg)
 
 
 def _assert_series_inner(
