@@ -7,6 +7,8 @@ mod clip;
 mod cum_agg;
 #[cfg(feature = "cutqcut")]
 mod cut;
+#[cfg(feature = "diff")]
+mod diff;
 #[cfg(feature = "ewma")]
 mod ewm;
 #[cfg(feature = "round_series")]
@@ -49,6 +51,8 @@ pub use clip::*;
 pub use cum_agg::*;
 #[cfg(feature = "cutqcut")]
 pub use cut::*;
+#[cfg(feature = "diff")]
+pub use diff::*;
 #[cfg(feature = "ewma")]
 pub use ewm::*;
 #[cfg(feature = "round_series")]

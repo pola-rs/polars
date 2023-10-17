@@ -15,7 +15,7 @@ pub(super) fn approx_n_unique(s: &Series) -> PolarsResult<Series> {
 
 #[cfg(feature = "diff")]
 pub(super) fn diff(s: &Series, n: i64, null_behavior: NullBehavior) -> PolarsResult<Series> {
-    s.diff(n, null_behavior)
+    polars_ops::prelude::diff(s, n, null_behavior)
 }
 
 #[cfg(feature = "pct_change")]

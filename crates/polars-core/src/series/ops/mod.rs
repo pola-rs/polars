@@ -1,5 +1,3 @@
-#[cfg(feature = "diff")]
-pub mod diff;
 mod downcast;
 mod extend;
 #[cfg(feature = "moment")]
