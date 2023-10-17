@@ -79,24 +79,14 @@ def assert_frame_equal(
     AssertionError: values for column 'a' are different
 
     """
-    collect_input_frames = isinstance(left, LazyFrame) and isinstance(right, LazyFrame)
-    if collect_input_frames:
-        objs = "LazyFrames"
-    elif isinstance(left, DataFrame) and isinstance(right, DataFrame):
-        objs = "DataFrames"
-    else:
-        raise_assertion_error(
-            "Inputs",
-            "unexpected input types",
-            type(left).__name__,
-            type(right).__name__,
-        )
+    lazy = _assert_input_types(left, right)
+    objs = "LazyFrames" if lazy else "DataFrames"
 
     _assert_frame_schema_equal(
         left, right, check_column_order=check_column_order, check_dtype=check_dtype
     )
 
-    if collect_input_frames:
+    if lazy:
         if check_dtype:  # check this _before_ we collect
             left_schema, right_schema = left.schema, right.schema
             if left_schema != right_schema:
@@ -134,6 +124,22 @@ def assert_frame_equal(
             raise AssertionError(msg) from exc
 
 
+def _assert_input_types(
+    left: DataFrame | LazyFrame, right: DataFrame | LazyFrame
+) -> bool:
+    if isinstance(left, LazyFrame) and isinstance(right, LazyFrame):
+        return True
+    elif isinstance(left, DataFrame) and isinstance(right, DataFrame):
+        return False
+    else:
+        raise_assertion_error(
+            "Inputs",
+            "unexpected input types",
+            type(left).__name__,
+            type(right).__name__,
+        )
+
+
 def _assert_frame_schema_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
@@ -150,7 +156,7 @@ def _assert_frame_schema_equal(
     # We know schemas do not match...
 
     if check_column_order and check_dtype:
-        #... so we can raise here
+        # ... so we can raise here
         msg = "x"
         raise AssertionError(msg)
 
