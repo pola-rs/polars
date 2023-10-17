@@ -860,7 +860,7 @@ def dict_to_pydf(
                             lambda t: pl.Series(t[0], t[1])
                             if isinstance(t[1], np.ndarray)
                             else t[1],
-                            [(k, v) for k, v in data.items()],
+                            list(data.items()),
                         ),
                     )
                 )
