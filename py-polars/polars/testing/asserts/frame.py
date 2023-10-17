@@ -89,8 +89,8 @@ def assert_frame_equal(
     if lazy:
         left, right = left.collect(), right.collect()  # type: ignore[union-attr]
 
-    if left.shape[0] != right.shape[0]:  # type: ignore[union-attr]
-        raise_assertion_error(objs, "length mismatch", left.shape, right.shape)  # type: ignore[union-attr]
+    if left.height != right.height:  # type: ignore[union-attr]
+        raise_assertion_error(objs, "length mismatch", left.height, right.height)  # type: ignore[union-attr]
 
     if not check_row_order:
         try:
