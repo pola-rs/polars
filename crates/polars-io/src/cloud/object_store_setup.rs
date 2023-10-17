@@ -4,7 +4,7 @@ use tokio::sync::RwLock;
 
 use super::*;
 
-type CacheKey = (CloudType, Option<CloudOptions>);
+type CacheKey = (String, Option<CloudOptions>);
 
 /// A very simple cache that only stores a single object-store.
 /// This greatly reduces the query times as multiple object stores (when reading many small files)
@@ -34,9 +34,8 @@ fn err_missing_configuration(feature: &str, scheme: &str) -> BuildResult {
 pub async fn build_object_store(url: &str, options: Option<&CloudOptions>) -> BuildResult {
     let cloud_location = CloudLocation::new(url)?;
 
-    let cloud_type = CloudType::from_str(url)?;
     let options = options.cloned();
-    let key = (cloud_type, options);
+    let key = (url.to_string(), options);
 
     {
         let cache = OBJECT_STORE_CACHE.read().await;
@@ -47,7 +46,8 @@ pub async fn build_object_store(url: &str, options: Option<&CloudOptions>) -> Bu
         }
     }
 
-    let store = match key.0 {
+    let cloud_type = CloudType::from_str(url)?;
+    let store = match cloud_type {
         CloudType::File => {
             let local = LocalFileSystem::new();
             Ok::<_, PolarsError>(Arc::new(local) as Arc<dyn ObjectStore>)
