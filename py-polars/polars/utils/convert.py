@@ -138,16 +138,16 @@ def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
     micros = dt.microsecond
     seconds = _timestamp_in_seconds(dt)
     return _seconds_and_micros_to_subseconds(
-        seconds=seconds, subseconds=micros, time_unit=time_unit
+        seconds=seconds, micros=micros, time_unit=time_unit
     )
 
 
 def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
     """Convert a Python timedelta object to a total number of subseconds."""
-    micros = td.microsecond
+    micros = td.microseconds
     seconds = td.days * SECONDS_PER_DAY + td.seconds
     return _seconds_and_micros_to_subseconds(
-        seconds=seconds, subseconds=micros, time_unit=time_unit
+        seconds=seconds, micros=micros, time_unit=time_unit
     )
 
 
