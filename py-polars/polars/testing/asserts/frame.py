@@ -92,17 +92,7 @@ def assert_frame_equal(
             type(right).__name__,
         )
 
-    if left_not_right := [c for c in left.columns if c not in right.columns]:
-        msg = f"columns {left_not_right!r} in left frame, but not in right"
-        raise AssertionError(msg)
-
-    if right_not_left := [c for c in right.columns if c not in left.columns]:
-        msg = f"columns {right_not_left!r} in right frame, but not in left"
-        raise AssertionError(msg)
-
-    if check_column_order and left.columns != right.columns:
-        msg = f"columns are not in the same order:\n{left.columns!r}\n{right.columns!r}"
-        raise AssertionError(msg)
+    _assert_frame_columns_equal(left, right, check_column_order=check_column_order)
 
     if collect_input_frames:
         if check_dtype:  # check this _before_ we collect
@@ -140,6 +130,29 @@ def assert_frame_equal(
         except AssertionError as exc:
             msg = f"values for column {c!r} are different"
             raise AssertionError(msg) from exc
+
+
+def _assert_frame_columns_equal(
+    left: DataFrame | LazyFrame,
+    right: DataFrame | LazyFrame,
+    *,
+    check_column_order: bool,
+) -> None:
+    left_columns = left.columns
+    right_columns = right.columns
+
+    if left_not_right := [c for c in left_columns if c not in right_columns]:
+        msg = f"columns {left_not_right!r} in left frame, but not in right"
+        raise AssertionError(msg)
+
+    if right_not_left := [c for c in right_columns if c not in left_columns]:
+        msg = f"columns {right_not_left!r} in right frame, but not in left"
+        raise AssertionError(msg)
+
+    if check_column_order and left_columns != right_columns:
+        # TODO: Use raise_assertion_error to get nice formatting
+        msg = f"columns are not in the same order:\n{left_columns!r}\n{right_columns!r}"
+        raise AssertionError(msg)
 
 
 def assert_frame_not_equal(
