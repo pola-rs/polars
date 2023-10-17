@@ -77,8 +77,8 @@ def assert_series_equal(
     """
     _assert_correct_input_type(left, right)
 
-    if len(left) != len(right):
-        raise_assertion_error("Series", "length mismatch", len(left), len(right))
+    if left.len() != right.len():
+        raise_assertion_error("Series", "length mismatch", left.len(), right.len())
 
     if check_names and left.name != right.name:
         raise_assertion_error("Series", "name mismatch", left.name, right.name)
@@ -117,7 +117,7 @@ def _assert_series_values_equal(
     nans_compare_equal: bool,
     categorical_as_str: bool,
 ) -> None:
-    """Compare Series values."""
+    """Assert that the values in both Series are equal."""
     if categorical_as_str and left.dtype == Categorical:
         left = left.cast(Utf8)
         right = right.cast(Utf8)
