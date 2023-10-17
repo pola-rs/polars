@@ -499,7 +499,7 @@ where
     D: NestedDecoder<'a>,
 {
     // front[a1, a2, a3, ...]back
-    if *remaining == 0 && items.len() == 0 {
+    if *remaining == 0 && items.is_empty() {
         return MaybeNext::None;
     }
     if !items.is_empty() && items.front().unwrap().0.len() > chunk_size.unwrap_or(usize::MAX) {
