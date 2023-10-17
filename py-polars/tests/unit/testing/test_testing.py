@@ -280,7 +280,7 @@ def test_assert_frame_equal_types() -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
     srs1 = pl.Series(values=[1, 2], name="a")
     with pytest.raises(
-        AssertionError, match=r"Inputs are different \(unexpected input types\)"
+        AssertionError, match=r"inputs are different \(unexpected input types\)"
     ):
         assert_frame_equal(df1, srs1)  # type: ignore[arg-type]
 
@@ -1044,6 +1044,15 @@ def test_assert_series_equal_full_series() -> None:
     )
     with pytest.raises(AssertionError, match=msg):
         assert_series_equal(s1, s2)
+
+
+def test_assert_frame_equal_dtypes_mismatch() -> None:
+    data = {"a": [1, 2], "b": [3, 4]}
+    df1 = pl.DataFrame(data, schema={"a": pl.Int8, "b": pl.Int16})
+    df2 = pl.DataFrame(data, schema={"b": pl.Int16, "a": pl.Int16})
+
+    with pytest.raises(AssertionError, match="dtypes do not match"):
+        assert_frame_equal(df1, df2, check_column_order=False)
 
 
 def test_assert_frame_not_equal() -> None:

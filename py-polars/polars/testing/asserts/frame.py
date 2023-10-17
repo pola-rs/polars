@@ -124,21 +124,13 @@ def assert_frame_equal(
 def _assert_frame_type_equal(
     left: DataFrame | LazyFrame, right: DataFrame | LazyFrame
 ) -> bool:
-    """
-    Assert that both inputs are either a DataFrame or a LazyFrame.
-
-    Returns
-    -------
-    bool
-        Whether the inputs are LazyFrames.
-    """
     if isinstance(left, DataFrame) and isinstance(right, DataFrame):
         return False
     elif isinstance(left, LazyFrame) and isinstance(right, LazyFrame):
         return True
     else:
         raise_assertion_error(
-            "Inputs",
+            "inputs",
             "unexpected input types",
             type(left).__name__,
             type(right).__name__,
@@ -173,15 +165,12 @@ def _assert_frame_schema_equal(
         if left_columns != right_columns:
             msg = "columns are not in the same order"
             raise_assertion_error("Frames", msg, left_columns, right_columns)
-        elif check_dtype:
-            msg = "schemas do not match"  # Checked in the fast path above
-            raise_assertion_error("Frames", msg, left_schema, right_schema)
 
-    elif check_dtype:
+    if check_dtype:
         left_schema_dict, right_schema_dict = dict(left_schema), dict(right_schema)
-        if left_schema_dict != right_schema_dict:
+        if check_column_order or left_schema_dict != right_schema_dict:
             msg = "dtypes do not match"
-            raise_assertion_error("Frames", msg, left_schema_dict, right_schema_dict)
+            raise_assertion_error("frames", msg, left_schema_dict, right_schema_dict)
 
 
 def assert_frame_not_equal(
