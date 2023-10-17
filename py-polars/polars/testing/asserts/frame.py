@@ -163,7 +163,8 @@ def _assert_frame_schema_equal(
         if left_not_right := [c for c in left_schema if c not in right_schema]:
             msg = f"columns {left_not_right!r} in left frame, but not in right"
             raise AssertionError(msg)
-        if right_not_left := [c for c in right_schema if c not in left_schema]:
+        else:
+            right_not_left = [c for c in right_schema if c not in left_schema]
             msg = f"columns {right_not_left!r} in right frame, but not in left"
             raise AssertionError(msg)
 
@@ -190,7 +191,8 @@ def _assert_frame_schema_equal(
 
     else:
         # Here we know that we are not checking for column order
-        # Either dtypes are wrong, or column order is wrong but it doesn't matter, or both
+        # Either dtypes are wrong, or column order is wrong but it doesn't matter,
+        # or both
 
         # We are checking for dtypes and don't care about column order
         if check_dtype and dict(left_schema) != dict(right_schema):
