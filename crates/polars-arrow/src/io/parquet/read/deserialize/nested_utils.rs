@@ -499,15 +499,13 @@ where
     D: NestedDecoder<'a>,
 {
     // front[a1, a2, a3, ...]back
-    if items.len() > 1 {
+    if *remaining == 0 && items.len() == 0 {
+        return MaybeNext::None;
+    }
+    if items.len() > 0 && items.front().unwrap().0.len() > chunk_size.unwrap_or(usize::MAX) {
         return MaybeNext::Some(Ok(items.pop_front().unwrap()));
     }
-    if *remaining == 0 {
-        return match items.pop_front() {
-            Some(decoded) => MaybeNext::Some(Ok(decoded)),
-            None => MaybeNext::None,
-        };
-    }
+
     match iter.next() {
         Err(e) => MaybeNext::Some(Err(e.into())),
         Ok(None) => {
@@ -541,8 +539,8 @@ where
                 Err(e) => return MaybeNext::Some(Err(e)),
             };
 
-            if (items.len() == 1)
-                && items.front().unwrap().0.len() > chunk_size.unwrap_or(usize::MAX)
+            // if possible, return the value immediately.
+            if items.len() > 0 && items.front().unwrap().0.len() > chunk_size.unwrap_or(usize::MAX)
             {
                 MaybeNext::Some(Ok(items.pop_front().unwrap()))
             } else {

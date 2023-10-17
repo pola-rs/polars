@@ -106,6 +106,7 @@ def test_hive_partitioned_projection_pushdown(
             root / "**/*.parquet", hive_partitioning=True, parallel=parallel  # type: ignore[arg-type]
         )
 
-        assert (
-            q.select("category").collect().frame_equal(q.collect().select("category"))
-        )
+        expect = q.collect().select("category")
+        actual = q.select("category").collect()
+
+        assert expect.frame_equal(actual)
