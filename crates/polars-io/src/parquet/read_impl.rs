@@ -278,7 +278,7 @@ fn rg_to_dfs_par_over_rg(
             let num_rows = rg_md.num_rows();
             *previous_row_count += num_rows as IdxSize;
             let projection_height = (*remaining_rows).min(num_rows);
-            *remaining_rows = *remaining_rows - projection_height;
+            *remaining_rows -= projection_height;
 
             (rg_idx, rg_md, projection_height, row_count_start)
         })
