@@ -230,7 +230,7 @@ fn rg_to_dfs_optionally_par_over_columns(
                 .collect::<PolarsResult<Vec<_>>>()?
         };
 
-        *remaining_rows = *remaining_rows - projection_height;
+        *remaining_rows -= projection_height;
 
         let mut df = DataFrame::new_no_checks(columns);
         if let Some(rc) = &row_count {
