@@ -325,7 +325,7 @@ def test_assert_frame_equal_ignore_row_order() -> None:
     df1 = pl.DataFrame({"a": [1, 2], "b": [4, 3]})
     df2 = pl.DataFrame({"a": [2, 1], "b": [3, 4]})
     df3 = pl.DataFrame({"b": [3, 4], "a": [2, 1]})
-    with pytest.raises(AssertionError, match="values for column 'a' are different."):
+    with pytest.raises(AssertionError, match="values for column 'a' are different"):
         assert_frame_equal(df1, df2)
 
     assert_frame_equal(df1, df2, check_row_order=False)
