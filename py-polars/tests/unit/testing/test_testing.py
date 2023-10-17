@@ -1044,3 +1044,15 @@ def test_assert_series_equal_full_series() -> None:
     )
     with pytest.raises(AssertionError, match=msg):
         assert_series_equal(s1, s2)
+
+
+def test_assert_frame_not_equal() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    with pytest.raises(AssertionError, match="frames are equal"):
+        assert_frame_not_equal(df, df)
+
+
+def test_assert_series_not_equal() -> None:
+    s = pl.Series("a", [1, 2])
+    with pytest.raises(AssertionError, match="Series are equal"):
+        assert_series_not_equal(s, s)
