@@ -87,12 +87,6 @@ def assert_frame_equal(
     )
 
     if lazy:
-        if check_dtype:  # check this _before_ we collect
-            left_schema, right_schema = left.schema, right.schema
-            if left_schema != right_schema:
-                raise_assertion_error(
-                    objs, "lazy schemas are not equal", left_schema, right_schema
-                )
         left, right = left.collect(), right.collect()  # type: ignore[union-attr]
 
     if left.shape[0] != right.shape[0]:  # type: ignore[union-attr]
