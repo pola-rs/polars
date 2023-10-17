@@ -167,6 +167,8 @@ def _to_python_time(value: int) -> time:
 def _to_python_timedelta(
     value: int | float, time_unit: TimeUnit | None = "ns"
 ) -> timedelta:
+    if time_unit is None:
+        time_unit = "us"
     _validate_time_unit(time_unit)
     if time_unit == "ns":
         return timedelta(microseconds=value // 1_000)
