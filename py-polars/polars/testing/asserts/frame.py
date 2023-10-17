@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from polars.dataframe import DataFrame
 from polars.exceptions import ComputeError, InvalidAssert
 from polars.lazyframe import LazyFrame
@@ -89,8 +91,10 @@ def assert_frame_equal(
     if lazy:
         left, right = left.collect(), right.collect()  # type: ignore[union-attr]
 
-    if left.height != right.height:  # type: ignore[union-attr]
-        raise_assertion_error(objs, "length mismatch", left.height, right.height)  # type: ignore[union-attr]
+    left, right = cast(DataFrame, left), cast(DataFrame, right)
+
+    if left.height != right.height:
+        raise_assertion_error(objs, "length mismatch", left.height, right.height)
 
     if not check_row_order:
         try:
@@ -100,12 +104,11 @@ def assert_frame_equal(
             msg = "cannot set `check_row_order=False` on frame with unsortable columns"
             raise InvalidAssert(msg) from exc
 
-    # note: does not assume a particular column order
     for c in left.columns:
         try:
             _assert_series_inner(
-                left[c],  # type: ignore[arg-type, index]
-                right[c],  # type: ignore[arg-type, index]
+                left.get_column(c),
+                right.get_column(c),
                 check_dtype=False,  # already checked
                 check_exact=check_exact,
                 atol=atol,
@@ -165,15 +168,14 @@ def _assert_frame_schema_equal(
             msg = f"columns {right_not_left!r} in right frame, but not in left"
             raise AssertionError(msg)
 
-    if check_column_order and check_dtype:
-        msg = "schemas do not match"  # Checked in the fast path above
-        raise_assertion_error("Frames", msg, left_schema, right_schema)
-
-    elif check_column_order:
+    if check_column_order:
         left_columns, right_columns = list(left_schema), list(right_schema)
         if left_columns != right_columns:
             msg = "columns are not in the same order"
             raise_assertion_error("Frames", msg, left_columns, right_columns)
+        elif check_dtype:
+            msg = "schemas do not match"  # Checked in the fast path above
+            raise_assertion_error("Frames", msg, left_schema, right_schema)
 
     elif check_dtype:
         left_schema_dict, right_schema_dict = dict(left_schema), dict(right_schema)
