@@ -580,23 +580,9 @@ pub fn cast(
             LargeUtf8 => Ok(Box::new(utf8_to_large_utf8(
                 array.as_any().downcast_ref().unwrap(),
             ))),
-            Timestamp(TimeUnit::Nanosecond, None) => {
-                utf8_to_naive_timestamp_dyn::<i32>(array, TimeUnit::Nanosecond)
-            },
-            Timestamp(TimeUnit::Millisecond, None) => {
-                utf8_to_naive_timestamp_dyn::<i32>(array, TimeUnit::Millisecond)
-            },
-            Timestamp(TimeUnit::Microsecond, None) => {
-                utf8_to_naive_timestamp_dyn::<i32>(array, TimeUnit::Microsecond)
-            },
-            Timestamp(TimeUnit::Nanosecond, Some(tz)) => {
-                utf8_to_timestamp_dyn::<i32>(array, tz.clone(), TimeUnit::Nanosecond)
-            },
-            Timestamp(TimeUnit::Millisecond, Some(tz)) => {
-                utf8_to_timestamp_dyn::<i32>(array, tz.clone(), TimeUnit::Millisecond)
-            },
-            Timestamp(TimeUnit::Microsecond, Some(tz)) => {
-                utf8_to_timestamp_dyn::<i32>(array, tz.clone(), TimeUnit::Microsecond)
+            Timestamp(tu, None) => utf8_to_naive_timestamp_dyn::<i32>(array, tu.to_owned()),
+            Timestamp(tu, Some(tz)) => {
+                utf8_to_timestamp_dyn::<i32>(array, tz.clone(), tu.to_owned())
             },
             _ => polars_bail!(InvalidOperation:
                 "casting from {from_type:?} to {to_type:?} not supported",
@@ -621,23 +607,9 @@ pub fn cast(
                 to_type.clone(),
             )
             .boxed()),
-            Timestamp(TimeUnit::Nanosecond, None) => {
-                utf8_to_naive_timestamp_dyn::<i64>(array, TimeUnit::Nanosecond)
-            },
-            Timestamp(TimeUnit::Millisecond, None) => {
-                utf8_to_naive_timestamp_dyn::<i64>(array, TimeUnit::Millisecond)
-            },
-            Timestamp(TimeUnit::Microsecond, None) => {
-                utf8_to_naive_timestamp_dyn::<i64>(array, TimeUnit::Microsecond)
-            },
-            Timestamp(TimeUnit::Nanosecond, Some(tz)) => {
-                utf8_to_timestamp_dyn::<i64>(array, tz.clone(), TimeUnit::Nanosecond)
-            },
-            Timestamp(TimeUnit::Millisecond, Some(tz)) => {
-                utf8_to_timestamp_dyn::<i64>(array, tz.clone(), TimeUnit::Millisecond)
-            },
-            Timestamp(TimeUnit::Microsecond, Some(tz)) => {
-                utf8_to_timestamp_dyn::<i64>(array, tz.clone(), TimeUnit::Microsecond)
+            Timestamp(tu, None) => utf8_to_naive_timestamp_dyn::<i64>(array, tu.to_owned()),
+            Timestamp(tu, Some(tz)) => {
+                utf8_to_timestamp_dyn::<i64>(array, tz.clone(), tu.to_owned())
             },
             _ => polars_bail!(InvalidOperation:
                 "casting from {from_type:?} to {to_type:?} not supported",

@@ -380,8 +380,6 @@ def test_utf8_date() -> None:
     )
     expected = pl.DataFrame({"x1-date": [date(2021, 1, 1)]})
     out = df.select(pl.col("x1-date"))
-    assert out.shape == (1, 1)
-    assert out.dtypes == [pl.Date]
     assert_frame_equal(expected, out)
 
 
@@ -419,8 +417,6 @@ def test_utf8_datetime() -> None:
     out = df.select(
         pl.col("x1-datetime-ns"), pl.col("x1-datetime-ms"), pl.col("x1-datetime-us")
     )
-    assert out.shape == (2, 3)
-    assert out.dtypes == [pl.Datetime, pl.Datetime, pl.Datetime]
     assert_frame_equal(expected, out)
 
 
@@ -477,10 +473,4 @@ def test_utf8_datetime_timezone() -> None:
         pl.col("x1-datetime-ns"), pl.col("x1-datetime-ms"), pl.col("x1-datetime-us")
     )
 
-    assert out.shape == (2, 3)
-    assert out.dtypes == [
-        pl.Datetime("ns", "America/Caracas"),
-        pl.Datetime("ms", "America/Santiago"),
-        pl.Datetime("us", "UTC"),
-    ]
     assert_frame_equal(expected, out)
