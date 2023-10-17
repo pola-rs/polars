@@ -7,6 +7,8 @@ mod clip;
 mod cum_agg;
 #[cfg(feature = "cutqcut")]
 mod cut;
+#[cfg(feature = "ewma")]
+mod ewm;
 #[cfg(feature = "round_series")]
 mod floor_divide;
 #[cfg(feature = "fused")]
@@ -47,6 +49,8 @@ pub use clip::*;
 pub use cum_agg::*;
 #[cfg(feature = "cutqcut")]
 pub use cut::*;
+#[cfg(feature = "ewma")]
+pub use ewm::*;
 #[cfg(feature = "round_series")]
 pub use floor_divide::*;
 #[cfg(feature = "fused")]

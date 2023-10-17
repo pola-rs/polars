@@ -1,8 +1,6 @@
 #[cfg(feature = "diff")]
 pub mod diff;
 mod downcast;
-#[cfg(feature = "ewma")]
-mod ewm;
 mod extend;
 #[cfg(feature = "moment")]
 pub mod moment;
