@@ -6483,7 +6483,7 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series([1,2,3])
+        >>> s = pl.Series([1, 2, 3])
         >>> s.ewm_mean(com=1)
         shape: (3,)
         Series: '' [f64]
