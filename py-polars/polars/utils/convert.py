@@ -4,16 +4,16 @@ import sys
 from datetime import datetime, time, timedelta, timezone
 from decimal import Context
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar, overload, get_args
 
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
+from polars.type_aliases import TimeUnit
 
 if TYPE_CHECKING:
     from collections.abc import Reversible
     from datetime import date, tzinfo
     from decimal import Decimal
 
-    from polars.type_aliases import TimeUnit
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec
@@ -48,12 +48,12 @@ if sys.version_info >= (3, 11):
 SECONDS_PER_DAY = 60 * 60 * 24
 EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
-ADMISSABLE_TIME_UNITS = {"ns", "us", "ms"}
+VALID_TIME_UNITS = get_args(TimeUnit)
 
 def _validate_time_unit(time_unit: TimeUnit) -> None:
-    if time_unit not in ADMISSABLE_TIME_UNITS:
+    if time_unit not in VALID_TIME_UNITS:
         raise ValueError(
-            f"`time_unit` must be one of {{'ns', 'us', 'ms'}}, got {time_unit!r}"
+            f"`time_unit` must be one of {set(VALID_TIME_UNITS)}, got {time_unit!r}"
         )
 
 _fromtimestamp = datetime.fromtimestamp
