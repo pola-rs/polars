@@ -50,7 +50,7 @@ EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
-def _validate_time_unit(time_unit: TimeUnit) -> None:
+def _validate_time_unit(time_unit: Any) -> None:
     if time_unit not in ("ms", "us", "ns"):
         raise ValueError(
             f"`time_unit` must be one of {{'ms', 'us', 'ns'}}, got {time_unit!r}"
