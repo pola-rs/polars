@@ -33,9 +33,6 @@ fn error_messages() {
     let base_err_msg =
         format!("xyz\n\nError originated just after this operation:\n{INITIAL_PROJECTION}");
 
-    let err_msg =
-        format!("xyz\n\nError originated just after this operation:\n{INITIAL_PROJECTION}");
-
     let df = df! [
         "c1" => [0, 1],
     ]
