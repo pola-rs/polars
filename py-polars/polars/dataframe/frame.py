@@ -6823,7 +6823,7 @@ class DataFrame:
         └──────┴──────┘
 
         """
-        return self.lazy().fill_nan(value).collect(_eager=True)
+        return self.lazy().fill_nan(value).collect(no_optimization=True)
 
     def explode(
         self,
