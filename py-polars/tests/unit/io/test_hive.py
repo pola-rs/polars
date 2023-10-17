@@ -98,3 +98,15 @@ def test_hive_partitioned_projection_pushdown(
     columns = ["sugars_g", "category"]
     for streaming in [True, False]:
         assert q.select(columns).collect(streaming=streaming).columns == columns
+
+    # test that hive partition columns are projected with the correct height when
+    # the projection contains only hive partition columns (11796)
+    for parallel in ("row_groups", "columns"):
+        q = pl.scan_parquet(
+            root / "**/*.parquet", hive_partitioning=True, parallel=parallel  # type: ignore[arg-type]
+        )
+
+        expect = q.collect().select("category")
+        actual = q.select("category").collect()
+
+        assert expect.frame_equal(actual)
