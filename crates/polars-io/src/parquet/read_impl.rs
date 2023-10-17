@@ -197,8 +197,6 @@ fn rg_to_dfs_optionally_par_over_columns(
         }
 
         let projection_height = (*remaining_rows).min(md.num_rows());
-        let mut hive_df = DataFrame::default();
-        materialize_hive_partitions(&mut hive_df, hive_partition_columns, projection_height);
         let chunk_size = md.num_rows();
         let columns = if let ParallelStrategy::Columns = parallel {
             POOL.install(|| {
@@ -235,15 +233,11 @@ fn rg_to_dfs_optionally_par_over_columns(
         *remaining_rows = *remaining_rows - projection_height;
 
         let mut df = DataFrame::new_no_checks(columns);
-        unsafe {
-            df.get_columns_mut()
-                .extend_from_slice(hive_df.get_columns());
-        }
-
         if let Some(rc) = &row_count {
             df.with_row_count_mut(&rc.name, Some(*previous_row_count + rc.offset));
         }
 
+        materialize_hive_partitions(&mut df, hive_partition_columns, projection_height);
         apply_predicate(&mut df, predicate, true)?;
 
         *previous_row_count += current_row_count;
@@ -293,17 +287,10 @@ fn rg_to_dfs_par_over_rg(
     let dfs = row_groups
         .into_par_iter()
         .map(|(rg_idx, md, projection_height, row_count_start)| {
-            let mut hive_df = DataFrame::default();
-            materialize_hive_partitions(&mut hive_df, hive_partition_columns, projection_height);
-
             if projection_height == 0
                 || use_statistics
                     && !read_this_row_group(predicate, &file_metadata.row_groups[rg_idx], schema)?
             {
-                // didn't read from storage but has hive partitions.
-                if hive_df.width() > 0 {
-                    return Ok(Some(hive_df));
-                }
                 return Ok(None);
             }
             // test we don't read the parquet file if this env var is set
@@ -329,15 +316,11 @@ fn rg_to_dfs_par_over_rg(
 
             let mut df = DataFrame::new_no_checks(columns);
 
-            unsafe {
-                df.get_columns_mut()
-                    .extend_from_slice(hive_df.get_columns())
-            }
-
             if let Some(rc) = &row_count {
                 df.with_row_count_mut(&rc.name, Some(row_count_start as IdxSize + rc.offset));
             }
 
+            materialize_hive_partitions(&mut df, hive_partition_columns, projection_height);
             apply_predicate(&mut df, predicate, false)?;
 
             Ok(Some(df))

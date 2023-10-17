@@ -101,14 +101,11 @@ def test_hive_partitioned_projection_pushdown(
 
     # test that hive partition columns are projected with the correct height when
     # the projection contains only hive partition columns (11796)
-    for parallel in ("columns", "row_groups"):
+    for parallel in ("row_groups", "columns"):
         q = pl.scan_parquet(
-            root / "**/*.parquet", hive_partitioning=True, parallel=parallel
+            root / "**/*.parquet", hive_partitioning=True, parallel=parallel  # type: ignore[arg-type]
         )
 
-        assert_frame_equal(
-            q.select("category").collect(), q.collect().select("category")
-        )
-        assert_frame_equal(
-            q.select("category").collect(), q.collect().select("category")
+        assert (
+            q.select("category").collect().frame_equal(q.collect().select("category"))
         )
