@@ -942,12 +942,14 @@ def test_sql_trim(foods_ipc_path: Path) -> None:
             "BY NAME",
             [(1, "zz"), (2, "yy"), (3, "xx")],
         ),
-        (
-            # note: waiting for "https://github.com/sqlparser-rs/sqlparser-rs/pull/997"
+        pytest.param(
             ["c1", "c2"],
             ["c2", "c1"],
             "DISTINCT BY NAME",
-            None,  # [(1, "zz"), (2, "yy"), (3, "xx")],
+            [(1, "zz"), (2, "yy"), (3, "xx")],
+            # TODO: Remove xfail marker when supported added in sqlparser-rs
+            # https://github.com/sqlparser-rs/sqlparser-rs/pull/997
+            marks=pytest.mark.xfail,
         ),
     ],
 )
@@ -955,7 +957,7 @@ def test_sql_union(
     cols1: list[str],
     cols2: list[str],
     union_subtype: str,
-    expected: dict[str, list[int] | list[str]] | None,
+    expected: list[tuple[int, str]],
 ) -> None:
     with pl.SQLContext(
         frame1=pl.DataFrame({"c1": [1, 2], "c2": ["zz", "yy"]}),
@@ -967,11 +969,7 @@ def test_sql_union(
             UNION {union_subtype}
             SELECT {', '.join(cols2)} FROM frame2
         """
-        if expected is not None:
-            assert sorted(ctx.execute(query).rows()) == expected
-        else:
-            with pytest.raises(pl.ComputeError, match="sql parser error"):
-                ctx.execute(query)
+        assert sorted(ctx.execute(query).rows()) == expected
 
 
 def test_sql_nullif_coalesce(foods_ipc_path: Path) -> None:

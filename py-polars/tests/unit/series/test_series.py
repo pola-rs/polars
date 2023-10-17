@@ -1438,10 +1438,10 @@ def test_bitwise() -> None:
 
     # ensure mistaken use of logical 'and'/'or' raises an exception
     with pytest.raises(TypeError, match="ambiguous"):
-        a and b
+        a and b  # type: ignore[redundant-expr]
 
     with pytest.raises(TypeError, match="ambiguous"):
-        a or b
+        a or b  # type: ignore[redundant-expr]
 
 
 def test_to_numpy(monkeypatch: Any) -> None:

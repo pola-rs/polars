@@ -159,7 +159,7 @@ NOOP_TEST_CASES = [
 )
 def test_bytecode_parser_expression(col: str, func: str, expected: str) -> None:
     try:
-        import udfs  # type: ignore[import]
+        import udfs  # type: ignore[import-not-found]
     except ModuleNotFoundError as exc:
         assert "No module named 'udfs'" in str(exc)  # noqa: PT017
         # Skip test if udfs can't be imported because it's not in the path.
