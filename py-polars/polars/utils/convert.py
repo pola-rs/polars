@@ -116,38 +116,36 @@ def _date_to_pl_date(d: date) -> int:
 
 
 def _seconds_and_micros_to_subseconds(
-    seconds: int, micros: int, time_unit: TimeUnit | None
+    seconds: int, micro_seconds: int, time_unit: TimeUnit
 ) -> int:
-    if time_unit is None:
-        time_unit = "us"
+    """Convert seconds and microseconds to subseconds in given time unit."""
     _validate_time_unit(time_unit)
-
     if time_unit == "ns":
-        return 1_000 * (seconds * 1_000_000 + micros)
+        return 1_000 * (seconds * 1_000_000 + micro_seconds)
     elif time_unit == "us":
-        return seconds * 1_000_000 + micros
+        return seconds * 1_000_000 + micro_seconds
     elif time_unit == "ms":
-        return seconds * 1_000 + micros // 1_000
+        return seconds * 1_000 + micro_seconds // 1_000
 
 
-def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
+def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit = "us") -> int:
     """Convert a python datetime to a timestamp in given time unit."""
     if dt.tzinfo is None:
         # Make sure to use UTC rather than system time zone.
         dt = dt.replace(tzinfo=timezone.utc)
-    micros = dt.microsecond
+    micro_seconds = dt.microsecond
     seconds = _timestamp_in_seconds(dt)
     return _seconds_and_micros_to_subseconds(
-        seconds=seconds, micros=micros, time_unit=time_unit
+        seconds=seconds, micro_seconds=micro_seconds, time_unit=time_unit
     )
 
 
-def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None) -> int:
+def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit = "us") -> int:
     """Convert a Python timedelta object to a total number of subseconds."""
-    micros = td.microseconds
+    micro_seconds = td.microseconds
     seconds = td.days * SECONDS_PER_DAY + td.seconds
     return _seconds_and_micros_to_subseconds(
-        seconds=seconds, micros=micros, time_unit=time_unit
+        seconds=seconds, micro_seconds=micro_seconds, time_unit=time_unit
     )
 
 
@@ -164,11 +162,8 @@ def _to_python_time(value: int) -> time:
         )
 
 
-def _to_python_timedelta(
-    value: int | float, time_unit: TimeUnit | None = "ns"
-) -> timedelta:
+def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "ns") -> timedelta:
     _validate_time_unit(time_unit)
-
     if time_unit == "ns":
         return timedelta(microseconds=value // 1_000)
     elif time_unit == "us":
@@ -185,7 +180,7 @@ def _to_python_date(value: int | float) -> date:
 
 def _to_python_datetime(
     value: int | float,
-    time_unit: TimeUnit | None = "ns",
+    time_unit: TimeUnit = "ns",
     time_zone: str | None = None,
 ) -> datetime:
     """Convert polars int64 timestamp to Python datetime."""
