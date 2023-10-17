@@ -822,3 +822,10 @@ def test_group_by_with_expr_as_key() -> None:
     # tests: 11766
     assert gb.head(0).frame_equal(gb.agg(pl.col("x").head(0)).explode("x"))
     assert gb.tail(0).frame_equal(gb.agg(pl.col("x").tail(0)).explode("x"))
+
+
+def test_lazy_group_by_reuse_11767() -> None:
+    lgb = pl.select(x=1).lazy().group_by("x")
+    a = lgb.count()
+    b = lgb.count()
+    assert a.collect().frame_equal(b.collect())
