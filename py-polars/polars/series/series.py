@@ -3811,7 +3811,7 @@ class Series:
 
         """
 
-    def to_list(self, *, use_pyarrow: bool = False) -> list[Any]:
+    def to_list(self, *, use_pyarrow: bool | None = None) -> list[Any]:
         """
         Convert this Series to a Python List. This operation clones data.
 
@@ -3829,8 +3829,15 @@ class Series:
         <class 'list'>
 
         """
-        if use_pyarrow:
-            return self.to_arrow().to_pylist()
+        if use_pyarrow is not None:
+            issue_deprecation_warning(
+                "The parameter `use_pyarrow` for `Series.to_list` is deprecated."
+                " Call the method without `use_pyarrow` to silence this warning.",
+                version="0.19.9",
+            )
+            if use_pyarrow:
+                return self.to_arrow().to_pylist()
+
         return self._s.to_list()
 
     def rechunk(self, *, in_place: bool = False) -> Self:

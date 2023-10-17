@@ -602,19 +602,23 @@ def test_to_pandas() -> None:
             pass
 
 
-def test_to_python() -> None:
-    a = pl.Series("a", range(20))
-    b = a.to_list()
-    assert isinstance(b, list)
-    assert len(b) == 20
-
-    b = a.to_list(use_pyarrow=True)
-    assert isinstance(b, list)
-    assert len(b) == 20
+def test_series_to_list() -> None:
+    s = pl.Series("a", range(20))
+    result = s.to_list()
+    assert isinstance(result, list)
+    assert len(result) == 20
 
     a = pl.Series("a", [1, None, 2])
     assert a.null_count() == 1
     assert a.to_list() == [1, None, 2]
+
+
+def test_series_to_list_use_pyarrow_deprecated() -> None:
+    s = pl.Series("a", range(20))
+    with pytest.deprecated_call():
+        result = s.to_list(use_pyarrow=True)
+    assert isinstance(result, list)
+    assert len(result) == 20
 
 
 def test_to_struct() -> None:
