@@ -75,7 +75,13 @@ def assert_series_equal(
     [right]: [1, 5, 3]
 
     """
-    _assert_correct_input_type(left, right)
+    if not (isinstance(left, Series) and isinstance(right, Series)):  # type: ignore[redundant-expr]
+        raise_assertion_error(
+            "inputs",
+            "unexpected input types",
+            type(left).__name__,
+            type(right).__name__,
+        )
 
     if left.len() != right.len():
         raise_assertion_error("Series", "length mismatch", left.len(), right.len())
@@ -90,21 +96,11 @@ def assert_series_equal(
         left,
         right,
         check_exact=check_exact,
-        atol=atol,
         rtol=rtol,
+        atol=atol,
         nans_compare_equal=nans_compare_equal,
         categorical_as_str=categorical_as_str,
     )
-
-
-def _assert_correct_input_type(left: Series, right: Series) -> None:
-    if not (isinstance(left, Series) and isinstance(right, Series)):  # type: ignore[redundant-expr]
-        raise_assertion_error(
-            "inputs",
-            "unexpected input types",
-            type(left).__name__,
-            type(right).__name__,
-        )
 
 
 def _assert_series_values_equal(
@@ -112,15 +108,14 @@ def _assert_series_values_equal(
     right: Series,
     *,
     check_exact: bool,
-    atol: float,
     rtol: float,
+    atol: float,
     nans_compare_equal: bool,
     categorical_as_str: bool,
 ) -> None:
     """Assert that the values in both Series are equal."""
     if categorical_as_str and left.dtype == Categorical:
-        left = left.cast(Utf8)
-        right = right.cast(Utf8)
+        left, right = left.cast(Utf8), right.cast(Utf8)
 
     # create mask of which (if any) values are unequal
     unequal = left.ne_missing(right)
