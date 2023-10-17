@@ -92,7 +92,9 @@ def assert_frame_equal(
             type(right).__name__,
         )
 
-    _assert_frame_columns_equal(left, right, check_column_order=check_column_order)
+    _assert_frame_schema_equal(
+        left, right, check_column_order=check_column_order, check_dtype=check_dtype
+    )
 
     if collect_input_frames:
         if check_dtype:  # check this _before_ we collect
@@ -120,7 +122,7 @@ def assert_frame_equal(
             _assert_series_inner(
                 left[c],  # type: ignore[arg-type, index]
                 right[c],  # type: ignore[arg-type, index]
-                check_dtype=check_dtype,
+                check_dtype=False,  # already checked
                 check_exact=check_exact,
                 atol=atol,
                 rtol=rtol,
@@ -132,27 +134,68 @@ def assert_frame_equal(
             raise AssertionError(msg) from exc
 
 
-def _assert_frame_columns_equal(
+def _assert_frame_schema_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
     *,
-    check_column_order: bool,
+    check_dtype: bool = True,
+    check_column_order: bool = True,
 ) -> None:
-    left_columns = left.columns
-    right_columns = right.columns
+    left_schema, right_schema = left.schema, right.schema
 
-    if left_not_right := [c for c in left_columns if c not in right_columns]:
-        msg = f"columns {left_not_right!r} in left frame, but not in right"
+    # Fast path for equal frames
+    if left_schema == right_schema:
+        return
+
+    # We know schemas do not match...
+
+    if check_column_order and check_dtype:
+        #... so we can raise here
+        msg = "x"
         raise AssertionError(msg)
 
-    if right_not_left := [c for c in right_columns if c not in left_columns]:
-        msg = f"columns {right_not_left!r} in right frame, but not in left"
+    elif not check_column_order and check_dtype:
+        msg = "y"
         raise AssertionError(msg)
 
-    if check_column_order and left_columns != right_columns:
-        # TODO: Use raise_assertion_error to get nice formatting
-        msg = f"columns are not in the same order:\n{left_columns!r}\n{right_columns!r}"
-        raise AssertionError(msg)
+    # Assert that column names match in any order
+    if left_schema.keys() != right_schema.keys():
+        if left_not_right := [c for c in left_schema if c not in right_schema]:
+            msg = f"columns {left_not_right!r} in left frame, but not in right"
+            raise AssertionError(msg)
+        if right_not_left := [c for c in right_schema if c not in left_schema]:
+            msg = f"columns {right_not_left!r} in right frame, but not in left"
+            raise AssertionError(msg)
+
+    # Schemas don't match, but column names are known to match...
+    # Either dtypes are wrong, or column order is wrong, or both
+
+    if check_dtype:
+        if dict(left_schema) != dict(right_schema):
+            msg = "dtypes do not match"
+            raise AssertionError(msg)
+
+    # Check for column order
+    if check_column_order:
+        left_columns, right_columns = list(left_schema), list(right_schema)
+        if left_columns != right_columns:
+            # TODO: Use raise_assertion_error to get nice formatting
+            msg = f"columns are not in the same order:\n{left_columns!r}\n{right_columns!r}"
+            raise AssertionError(msg)
+
+        # Here we know the order matches. So dtypes must not match!
+        if check_dtype:
+            msg = "dtypes do not match"
+            raise AssertionError(msg)
+
+    else:
+        # Here we know that we are not checking for column order
+        # Either dtypes are wrong, or column order is wrong but it doesn't matter, or both
+
+        # We are checking for dtypes and don't care about column order
+        if check_dtype and dict(left_schema) != dict(right_schema):
+            msg = "dtypes do not match"
+            raise AssertionError(msg)
 
 
 def assert_frame_not_equal(
