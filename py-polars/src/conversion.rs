@@ -13,6 +13,7 @@ use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
 use polars_core::frame::row::any_values_to_dtype;
 use polars_core::prelude::{IndexOrder, QuantileInterpolOptions};
+use polars_core::utils::arrow::array::Utf8Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_lazy::prelude::*;
 #[cfg(feature = "cloud")]
@@ -417,6 +418,17 @@ impl FromPyObject<'_> for Wrap<DataType> {
                             "{dt} is not a recognised polars DataType.",
                         )))
                     },
+                }
+            },
+            "Categorical" => {
+                let categories = ob.getattr(intern!(py, "categories")).unwrap();
+                if categories.is_none() {
+                    DataType::Categorical(None)
+                } else {
+                    let categories = categories.extract::<Wrap<Utf8Chunked>>()?.0;
+                    let arr = categories.rechunk().into_series().to_arrow(0);
+                    let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
+                    create_categorical_data_type(arr.clone())
                 }
             },
             "Duration" => {

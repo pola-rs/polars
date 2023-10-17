@@ -1,4 +1,5 @@
 use polars::prelude::*;
+use polars_core::export::arrow::array::Utf8Array;
 use pyo3::{FromPyObject, PyAny, PyResult};
 
 #[cfg(feature = "object")]
@@ -27,7 +28,7 @@ pub(crate) enum PyDataType {
     Time,
     #[cfg(feature = "object")]
     Object,
-    Categorical,
+    Categorical(Option<Utf8Array<i64>>),
     Struct,
     Binary,
     Decimal(Option<usize>, usize),
@@ -60,7 +61,10 @@ impl From<&DataType> for PyDataType {
             DataType::Time => Time,
             #[cfg(feature = "object")]
             DataType::Object(_) => Object,
-            DataType::Categorical(_) => Categorical,
+            DataType::Categorical(rev_map) => rev_map.as_ref().map_or_else(
+                || Categorical(None),
+                |rev_map| Categorical(Some(rev_map.get_categories().clone())),
+            ),
             DataType::Struct(_) => Struct,
             DataType::Null | DataType::Unknown => {
                 panic!("null or unknown not expected here")
@@ -99,7 +103,10 @@ impl From<PyDataType> for DataType {
             PyDataType::Time => Time,
             #[cfg(feature = "object")]
             PyDataType::Object => Object(OBJECT_NAME),
-            PyDataType::Categorical => Categorical(None),
+            PyDataType::Categorical(categories) => categories.map_or_else(
+                || Categorical(None),
+                |categories| create_categorical_data_type(categories),
+            ),
             PyDataType::Struct => Struct(vec![]),
             PyDataType::Decimal(p, s) => Decimal(p, Some(s)),
             PyDataType::Array(width) => Array(DataType::Null.into(), width),

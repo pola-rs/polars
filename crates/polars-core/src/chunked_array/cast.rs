@@ -10,6 +10,8 @@ use crate::chunked_array::temporal::validate_time_zone;
 #[cfg(feature = "dtype-datetime")]
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
+#[cfg(feature = "dtype-categorical")]
+use crate::using_string_cache;
 
 pub(crate) fn cast_chunks(
     chunks: &[ArrayRef],
@@ -174,12 +176,22 @@ impl ChunkCast for Utf8Chunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         match data_type {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => {
-                let iter = self.into_iter();
-                let mut builder = CategoricalChunkedBuilder::new(self.name(), self.len());
-                builder.drain_iter(iter);
-                let ca = builder.finish();
-                Ok(ca.into_series())
+            DataType::Categorical(rev_map) => match rev_map {
+                None => {
+                    let iter = self.into_iter();
+                    let mut builder = CategoricalChunkedBuilder::new(self.name(), self.len());
+                    builder.drain_iter(iter);
+                    let ca = builder.finish();
+                    Ok(ca.into_series())
+                },
+                Some(rev_map) => {
+                    polars_ensure!(!using_string_cache(), InvalidOperation: "Can not cast to categorical with fixed categories while global string cache is active");
+                    CategoricalChunked::from_string_with_fixed_categories(
+                        self,
+                        rev_map.get_categories(),
+                    )
+                    .map(|ca| ca.into_series())
+                },
             },
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),

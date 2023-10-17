@@ -44,7 +44,7 @@ pub enum DataType {
     Null,
     #[cfg(feature = "dtype-categorical")]
     // The RevMapping has the internal state.
-    // This is ignored with casts, comparisons, hashing etc.
+    // This is ignored with comparisons, hashing etc.
     Categorical(Option<Arc<RevMapping>>),
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
@@ -413,4 +413,10 @@ pub(crate) fn can_extend_dtype(left: &DataType, right: &DataType) -> PolarsResul
             Ok(false)
         },
     }
+}
+
+#[cfg(feature = "dtype-categorical")]
+pub fn create_categorical_data_type(categories: Utf8Array<i64>) -> DataType {
+    let rev_map = RevMapping::from_fixed_categories(categories.clone());
+    DataType::Categorical(Some(Arc::new(rev_map)))
 }

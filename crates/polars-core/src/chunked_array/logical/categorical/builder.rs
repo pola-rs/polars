@@ -190,6 +190,10 @@ impl RevMapping {
             },
         }
     }
+
+    pub fn from_fixed_categories(categories: Utf8Array<i64>) -> Self {
+        Self::Local(categories)
+    }
 }
 
 #[derive(Eq, Copy, Clone)]
@@ -513,6 +517,40 @@ impl CategoricalChunked {
         let rev_map = RevMapping::Global(rev_map, str_values.into(), cache.uuid);
 
         CategoricalChunked::from_cats_and_rev_map_unchecked(cats, Arc::new(rev_map))
+    }
+
+    /// Create a [`CategoricalChunked`] from a fixed list of categories and a List of strings.
+    /// This will error if a string is not in the fixed list of categories
+    pub fn from_string_with_fixed_categories(
+        values: &Utf8Chunked,
+        categories: &Utf8Array<i64>,
+    ) -> PolarsResult<CategoricalChunked> {
+        // Build a mapping string -> idx
+        let mut map = PlHashMap::with_capacity(categories.len());
+        for (idx, cat) in categories.iter().flatten().enumerate() {
+            map.insert(cat, idx as u32);
+        }
+        // Find idx of every value in the map
+        let ca_idx: UInt32Chunked = values
+            .into_iter()
+            .map(|opt_s: Option<&str>| {
+                opt_s
+                    .map(|s| {
+                        map.get(s).copied().ok_or_else(
+                            || polars_err!(OutOfBounds: "Value {} in string column not found in fixed set of categories {:?}",s,categories),
+                        )
+                    })
+                    .transpose()
+            })
+            .collect::<Result<UInt32Chunked, PolarsError>>()?;
+
+        let rev_map = RevMapping::from_fixed_categories(categories.clone());
+        unsafe {
+            Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
+                ca_idx,
+                Arc::new(rev_map),
+            ))
+        }
     }
 }
 

@@ -444,7 +444,7 @@ def sequence_to_pyseries(
         pyseries = _construct_series_with_fallbacks(
             constructor, name, values, dtype, strict=strict
         )
-        if dtype in (Date, Datetime, Duration, Time, Categorical, Boolean):
+        if dtype in (Date, Datetime, Duration, Time, Boolean,Categorical) or isinstance(dtype,Categorical):
             if pyseries.dtype() != dtype:
                 pyseries = pyseries.cast(dtype, strict=True)
         return pyseries
