@@ -110,8 +110,8 @@ def assert_frame_equal(
                 left.get_column(c),
                 right.get_column(c),
                 check_exact=check_exact,
-                atol=atol,
                 rtol=rtol,
+                atol=atol,
                 nans_compare_equal=nans_compare_equal,
                 categorical_as_str=categorical_as_str,
             )

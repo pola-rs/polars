@@ -137,8 +137,8 @@ def _assert_series_values_equal(
             left=left.filter(unequal),
             right=right.filter(unequal),
             check_exact=check_exact,
-            atol=atol,
             rtol=rtol,
+            atol=atol,
             nans_compare_equal=nans_compare_equal,
             categorical_as_str=categorical_as_str,
         ):
@@ -167,8 +167,8 @@ def _assert_series_values_equal(
                 left,
                 right,
                 unequal,
-                atol=atol,
                 rtol=rtol,
+                atol=atol,
                 nans_compare_equal=nans_compare_equal,
                 comparing_floats=comparing_floats,
             )
@@ -186,9 +186,9 @@ def _check_series_equal_inexact(
     left: Series,
     right: Series,
     unequal: Series,
-    atol: float,
-    rtol: float,
     *,
+    rtol: float,
+    atol: float,
     nans_compare_equal: bool,
     comparing_floats: bool,
 ) -> tuple[bool, str]:
@@ -229,8 +229,8 @@ def _assert_series_nested(
     right: Series,
     *,
     check_exact: bool,
-    atol: float,
     rtol: float,
+    atol: float,
     nans_compare_equal: bool,
     categorical_as_str: bool,
 ) -> bool:
@@ -262,8 +262,8 @@ def _assert_series_nested(
                 s1,
                 s2,
                 check_exact=check_exact,
-                atol=atol,
                 rtol=rtol,
+                atol=atol,
                 nans_compare_equal=nans_compare_equal,
                 categorical_as_str=categorical_as_str,
             )
@@ -288,8 +288,8 @@ def _assert_series_nested(
                 s1,
                 s2,
                 check_exact=check_exact,
-                atol=atol,
                 rtol=rtol,
+                atol=atol,
                 nans_compare_equal=nans_compare_equal,
                 categorical_as_str=categorical_as_str,
             )
