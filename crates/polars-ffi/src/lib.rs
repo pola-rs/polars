@@ -97,11 +97,7 @@ pub unsafe fn import_series(e: SeriesExport) -> PolarsResult<Series> {
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    Ok(Series::from_chunks_and_dtype_unchecked(
-        &field.name,
-        chunks,
-        &(&field.data_type).into(),
-    ))
+    Series::try_from((field.name.as_str(), chunks))
 }
 
 /// # Safety
