@@ -126,7 +126,7 @@ from polars.testing import assert_frame_equal, assert_frame_not_equal
 def test_assert_frame_equal_passes_assertion(
     df1: pl.DataFrame,
     df2: pl.DataFrame,
-    kwargs: Any,
+    kwargs: dict[str, Any],
 ) -> None:
     assert_frame_equal(df1, df2, **kwargs)
     with pytest.raises(AssertionError):
@@ -225,7 +225,7 @@ def test_assert_frame_equal_passes_assertion(
 def test_assert_frame_equal_raises_assertion_error(
     df1: pl.DataFrame,
     df2: pl.DataFrame,
-    kwargs: Any,
+    kwargs: dict[str, Any],
 ) -> None:
     with pytest.raises(AssertionError):
         assert_frame_equal(df1, df2, **kwargs)
