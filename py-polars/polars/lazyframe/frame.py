@@ -5765,7 +5765,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         strategy that defines explicit join columns in each frame:
 
         >>> lf.update(
-        ...     new_df, left_on="A", right_on="C", how="outer", include_nulls=True
+        ...     new_lf, left_on="A", right_on="C", how="outer", include_nulls=True
         ... ).collect()
         shape: (5, 2)
         ┌─────┬──────┐
