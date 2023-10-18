@@ -651,3 +651,11 @@ def test_assert_series_not_equal() -> None:
     s = pl.Series("a", [1, 2])
     with pytest.raises(AssertionError, match="Series are equal"):
         assert_series_not_equal(s, s)
+
+
+def test_assert_series_equal_nested_float() -> None:
+    s1 = pl.Series([[1, 2], [3, 4.0]], dtype=pl.List(pl.Float64))
+    s2 = pl.Series([[1, 2], [3, 4.9]], dtype=pl.List(pl.Float64))
+
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2)
