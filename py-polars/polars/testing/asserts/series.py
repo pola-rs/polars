@@ -23,8 +23,8 @@ def assert_series_equal(
     check_dtype: bool = True,
     check_names: bool = True,
     check_exact: bool = False,
-    rtol: float = 1.0e-5,
-    atol: float = 1.0e-8,
+    rtol: float = 1e-5,
+    atol: float = 1e-8,
     nans_compare_equal: bool = True,
     categorical_as_str: bool = False,
 ) -> None:
@@ -314,8 +314,8 @@ def assert_series_not_equal(
     check_dtype: bool = True,
     check_names: bool = True,
     check_exact: bool = False,
-    rtol: float = 1.0e-5,
-    atol: float = 1.0e-8,
+    rtol: float = 1e-5,
+    atol: float = 1e-8,
     nans_compare_equal: bool = True,
     categorical_as_str: bool = False,
 ) -> None:
