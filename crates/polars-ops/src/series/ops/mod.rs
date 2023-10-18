@@ -34,6 +34,8 @@ mod rank;
 mod rle;
 #[cfg(feature = "rolling_window")]
 mod rolling;
+#[cfg(feature = "round_series")]
+mod round;
 #[cfg(feature = "search_sorted")]
 mod search_sorted;
 #[cfg(feature = "to_dummies")]
@@ -77,6 +79,8 @@ pub use rank::*;
 pub use rle::*;
 #[cfg(feature = "rolling_window")]
 pub use rolling::*;
+#[cfg(feature = "round_series")]
+pub use round::*;
 #[cfg(feature = "search_sorted")]
 pub use search_sorted::*;
 #[cfg(feature = "to_dummies")]

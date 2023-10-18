@@ -1,14 +1,17 @@
 use num_traits::pow::Pow;
+use polars_core::prelude::*;
 
-use crate::prelude::*;
+use crate::series::ops::SeriesSealed;
 
-impl Series {
+pub trait RoundSeries: SeriesSealed {
     /// Round underlying floating point array to given decimal.
-    pub fn round(&self, decimals: u32) -> PolarsResult<Self> {
-        if let Ok(ca) = self.f32() {
-            if decimals == 0 {
+    fn round(&self, decimals: u32) -> PolarsResult<Series> {
+        let s = self.as_series();
+
+        if let Ok(ca) = s.f32() {
+            return if decimals == 0 {
                 let s = ca.apply_values(|val| val.round()).into_series();
-                return Ok(s);
+                Ok(s)
             } else {
                 // Note we do the computation on f64 floats to not lose precision
                 // when the computation is done, we cast to f32
@@ -16,47 +19,66 @@ impl Series {
                 let s = ca
                     .apply_values(|val| ((val as f64 * multiplier).round() / multiplier) as f32)
                     .into_series();
-                return Ok(s);
-            }
+                Ok(s)
+            };
         }
-        if let Ok(ca) = self.f64() {
-            if decimals == 0 {
+        if let Ok(ca) = s.f64() {
+            return if decimals == 0 {
                 let s = ca.apply_values(|val| val.round()).into_series();
-                return Ok(s);
+                Ok(s)
             } else {
                 let multiplier = 10.0.pow(decimals as f64);
                 let s = ca
                     .apply_values(|val| (val * multiplier).round() / multiplier)
                     .into_series();
-                return Ok(s);
-            }
+                Ok(s)
+            };
         }
-        polars_bail!(opq = round, self.dtype());
+        polars_bail!(opq = round, s.dtype());
     }
 
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
-    pub fn floor(&self) -> PolarsResult<Self> {
-        if let Ok(ca) = self.f32() {
+    fn floor(&self) -> PolarsResult<Series> {
+        let s = self.as_series();
+
+        if let Ok(ca) = s.f32() {
             let s = ca.apply_values(|val| val.floor()).into_series();
             return Ok(s);
         }
-        if let Ok(ca) = self.f64() {
+        if let Ok(ca) = s.f64() {
             let s = ca.apply_values(|val| val.floor()).into_series();
             return Ok(s);
         }
-        polars_bail!(opq = floor, self.dtype());
+        polars_bail!(opq = floor, s.dtype());
     }
 
     /// Ceil underlying floating point array to the highest integers smaller or equal to the float value.
-    pub fn ceil(&self) -> PolarsResult<Self> {
-        if let Ok(ca) = self.f32() {
+    fn ceil(&self) -> PolarsResult<Series> {
+        let s = self.as_series();
+
+        if let Ok(ca) = s.f32() {
             let s = ca.apply_values(|val| val.ceil()).into_series();
             return Ok(s);
         }
-        if let Ok(ca) = self.f64() {
+        if let Ok(ca) = s.f64() {
             let s = ca.apply_values(|val| val.ceil()).into_series();
             return Ok(s);
         }
-        polars_bail!(opq = ceil, self.dtype());
+        polars_bail!(opq = ceil, s.dtype());
+    }
+}
+
+impl RoundSeries for Series {}
+
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+
+    #[test]
+    fn test_round_series() {
+        let series = Series::new("a", &[1.003, 2.23222, 3.4352]);
+        let out = series.round(2).unwrap();
+        let ca = out.f64().unwrap();
+        assert_eq!(ca.get(0), Some(1.0));
     }
 }

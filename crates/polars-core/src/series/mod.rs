@@ -1043,13 +1043,4 @@ mod test {
         let _ = series.slice(-6, 2);
         let _ = series.slice(4, 2);
     }
-
-    #[test]
-    #[cfg(feature = "round_series")]
-    fn test_round_series() {
-        let series = Series::new("a", &[1.003, 2.23222, 3.4352]);
-        let out = series.round(2).unwrap();
-        let ca = out.f64().unwrap();
-        assert_eq!(ca.get(0), Some(1.0));
-    }
 }
