@@ -18,47 +18,6 @@ use crate::datatypes::Schema;
 ///
 /// Any values in the sink's `metadata` field will be written to the file's footer
 /// when the sink is closed.
-///
-/// # Examples
-///
-/// ```
-/// use futures::SinkExt;
-/// use polars_arrow::array::{Array, Int32Array};
-/// use polars_arrow::datatypes::{DataType, Field, Schema};
-/// use polars_arrow::chunk::Chunk;
-/// use polars_arrow::io::parquet::write::{Encoding, WriteOptions, CompressionOptions, Version};
-/// # use polars_arrow::io::parquet::write::FileSink;
-/// # futures::executor::block_on(async move {
-///
-/// let schema = Schema::from(vec![
-///     Field::new("values", DataType::Int32, true),
-/// ]);
-/// let encoding = vec![vec![Encoding::Plain]];
-/// let options = WriteOptions {
-///     write_statistics: true,
-///     compression: CompressionOptions::Uncompressed,
-///     version: Version::V2,
-///     data_pagesize_limit: None,
-/// };
-///
-/// let mut buffer = vec![];
-/// let mut sink = FileSink::try_new(
-///     &mut buffer,
-///     schema,
-///     encoding,
-///     options,
-/// )?;
-///
-/// for i in 0..3 {
-///     let values = Int32Array::from(&[Some(i), None]);
-///     let chunk = Chunk::new(vec![values.boxed()]);
-///     sink.feed(chunk).await?;
-/// }
-/// sink.metadata.insert(String::from("key"), Some(String::from("value")));
-/// sink.close().await?;
-/// # polars_arrow::error::Result::Ok(())
-/// # }).unwrap();
-/// ```
 pub struct FileSink<'a, W: AsyncWrite + Send + Unpin> {
     writer: Option<FileStreamer<W>>,
     task: Option<BoxFuture<'a, PolarsResult<Option<FileStreamer<W>>>>>,
