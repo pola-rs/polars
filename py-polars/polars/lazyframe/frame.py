@@ -5831,24 +5831,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         # When include_nulls is True, we need to distinguish records after the join that
         # were originally null in the right frame, as opposed to records that were null
         # because the key was missing from the right frame.
-        # Add {name}__VALID columns indicating whether right frame had key.
-        tmp_valid = "__VALID"
+        # Add a validity column to track whether row was matched or not.
         if include_nulls:
-            right_other_valid = [f"{name}{tmp_valid}" for name in right_other]
-            other = other.with_columns(
-                F.lit(True).alias(null_name) for null_name in right_other_valid
-            )
+            validity = ("__POLARS_VALIDITY",)
+            other = other.with_columns(F.lit(True).alias(validity[0]))
         else:
-            right_other_valid = []
+            validity = ()  # type: ignore[assignment]
 
         tmp_name = "__POLARS_RIGHT"
-        drop_columns = [
-            *(f"{name}{tmp_name}" for name in right_other),
-            *right_other_valid,
-        ]
+        drop_columns = [*(f"{name}{tmp_name}" for name in right_other), *validity]
         result = (
             self.join(
-                other.select(*right_on, *right_other, *right_other_valid),
+                other.select(*right_on, *right_other, *validity),
                 left_on=left_on,
                 right_on=right_on,
                 how=how,
@@ -5856,8 +5850,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
             .with_columns(
                 (
-                    # only use left value when right value failed to join
-                    F.when(F.col(f"{name}{tmp_valid}").is_null())
+                    # use left value only when right value failed to join
+                    F.when(F.col(validity).is_null())
                     .then(F.col(name))
                     .otherwise(F.col(f"{name}{tmp_name}"))
                     if include_nulls
