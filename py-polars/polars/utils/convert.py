@@ -57,8 +57,6 @@ def _validate_time_unit(time_unit: Any) -> None:
         )
 
 
-_fromtimestamp = datetime.fromtimestamp
-
 
 def _timestamp_in_seconds(dt: datetime) -> int:
     du = dt - EPOCH_UTC
