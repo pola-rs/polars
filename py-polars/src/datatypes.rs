@@ -103,10 +103,9 @@ impl From<PyDataType> for DataType {
             PyDataType::Time => Time,
             #[cfg(feature = "object")]
             PyDataType::Object => Object(OBJECT_NAME),
-            PyDataType::Categorical(categories) => categories.map_or_else(
-                || Categorical(None),
-                |categories| create_categorical_data_type(categories),
-            ),
+            PyDataType::Categorical(categories) => {
+                categories.map_or_else(|| Categorical(None), create_categorical_data_type)
+            },
             PyDataType::Struct => Struct(vec![]),
             PyDataType::Decimal(p, s) => Decimal(p, Some(s)),
             PyDataType::Array(width) => Array(DataType::Null.into(), width),
