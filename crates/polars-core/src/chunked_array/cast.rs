@@ -190,7 +190,11 @@ impl ChunkCast for Utf8Chunked {
                         self,
                         rev_map.get_categories(),
                     )
-                    .map(|ca| ca.into_series())
+                    .map(|ca| {
+                        let mut s = ca.into_series();
+                        s.rename(self.name());
+                        s
+                    })
                 },
             },
             #[cfg(feature = "dtype-struct")]
